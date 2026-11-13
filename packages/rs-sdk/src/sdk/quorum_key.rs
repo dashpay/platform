@@ -30,7 +30,7 @@ pub(crate) enum KeyFetchFailure {
 /// fetched once at most for each Core height it is named at. `max_fetches` bounds how many
 /// fetches there are: a response that needs more is refused with the verifier's error.
 ///
-/// What the provider's trusted source said decides the result:
+/// What the provider's source said decides the result:
 /// * the key: the result of the next verification;
 /// * the quorum is absent: the original, retryable error, so the node that named the
 ///   quorum is banned and the request moves on;
@@ -116,10 +116,11 @@ pub(crate) async fn verify_fetching_quorum_keys<T>(
                     quorum_type,
                     quorum_hash = %hex::encode(quorum_hash),
                     core_chain_locked_height,
-                    "proof names a quorum the trusted quorum source does not list"
+                    "proof names a quorum the provider's quorum source does not know"
                 );
-                // A fresh trusted answer supersedes the initial lookup's
-                // failure: the node named a quorum the source does not know.
+                // A fresh answer from the provider's source supersedes the
+                // initial lookup's failure: the node named a quorum that
+                // source does not know.
                 return Err(KeyFetchFailure::Decided(Box::new(Error::Proof(missing))));
             }
             Err(ContextProviderError::QuorumSourceUnavailable(reason)) => {
@@ -212,7 +213,9 @@ mod tests {
         GetEpochsInfoRequest, GetEpochsInfoResponse, Proof, ResponseMetadata,
         WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
     };
-    use dash_context_provider::{ContextProviderError, QuorumKeyFuture};
+    use dash_context_provider::{
+        AdaptiveContextProvider, ContextProviderError, QuorumKeyFuture, QuorumKeySource,
+    };
     use dpp::block::extended_epoch_info::ExtendedEpochInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::TokenConfiguration;
@@ -774,6 +777,9 @@ mod tests {
         finish_fetch_after_ms: AtomicU64,
         /// Earliest synchronous lookup completion time, including refetch.
         finish_lookup_after_ms: AtomicU64,
+        /// Run once, the first time the SDK asks for a fetch, before the inner
+        /// fetch starts.
+        on_fetch: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
     }
 
     impl Counting {
@@ -786,6 +792,7 @@ mod tests {
                 raise_on_fetch: std::sync::Mutex::new(None),
                 finish_fetch_after_ms: AtomicU64::new(0),
                 finish_lookup_after_ms: AtomicU64::new(0),
+                on_fetch: std::sync::Mutex::new(None),
             })
         }
     }
@@ -839,6 +846,10 @@ mod tests {
                 Some((quorum_type, quorum_hash, core_chain_locked_height));
             if let Some((mark, height)) = self.raise_on_fetch.lock().expect("raise lock").as_ref() {
                 mark.fetch_max(*height, Ordering::SeqCst);
+            }
+            let on_fetch = self.on_fetch.lock().expect("hook lock").take();
+            if let Some(on_fetch) = on_fetch {
+                on_fetch();
             }
             let fetch = self.inner.fetch_quorum_public_key(
                 quorum_type,
@@ -952,6 +963,188 @@ mod tests {
         let mut asked = service.join().expect("quorum service");
         asked.sort();
         assert_eq!(asked, ["/previous", "/quorums"]);
+    }
+
+    /// An SDK in Auto with SPV synced still verifies a proof signed by a
+    /// quorum SPV has not caught up with yet, with the key the trusted
+    /// service lists: the node that sent it is honest, and would otherwise
+    /// be banned for SPV lagging behind.
+    #[tokio::test]
+    async fn should_verify_a_proof_whose_quorum_spv_has_not_seen_with_the_trusted_key() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let trusted = Arc::new(trusted_provider(base_url));
+        let adaptive = AdaptiveContextProvider::new(
+            Arc::clone(&trusted) as Arc<dyn ContextProvider>,
+            trusted.local_resolver(),
+            Network::Regtest,
+        )
+        .expect("a trusted provider of the same network");
+        let spv_client = Arc::new(SpvWithoutTheQuorum::default());
+        let spv = adaptive
+            .spv_source_slot()
+            .expect("an SPV slot")
+            .claim()
+            .expect("an empty slot");
+        spv.publish(
+            Arc::clone(&spv_client) as Arc<dyn ContextProvider>,
+            Arc::new(|| Ok(true)),
+        );
+        assert_eq!(
+            adaptive.quorum_source(),
+            Some(QuorumKeySource::Spv),
+            "a synced SPV client is asked first"
+        );
+        let provider = Counting::new(adaptive);
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let epoch = verify(&sdk, request, response)
+            .await
+            .expect("the trusted key verifies the proof SPV cannot");
+
+        assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+        assert_eq!(
+            spv_client.lookups.load(Ordering::SeqCst),
+            2,
+            "SPV is asked first, before and after the fetch"
+        );
+        assert_eq!(
+            provider.fetches.load(Ordering::SeqCst),
+            1,
+            "the key SPV lacks is fetched"
+        );
+        let mut asked = service.join().expect("quorum service");
+        asked.sort();
+        assert_eq!(
+            asked,
+            ["/previous", "/quorums"],
+            "the key comes from the trusted service"
+        );
+    }
+
+    /// A synced SPV client that does not hold the quorum a proof names: it
+    /// answers every lookup with the error platform-wallet's SPV source
+    /// reports for a missing quorum, and counts them.
+    #[derive(Default)]
+    struct SpvWithoutTheQuorum {
+        lookups: AtomicUsize,
+    }
+
+    impl ContextProvider for SpvWithoutTheQuorum {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            self.lookups.fetch_add(1, Ordering::SeqCst);
+            Err(ContextProviderError::Generic(
+                "SPV error: quorum not found".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// A provider set while a verification fetches a missing quorum key does
+    /// not take that verification over: the response is verified again with
+    /// the provider the verification started with, whose cache now holds the
+    /// key, and only verifications that start later use the new provider.
+    #[tokio::test]
+    async fn should_finish_a_verification_with_the_provider_it_started_with() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let sdk = network_sdk(Arc::clone(&provider));
+        let replacement = Counting::new(CannotFetch);
+        let setter = sdk.clone();
+        let installed = Arc::clone(&replacement);
+        *provider.on_fetch.lock().expect("hook lock") = Some(Box::new(move || {
+            setter
+                .set_context_provider(installed)
+                .expect("the replacement states no requirements");
+        }));
+        let (request, response) = recorded_epoch_fetch();
+
+        let epoch = verify(&sdk, request, response.clone())
+            .await
+            .expect("the provider that fetched the key verifies the proof");
+
+        assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            provider.lookups.load(Ordering::SeqCst),
+            2,
+            "both verifications of the response ask the provider they started with"
+        );
+        assert_eq!(replacement.lookups.load(Ordering::SeqCst), 0);
+        assert_eq!(replacement.fetches.load(Ordering::SeqCst), 0);
+        service.join().expect("quorum service");
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("the replacement has no key");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
+            ),
+            "got {error:?}"
+        );
+        assert_eq!(
+            replacement.lookups.load(Ordering::SeqCst),
+            1,
+            "a verification that starts after the change uses the new provider"
+        );
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
+    }
+
+    /// A mock SDK verifies an answer it holds no expectation for through the
+    /// clone of the SDK it took when it was built, which verifies with a
+    /// provider set afterwards.
+    #[tokio::test]
+    async fn should_verify_a_mock_answer_with_a_provider_set_after_build() {
+        let provider = Counting::new(CannotFetch);
+        let sdk = SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.set_context_provider(Arc::clone(&provider))
+            .expect("the test provider states no requirements");
+        let (request, response) = recorded_epoch_fetch();
+
+        verify(&sdk, request, response)
+            .await
+            .expect_err("the provider has no key");
+
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 1);
     }
 
     /// The second verification is a full one: a key that arrived does not

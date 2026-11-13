@@ -1988,8 +1988,13 @@ mod tests {
 
         assert_eq!(stored.contract.id(), decision_proposals_id);
         assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
-        assert!(stored.contract.document_type_for_name("proposal").is_ok());
-        assert_eq!(stored.contract.document_types().len(), 1);
+        for document_type in ["proposal", "multipleChoiceProposal", "choice"] {
+            assert!(stored
+                .contract
+                .document_type_for_name(document_type)
+                .is_ok());
+        }
+        assert_eq!(stored.contract.document_types().len(), 3);
         assert_eq!(
             platform
                 .drive
@@ -2707,8 +2712,12 @@ mod tests {
                 .keys()
                 .map(|path| path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["encryptedAccountLabel", "encryptedPublicKey"],
-            "the stored DashPay v3 keeps both encryptedFor declarations"
+            vec![
+                "encryptedAccountLabel",
+                "encryptedPublicKey",
+                "encryptedShieldedAddress"
+            ],
+            "the stored DashPay v3 keeps its three encryptedFor declarations"
         );
         assert_eq!(
             encrypted,

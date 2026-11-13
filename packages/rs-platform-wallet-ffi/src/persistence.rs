@@ -9805,31 +9805,9 @@ mod tests {
 
     unsafe extern "C" fn noop_release(_ctx: *mut c_void) {}
     #[cfg(feature = "shielded")]
-    unsafe extern "C" fn noop_persist_viewing_keys(
-        _ctx: *mut c_void,
-        _wallet_id: *const u8,
-        _entries: *const crate::shielded_persistence::ShieldedViewingKeyFFI,
-        _count: usize,
-    ) -> i32 {
-        0
-    }
-    #[cfg(feature = "shielded")]
-    unsafe extern "C" fn noop_load_viewing_keys(
-        _ctx: *mut c_void,
-        out_entries: *mut *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
-        out_count: *mut usize,
-    ) -> i32 {
-        *out_entries = std::ptr::null();
-        *out_count = 0;
-        0
-    }
-    #[cfg(feature = "shielded")]
-    unsafe extern "C" fn noop_free_viewing_keys(
-        _ctx: *mut c_void,
-        _entries: *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
-        _count: usize,
-    ) {
-    }
+    use crate::test_fixtures::{
+        noop_free_viewing_keys, noop_load_viewing_keys, noop_persist_viewing_keys,
+    };
 
     /// The owned-context contract at the persister level: the host context
     /// is released exactly once, and only when the LAST `Arc` clone drops.

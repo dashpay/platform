@@ -104,7 +104,13 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
 mod no_locking_contest_tests;
 
 #[cfg(test)]
+mod contest_index_value_forms_tests;
+
+#[cfg(test)]
 mod charter_election_tests;
+
+#[cfg(test)]
+mod multiple_choice_proposal_tests;
 
 #[cfg(test)]
 mod end_date_cleanup_tests;

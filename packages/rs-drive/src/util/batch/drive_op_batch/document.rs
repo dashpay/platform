@@ -12,6 +12,7 @@ use crate::util::object_size_info::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::document_event::DocumentEvent;
@@ -130,6 +131,22 @@ pub enum DocumentOperationType<'a> {
     DeleteDocument {
         /// The document id
         document_id: Identifier,
+        /// The identity credited with the lifecycle record a keep-history
+        /// delete writes; `None` credits nobody.
+        deleter_id: Option<Identifier>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Removes a bounded chunk of the retained revisions of an already deleted
+    /// keep-history document, dropping the history subtree and the lifecycle
+    /// record with the terminal chunk. Whether the type allows erasure and who
+    /// may start one are decided in transition validation, like a delete's
+    /// ownership; this operation assumes both.
+    EraseDocument {
+        /// The document id
+        document_id: Identifier,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
@@ -224,9 +241,8 @@ fn force_delete_consumed_document_operations(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
     match consumed_document.read {
-        Some(read) => drive.force_delete_read_document_for_contract_operations(
-            read.document,
-            read.storage_flags,
+        Some(document) => drive.force_delete_read_document_for_contract_operations(
+            document,
             contract,
             document_type,
             previous_batch_operations,
@@ -239,9 +255,10 @@ fn force_delete_consumed_document_operations(
             consumed_document.document_id,
             contract,
             document_type,
+            block_info,
+            None,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
-            block_info.time_ms,
             transaction,
             platform_version,
         ),
@@ -263,6 +280,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         self.into_low_level_drive_operations_after_ttl_drain(
             drive,
             estimated_costs_only_with_layer_info,
+            None,
             block_info,
             transaction,
             platform_version,
@@ -534,6 +552,9 @@ impl DocumentOperationType<'_> {
             }
             // These write to system contracts.
             Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
+            // An erase acts on a document whose delete already removed every
+            // index reference, so there is nothing left to drain.
+            Self::EraseDocument { .. } => Ok(()),
         }
     }
 
@@ -541,6 +562,7 @@ impl DocumentOperationType<'_> {
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -744,9 +766,10 @@ impl DocumentOperationType<'_> {
                         document_id,
                         contract,
                         consumed_document_type,
+                        block_info,
+                        None,
                         Some(&mut drive_operations),
                         estimated_costs_only_with_layer_info,
-                        block_info.time_ms,
                         transaction,
                         platform_version,
                     )?;
@@ -810,6 +833,55 @@ impl DocumentOperationType<'_> {
             }
             DocumentOperationType::DeleteDocument {
                 document_id,
+                deleter_id,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
+                let mut operations = drive
+                    .delete_document_for_contract_operations_without_ttl_drain(
+                        document_id,
+                        contract,
+                        document_type,
+                        block_info,
+                        deleter_id,
+                        previous_batch_operations,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?;
+                // Protocols through 14 return only the delete's operations.
+                // Generation 1 deletes retain the contract fetch they bill.
+                if platform_version
+                    .drive
+                    .methods
+                    .document
+                    .delete
+                    .delete_document_for_contract_operations
+                    == 0
+                {
+                    return Ok(operations);
+                }
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
+            }
+            DocumentOperationType::EraseDocument {
+                document_id,
                 contract_info,
                 document_type_info,
             } => {
@@ -824,16 +896,17 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
-                drive.delete_document_for_contract_operations_without_ttl_drain(
+                let mut operations = drive.erase_document_for_contract_operations(
                     document_id,
                     contract,
                     document_type,
-                    None,
+                    block_info,
                     estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
                     transaction,
                     platform_version,
-                )
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
             }
             DocumentOperationType::ForceDeleteDocument {
                 document_id,
@@ -851,15 +924,24 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
+                // Only history deletes use pending siblings to share the lazy lifecycle container.
+                // Released force-delete handlers refuse history types.
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
                 // The deletion a document's own owner runs, without its `canBeDeleted` guard;
                 // it removes the expirations tree entry of a type with a `ttl` itself.
                 drive.force_delete_document_for_contract_operations(
                     document_id,
                     contract,
                     document_type,
+                    block_info,
                     None,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -882,12 +964,20 @@ impl DocumentOperationType<'_> {
                 )
                 .resolve(contract)?;
 
+                // Only history deletes use pending siblings to share the lazy lifecycle container.
+                // Released force-delete handlers refuse history types.
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
                 force_delete_consumed_document_operations(
                     drive,
                     consumed_document,
                     contract,
                     document_type,
-                    None,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,

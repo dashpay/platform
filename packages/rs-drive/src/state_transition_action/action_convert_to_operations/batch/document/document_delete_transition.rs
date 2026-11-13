@@ -44,6 +44,38 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
                     }),
                     DocumentOperation(DocumentOperationType::DeleteDocument {
                         document_id: base.id(),
+                        deleter_id: None,
+                        contract_info: DataContractInfo::DataContractFetchInfo(
+                            base.data_contract_fetch_info(),
+                        ),
+                        document_type_info: DocumentTypeInfo::DocumentTypeName(
+                            base.document_type_name_owned(),
+                        ),
+                    }),
+                ];
+
+                ops.extend(document_deletion_token_cost_operations);
+
+                Ok(ops)
+            }
+            1 => {
+                let base = self.base_owned();
+
+                let data_contract_id = base.data_contract_id();
+
+                let identity_contract_nonce = base.identity_contract_nonce();
+
+                let document_deletion_token_cost_operations = base.token_cost_operations(owner_id);
+
+                let mut ops = vec![
+                    IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                        identity_id: owner_id.into_buffer(),
+                        contract_id: data_contract_id.into_buffer(),
+                        nonce: identity_contract_nonce,
+                    }),
+                    DocumentOperation(DocumentOperationType::DeleteDocument {
+                        document_id: base.id(),
+                        deleter_id: Some(owner_id),
                         contract_info: DataContractInfo::DataContractFetchInfo(
                             base.data_contract_fetch_info(),
                         ),
@@ -60,7 +92,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

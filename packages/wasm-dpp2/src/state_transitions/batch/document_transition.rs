@@ -1,5 +1,6 @@
 use crate::state_transitions::batch::document_transitions::create::DocumentCreateTransitionWasm;
 use crate::state_transitions::batch::document_transitions::delete::DocumentDeleteTransitionWasm;
+use crate::state_transitions::batch::document_transitions::erase::DocumentEraseTransitionWasm;
 use crate::state_transitions::batch::document_transitions::purchase::DocumentPurchaseTransitionWasm;
 use crate::state_transitions::batch::document_transitions::replace::DocumentReplaceTransitionWasm;
 use crate::state_transitions::batch::document_transitions::transfer::DocumentTransferTransitionWasm;
@@ -53,6 +54,8 @@ impl DocumentTransitionWasm {
             DocumentTransitionActionType::UpdatePrice => 5,
             DocumentTransitionActionType::IgnoreWhileBumpingRevision => 6,
             DocumentTransitionActionType::IndexOnlyDelete => 7,
+            // The appended value preserves old discriminants; released protocol bounds reject it.
+            DocumentTransitionActionType::Erase => 8,
         }
     }
 
@@ -114,6 +117,16 @@ impl DocumentTransitionWasm {
             DocumentTransition::Delete(delete) => Ok(DocumentDeleteTransitionWasm::from(delete)),
             _ => Err(WasmDppError::invalid_argument(
                 "Document transition is not a delete transition",
+            )),
+        }
+    }
+
+    #[wasm_bindgen(getter = "eraseTransition")]
+    pub fn erase_transition(&self) -> WasmDppResult<DocumentEraseTransitionWasm> {
+        match self.0.clone() {
+            DocumentTransition::Erase(erase) => Ok(DocumentEraseTransitionWasm::from(erase)),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not an erase transition",
             )),
         }
     }

@@ -21,6 +21,7 @@ use dpp::data_contract::DataContractFactory;
 use dpp::platform_value::platform_value;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::query::document_history_drive_query::DocumentHistoryFilter;
 use drive::query::{
     contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery,
     vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery,
@@ -170,17 +171,16 @@ proof_only!(
         data_contract_id: id(),
         document_type_name: "domain".into(),
         document_id: other_id(),
-        start_at_ms: 123,
-        limit: Some(2),
-        offset: None
+        filter: DocumentHistoryFilter::StartAtTime(123),
+        limit: Some(2)
     },
     proto::GetDocumentHistoryRequest,
     |request: proto::GetDocumentHistoryRequest| {
-        let Some(proto::get_document_history_request::Version::V0(v0)) = request.version else {
-            panic!("expected V0 request")
+        let Some(proto::get_document_history_request::Version::V1(v1)) = request.version else {
+            panic!("expected V1 request")
         };
-        assert!(v0.prove);
-        assert_eq!(v0.document_id, other_id().to_vec());
+        assert!(v1.prove);
+        assert_eq!(v1.document_id, other_id().to_vec());
     }
 );
 

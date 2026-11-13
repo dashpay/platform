@@ -27,6 +27,9 @@
     "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
+    "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
+    "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
@@ -55,6 +58,7 @@
     "platform_wallet_manager_accept_contact_request_replying_in_kind": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_accept_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_manager_create_with_sdk": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
@@ -2013,6 +2017,81 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
           "id": "should_refuse_drain_on_a_buffered_persistence_backend",
           "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "network.adaptive_quorum_source",
+      "title": "Adaptive quorum-key source (Auto/SPV/Trusted) served by the wallet manager's SPV",
+      "area": "shared_policy",
+      "shared_apis": [
+        "dash_sdk_create_adaptive",
+        "dash_sdk_get_context_provider_source",
+        "dash_sdk_set_context_provider_mode",
+        "platform_wallet_manager_create_with_sdk"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "tested",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "tested",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/SDKQuorumSourceTests.swift",
+          "id": "testShouldBuildAnAdaptiveSdkInAutoByDefault",
+          "command": "swift test --package-path packages/swift-sdk --filter SDKQuorumSourceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/AppStateQuorumModeTests.swift",
+          "id": "testShouldRestoreTheSavedQuorumModeOnLaunch",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -only-testing:SwiftExampleAppTests/AppStateQuorumModeTests",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/QuorumSourceFfiTest.kt",
+          "id": "defaultSdkIsAdaptiveInAutoAndSwitchesModes",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/QuorumSourceFfiTest.kt",
+          "id": "secondManagerOnOneAdaptiveSdkIsRefused",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/state/AppStateQuorumModeTest.kt",
+          "id": "pickedQuorumModeSurvivesARelaunch",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SYS-09",
           "covers_restart": false
         }
       ]
