@@ -32,7 +32,7 @@ pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
 pub const TOKEN_SHIELDED_POOLS_KEY: u8 = 224;
 /// Key for the token order escrow tree (a BigSumTree of per-token SumTrees).
 ///
-/// Introduced in protocol version 15 for the token marketplace. Each token that has had an open
+/// Introduced in protocol version 16 for the token marketplace. Each token that has had an open
 /// listing owns one child SumTree keyed by its token id, created with its first listing, whose
 /// SumItems, keyed by order id, are the tokens each open listing holds in escrow. The BigSumTree
 /// total is every token held in escrow and joins the identity balances and the shielded pools on
@@ -47,7 +47,7 @@ pub const TOKEN_ORDER_ESCROW_KEY: u8 = 96;
 //           TOKEN_DISTRIBUTIONS_KEY    TOKEN_DIRECT_SELL_PRICE_KEY                  TOKEN_CONTRACT_INFO_KEY
 //
 // TOKEN_SHIELDED_POOLS_KEY (protocol version 14) is the right child of TOKEN_IDENTITY_INFO_KEY,
-// and TOKEN_ORDER_ESCROW_KEY (protocol version 15) the right child of TOKEN_DIRECT_SELL_PRICE_KEY.
+// and TOKEN_ORDER_ESCROW_KEY (protocol version 16) the right child of TOKEN_DIRECT_SELL_PRICE_KEY.
 
 // The token distribution Tree level
 

@@ -108,6 +108,13 @@ reqwest = { version = "0.12", features = ["json"] }
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 
+[dev-dependencies]
+# The test platform versions: the token marketplace is tested under one until protocol version
+# 16 has tables.
+platform-version = { path = "../rs-platform-version", features = [
+    "mock-versions",
+] }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 # The `refresh_checkpoints` example reads Platform's Core height from proved

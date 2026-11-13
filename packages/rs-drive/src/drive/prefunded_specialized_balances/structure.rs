@@ -63,7 +63,7 @@ pub(crate) fn structure() -> StructureNode {
             "PREFUNDED_BALANCES_FOR_TOKEN_ORDERS",
         )
         .kind(ElementKind::SumTree)
-        .since(15)
+        .since(16)
         .source("packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs")
         .book("data-model/token-marketplace.md")
         .describe(

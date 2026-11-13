@@ -29,7 +29,7 @@ pub enum TokenTradeMode {
     NotTradeable,
     /// Holders may list the token at a price and make offers for it: listed tokens and offered
     /// credits are held in escrow until the order is filled or cancelled. Admitted from protocol
-    /// version 16 (`TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION`), and only on a
+    /// version 16 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`), and only on a
     /// transferable token, since every fill moves the token from one identity to another.
     Tradeable,
 }

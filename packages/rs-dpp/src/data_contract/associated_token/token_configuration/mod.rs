@@ -21,7 +21,7 @@ use crate::serialization::ValueConvertible;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_version::version::feature_initial_protocol_versions::TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -156,7 +156,7 @@ impl TokenConfiguration {
     }
 
     /// A tradeable token (`marketplaceRules.tradeMode` `Tradeable`) is admitted from protocol
-    /// version 16 (`TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION`): below it the mode is
+    /// version 16 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`): below it the mode is
     /// refused as not active. Software that predates protocol version 15 gives that refusal by
     /// failing to decode the mode; protocol version 15 decodes it and refuses it here, as it has
     /// no way to trade a token. A tradeable token must also be transferable, since filling a
@@ -187,12 +187,12 @@ impl TokenConfiguration {
         if !trade_mode.is_tradeable() {
             return SimpleConsensusValidationResult::new();
         }
-        if platform_version.protocol_version < TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION {
+        if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
             return SimpleConsensusValidationResult::new_with_error(
                 StateTransitionNotActiveError::new(
                     "TokenTradeModeTradeable",
                     platform_version.protocol_version,
-                    TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION,
+                    TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION,
                 )
                 .into(),
             );
@@ -1235,12 +1235,11 @@ mod marketplace_rules_tests {
     /// what it admits is tested with the latest tables under its number; once it has them, they
     /// are the ones used.
     fn protocol_version_admitting_tradeable() -> PlatformVersion {
-        PlatformVersion::get(TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION)
+        PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
             .cloned()
             .unwrap_or_else(|_| {
                 let mut platform_version = PlatformVersion::latest().clone();
-                platform_version.protocol_version =
-                    TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION;
+                platform_version.protocol_version = TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
                 platform_version
             })
     }
@@ -1272,7 +1271,7 @@ mod marketplace_rules_tests {
                     );
                     assert_eq!(
                         inner.required_protocol_version(),
-                        TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION
+                        TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
                     );
                     assert_eq!(inner.required_protocol_version(), 16);
                     assert_eq!(error.code(), 10603);

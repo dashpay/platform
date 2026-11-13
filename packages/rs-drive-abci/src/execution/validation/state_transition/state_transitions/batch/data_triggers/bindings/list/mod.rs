@@ -57,6 +57,7 @@ mod tests {
     use dpp::system_data_contracts::token_market_contract;
     use dpp::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
     use drive::drive::contract::DataContractFetchInfo;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
@@ -117,12 +118,15 @@ mod tests {
         }
     }
 
-    /// Through the version dispatch: the latest protocol version binds exactly one trigger to
-    /// each replace and delete of an `ask` and a `bid`, and running it refuses the write with
-    /// `DataTriggerConditionError`. Protocol version 14 binds none of them.
+    /// Through the version dispatch: the latest bindings bind exactly one trigger to each
+    /// replace and delete of an `ask` and a `bid`, and running it refuses the write with
+    /// `DataTriggerConditionError`. Protocol version 14 binds none of them. The token market
+    /// contract exists from protocol version 16, which has no tables yet, so the platform is
+    /// born at the test version that selects the token marketplace.
     #[test]
     fn should_refuse_order_writes_through_the_latest_bindings_and_bind_none_before_15() {
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(TEST_PROTOCOL_VERSION_5)
             .build_with_mock_rpc()
             .set_genesis_state();
         let state = platform.state.load();
@@ -131,7 +135,8 @@ mod tests {
             state: &state,
             config: &platform.config,
         };
-        let latest = PlatformVersion::latest();
+        let latest = PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
+            .expect("expected the token marketplace test version");
         let contract = platform
             .drive
             .get_contract_with_fetch_info(

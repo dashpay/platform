@@ -1,9 +1,9 @@
 # Token Marketplace
 
 From protocol version 16 a token can be tradeable: its holders can sell it to each other on
-Platform at a price they set, and anyone can make an offer for it. Protocol version 15 prepares
-the state the market uses (the escrow trees and the token market contract below) and admits no
-tradeable token yet. Nobody has to trust the other
+Platform at a price they set, and anyone can make an offer for it. Nothing of the market exists
+before that version: no escrow tree, no token market contract and no tradeable token. Nobody has
+to trust the other
 side. The tokens a seller lists and the credits a buyer offers are held in escrow until the order
 is filled or cancelled, so a fill always delivers what the order promised.
 
@@ -55,8 +55,8 @@ when the token is created, so the trade mode is the only half of the rule an upd
 ## Where orders and escrow live
 
 Open orders are documents of the token market system contract
-(`AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e`), registered at genesis from protocol version 15
-and inserted by the upgrade to 15. It has two document types, `ask` (a listing) and `bid` (an
+(`AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e`), registered at genesis from protocol version 16
+and inserted by the upgrade to 16. It has two document types, `ask` (a listing) and `bid` (an
 offer), each with three indexes:
 
 | Index | Properties | Serves |
@@ -79,8 +79,7 @@ different scales. After a token changes its decimals, the orders placed before t
 under the old decimals until they close; a client showing them alongside the new ones queries both
 and scales each by its `decimals`.
 
-Only the marketplace transitions write orders, and protocol version 15 has none: the two types
-and the escrow trees stay empty until protocol version 16. A document transition cannot create one
+Only the marketplace transitions write orders. A document transition cannot create one
 (`creationRestrictionMode` 2), and a replace or a delete of one is refused by a data trigger. The
 types stay mutable and deletable so the documents carry a revision and storage flags: the order's
 owner pays its storage and gets it back when the order closes.

@@ -24,8 +24,7 @@ use dpp::version::feature_initial_protocol_versions::{
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
-    TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-    TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION,
+    TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 
@@ -171,9 +170,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                         ]));
                     }
                 }
-                if platform_version.protocol_version
-                    < TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION
-                {
+                if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
                     // The token marketplace: a configuration update that makes a token
                     // tradeable. Software older than protocol version 15 cannot decode one, so
                     // it is refused unpaid, as that software refuses it. Protocol version 15
@@ -202,7 +199,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             StateTransitionNotActiveError::new(
                                 transition,
                                 platform_version.protocol_version,
-                                TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION,
+                                TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION,
                             )
                             .into(),
                         ]));
@@ -823,7 +820,7 @@ mod tests {
         fn protocol_versions_before_tradeable() -> [&'static PlatformVersion; 2] {
             [
                 PlatformVersion::get(14).expect("expected protocol version 14"),
-                PlatformVersion::get(TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION - 1)
+                PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1)
                     .expect("the version before tradeable tokens"),
             ]
         }
@@ -832,12 +829,11 @@ mod tests {
         /// what it admits is tested with the latest tables under its number; once it has them, they
         /// are the ones used.
         fn protocol_version_admitting_tradeable() -> PlatformVersion {
-            PlatformVersion::get(TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION)
+            PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
                 .cloned()
                 .unwrap_or_else(|_| {
                     let mut platform_version = PlatformVersion::latest().clone();
-                    platform_version.protocol_version =
-                        TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION;
+                    platform_version.protocol_version = TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
                     platform_version
                 })
         }
