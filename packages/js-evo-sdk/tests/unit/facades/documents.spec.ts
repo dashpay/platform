@@ -27,6 +27,7 @@ describe('DocumentsFacade', () => {
   let getContestFundToJoinStub: SinonStub;
   let documentReplaceStub: SinonStub;
   let documentDeleteStub: SinonStub;
+  let documentEraseStub: SinonStub;
   let documentTransferStub: SinonStub;
   let documentPurchaseStub: SinonStub;
   let documentSetPriceStub: SinonStub;
@@ -97,6 +98,7 @@ describe('DocumentsFacade', () => {
     getContestFundToJoinStub = this.sinon.stub(wasmSdk, 'getContestFundToJoin').resolves(undefined);
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
+    documentEraseStub = this.sinon.stub(wasmSdk, 'documentErase').resolves();
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
     documentPurchaseStub = this.sinon.stub(wasmSdk, 'documentPurchase').resolves();
     documentSetPriceStub = this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
@@ -347,6 +349,37 @@ describe('DocumentsFacade', () => {
       await client.documents.delete(options);
 
       expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('erase()', () => {
+    it('should erase the retained revisions of a deleted document', async () => {
+      const options = {
+        document,
+        identityKey,
+        signer,
+      };
+
+      await client.documents.erase(options);
+
+      expect(documentEraseStub).to.be.calledOnceWithExactly(options);
+    });
+
+    it('should accept document identifiers instead of a Document instance', async () => {
+      const options = {
+        document: {
+          id: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+          ownerId: '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
+          dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+          documentTypeName: 'note',
+        },
+        identityKey,
+        signer,
+      };
+
+      await client.documents.erase(options);
+
+      expect(documentEraseStub).to.be.calledOnceWithExactly(options);
     });
   });
 

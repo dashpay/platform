@@ -184,10 +184,10 @@ pub fn action_fee_operations(
 /// paid for the storage, and a document's would otherwise go to its owner, who could delete it
 /// and keep what the sponsor paid.
 ///
-/// Deletes name no owner (their refunds go to the owners recorded on what they remove), history
-/// entries, which are never deleted, refund nobody, and the withdrawal and multi-document
-/// operations are never part of a batch. A document of a type with a `ttl` is stored without
-/// flags and refunds nobody.
+/// A history delete names the sponsor on its lifecycle record; refunds for the
+/// removed pointer and index entries still go to their recorded owners. An erase
+/// preserves those owners too. Withdrawal and multi-document operations are never
+/// part of a batch. A type with a `ttl` is stored without flags and refunds nobody.
 ///
 /// The estimate needs no owner, and an owner takes no more bytes than any other, so this
 /// changes no fee.
@@ -223,7 +223,11 @@ pub fn record_gas_sponsor_as_storage_owner(
             } => owned_document_info
                 .document_info
                 .set_storage_flags_owner(gas_sponsor),
-            DocumentOperationType::DeleteDocument { .. }
+            // Only delete operation generation 1 reads this owner, for the lifecycle record.
+            DocumentOperationType::DeleteDocument { deleter_id, .. } => {
+                *deleter_id = Some(gas_sponsor_id);
+            }
+            DocumentOperationType::EraseDocument { .. }
             | DocumentOperationType::ForceDeleteDocument { .. }
             | DocumentOperationType::ForceDeleteReadDocument { .. }
             | DocumentOperationType::DeleteIndexOnlyDocument { .. }

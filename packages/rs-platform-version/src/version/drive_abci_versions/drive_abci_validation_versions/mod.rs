@@ -263,6 +263,8 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
     /// version table, where the kind cannot appear.
     pub document_index_only_delete_transition_structure_validation: FeatureVersion,
+    /// The erase kind, active from protocol version 15.
+    pub document_erase_transition_structure_validation: OptionalFeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
     pub document_transfer_transition_structure_validation: FeatureVersion,
     pub document_purchase_transition_structure_validation: FeatureVersion,
@@ -273,6 +275,8 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
     /// version table, where the kind cannot appear.
     pub document_index_only_delete_transition_state_validation: FeatureVersion,
+    /// The erase kind, active from protocol version 15.
+    pub document_erase_transition_state_validation: OptionalFeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,

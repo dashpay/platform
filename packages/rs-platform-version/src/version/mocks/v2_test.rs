@@ -598,6 +598,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
     fee_version: FEE_VERSION1,
     system_limits: SystemLimits {
+        max_document_revisions_erased_per_transition: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
         estimated_contract_max_serialized_size: 16384,

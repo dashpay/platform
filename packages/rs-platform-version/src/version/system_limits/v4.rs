@@ -126,6 +126,7 @@ use crate::version::system_limits::SystemLimits;
 ///   the keys of unsigned integer index values, applying its moves in batches of 10,000 moves
 ///   (`max_rekey_batch_moves`). `None` in the earlier tables, which never run the rewrite.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: None,
     // The page matches one notes-tree chunk (2^11). A batch holds at most that
     // page's missing rhos; GroveDB accepts a Vec of operations with no smaller API cap.
     credit_pool_nullifier_backfill_page_size: 2048,
