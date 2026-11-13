@@ -192,12 +192,11 @@ fun SendTransactionScreen(
         }
     }
 
-    // Shielded credits — unspent-note sum from Room, only on a shielded
-    // build (same source WalletDetailScreen's Shielded row reads).
+    // Ordinary shielded sends spend account zero.
     val hasShielded = remember { Sdk.hasShielded() }
     val shieldedBalance by remember(walletIdHex) {
         if (hasShielded) {
-            container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
+            container.database.shieldedDao().observeUnspentNotesByWalletAccount(walletId, 0)
                 .map { notes -> notes.sumOf { it.value } }
         } else {
             MutableStateFlow(0L)
