@@ -9,6 +9,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
+import org.dashfoundation.dashsdk.wallet.op
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -110,6 +111,32 @@ class Sdk private constructor(
     val isClosed: Boolean get() = handleRef.get() == 0L
 
     /**
+     * The source proof verification asks first for quorum keys, as the
+     * native SDK's context provider reports it — port of `SDK.quorumSource`
+     * (`SwiftDashSDK/SDK.swift`). Fixed for a trusted SDK; for an adaptive
+     * one in [QuorumMode.AUTO] it follows SPV readiness, and a key SPV
+     * cannot serve still comes from the trusted service while this reports
+     * [QuorumSource.SPV]. Reading it can wait on the SPV client.
+     */
+    suspend fun quorumSource(): QuorumSource = queryGate.op {
+        when (SdkNative.quorumSource(handle)) {
+            0 -> QuorumSource.TRUSTED
+            1 -> QuorumSource.SPV
+            else -> QuorumSource.CUSTOM
+        }
+    }
+
+    /**
+     * Set the quorum mode of the native SDK's context provider without
+     * replacing it — port of `SDK.setQuorumMode` (`SwiftDashSDK/SDK.swift`).
+     * Only an adaptive SDK has one; any other refuses with a
+     * [org.dashfoundation.dashsdk.errors.DashSdkError].
+     */
+    suspend fun setQuorumMode(mode: QuorumMode): Unit = queryGate.op {
+        mapNativeErrors { SdkNative.setQuorumMode(handle, mode.ffiValue) }
+    }
+
+    /**
      * Lease fence for in-flight queries: every [org.dashfoundation.dashsdk.queries]
      * entry point runs under it, and [closeSuspending] awaits it before
      * freeing the native SDK (`dash_sdk_destroy` is a raw, non-refcounted
@@ -163,6 +190,55 @@ class Sdk private constructor(
 
     enum class LogLevel(val value: Int) {
         ERROR(0), WARN(1), INFO(2), DEBUG(3), TRACE(4)
+    }
+
+    /**
+     * The context provider the native SDK is built with, for its lifetime —
+     * port of `SDK.ContextProviderKind`. Contracts and tokens resolve
+     * locally with each of them.
+     */
+    enum class ContextProviderKind {
+        /** Quorum keys from the trusted quorum service only. */
+        TRUSTED,
+
+        /**
+         * Quorum keys routed by a [QuorumMode] that can change at run time,
+         * starting in [QuorumMode.AUTO]. The default.
+         */
+        ADAPTIVE,
+    }
+
+    /**
+     * Where an adaptive SDK takes quorum keys from — port of
+     * `SDK.QuorumMode`. [ffiValue] is the native `ContextProviderMode`.
+     */
+    enum class QuorumMode(val ffiValue: Int) {
+        /**
+         * SPV first while it is synced, with the trusted quorum service
+         * serving any key SPV cannot, such as a quorum SPV has not caught up
+         * with; the trusted service alone whenever SPV is not synced. Every
+         * key comes from one of the two, so Auto is only as strong as the
+         * trusted service: whoever controls it and a node can have a proof
+         * accepted that names a quorum SPV does not hold, and cutting the
+         * client off from its SPV peers moves every key onto it. Use [SPV]
+         * when proofs must never be verified with its keys.
+         */
+        AUTO(0),
+
+        /** SPV only; proofs fail whenever SPV is not synced. */
+        SPV(1),
+
+        /** The trusted quorum service only. */
+        TRUSTED(2),
+    }
+
+    /** Which quorum-key source proof verification asks first — port of `SDK.QuorumSource`. */
+    enum class QuorumSource {
+        TRUSTED,
+        SPV,
+
+        /** The SDK's context provider does not say where its keys come from. */
+        CUSTOM,
     }
 
     /**
@@ -436,9 +512,28 @@ class Sdk private constructor(
         }
 
         /**
-         * Create an SDK instance with trusted setup — port of
-         * `SDK.init(network:platformVersion:)` including the override
-         * gating and devnet auto-discovery policy:
+         * Create an SDK instance with the adaptive context provider, in
+         * [QuorumMode.AUTO] — port of `SDK.init(network:platformVersion:)`
+         * (`SwiftDashSDK/SDK.swift`),
+         * whose `contextProvider` defaults to `.adaptive`. Proofs are
+         * verified with the trusted quorum service's keys until a
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager] built on
+         * this SDK runs SPV and it has synced, then with SPV's keys, and
+         * still with the trusted service's for any key SPV cannot serve. An
+         * SDK no manager serves verifies like a trusted one. Only one manager
+         * serves an SDK: building a second on it while the first is open
+         * throws, so close a manager before building another on the same
+         * SDK.
+         *
+         * Same as `create(config, ContextProviderKind.ADAPTIVE)`.
+         */
+        suspend fun create(config: SdkConfig): Sdk = create(config, ContextProviderKind.ADAPTIVE)
+
+        /**
+         * Create an SDK instance with [contextProvider] — port of
+         * `SDK.init(network:platformVersion:contextProvider:)`
+         * (`SwiftDashSDK/SDK.swift`) including the
+         * override gating and devnet auto-discovery policy:
          *
          * - Regtest: DAPI/quorum overrides applied unconditionally (Rust
          *   has no built-in defaults for regtest).
@@ -448,7 +543,10 @@ class Sdk private constructor(
          * - Mainnet/testnet: overrides only under [SdkConfig.useDockerSetup];
          *   otherwise Rust picks canonical seeds and quorum endpoints.
          */
-        suspend fun create(config: SdkConfig): Sdk = withContext(Dispatchers.IO) {
+        suspend fun create(
+            config: SdkConfig,
+            contextProvider: ContextProviderKind,
+        ): Sdk = withContext(Dispatchers.IO) {
             initialize()
 
             val network = config.network
@@ -466,15 +564,19 @@ class Sdk private constructor(
                 else -> null
             }
 
+            val createNative = when (contextProvider) {
+                ContextProviderKind.TRUSTED -> SdkNative::createTrusted
+                ContextProviderKind.ADAPTIVE -> SdkNative::createAdaptive
+            }
             val handle = mapNativeErrors {
-                SdkNative.createTrusted(
-                    network = network.ffiValue,
-                    dapiAddresses = dapiAddresses,
-                    quorumUrl = quorumUrl,
-                    skipAssetLockProofVerification = config.skipAssetLockProofVerification,
-                    requestRetryCount = config.requestRetryCount,
-                    requestTimeoutMs = config.requestTimeoutMs,
-                    platformVersion = config.platformVersion,
+                createNative(
+                    network.ffiValue,
+                    dapiAddresses,
+                    quorumUrl,
+                    config.skipAssetLockProofVerification,
+                    config.requestRetryCount,
+                    config.requestTimeoutMs,
+                    config.platformVersion,
                 )
             }
             Sdk(handle, network)
