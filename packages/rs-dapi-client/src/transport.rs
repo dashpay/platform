@@ -23,11 +23,13 @@ pub(crate) use proxy::PROXY_CONNECT_TIMEOUT;
 pub use proxy::{ProxyEndpoint, ProxyError, Socks5Auth, Socks5Proxy};
 #[cfg(not(target_arch = "wasm32"))]
 pub use tonic_channel::{
-    create_channel, CoreGrpcClient, PlatformGrpcClient, TokioBackonSleeper as BackonSleeper,
+    create_channel, new_core_client, new_platform_client, CoreGrpcClient, PlatformGrpcClient,
+    TokioBackonSleeper as BackonSleeper,
 };
 #[cfg(target_arch = "wasm32")]
 pub use wasm_channel::{
-    create_channel, CoreGrpcClient, PlatformGrpcClient, WasmBackonSleeper as BackonSleeper,
+    create_channel, new_core_client, new_platform_client, CoreGrpcClient, PlatformGrpcClient,
+    WasmBackonSleeper as BackonSleeper,
 };
 
 /// Sleep for the given duration.
