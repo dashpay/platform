@@ -36,5 +36,5 @@ contracts are not included.
 ## Updating
 
 Regenerate both files the same way and update the counts `tests/contract_corpus.rs`
-asserts. Never edit a line by hand: the bytes are only worth testing because a network
-serves them.
+asserts, then regenerate `../stored_contracts` as its `README.md` says. Never edit a line
+by hand: the bytes are only worth testing because a network serves them.

@@ -11,6 +11,7 @@ Welcome to the Dashmate documentation. This documentation provides a comprehensi
 - [Configuration](./config/index.md)
 - [Commands](./commands/index.md)
 - [Troubleshooting](./troubleshooting.md)
+- Specs: [DKG-safe stop](./specs/dkg-safe-stop.md)
 
 ## Introduction to Dash Platform
 

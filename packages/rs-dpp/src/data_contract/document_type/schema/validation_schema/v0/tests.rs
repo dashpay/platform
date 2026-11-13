@@ -18,7 +18,7 @@ use std::path::Path;
 
 /// The validation schema of `root` as generation 0 of the builder builds it.
 fn built(root: &Value) -> Result<ValidationSchema, DataContractError> {
-    ValidationSchema::try_from_root_v0(root).map(|(schema, _)| schema)
+    ValidationSchema::try_from_root_v0(root)
 }
 
 fn build(root: Value) -> ValidationSchema {
@@ -1139,9 +1139,13 @@ fn should_refuse_a_byte_array_keyword_written_false() {
     assert!(message.contains("`byteArray: false`"), "{message}");
 }
 
+/// The builder reads a pattern's syntax only: it refuses one that does not parse, which the
+/// `regex` crate never compiles, and holds one that parses whether or not it compiles. The
+/// native validator compiles a pattern when a value first reaches it, and registration
+/// compiles every pattern of the type before it accepts it.
 #[test]
-fn should_refuse_a_pattern_the_validator_does_not_compile() {
-    // The ECMA escapes the validator rewrites compile
+fn should_refuse_a_pattern_that_does_not_parse() {
+    // The ECMA escapes the validator rewrites parse
     let schema = build(with_value(
         platform_value!({ "type": "string", "maxLength": 8, "pattern": "^\\d\\w\\s\\cA$" }),
     ));
@@ -1156,20 +1160,17 @@ fn should_refuse_a_pattern_the_validator_does_not_compile() {
     ));
     assert!(message.contains("compiles no `pattern`"), "{message}");
 
-    // A pattern too large for registration's size limit compiles under the crate's default,
-    // which the validator of a contract loaded from state uses; one too large for that does
-    // not
-    let schema = build(with_value(
-        platform_value!({ "type": "string", "maxLength": 512, "pattern": PATTERN_BETWEEN_LIMITS }),
-    ));
-    assert_eq!(
-        string(property(&schema.root, "value")).pattern.as_deref(),
-        Some(PATTERN_BETWEEN_LIMITS)
-    );
-    let message = refusal(with_value(
-        platform_value!({ "type": "string", "maxLength": 512, "pattern": PATTERN_BEYOND_LIMITS }),
-    ));
-    assert!(message.contains("compiles no `pattern`"), "{message}");
+    // A pattern too large for registration's size limit, and one too large for the crate's
+    // default, both parse: the builder holds them without compiling either
+    for pattern in [PATTERN_BETWEEN_LIMITS, PATTERN_BEYOND_LIMITS] {
+        let schema = build(with_value(
+            platform_value!({ "type": "string", "maxLength": 512, "pattern": pattern }),
+        ));
+        assert_eq!(
+            string(property(&schema.root, "value")).pattern.as_deref(),
+            Some(pattern)
+        );
+    }
 }
 
 /// A pattern the `regex` crate compiles under its default size limit but not under the

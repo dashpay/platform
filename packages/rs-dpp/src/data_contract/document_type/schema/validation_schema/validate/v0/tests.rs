@@ -13,6 +13,22 @@ fn with_value(schema: &JsonValue) -> JsonValue {
     json!({ "type": "object", "properties": { "value": schema } })
 }
 
+/// The native validator's first violation of `document`, as a JSON Schema error, under no
+/// value-depth limit (the checks that walk a value's depth are covered on their own).
+fn first_violation(
+    validator: &DocumentSchemaValidator,
+    document: &JsonValue,
+) -> Option<JsonSchemaError> {
+    match validator
+        .validate(document, None)
+        .expect("expected the check to run")
+    {
+        None => None,
+        Some(ConsensusError::BasicError(BasicError::JsonSchemaError(error))) => Some(error),
+        Some(other) => panic!("unexpected consensus error: {other:?}"),
+    }
+}
+
 /// The native validator of `root`, a document schema.
 fn validator_of(root: &JsonValue) -> DocumentSchemaValidator {
     let schema = ValidationSchema::try_from_root(&Value::from(root.clone()))
@@ -23,10 +39,7 @@ fn validator_of(root: &JsonValue) -> DocumentSchemaValidator {
 /// Whether the native validator accepts `document` under `root`, asserting the existing
 /// validator agrees.
 fn agreed_verdict(root: &JsonValue, document: &JsonValue) -> bool {
-    let native = validator_of(root)
-        .validate(document)
-        .expect("expected the check to run")
-        .is_none();
+    let native = first_violation(&validator_of(root), document).is_none();
     assert_eq!(
         native,
         existing_validator_accepts(root, document),
@@ -259,16 +272,15 @@ fn should_read_objects_and_references_as_the_existing_validator_does() {
 #[test]
 fn should_report_the_first_violation_and_where_it_is() {
     // The value also lacks the required `name`, which the walk does not reach
-    let violation = validator_of(&json!({
+    let validator = validator_of(&json!({
         "type": "object",
         "properties": {
             "tags": { "type": "array", "items": { "type": "string", "maxLength": 2 } },
         },
         "required": ["name"],
-    }))
-    .validate(&json!({ "tags": ["ok", "long"] }))
-    .expect("expected the check to run")
-    .expect("expected a violation");
+    }));
+    let violation = first_violation(&validator, &json!({ "tags": ["ok", "long"] }))
+        .expect("expected a violation");
     assert_eq!(
         (
             violation.keyword(),
@@ -288,10 +300,9 @@ fn should_report_the_first_violation_and_where_it_is() {
 #[test]
 fn should_report_the_first_violation_in_the_walks_order() {
     // The JSON Schema validator lists `enum` first, as the schema writes it first
-    let violation = validator_of(&with_value(&json!({ "enum": ["a"], "type": "string" })))
-        .validate(&json!({ "value": 1 }))
-        .expect("expected the check to run")
-        .expect("expected a violation");
+    let validator = validator_of(&with_value(&json!({ "enum": ["a"], "type": "string" })));
+    let violation =
+        first_violation(&validator, &json!({ "value": 1 })).expect("expected a violation");
     assert_eq!(violation.keyword(), "type");
 }
 
@@ -307,19 +318,14 @@ fn should_hold_zero_and_negative_zero_as_one_value_at_every_length() {
         JsonValue::Array(items)
     };
     for length in [2, 15, 16, 17] {
-        let violation = validator
-            .validate(&json!({ "value": list(length, 0.0, -0.0) }))
-            .expect("expected the check to run");
+        let violation = first_violation(&validator, &json!({ "value": list(length, 0.0, -0.0) }));
         assert_eq!(
             violation.as_ref().map(|violation| violation.keyword()),
             Some("uniqueItems"),
             "{length} elements holding 0.0 and -0.0"
         );
         assert!(
-            validator
-                .validate(&json!({ "value": list(length, 0.0, 0.5) }))
-                .expect("expected the check to run")
-                .is_none(),
+            first_violation(&validator, &json!({ "value": list(length, 0.0, 0.5) })).is_none(),
             "{length} distinct elements"
         );
     }
@@ -398,10 +404,7 @@ fn should_reach_the_existing_validators_verdict_on_generated_schemas() {
         let native =
             DocumentSchemaValidator::new(schema).expect("expected the patterns to compile");
         for (document, existing_accepts) in documents.iter().zip(existing_verdicts) {
-            let native_accepts = native
-                .validate(document)
-                .expect("expected the check to run")
-                .is_none();
+            let native_accepts = first_violation(&native, document).is_none();
             assert_eq!(
                 native_accepts, existing_accepts,
                 "case {case}: {document} under {root}"
@@ -642,9 +645,7 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
     for (case, root, document) in cases {
         let expected = existing_validator_first_error(&root, &document)
             .unwrap_or_else(|| panic!("{case}: the existing validator accepts it"));
-        let violation = validator_of(&root)
-            .validate(&document)
-            .expect("expected the check to run")
+        let violation = first_violation(&validator_of(&root), &document)
             .unwrap_or_else(|| panic!("{case}: the native validator accepts it"));
         let native = (
             violation.keyword().to_string(),
@@ -672,8 +673,9 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
 #[test]
 fn should_build_no_violation_when_only_asking_whether_a_value_matches() {
     let validator = validator_of(&with_value(&json!({ "type": "string", "enum": ["a"] })));
-    let mut walk = Walk::new(&validator, true);
-    walk.node(&validator.schema.root, &json!({ "value": 1 }), 0)
+    let mut walk = Walk::new(&validator, true, None);
+    let instance = json!({ "value": 1 });
+    walk.node(&validator.schema.root, &instance, 0, 0)
         .expect("expected the check to run");
     assert!(walk.failed);
     assert!(walk.violation.is_none());
@@ -700,4 +702,190 @@ fn should_refuse_a_property_declared_twice() {
         DocumentSchemaValidator::new(schema),
         Err(DataContractError::InvalidContractStructure(_))
     ));
+}
+
+/// A schema that refers to itself through `items` leads the walk as deep as a value nests.
+/// The document validator's own depth check refuses a value past the system maximum before
+/// the walk, so this reaches the walk only by calling it directly; the walk then refuses the
+/// value at its limit with the same error the depth check reports, rather than recurse as
+/// deep as the value.
+#[test]
+fn should_refuse_a_value_nested_past_the_value_depth_limit() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": { "p": { "type": "array", "items": { "$ref": "#/properties/p" } } },
+    }));
+    let mut deep = json!(0);
+    for _ in 0..8 {
+        deep = JsonValue::Array(vec![deep]);
+    }
+    let document = json!({ "p": deep });
+
+    let error = validator
+        .validate(&document, Some(3))
+        .expect("expected the check to run")
+        .expect("expected a refusal past the limit");
+    let ConsensusError::BasicError(BasicError::ValueError(value_error)) = &error else {
+        panic!("expected a value-depth refusal, got {error:?}");
+    };
+    assert_eq!(
+        value_error.to_string(),
+        "document value depth 4 exceeds system maximum 3"
+    );
+
+    // Under no limit the same value is not refused for its depth; the walk reports its own
+    // verdict instead (the innermost value is not an array).
+    let unlimited = validator
+        .validate(&document, None)
+        .expect("expected the check to run");
+    assert!(
+        !matches!(
+            unlimited,
+            Some(ConsensusError::BasicError(BasicError::ValueError(_)))
+        ),
+        "{unlimited:?}"
+    );
+}
+
+/// The walk's depth bound counts only containers, as the document validator's depth check
+/// does, so a value whose container nesting equals the limit and whose leaf is a scalar is
+/// not refused for depth under a schema that accepts it.
+#[test]
+fn should_not_refuse_a_value_whose_container_nesting_equals_the_limit() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": {
+            "p": {
+                "type": "array",
+                "items": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } }
+            }
+        },
+    }));
+    // Three array containers nesting a string: the deepest container is at depth 3.
+    let document = json!({ "p": [[["s"]]] });
+    assert!(
+        validator
+            .validate(&document, Some(3))
+            .expect("expected the check to run")
+            .is_none(),
+        "a value at the container limit with a scalar leaf must not be refused for depth"
+    );
+    // A fourth container exceeds the limit and is refused.
+    let too_deep = json!({ "p": [[[["s"]]]] });
+    let error = validator
+        .validate(&too_deep, Some(3))
+        .expect("expected the check to run")
+        .expect("expected a refusal past the limit");
+    assert!(
+        matches!(error, ConsensusError::BasicError(BasicError::ValueError(_))),
+        "{error:?}"
+    );
+}
+
+/// A pattern that parses but that the `regex` crate does not compile under its default size
+/// limit.
+const PATTERN_BEYOND_THE_SIZE_LIMIT: &str = "^\\p{L}{400}$";
+
+/// Building the validator compiles none of its patterns: it compiles each the first time a
+/// value reaches it, and keeps it.
+#[test]
+fn should_compile_a_pattern_only_when_a_value_first_reaches_it() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "string", "pattern": "^a+$" },
+            "b": { "type": "string", "pattern": "^b+$" },
+        },
+    }));
+    assert_eq!(validator.attempted_patterns(), 0);
+
+    assert!(first_violation(&validator, &json!({ "a": "aa" })).is_none());
+    assert_eq!(validator.attempted_patterns(), 1);
+
+    let violation = first_violation(&validator, &json!({ "a": "aa", "b": "c" }))
+        .expect("expected `b` not to match");
+    assert_eq!(violation.keyword(), "pattern");
+    assert_eq!(validator.attempted_patterns(), 2);
+}
+
+/// A string reaching a pattern the `regex` crate does not compile is refused as the JSON
+/// Schema validator refuses a value reaching a `$ref` target that holds one: with a `format`
+/// violation naming the pattern as a `regex` it does not compile. A value that never reaches
+/// the pattern is checked as usual.
+#[test]
+fn should_refuse_a_string_reaching_a_pattern_that_does_not_compile() {
+    let validator = validator_of(&with_value(
+        &json!({ "type": "string", "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT }),
+    ));
+    assert!(first_violation(&validator, &json!({})).is_none());
+    assert_eq!(validator.attempted_patterns(), 0);
+
+    let violation =
+        first_violation(&validator, &json!({ "value": "a" })).expect("expected a refusal");
+    assert_eq!(violation.keyword(), "format");
+    assert_eq!(
+        violation.params(),
+        &Value::from(json!({ "format": "regex" }))
+    );
+    assert_eq!(
+        violation.error_summary(),
+        format!(
+            "{} is not a \"regex\"",
+            json!(PATTERN_BEYOND_THE_SIZE_LIMIT)
+        )
+    );
+    assert_eq!(violation.schema_path(), "/properties/value/pattern");
+
+    // The result is kept, and refuses the next string reaching the pattern too
+    assert_eq!(validator.attempted_patterns(), 1);
+    assert_eq!(
+        first_violation(&validator, &json!({ "value": "b" })).map(|v| v.keyword().to_string()),
+        Some("format".to_string())
+    );
+
+    // A value of another type fails `type` before it reaches the pattern
+    assert_eq!(
+        first_violation(&validator, &json!({ "value": 1 })).map(|v| v.keyword().to_string()),
+        Some("type".to_string())
+    );
+}
+
+/// Matching an element against `contains` only asks whether it matches, so a pattern the
+/// `regex` crate does not compile matches no element, as a `$ref` target holding one matches
+/// none under the JSON Schema validator: the array fails `contains`, with no other error.
+#[test]
+fn should_match_no_element_against_a_contains_pattern_that_does_not_compile() {
+    let validator = validator_of(&with_value(&json!({
+        "type": "array",
+        "contains": { "type": "string", "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT },
+    })));
+    assert!(first_violation(&validator, &json!({})).is_none());
+    let violation =
+        first_violation(&validator, &json!({ "value": ["a"] })).expect("expected a refusal");
+    assert_eq!(violation.keyword(), "contains");
+}
+
+/// A pattern is compiled as the JSON Schema validator compiles it, with its ECMA escapes
+/// rewritten: `\d` is an ASCII digit and `\cA` the control character U+0001.
+#[test]
+fn should_compile_a_pattern_with_its_ecma_escapes_rewritten() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": {
+            "digit": { "type": "string", "pattern": "^\\d$" },
+            "control": { "type": "string", "pattern": "^\\cA$" },
+        },
+    }));
+    for (document, accepted) in [
+        (json!({ "digit": "3" }), true),
+        (json!({ "digit": "\u{663}" }), false),
+        (json!({ "control": "\u{1}" }), true),
+        (json!({ "control": "A" }), false),
+    ] {
+        assert_eq!(
+            first_violation(&validator, &document).is_none(),
+            accepted,
+            "{document}"
+        );
+    }
 }

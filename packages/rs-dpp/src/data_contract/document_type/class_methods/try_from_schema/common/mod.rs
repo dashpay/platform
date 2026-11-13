@@ -43,7 +43,7 @@ use crate::data_contract::document_type::property_names::moderator_abilities::{
     DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CREATION_RESTRICTION_MODE,
+    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CAN_BE_ERASED, CREATION_RESTRICTION_MODE,
     DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
     KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
@@ -207,7 +207,9 @@ pub(super) fn no_ranked_index_structure_check(
 /// is exactly what a build without generation 3 does not need, so it can be
 /// removed as a block. See the `RANKED` markers through this module for the
 /// matching call sites.
+#[derive(Clone, Copy)]
 pub(super) struct ParserGeneration {
+    pub admit_lifecycle: bool,
     // ---- present in every generation ----
     /// The `document_type_schema` table value to select the document
     /// meta-schema with. Read by the *driver*, not down here.
@@ -1143,7 +1145,11 @@ fn parse_indices(
                     // produced — which is what `TryFrom<&[(Value, Value)]> for
                     // Index` does, so without generation 3 this whole call
                     // collapses back to `.as_slice().try_into()`.
-                    let mut index: Index = Index::try_from_value_map(
+                    // A contested index's `resolution` is read as the platform version's
+                    // tables say (`ContestedIndexResolution::try_from_schema_value`): that
+                    // is a method version, not a property of the generation, since
+                    // protocol version 14 parses generation 3 and version 15 parses generation 4.
+                    let mut index: Index = Index::try_from_value_map_for_platform_version(
                         index_value
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
@@ -1164,8 +1170,8 @@ fn parse_indices(
                                 .admit_range_countable_implies_countable,
                             no_locking_resolution: ctx.generation.admit_index_no_locking_resolution,
                         },
-                    )
-                    .map_err(consensus_or_protocol_data_contract_error)?;
+                        ctx.platform_version,
+                    )?;
 
                     // INTEGER RANGE: the index grammar cannot see property
                     // types, so the source's key encoding is resolved here,
@@ -3448,7 +3454,8 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
+/// included), `chooseFirst` function param and key id property, and every property a
+/// reference naming its target through the referring document reads it from, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -3475,6 +3482,13 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             } = leaf
             {
                 read.insert(top_level_property(key_id_property));
+            }
+            // A reference naming its target through the referring document reads where it
+            // points there: the contract id, the document type name, and every property a
+            // slot takes its property name from. A change to one of them outside a replace
+            // would leave the stored reference pointing at something nobody checked
+            if let Some(dynamic) = leaf.as_dynamic_document_reference() {
+                read.extend(dynamic.target_properties().map(top_level_property));
             }
             let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;
@@ -5803,4 +5817,104 @@ fn unrequired_ancestor(property_name: &str, required_fields: &BTreeSet<String>) 
         ancestor.push_str(segment);
     }
     None
+}
+
+pub(super) fn parse_can_be_erased_keyword(schema: &Value) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, CAN_BE_ERASED)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Write the `canBeErased` flag onto the parsed document type after checking
+/// the two settings it depends on.
+///
+/// Erase purges the retained revisions of a document that has already been
+/// deleted, so a type that keeps no history has nothing to purge and a type
+/// whose documents can never be deleted can never reach the state erase acts
+/// on. Both are rejected rather than silently ignored: a document type whose
+/// declared behavior and reachable behavior disagree is a contract-authoring
+/// error, not a default.
+///
+/// Runs regardless of `full_validation`, like [`apply_index_only`]: the flag
+/// governs an irreversible operation, so a stored contract must never come
+/// back out of the parser with the flag set on a type that cannot support it.
+pub(super) fn apply_can_be_erased(
+    document_type: &mut DocumentTypeV2,
+    can_be_erased: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !can_be_erased {
+        return Ok(());
+    }
+
+    // A consensus error, not a bare data-contract error: only the consensus
+    // variant becomes a paid rejection with a nonce bump when a signed contract
+    // create or update carries the combination. The bare variant would escape as
+    // an internal execution error and cost the submitter nothing.
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if !document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeErased: true` but does not keep history: erase \
+             removes retained revisions, and a type without history has none",
+            name,
+        )));
+    }
+    if !document_type.documents_can_be_deleted {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeErased: true` but `canBeDeleted: false`: erase \
+             applies to deleted documents only, so its documents could never be erased",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_erased = true;
+    Ok(())
+}
+
+/// Reject a keep-history document type that carries a contested index.
+///
+/// A contested resource is awarded by block processing, outside state
+/// transition validation, at an id derived from the winner rather than from
+/// the contested values. On a keep-history type that award can land on an id
+/// whose retained history already exists, which the storage guard turns into a
+/// deterministic block failure on every validator. Making the combination safe
+/// needs changes to the contested machinery itself, so until then the two are
+/// kept apart at contract registration.
+pub(super) fn reject_contested_keep_history(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !document_type.documents_keep_history {
+        return Ok(());
+    }
+    if let Some((index_name, _)) = document_type
+        .indices
+        .iter()
+        .find(|(_, index)| index.contested_index.is_some())
+    {
+        // Consensus error for the same reason as `apply_can_be_erased`: a
+        // signed contract carrying this combination must be a paid rejection.
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets `documentsKeepHistory: true` and declares the \
+                 contested index \"{}\": a contested resource is awarded outside transition \
+                 validation and cannot be combined with retained history",
+                name, index_name,
+            )),
+        ));
+    }
+    Ok(())
 }

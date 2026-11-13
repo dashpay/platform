@@ -66,6 +66,23 @@ budget like a successful one. Storage refunds never add to a budget: it only goe
 
 What is left is kept by Platform next to the key, not in the key, and starts at the full budget.
 
+## What a limited key may not sign
+
+A budget counts what the state transitions signed with the key take from the identity, and an
+expiry ends the key's signing. Two kinds of transition reach past both, so a key that carries a
+budget or an expiry may not sign them:
+
+- `IdentityKeyLimitsUpdate`, from protocol version 14
+  (`PublicKeyWithLimitsCannotUpdateKeyLimitsError`, 20017): a limited key cannot raise limits,
+  its own included.
+- `DataContractCreate` and `DataContractUpdate`, from protocol version 15
+  (`PublicKeyWithLimitsCannotSignDataContractTransitionError`, 20018): a data contract commits
+  its owner beyond the transition that sets it up or changes it, so only a key without limits
+  may sign one, whatever the contract says.
+
+Both refusals are made at signature validation and are unpaid: the identity balance, the key
+budget and the nonce stay as they are.
+
 ## When a budgeted key is refused
 
 Before a state transition runs, everything it requires from the budget must fit in what is left:

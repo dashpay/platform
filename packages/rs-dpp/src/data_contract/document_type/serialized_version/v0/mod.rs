@@ -62,6 +62,36 @@ fn stored_error(message: String) -> ProtocolError {
     ProtocolError::CorruptedSerialization(format!("stored document type: {message}"))
 }
 
+/// Deletion policy encoded where earlier compiled types stored a boolean. The first two
+/// variants preserve the boolean's bytes; only erasable history uses the third variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+enum StoredDeletion {
+    NotDeletable,
+    Deletable,
+    DeletableAndErasable,
+}
+
+impl StoredDeletion {
+    fn of(deletable: bool, erasable: bool) -> Result<Self, ProtocolError> {
+        match (deletable, erasable) {
+            (false, false) => Ok(Self::NotDeletable),
+            (true, false) => Ok(Self::Deletable),
+            (true, true) => Ok(Self::DeletableAndErasable),
+            (false, true) => Err(stored_error("erasable type cannot be deleted".to_string())),
+        }
+    }
+    fn into_parts(self, keeps_history: bool) -> Result<(bool, bool), ProtocolError> {
+        match self {
+            Self::NotDeletable => Ok((false, false)),
+            Self::Deletable => Ok((true, false)),
+            Self::DeletableAndErasable if keeps_history => Ok((true, true)),
+            Self::DeletableAndErasable => {
+                Err(stored_error("erasable type keeps no history".to_string()))
+            }
+        }
+    }
+}
+
 /// A document type compiled, generation 0.
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct DocumentTypeInSerializationFormatV0 {
@@ -85,7 +115,7 @@ pub struct DocumentTypeInSerializationFormatV0 {
     documents_keep_purchase_history: bool,
     documents_keep_pricing_history: bool,
     documents_mutable: bool,
-    documents_can_be_deleted: bool,
+    documents_can_be_deleted: StoredDeletion,
     documents_deleted_only_when_consumed: bool,
     documents_transferable: StoredTransferable,
     trade_mode: StoredTradeMode,
@@ -177,6 +207,7 @@ impl DocumentTypeInSerializationFormatV0 {
             documents_keep_pricing_history,
             documents_mutable,
             documents_can_be_deleted,
+            documents_can_be_erased,
             documents_deleted_only_when_consumed,
             documents_transferable,
             trade_mode,
@@ -230,7 +261,10 @@ impl DocumentTypeInSerializationFormatV0 {
             documents_keep_purchase_history: *documents_keep_purchase_history,
             documents_keep_pricing_history: *documents_keep_pricing_history,
             documents_mutable: *documents_mutable,
-            documents_can_be_deleted: *documents_can_be_deleted,
+            documents_can_be_deleted: StoredDeletion::of(
+                *documents_can_be_deleted,
+                *documents_can_be_erased,
+            )?,
             documents_deleted_only_when_consumed: *documents_deleted_only_when_consumed,
             documents_transferable: (*documents_transferable).into(),
             trade_mode: (*trade_mode).into(),
@@ -364,6 +398,8 @@ impl DocumentTypeInSerializationFormatV0 {
         } = self;
 
         let (index_only, private_document) = storage.into_parts()?;
+        let (documents_can_be_deleted, documents_can_be_erased) =
+            documents_can_be_deleted.into_parts(documents_keep_history)?;
 
         let properties = properties_from_stored(properties)?;
         let flattened_properties = properties_from_stored(flattened_properties)?;
@@ -436,6 +472,7 @@ impl DocumentTypeInSerializationFormatV0 {
             documents_keep_pricing_history,
             documents_mutable,
             documents_can_be_deleted,
+            documents_can_be_erased,
             documents_deleted_only_when_consumed,
             documents_transferable: documents_transferable.into(),
             trade_mode: trade_mode.into(),

@@ -2,6 +2,7 @@ use crate::consensus::signature::ContractBoundedKeyNonBatchError;
 use crate::consensus::signature::ContractBoundedKeyOutOfBoundsError;
 use crate::consensus::signature::PublicKeyBudgetExhaustedError;
 use crate::consensus::signature::PublicKeyExpiredError;
+use crate::consensus::signature::PublicKeyWithLimitsCannotSignDataContractTransitionError;
 use crate::consensus::signature::PublicKeyWithLimitsCannotUpdateKeyLimitsError;
 use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
@@ -92,6 +93,12 @@ pub enum SignatureError {
     // Identity key limits update (protocol version 14).
     #[error(transparent)]
     PublicKeyWithLimitsCannotUpdateKeyLimitsError(PublicKeyWithLimitsCannotUpdateKeyLimitsError),
+
+    // A key with limits may not create or update a data contract (protocol version 15).
+    #[error(transparent)]
+    PublicKeyWithLimitsCannotSignDataContractTransitionError(
+        PublicKeyWithLimitsCannotSignDataContractTransitionError,
+    ),
 }
 
 impl From<SignatureError> for ConsensusError {
@@ -157,6 +164,14 @@ mod tests {
                 )
             ),
             17
+        );
+        assert_eq!(
+            discriminant_of(
+                SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(
+                    PublicKeyWithLimitsCannotSignDataContractTransitionError::new(1)
+                )
+            ),
+            18
         );
     }
 }

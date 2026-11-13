@@ -46,10 +46,12 @@ describe('Decision Proposals Contract', () => {
     );
   });
 
-  const validate = (raw) => {
-    const document = dpp.document.create(dataContract, identityId, 'proposal', raw);
+  const validateType = (type, raw) => {
+    const document = dpp.document.create(dataContract, identityId, type, raw);
     return document.validate(dpp.protocolVersion);
   };
+
+  const validate = (raw) => validateType('proposal', raw);
 
   const rawProposal = () => ({
     title: 'Should evonodes run the new indexer by default?',
@@ -71,8 +73,12 @@ describe('Decision Proposals Contract', () => {
       .throw();
   });
 
-  it('should have one document type', () => {
-    expect(Object.keys(decisionProposalsContractDocumentsSchema)).to.deep.equal(['proposal']);
+  it('should have the yes/no proposal and the two types of a multiple choice one', () => {
+    expect(Object.keys(decisionProposalsContractDocumentsSchema)).to.deep.equal([
+      'proposal',
+      'multipleChoiceProposal',
+      'choice',
+    ]);
   });
 
   describe('proposal', () => {
@@ -225,6 +231,290 @@ describe('Decision Proposals Contract', () => {
           });
         }
       });
+    });
+  });
+
+  describe('multipleChoiceProposal', () => {
+    // The description is a document of another contract: its id, that contract's id and
+    // the name of its document type
+    const rawQuestion = async () => ({
+      title: 'Which block time should Platform target?',
+      descriptionId: await generateRandomIdentifier(),
+      descriptionContractId: await generateRandomIdentifier(),
+      descriptionDocumentType: 'post',
+      url: 'https://www.dash.org/forum/threads/block-time.1/',
+      open: true,
+    });
+
+    it('should be valid', async () => {
+      expect(validateType('multipleChoiceProposal', await rawQuestion()).isValid()).to.be.true();
+    });
+
+    it('should not need a url when it points at a description document', async () => {
+      const raw = await rawQuestion();
+      delete raw.url;
+
+      expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
+    });
+
+    it('should not need a description document when it gives a url', async () => {
+      const raw = await rawQuestion();
+      delete raw.descriptionId;
+      delete raw.descriptionContractId;
+      delete raw.descriptionDocumentType;
+
+      expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
+    });
+
+    it('should be described by a document, a url or both, the document named whole', () => {
+      // Judged when a proposal is written, not by the JSON Schema of its type
+      const { propertyConstraints } = decisionProposalsContractDocumentsSchema.multipleChoiceProposal;
+
+      expect(propertyConstraints).to.deep.equal({
+        describedByADocumentOrAUrl: {
+          anyOf: [{ present: 'descriptionId' }, { present: 'url' }],
+        },
+        descriptionDocumentNamedWhole: {
+          in: [
+            { countPresent: ['descriptionId', 'descriptionContractId', 'descriptionDocumentType'] },
+            [0, 3],
+          ],
+        },
+      });
+    });
+
+    it('should keep its text and its description editable for two hours, every version, and never be deleted', () => {
+      const { multipleChoiceProposal } = decisionProposalsContractDocumentsSchema;
+
+      expect(multipleChoiceProposal.documentsMutable).to.be.true();
+      expect(multipleChoiceProposal.documentsKeepHistory).to.be.true();
+      expect(multipleChoiceProposal.canBeDeleted).to.be.false();
+      expect(multipleChoiceProposal.immutable).to.deep.equal([
+        'open',
+        ...[
+          'title',
+          'descriptionId',
+          'descriptionContractId',
+          'descriptionDocumentType',
+          'url',
+        ].map((property) => ({
+          property,
+          when: { greaterThan: [{ subtract: ['$updatedAt', '$createdAt'] }, 7200000] },
+        })),
+      ]);
+    });
+
+    it('should take its description from a moderated document of an elected contract', () => {
+      const { properties } = decisionProposalsContractDocumentsSchema.multipleChoiceProposal;
+
+      expect(properties.description).to.be.undefined();
+
+      const takenWithTheDocument = {
+        allOf: [
+          { not: { contains: ['$moderatorAbilities.deleteKeepsFields', '$property'] } },
+          { not: { contains: ['$moderatorAbilities.changeFields', '$property'] } },
+        ],
+      };
+
+      expect(properties.descriptionId.refersTo).to.deep.equal({
+        type: 'moderatedDocument',
+        contractId: '$self.descriptionContractId',
+        documentType: '$self.descriptionDocumentType',
+        documentTypeRequirements: {
+          // The contract's elected team may delete documents of the type, at any time
+          when: {
+            allOf: [
+              { contains: ['$electedAbilities', { const: 'deleteDocuments' }] },
+              {
+                anyOf: [
+                  { absent: '$moderatorAbilities.deleteWithin' },
+                  {
+                    allOf: [
+                      { present: '$moderatorAbilities.deleteSettled' },
+                      { absent: '$moderatorAbilities.deleteSettled.approversPredateDocument' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          properties: {
+            body: { name: '$any', type: 'string', when: takenWithTheDocument },
+            bodyBytes: {
+              name: '$any', type: 'array', byteArray: true, when: takenWithTheDocument,
+            },
+          },
+          require: { anyOf: ['body', 'bodyBytes'] },
+        },
+      });
+      expect(properties.descriptionContractId.refersTo).to.deep.equal({
+        type: 'contract',
+        contractRequirements: { moderation: 'elected', ownerProtected: false },
+      });
+    });
+
+    it('should refuse a description document type of 65 characters', async () => {
+      const raw = await rawQuestion();
+      raw.descriptionDocumentType = 'a'.repeat(65);
+
+      const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
+
+      expect(error.keyword).to.equal('maxLength');
+    });
+
+    it('should say whether it is open', async () => {
+      const { multipleChoiceProposal } = decisionProposalsContractDocumentsSchema;
+
+      expect(multipleChoiceProposal.properties.open.type).to.equal('boolean');
+
+      const question = await rawQuestion();
+
+      [true, false].forEach((open) => {
+        const raw = { ...question, open };
+
+        expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
+      });
+    });
+
+    it('should refuse an open that is not a boolean', async () => {
+      const raw = await rawQuestion();
+      raw.open = 'yes';
+
+      const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
+
+      expect(error.keyword).to.equal('type');
+    });
+
+    it('should index proposals by owner and by creation time', () => {
+      const { indices } = decisionProposalsContractDocumentsSchema.multipleChoiceProposal;
+
+      expect(indices.map(({ name }) => name)).to.deep.equal(['byOwner', 'byCreatedAt']);
+      indices.forEach(({ unique }) => expect(unique).to.be.undefined());
+    });
+
+    [
+      'title',
+      'open',
+    ].forEach((property) => {
+      it(`should require ${property}`, async () => {
+        const raw = await rawQuestion();
+        delete raw[property];
+
+        const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
+
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal(property);
+      });
+    });
+
+    it('should not have additional properties', async () => {
+      const raw = await rawQuestion();
+      raw.choices = ['one', 'two'];
+
+      const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
+
+      expect(error.keyword).to.equal('additionalProperties');
+      expect(error.params.additionalProperties).to.deep.equal(['choices']);
+    });
+
+    it('should refuse a title of 129 characters', async () => {
+      const raw = await rawQuestion();
+      raw.title = 'a'.repeat(129);
+
+      const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
+
+      expect(error.keyword).to.equal('maxLength');
+    });
+  });
+
+  describe('choice', () => {
+    const rawChoice = async () => ({
+      proposalId: await generateRandomIdentifier(),
+      title: 'Two seconds',
+      description: 'Halves the time a payment waits for its block.',
+    });
+
+    it('should be valid', async () => {
+      expect(validateType('choice', await rawChoice()).isValid()).to.be.true();
+    });
+
+    it('should not need a description', async () => {
+      const raw = await rawChoice();
+      delete raw.description;
+
+      expect(validateType('choice', raw).isValid()).to.be.true();
+    });
+
+    it('should answer a multiple choice proposal that is never deleted', () => {
+      const { proposalId } = decisionProposalsContractDocumentsSchema.choice.properties;
+
+      expect(proposalId.refersTo).to.deep.equal({
+        type: 'permanentDocument',
+        documentType: 'multipleChoiceProposal',
+      });
+    });
+
+    it('should put the choices of one proposal to a masternode vote', () => {
+      const { choice } = decisionProposalsContractDocumentsSchema;
+
+      expect(choice.documentsMutable).to.be.false();
+      expect(choice.canBeDeleted).to.be.false();
+      expect(choice.indices).to.have.length(1);
+
+      const [index] = choice.indices;
+
+      expect(index.name).to.equal('byProposal');
+      expect(index.properties).to.deep.equal([{ proposalId: 'asc' }]);
+      expect(index.unique).to.be.true();
+      // Resolution 2: each choice is a contender of its own, so an identity may enter
+      // several, and a lock vote means none of the choices. No `fieldMatches`: every
+      // choice is contested.
+      expect(index.contested.resolution).to.equal(2);
+      expect(index.contested.fieldMatches).to.be.undefined();
+    });
+
+    it('should hold the choices of a proposal that is not open to its owner', () => {
+      const { propertyConstraints } = decisionProposalsContractDocumentsSchema.choice;
+
+      expect(propertyConstraints).to.deep.equal({
+        closedProposalTakesItsOwnersChoices: {
+          ifThen: [
+            { equal: [{ referenced: ['proposalId', 'open'] }, 0] },
+            { equal: [{ referenced: ['proposalId', '$ownerId'] }, '$ownerId'] },
+          ],
+        },
+      });
+    });
+
+    ['proposalId', 'title'].forEach((property) => {
+      it(`should require ${property}`, async () => {
+        const raw = await rawChoice();
+        delete raw[property];
+
+        const error = expectJsonSchemaError(validateType('choice', raw));
+
+        expect(error.keyword).to.equal('required');
+        expect(error.params.missingProperty).to.equal(property);
+      });
+    });
+
+    it('should not have additional properties', async () => {
+      const raw = await rawChoice();
+      raw.votes = 3;
+
+      const error = expectJsonSchemaError(validateType('choice', raw));
+
+      expect(error.keyword).to.equal('additionalProperties');
+      expect(error.params.additionalProperties).to.deep.equal(['votes']);
+    });
+
+    it('should refuse a title of 129 characters', async () => {
+      const raw = await rawChoice();
+      raw.title = 'a'.repeat(129);
+
+      const error = expectJsonSchemaError(validateType('choice', raw));
+
+      expect(error.keyword).to.equal('maxLength');
     });
   });
 });
