@@ -796,7 +796,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorIdentityLookupFailed` (native code 77). Platform could not be
+         * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
          * asked for an identity the operation names (the lookup failed, which
          * is not Platform's answer that it does not exist, code 7). Nothing
          * was signed, reserved or broadcast, so the operation may be retried
@@ -1015,7 +1015,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
-            77 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

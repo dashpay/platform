@@ -325,7 +325,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Platform could not be asked for an identity the operation names (the
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
-    case errorIdentityLookupFailed = 77
+    case errorIdentityLookupFailed = 80
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -750,7 +750,7 @@ public enum PlatformWalletError: LocalizedError {
     /// reads whether the pair is still held so.
     case publicContactRequestUnconfirmed(String)
     /// Platform could not be asked for an identity the operation names (code
-    /// 77): the lookup itself failed, before anything was signed, reserved or
+    /// 80): the lookup itself failed, before anything was signed, reserved or
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String)

@@ -407,7 +407,7 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportAFailedIdentityLookupByItsOwnCode() {
         val detail = "could not look up identity on Platform; nothing was sent"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 77, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 80, detail)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.IdentityLookupFailed)
         assertEquals(detail, mapped.message)

@@ -775,7 +775,7 @@ pub enum PlatformWalletFFIResultCode {
     /// signed, reserved or broadcast, so the operation may be retried as it
     /// is; a host need not treat it as possibly delivered. Returned by the
     /// external identity top-up from Platform addresses.
-    ErrorIdentityLookupFailed = 77,
+    ErrorIdentityLookupFailed = 80,
 
     /// The named thing does not exist.
     ///
@@ -3196,7 +3196,7 @@ mod private_contact_request_error_tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
         );
-        assert_eq!(result.code as u32, 77);
+        assert_eq!(result.code as u32, 80);
     }
 
     /// A public contact request a loaded wallet refuses until its private
