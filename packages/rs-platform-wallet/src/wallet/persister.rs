@@ -179,9 +179,13 @@ pub(crate) enum NotDurable {
          had buffered"
     )]
     Lost,
-    /// The store or the flush this call made failed.
+    /// The store this call made failed, so nothing was flushed.
     #[error("{0}")]
-    Backend(PersistenceError),
+    Store(PersistenceError),
+    /// The flush this call made failed: a transient failure keeps what the
+    /// backend buffered, any other drops it.
+    #[error("{0}")]
+    Flush(PersistenceError),
     /// Another flush is in progress, and its outcome is not recorded yet.
     #[error(
         "another flush of the wallet's records is in progress, and its outcome is not known \
@@ -348,7 +352,7 @@ impl WalletPersister {
         }
         match self.flush_durably() {
             Ok(()) => self.note_read_back_private_entries(pending),
-            Err(NotDurable::Backend(error)) if error.is_transient() => {
+            Err(NotDurable::Flush(error)) if error.is_transient() => {
                 tracing::warn!(
                     %error,
                     kept = pending.len(),
@@ -367,7 +371,8 @@ impl WalletPersister {
                 );
                 self.unflushed_read_back_entries().extend(pending);
             }
-            Err(NotDurable::Backend(error)) => {
+            // `flush_durably` stores nothing, so `Store` is never its answer.
+            Err(NotDurable::Flush(error) | NotDurable::Store(error)) => {
                 // Any other failure dropped the buffer, the records these
                 // notices rest on with it: the notices go, so their journal
                 // records, and the pairs they hold, stay. Their read is not
@@ -635,11 +640,11 @@ impl WalletPersister {
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), NotDurable> {
         let lost_before = self.flush_ledger.lost();
-        self.store(changeset).map_err(NotDurable::Backend)?;
+        self.store(changeset).map_err(NotDurable::Store)?;
         if self.store_commits_inline() {
             return Ok(());
         }
-        self.flush().map_err(NotDurable::Backend)?;
+        self.flush().map_err(NotDurable::Flush)?;
         if self.flush_ledger.in_flight() != 0 {
             return Err(NotDurable::OtherFlushInFlight);
         }
@@ -678,7 +683,7 @@ impl WalletPersister {
             return Err(NotDurable::Lost);
         }
         if !self.store_commits_inline() {
-            self.flush().map_err(NotDurable::Backend)?;
+            self.flush().map_err(NotDurable::Flush)?;
             if self.flush_ledger.in_flight() != 0 {
                 return Err(NotDurable::OtherFlushInFlight);
             }

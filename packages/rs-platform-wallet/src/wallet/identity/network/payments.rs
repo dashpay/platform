@@ -22,6 +22,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::PlatformWalletChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
+use crate::wallet::persister::NotDurable;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::reservations::release_reservation_after_rejected_broadcast;
 
@@ -1562,15 +1563,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )?
         };
         // Host persistence may re-enter wallet APIs, so never invoke it under
-        // the manager guard. Failure must not expose an unpersisted address.
+        // the manager guard. Failure must not expose an unpersisted address,
+        // and a flush that succeeded is no proof by itself: another flush of
+        // the wallet's records may have taken the reservation and failed for
+        // good, dropping it (`WalletPersister::store_durably`). The address
+        // then stays used in memory and is not handed out.
         self.persister
-            .store(changeset)
-            .map_err(|e| self.persister.classify_store_failure(e))?;
-        self.persister.flush().map_err(|e| {
-            PlatformWalletError::Persistence(format!(
-                "failed to flush payment-address reservation: {e}"
-            ))
-        })?;
+            .store_durably(changeset)
+            .map_err(|not_durable| match not_durable {
+                NotDurable::Store(e) => self.persister.classify_store_failure(e),
+                not_flushed => PlatformWalletError::Persistence(format!(
+                    "failed to flush payment-address reservation: {not_flushed}"
+                )),
+            })?;
         Ok(address)
     }
 
@@ -2196,6 +2201,14 @@ mod tests {
         /// When set, every round recording a DashPay payment fails
         /// transiently (and is not recorded).
         fail_payment_records: Mutex<bool>,
+        /// Once set, the next flush is overtaken: before it writes, a flush
+        /// through this persister fails for good, as one from another thread
+        /// would, dropping what was buffered; the overtaken flush then
+        /// succeeds over nothing.
+        overtaken_by: Mutex<Option<WalletPersister>>,
+        /// While set, a flush fails for good: the backend drops what it
+        /// buffered.
+        flush_drops_buffer: std::sync::atomic::AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -2283,6 +2296,23 @@ mod tests {
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
             self.flushes
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // Taken in its own statement: the flush below comes back here.
+            let overtaking = self.overtaken_by.lock().unwrap().take();
+            if let Some(persister) = overtaking {
+                self.flush_drops_buffer
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                let overtook = persister.flush();
+                self.flush_drops_buffer
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                assert!(overtook.is_err_and(|error| !error.is_transient()));
+                return Ok(());
+            }
+            if self
+                .flush_drops_buffer
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(PersistenceError::backend("the database is corrupt"));
+            }
             if *self.fail_flushes.lock().unwrap() {
                 return Err(PersistenceError::backend_with_kind(
                     PersistenceErrorKind::Transient,
@@ -12125,6 +12155,60 @@ mod tests {
         );
     }
 
+    /// A withdrawal address is not handed out when another flush of the
+    /// wallet's records took its reservation first and failed for good,
+    /// though the reservation's own flush then succeeded, over nothing: a
+    /// restart would hand the same address to the next payment. The address
+    /// stays used in memory, so the next call hands out another one.
+    #[tokio::test]
+    async fn should_not_hand_out_a_payment_address_whose_reservation_another_flush_dropped() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let (manager, persister, wallet_id, owner, contact) =
+            register_sender_and_external_account().await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let iw = wallet.identity();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        *persister.buffered.lock().unwrap() = true;
+        *persister.overtaken_by.lock().unwrap() = Some(wallet.persister().clone());
+        let refused = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+                if message.contains("failed to flush payment-address reservation")),
+            "{refused:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner, contact).await,
+            vec![0],
+            "the address that was not handed out stays used in memory"
+        );
+        let next = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await
+            .expect("a later reservation is durable");
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner, contact).await,
+            vec![0, 1]
+        );
+        assert!(persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .flat_map(|(_, cs)| &cs.account_address_pools)
+            .flat_map(|pool| &pool.addresses)
+            .any(|info| info.address == next && info.is_used()));
+    }
+
     /// Persister that parks the FIRST external-pool store inside `store`,
     /// after the caller has captured its whole-pool snapshot, until the
     /// test releases it. Every store is recorded in arrival order so the
@@ -14880,6 +14964,175 @@ mod tests {
             "the failed send gave its address back"
         );
         iw.dashpay().abandon_prepared_payment(retry).await;
+    }
+
+    /// A prepared payment's reservation is not on disk when another flush of
+    /// the wallet's records took it first and failed for good, though its own
+    /// flush then succeeded, over nothing: nothing is sent, the address and
+    /// the inputs come back, and the error is a flush whose buffered round
+    /// was discarded.
+    #[tokio::test]
+    async fn should_send_nothing_when_another_flush_dropped_a_prepared_reservation() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let probe = Arc::new(DurabilityProbeBroadcaster {
+            persister: Arc::clone(&persister),
+            seen: Mutex::new(None),
+        });
+        let core = crate::CoreWallet::new(
+            Arc::clone(&wallet_arc.core().sdk),
+            Arc::clone(&wallet_arc.core().wallet_manager),
+            wallet_arc.core().wallet_id,
+            Arc::clone(&probe),
+            Arc::clone(wallet_arc.core().generation()),
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let first_output = payment_script(prepared.transaction(), 100_000);
+        *persister.buffered.lock().unwrap() = true;
+        *persister.overtaken_by.lock().unwrap() = Some(wallet_arc.persister().clone());
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a reservation another flush dropped must not be broadcast");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Fatal)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert!(
+            probe.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the failed send released the only coin");
+        assert_eq!(
+            payment_script(retry.transaction(), 100_000),
+            first_output,
+            "the address was released, so the retry pays it"
+        );
+        iw.dashpay()
+            .send_prepared_payment(retry)
+            .await
+            .expect("the retry's reservation is durable");
+        assert!(
+            probe
+                .seen
+                .lock()
+                .unwrap()
+                .is_some_and(|(_, reserved)| reserved),
+            "the retry reached the network with its reservation stored"
+        );
+    }
+
+    /// A direct send's reservation is not on disk when another flush of the
+    /// wallet's records took it first and failed for good, though its own
+    /// flush then succeeded, over nothing: nothing is sent, and the address
+    /// and the inputs come back for the retry.
+    #[tokio::test]
+    async fn should_send_nothing_when_another_flush_dropped_a_send_s_reservation() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xD2, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let sending = with_identity_broadcaster(
+            iw,
+            DurabilityProbeBroadcaster {
+                persister: Arc::clone(&persister),
+                seen: Mutex::new(None),
+            },
+        );
+        *persister.buffered.lock().unwrap() = true;
+        *persister.overtaken_by.lock().unwrap() = Some(wallet_arc.persister().clone());
+        let err = sending
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("a reservation another flush dropped must not be broadcast");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Fatal)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert!(
+            sending.broadcaster.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        sending
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect("the failed send released the only coin");
+        assert!(
+            sending
+                .broadcaster
+                .seen
+                .lock()
+                .unwrap()
+                .is_some_and(|(_, reserved)| reserved),
+            "the retry reached the network with its reservation stored"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the address was released, so the retry pays it"
+        );
     }
 
     /// Broadcaster that, while it holds the transaction, checks whether a

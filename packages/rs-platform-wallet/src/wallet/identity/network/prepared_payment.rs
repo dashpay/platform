@@ -74,11 +74,14 @@ use super::payments::{
 };
 use super::DashPayView;
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::{account_address_pool_entries, PlatformWalletChangeSet};
+use crate::changeset::{
+    account_address_pool_entries, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+};
 use crate::error::PlatformWalletError;
 use crate::util::now_secs;
 use crate::wallet::core::{CoreWallet, SignedCoreTransaction, WalletGeneration};
 use crate::wallet::identity::types::dashpay::payment::PaymentEntry;
+use crate::wallet::persister::NotDurable;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::reservations::reservation_expired;
 use crate::SEND_FUNDING_SOURCES;
@@ -722,23 +725,38 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
     }
 
-    /// Store `changeset` and, on a backend that buffers, flush it, so it is
-    /// on disk when this returns. A failed flush is `PersisterFlush` with the
-    /// backend's own kind: the round may still be buffered and commit at a
-    /// later flush, so it is not proof that nothing was stored.
+    /// Store `changeset` and answer `Ok` only once it is on disk
+    /// (`WalletPersister::store_durably`): at once on a backend that commits
+    /// a store inline, and otherwise after a flush that no other flush of the
+    /// wallet's records can have emptied. A failed flush is `PersisterFlush`
+    /// with the backend's own kind: the round may still be buffered and
+    /// commit at a later flush, so it is not proof that nothing was stored.
+    ///
+    /// A flush that succeeded is not trusted by itself: another flush may
+    /// have taken what the store buffered and failed for good, dropping it.
+    /// That is reported as the flush failure it is, `PersisterFlush` of kind
+    /// `Fatal`, the buffered round discarded; and a flush still in progress,
+    /// whose outcome is not known yet, as one of kind `Transient`, to be
+    /// tried again.
     pub(super) fn store_durably(
         &self,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PlatformWalletError> {
         self.persister
-            .store(changeset)
-            .map_err(|e| self.persister.classify_store_failure(e))?;
-        if !self.persister.store_commits_inline() {
-            self.persister
-                .flush()
-                .map_err(PlatformWalletError::from_flush_failure)?;
-        }
-        Ok(())
+            .store_durably(changeset)
+            .map_err(|not_durable| match not_durable {
+                NotDurable::Store(e) => self.persister.classify_store_failure(e),
+                NotDurable::Flush(e) => PlatformWalletError::from_flush_failure(e),
+                NotDurable::Lost => PlatformWalletError::from_flush_failure(
+                    PersistenceError::backend_with_kind(PersistenceErrorKind::Fatal, not_durable),
+                ),
+                NotDurable::OtherFlushInFlight => {
+                    PlatformWalletError::from_flush_failure(PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        not_durable,
+                    ))
+                }
+            })
     }
 
     /// The wallet info of `generation`, or `WalletNotFound` when the wallet
