@@ -28,6 +28,8 @@ struct ClaimInvitationSheet: View {
     /// Existing identities on this network — used to pick the next unused
     /// registration index for the new identity.
     @Query private var identities: [PersistentIdentity]
+    /// Accounts, for the identity-registration slot rows the claim reserves.
+    @Query private var accounts: [PersistentAccount]
 
     @State private var uri: String
     @State private var preview: ManagedPlatformWallet.InvitationPreview?
@@ -201,6 +203,7 @@ struct ClaimInvitationSheet: View {
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 let identityIndex = nextUnusedIdentityIndex()
+                reserveIdentitySlot(identityIndex)
 
                 // Register the invitee's own keys exactly like a normal
                 // registration: master + auth keys, plus a DashPay enc/dec pair
@@ -352,5 +355,17 @@ struct ClaimInvitationSheet: View {
             .map(\.identityIndex)
         guard let highest = (recorded + held).max() else { return 0 }
         return highest == UInt32.max ? UInt32.max : highest + 1
+    }
+
+    /// Mark the claim's slot used before its keys are derived, so a normal
+    /// registration started meanwhile skips it: `CreateIdentityView` treats a
+    /// slot whose identity-registration address is `isUsed` as taken. A no-op
+    /// when the slot row is beyond the derived lookahead, as there.
+    private func reserveIdentitySlot(_ identityIndex: UInt32) {
+        let slot = accounts
+            .first { $0.wallet.walletId == walletId && $0.accountType == 2 }?
+            .coreAddresses
+            .first { $0.addressIndex == identityIndex }
+        slot?.isUsed = true
     }
 }
