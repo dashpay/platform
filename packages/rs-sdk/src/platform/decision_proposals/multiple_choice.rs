@@ -614,6 +614,10 @@ impl Sdk {
     /// The choice the finished vote of the proposal `proposal_id` kept, stored as an ordinary
     /// document under the identity that entered it. `None` while the vote runs, for a vote
     /// that kept none of the choices, and for a proposal no choice was entered for.
+    ///
+    /// One proved document query through the `byProposal` index. The choices a vote holds are
+    /// in the vote's own storage, which a document query does not read: the index holds a
+    /// choice only once a vote has kept it, and being unique it holds at most that one.
     pub async fn fetch_kept_choice(
         &self,
         proposal_id: Identifier,

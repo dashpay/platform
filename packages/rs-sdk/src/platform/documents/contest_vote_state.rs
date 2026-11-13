@@ -22,9 +22,10 @@ impl Sdk {
     /// without a start.
     ///
     /// `limit` is the most contenders returned; `None` returns every contender, and `Some(0)`
-    /// an empty state without a request. A contest that ended answers with every contender of
-    /// its record whatever a page asks for, so its contenders are cut to `limit` here, the
-    /// first in id order kept; its winner and its abstain and lock tallies are returned whole.
+    /// an empty state without a request. A contest that ended answers its first page with
+    /// every contender of its record, whatever the page asks for: no further page is read, and
+    /// its contenders are cut to `limit` here, the first in id order kept; its winner and its
+    /// abstain and lock tallies are returned whole.
     pub async fn fetch_contested_resource_vote_state(
         &self,
         vote_poll: &ContestedDocumentResourceVotePoll,
@@ -59,6 +60,8 @@ impl Sdk {
             .await?;
             let page_len = page.contenders.len();
             let last = page.contenders.keys().last().copied();
+            // A page naming a winner is the record of a contest that ended, which is whole
+            let ended = page.winner.is_some();
             match state.as_mut() {
                 None => state = Some(page),
                 Some(state) => state.contenders.extend(page.contenders),
@@ -66,7 +69,7 @@ impl Sdk {
 
             // A short page is the last one
             match last {
-                Some(last) if page_len >= page_limit as usize => {
+                Some(last) if !ended && page_len >= page_limit as usize => {
                     start_at = Some((last.to_buffer(), false));
                 }
                 _ => break,
@@ -98,7 +101,7 @@ mod tests {
     /// the page asked for: the state holds `limit` of them, with the winner and the abstain
     /// and lock tallies of the whole contest.
     #[tokio::test]
-    async fn should_return_at_most_the_limit_of_contenders_of_a_contest_that_ended() {
+    async fn should_read_a_contest_that_ended_in_one_page_and_cut_it_to_the_limit() {
         let mut sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
             .build()
@@ -153,6 +156,36 @@ mod tests {
                 .await
                 .expect("registers the page");
         }
+        // The whole record of a contest that ended comes with its first page, however many
+        // contenders it holds: no page after it is registered, so asking for one would fail
+        let record: BTreeMap<_, _> = (1..=150u8).map(|n| contender(n, 1)).collect();
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                ContestedDocumentVotePollDriveQuery {
+                    vote_poll: vote_poll.clone(),
+                    result_type:
+                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                    allow_include_locked_and_abstaining_vote_tally: true,
+                    start_at: None,
+                    limit: Some(DEFAULT_QUERY_LIMIT),
+                    offset: None,
+                },
+                Some(Contenders {
+                    winner,
+                    contenders: record,
+                    abstain_vote_tally: Some(6),
+                    lock_vote_tally: Some(2),
+                }),
+            )
+            .await
+            .expect("registers the record");
+        let whole = sdk
+            .fetch_contested_resource_vote_state(&vote_poll, None)
+            .await
+            .expect("reads the record in one page");
+        assert_eq!(whole.contenders.len(), 150);
+        assert_eq!(whole.winner, winner);
+
         for limit in [1u32, 2] {
             let state = sdk
                 .fetch_contested_resource_vote_state(&vote_poll, Some(limit))
