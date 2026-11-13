@@ -220,4 +220,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_index_entries_per_document: Some(256), // typed array element indexes (new in v14): one document of a type with an indexed array writes at most 256 index entries
     max_choose_first_candidates: 1_000, // refersTo chooseFirst (new in v14): competitors a create reads, oldest first
     max_rekey_batch_moves: Some(10_000), // the protocol version 14 rewrite of unsigned index value keys applies its moves in batches of this many moves
+    max_history_migration_batch_operations: None, // read only by the protocol version 15 upgrade
 };

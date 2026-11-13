@@ -13,7 +13,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_factory::DocumentFactory;
-use dpp::document::DocumentV0Setters;
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{platform_value, Value};
 use std::borrow::Cow;
 

@@ -568,6 +568,22 @@ pub struct SystemLimits {
     ///
     /// `None` in the tables of protocol versions that never run the rewrite.
     pub max_rekey_batch_moves: Option<u32>,
+    /// How many GroveDB operations the move of retained document histories to the composite-key
+    /// layout on the first block of protocol version 15
+    /// (`Drive::migrate_document_history_storage`) gathers before it applies them, across
+    /// documents, types and contracts: one batch per document would propagate to the root once
+    /// per document. A document's operations are never split, so a batch holds at most one
+    /// document's operations more. Part of what that block writes, since the batch boundaries
+    /// shape the Merk trees the documents' keys are deleted from and inserted into.
+    ///
+    /// It also bounds the block's stack: a batch deletes the keys of up to about a sixth of
+    /// this many documents from a type's primary-key tree, and Merk's batch delete recurses
+    /// about once per key it removes from a tree. 500 operations stay under 512 KiB of stack
+    /// for a type of 32,000 documents; 10,000 need more than 2 MiB.
+    ///
+    /// `None` in the tables of protocol versions before 15, which never run the migration; every
+    /// table from protocol version 15 on sets it.
+    pub max_history_migration_batch_operations: Option<u32>,
 }
 
 #[cfg(test)]
