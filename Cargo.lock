@@ -6700,6 +6700,7 @@ dependencies = [
  "log",
  "platform-wallet-ffi",
  "rs-sdk-ffi",
+ "serde_json",
  "zeroize",
 ]
 
