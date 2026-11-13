@@ -101,14 +101,27 @@ impl<C> Platform<C> {
                     })
                     .collect()
             } else {
-                self.drive
-                    .fetch_contracts(start_at, limit, None, platform_version)?
-                    .into_iter()
-                    .map(|contract| {
+                // The ids of the range, then each contract through the contract cache, as
+                // `getDataContracts` reads: a contract stored as its schemas is parsed, every
+                // pattern it holds compiled, each time it is read from state
+                let contract_ids =
+                    self.drive
+                        .fetch_contract_ids(start_at, limit, None, platform_version)?;
+                let mut contracts = self.drive.get_contracts_with_fetch_info(
+                    &contract_ids,
+                    true,
+                    None,
+                    platform_version,
+                )?;
+                contract_ids
+                    .iter()
+                    .filter_map(|contract_id| contracts.remove(contract_id).flatten())
+                    .map(|fetch_info| {
                         Ok(DataContractEntry {
-                            identifier: contract.id().to_vec(),
+                            identifier: fetch_info.contract.id().to_vec(),
                             data_contract: Some(
-                                contract
+                                fetch_info
+                                    .contract
                                     .serialize_to_bytes_with_platform_version(platform_version)?,
                             ),
                         })
@@ -427,5 +440,46 @@ mod tests {
             vec![ids[1], ids[2]]
         );
         assert!(page.iter().all(|(_, contract)| contract.is_some()));
+    }
+
+    /// A contract stored as its schemas is parsed each time it is read from state, every
+    /// pattern it holds compiled, so a page of full contracts reads each through the contract
+    /// cache.
+    #[test]
+    fn should_answer_full_contracts_through_the_contract_cache() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let ids = store_three_contracts(&platform, version);
+        // What stored the contracts cached them
+        let cache = &platform.drive.cache.data_contracts;
+        cache.clear();
+
+        let query = || {
+            let page = entries(
+                platform
+                    .query_data_contracts_by_range_v0(
+                        page_request(None, None, false, false),
+                        &state,
+                        version,
+                    )
+                    .expect("expected query to succeed"),
+            );
+            assert!(page.iter().all(|entry| entry.data_contract.is_some()));
+            ids.iter()
+                .map(|id| {
+                    cache
+                        .get(*id, false)
+                        .expect("the query caches the contract")
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let read_from_state = query();
+        let read_again = query();
+        for (first, second) in read_from_state.iter().zip(&read_again) {
+            assert!(
+                std::sync::Arc::ptr_eq(first, second),
+                "the second query is answered with the cached contract"
+            );
+        }
     }
 }

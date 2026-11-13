@@ -964,6 +964,12 @@ static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap:
 static NO_DERIVED_INDEX_PROPERTIES: BTreeMap<String, DerivedIndexProperty> = BTreeMap::new();
 
 impl DocumentTypeV2Getters for DocumentType {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentType::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentType::V0(_) => false,
@@ -1240,6 +1246,12 @@ impl DocumentTypeV2Setters for DocumentType {
 }
 
 impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentTypeRef::V0(_) => false,
@@ -1482,6 +1494,12 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentTypeMutRef::V0(_) => false,

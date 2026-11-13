@@ -70,6 +70,11 @@ use super::{
 ///   `DataContractUpdate` (`PublicKeyWithLimitsCannotSignDataContractTransitionError`, 20018): a
 ///   data contract commits its owner beyond the transition that sets it up or changes it.
 ///
+/// - document delete `structure_validation` 2 admits a deletable keep-history type;
+///   `document_erase_transition_structure_validation` and
+///   `document_erase_transition_state_validation` are `Some(0)`: an erase must name an
+///   erasable type and a deleted document, with its owner's authorization to begin.
+///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -112,9 +117,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .contract_update_state_transition
             },
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
+                document_delete_transition_structure_validation: 2, // a keep-history type may be deleted when its deletion flag permits it
+                document_delete_transition_state_validation: 1, // the upstream owner, nonce and constraint checks also cover a history delete
+                document_erase_transition_structure_validation: Some(0), // an erase requires a permanent erasable history type
+                document_erase_transition_state_validation: Some(0), // a deleted document needs owner authorization to start erasure
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
-                document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away
+                document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); the token market contract's orders are written by the marketplace transitions only

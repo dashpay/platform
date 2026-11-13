@@ -42,16 +42,14 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
-            let maybe_data_contract_fetch_info = self
-                .drive
-                .fetch_contract(
-                    contract_id.into_buffer(),
-                    None,
-                    None,
-                    None,
-                    platform_version,
-                )
-                .unwrap()?;
+            // Through the contract cache, as `getDataContracts` reads: a contract stored as its
+            // schemas is parsed, every pattern it holds compiled, each time it is read from state
+            let maybe_data_contract_fetch_info = self.drive.get_contract_with_fetch_info(
+                contract_id.into_buffer(),
+                true,
+                None,
+                platform_version,
+            )?;
 
             let data_contract_fetch_info =
                 check_validation_result_with_data!(maybe_data_contract_fetch_info.ok_or_else(
@@ -83,6 +81,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use std::sync::Arc;
 
     #[test]
     fn test_invalid_data_contract_id() {
@@ -294,5 +293,38 @@ mod tests {
             data.result,
             Some(get_data_contract_response_v0::Result::Proof(_))
         ));
+    }
+
+    /// A contract stored as its schemas is parsed each time it is read from state, every
+    /// pattern it holds compiled, so a query reads it through the contract cache.
+    #[test]
+    fn should_answer_through_the_contract_cache() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract =
+            get_data_contract_fixture(None, 0, version.protocol_version).data_contract_owned();
+        store_data_contract(&platform, &contract, version);
+        let id = contract.id().to_buffer();
+        // What stored the contract cached it
+        let cache = &platform.drive.cache.data_contracts;
+        cache.clear();
+
+        let query = || {
+            let request = GetDataContractRequestV0 {
+                id: id.to_vec(),
+                prove: false,
+            };
+            let result = platform
+                .query_data_contract_v0(request, &state, version)
+                .expect("expected query to succeed");
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
+            cache.get(id, false).expect("the query caches the contract")
+        };
+
+        let read_from_state = query();
+        let read_again = query();
+        assert!(
+            Arc::ptr_eq(&read_from_state, &read_again),
+            "the second query is answered with the cached contract"
+        );
     }
 }

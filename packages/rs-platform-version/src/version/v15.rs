@@ -8,10 +8,10 @@ use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v4::STATE_TRANSITION_SERIALIZATION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_state_transition_versions::v5::STATE_TRANSITION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
+use crate::version::dpp_versions::dpp_validation_versions::v6::DPP_VALIDATION_VERSIONS_V6;
 use crate::version::dpp_versions::dpp_voting_versions::v3::VOTING_VERSION_V3;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
@@ -150,7 +150,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    pattern. This accepts a value that parses but that the engine does not
 ///    compile, and one that names a Unicode property the engine holds no
 ///    character class for; a value that is not valid regular-expression syntax
-///    is still refused. A document type whose schema the validation
+///    is still refused. A schema's `pattern` is checked for its syntax when
+///    the validation schema is built, and compiled the first time a value
+///    reaches it. A type registered through protocol v14 can hold a pattern
+///    that parses but does not compile only where a `$ref` alone reaches it,
+///    in a value no registration check read as a schema: a string reaching it
+///    is refused with a `format` violation naming it as a `regex`, as protocol
+///    v14 refuses it, and a `contains` element reaching it matches nothing.
+///    Protocol v14 refused every value reaching the schema holding such a
+///    pattern; a value that is not a string, which no pattern applies to, is
+///    now checked against the rest of that schema alone.
+///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
 ///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
@@ -173,7 +183,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
-///    has its documents checked natively (note 6). It also selects
+///    has its documents checked natively (note 6), and compiles every
+///    `pattern` of the type, one only a `$ref` reaches included, refusing one
+///    that does not compile under the `regex` crate's default size limit
+///    (`InvalidContractStructure`). It also selects
 ///    `validate_max_depth` 2, the depth and cycle check run at registration and
 ///    update, which reads a `$ref` pointer by RFC 6901, as the validators do,
 ///    where generation 1 read it as a `.`-separated path: so a `$ref` the two
@@ -186,8 +199,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    maps, so a schema whose array nesting alone exceeds the maximum depth,
 ///    such as a deeply nested `const` or `enum` value, is now refused at
 ///    registration and update (`DataContractMaxDepthExceedError`). The parser
-///    is generation 3 at both versions, and loading a stored contract runs no
-///    schema check.
+///    is generation 4 at protocol v15 (note 41) and 3 at v14; loading a stored
+///    contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0 and
 ///    `validate_max_depth` 1.
 ///
@@ -216,6 +229,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    no state validation, hold a contract update to it through
 ///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
 ///    time fields at their widest: a bound on what a block measures.
+///    Measuring the compiled bytes builds each type's validation schema, which
+///    checks every `pattern`'s syntax and compiles none (note 6).
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
 ///
@@ -554,6 +569,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     profile create and replace triggers, which made the identity, writer and type byte
 ///     checks and refused with `DataTriggerConditionError` (40500). Protocol v14 keeps
 ///     DashPay v2 and bindings 2, and earlier versions the contract and bindings they had.
+///     DashPay v3 also gives a `contactRequest` one property, the optional
+///     `encryptedShieldedAddress`, last in position: the sender's shielded payment address
+///     for this contact (43 bytes) under the same `encryptedFor` as `encryptedPublicKey`.
+///     Consensus accepts 64 or 80 bytes, an IV plus three or four AES blocks, and refuses
+///     every other length from 64 to 80 (`InvalidEncryptedPropertyShapeError`, 10420).
+///     A 43-byte address encrypts to 64 bytes, which wallets write; they keep 80 for a
+///     later encoding, a convention consensus does not check. A contact request stored
+///     under v1 or v2 ends before the property and reads back without it.
 ///     DashPay v3 also declares `privateContactRequest`, a private type (note 13) of 589-byte
 ///     entries whose properties describe a contact request only its recipient can read:
 ///     `accountReference`, the DIP-15 compact `extendedPublicKey` (69 bytes), and the optional
@@ -732,8 +755,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     backfilled); a property it does not hold for does not fill the slot. Judging the
 ///     named type is billed before it is judged, `requirement_credits_per_comparison`
 ///     (100, added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`, which nothing read for
-///     it before) for each property a slot tries and each node of its `when` for it. The native schema check of note 7 admits the keys and meta-schema v3 refuses
-///     them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     it before) for each property a slot tries and each node of its `when` for it.
+///     `documentTypeRequirements` takes a `when` of its own, the same condition judged
+///     once for the named type as a whole, reading no `$property`; a `when` may also look
+///     into `$electedAbilities` (the abilities the type's contract gives its elected
+///     moderation team on the type) and test with `present` or `absent` whether the type
+///     declares `moderatorAbilities.deleteWithin` or `moderatorAbilities.deleteSettled`,
+///     or whether that rule sets `approversPredateDocument`. The native schema check of
+///     note 7 admits the keys and meta-schema v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
 ///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
 ///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
 ///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
@@ -750,8 +779,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
 ///     moderated one a replace keeps, was removed on the record. A replace checks the
 ///     reference again when its value or a property it reads the target from changed.
-///     Protocol v14 and earlier keep `apply_property_reference` 0, which does not read the
-///     keys, and `document_reference_validation` 0, which no dynamic reference reaches.
+///     The decision proposals contract's `multipleChoiceProposal` type uses it for a
+///     description hosted on Platform: a moderated document, of a contract declaring elected
+///     moderation, whose text a moderator's removal takes away (a proposal may give a url
+///     instead, or both). Protocol v14 and earlier keep
+///     `apply_property_reference` 0, which does not read the keys, and
+///     `document_reference_validation` 0, which no dynamic reference reaches.
 ///     Version 1 takes this reading only for a declaration version 0 cannot read at all (a
 ///     reference to a document whose `contractId` is written `"$self."`, or a `type` listing
 ///     kinds), so a contract stored before 15 with `"$self."` keys on any other declaration
@@ -785,25 +818,120 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     at the block time, so an expired bucket is never written again after its drop. Its
 ///     estimates keep every bucket, as generation 2's do. Protocol v14 keeps
 ///     `add_indices_for_top_index_level_for_contract_operations` 2, which writes every bucket.
+///
+/// 37. **A contest among documents**: `CONTRACT_VERSIONS_V7` selects
+///     `parse_contested_documents_resolution` 0: a contested index may declare
+///     `"resolution": 2` (`ContestedIndexResolution::MasternodeVoteOnDocuments`), which the
+///     native schema check of note 7 admits and meta-schema v3 refuses. Masternodes vote for
+///     a contender, abstain or lock, as under resolution 0, but each document entered for the
+///     index values is a contender of its own: the contest keeps it under its document id
+///     where the other resolutions keep it under its owner's id, so an identity may enter
+///     several (no `DocumentContestIdentityAlreadyContestantError`), a vote towards a
+///     contender names the document id, and the stored result names the winning document.
+///     The winner is stored under the owner its document names. The methods that write, check
+///     and award a contender read the resolution of the contested index, which no contract
+///     registered before this version can declare, so the generations protocol v14 and
+///     earlier select behave as they did. The decision proposals contract's `choice` type
+///     uses it for the choices of a multiple choice proposal. Protocol v14 and earlier keep
+///     `parse_contested_documents_resolution` `None` and refuse the value.
+///
+///
+/// 38. **Removing the contested resource votes of a masternode that left the list**:
+///     `remove_all_votes_given_by_identities` 1 (`DRIVE_VOTE_METHOD_VERSIONS_V4`, note 10)
+///     removes every contested resource vote reference of the masternode, and deletes the
+///     vote a reference points at while that vote is stored, once when two references point
+///     at it. Generation 0 deletes at the path of every reference. Protocol v14 and earlier
+///     keep generation 0.
+///
+/// 39. **The contenders of one contest name one poll**: a contest is stored at the path of
+///     its index keys, and its poll is named by an id hashed from its index values.
+///     `canonical_contested_index_values` 1 (`CONTRACT_VERSIONS_V7`) writes every index
+///     value of a contested create the one way its property's type keys it: an integer in
+///     any integer form as the type's own integer, a date as a `u64`, an integer or a float
+///     of a float property as a float, bytes in any form as bytes (none as a missing
+///     value), `"\0"` as the empty string, and an identifier as generation 0 writes it. It
+///     is the value a query of the contest decodes from the key. Generation 0 writes only
+///     identifiers one way, so two contenders sending an integer as `U64(5)` and `U8(5)`
+///     name two polls of one contest. A masternode vote names its poll as sent, at every
+///     version, and is refused unless a prefunded balance is held under that poll
+///     (`PrefundedSpecializedBalanceNotFoundError`, 40401), so a voter sends the values as
+///     the contest query returns them. A contest under way keeps the poll it was opened
+///     under, which names its prefunded balance and its end date: a contender joining a
+///     contest opened in an earlier epoch reads the protocol version that epoch ran
+///     (`fetch_contest_opening_protocol_version` 0, `DRIVE_VOTE_METHOD_VERSIONS_V4`, `None`
+///     before) and writes its index values as that version does, so a contest opened at
+///     protocol version 14 is named as generation 0 names it until it ends. The read is
+///     billed, and made only for a create whose values this version does not write as sent.
+///     Document create advanced structure validation 2
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) compares the poll a create
+///     names with the one its document type expects by contract, document type and index
+///     name, where generation 1, which protocol v14 keeps, compares them whole. Protocol
+///     v14 keeps generation 0 of `canonical_contested_index_values`.
+///
+/// 40. **A multiple choice proposal pays a processing fee**: a `multipleChoiceProposal` of
+///     the decision proposals contract opens no poll (its first choice does, note 37), so
+///     its create prefunds no votes. `FEE_VERSION4` charges it
+///     `multiple_choice_proposal_processing_fee` (0.2 Dash, in `VoteResolutionFundFees`)
+///     instead: the execution event of a document batch adds it to the batch's processing
+///     fee once for each such proposal the batch creates, read off the transitions as state
+///     validation left them, so a create that is refused pays its gas alone. It goes to the
+///     processing fee pools with the rest of the processing fee, the create does not state
+///     it, and a payer whose balance does not cover it is refused
+///     (`IdentityInsufficientBalanceError`). The fee schedules of protocol v14 and earlier
+///     carry 0, and the contract does not exist there, so nothing is charged.
+///
+/// 41. **Retained-history lifecycle**: a deletable history document loses its current
+///     pointer and index entries on delete, retaining its revisions and a lifecycle record.
+///     Converting several history deletes of one type in one batch inserts its lifecycle
+///     container once.
+///     An erasable type admits bounded erase transitions, newest revisions first; the first
+///     chunk requires the current owner's authorization and continuations finish the same
+///     erasure. Terminal erasure removes the record and retained history without a receipt.
+///     History V1 authenticates deleted and erasing states. Timed single-document reads
+///     authenticate the lifecycle beside the history: a deletion is absent from its original
+///     deletion time, and an erasing or erased document is absent at every requested time.
+///     Parser 4 admits `canBeErased` with meta-schema 3; compiled type storage keeps generation
+///     0 and its existing non-lifecycle bytes. Protocols through 14 retain their handlers,
+///     limits and wire bounds, and cannot admit an erase.
+/// 42. **A contract's patterns are bounded**: `CONTRACT_VERSIONS_V7` selects
+///     `validate_schema_patterns` 0. Contract registration and update refuse a contract whose
+///     document schemas and `$defs` hold more than 32 patterns
+///     (`max_contract_schema_patterns`: every string under a `pattern` key and every
+///     `regexPattern` of a contested index, one in `$defs` counted once for each document
+///     type), or a pattern that does not compile within 128 KiB
+///     (`max_schema_pattern_compiled_size`), before anything compiles one. Every pattern is
+///     compiled when a contract is parsed and again for the validator its documents are
+///     checked with, under a limit of 5 or 10 MiB each and in any number, so one 20 KiB
+///     contract cost a node tens of seconds to check and over a gigabyte to keep. The balance
+///     pre-check estimates the registration fee before that, and its estimate parsed every
+///     index, compiling the field matches of a contested one: `registration_cost` 3 bills an
+///     index by the keys it declares instead, the same fee for every contract that registers.
+///     Both numbers are in every system limits table: `check_tx` holds a contract to them
+///     before the balance pre-check at every protocol version, as mempool policy where
+///     consensus has no such rule, and there also keeps a schema declaring `format: regex` out
+///     of the mempool, whose values the `jsonschema` crate compiles. Protocol v14 selects no
+///     `validate_schema_patterns` and `registration_cost` 2, so a block accepts there what it
+///     accepted before, and a contract registered earlier is not checked again when it is
+///     read.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: insert.add_document_for_contract_operations 2, delete.delete_document_for_contract_operations 1, delete.remove_document_from_primary_storage 1 and its estimate 1, query.fetch_document_lifecycle Some(0), and the erase/lifecycle estimate and erase_refund_recipient_cost selectors Some(0); batch_operations.convert_drive_operations_to_grove_operations 2; state transition method versions v5: document_delete_transition 1 and document_erase_transition Some(0); verify methods v4: single_document.verify_proof 1 extend retained history (note 41); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle (note 41)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: getDocumentHistory accepts V1 only
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V5,
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3,
+        validation: DPP_VALIDATION_VERSIONS_V6, // changed: document type update 2 preserves erasure constraints (note 41)
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V4, // changed: document erase bounds Some(0) admit the appended kind (note 41)
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
@@ -813,8 +941,8 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
-    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25)
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25); a multiple choice proposal pays a 0.2 Dash processing fee on create (note 40)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25); max_document_revisions_erased_per_transition caps an erase at 100 revisions (note 41)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
         evidence: Some(ConsensusEvidenceParams {

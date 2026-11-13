@@ -255,6 +255,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
+                document_erase_transition_structure_validation: None,
                 document_replace_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom` refusal in place, inert before this version
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
@@ -263,6 +264,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 1, // changed: v1 judges the document type's `deleteConstraints` on the stored document
                 document_index_only_delete_transition_state_validation: 0,
+                document_erase_transition_state_validation: None,
                 document_replace_transition_state_validation: 1,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,

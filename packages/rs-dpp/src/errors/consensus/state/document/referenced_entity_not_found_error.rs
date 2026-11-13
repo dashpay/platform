@@ -125,6 +125,7 @@ mod tests {
                         })
                         .collect(),
                 )),
+                when: None,
             }),
         }
     }

@@ -156,6 +156,7 @@ impl Drive {
             let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
                 self,
                 &mut estimated_costs_only_with_layer_info,
+                None,
                 block_info,
                 transaction,
                 platform_version,
@@ -683,7 +684,7 @@ mod tests {
                     Err(Error::Drive(DriveError::NotSupported(_)))
                 ));
             }
-            for version in [legacy, platform_version] {
+            for version in [legacy, PlatformVersion::get(14).unwrap(), platform_version] {
                 assert!(matches!(
                     drive.convert_drive_operations_to_grove_operations(
                         vec![pool_credit(amount)],

@@ -13435,6 +13435,7 @@ mod tests {
             generation: Arc::clone(&real.generation),
             broadcaster: Arc::new(GatedRejectingBroadcaster { entered, release }),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }
@@ -13477,6 +13478,7 @@ mod tests {
             generation: Arc::clone(&real.generation),
             broadcaster: Arc::new(GatedBroadcaster { entered, release }),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }
@@ -13533,6 +13535,7 @@ mod tests {
             generation: Arc::clone(&real.generation),
             broadcaster: Arc::new(broadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            document_erase_gate: Arc::clone(&real.document_erase_gate),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }

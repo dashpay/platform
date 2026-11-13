@@ -52,7 +52,8 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
-///   a masternode that left the list. It sets every `yes_no` method to `Some(0)`, so yes/no
+///   a masternode that left the list and deletes a contested resource vote a reference
+///   points at while that vote is stored. It sets every `yes_no` method to `Some(0)`, so yes/no
 ///   polls can be opened and voted on (`None`, not active, in every earlier table), and bumps
 ///   `contested_resource_insert.add_vote_poll_end_date_query_operations` to 1, which adds only
 ///   the entry when the batch already queues the end date's tree with other storage flags.
@@ -152,8 +153,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time; no insert into an expired time range bucket
         batch_operations: DriveBatchOperationsMethodVersion {
+            convert_drive_operations_to_grove_operations: 2, // changed: sibling history deletes share their pending lifecycle container (note 41)
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
-            ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description

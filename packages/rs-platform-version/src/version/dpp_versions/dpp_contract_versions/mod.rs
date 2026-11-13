@@ -47,6 +47,12 @@ pub struct DataContractMethodVersions {
     pub validate_moderation_config: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
+    /// `DataContract::validate_schema_patterns`: refuses a contract whose document schemas and
+    /// `$defs` hold more patterns than `max_contract_schema_patterns`, or one that does not
+    /// compile within `max_schema_pattern_compiled_size`. `None` on versions that predate the
+    /// rule: the method refuses nothing there, so the shipped
+    /// `create_document_types_from_document_schemas` 1 that calls it is inert.
+    pub validate_schema_patterns: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -112,10 +118,11 @@ pub struct DocumentTypeMethodVersions {
     /// keyword: the method returns an empty result there, so the shipped
     /// `DataContract::validate_document_properties` 0 that calls it is inert.
     pub validate_property_constraints: OptionalFeatureVersion,
-    /// `Index::extract_contested_values`: writes an identifier property given as bytes or as
-    /// an array of byte values as `Value::Identifier` in a contest's index values, so every
-    /// contender names one contest with one poll. `None` on versions that predate it, where
-    /// the values are taken as given.
+    /// `Index::extract_contested_values`: writes a contest's index values one way, so every
+    /// contender names one contest with one poll. Generation 0 writes an identifier property
+    /// given as bytes or as an array of byte values as `Value::Identifier`; generation 1 writes
+    /// the value of every property the one way its type keys it. `None` on versions that
+    /// predate it, where the values are taken as given.
     pub canonical_contested_index_values: OptionalFeatureVersion,
     /// `fill_generated_properties`: writes each `generatedFrom` property a
     /// created or replaced document leaves out, generated from its params,
@@ -215,6 +222,14 @@ pub struct DocumentTypeSchemaVersions {
     /// the contracts admitted under meta-schema v0, which left the doctype level open. 0
     /// (protocol version 15).
     pub parse_private_document: OptionalFeatureVersion,
+    /// `ContestedIndexResolution::try_from_schema_value`: reads the `resolution` a contested
+    /// index declares. Version 0 also reads 2
+    /// (`ContestedIndexResolution::MasternodeVoteOnDocuments`): each document entered for the
+    /// index values is a contender of its own, named by its document id, so an identity may
+    /// enter several. `None` on versions that predate it: the value is converted as it always
+    /// was, which refuses 2 as an unknown resolution, and so do the meta-schemas (v1 to v3
+    /// list the resolutions they admit). 0 (protocol version 15).
+    pub parse_contested_documents_resolution: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
