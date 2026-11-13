@@ -321,7 +321,10 @@ mod tests {
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWallet;
+    use dash_sdk::dapi_grpc::platform::v0::GetDocumentHistoryRequest;
     use dash_sdk::drive::query::document_history_drive_query::DocumentHistoryLifecycleTimes;
+    use dash_sdk::platform::Query;
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -524,7 +527,10 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct Contracts(std::sync::Mutex<Option<Arc<DataContract>>>);
+    struct Contracts(
+        std::sync::Mutex<Option<Arc<DataContract>>>,
+        std::sync::Mutex<Option<dash_sdk::Sdk>>,
+    );
 
     impl dash_sdk::platform::ContextProvider for Contracts {
         fn get_data_contract(
@@ -541,6 +547,18 @@ mod tests {
                 .cloned())
         }
         fn register_data_contract(&self, contract: Arc<DataContract>) {
+            let control = self.1.lock().unwrap().take();
+            if let Some(mut control) = control {
+                assert_eq!(
+                    futures::executor::block_on(history_reads(
+                        &mut control,
+                        &contract,
+                        DocumentHistoryFilter::StartAtTime(0)
+                    )),
+                    0,
+                    "contract registration must precede every history read"
+                );
+            }
             *self.0.lock().unwrap() = Some(contract);
         }
         fn get_token_configuration(
@@ -580,6 +598,17 @@ mod tests {
             filter,
             limit: Some(1),
         }
+    }
+
+    async fn history_reads(
+        sdk: &mut dash_sdk::Sdk,
+        contract: &DataContract,
+        filter: DocumentHistoryFilter,
+    ) -> usize {
+        let request: GetDocumentHistoryRequest = history_query(contract, filter)
+            .query(&sdk.query_settings())
+            .unwrap();
+        sdk.mock().request_count(&request).await
     }
 
     fn history(state: DocumentHistoryState, owner: Identifier, newest: bool) -> DocumentHistory {
@@ -632,6 +661,8 @@ mod tests {
             )
             .await
             .unwrap();
+        *provider.1.lock().unwrap() = Some(sdk.clone());
+        let mut control = sdk.clone();
         let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
         assert!(provider.0.lock().unwrap().is_none());
         let outcome = wallet
@@ -656,6 +687,16 @@ mod tests {
         assert_eq!(
             provider.0.lock().unwrap().as_ref().unwrap().id(),
             contract.id()
+        );
+        assert!(provider.1.lock().unwrap().is_none());
+        assert_eq!(
+            history_reads(
+                &mut control,
+                &contract,
+                DocumentHistoryFilter::StartAtTime(0)
+            )
+            .await,
+            1
         );
     }
 
@@ -1011,6 +1052,7 @@ mod tests {
                 .expect_fetch(contract.id(), Some(contract.clone()))
                 .await
                 .unwrap();
+            let mut control = sdk.clone();
             let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
             let result = wallet
                 .identity()
@@ -1027,6 +1069,15 @@ mod tests {
                 result,
                 Err(PlatformWalletError::InvalidIdentityData(_))
             ));
+            assert_eq!(
+                history_reads(
+                    &mut control,
+                    &contract,
+                    DocumentHistoryFilter::StartAtTime(0)
+                )
+                .await,
+                0
+            );
         }
     }
 
@@ -1209,5 +1260,195 @@ mod tests {
                 expected
             );
         }
+    }
+
+    async fn erasing_wallet() -> (Arc<PlatformWallet>, DataContract) {
+        use super::super::signing_key::tests::wallet_with_signing_keys_on;
+        let contract = contract();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                history_query(&contract, DocumentHistoryFilter::StartAtTime(0)),
+                Some(history(
+                    DocumentHistoryState::Erasing,
+                    Identifier::from([9; 32]),
+                    false,
+                )),
+            )
+            .await
+            .unwrap();
+        (
+            wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await,
+            contract,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_reject_a_concurrent_erase_while_the_first_submission_is_pending() {
+        use super::super::signing_key::tests::available;
+        let (wallet, contract) = erasing_wallet().await;
+        let submitter = Identifier::default();
+        let contract_id = contract.id();
+        let document_id = Identifier::from([2; 32]);
+        let signer = available(&[1]);
+        let entered = tokio::sync::Notify::new();
+        let mut first = Box::pin(wallet.identity().erase_and_observe_with_submit(
+            &submitter,
+            &contract_id,
+            "note",
+            &document_id,
+            &signer,
+            |_, _| async {
+                entered.notify_one();
+                std::future::pending::<Result<(), SdkError>>().await
+            },
+        ));
+        tokio::select! {
+            _ = entered.notified() => {},
+            result = &mut first => panic!("first submission must remain pending: {result:?}"),
+        }
+        let result = wallet
+            .identity()
+            .erase_and_observe_with_submit(
+                &submitter,
+                &contract_id,
+                "note",
+                &document_id,
+                &signer,
+                |_, _| async { panic!("concurrent operation must not submit") },
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::DocumentEraseBusy)
+        ));
+        drop(first);
+    }
+
+    #[tokio::test]
+    async fn should_release_the_in_flight_guard_when_cancelled_during_submission() {
+        use super::super::signing_key::tests::available;
+        let (wallet, contract) = erasing_wallet().await;
+        let submitter = Identifier::default();
+        let contract_id = contract.id();
+        let document_id = Identifier::from([2; 32]);
+        let signer = available(&[1]);
+        let entered = tokio::sync::Notify::new();
+        let mut first = Box::pin(wallet.identity().erase_and_observe_with_submit(
+            &submitter,
+            &contract_id,
+            "note",
+            &document_id,
+            &signer,
+            |_, _| async {
+                entered.notify_one();
+                std::future::pending::<Result<(), SdkError>>().await
+            },
+        ));
+        tokio::select! {
+            _ = entered.notified() => {},
+            result = &mut first => panic!("first submission must remain pending: {result:?}"),
+        }
+        drop(first);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let outcome = wallet
+            .identity()
+            .erase_and_observe_with_submit(
+                &submitter,
+                &contract_id,
+                "note",
+                &document_id,
+                &signer,
+                |_, _| async {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(matches!(outcome, DocumentEraseOutcome::Submitted { .. }));
+    }
+
+    #[tokio::test]
+    async fn should_not_submit_when_the_newest_owner_page_has_a_different_lifecycle() {
+        use super::super::signing_key::tests::{available, wallet_with_signing_keys_on};
+        let contract = contract();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                history_query(&contract, DocumentHistoryFilter::StartAtTime(0)),
+                Some(history(
+                    DocumentHistoryState::Deleted,
+                    Identifier::from([9; 32]),
+                    false,
+                )),
+            )
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                history_query(&contract, DocumentHistoryFilter::Revision(3)),
+                Some(history(
+                    DocumentHistoryState::Erasing,
+                    Identifier::default(),
+                    true,
+                )),
+            )
+            .await
+            .unwrap();
+        let mut control = sdk.clone();
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let outcome = wallet
+            .identity()
+            .erase_and_observe_with_submit(
+                &Identifier::default(),
+                &contract.id(),
+                "note",
+                &Identifier::from([2; 32]),
+                &available(&[1]),
+                |_, _| async {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(matches!(
+            outcome,
+            DocumentEraseOutcome::NotSubmitted {
+                reason: DocumentEraseNotSubmittedReason::PreflightUnavailable,
+                ..
+            }
+        ));
+        assert_eq!(
+            history_reads(
+                &mut control,
+                &contract,
+                DocumentHistoryFilter::StartAtTime(0)
+            )
+            .await,
+            1
+        );
+        assert_eq!(
+            history_reads(&mut control, &contract, DocumentHistoryFilter::Revision(3)).await,
+            1
+        );
     }
 }
