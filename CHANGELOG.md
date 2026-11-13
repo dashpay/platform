@@ -1,3 +1,448 @@
+## [5.1.0-dev.1](///compare/v5.0.3...v5.1.0-dev.1) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* upgrade Tenderdash to v2.0.0-dev.2 (#5836)
+* **platform:** a data contract holds a bounded number of patterns of bounded compiled size (PV15) (#5879)
+* **platform:** delete and erase lifecycle for keep-history documents (#4657)
+* **platform:** charge a processing fee for a multiple choice proposal (PV15) (#5897)
+* **dpp:** compile document-schema patterns when first used (#5891)
+* **platform:** dashpay contact requests carry an encrypted shielded address (PV15) (#5892)
+* **contract:** describe a multiple choice proposal by a document, a url or both (PV15) (#5895)
+* **platform:** multiple choice proposals take their description from a moderated text (PV15) (#5851)
+* **platform:** one vote poll per contest for index values sent in different forms (PV15) (#5886)
+* **platform:** multiple choice decision proposals, voted on as a contest among documents (PV15) (#5848)
+* **drive:** write no entry in an expired time range bucket on insert (PV15) (#5877)
+* **drive:** preserve composite document history across protocol activation (#4652)
+* **dpp:** native document validation rules at protocol version 15 (#5871)
+* **platform:** either-kind targets and slot conditions for document-named references (PV15) (#5850)
+* **drive:** estimate summable index entries with their sum items, and other PV15 fee estimate follow-ups (#5858)
+* **platform:** keys with a budget or an expiry sign no data contract create or update (PV15) (#5861)
+* **platform:** document references whose target the document names (PV15) (#5849)
+* **drive-abci:** follow operator payout changes and repair operator keys at protocol 15 (#5775)
+* **dpp:** hold only instant asset lock proofs to the input cap (PV15) (#5825)
+* **platform:** hand stored bytes to the owner a document update names (PV15) (#5829)
+* **platform:** a private type's update may only add properties after its existing ones (PV15) (#5807)
+* **platform:** dashpay contract v3 declares private contact requests (PV15) (#5804)
+* **platform:** append private document entries paid from the shielded pool (PV15) (#5799)
+* **platform:** dashpay contract v3 declares the checks of its data triggers (#4933)
+* **drive-abci:** check the IdentityCreate identity id in basic structure (PV15) (#5770)
+* **platform:** update rust-dashcore past the FFI removal (#5729)
+* **drive-abci:** re-enable the voter key of the address a masternode returns to (PV15) (#5768)
+* **sdk:** let wasm-sdk and evo-sdk opt into the verified quorum context provider (#5721)
+* **dpp:** refuse a contest keyed by a nested or system property (PV15) (#5761)
+* **drive-abci:** emit version 2 asset unlocks once Core V24 is active (PV15) (#5634)
+* **sdk:** move the KeyWallet helpers to platform-wallet (#5727)
+* **platform:** decide a contest by its index values (PV15) (#5744)
+* **sdk:** decide from the version tables which networks serve a document query (#5636)
+* **drive-abci:** record Core fork activation in state (PV15) (#5681)
+* **platform:** token marketplace escrow trees and token market contract (PV15) (#5526)
+* set zero consensus evidence budget at protocol 15 (#5489)
+* **platform:** generatedFrom sys.tokens.decimals generates a token's decimals (PV15) (#5604)
+* **platform:** update rust-dashcore to dev 7329126e (#5726)
+* **platform-wallet:** report a freshly built asset lock's outpoint to the caller (#5476)
+* **drive:** estimate a batch's fee the same whatever its operations' order (PV15) (#5688)
+* **drive:** create the store of a private document type, and refuse document queries on one (PV15) (#5703)
+* **dpp:** refuse a document type schema naming a key twice (PV15) (#5702)
+* **platform:** private document types, declared with the `private` keyword (PV15) (#5689)
+* **platform:** decision proposals open masternode yes/no polls (PV15) (#5684)
+* **platform:** yes/no votes name their poll by id, and polls carry a typed purpose (PV15) (#5680)
+* **platform:** delete a consumed document from what its lookup read (PV15) (#5360)
+* **platform-wallet:** sign a DashPay contact payment before broadcasting it (#5465)
+* **platform:** yes/no masternode vote poll kind with supermajority and minimum voting power (#4899)
+* **platform:** refuse a token config update on a read-only contract (PV15) (#5632)
+* **sdk:** refuse document requests no node can answer instead of banning nodes
+* **drive:** store contracts compiled from protocol version 15 (#5579)
+* **sdk:** report active group config update proposals as success (#5584)
+* **dpp:** stored contract format with compiled document types (#5578)
+* **dpp:** check document schemas natively at registration from protocol version 15 (#5538)
+* **dpp:** validate documents natively at protocol version 15 (#5533)
+* **sdk:** read how many times a masternode has voted on a contested resource (#5312)
+* **platform:** tradeable tokens (PV15) (#5524)
+* **platform:** dpns contract v3 checks name registration with schema keywords (PV15) (#5337)
+* **swift-sdk:** start SPV off the main thread (#5512)
+* migrate Platform cryptography to rust-dashcore dev (aca02026) (#5514)
+* **platform:** update rust-dashcore to dev 280b3f2c (#5493)
+* **drive-abci:** refuse IdentityUpdate added key proof failures without charging the identity (PV15) (#5494)
+* **drive-abci:** leave chain locks signed by quorums Platform does not hold to Core (PV15) (#5454)
+* **swift-sdk:** drop the signed-attempt archive and activity reconciliation host support
+* **platform-wallet:** complete drains from Platform's verdict instead of a signed-attempt archive
+* **platform-wallet:** summarize dApp state transitions in platform-wallet and address review findings
+* **sdk:** Swift ManagedPlatformWallet.ParsedTokenPurchaseTransition and the two-case ParsedStateTransition enum are removed; parseStateTransition returns the new struct.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+* **platform-wallet-ffi:** PARSED_STATE_TRANSITION_KIND_TOKEN_DIRECT_PURCHASE, ParsedTokenDirectPurchaseFFI and ParsedStateTransitionFFI.token_direct_purchase are removed; a direct purchase is a Batch row with action DirectPurchase.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+* **platform-wallet:** `get_quorum_public_key` errors for unverified quorums,
+and `PlatformWalletError` gains the `QuorumNotVerified` variant.
+
+<sub>🤖 Co-authored by [Claudius the Magnificent](https://github.com/lklimek/claudius) AI Agent</sub>
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PSi8cX229kW2fmLxKW6ir4
+* **platform:** update rust-dashcore (incl secp256k1 0.33) (#5307)
+* **dashmate:** Debian package filenames and versions change shape. A rebuild
+of an already published version needs DASHMATE_DEB_REVISION, and re-releasing a
+version published under the old scheme needs DASHMATE_DEB_EPOCH.
+
+Test would have caught this in CI: 4 of the new specs fail before the fix.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+### Features
+
+* **contract:** describe a multiple choice proposal by a document, a url or both (PV15) ([#5895](undefined/undefined/undefined/issues/5895))
+* **dapi:** add getOwnerTransactionsInBlock and getBlocks queries ([#5815](undefined/undefined/undefined/issues/5815))
+* **dashmate:** show what a DKG-safe stop waits for and how long ([#5843](undefined/undefined/undefined/issues/5843))
+* **dpp:** check document schemas natively at registration from protocol version 15 ([#5538](undefined/undefined/undefined/issues/5538))
+* **dpp:** contract corpus test and typed validation schema for document types ([#5486](undefined/undefined/undefined/issues/5486))
+* **dpp:** stored contract format with compiled document types ([#5578](undefined/undefined/undefined/issues/5578))
+* **dpp:** validate documents natively at protocol version 15 ([#5533](undefined/undefined/undefined/issues/5533))
+* **drive-abci:** check the IdentityCreate identity id in basic structure (PV15) ([#5770](undefined/undefined/undefined/issues/5770))
+* **drive-abci:** emit version 2 asset unlocks once Core V24 is active (PV15) ([#5634](undefined/undefined/undefined/issues/5634))
+* **drive-abci:** record Core fork activation in state (PV15) ([#5681](undefined/undefined/undefined/issues/5681))
+* **drive:** create the store of a private document type, and refuse document queries on one (PV15) ([#5703](undefined/undefined/undefined/issues/5703))
+* **drive:** preserve composite document history across protocol activation ([#4652](undefined/undefined/undefined/issues/4652))
+* **drive:** store contracts compiled from protocol version 15 ([#5579](undefined/undefined/undefined/issues/5579))
+* fetch an identity's public keys without reloading the managed identity ([#5715](undefined/undefined/undefined/issues/5715))
+* **kotlin-sdk:** bind fund_from_asset_lock_external (Core → third-party Platform address) ([#5797](undefined/undefined/undefined/issues/5797))
+* **kotlin-sdk:** bridge the adaptive context provider and build it by default ([#5884](undefined/undefined/undefined/issues/5884))
+* **kotlin-sdk:** partial-amount platform-address withdrawal ([#5830](undefined/undefined/undefined/issues/5830))
+* **kotlin-sdk:** send, receive and accept DashPay private contact requests ([#5813](undefined/undefined/undefined/issues/5813))
+* per-contact shielded address index and a payment reference memo kind ([#5893](undefined/undefined/undefined/issues/5893))
+* **platform-wallet-ffi:** decode any state transition kind in parse_state_transition
+* **platform-wallet:** delete an index-only document by its values ([#5419](undefined/undefined/undefined/issues/5419))
+* **platform-wallet:** derive application encryption keys with the DIP-13 rotation level ([#5649](undefined/undefined/undefined/issues/5649))
+* **platform-wallet:** derive DashPay Connect keys at the DIP-13 sub-feature paths, closes dashpay/dips#191
+* **platform-wallet:** expose the BIP-44 account 0 xpub ([#5756](undefined/undefined/undefined/issues/5756))
+* **platform-wallet:** fresh shielded addresses and an own-address check ([#5888](undefined/undefined/undefined/issues/5888))
+* **platform-wallet:** invitation claim status for the invitee, idempotent claim ([#4997](undefined/undefined/undefined/issues/4997))
+* **platform-wallet:** persist the Orchard recipient of a shielded asset-lock funding ([#5762](undefined/undefined/undefined/issues/5762))
+* **platform-wallet:** register limited keys as version 1 keys in creation, closes #4811
+* **platform-wallet:** report a freshly built asset lock's outpoint to the caller ([#5476](undefined/undefined/undefined/issues/5476))
+* **platform-wallet:** send, receive and accept DashPay private contact requests ([#5810](undefined/undefined/undefined/issues/5810))
+* **platform-wallet:** sign a DashPay contact payment before broadcasting it ([#5465](undefined/undefined/undefined/issues/5465))
+* **platform:** a private type's update may only add properties after its existing ones (PV15) ([#5807](undefined/undefined/undefined/issues/5807))
+* **platform:** append private document entries paid from the shielded pool (PV15) ([#5799](undefined/undefined/undefined/issues/5799))
+* **platform:** charge a processing fee for a multiple choice proposal (PV15) ([#5897](undefined/undefined/undefined/issues/5897))
+* **platform:** dashpay contact requests carry an encrypted shielded address (PV15) ([#5892](undefined/undefined/undefined/issues/5892))
+* **platform:** dashpay contract v3 declares private contact requests (PV15) ([#5804](undefined/undefined/undefined/issues/5804))
+* **platform:** dashpay contract v3 declares the checks of its data triggers ([#4933](undefined/undefined/undefined/issues/4933))
+* **platform:** decision proposals open masternode yes/no polls (PV15) ([#5684](undefined/undefined/undefined/issues/5684))
+* **platform:** delete and erase lifecycle for keep-history documents ([#4657](undefined/undefined/undefined/issues/4657))
+* **platform:** document references whose target the document names (PV15) ([#5849](undefined/undefined/undefined/issues/5849))
+* **platform:** dpns contract v3 checks name registration with schema keywords (PV15) ([#5337](undefined/undefined/undefined/issues/5337))
+* **platform:** either-kind targets and slot conditions for document-named references (PV15) ([#5850](undefined/undefined/undefined/issues/5850))
+* **platform:** generatedFrom sys.tokens.decimals generates a token's decimals (PV15) ([#5604](undefined/undefined/undefined/issues/5604))
+* **platform:** introduce protocol version 15 ([#5043](undefined/undefined/undefined/issues/5043))
+* **platform:** multiple choice decision proposals, voted on as a contest among documents (PV15) ([#5848](undefined/undefined/undefined/issues/5848))
+* **platform:** multiple choice proposals take their description from a moderated text (PV15) ([#5851](undefined/undefined/undefined/issues/5851))
+* **platform:** price storage refunds at the storing epoch's rate and drop the fee history map ([#5798](undefined/undefined/undefined/issues/5798))
+* **platform:** private document types, declared with the `private` keyword (PV15) ([#5689](undefined/undefined/undefined/issues/5689))
+* **platform:** read and prove the entries of a private document type's store (getPrivateDocumentEntries, PV15) ([#5708](undefined/undefined/undefined/issues/5708))
+* **platform:** token marketplace escrow trees and token market contract (PV15) ([#5526](undefined/undefined/undefined/issues/5526))
+* **platform:** tradeable tokens (PV15) ([#5524](undefined/undefined/undefined/issues/5524))
+* **platform:** yes/no masternode vote poll kind with supermajority and minimum voting power ([#4899](undefined/undefined/undefined/issues/4899))
+* **platform:** yes/no vote poll state and masternode answer queries ([#5651](undefined/undefined/undefined/issues/5651))
+* **platform:** yes/no votes name their poll by id, and polls carry a typed purpose (PV15) ([#5680](undefined/undefined/undefined/issues/5680))
+* **sdk-ffi:** read a contract group's information with a proof
+* **sdk:** add dash-sdk-cxx, a C++ binding of dash-sdk for Dash Core ([#4633](undefined/undefined/undefined/issues/4633))
+* **sdk:** add opt-in verified HTTP context provider ([#5523](undefined/undefined/undefined/issues/5523))
+* **sdk:** add protocol compatibility checks and write admission
+* **sdk:** back SPV up with the trusted quorum service in Auto mode ([#5882](undefined/undefined/undefined/issues/5882))
+* **sdk:** DashPay Connect key derivation and decode-any-kind parsing in Swift and Kotlin
+* **sdk:** decide from the version tables which networks serve a document query ([#5636](undefined/undefined/undefined/issues/5636))
+* **sdk:** decision proposal helpers in rs-sdk, wasm-sdk and js-evo-sdk ([#5700](undefined/undefined/undefined/issues/5700))
+* **sdk:** decision proposals in rs-sdk-ffi, Swift and Kotlin ([#5704](undefined/undefined/undefined/issues/5704))
+* **sdk:** expose the document erase and history lifecycle on mobile and FFI ([#4660](undefined/undefined/undefined/issues/4660))
+* **sdk:** let wasm-sdk and evo-sdk opt into the verified quorum context provider ([#5721](undefined/undefined/undefined/issues/5721))
+* **sdk:** move DashPay profile create, update and fetch into rs-sdk ([#5470](undefined/undefined/undefined/issues/5470))
+* **sdk:** move the DashPay invitation link codec and claim into rs-sdk ([#5471](undefined/undefined/undefined/issues/5471))
+* **sdk:** persist the owner balance a DashPay profile write's proof carries, closes #5409 #5470 #5409 #5409 #5409
+* **sdk:** prove a state transition's outcome, and add getRecentStateTransitionStatus ([#5823](undefined/undefined/undefined/issues/5823))
+* **sdk:** read how many times a masternode has voted on a contested resource ([#5312](undefined/undefined/undefined/issues/5312))
+* **sdk:** refresh the embedded quorum-proof checkpoints on every release ([#5669](undefined/undefined/undefined/issues/5669))
+* **sdk:** refuse a private document type too small for its payload ([#5805](undefined/undefined/undefined/issues/5805))
+* **sdk:** route DAPI connections through a SOCKS5 proxy ([#5160](undefined/undefined/undefined/issues/5160))
+* **sdk:** seal and open private document entries in the standard envelope ([#5806](undefined/undefined/undefined/issues/5806))
+* **sdk:** send, scan and read DashPay private contact requests ([#5809](undefined/undefined/undefined/issues/5809))
+* **sdk:** verify Core quorum proof chains (DIP 175) ([#5521](undefined/undefined/undefined/issues/5521))
+* **sdk:** verify the block proofs of getBlocks and getOwnerTransactionsInBlock ([#5834](undefined/undefined/undefined/issues/5834))
+* **swift-sdk:** default SDK to the adaptive context provider in Auto mode ([#5883](undefined/undefined/undefined/issues/5883))
+* **swift-sdk:** expose when each DPNS contender submitted its request ([#5718](undefined/undefined/undefined/issues/5718))
+* **swift-sdk:** read a contract group's owner with a proof
+* **swift-sdk:** send, receive and accept DashPay private contact requests ([#5812](undefined/undefined/undefined/issues/5812))
+* **swift-sdk:** use SPV-synced quorums for Platform proof verification ([#3417](undefined/undefined/undefined/issues/3417))
+* **wallet:** reserve DashPay payout addresses without Core funding
+* **wasm-sdk:** seal and scan DashPay private contact requests ([#5811](undefined/undefined/undefined/issues/5811))
+
+
+### Bug Fixes
+
+* **dapi:** meter token pool transitions in the shielded proof failure budget ([#5801](undefined/undefined/undefined/issues/5801))
+* **dapi:** stream every instance of a re-signed asset unlock ([#5832](undefined/undefined/undefined/issues/5832))
+* **dashmate:** fail the deb repack when the version was not rewritten
+* **dashmate:** give Debian packages versions apt can order
+* **dashmate:** keep dev builds below beta and rc in the Debian version
+* **dashmate:** key the protxinfo whitelist migration to 5.1.0-dev.1 ([#5844](undefined/undefined/undefined/issues/5844))
+* **dashmate:** publish the debs without oclif's apt index
+* **dashmate:** refresh quorum-server seeds and complete node identities ([#5290](undefined/undefined/undefined/issues/5290))
+* **dashmate:** report a missing dpkg before downloading anything to compare
+* **dashmate:** stop masternodes safely around DKGs on Core 24 ([#5841](undefined/undefined/undefined/issues/5841))
+* **dashmate:** stop the GitHub release lookup throwing and validate its version, closes #4283
+* **dashmate:** use complete DKG membership for safe stops ([#5231](undefined/undefined/undefined/issues/5231))
+* **dashmate:** wait out the previous lego container's removal in ssl obtain ([#5602](undefined/undefined/undefined/issues/5602))
+* **dpp:** compile document-schema patterns when first used ([#5891](undefined/undefined/undefined/issues/5891))
+* **dpp:** cut long platform value text on a character boundary when displaying it ([#5434](undefined/undefined/undefined/issues/5434))
+* **dpp:** hold arrays to the maximum schema depth in validate_max_depth v2 ([#5881](undefined/undefined/undefined/issues/5881))
+* **dpp:** hold only instant asset lock proofs to the input cap (PV15) ([#5825](undefined/undefined/undefined/issues/5825))
+* **dpp:** native document validation rules at protocol version 15 ([#5871](undefined/undefined/undefined/issues/5871))
+* **dpp:** read a refersTo as dynamic only where protocol version 14 cannot read it ([#5887](undefined/undefined/undefined/issues/5887))
+* **dpp:** refuse a contest keyed by a nested or system property (PV15) ([#5761](undefined/undefined/undefined/issues/5761))
+* **dpp:** refuse a document type schema naming a key twice (PV15) ([#5702](undefined/undefined/undefined/issues/5702))
+* **drive-abci:** apply masternode list diffs as v0 and v1 always have ([#5455](undefined/undefined/undefined/issues/5455))
+* **drive-abci:** follow operator payout changes and repair operator keys at protocol 15 ([#5775](undefined/undefined/undefined/issues/5775))
+* **drive-abci:** leave chain locks signed by quorums Platform does not hold to Core (PV15) ([#5454](undefined/undefined/undefined/issues/5454))
+* **drive-abci:** re-enable the voter key of the address a masternode returns to (PV15) ([#5768](undefined/undefined/undefined/issues/5768))
+* **drive-abci:** refuse IdentityUpdate added key proof failures without charging the identity (PV15) ([#5494](undefined/undefined/undefined/issues/5494))
+* **drive-abci:** stop key-adding identity updates from taking the shielded proof verifier ([#5854](undefined/undefined/undefined/issues/5854))
+* **drive:** drop the argument [#5798](undefined/undefined/undefined/issues/5798) removed from add_document_for_contract in a proof plan test ([#5821](undefined/undefined/undefined/issues/5821))
+* **drive:** estimate a batch's fee the same whatever its operations' order (PV15) ([#5688](undefined/undefined/undefined/issues/5688))
+* **drive:** estimate summable index entries with their sum items, and other PV15 fee estimate follow-ups ([#5858](undefined/undefined/undefined/issues/5858))
+* **drive:** look up a single document at a block time (PV15) ([#5838](undefined/undefined/undefined/issues/5838))
+* **drive:** prove decision proposal creates as plain documents, found by a new strategy test ([#5696](undefined/undefined/undefined/issues/5696))
+* **drive:** verify a single document that may be contested (PV15) ([#5835](undefined/undefined/undefined/issues/5835))
+* **drive:** write no entry in an expired time range bucket on insert (PV15) ([#5877](undefined/undefined/undefined/issues/5877))
+* **kotlin-sdk:** keep parsed state transition amounts unsigned
+* **kotlin-sdk:** release contact request handles after a sync ([#5814](undefined/undefined/undefined/issues/5814))
+* **kotlin-sdk:** report an unreadable parsed state transition blob as a DashSdkError
+* move mobile document erase decisions into the Rust wallet ([#5907](undefined/undefined/undefined/issues/5907))
+* **platform-wallet-ffi:** null the payout-address out-param before the signer check
+* **platform-wallet-ffi:** refuse invalid document-type bounds in the identity update parser
+* **platform-wallet:** admit wallet drains on inline-committing persistence only
+* **platform-wallet:** apply the drain persistence admission on every resume path
+* **platform-wallet:** cap a wallet drain at the asset-lock input limit, not the standard-tx limit, closes dashpay/rust-dashcore#1191
+* **platform-wallet:** charge every detail byte to the budget and report witness-signed transitions as signed
+* **platform-wallet:** check the drain's consumption verdict before recording activity
+* **platform-wallet:** close drain cancellation and restore gaps
+* **platform-wallet:** complete a drain only when the proof attests full consumption
+* **platform-wallet:** confirm rejected-drain absence freshly and republish without a proof
+* **platform-wallet:** escape and bound the details of a state transition summary
+* **platform-wallet:** finish rejected-drain cleanup and republish deferred completion
+* **platform-wallet:** gate drain completion on a dedicated proven status
+* **platform-wallet:** hydrate durable drains and honor inline commits
+* **platform-wallet:** keep the cached identity in step with the chain around updates ([#5487](undefined/undefined/undefined/issues/5487))
+* **platform-wallet:** keep the typed cause of a payout-reservation store failure
+* **platform-wallet:** leave summary details as the escaped Debug output
+* **platform-wallet:** let a shielded sync pass observe cancellation ([#5743](undefined/undefined/undefined/issues/5743))
+* **platform-wallet:** make drain recovery and history durable
+* **platform-wallet:** owe a chain truncation's cursor to the DashPay backfill record ([#5484](undefined/undefined/undefined/issues/5484))
+* **platform-wallet:** poll the asset-lock resume FFIs on a big-stack thread ([#5585](undefined/undefined/undefined/issues/5585))
+* **platform-wallet:** publish drain outcomes without cancellation gaps
+* **platform-wallet:** refuse a fixed-amount asset lock over the input cap before broadcast ([#5712](undefined/undefined/undefined/issues/5712))
+* **platform-wallet:** refuse invalid document-type bounds on an identity update's added keys
+* **platform-wallet:** refuse to resume an asset lock over the input cap ([#5759](undefined/undefined/undefined/issues/5759)), closes #5714
+* **platform-wallet:** reject conflicting persisted drain operation IDs
+* **platform-wallet:** reject zero-amount shielded spends before reserving notes ([#5570](undefined/undefined/undefined/issues/5570))
+* **platform-wallet:** release committed rejections and bound drain retries
+* **platform-wallet:** reopen a latched quiesce gate when a sync loop starts ([#5663](undefined/undefined/undefined/issues/5663))
+* **platform-wallet:** rescan DashPay contact accounts from the contact request height ([#4740](undefined/undefined/undefined/issues/4740))
+* **platform-wallet:** retry an oversized InstantSend asset-lock transition with a ChainLock proof ([#5460](undefined/undefined/undefined/issues/5460))
+* **platform-wallet:** retry unpublished drain checkpoints
+* **platform-wallet:** return only verified SPV quorum keys for proofs
+* **platform-wallet:** select available signing keys across identity operations ([#4764](undefined/undefined/undefined/issues/4764))
+* **platform-wallet:** show a contract create's group declarations in its summary
+* **platform-wallet:** stop concurrent shielded syncs from duplicating commitments ([#5564](undefined/undefined/undefined/issues/5564))
+* **platform-wallet:** summarize v5.0-dev's shielded-pool token rows and renamed token payment accessor, closes #4932 #4760
+* **platform-wallet:** use the non-deprecated secp256k1 secret-key constructor in the drain fixture
+* **platform:** a data contract holds a bounded number of patterns of bounded compiled size (PV15) ([#5879](undefined/undefined/undefined/issues/5879))
+* **platform:** decide a contest by its index values (PV15) ([#5744](undefined/undefined/undefined/issues/5744))
+* **platform:** hand stored bytes to the owner a document update names (PV15) ([#5829](undefined/undefined/undefined/issues/5829))
+* **platform:** keys with a budget or an expiry sign no data contract create or update (PV15) ([#5861](undefined/undefined/undefined/issues/5861))
+* **platform:** one vote poll per contest for index values sent in different forms (PV15) ([#5886](undefined/undefined/undefined/issues/5886))
+* **platform:** point PLATFORM_V15 at query versions V2 after v4.2 merge ([#5212](undefined/undefined/undefined/issues/5212))
+* **platform:** read back compiled contracts without compiling their contested regexes ([#5678](undefined/undefined/undefined/issues/5678))
+* **platform:** refuse a token config update on a read-only contract (PV15) ([#5632](undefined/undefined/undefined/issues/5632))
+* **rs-sdk-ffi:** return the proved identities contract keys ([#5491](undefined/undefined/undefined/issues/5491))
+* **sdk:** address protocol observation and broadcast review findings
+* **sdk:** ban a node that fails a block query, but not one that is busy ([#5839](undefined/undefined/undefined/issues/5839))
+* **sdk:** bump dashcore-lib to 0.26.1 to parse Core V24 data
+* **sdk:** check document windows and ranked indexes before sending ([#5638](undefined/undefined/undefined/issues/5638))
+* **sdk:** follow chain reorgs in SPV header sync and keep its memory bounded ([#5701](undefined/undefined/undefined/issues/5701))
+* **sdk:** honor explicit regtest addresses in the JS DAPI client ([#5291](undefined/undefined/undefined/issues/5291))
+* **sdk:** let wasm-sdk build without its default features ([#5612](undefined/undefined/undefined/issues/5612))
+* **sdk:** pass the platform version in the address nonce broadcast tests ([#5667](undefined/undefined/undefined/issues/5667))
+* **sdk:** preserve uncertain submission outcomes through shared broadcast ([#5556](undefined/undefined/undefined/issues/5556))
+* **sdk:** preserve unconfirmed identity address top-ups
+* **sdk:** preserve unconfirmed submission errors across ffi
+* **sdk:** preserve unconfirmed wallet presentation
+* **sdk:** preserve verified waits across combined submission helpers
+* **sdk:** query compacted address balances when the recent proof has no boundary ([#5572](undefined/undefined/undefined/issues/5572))
+* **sdk:** recognize prefixed DAPI processing refusals
+* **sdk:** refresh the testnet DAPI address whitelist
+* **sdk:** refuse a vote recovery whose proved vote differs from the submitted one ([#5755](undefined/undefined/undefined/issues/5755))
+* **sdk:** refuse document requests no node can answer instead of banning nodes, closes #5618
+* **sdk:** report active group config update proposals as success ([#5584](undefined/undefined/undefined/issues/5584))
+* **sdk:** retain broadcast ambiguity across retry attempts
+* **sdk:** retry address nonce skew on another node ([#5562](undefined/undefined/undefined/issues/5562))
+* **sdk:** retry an InstantSend asset lock proof refused for too many inputs with a ChainLock proof ([#5845](undefined/undefined/undefined/issues/5845))
+* **sdk:** send wasm DAPI requests to a single-slash path ([#5611](undefined/undefined/undefined/issues/5611))
+* **sdk:** stop banning nodes for proofs the SDK's context provider cannot verify ([#5769](undefined/undefined/undefined/issues/5769))
+* **sdk:** stop header sync errors from crashing the process or hiding their cause ([#5697](undefined/undefined/undefined/issues/5697))
+* **sdk:** validate SPV header difficulty exactly as Dash Core does ([#5699](undefined/undefined/undefined/issues/5699))
+* **sdk:** verify quorum proofs without blocking the executor ([#5720](undefined/undefined/undefined/issues/5720))
+* set zero consensus evidence budget at protocol 15 ([#5489](undefined/undefined/undefined/issues/5489))
+* **swift-sdk:** keep drain status authoritative in Rust while a call is in flight
+* **swift-sdk:** preserve empty epoch query results
+* **swift-sdk:** run identityGet and dpnsGetUsername off the main actor ([#5862](undefined/undefined/undefined/issues/5862))
+* **swift-sdk:** start SPV off the main thread ([#5512](undefined/undefined/undefined/issues/5512)), closes #5535
+* **unified-sdk-jni:** overwrite the JVM copy of a connect key when marshalling fails
+* **wallet:** drain Core balance with authenticated shielded recovery
+* write the FFI headers to the profile directory under Cargo 1.100 ([#5898](undefined/undefined/undefined/issues/5898))
+
+
+### Performance Improvements
+
+* **platform:** delete a consumed document from what its lookup read (PV15) ([#5360](undefined/undefined/undefined/issues/5360))
+* **swift-sdk:** batch address-pool persistence lookups into chunked fetches ([#4392](undefined/undefined/undefined/issues/4392))
+
+
+### Continuous Integration
+
+* **dashmate:** bind published hashes to names, and order the baseline by publication
+* **dashmate:** let release runs set the Debian revision and epoch
+* **dashmate:** make releases verifiable and safe to hold a signing key
+* **dashmate:** overwrite the package artifact when a release job is re-run
+* **dashmate:** re-check for a signature immediately before replacing checksums
+* **dashmate:** stop the release token outliving the step that needs it
+* deploy isolated PR Hygiene engine on v4.3
+* link the contract viewer on pull requests that add or change a system contract ([#5552](undefined/undefined/undefined/issues/5552))
+* lint and test JS packages in fewer jobs ([#5757](undefined/undefined/undefined/issues/5757))
+* pin the remaining mutable third-party action refs to commit shas
+* PR Hygiene is the merge gate; CODEOWNERS carries no rules ([#4840](undefined/undefined/undefined/issues/4840))
+* re-pin PR Hygiene ([#4936](undefined/undefined/undefined/issues/4936))
+* re-pin PR Hygiene ([#4946](undefined/undefined/undefined/issues/4946))
+* re-pin PR Hygiene ([#4976](undefined/undefined/undefined/issues/4976))
+* re-pin PR Hygiene ([#4980](undefined/undefined/undefined/issues/4980))
+* re-pin PR Hygiene ([#4990](undefined/undefined/undefined/issues/4990))
+* re-pin PR Hygiene ([#5017](undefined/undefined/undefined/issues/5017))
+* re-pin PR Hygiene ([#5024](undefined/undefined/undefined/issues/5024))
+* re-pin PR Hygiene and wake it on a hand-over ([#5021](undefined/undefined/undefined/issues/5021))
+* re-pin PR Hygiene engine to 3b98772
+* re-pin PR Hygiene for one name for the author limit ([#4903](undefined/undefined/undefined/issues/4903))
+* re-pin PR Hygiene for state labels and /skip-bots ([#4862](undefined/undefined/undefined/issues/4862))
+* re-pin PR Hygiene for the checklist in the description ([#4889](undefined/undefined/undefined/issues/4889))
+* re-pin PR Hygiene so a bot line says everything about that bot ([#4892](undefined/undefined/undefined/issues/4892))
+* re-pin PR Hygiene so it can verify access granted by the organisation ([#4805](undefined/undefined/undefined/issues/4805))
+* re-pin PR Hygiene so its runs queue instead of cancelling ([#4774](undefined/undefined/undefined/issues/4774))
+* re-pin PR Hygiene so the sweep reaches every pull request ([#4771](undefined/undefined/undefined/issues/4771))
+* re-pin PR Hygiene to ask a flaky read once more ([#4895](undefined/undefined/undefined/issues/4895))
+* re-pin PR Hygiene to clone this repository only on its sweep ([#4786](undefined/undefined/undefined/issues/4786))
+* re-pin PR Hygiene to read each pull request once ([#4779](undefined/undefined/undefined/issues/4779))
+* re-pin PR Hygiene to require a green build before asking a human ([#4796](undefined/undefined/undefined/issues/4796))
+* run change detection on the light runner pool ([#5748](undefined/undefined/undefined/issues/5748))
+* run platform-wallet-storage tests named "shield" on the full workspace path ([#5407](undefined/undefined/undefined/issues/5407))
+* run PR Hygiene's engine from master ([#5248](undefined/undefined/undefined/issues/5248))
+* run the dash-platform-queries tests in PR CI, closes #5624
+* run the runner-select gate on the light runner pool ([#5747](undefined/undefined/undefined/issues/5747))
+* wake PR Hygiene only for a comment that can change the answer ([#4783](undefined/undefined/undefined/issues/4783))
+
+
+### Miscellaneous Chores
+
+* add layer ownership skill ([#5488](undefined/undefined/undefined/issues/5488))
+* address review of the v5.0-dev forward merge
+* **dashmate:** run Dash Core 24 by default ([#5842](undefined/undefined/undefined/issues/5842))
+* **platform:** update rust-dashcore (incl secp256k1 0.33) ([#5307](undefined/undefined/undefined/issues/5307))
+* **platform:** update rust-dashcore past the FFI removal ([#5729](undefined/undefined/undefined/issues/5729))
+* **platform:** update rust-dashcore to dev 280b3f2c ([#5493](undefined/undefined/undefined/issues/5493))
+* **platform:** update rust-dashcore to dev 7329126e ([#5726](undefined/undefined/undefined/issues/5726))
+* **sdk:** preserve existing observer result type under clippy
+* **skills:** rename review-prs to prs ([#4788](undefined/undefined/undefined/issues/4788))
+* **swift-sdk:** freeze App Store schema 4.0.0 ([#5785](undefined/undefined/undefined/issues/5785))
+
+
+### Documentation
+
+* **dashmate:** delete every superseded deb after a rebuild, not only revision 1
+* **dashmate:** delete superseded debs only after the rebuild is attached
+* **dashmate:** describe how a DKG-safe stop decides ([#5878](undefined/undefined/undefined/issues/5878))
+* **dashmate:** explain how to rebuild a published deb
+* **dashmate:** install the package that was downloaded, not every match
+* describe asset unlock payload version 2 as a Core fork record consumer ([#5772](undefined/undefined/undefined/issues/5772))
+* describe how drive-abci reads Dash Core and records Core fork activations ([#5754](undefined/undefined/undefined/issues/5754))
+* make layer-ownership catch implementation details leaking to clients ([#5642](undefined/undefined/undefined/issues/5642))
+* **platform-wallet:** state the contact-payment gate's handle-sharing contract
+* **platform-wallet:** state which connect key sub-feature and purpose pairs derive
+* **platform:** note that fee version numbers must stay contiguous ([#5765](undefined/undefined/undefined/issues/5765))
+* require checking Rust changes against the coding conventions ([#5474](undefined/undefined/undefined/issues/5474))
+* **sdk:** describe the testnet DAPI whitelist as a snapshot, closes #2816
+* **sdk:** drop signed-attempt persistence from the drain parity entry
+
+
+### Tests
+
+* **contract:** expect only the first schema violation of a document at protocol version 15
+* cover every served protocol version in the non-unique lookup tests, closes #5515
+* cover protocols 13 and 14 in the incoming document proof tests, closes #5560 #5559
+* **dashmate:** build the repack fixtures with oclif's real control file
+* **dashmate:** pin zero, devnet and failing command line versions
+* **dpp:** pin the bytes protocol version 15 stores contracts in ([#5880](undefined/undefined/undefined/issues/5880))
+* **drive-abci:** activate protocol version 14 in the credit pool backfill strategy tests ([#5735](undefined/undefined/undefined/issues/5735))
+* **drive-abci:** assert total supply drops by the destroyed frozen amount ([#5554](undefined/undefined/undefined/issues/5554))
+* **drive-abci:** guard chain lock, masternode list replay and version table invariants ([#5831](undefined/undefined/undefined/issues/5831))
+* **drive-abci:** name the fault in the check_tx refusal assertions
+* **drive-abci:** pin the check_tx consensus error for an IdentityUpdate adding malformed ECDSA/BLS key data, closes #5464
+* **drive-abci:** pin the nullifier batch guard characterization at protocol 15, closes #5411
+* **drive-abci:** stop pinning the latest protocol version in the v0 shield-from-asset-lock refusal test ([#5298](undefined/undefined/undefined/issues/5298))
+* **drive:** regenerate grovedb structure snapshot after the v5.0-dev merge, closes #4760 #5154
+* **drive:** track latest protocol version in grovedb structure snapshot ([#5154](undefined/undefined/undefined/issues/5154))
+* **kotlin-sdk:** build the unknown-kind parse blob with the u32 name and complete flag
+* **platform-wallet-ffi:** refuse trailing bytes through the public parser; drop orphaned test docs
+* **platform-wallet-storage:** require unique, contiguous migration versions ([#5553](undefined/undefined/undefined/issues/5553))
+* **platform-wallet:** keep the missing-wallet drain regression reaching the durable read
+* **platform-wallet:** pass the built-lock observer in the input-cap test helper ([#5734](undefined/undefined/undefined/issues/5734))
+* **platform-wallet:** pin the contact-payment gate's snapshot ordering
+* **platform:** freeze historical storage and signing vectors ([#5359](undefined/undefined/undefined/issues/5359))
+* **sdk:** configure browser lifecycle context provider
+* **sdk:** fill the verified protocol version in identities contract keys query tests ([#5571](undefined/undefined/undefined/issues/5571))
+
+
+### Code Refactoring
+
+* **dashmate:** move the release packaging scripts next to the package
+* **dashmate:** name the packaging scripts by the module system they use
+* migrate Platform cryptography to rust-dashcore dev (aca02026) ([#5514](undefined/undefined/undefined/issues/5514))
+* **platform-wallet-ffi:** reserve the payout address outside the registry guard
+* **platform-wallet:** check a converted evonode address map with rust-dashcore's Core rules ([#5817](undefined/undefined/undefined/issues/5817))
+* **platform-wallet:** complete drains from Platform's verdict instead of a signed-attempt archive
+* **platform-wallet:** derive connect keys with key-wallet's DIP-13 application paths, closes rust-dashcore#1049
+* **platform-wallet:** list every transition kind when deciding whether it is signed
+* **platform-wallet:** localize drain settlement and narrow recipient API
+* **platform-wallet:** own the TXO reconcile policy in the wallet ([#5796](undefined/undefined/undefined/issues/5796))
+* **platform-wallet:** summarize dApp state transitions in platform-wallet and address review findings, closes #4931
+* **platform-wallet:** wake SPV readiness wait on events instead of polling, closes #5307
+* **platform:** read a consumed document through generation 0's lookup and test the PV14 consume path ([#5874](undefined/undefined/undefined/issues/5874))
+* reject legacy BLS storage formats ([#5323](undefined/undefined/undefined/issues/5323))
+* **sdk:** check document requests with Drive's own request-only planning before sending ([#5774](undefined/undefined/undefined/issues/5774))
+* **sdk:** drop the `key-wallet-ffi` dependency ([#5728](undefined/undefined/undefined/issues/5728))
+* **sdk:** make protocol observations advisory
+* **sdk:** move the KeyWallet helpers to platform-wallet ([#5727](undefined/undefined/undefined/issues/5727))
+* share one bincode config constant ([#5586](undefined/undefined/undefined/issues/5586))
+* **swift-sdk:** drop the signed-attempt archive and activity reconciliation host support
+
+
+### Build System
+
+* fix the stale dash-core-proof version that fails every --locked build on v5.1-dev ([#5650](undefined/undefined/undefined/issues/5650))
+* make the workspace lockfile vendorable again ([#5473](undefined/undefined/undefined/issues/5473))
+* pin rust-dashcore to dev at 626c91d1, closes #1169 #1168
+* pin rust-dashcore to the payload serde variant-order fix, closes rust-dashcore#1156
+* point every publishable package at the repository it lives in
+* upgrade Tenderdash to v2.0.0-dev.2 ([#5836](undefined/undefined/undefined/issues/5836))
+
 ## [Unreleased]
 
 ### Tests
