@@ -36,6 +36,7 @@ use dpp::state_transition::batch_transition::document_create_transition::v0::v0_
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::token_mint_transition::validate_structure::TokenMintTransitionStructureValidation;
 use dpp::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
+use dpp::state_transition::batch_transition::{TokenMintTransition, TokenTransferTransition};
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
@@ -659,25 +660,35 @@ impl Drive {
                         )?;
                         let keeps_historical_document = token_config.keeps_history();
 
-                        // A random transfer or mint (protocol version 15) executes only where
-                        // its format is active and in the shape its structure validation
-                        // admits: a random group mint, say, is refused, while a fixed one of
+                        // A transfer or mint of format version 1 (protocol version 15) executes
+                        // only where that format is active, as the platform decides for the
+                        // whole format (`StateTransition::active_version_range`), whether or not
+                        // it names a random minimum: one naming none would otherwise take the
+                        // proof of a fixed one of format version 0, which has the same history.
+                        // A random one executes only in the shape its structure validation
+                        // admits too: a random group mint, say, is refused, while a fixed one of
                         // the same owner, nonce, recipient and group action can stand in state
                         // for its proof. Expecting one the platform never executes is refused
                         // here, by the checks the platform refuses it with, before any branch
                         // reads the proof.
-                        if token_transition.random_amount_range().is_some() {
-                            if platform_version
+                        let format_version_1 = matches!(
+                            token_transition,
+                            TokenTransition::Transfer(TokenTransferTransition::V1(_))
+                                | TokenTransition::Mint(TokenMintTransition::V1(_))
+                        );
+                        if format_version_1
+                            && platform_version
                                 .dpp
                                 .state_transition_serialization_versions
                                 .random_token_amount
                                 .is_none()
-                            {
-                                return Err(Error::Proof(ProofError::InvalidTransition(format!(
-                                    "protocol version {} does not execute a random token transfer or mint",
-                                    platform_version.protocol_version
-                                ))));
-                            }
+                        {
+                            return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                "protocol version {} does not execute a token transfer or mint of format version 1",
+                                platform_version.protocol_version
+                            ))));
+                        }
+                        if token_transition.random_amount_range().is_some() {
                             let structure = match token_transition {
                                 TokenTransition::Transfer(transfer) => {
                                     Some(transfer.validate_structure(owner_id, platform_version)?)

@@ -407,6 +407,45 @@ impl Fixture {
         }))
     }
 
+    /// [`Self::fixed_transition`] in format version 1, naming no random minimum: a fixed
+    /// amount, where that format is active.
+    fn fixed_transition_in_format_version_1(&self) -> StateTransition {
+        let base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: NONCE,
+            token_contract_position: 0,
+            data_contract_id: CONTRACT.into(),
+            token_id: self.token_id,
+            using_group_info: None,
+        });
+        let token_transition = match self.kind {
+            Kind::Transfer => {
+                TokenTransition::Transfer(TokenTransferTransition::V1(TokenTransferTransitionV1 {
+                    base,
+                    amount: MINIMUM,
+                    recipient_id: RECIPIENT.into(),
+                    public_note: Some(NOTE.to_string()),
+                    shared_encrypted_note: None,
+                    private_encrypted_note: None,
+                    random_minimum_amount: None,
+                }))
+            }
+            Kind::Mint => TokenTransition::Mint(TokenMintTransition::V1(TokenMintTransitionV1 {
+                base,
+                issued_to_identity_id: Some(RECIPIENT.into()),
+                amount: MINIMUM,
+                public_note: Some(NOTE.to_string()),
+                random_minimum_amount: None,
+            })),
+        };
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: OWNER.into(),
+            transitions: vec![BatchedTransition::Token(token_transition)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }))
+    }
+
     /// The proof of the genuine transition's execution, from the drive's state.
     fn proof(&self) -> Vec<u8> {
         self.proof_of(&self.genuine_transition())
@@ -671,6 +710,32 @@ fn should_refuse_a_random_transfer_or_mint_where_random_amounts_are_inactive() {
             fixture.verify_at(&proof, &fixture.genuine_transition(), &inactive),
             "a random transition where random amounts are inactive",
         );
+    }
+}
+
+#[test]
+fn should_refuse_a_format_version_1_transfer_or_mint_without_a_random_minimum_where_the_format_is_inactive(
+) {
+    // The platform refuses format version 1 as a whole where it is inactive, so a transition
+    // of that format naming no random minimum never executes there, though a fixed one of
+    // format version 0 with the same fields leaves the same history: its proof must not stand
+    // for it. Where the format is active, the same transition is a fixed amount and verifies.
+    let mut inactive = PlatformVersion::latest().clone();
+    inactive
+        .dpp
+        .state_transition_serialization_versions
+        .random_token_amount = None;
+    for kind in [Kind::Transfer, Kind::Mint] {
+        let fixture = Fixture::executing(kind, Execution::Fixed);
+        let proof = fixture.proof_of(&fixture.fixed_transition());
+        let transition = fixture.fixed_transition_in_format_version_1();
+        assert_invalid_transition(
+            fixture.verify_at(&proof, &transition, &inactive),
+            "a format version 1 transition where the format is inactive",
+        );
+        fixture
+            .verify(&proof, &transition)
+            .expect("expected the fixed amount to verify where the format is active");
     }
 }
 
