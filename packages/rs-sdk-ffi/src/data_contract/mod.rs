@@ -22,6 +22,7 @@
 //!   - A contract JSON with its property type shorthands written in full
 //!     (`property_type_shorthands`).
 
+mod json;
 mod property_constraints;
 mod property_type_shorthands;
 mod put;
