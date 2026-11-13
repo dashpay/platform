@@ -86,6 +86,8 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::version::PlatformVersion;
 
 use crate::core::FetchedCoreTransaction;
 use crate::platform::transition::asset_lock_submission::{
@@ -772,6 +774,29 @@ fn preflight_keys_map(keys_map: &BTreeMap<u32, IdentityPublicKey>) -> Result<(),
     Ok(())
 }
 
+/// Refuse a key set that Platform's structural validation of an identity
+/// create would refuse (duplicate key data, too many keys, master key count,
+/// security levels), using that validation itself. Platform refuses those
+/// only after it has charged part of the voucher.
+fn validate_claim_keys_structure(
+    keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
+    platform_version: &PlatformVersion,
+) -> Result<(), InvitationError> {
+    let keys: Vec<IdentityPublicKeyInCreation> = keys_map.values().map(Into::into).collect();
+    let result = IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+        &keys,
+        true,
+        platform_version,
+    )
+    .map_err(|e| invalid(format!("could not validate the identity keys: {e}")))?;
+    match result.errors.first() {
+        Some(error) => Err(invalid(format!(
+            "Platform would refuse these identity keys: {error}"
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Byte-reverse a txid hex string. Old iOS invitation links carry the funding
 /// txid in little-endian internal order; DAPI keys `getTransaction` by the
 /// big-endian display id, so the claim retries with the id reversed on a miss
@@ -956,6 +981,7 @@ impl Sdk {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         preflight_keys_map(&keys_map)?;
+        validate_claim_keys_structure(&keys_map, self.version())?;
         ensure_invitation_network(&invitation, self.network)?;
 
         // Reconstruct the funding asset-lock proof by refetching the tx. Consensus
@@ -2427,6 +2453,29 @@ mod tests {
             Err(InvitationError::Invalid(_))
         ));
         assert!(preflight_keys_map(&our_keys()).is_ok());
+    }
+
+    /// A key set Platform's structural validation refuses (here two keys with
+    /// the same data, refused with 10500 after part of the voucher is charged)
+    /// never leaves; a valid set passes.
+    #[test]
+    fn should_refuse_keys_platform_refuses_structurally() {
+        let high = |id: KeyID, byte: u8| {
+            let mut key = test_key(id, byte);
+            key.set_security_level(SecurityLevel::HIGH);
+            key
+        };
+        let platform_version = PlatformVersion::latest();
+        let valid: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 1)), (1, high(1, 2))].into();
+        assert!(validate_claim_keys_structure(&valid, platform_version).is_ok());
+
+        let duplicate_data: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 1)), (1, high(1, 1))].into();
+        assert!(matches!(
+            validate_claim_keys_structure(&duplicate_data, platform_version),
+            Err(InvitationError::Invalid(_))
+        ));
     }
 
     /// The claim looks up the hash of every key it submits, once each, and a
