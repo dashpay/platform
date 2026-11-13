@@ -32,6 +32,8 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::query_types::{AddressInfo, AddressInfos};
 use dash_sdk::{RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityV0};
@@ -136,12 +138,13 @@ struct Fixture {
 
 impl Fixture {
     async fn new(on_platform: bool) -> Self {
-        Self::build(Some(on_platform)).await
+        Self::build(Some(on_platform), AMOUNT).await
     }
 
     /// `on_platform` `None`: Platform cannot be reached to look the
     /// identity up, there is no expectation for the request.
-    async fn build(on_platform: Option<bool>) -> Self {
+    /// `address_balance` is what Platform holds on [`ADDRESS`].
+    async fn build(on_platform: Option<bool>, address_balance: u64) -> Self {
         let mut sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
             .with_time_tolerance(None)
@@ -201,7 +204,7 @@ impl Fixture {
                     Some(AddressInfo {
                         address: ADDRESS,
                         nonce: 0,
-                        balance: AMOUNT,
+                        balance: address_balance,
                     }),
                 )])),
             )
@@ -353,7 +356,7 @@ async fn should_refuse_an_identity_platform_does_not_know_without_submitting() {
 /// have gone through", with nothing signed or submitted.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_report_a_failed_recipient_lookup_as_not_sent() {
-    let mut fixture = Fixture::build(None).await;
+    let mut fixture = Fixture::build(None, AMOUNT).await;
 
     let error = fixture
         .top_up()
@@ -679,5 +682,24 @@ async fn should_refuse_an_overflowing_funding_sum_on_both_routes() {
             "got {result:?}"
         );
     }
+    assert_eq!(fixture.submissions().await, (0, 0, 0));
+}
+
+/// An SDK error the top-up does not promote keeps its typed variant, here
+/// the SDK's own refusal of an address short of the amount, with nothing
+/// signed or submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_keep_an_unpromoted_sdk_error_typed() {
+    let mut fixture = Fixture::build(Some(true), AMOUNT - 1).await;
+
+    let error = fixture.top_up().await.expect_err("the address is short");
+
+    assert!(
+        matches!(&error, PlatformWalletError::Sdk(e) if matches!(
+            e.consensus_error(),
+            Some(ConsensusError::StateError(StateError::AddressNotEnoughFundsError(_)))
+        )),
+        "got {error:?}"
+    );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }

@@ -216,17 +216,14 @@ impl IdentityWallet {
     }
 }
 
-/// An SDK error of an address top-up as the wallet reports it.
+/// An SDK error of an address top-up as the wallet reports it: a nonce
+/// race and an empty input map promoted to their own errors, every other
+/// error kept typed under [`PlatformWalletError::Sdk`].
 fn top_up_error(e: dash_sdk::Error) -> PlatformWalletError {
     preserve_signer_key_unavailable_or(e, |e| {
         promote_address_nonce_error(&e)
             .or_else(|| no_inputs_as_invalid_parameter(&e))
-            .unwrap_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to top up identity from addresses: {}",
-                    e
-                ))
-            })
+            .unwrap_or(PlatformWalletError::Sdk(e))
     })
 }
 
