@@ -74,14 +74,11 @@ use super::payments::{
 };
 use super::DashPayView;
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::{
-    account_address_pool_entries, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
-};
+use crate::changeset::{account_address_pool_entries, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::util::now_secs;
 use crate::wallet::core::{CoreWallet, SignedCoreTransaction, WalletGeneration};
 use crate::wallet::identity::types::dashpay::payment::PaymentEntry;
-use crate::wallet::persister::NotDurable;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::reservations::reservation_expired;
 use crate::SEND_FUNDING_SOURCES;
@@ -745,19 +742,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ) -> Result<(), PlatformWalletError> {
         self.persister
             .store_durably(changeset)
-            .map_err(|not_durable| match not_durable {
-                NotDurable::Store(e) => self.persister.classify_store_failure(e),
-                NotDurable::Flush(e) => PlatformWalletError::from_flush_failure(e),
-                NotDurable::Lost => PlatformWalletError::from_flush_failure(
-                    PersistenceError::backend_with_kind(PersistenceErrorKind::Fatal, not_durable),
-                ),
-                NotDurable::OtherFlushUnsettled => {
-                    PlatformWalletError::from_flush_failure(PersistenceError::backend_with_kind(
-                        PersistenceErrorKind::Transient,
-                        not_durable,
-                    ))
-                }
-            })
+            .map_err(|not_durable| self.persister.classify_not_durable(not_durable))
     }
 
     /// The wallet info of `generation`, or `WalletNotFound` when the wallet
