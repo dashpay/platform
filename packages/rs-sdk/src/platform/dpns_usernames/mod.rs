@@ -218,7 +218,50 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
     /// From protocol version 14 the fund to join doubles once a contest holds 250 contenders
     /// and again for every 50 more, and a registration is charged it. The identity must hold
     /// what it states. `None` states the fund to join read just before the domain is submitted.
+    /// Must be `None` for [`Sdk::register_dpns_name_under_policy`], whose policy states it.
     pub contest_fund: Option<Credits>,
+}
+
+/// What [`Sdk::register_dpns_name_under_policy`] does with a name that would join a contest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DpnsContestPolicy {
+    /// Ordinary names only. A name that would join a contest is refused with
+    /// [`Error::DpnsNameContested`] before anything is written, so the refusal costs no fee.
+    /// An ordinary name states a contest fund of 0.
+    Refuse,
+    /// Join a contest when the name is contested, stating at most these credits as the fund
+    /// to join, 0 included. Platform refuses the domain, and charges its fees, when joining
+    /// costs more.
+    Cap(Credits),
+}
+
+impl DpnsContestPolicy {
+    /// The refusal `label` gets by its spelling alone, before anything is read: under
+    /// [`Self::Refuse`], a label [`is_contested_username`] names contested. A registration
+    /// under the policy checks this first, then the domain it builds against the DPNS
+    /// contract it builds it with.
+    pub fn check_label(&self, label: &str) -> Result<(), Error> {
+        match self {
+            Self::Refuse if is_contested_username(label) => Err(Error::DpnsNameContested {
+                label: label.to_string(),
+                index: None,
+            }),
+            _ => Ok(()),
+        }
+    }
+
+    /// The contest fund a domain for `label` states, `contest` being the contested index the
+    /// domain falls under, if any.
+    fn contest_fund(&self, label: &str, contest: Option<String>) -> Result<Credits, Error> {
+        match (self, contest) {
+            (Self::Refuse, Some(index)) => Err(Error::DpnsNameContested {
+                label: label.to_string(),
+                index: Some(index),
+            }),
+            (Self::Refuse, None) => Ok(0),
+            (Self::Cap(cap), _) => Ok(*cap),
+        }
+    }
 }
 
 /// Result of a DPNS name registration
@@ -488,6 +531,22 @@ impl Sdk {
             .map(|(result, _owner_balance, _metadata)| result)
     }
 
+    /// Register a DPNS username like [`Sdk::register_dpns_name`], with `policy` deciding what
+    /// a name that would join a contest does. The policy is applied to the domain this
+    /// registration builds, against the DPNS contract it builds it with, before a pending
+    /// preorder is looked for, deleted or replaced, so a refused name costs no fee. The domain
+    /// always states the contest fund the policy gives, so the SDK never prices it:
+    /// `input.contest_fund` must be `None`.
+    pub async fn register_dpns_name_under_policy<S: Signer<IdentityPublicKey>>(
+        &self,
+        input: RegisterDpnsNameInput<S>,
+        policy: DpnsContestPolicy,
+    ) -> Result<RegisterDpnsNameResult, Error> {
+        self.register_dpns_name_with(input, Some(policy))
+            .await
+            .map(|(result, _owner_balance, _metadata)| result)
+    }
+
     /// Register a DPNS username like [`Sdk::register_dpns_name`], and also return
     /// what the domain document's proof carries next to the document: the credit
     /// balance of the registering identity after the registration (`None` for a
@@ -502,6 +561,24 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<(RegisterDpnsNameResult, Option<Credits>, ResponseMetadata), Error> {
+        self.register_dpns_name_with(input, None).await
+    }
+
+    async fn register_dpns_name_with<S: Signer<IdentityPublicKey>>(
+        &self,
+        input: RegisterDpnsNameInput<S>,
+        policy: Option<DpnsContestPolicy>,
+    ) -> Result<(RegisterDpnsNameResult, Option<Credits>, ResponseMetadata), Error> {
+        if let Some(policy) = policy {
+            if input.contest_fund.is_some() {
+                return Err(Error::InvalidRequest(
+                    "a registration under a contest policy states the fund the policy gives: \
+                     contest_fund must be None"
+                        .to_string(),
+                ));
+            }
+            policy.check_label(&input.label)?;
+        }
         let identity_id = input.identity.id().to_owned();
         let DpnsRegistrationDocuments {
             dpns_contract,
@@ -513,6 +590,15 @@ impl Sdk {
         } = self
             .dpns_registration_documents(&input.label, identity_id)
             .await?;
+        let contest_fund = match policy {
+            Some(policy) => {
+                let contest = self
+                    .contested_vote_poll(domain_document_type.as_ref(), &domain_document)?
+                    .map(|vote_poll| vote_poll.index_name);
+                Some(policy.contest_fund(&input.label, contest)?)
+            }
+            None => input.contest_fund,
+        };
 
         // From DPNS v3 an identity holds one pending preorder of a name: one an earlier
         // registration left behind, whose domain create failed, is revealed again rather
@@ -571,7 +657,7 @@ impl Sdk {
 
         // Submit domain document after preorder
         debug!(%identity_id, stage = "domain", "DPNS registration: submitting document");
-        let domain_settings = input.contest_fund.map(|contest_fund| PutSettings {
+        let domain_settings = contest_fund.map(|contest_fund| PutSettings {
             state_transition_creation_options: Some(StateTransitionCreationOptions {
                 contest_fund: Some(contest_fund),
                 ..Default::default()
@@ -1089,6 +1175,217 @@ mod tests {
             .expect("the provider answers")
             .expect("the provider holds DPNS");
         assert!(declares_the_preorder_hash(&resolved));
+    }
+
+    /// Refuse states 0 for an ordinary name and refuses a contested one; Cap states its cap,
+    /// 0 included, whether the name is contested or not.
+    #[test]
+    fn should_give_each_contest_policy_its_contest_fund() {
+        let joins = || Some("parentNameAndLabel".to_string());
+        assert_eq!(
+            DpnsContestPolicy::Refuse
+                .contest_fund("bob2000", None)
+                .unwrap(),
+            0
+        );
+        assert!(matches!(
+            DpnsContestPolicy::Refuse.contest_fund("Bob", joins()),
+            Err(Error::DpnsNameContested { index: Some(index), .. }) if index == "parentNameAndLabel"
+        ));
+        for cap in [0, 5_000_000] {
+            for contest in [None, joins()] {
+                assert_eq!(
+                    DpnsContestPolicy::Cap(cap)
+                        .contest_fund("Bob", contest)
+                        .unwrap(),
+                    cap
+                );
+            }
+        }
+
+        assert!(matches!(
+            DpnsContestPolicy::Refuse.check_label("Alice"),
+            Err(Error::DpnsNameContested { index: None, .. })
+        ));
+        assert!(DpnsContestPolicy::Refuse.check_label("bob2000").is_ok());
+        assert!(DpnsContestPolicy::Cap(0).check_label("Alice").is_ok());
+    }
+
+    /// `owner`'s registration of `label`, which stops before it signs.
+    fn registration(
+        label: &str,
+        owner: Identifier,
+        contest_fund: Option<Credits>,
+    ) -> RegisterDpnsNameInput<UnusedSigner> {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+
+        RegisterDpnsNameInput {
+            label: label.to_string(),
+            identity: Identity::create_basic_identity(owner, PlatformVersion::latest())
+                .expect("the identity builds"),
+            identity_public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![1; 33]),
+                disabled_at: None,
+            }),
+            signer: UnusedSigner,
+            preorder_callback: None,
+            contest_fund,
+        }
+    }
+
+    /// DPNS v3 with its contested index widened to normalized labels of up to 63 characters:
+    /// a contract whose contest rule is not the one `is_contested_username` spells out.
+    fn dpns_v3_contesting_long_labels() -> DataContract {
+        let version = PlatformVersion::latest();
+        let mut source = SystemDataContract::DPNS
+            .source(version)
+            .expect("the DPNS source loads");
+        *source
+            .document_schemas
+            .pointer_mut("/domain/indices/0/contested/fieldMatches/0/regexPattern")
+            .expect("DPNS v3 contests labels by a pattern") = "^[a-zA-Z01-]{3,63}$".into();
+        dpp::data_contract::DataContractFactory::new(version.protocol_version)
+            .expect("a contract factory")
+            .create_with_id(
+                Identifier::from(source.id_bytes),
+                Identifier::from(source.owner_id_bytes),
+                0,
+                source.document_schemas.into(),
+                None,
+                source.definitions.map(Into::into),
+            )
+            .expect("the widened contract builds")
+            .data_contract_owned()
+    }
+
+    /// A mock SDK on a network at the latest protocol version that stores `stored` as DPNS.
+    /// Answers set on it are encoded at that version.
+    async fn sdk_storing(stored: &DataContract) -> Sdk {
+        let mut sdk = SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::latest())
+            .with_context_provider(DpnsV2ContextProvider::default())
+            .build()
+            .expect("the mock SDK builds");
+        expect_epoch_refresh(&mut sdk).await;
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DPNS fetch is expected");
+        sdk
+    }
+
+    /// Refuse turns away a label its spelling puts in a contest before anything is read: the
+    /// mock answers no request. A policy also refuses an input that states its own fund.
+    #[tokio::test]
+    async fn should_refuse_a_contested_label_before_reading_anything() {
+        let sdk = mock_sdk();
+        let owner = Identifier::new([1u8; 32]);
+
+        let refused = sdk
+            .register_dpns_name_under_policy(
+                registration("Bob", owner, None),
+                DpnsContestPolicy::Refuse,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(Error::DpnsNameContested { label, index: None }) if label == "Bob"),
+            "{refused:?}"
+        );
+
+        let refused = sdk
+            .register_dpns_name_under_policy(
+                registration("bob2000", owner, Some(0)),
+                DpnsContestPolicy::Cap(0),
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(Error::InvalidRequest(_))),
+            "{refused:?}"
+        );
+    }
+
+    /// Refuse judges the domain the registration builds against the contract it builds it
+    /// with. A label of 20 characters is ordinary by its spelling: the DPNS v3 the network
+    /// stores lets it through to the pending-preorder query (left unanswered), while a
+    /// contract contesting such labels refuses it before that query, a delete or a preorder.
+    #[tokio::test]
+    async fn should_refuse_a_name_the_registrations_own_contract_contests() {
+        let owner = Identifier::new([1u8; 32]);
+        let label = "bobbobbobbobbobbobbo";
+        assert!(!is_contested_username(label));
+
+        let sdk = sdk_storing(&dpns_v3_contesting_long_labels()).await;
+        let refused = sdk
+            .register_dpns_name_under_policy(
+                registration(label, owner, None),
+                DpnsContestPolicy::Refuse,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(Error::DpnsNameContested { index: Some(index), .. }) if index == "parentNameAndLabel"),
+            "{refused:?}"
+        );
+
+        let sdk = sdk_storing(&dpns_v3()).await;
+        let error = sdk
+            .register_dpns_name_under_policy(
+                registration(label, owner, None),
+                DpnsContestPolicy::Refuse,
+            )
+            .await
+            .expect_err("the unanswered pending-preorder query stops the registration");
+        assert!(
+            error.to_string().contains("GetDocumentsRequest"),
+            "an ordinary name reaches the pending-preorder query, got {error}"
+        );
+    }
+
+    /// Cap states its fund on the domain, 0 included, so a contested name is never priced by
+    /// the SDK: with the pending preorder revealable, the domain create asks for its nonce
+    /// (left unanswered), never for the contest's vote state.
+    #[tokio::test]
+    async fn should_state_the_cap_on_a_contested_domain() {
+        let owner = Identifier::new([1u8; 32]);
+        for cap in [0, 5_000_000] {
+            let mut sdk = sdk_storing(&dpns_v3()).await;
+            let pending = bob_v3_preorder(owner);
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, Documents>(
+                    pending_preorder_query(
+                        Arc::new(dpns_v3()),
+                        owner,
+                        pending.properties()[NAME_HASH].clone(),
+                    ),
+                    Some(
+                        [(pending.id(), Some(pending.clone()))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                )
+                .await
+                .expect("the expectation is set");
+
+            let error = sdk
+                .register_dpns_name_under_policy(
+                    registration("Bob", owner, None),
+                    DpnsContestPolicy::Cap(cap),
+                )
+                .await
+                .expect_err("the unanswered nonce query stops the registration");
+            let message = error.to_string();
+            assert!(
+                message.contains("GetIdentityContractNonceRequest")
+                    && !message.contains("ContestedResourceVoteState"),
+                "cap {cap}: the domain must state its fund, got {message}"
+            );
+        }
     }
 
     /// A signer the tests never reach: each registration below stops before it signs.

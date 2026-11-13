@@ -24,23 +24,44 @@ use crate::runtime::blocking;
 unsafe impl Send for ffi::CoreContext {}
 unsafe impl Sync for ffi::CoreContext {}
 
+/// What a [`QuorumSource`] knows of the quorum a proof names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuorumAnswer {
+    /// The quorum could have signed; its BLS public key.
+    Found([u8; 48]),
+    /// The source's complete evidence shows it could not have signed.
+    Invalid,
+    /// The source cannot decide now: no fault of the proof.
+    Unavailable,
+}
+
 /// Where quorum keys come from: the embedder's `CoreContext`, or a fake in
-/// tests. Both answer `None` for anything they do not hold.
+/// tests.
 pub trait QuorumSource: Send + Sync {
-    fn quorum_public_key(&self, llmq_type: u8, hash: &[u8; 32], height: u32) -> Option<[u8; 48]>;
+    fn quorum_public_key(&self, llmq_type: u8, hash: &[u8; 32], height: u32) -> QuorumAnswer;
     fn platform_activation_height(&self) -> Option<u32>;
 }
 
 impl QuorumSource for cxx::UniquePtr<ffi::CoreContext> {
-    fn quorum_public_key(&self, llmq_type: u8, hash: &[u8; 32], height: u32) -> Option<[u8; 48]> {
+    fn quorum_public_key(&self, llmq_type: u8, hash: &[u8; 32], height: u32) -> QuorumAnswer {
         let mut key = [0u8; 48];
-        self.QuorumPublicKey(llmq_type, hash, height, &mut key)
-            .then_some(key)
+        let lookup = self.QuorumPublicKey(llmq_type, hash, height, &mut key);
+        answer(lookup, key)
     }
 
     fn platform_activation_height(&self) -> Option<u32> {
         let mut height = 0;
         self.PlatformActivationHeight(&mut height).then_some(height)
+    }
+}
+
+/// The embedder's lookup: a value outside the enum is its fault, never the
+/// proof's.
+fn answer(lookup: ffi::QuorumLookup, key: [u8; 48]) -> QuorumAnswer {
+    match lookup {
+        ffi::QuorumLookup::Found => QuorumAnswer::Found(key),
+        ffi::QuorumLookup::Invalid => QuorumAnswer::Invalid,
+        _ => QuorumAnswer::Unavailable,
     }
 }
 
@@ -75,7 +96,10 @@ impl<S: QuorumSource> ContextProvider for CoreContextProvider<S> {
 
     /// `quorum_hash` arrives in proof byte order, the reverse of the
     /// embedder's internal `uint256` order. The type is range-checked before
-    /// it is narrowed and must be the configured Platform type.
+    /// it is narrowed and must be the configured Platform type. The signed
+    /// height goes to the embedder unchanged. `Unavailable` is the source's
+    /// gap (`QuorumSourceUnavailable`, which bans no endpoint); only
+    /// `Invalid` indicts the proof.
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -89,18 +113,26 @@ impl<S: QuorumSource> ContextProvider for CoreContextProvider<S> {
             )));
         }
         let internal_order = reversed(&quorum_hash);
-        blocking(|| {
+        let answer = blocking(|| {
             self.source.quorum_public_key(
                 self.platform_llmq_type,
                 &internal_order,
                 core_chain_locked_height,
             )
-        })
-        .ok_or_else(|| {
-            ContextProviderError::InvalidQuorum(
-                "no local Platform quorum with that hash".to_string(),
-            )
-        })
+        });
+        match answer {
+            QuorumAnswer::Found(key) => Ok(key),
+            QuorumAnswer::Invalid => Err(ContextProviderError::InvalidQuorum(format!(
+                "no local Platform quorum with that hash could sign at Core height \
+                 {core_chain_locked_height}"
+            ))),
+            QuorumAnswer::Unavailable => {
+                Err(ContextProviderError::QuorumSourceUnavailable(format!(
+                    "the local quorum data cannot decide this quorum at Core height \
+                     {core_chain_locked_height} yet"
+                )))
+            }
+        }
     }
 
     /// A refusal is the local source's gap, not a bad proof. (Its only SDK
@@ -121,22 +153,24 @@ mod tests {
 
     const PLATFORM_LLMQ: u8 = 106;
 
-    /// Holds one key, under its hash in the embedder's byte order, and
-    /// records every lookup it is asked for.
-    struct OneQuorum {
-        hash: [u8; 32],
+    /// Finds one quorum and knows another invalid, under their hashes in the
+    /// embedder's byte order; cannot decide any other. Records every lookup.
+    struct Scripted {
+        found: [u8; 32],
+        invalid: [u8; 32],
         asked: Mutex<Vec<(u8, [u8; 32], u32)>>,
     }
 
-    impl QuorumSource for OneQuorum {
-        fn quorum_public_key(
-            &self,
-            llmq_type: u8,
-            hash: &[u8; 32],
-            height: u32,
-        ) -> Option<[u8; 48]> {
+    impl QuorumSource for Scripted {
+        fn quorum_public_key(&self, llmq_type: u8, hash: &[u8; 32], height: u32) -> QuorumAnswer {
             self.asked.lock().unwrap().push((llmq_type, *hash, height));
-            (*hash == self.hash).then_some([7; 48])
+            if *hash == self.found {
+                QuorumAnswer::Found([7; 48])
+            } else if *hash == self.invalid {
+                QuorumAnswer::Invalid
+            } else {
+                QuorumAnswer::Unavailable
+            }
         }
 
         fn platform_activation_height(&self) -> Option<u32> {
@@ -144,60 +178,96 @@ mod tests {
         }
     }
 
-    fn provider(hash: [u8; 32]) -> CoreContextProvider<OneQuorum> {
+    fn hash(first: u8) -> [u8; 32] {
+        let mut hash = [0u8; 32];
+        hash[0] = first;
+        hash
+    }
+
+    fn provider() -> CoreContextProvider<Scripted> {
         CoreContextProvider {
-            source: OneQuorum {
-                hash,
+            source: Scripted {
+                found: hash(0xaa),
+                invalid: hash(0xbb),
                 asked: Mutex::new(Vec::new()),
             },
             platform_llmq_type: PLATFORM_LLMQ,
         }
     }
 
+    /// Found gives the key, Invalid indicts the proof, Unavailable is the
+    /// source's gap. The hash is reversed once and the signed height passed
+    /// as is.
     #[test]
-    fn quorum_lookups_check_the_type_and_pass_the_hash_in_core_order() {
-        let mut core_order = [0u8; 32];
-        core_order[0] = 0xaa;
-        let provider = provider(core_order);
-        let mut proof_order = core_order;
-        proof_order.reverse();
+    fn should_map_each_quorum_answer_to_its_own_result() {
+        let provider = provider();
         let platform = u32::from(PLATFORM_LLMQ);
+        let signed_height = 4_000_001;
 
         assert_eq!(
             provider
-                .get_quorum_public_key(platform, proof_order, 9)
+                .get_quorum_public_key(platform, reversed(&hash(0xaa)), signed_height)
                 .unwrap(),
             [7; 48]
         );
-        // Unknown to the embedder: refused, with no fallback.
         assert!(matches!(
-            provider.get_quorum_public_key(platform, core_order, 9),
+            provider.get_quorum_public_key(platform, reversed(&hash(0xbb)), signed_height),
             Err(ContextProviderError::InvalidQuorum(_))
         ));
-        // Another type, including one that would wrap to the Platform type
-        // when narrowed to u8, never reaches the embedder.
-        for other in [platform + 1, platform + 256, u32::MAX] {
-            assert!(matches!(
-                provider.get_quorum_public_key(other, proof_order, 9),
-                Err(ContextProviderError::InvalidQuorum(_))
-            ));
-        }
+        assert!(matches!(
+            provider.get_quorum_public_key(platform, reversed(&hash(0xcc)), signed_height),
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
         assert_eq!(
             *provider.source.asked.lock().unwrap(),
             vec![
-                (PLATFORM_LLMQ, core_order, 9),
-                (PLATFORM_LLMQ, proof_order, 9)
+                (PLATFORM_LLMQ, hash(0xaa), signed_height),
+                (PLATFORM_LLMQ, hash(0xbb), signed_height),
+                (PLATFORM_LLMQ, hash(0xcc), signed_height),
             ]
         );
+    }
+
+    #[test]
+    fn should_never_ask_the_embedder_about_another_quorum_type() {
+        let provider = provider();
+        let platform = u32::from(PLATFORM_LLMQ);
+        // Including one that would wrap to the Platform type when narrowed.
+        for other in [platform + 1, platform + 256, u32::MAX] {
+            assert!(matches!(
+                provider.get_quorum_public_key(other, reversed(&hash(0xaa)), 9),
+                Err(ContextProviderError::InvalidQuorum(_))
+            ));
+        }
+        assert!(provider.source.asked.lock().unwrap().is_empty());
         assert!(matches!(
             provider.get_platform_activation_height(),
             Err(ContextProviderError::QuorumSourceUnavailable(_))
         ));
     }
 
+    /// A lookup value the enum does not name is the embedder's fault.
+    #[test]
+    fn should_read_an_unknown_embedder_lookup_as_unavailable() {
+        assert_eq!(
+            answer(ffi::QuorumLookup::Found, [3; 48]),
+            QuorumAnswer::Found([3; 48])
+        );
+        assert_eq!(
+            answer(ffi::QuorumLookup::Invalid, [3; 48]),
+            QuorumAnswer::Invalid
+        );
+        for repr in [2, 3, 0xff] {
+            assert_eq!(
+                answer(ffi::QuorumLookup { repr }, [3; 48]),
+                QuorumAnswer::Unavailable
+            );
+        }
+    }
+
     #[test]
     fn system_contracts_are_served_locally() {
-        let provider = provider([0; 32]);
+        let provider = provider();
         let version = PlatformVersion::latest();
         for contract in [SystemDataContract::DPNS, SystemDataContract::Dashpay] {
             assert!(provider

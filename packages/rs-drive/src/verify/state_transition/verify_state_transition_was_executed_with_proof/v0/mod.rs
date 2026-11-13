@@ -2339,8 +2339,8 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use crate::drive::RootTree;
+                use crate::util::common::asset_lock::stored_asset_lock_info;
                 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-                use dpp::asset_lock::StoredAssetLockInfo;
                 use dpp::identity::state_transition::AssetLockProved;
                 use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::{
@@ -2449,16 +2449,14 @@ impl Drive {
                             ))
                         })?;
 
+                        // Inert for every protocol version: the helper reads an empty item as
+                        // FullyConsumed and hands any other to the same untrusted decoder this
+                        // arm called inline, so each item verifies as before.
                         let info = match outpoint_element {
-                            Some(Element::Item(bytes, _)) => {
-                                if bytes.is_empty() {
-                                    StoredAssetLockInfo::FullyConsumed
-                                } else {
-                                    StoredAssetLockInfo::PartiallyConsumed(
-                                        AssetLockValue::deserialize_from_bytes_untrusted(&bytes)?,
-                                    )
-                                }
-                            }
+                            Some(Element::Item(bytes, _)) => stored_asset_lock_info(
+                                Some(&bytes),
+                                AssetLockValue::deserialize_from_bytes_untrusted,
+                            )?,
                             Some(_) => {
                                 return Err(Error::Proof(ProofError::CorruptedProof(
                                     "expected an item element for asset lock outpoint".to_string(),
@@ -2492,19 +2490,13 @@ impl Drive {
                             )));
                         }
 
+                        // Inert for every protocol version, as in the surplus arm above.
                         let info = if let Some(proved) = proved_key_values.pop() {
                             match proved.2 {
-                                Some(Element::Item(bytes, _)) => {
-                                    if bytes.is_empty() {
-                                        StoredAssetLockInfo::FullyConsumed
-                                    } else {
-                                        StoredAssetLockInfo::PartiallyConsumed(
-                                            AssetLockValue::deserialize_from_bytes_untrusted(
-                                                &bytes,
-                                            )?,
-                                        )
-                                    }
-                                }
+                                Some(Element::Item(bytes, _)) => stored_asset_lock_info(
+                                    Some(&bytes),
+                                    AssetLockValue::deserialize_from_bytes_untrusted,
+                                )?,
                                 Some(_) => {
                                     return Err(Error::Proof(ProofError::CorruptedProof(
                                         "expected an item element for asset lock outpoint"
@@ -6121,6 +6113,131 @@ mod tests {
             "expected error for shield from asset lock (chain) with empty proof, got: {:?}",
             result
         );
+    }
+
+    // --- ShieldFromAssetLock reads the outpoint's record alike in both arms,
+    // at protocol version 13 (the last of verifier generation 0), 14 and the
+    // latest. An empty item is FullyConsumed, a nonempty one decodes untrusted
+    // with trailing bytes ignored, and an absent record is a corrupted proof,
+    // because the transition executed.
+    #[test]
+    fn should_read_the_shield_from_asset_lock_record_alike_from_protocol_version_13() {
+        use crate::drive::RootTree;
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+        use dpp::asset_lock::StoredAssetLockInfo;
+        use dpp::dashcore::OutPoint;
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+        use dpp::platform_value::BinaryData;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+        use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+        use grovedb::Element;
+        use StateTransitionProofResult::{
+            VerifiedAssetLockConsumed, VerifiedAssetLockConsumedWithAddressInfos,
+        };
+
+        let path: [&[u8]; 1] = [&[RootTree::SpentAssetLockTransactions as u8]];
+        for protocol_version in [13, 14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("a known protocol version");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let left = AssetLockValue::new(2_000, vec![0x76], 1_500, vec![], platform_version)
+                .expect("an asset lock value");
+            let encoded = left
+                .serialize_to_bytes()
+                .expect("an encoded asset lock value");
+            let padded = [encoded.as_slice(), &[0xab, 0xcd]].concat();
+            let rows = [
+                (1, Some(vec![]), Some(StoredAssetLockInfo::FullyConsumed)),
+                (
+                    2,
+                    Some(encoded),
+                    Some(StoredAssetLockInfo::PartiallyConsumed(left.clone())),
+                ),
+                (
+                    3,
+                    Some(padded),
+                    Some(StoredAssetLockInfo::PartiallyConsumed(left)),
+                ),
+                (4, None, None),
+            ];
+
+            for (seed, item, expected) in rows {
+                let out_point = [seed; 36];
+                if let Some(item) = item {
+                    drive
+                        .grove_insert(
+                            (&path).into(),
+                            &out_point,
+                            Element::new_item(item),
+                            None,
+                            None,
+                            &mut vec![],
+                            &platform_version.drive,
+                        )
+                        .expect("a record inserted");
+                }
+
+                for surplus_output in [None, Some(PlatformAddress::P2pkh([0x33; 20]))] {
+                    let with_surplus = surplus_output.is_some();
+                    let transition = StateTransition::ShieldFromAssetLock(
+                        ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
+                            asset_lock_proof: AssetLockProof::Chain(ChainAssetLockProof {
+                                core_chain_locked_height: 100,
+                                out_point: OutPoint::from(out_point),
+                            }),
+                            actions: vec![],
+                            value_balance: 0,
+                            anchor: [0u8; 32],
+                            proof: vec![],
+                            binding_signature: [0u8; 64],
+                            surplus_output,
+                            signature: BinaryData::new(vec![]),
+                        }),
+                    );
+                    let proof = drive
+                        .prove_state_transition(&transition, None, platform_version)
+                        .expect("a proof")
+                        .into_data()
+                        .expect("proof bytes");
+
+                    let verified = Drive::verify_state_transition_was_executed_with_proof(
+                        &transition,
+                        &BlockInfo::default(),
+                        &proof,
+                        &|_| Ok(None),
+                        platform_version,
+                    )
+                    .map(|(_, outcome)| outcome.into_result());
+
+                    let row = format!(
+                        "protocol version {protocol_version}, record {seed}, surplus output {with_surplus}"
+                    );
+                    match (&expected, verified) {
+                        (Some(expected), Ok(VerifiedAssetLockConsumed(info))) if !with_surplus => {
+                            assert_eq!(&info, expected, "{row}")
+                        }
+                        (
+                            Some(expected),
+                            Ok(VerifiedAssetLockConsumedWithAddressInfos(info, _)),
+                        ) if with_surplus => {
+                            assert_eq!(&info, expected, "{row}")
+                        }
+                        (
+                            None,
+                            Err(crate::error::Error::Proof(ProofError::CorruptedProof(message))),
+                        ) => assert!(
+                            message.contains("asset lock outpoint is absent from proof"),
+                            "{row}: {message}"
+                        ),
+                        (expected, verified) => {
+                            panic!("{row}: expected {expected:?}, got {verified:?}")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // --- IdentityCreateFromAddresses: empty proof returns error.

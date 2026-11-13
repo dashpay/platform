@@ -295,6 +295,15 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             EncryptedFor(e) => e.into(),
+            // Refusals of SDK operations this binding does not expose.
+            error @ (DpnsNameContested { .. }
+            | FeeIncreaseFloorAboveCap { .. }
+            | AssetLockNotUsedUp { .. }) => Self::new(
+                WasmSdkErrorKind::Generic,
+                error.to_string(),
+                None,
+                retriable,
+            ),
             error @ ProtocolVersionNotActive { .. } => {
                 // The SDK's message names what is missing; a failed query for the network's
                 // version is its source, and JS sees only the message. The refusal holds

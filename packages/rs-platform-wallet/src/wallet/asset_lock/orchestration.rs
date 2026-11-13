@@ -15,8 +15,11 @@
 //! - [`submit_with_cl_height_retry`] — re-exported from
 //!   `dash_sdk::platform::transition::asset_lock_submission`: the
 //!   retry-on-10506 wrapper that bumps `user_fee_increase` between
-//!   attempts so Tenderdash's invalid-tx hash cache (24h on
-//!   mainnet/testnet) can't silently drop resubmits.
+//!   attempts so no attempt repeats bytes a node refused: Tenderdash
+//!   keeps refused hashes with no time limit (the mempool's 24 h
+//!   `ttl-duration` covers admitted transactions only) and drops
+//!   identical-bytes resubmits; see the SDK module's "Refused
+//!   transitions".
 //! - [`AssetLockManager::resolve_funding_with_is_timeout_fallback`] —
 //!   maps an [`AssetLockFunding`] choice to a [`FundingResolution`]
 //!   that the caller can drive into an IS→CL retry when the IS-lock

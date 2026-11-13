@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use dash_sdk::dpp::dashcore::consensus::Decodable;
-use dash_sdk::dpp::dashcore::{InstantLock, OutPoint, Transaction};
+use dash_sdk::dpp::dashcore::{InstantLock, OutPoint, Transaction, Txid};
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -29,6 +29,20 @@ pub fn reversed(hash: &[u8; 32]) -> [u8; 32] {
     let mut out = *hash;
     out.reverse();
     out
+}
+
+/// An asset lock's credit output; `txid` is in the embedder's internal byte
+/// order, which is also the consensus encoding's.
+pub fn out_point(txid: &[u8; 32], vout: u32) -> OutPoint {
+    OutPoint::new(Txid::from_byte_array(*txid), vout)
+}
+
+/// The id of the identity an asset lock's credit output registers, by dpp's
+/// own derivation.
+pub fn identity_id_from_outpoint(txid: &[u8; 32], vout: u32) -> [u8; 32] {
+    ChainAssetLockProof::new(0, out_point(txid, vout).into())
+        .create_identifier()
+        .to_buffer()
 }
 
 pub fn identity(identity: &Identity) -> ffi::Identity {
@@ -182,7 +196,55 @@ pub fn contact_request(document: &Document) -> Result<ffi::ContactRequest, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dash_sdk::dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dash_sdk::dpp::dashcore::{ScriptBuf, TxOut};
     use dash_sdk::dpp::document::DocumentV0;
+
+    /// The id an IdentityCreate gets from its asset lock proof, as dpp
+    /// derives it, and as a fixed vector: sha256d(txid || vout as a
+    /// little-endian u32), the txid in internal byte order.
+    #[test]
+    fn should_derive_an_identity_id_from_its_asset_lock_outpoint() {
+        let credit = || TxOut {
+            value: 100_000,
+            script_pubkey: ScriptBuf::new(),
+        };
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload {
+                    version: 1,
+                    credit_outputs: vec![credit(), credit()],
+                },
+            )),
+        };
+        let txid = transaction.txid().to_byte_array();
+        let proof = AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock::default(),
+            transaction,
+            1,
+        ));
+        let derived = proof.create_identifier().expect("output 1 exists");
+        assert_eq!(identity_id_from_outpoint(&txid, 1), derived.to_buffer());
+        assert_ne!(identity_id_from_outpoint(&txid, 0), derived.to_buffer());
+
+        let mut txid = [0u8; 32];
+        for (i, byte) in txid.iter_mut().enumerate() {
+            *byte = i as u8;
+        }
+        assert_eq!(
+            identity_id_from_outpoint(&txid, 1),
+            [
+                0x52, 0x70, 0x67, 0xec, 0x1a, 0x72, 0x8f, 0xb4, 0x13, 0x26, 0x29, 0x8d, 0x1c, 0xbe,
+                0xf2, 0x91, 0x96, 0x74, 0x36, 0xd4, 0x2f, 0xfc, 0x3d, 0xf7, 0x26, 0xf2, 0x28, 0xf3,
+                0xe9, 0xc5, 0x03, 0xfd,
+            ]
+        );
+    }
 
     #[test]
     fn a_contact_request_document_is_marshalled_field_by_field() {
