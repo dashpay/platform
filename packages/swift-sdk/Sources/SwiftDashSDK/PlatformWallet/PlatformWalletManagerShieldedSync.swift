@@ -82,6 +82,13 @@ public struct ShieldedSyncEvent: Sendable {
     }
 }
 
+/// The native shield-from-identity-to-recipient call; injectable through
+/// `PlatformWalletManager.nativeShieldFromIdentityToRecipientCall`.
+typealias ShieldFromIdentityToRecipientCall = @Sendable (
+    Handle, UnsafePointer<UInt8>, UInt32, UnsafePointer<UInt8>, UnsafePointer<UInt8>,
+    UInt64, UnsafePointer<CChar>?, OpaquePointer, UnsafeMutablePointer<UInt64>
+) -> PlatformWalletFFIResult
+
 extension PlatformWalletManager {
     /// Shutdown leaves the handle live for admitted operations after its
     /// early shielded stop. Do not restart or mutate that lifecycle while
@@ -459,9 +466,14 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: Clear quiesces the same loop and would wait on the calling
     /// thread for the pass that stop is draining.
+    ///
+    /// Throws `invalidHandle` while an async native operation is admitted
+    /// (for example a shielded spend or a wallet drain): Clear would wipe the
+    /// recovery state that operation is about to write or has armed.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
+        try ensureSyncNativeOpAllowed("clearShielded")
         try withShieldedLocalBalanceMutation {
             try platform_wallet_manager_shielded_clear(handle).check()
         }
@@ -1098,6 +1110,119 @@ extension PlatformWalletManager {
                             handle, widPtr, shieldedAccount, idPtr, amount,
                             signerHandle, &newBalance
                         ).check()
+                    }
+                }
+            }
+            return newBalance
+        }.value
+    }
+
+    /// Identity → EXTERNAL Shielded. The Type 21 `ShieldFromIdentity` transition
+    /// with the note assigned to `recipientRaw43` (a third-party raw 43-byte
+    /// Orchard payment address) instead of the wallet's own default address.
+    /// Same signer, confirmation and no-retry rules as
+    /// [`shieldedShieldFromIdentity`].
+    ///
+    /// The identity is debited `amount` plus the metered fee plus the shielded
+    /// compute fee (`estimateShieldedFee(kind: .shieldFromIdentity)`).
+    /// Returns the identity's proven post-debit balance; any unconfirmed
+    /// outcome throws `.shieldedSpendUnconfirmed` (do not resubmit).
+    ///
+    /// `memo` follows [`shieldedShieldToRecipient`]'s rules: `nil` / empty
+    /// means no memo; a non-empty memo's UTF-8 byte length must be at most 32
+    /// or the call throws `invalidParameter` (Rust owns the limit).
+    ///
+    /// Admitted as an async native operation until the result is delivered:
+    /// `shutdown()` waits for it, a call made once a shutdown has begun throws
+    /// `invalidHandle` before any native work, and the synchronous wallet
+    /// create, load and delete throw `invalidHandle` while it is in flight.
+    @discardableResult
+    public func shieldedShieldFromIdentityToRecipient(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        identityId: Data,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String? = nil,
+        identitySigner: KeychainSigner
+    ) async throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipientRaw43 must be exactly 43 bytes"
+            )
+        }
+        // The memo crosses the FFI as a C string, which ends at the first
+        // NUL: a memo holding one would be sent cut short.
+        guard memo?.utf8.contains(0) != true else {
+            throw PlatformWalletError.invalidParameter(
+                "memo must not contain NUL characters"
+            )
+        }
+
+        // Admitted through the detached call and the result delivery, like
+        // `withWalletDrainNativeOperation`: `shutdown()` waits for the spend
+        // before destroying the handle, and `deleteWallet` is rejected while
+        // it runs. Cancelling the caller does not release it early.
+        try admitNativeOp("shieldedShieldFromIdentityToRecipient")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        let signerHandle = identitySigner.handle
+        let shield = nativeShieldFromIdentityToRecipientCall
+
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var newBalance: UInt64 = 0
+            try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try identityId.withUnsafeBytes { idRaw in
+                        guard let idPtr = idRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "identityId baseAddress is nil"
+                            )
+                        }
+                        try recipientRaw43.withUnsafeBytes { rcpRaw in
+                            guard let rcpPtr = rcpRaw.baseAddress?
+                                .assumingMemoryBound(to: UInt8.self)
+                            else {
+                                throw PlatformWalletError.invalidParameter(
+                                    "recipientRaw43 baseAddress is nil"
+                                )
+                            }
+                            // `nil` / empty → null pointer (no memo); otherwise
+                            // pass the text as a C string — Rust validates the
+                            // 32-byte limit and does the 36-byte encoding.
+                            let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                                try shield(
+                                    handle, widPtr, shieldedAccount, idPtr, rcpPtr, amount,
+                                    memoCStr, signerHandle, &newBalance
+                                ).check()
+                            }
+                            if let memo, !memo.isEmpty {
+                                try memo.withCString { try send($0) }
+                            } else {
+                                try send(nil)
+                            }
+                        }
                     }
                 }
             }
