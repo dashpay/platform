@@ -3127,23 +3127,28 @@ impl PrivatePaymentRestore {
 
     /// Whether the requests the wallet tracks are durable now: at once for a
     /// backend that commits inline, as each was stored before it was
-    /// tracked; after a flush that succeeds otherwise.
+    /// tracked; after a flush that succeeds otherwise. Never once a flush of
+    /// the wallet's records failed for good in this process
+    /// (`WalletPersister::buffered_writes_lost`), which is read after the
+    /// flush here: one that failed for good on another thread just before it
+    /// left nothing buffered, so this one succeeds over records that never
+    /// reached disk.
     fn settled_requests_durable(&self) -> bool {
-        if self.persister.store_commits_inline() {
-            return true;
+        if self.persister.buffered_writes_lost() {
+            return false;
         }
-        match self.persister.flush() {
-            Ok(()) => true,
-            Err(error) => {
+        if !self.persister.store_commits_inline() {
+            if let Err(error) = self.persister.flush() {
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     %error,
                     "the requests settling private payments are not flushed; their journal \
                      records stay for a later restoration"
                 );
-                false
+                return false;
             }
         }
+        !self.persister.buffered_writes_lost()
     }
 
     fn restores_lock(&self) -> std::sync::MutexGuard<'_, PrivatePaymentRestores> {
@@ -3266,10 +3271,7 @@ impl PrivatePaymentRestore {
             .into_iter()
             .filter(|commitment| !self.persister.read_back_awaiting_flush(commitment))
             .collect();
-        if !settled.is_empty()
-            && !self.persister.buffered_writes_lost()
-            && self.settled_requests_durable()
-        {
+        if !settled.is_empty() && self.settled_requests_durable() {
             let store = if wait {
                 Some(self.coordinator.store().write().await)
             } else {

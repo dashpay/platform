@@ -700,6 +700,37 @@ fn release_public_claim(
     }
 }
 
+/// Why a public request from `sender` to `recipient` may not go out, from
+/// what the wallet tracks of the pair's private requests: one to the
+/// recipient is reserved, or a private payment the shielded store's journal
+/// keeps unresolved holds the pair
+/// ([`PlatformWalletError::PrivateContactRequestPending`]), or their requests
+/// came or went privately, as a `contactRequest` document would publish the
+/// relationship
+/// ([`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]). Read by
+/// the claim of the pair and, before a held request's bytes are broadcast
+/// again, by the settling of it.
+fn private_pair_refusal(
+    managed: &ManagedIdentity,
+    persister: &WalletPersister,
+    sender: &Identifier,
+    recipient: &Identifier,
+) -> Result<(), PlatformWalletError> {
+    if managed.dashpay().private_reply_pending(recipient)
+        || persister.private_pair_journaled(sender, recipient)
+    {
+        return Err(PlatformWalletError::PrivateContactRequestPending(
+            *recipient,
+        ));
+    }
+    if managed.dashpay().private_contact(recipient).is_some() {
+        return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
+            *recipient,
+        ));
+    }
+    Ok(())
+}
+
 /// What a contact request to send is built from, whether it is published as a
 /// `contactRequest` document or sealed privately: see
 /// `DashPayView::prepare_contact_request`.
@@ -765,9 +796,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// transition kept, until a proved read settles it
     /// (`DashPayView::settle_unconfirmed_public_request`): until then a request
     /// to the recipient is refused
-    /// ([`PlatformWalletError::PublicContactRequestUnconfirmed`]). A request
-    /// already on Platform that this one would repeat is adopted as sent,
-    /// with nothing signed.
+    /// ([`PlatformWalletError::PublicContactRequestUnconfirmed`]), as is a
+    /// second one while a public request to the recipient is being sent. A
+    /// request already on Platform that this one would repeat is adopted as
+    /// sent, with nothing signed; so is the unconfirmed one, when this send
+    /// finds it on Platform: it comes back as the request sent.
     ///
     /// A recipient whose requests with this identity came or went privately is
     /// refused ([`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]).
@@ -857,13 +890,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             Box::pin(self.read_private_store_before_deciding(sender_identity_id, crypto)).await;
         // A public request to the recipient whose outcome is unconfirmed is
         // settled first where proof allows; while it stands the claim refuses.
-        Box::pin(
-            self.settle_unconfirmed_public_request_logged(
-                sender_identity_id,
-                recipient_identity_id,
-            ),
-        )
+        // Its bytes go out again only after a store read that succeeded: one
+        // that failed leaves what the wallet tracks of the pair unverified.
+        let settled = Box::pin(self.settle_unconfirmed_public_request_logged(
+            sender_identity_id,
+            recipient_identity_id,
+            read.is_ok(),
+        ))
         .await;
+        if let Some(request) = settled {
+            // The request this send would repeat is on Platform, recorded
+            // just now: it is the one sent. Building another would bump its
+            // version past the one recorded and sign a rotation the caller
+            // did not ask for. A reply adopts it as any tracked request.
+            return Ok((!adopt_reply).then_some(request));
+        }
         let claim = {
             let _lifecycle = self.generation.payment_guard().await;
             if !self.is_current_generation().await {
@@ -918,7 +959,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// removed and added again since
     /// (`WalletPersister::private_pair_journaled`), or once their requests
     /// came or went privately, as a `contactRequest` document would publish
-    /// the relationship (replies and rotations go privately instead). The
+    /// the relationship (replies and rotations go privately instead)
+    /// ([`private_pair_refusal`]). Refused too while a public request to the
+    /// recipient is unconfirmed, or another is being sent
+    /// ([`PlatformWalletError::PublicContactRequestUnconfirmed`]): one public
+    /// send holds the pair at a time. The
     /// refusal reads what the wallet tracks, which the store read before the
     /// send brought up to date (`DashPayView::read_private_store_before_deciding`).
     /// When that read applied (`store_read`), the sender's read must still be
@@ -957,19 +1002,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 *recipient,
             ));
         }
-        if managed.dashpay().private_reply_pending(recipient)
-            || self.persister.private_pair_journaled(sender, recipient)
-        {
-            return Err(PlatformWalletError::PrivateContactRequestPending(
-                *recipient,
-            ));
-        }
-        if managed.dashpay().private_contact(recipient).is_some() {
-            return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
-                *recipient,
-            ));
-        }
-        let attempt = managed.claim_public_contact_request(*recipient);
+        private_pair_refusal(managed, &self.persister, sender, recipient)?;
+        // One public send per pair: a second, built from the same tracked
+        // requests, would sign a request of its own while the first may
+        // still execute.
+        let attempt = managed.claim_public_contact_request(*recipient).ok_or(
+            PlatformWalletError::PublicContactRequestUnconfirmed(*recipient),
+        )?;
         Ok(Some(PublicContactClaim {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
@@ -1346,7 +1385,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// ([`PlatformWalletError::PublicContactRequestUnconfirmed`]). A public
     /// contact request sync settles it. The per-contact read a host shows next
     /// to `DashPayView::private_pair_held`, so it tells a public request
-    /// awaiting its outcome from a private one pending.
+    /// awaiting its outcome from a private one pending. A public request
+    /// still being sent is not reported, though a second public send is
+    /// refused with the same error while it is.
     pub async fn public_contact_request_unconfirmed(
         &self,
         sender: &Identifier,
@@ -1376,8 +1417,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///   at or above (`TransitionOutcome::ExecutedOrSuperseded`): it never
     ///   wrote the document and never will, so the pair is released and a new
     ///   request may be sent;
-    /// - otherwise it may still execute: the same signed bytes are broadcast
-    ///   again, whatever that answers, and the pair stays held.
+    /// - otherwise it may still execute, and the pair stays held: when
+    ///   `broadcast_again`, and a public request to the recipient would
+    ///   still go out by what the wallet tracks
+    ///   ([`Self::may_broadcast_held_public_request`]), the same signed bytes
+    ///   are broadcast again, whatever that answers.
+    ///
+    /// Returns the request when this call recorded it as sent.
+    ///
+    /// `broadcast_again` is the caller's: a public send passes whether the
+    /// store read it just made succeeded, the public sync passes `true`, and
+    /// a private send passes `false`, as it is about to take the pair
+    /// privately.
     ///
     /// The nonce is read before the document: a nonce used at height `h`
     /// proves the transition cannot execute after `h`, so only a document
@@ -1386,7 +1437,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         &self,
         sender: &Identifier,
         recipient: &Identifier,
-    ) -> Result<(), PlatformWalletError> {
+        broadcast_again: bool,
+    ) -> Result<Option<ContactRequest>, PlatformWalletError> {
         let held = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
@@ -1400,7 +1452,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 })
         };
         let Some(held) = held else {
-            return Ok(());
+            return Ok(None);
         };
         let outcome = self
             .sdk
@@ -1418,7 +1470,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             TransitionOutcome::StillPossible { .. } => false,
         };
         if found.is_none() && !settled {
-            if matches!(outcome, TransitionOutcome::StillPossible { .. }) {
+            if broadcast_again
+                && matches!(outcome, TransitionOutcome::StillPossible { .. })
+                && self
+                    .may_broadcast_held_public_request(sender, recipient, held.attempt)
+                    .await
+            {
                 // The same bytes, so never a second request; an endpoint's
                 // answer proves nothing either way.
                 let delivery = broadcast_tracking_delivery(&self.sdk, &held.transition).await;
@@ -1429,15 +1486,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "unconfirmed public contact request broadcast again"
                 );
             }
-            return Ok(());
+            return Ok(None);
         }
         let _lifecycle = self.generation.payment_guard().await;
         if !self.is_current_generation().await {
-            return Ok(());
+            return Ok(None);
         }
         match found {
-            Some(request) => {
-                self.record_sent_contact_request(
+            Some(request) => self
+                .record_sent_contact_request(
                     sender,
                     recipient,
                     request,
@@ -1445,8 +1502,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     held.account_index,
                     held.contact_xpub,
                 )
-                .await?;
-            }
+                .await
+                .map(Some),
             None => {
                 let mut wm = self.wallet_manager.write().await;
                 if let Some(managed) =
@@ -1455,9 +1512,47 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 {
                     managed.settle_unconfirmed_public_request(recipient, held.attempt);
                 }
+                Ok(None)
             }
         }
-        Ok(())
+    }
+
+    /// Whether the bytes of the unconfirmed public request `attempt` holds
+    /// from `sender` to `recipient` may be broadcast again: only where a
+    /// public request to the recipient would still go out, by what this
+    /// handle's wallet generation tracks. Not while the wallet's private
+    /// payments may be unrestored, not while the sender's read of the private
+    /// store was rewound and has not reached its end again, and not once a
+    /// private request holds the pair or their requests came or went
+    /// privately ([`private_pair_refusal`]): the request stays held, and
+    /// only a proved read settles it.
+    ///
+    /// It reads what the wallet tracks, not the store: a private request the
+    /// store holds that no private sync has read in yet does not stop the
+    /// broadcast, as one sealed after a send's own store read does not stop
+    /// that send.
+    async fn may_broadcast_held_public_request(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        attempt: u64,
+    ) -> bool {
+        if self.persister.private_payments_unrestored() {
+            return false;
+        }
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .and_then(|info| info.identity_manager.managed_identity(sender))
+            .is_some_and(|managed| {
+                let dashpay = managed.dashpay();
+                dashpay
+                    .unconfirmed_public_request(recipient)
+                    .is_some_and(|held| held.attempt == attempt)
+                    && !dashpay.private_payments_unrestored()
+                    && !dashpay.private_store_read_rewound()
+                    && private_pair_refusal(managed, &self.persister, sender, recipient).is_ok()
+            })
     }
 
     /// [`Self::settle_unconfirmed_public_request`], logging a read that could
@@ -1466,18 +1561,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         &self,
         sender: &Identifier,
         recipient: &Identifier,
-    ) {
+        broadcast_again: bool,
+    ) -> Option<ContactRequest> {
         // Boxed: its reads and broadcast make a large future, which sends and
         // syncs nest in their own.
-        if let Err(error) =
-            Box::pin(self.settle_unconfirmed_public_request(sender, recipient)).await
+        match Box::pin(self.settle_unconfirmed_public_request(sender, recipient, broadcast_again))
+            .await
         {
-            tracing::warn!(
-                sender = %sender,
-                recipient = %recipient,
-                %error,
-                "an unconfirmed public contact request could not be settled; it stays held"
-            );
+            Ok(recorded) => recorded,
+            Err(error) => {
+                tracing::warn!(
+                    sender = %sender,
+                    recipient = %recipient,
+                    %error,
+                    "an unconfirmed public contact request could not be settled; it stays held"
+                );
+                None
+            }
         }
     }
 
@@ -1508,7 +1608,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .unwrap_or_default()
         };
         for (sender, recipient) in pairs {
-            self.settle_unconfirmed_public_request_logged(&sender, &recipient)
+            self.settle_unconfirmed_public_request_logged(&sender, &recipient, true)
                 .await;
         }
     }
@@ -4714,9 +4814,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // preserves metadata on an already-established pair.
             {
                 let mut wm = self.wallet_manager.write().await;
-                let managed = wm
-                    .get_wallet_info_mut(&self.wallet_id)
-                    .and_then(|info| info.identity_manager.managed_identity_mut(&our_identity_id))
+                // Only on this handle's wallet generation: the reply's send
+                // ran without the lifecycle gate, and a wallet re-created
+                // under this id since is not given the contact.
+                let managed = self
+                    .current_wallet_info_mut(&mut wm)?
+                    .identity_manager
+                    .managed_identity_mut(&our_identity_id)
                     .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
                 // Read now: a reply adopted after `send_reply` may have
                 // established the pair since step 1.

@@ -299,15 +299,7 @@ impl WalletPersister {
         if pending.is_empty() {
             return;
         }
-        if self.buffered_writes_lost() {
-            tracing::warn!(
-                dropped = pending.len(),
-                "private requests read back after this wallet's records were lost are not \
-                 noted; their journal records stay for the next process"
-            );
-            return;
-        }
-        if !self.store_commits_inline() {
+        if !self.buffered_writes_lost() && !self.store_commits_inline() {
             if let Err(error) = self.flush() {
                 if error.is_transient() {
                     tracing::warn!(
@@ -341,6 +333,17 @@ impl WalletPersister {
                 }
                 return;
             }
+        }
+        // Read after the flush, not only before it: a flush that failed for
+        // good on another thread in between left nothing buffered, and the
+        // flush here then succeeded over records that never reached disk.
+        if self.buffered_writes_lost() {
+            tracing::warn!(
+                dropped = pending.len(),
+                "private requests read back after this wallet's records were lost are not \
+                 noted; their journal records stay for the next process"
+            );
+            return;
         }
         self.note_read_back_private_entries(pending);
     }
@@ -819,5 +822,57 @@ mod tests {
             .expect("the flushes complete");
         assert!(!noted_on_failure, "a failed flush notes nothing");
         assert_eq!(noted, BTreeSet::from([[1; 32], [2; 32]]), "nothing lost");
+    }
+
+    /// A read-back is not noted on the strength of a flush that succeeded
+    /// after another failed for good, also when that failure came while this
+    /// call's own flush ran, after it read that nothing was lost: the one
+    /// that failed dropped the buffer, so the one here succeeded over records
+    /// that never reached disk.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_note_no_read_back_when_a_flush_fails_for_good_during_its_own() {
+        struct Overtaken {
+            persister: OnceLock<WalletPersister>,
+            flushes: AtomicU64,
+        }
+        impl PlatformWalletPersistence for Overtaken {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                match self.flushes.fetch_add(1, Ordering::SeqCst) {
+                    // The flush under test: before it ends, another, as from
+                    // another thread, fails for good.
+                    0 => {
+                        let overtaking = self.persister.get().expect("set").flush();
+                        assert!(overtaking.is_err_and(|error| !error.is_transient()));
+                        Ok(())
+                    }
+                    1 => Err(PersistenceError::backend("the database is corrupt")),
+                    _ => Ok(()),
+                }
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let backend = Arc::new(Overtaken {
+            persister: OnceLock::new(),
+            flushes: AtomicU64::new(0),
+        });
+        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+        let _ = backend.persister.set(persister.clone());
+        persister.note_read_back_once_durable([[1; 32]]);
+        assert!(persister.buffered_writes_lost());
+        assert!(
+            !persister.has_read_back_private_entries(),
+            "its flush succeeded over a buffer the other one dropped"
+        );
     }
 }
