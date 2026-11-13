@@ -1263,11 +1263,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
 // accept that replies the way a request came
 // (`acceptContactRequestReplyingInKind`) is exported in every build.
 
-/// The bytes of an Orchard payment address the FFI reads from a
-/// `shielded_address` pointer: an 11-byte diversifier and a 32-byte
-/// transmission key.
-const SHIELDED_ADDRESS_LEN: usize = 43;
-
 /// The longs [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_syncPrivateContactRequests`]
 /// returns, in the order `Dashpay.syncPrivateContactRequests` reads them:
 /// the requests the pass ingested, the store pages read, the entries
@@ -1597,7 +1592,9 @@ fn readiness_flags(readiness: &PrivateContactReadinessFFI) -> [jboolean; 4] {
 }
 
 /// Copy an optional Java `byte[]`; JVM null is `None`. Throws and returns
-/// `Err` on a JNI error. `field` names the argument in the message.
+/// `Err` on a JNI error. `field` names the argument in the message. Only the
+/// private send reads one, so it is built with that export.
+#[cfg(feature = "shielded")]
 fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
     if arr.is_null() {
         return Ok(None);
@@ -1612,37 +1609,16 @@ fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Opt
     }
 }
 
-/// Copy an optional Orchard address. The FFI reads exactly
-/// [`SHIELDED_ADDRESS_LEN`] bytes from the pointer it is given and has no
-/// length to check against, so any other length is refused here before the
-/// pointer crosses.
-fn read_opt_shielded_address(env: &mut JNIEnv, arr: &JByteArray) -> Result<Option<Vec<u8>>, ()> {
-    let address = read_opt_bytes(env, arr, "shieldedAddress")?;
-    if let Some(address) = &address {
-        if address.len() != SHIELDED_ADDRESS_LEN {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!(
-                    "shieldedAddress must be {SHIELDED_ADDRESS_LEN} raw Orchard bytes, got {}",
-                    address.len()
-                ),
-            );
-            return Err(());
-        }
-    }
-    Ok(address)
-}
-
 /// Send a DashPay private contact request from `senderIdentityId` to
 /// `recipientIdentityId`, paying for it from `account`'s shielded notes
 /// (bridges `platform_wallet_manager_send_private_contact_request`).
 /// `resolverHandle` supplies the Orchard spend authority and the DashPay
 /// keys; `signerHandle` is the identity signer (`SignerHandle`) the public
 /// [`crate::tokens`] `sendContactRequest` takes, and signs the request.
-/// `accountLabel`, `autoAcceptProof` and `shieldedAddress` (43 bytes) may be
-/// null. Blocks for the Halo 2 proof; returns the created `ContactRequest`
-/// handle (destroy via `TokensNative.contactRequestDestroy`).
+/// `accountLabel` and `autoAcceptProof` may be null. The wallet derives the
+/// Orchard address the request carries, one for this contact alone. Blocks
+/// for the Halo 2 proof; returns the created `ContactRequest` handle (destroy
+/// via `TokensNative.contactRequestDestroy`).
 #[cfg(feature = "shielded")]
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -1657,7 +1633,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPri
     recipient_identity_id: JByteArray,
     account_label: JString,
     auto_accept_proof: JByteArray,
-    shielded_address: JByteArray,
     signer_handle: jlong,
 ) -> jlong {
     guard(&mut env, 0, |env| {
@@ -1680,9 +1655,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPri
         let Ok(proof) = read_opt_bytes(env, &auto_accept_proof, "autoAcceptProof") else {
             return 0;
         };
-        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
-            return 0;
-        };
         let (proof_ptr, proof_len) = proof
             .as_ref()
             .map_or((ptr::null(), 0), |proof| (proof.as_ptr(), proof.len()));
@@ -1698,9 +1670,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPri
                 label.as_ref().map_or(ptr::null(), |label| label.as_ptr()),
                 proof_ptr,
                 proof_len,
-                address
-                    .as_ref()
-                    .map_or(ptr::null(), |address| address.as_ptr()),
                 signer_handle as *mut SignerHandle,
                 &mut out_handle,
             )
@@ -1715,10 +1684,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPri
 /// Accept the incoming contact request `requestHandle` with a private reply,
 /// paying for the reply from `account`'s shielded notes (bridges
 /// `platform_wallet_manager_accept_private_contact_request`). The handles
-/// are as for [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPrivateContactRequest`];
-/// `shieldedAddress` (43 bytes) may be null. Blocks for the Halo 2 proof;
-/// returns the `EstablishedContact` handle (destroy via
-/// `TokensNative.establishedContactDestroy`).
+/// are as for [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPrivateContactRequest`],
+/// and the wallet derives the Orchard address the reply carries the same
+/// way. Blocks for the Halo 2 proof; returns the `EstablishedContact` handle
+/// (destroy via `TokensNative.establishedContactDestroy`).
 #[cfg(feature = "shielded")]
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -1730,7 +1699,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptP
     resolver_handle: jlong,
     account: jint,
     request_handle: jlong,
-    shielded_address: JByteArray,
     signer_handle: jlong,
 ) -> jlong {
     guard(&mut env, 0, |env| {
@@ -1741,9 +1709,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptP
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return 0;
         };
-        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
-            return 0;
-        };
         let mut out_handle: Handle = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_accept_private_contact_request(
@@ -1752,9 +1717,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptP
                 resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 request_handle as Handle,
-                address
-                    .as_ref()
-                    .map_or(ptr::null(), |address| address.as_ptr()),
                 signer_handle as *mut SignerHandle,
                 &mut out_handle,
             )
@@ -1772,10 +1734,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptP
 /// privately, paid from `account`'s shielded notes, when it came privately
 /// and no reply exists yet; otherwise with a `contactRequest` document, or by
 /// adopting the reply already sent. The wallet decides; this is the accept a
-/// host calls. Arguments and result are as for the private accept above.
-/// Exported in every build: without the `shielded` feature a request that
-/// needs a private reply is refused with `ErrorShieldedBuildRequired`, and a
-/// public or adopted reply works as in a shielded build.
+/// host calls. Arguments and result are as for the private accept above, and
+/// a private reply carries the Orchard address the wallet derives for this
+/// contact. Exported in every build: without the `shielded` feature a request
+/// that needs a private reply is refused with `ErrorShieldedBuildRequired`,
+/// and a public or adopted reply works as in a shielded build.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptContactRequestReplyingInKind(
@@ -1786,7 +1749,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptC
     resolver_handle: jlong,
     account: jint,
     request_handle: jlong,
-    shielded_address: JByteArray,
     signer_handle: jlong,
 ) -> jlong {
     guard(&mut env, 0, |env| {
@@ -1797,9 +1759,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptC
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return 0;
         };
-        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
-            return 0;
-        };
         let mut out_handle: Handle = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_accept_contact_request_replying_in_kind(
@@ -1808,9 +1767,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptC
                 resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 request_handle as Handle,
-                address
-                    .as_ref()
-                    .map_or(ptr::null(), |address| address.as_ptr()),
                 signer_handle as *mut SignerHandle,
                 &mut out_handle,
             )

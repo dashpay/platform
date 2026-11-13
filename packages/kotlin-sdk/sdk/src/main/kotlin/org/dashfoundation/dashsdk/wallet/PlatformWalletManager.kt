@@ -2186,9 +2186,10 @@ class PlatformWalletManager(
      * The request is signed by this manager's identity signer
      * ([signerHandle], the handle the public `Dashpay.sendContactRequest`
      * is given) and sealed with DashPay keys derived through this manager's
-     * resolver, which also supplies the Orchard spend authority.
-     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
-     * pay us at privately. Blocks for the Halo 2 proof.
+     * resolver, which also supplies the Orchard spend authority. The
+     * request carries an Orchard address the contact may pay us at
+     * privately, which the wallet derives for this contact alone. Blocks
+     * for the Halo 2 proof.
      *
      * Before anything is paid the wallet reads DashPay's private store for
      * the sender to its end. Throws
@@ -2212,7 +2213,6 @@ class PlatformWalletManager(
         recipientIdentityId: ByteArray,
         accountLabel: String? = null,
         autoAcceptProof: ByteArray? = null,
-        shieldedAddress: ByteArray? = null,
         account: Int = 0,
     ): ContactRequestRef = teardownGate.op {
         require(account >= 0) { "account must be non-negative, got $account" }
@@ -2226,7 +2226,6 @@ class PlatformWalletManager(
                 recipientIdentityId,
                 accountLabel,
                 autoAcceptProof,
-                shieldedAddress,
                 signerHandle,
             )
         }
@@ -2243,16 +2242,15 @@ class PlatformWalletManager(
      * A host accepts with [acceptContactRequestReplyingInKind], which
      * picks this reply itself; this explicit accept stays for a host that
      * wants a private reply. The reply is signed by this manager's identity
-     * signer ([signerHandle]).
-     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
-     * pay us at privately. Blocks for the Halo 2 proof.
+     * signer ([signerHandle]). It carries an Orchard address the contact
+     * may pay us at privately, which the wallet derives for this contact
+     * alone. Blocks for the Halo 2 proof.
      *
      * @return the established contact; close it (or `use {}`) when done.
      */
     suspend fun acceptPrivateContactRequest(
         walletId: ByteArray,
         request: ContactRequestRef,
-        shieldedAddress: ByteArray? = null,
         account: Int = 0,
     ): EstablishedContactRef = teardownGate.op {
         require(account >= 0) { "account must be non-negative, got $account" }
@@ -2263,7 +2261,6 @@ class PlatformWalletManager(
                 mnemonicResolver.nativeHandle,
                 account,
                 request.value,
-                shieldedAddress,
                 signerHandle,
             )
         }
@@ -2282,9 +2279,9 @@ class PlatformWalletManager(
      * [request] is the incoming request (`Dashpay.incomingContactRequest`).
      * The reply is signed by this manager's identity signer ([signerHandle]);
      * the Orchard spend authority comes from this manager's resolver and is
-     * derived only for a private reply. [shieldedAddress] is the 43-byte raw
-     * Orchard address the contact may pay us at privately; a public reply
-     * ignores it.
+     * derived only for a private reply. A private reply carries an Orchard
+     * address the contact may pay us at privately, which the wallet derives
+     * for this contact alone.
      *
      * A public or adopted reply needs neither shielded support nor a
      * mnemonic read for the payment. Throws
@@ -2304,7 +2301,6 @@ class PlatformWalletManager(
     suspend fun acceptContactRequestReplyingInKind(
         walletId: ByteArray,
         request: ContactRequestRef,
-        shieldedAddress: ByteArray? = null,
         account: Int = 0,
     ): EstablishedContactRef = teardownGate.op {
         require(account >= 0) { "account must be non-negative, got $account" }
@@ -2315,7 +2311,6 @@ class PlatformWalletManager(
                 mnemonicResolver.nativeHandle,
                 account,
                 request.value,
-                shieldedAddress,
                 signerHandle,
             )
         }

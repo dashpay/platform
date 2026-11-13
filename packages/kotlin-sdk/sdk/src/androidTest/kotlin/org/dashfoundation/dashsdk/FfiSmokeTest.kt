@@ -105,11 +105,10 @@ class FfiSmokeTest {
      * DashPay private contact requests (protocol version 15): the
      * `DashpayNative` symbols bind with the descriptors Kotlin declares, and
      * bad input surfaces as a mapped [DashSDKException] rather than a crash.
-     * A null resolver is refused before any wallet lookup, and a shielded
-     * address that is not 43 bytes never reaches the FFI (which reads
-     * exactly 43). The explicit private send and private-reply accept are
-     * exported only by a shielded build, so they are probed only there; the
-     * sync, the reads and the in-kind accept are exported by every build.
+     * A null resolver is refused before any wallet lookup. The explicit
+     * private send and private-reply accept are exported only by a shielded
+     * build, so they are probed only there; the sync, the reads and the
+     * in-kind accept are exported by every build.
      * The flows themselves need a protocol version 15 network with shielded
      * funds; their Rust side is covered by the platform-wallet and
      * platform-wallet-ffi tests.
@@ -124,12 +123,12 @@ class FfiSmokeTest {
             assertThrows(DashSDKException::class.java) {
                 DashpayNative.sendPrivateContactRequest(
                     0L, ByteArray(32), 0L, 0, ByteArray(32), ByteArray(32),
-                    null, null, null, 0L,
+                    null, null, 0L,
                 )
             }
             assertThrows(DashSDKException::class.java) {
                 DashpayNative.acceptPrivateContactRequest(
-                    0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+                    0L, ByteArray(32), 0L, 0, 0L, 0L,
                 )
             }
         }
@@ -139,7 +138,7 @@ class FfiSmokeTest {
         }
         assertThrows(DashSDKException::class.java) {
             DashpayNative.acceptContactRequestReplyingInKind(
-                0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+                0L, ByteArray(32), 0L, 0, 0L, 0L,
             )
         }
         // The private contact read is benign on a miss (null, as Swift's

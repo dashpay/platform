@@ -280,8 +280,9 @@ extension ManagedPlatformWallet {
 extension PlatformWalletManager {
     /// Send a DashPay private contact request from `senderIdentityId` to
     /// `recipientIdentityId`, paying for it from `account`'s shielded notes,
-    /// so nothing on chain names either identity. `shieldedAddress` is the
-    /// 43-byte Orchard address the contact may pay us at privately.
+    /// so nothing on chain names either identity. The request carries an
+    /// Orchard address the contact may pay us at privately, which the wallet
+    /// derives for this contact alone.
     ///
     /// `resolver` supplies both the Orchard spend authority and the DashPay
     /// keys. `signer` is the identity signer `sendContactRequest` takes: it
@@ -307,13 +308,11 @@ extension PlatformWalletManager {
         recipientIdentityId: Identifier,
         accountLabel: String? = nil,
         autoAcceptProof: Data? = nil,
-        shieldedAddress: Data? = nil,
         signer: KeychainSigner
     ) async throws -> ContactRequest {
         let handle = try privateContactRequestManagerHandle(
             walletId: walletId,
-            resolver: resolver,
-            shieldedAddress: shieldedAddress
+            resolver: resolver
         )
         // Counted as the other native manager operations are, so a teardown
         // waits for this call to return before it frees the manager.
@@ -333,22 +332,19 @@ extension PlatformWalletManager {
                         try recipientIdentityId.withFFIBytes { recipientPtr in
                             try withOptionalCString(accountLabel) { labelPtr in
                                 try withOptionalBytes(autoAcceptProof) { proofPtr, proofLen in
-                                    try withOptionalBytes(shieldedAddress) { addressPtr, _ in
-                                        try platform_wallet_manager_send_private_contact_request(
-                                            handle,
-                                            widPtr,
-                                            resolverHandle,
-                                            account,
-                                            senderPtr,
-                                            recipientPtr,
-                                            labelPtr,
-                                            proofPtr,
-                                            proofLen,
-                                            addressPtr,
-                                            signerHandle,
-                                            &outHandle
-                                        ).check()
-                                    }
+                                    try platform_wallet_manager_send_private_contact_request(
+                                        handle,
+                                        widPtr,
+                                        resolverHandle,
+                                        account,
+                                        senderPtr,
+                                        recipientPtr,
+                                        labelPtr,
+                                        proofPtr,
+                                        proofLen,
+                                        signerHandle,
+                                        &outHandle
+                                    ).check()
                                 }
                             }
                         }
@@ -362,22 +358,20 @@ extension PlatformWalletManager {
 
     /// Accept a DashPay contact request that came privately, replying
     /// privately and paying for the reply from `account`'s shielded notes.
-    /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
-    /// us at privately. `signer` is the identity signer
-    /// `acceptContactRequest` takes; it signs the reply. It throws as
-    /// `sendPrivateContactRequest` does.
+    /// The reply carries an Orchard address the contact may pay us at
+    /// privately, which the wallet derives for this contact alone. `signer`
+    /// is the identity signer `acceptContactRequest` takes; it signs the
+    /// reply. It throws as `sendPrivateContactRequest` does.
     public func acceptPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
         account: UInt32 = 0,
         request: ContactRequest,
-        shieldedAddress: Data? = nil,
         signer: KeychainSigner
     ) async throws -> EstablishedContact {
         let handle = try privateContactRequestManagerHandle(
             walletId: walletId,
-            resolver: resolver,
-            shieldedAddress: shieldedAddress
+            resolver: resolver
         )
         // Counted as the other native manager operations are, so a teardown
         // waits for this call to return before it frees the manager.
@@ -391,18 +385,15 @@ extension PlatformWalletManager {
             let resolverHandle = resolver.handle
             try withExtendedLifetime((resolver, signer, request)) {
                 try walletId.withFFIBytes { widPtr in
-                    try withOptionalBytes(shieldedAddress) { addressPtr, _ in
-                        try platform_wallet_manager_accept_private_contact_request(
-                            handle,
-                            widPtr,
-                            resolverHandle,
-                            account,
-                            requestHandle,
-                            addressPtr,
-                            signerHandle,
-                            &outHandle
-                        ).check()
-                    }
+                    try platform_wallet_manager_accept_private_contact_request(
+                        handle,
+                        widPtr,
+                        resolverHandle,
+                        account,
+                        requestHandle,
+                        signerHandle,
+                        &outHandle
+                    ).check()
                 }
             }
             return outHandle
@@ -415,9 +406,10 @@ extension PlatformWalletManager {
     /// reply exists yet; otherwise with a `contactRequest` document signed by
     /// `signer`, or by adopting the reply already sent. Which reply a request
     /// takes is the wallet's decision, so this is the accept a host calls.
-    /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
-    /// us at privately; a public reply ignores it. A public or adopted reply
-    /// needs neither shielded support nor a mnemonic read for the payment.
+    /// A private reply carries an Orchard address the contact may pay us at
+    /// privately, which the wallet derives for this contact alone. A public
+    /// or adopted reply needs neither shielded support nor a mnemonic read
+    /// for the payment.
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` (or
     /// `.transactionBroadcastUnconfirmed`) when a private reply may already be
     /// on chain, or `.privateContactRequestPending` when
@@ -431,13 +423,11 @@ extension PlatformWalletManager {
         resolver: MnemonicResolver,
         account: UInt32 = 0,
         request: ContactRequest,
-        shieldedAddress: Data? = nil,
         signer: KeychainSigner
     ) async throws -> EstablishedContact {
         let handle = try privateContactRequestManagerHandle(
             walletId: walletId,
-            resolver: resolver,
-            shieldedAddress: shieldedAddress
+            resolver: resolver
         )
         // Counted as the other native manager operations are, so a teardown
         // waits for this call to return before it frees the manager.
@@ -453,18 +443,15 @@ extension PlatformWalletManager {
             // FFI call, whose vtable callbacks fire during it.
             try withExtendedLifetime((resolver, signer, request)) {
                 try walletId.withFFIBytes { widPtr in
-                    try withOptionalBytes(shieldedAddress) { addressPtr, _ in
-                        try platform_wallet_manager_accept_contact_request_replying_in_kind(
-                            handle,
-                            widPtr,
-                            resolverHandle,
-                            account,
-                            requestHandle,
-                            addressPtr,
-                            signerHandle,
-                            &outHandle
-                        ).check()
-                    }
+                    try platform_wallet_manager_accept_contact_request_replying_in_kind(
+                        handle,
+                        widPtr,
+                        resolverHandle,
+                        account,
+                        requestHandle,
+                        signerHandle,
+                        &outHandle
+                    ).check()
                 }
             }
             return outHandle
@@ -474,23 +461,17 @@ extension PlatformWalletManager {
 
     /// The manager handle of a private contact request call, refused before
     /// any FFI call when the arguments cannot be passed: an unconfigured
-    /// manager, a wallet id that is not 32 bytes, a shielded address that is
-    /// not the 43 bytes Rust reads, or a resolver without a handle.
+    /// manager, a wallet id that is not 32 bytes, or a resolver without a
+    /// handle.
     private func privateContactRequestManagerHandle(
         walletId: Data,
-        resolver: MnemonicResolver,
-        shieldedAddress: Data?
+        resolver: MnemonicResolver
     ) throws -> Handle {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId must be exactly 32 bytes")
-        }
-        if let shieldedAddress, shieldedAddress.count != 43 {
-            throw PlatformWalletError.invalidParameter(
-                "shieldedAddress must be exactly 43 raw Orchard bytes"
-            )
         }
         guard resolver.handle != nil else {
             throw PlatformWalletError.invalidParameter("MnemonicResolver has no handle")
