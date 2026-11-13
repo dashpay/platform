@@ -166,18 +166,27 @@ struct DischargedPrivateEntries {
     journaled: BTreeMap<[u8; 32], (Identifier, Identifier)>,
 }
 
-/// Why the records stored for a wallet are not known to be durable
-/// ([`WalletPersister::flush_durably`]).
-#[cfg(feature = "shielded")]
-#[derive(Debug)]
+/// Why records stored for a wallet are not known to be durable
+/// ([`WalletPersister::store_durably`], [`WalletPersister::flush_durably`]).
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum NotDurable {
-    /// A flush of the wallet id's records failed for good since the handle
-    /// was made, the backend dropping what it buffered
-    /// ([`WalletPersister::buffered_writes_lost`]).
+    /// A flush of the wallet id's records failed for good, the backend
+    /// dropping what it buffered: since before the store, for a store made
+    /// durable, and since the handle was made otherwise
+    /// (`WalletPersister::buffered_writes_lost`).
+    #[error(
+        "a flush of the wallet's records failed for good, and the backend dropped what it \
+         had buffered"
+    )]
     Lost,
-    /// The flush this call made failed.
-    Flush(PersistenceError),
+    /// The store or the flush this call made failed.
+    #[error("{0}")]
+    Backend(PersistenceError),
     /// Another flush is in progress, and its outcome is not recorded yet.
+    #[error(
+        "another flush of the wallet's records is in progress, and its outcome is not known \
+         yet"
+    )]
     OtherFlushInFlight,
 }
 
@@ -339,7 +348,7 @@ impl WalletPersister {
         }
         match self.flush_durably() {
             Ok(()) => self.note_read_back_private_entries(pending),
-            Err(NotDurable::Flush(error)) if error.is_transient() => {
+            Err(NotDurable::Backend(error)) if error.is_transient() => {
                 tracing::warn!(
                     %error,
                     kept = pending.len(),
@@ -358,7 +367,7 @@ impl WalletPersister {
                 );
                 self.unflushed_read_back_entries().extend(pending);
             }
-            Err(NotDurable::Flush(error)) => {
+            Err(NotDurable::Backend(error)) => {
                 // Any other failure dropped the buffer, the records these
                 // notices rest on with it: the notices go, so their journal
                 // records, and the pairs they hold, stay. Their read is not
@@ -604,6 +613,42 @@ impl WalletPersister {
         self.flush_ledger.flush(self.inner.as_ref(), self.wallet_id)
     }
 
+    /// Store `changeset` and answer `Ok` only once it is durable: at once for
+    /// a backend that commits a store inline, and otherwise after a flush
+    /// that succeeds with, after it, no flush of the wallet id's records in
+    /// progress and none failed for good since before the store
+    /// ([`FlushLedger`]), read in that order.
+    ///
+    /// The flush succeeding proves nothing by itself: another flush may take
+    /// what the store buffered and fail for good, dropping it, and the one
+    /// here then succeeds over a buffer that no longer holds it. That other
+    /// flush began before this one returned, and it records its failure only
+    /// after the backend returns: so after this flush it shows either as a
+    /// flush in progress, or as one more that failed for good than there
+    /// were before the store.
+    ///
+    /// It answers for `changeset` alone, which [`Self::flush_durably`] does
+    /// not: a flush that failed for good before the store dropped nothing of
+    /// it, and does not refuse it.
+    pub(crate) fn store_durably(
+        &self,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), NotDurable> {
+        let lost_before = self.flush_ledger.lost();
+        self.store(changeset).map_err(NotDurable::Backend)?;
+        if self.store_commits_inline() {
+            return Ok(());
+        }
+        self.flush().map_err(NotDurable::Backend)?;
+        if self.flush_ledger.in_flight() != 0 {
+            return Err(NotDurable::OtherFlushInFlight);
+        }
+        if self.flush_ledger.lost() != lost_before {
+            return Err(NotDurable::Lost);
+        }
+        Ok(())
+    }
+
     /// Make every record stored for this wallet before the call durable, and
     /// answer `Ok` only once it is: at once for a backend that commits
     /// inline, after a flush that succeeds otherwise, and never once a flush
@@ -633,7 +678,7 @@ impl WalletPersister {
             return Err(NotDurable::Lost);
         }
         if !self.store_commits_inline() {
-            self.flush().map_err(NotDurable::Flush)?;
+            self.flush().map_err(NotDurable::Backend)?;
             if self.flush_ledger.in_flight() != 0 {
                 return Err(NotDurable::OtherFlushInFlight);
             }
@@ -806,9 +851,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "shielded")]
     use crate::changeset::PersistenceErrorKind;
-    #[cfg(feature = "shielded")]
     use std::sync::{mpsc, OnceLock};
-    #[cfg(feature = "shielded")]
     use std::time::Duration;
 
     /// `persists_durably` is a fail-closed security capability: an
@@ -836,6 +879,159 @@ mod tests {
         }
         assert!(!BareMinimum.persists_durably());
         assert!(!NoPlatformPersistence.persists_durably());
+    }
+
+    /// A store is not answered for on the strength of a flush that succeeded
+    /// after another took what the store buffered and failed for good,
+    /// whether that one ran between the store and its flush or during the
+    /// flush: the record never reached disk. A later store is answered for,
+    /// as the flush that failed dropped nothing of it.
+    #[test]
+    fn should_not_answer_for_a_store_another_flush_dropped() {
+        /// Buffers what is stored, and is overtaken once: a flush through the
+        /// same persister, as one from another thread, takes the buffer and
+        /// fails for good, right after the first store buffers
+        /// (`in_store`) or as the first flush begins.
+        struct Overtaken {
+            persister: OnceLock<WalletPersister>,
+            in_store: bool,
+            overtaken: AtomicBool,
+            fails_for_good: AtomicBool,
+            buffered: AtomicU64,
+            durable: AtomicU64,
+        }
+        impl Overtaken {
+            fn overtake(&self) {
+                if self.overtaken.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                self.fails_for_good.store(true, Ordering::SeqCst);
+                let overtaking = self.persister.get().expect("set").flush();
+                self.fails_for_good.store(false, Ordering::SeqCst);
+                assert!(overtaking.is_err_and(|error| !error.is_transient()));
+            }
+        }
+        impl PlatformWalletPersistence for Overtaken {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.buffered.fetch_add(1, Ordering::SeqCst);
+                if self.in_store {
+                    self.overtake();
+                }
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.fails_for_good.load(Ordering::SeqCst) {
+                    self.buffered.store(0, Ordering::SeqCst);
+                    return Err(PersistenceError::backend("the database is corrupt"));
+                }
+                self.overtake();
+                self.durable
+                    .fetch_add(self.buffered.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        for in_store in [true, false] {
+            let backend = Arc::new(Overtaken {
+                persister: OnceLock::new(),
+                in_store,
+                overtaken: AtomicBool::new(false),
+                fails_for_good: AtomicBool::new(false),
+                buffered: AtomicU64::new(0),
+                durable: AtomicU64::new(0),
+            });
+            let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+            let _ = backend.persister.set(persister.clone());
+
+            let stored = persister.store_durably(PlatformWalletChangeSet::default());
+            assert!(
+                matches!(stored, Err(NotDurable::Lost)),
+                "overtaken in its store: {in_store}, {stored:?}"
+            );
+            assert_eq!(backend.durable.load(Ordering::SeqCst), 0, "never on disk");
+
+            let later = persister.store_durably(PlatformWalletChangeSet::default());
+            assert!(
+                later.is_ok(),
+                "overtaken in its store: {in_store}, {later:?}"
+            );
+            assert_eq!(backend.durable.load(Ordering::SeqCst), 1, "on disk");
+        }
+    }
+
+    /// A store is not answered for while another flush of the wallet's
+    /// records is still inside the backend: that one may have taken what the
+    /// store buffered, and its failure is recorded only once it returns.
+    #[test]
+    fn should_not_answer_for_a_store_while_another_flush_has_not_returned() {
+        struct Stalled {
+            flushes: AtomicU64,
+            entered: std::sync::Mutex<mpsc::Sender<()>>,
+            release: std::sync::Mutex<mpsc::Receiver<()>>,
+        }
+        impl PlatformWalletPersistence for Stalled {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.flushes.fetch_add(1, Ordering::SeqCst) != 0 {
+                    return Ok(());
+                }
+                // The first flush has not returned yet.
+                self.entered
+                    .lock()
+                    .expect("entered")
+                    .send(())
+                    .expect("the test waits");
+                self.release
+                    .lock()
+                    .expect("release")
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("released");
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let (entered, has_entered) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let backend = Arc::new(Stalled {
+            flushes: AtomicU64::new(0),
+            entered: std::sync::Mutex::new(entered),
+            release: std::sync::Mutex::new(released),
+        });
+        let persister = WalletPersister::new([0; 32], backend as _);
+        let stalled = {
+            let persister = persister.clone();
+            std::thread::spawn(move || persister.flush())
+        };
+        has_entered
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the first flush is inside the backend");
+
+        let meanwhile = persister.store_durably(PlatformWalletChangeSet::default());
+        release.send(()).expect("the first flush waits");
+        assert!(stalled.join().expect("the first flush returns").is_ok());
+
+        assert!(
+            matches!(meanwhile, Err(NotDurable::OtherFlushInFlight)),
+            "{meanwhile:?}"
+        );
+        let after = persister.store_durably(PlatformWalletChangeSet::default());
+        assert!(after.is_ok(), "{after:?}");
     }
 
     /// The host's flush runs with no lock of the persister held: a flush that

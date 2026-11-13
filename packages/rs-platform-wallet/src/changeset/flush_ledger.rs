@@ -62,13 +62,11 @@ impl FlushLedger {
     }
 
     /// How many flushes are in progress.
-    #[cfg(feature = "shielded")]
     pub(crate) fn in_flight(&self) -> usize {
         self.in_flight.load(Ordering::SeqCst)
     }
 
     /// How many flushes failed for good so far.
-    #[cfg(feature = "shielded")]
     pub(crate) fn lost(&self) -> u64 {
         self.lost.load(Ordering::SeqCst)
     }

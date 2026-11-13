@@ -71,7 +71,7 @@ use super::contact_requests::{
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::{ContactChangeSet, PersistenceError, PrivateContactRequestsPosition};
+use crate::changeset::{ContactChangeSet, PrivateContactRequestsPosition};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
@@ -1364,12 +1364,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Store `owner`'s position record, marking it as holding a private payment
-    /// that may be unresolved, durably, before anything is paid: flushed when
-    /// the backend does not commit a store inline. A backend that does not
-    /// keep the marker refuses the payment
+    /// that may be unresolved, durably, before anything is paid
+    /// (`WalletPersister::store_durably`): flushed when the backend does not
+    /// commit a store inline, and trusted only when no other flush of the
+    /// wallet's records can have dropped it. A backend that does not keep the
+    /// marker refuses the payment
     /// ([`PlatformWalletError::PrivateContactRecoveryUnsupported`]), and a
-    /// failed store or flush refuses it too, with nothing paid: a payment a
-    /// restart could not see would leave the pair unheld.
+    /// store that is not known to be durable refuses it too, with nothing
+    /// paid: a payment a restart could not see would leave the pair unheld.
     ///
     /// Clearing the marker once the payment resolves is not flushed: a clear
     /// that is lost only holds the identity after a restart until a
@@ -1401,18 +1403,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         changeset
             .private_contact_requests_positions
             .insert(*owner, marker);
-        let not_kept = |error: PersistenceError| {
-            PlatformWalletError::Persistence(format!(
-                "the private contact request's unresolved payment was not stored durably, so it \
-                 is not paid for: {error}"
-            ))
-        };
-        // Not known to be stored until both succeed.
+        // Not known to be stored until it is durable.
         self.persister.note_private_marker_stored(*owner, None);
-        self.persister.store(changeset.into()).map_err(not_kept)?;
-        if !self.persister.store_commits_inline() {
-            self.persister.flush().map_err(not_kept)?;
-        }
+        self.persister
+            .store_durably(changeset.into())
+            .map_err(|error| {
+                PlatformWalletError::Persistence(format!(
+                    "the private contact request's unresolved payment was not stored durably, so \
+                     it is not paid for: {error}"
+                ))
+            })?;
         self.persister
             .note_private_marker_stored(*owner, Some(marker.private_payments_unresolved));
         drop(wm);
@@ -4871,6 +4871,59 @@ mod tests {
                 Err(PlatformWalletError::PrivateContactRecoveryUnsupported)
             ),
             "{refused:?}"
+        );
+        assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
+    }
+
+    /// A private payment is refused, with nothing paid, when another flush of
+    /// the wallet's records fails for good while the marker's own flush runs:
+    /// that one dropped the buffered marker, so the flush that then succeeded
+    /// proves nothing, and a restart would not hold the pair.
+    #[tokio::test]
+    async fn should_not_pay_for_a_private_request_whose_marker_another_flush_dropped() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let (_manager, alice_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        *persistence.overtaken_by.lock().expect("overtaken") =
+            Some(alice_wallet.persister().clone());
+        let refused = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+                if message.contains("not stored durably")),
+            "{refused:?}"
+        );
+        assert!(
+            persistence
+                .overtaken_by
+                .lock()
+                .expect("overtaken")
+                .is_none(),
+            "a flush was overtaken"
         );
         assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
     }
