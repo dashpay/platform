@@ -7,6 +7,7 @@ use crate::version::system_limits::SystemLimits;
 /// and mirrored by document validation. The rule cannot activate in v12 because v12 is already
 /// live on networks without it.
 pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
@@ -25,6 +26,9 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,
+    max_document_type_requirement_slots: 4,
+    max_document_type_requirement_condition_nodes: 16,
+    max_document_type_requirement_condition_text_length: 256,
     max_property_constraints: 16,
     max_property_constraint_nodes: 32,
     max_property_constraint_aggregates: 4,

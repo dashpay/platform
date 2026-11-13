@@ -1237,6 +1237,105 @@ mod tests {
         }
     }
 
+    /// The JSON-RPC requests `DefaultCoreRPC` sends for a chain lock.
+    mod chain_lock_requests {
+        use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+        use dpp::dashcore::{BlockHash, ChainLock};
+        use dpp::dashcore_rpc::jsonrpc::{self, Request, Response, Transport};
+        use dpp::dashcore_rpc::Client;
+        use serde_json::value::RawValue;
+        use serde_json::{json, Value};
+        use std::fmt;
+        use std::str::FromStr;
+        use std::sync::{Arc, Mutex};
+
+        /// A Core JSON-RPC transport that records every request and answers each with `answer`.
+        struct RecordingTransport {
+            requests: Arc<Mutex<Vec<Value>>>,
+            answer: Value,
+        }
+
+        impl Transport for RecordingTransport {
+            fn send_request(&self, request: Request) -> Result<Response, jsonrpc::Error> {
+                self.requests
+                    .lock()
+                    .expect("requests lock")
+                    .push(serde_json::to_value(&request).expect("request is JSON"));
+                Ok(Response {
+                    result: Some(
+                        RawValue::from_string(self.answer.to_string()).expect("answer is JSON"),
+                    ),
+                    error: None,
+                    id: request.id,
+                    jsonrpc: request.jsonrpc.map(str::to_string),
+                })
+            }
+
+            fn send_batch(&self, _: &[Request]) -> Result<Vec<Response>, jsonrpc::Error> {
+                Err(jsonrpc::Error::EmptyBatch)
+            }
+
+            fn fmt_target(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "recording transport")
+            }
+        }
+
+        /// A `DefaultCoreRPC` whose Core answers every request with `answer`, and the requests it
+        /// sends.
+        fn recording_core_rpc(answer: Value) -> (DefaultCoreRPC, Arc<Mutex<Vec<Value>>>) {
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let transport = RecordingTransport {
+                requests: Arc::clone(&requests),
+                answer,
+            };
+            let core_rpc = DefaultCoreRPC {
+                inner: Client::from_jsonrpc(jsonrpc::Client::with_transport(transport)),
+                prefetcher: None,
+            };
+            (core_rpc, requests)
+        }
+
+        /// Core checks a chain lock's signature against the block hash it is given, so a block
+        /// hash sent in the wrong byte order fails every genuine chain lock Platform leaves to
+        /// Core, and every validator would reject such a proposal. `verifychainlock` takes the
+        /// block hash as Core displays it, the signature as hex and the height.
+        #[test]
+        fn should_ask_core_to_verify_a_mainnet_chain_lock_by_its_displayed_block_hash() {
+            // Mainnet chain lock 2555653, as Dash Core's `getbestchainlock` prints it.
+            let block_hash = "0000000000000001a26bc13523d40ae79f5680207c0d8486c4939ce2ef01c6c8";
+            let signature = "83fae388eb55f8e8d9fd89623b5018a1294550f6032b96d5c89de71bf7d567d19cced4023eefcbf9898d77744a2c90860614854ae35d32c0d9268ef06c4859effaf3b9e5f132af58aae0f760cd94ab8b987a6663f01f660d61dbe2ea0856b197";
+            let chain_lock = ChainLock {
+                block_height: 2555653,
+                block_hash: BlockHash::from_str(block_hash).expect("block hash"),
+                signature: <[u8; 96]>::try_from(hex::decode(signature).expect("hex"))
+                    .expect("96 bytes")
+                    .into(),
+            };
+
+            for answer in [true, false] {
+                let (core_rpc, requests) = recording_core_rpc(json!(answer));
+
+                assert_eq!(
+                    core_rpc
+                        .verify_chain_lock(&chain_lock)
+                        .expect("Core answers"),
+                    answer
+                );
+
+                let requests = requests.lock().expect("requests lock");
+                let [request] = requests.as_slice() else {
+                    panic!("expected one request, got {requests:?}");
+                };
+                assert_eq!(request["method"], "verifychainlock");
+                assert_eq!(
+                    request["params"],
+                    json!([block_hash, signature, 2555653]),
+                    "the block hash as Core displays it, the signature as hex, and the height"
+                );
+            }
+        }
+    }
+
     /// A `protx info` answer as Dash Core prints it, for MN_L2 of the legacy operator key
     /// recording, with an operator reward that is not a whole percentage.
     fn protx_info_answer(pro_tx_hash: &str) -> serde_json::Value {

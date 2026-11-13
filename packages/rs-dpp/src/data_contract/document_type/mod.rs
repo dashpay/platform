@@ -68,6 +68,7 @@ pub(crate) mod property_names {
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    pub const CAN_BE_ERASED: &str = "canBeErased";
     /// The `canBeDeleted` value saying a document leaves state only when a
     /// `refersTo` with `consume` deletes it, never by its owner's delete.
     /// Meta-schema v3+ (protocol version 14).
@@ -172,6 +173,10 @@ pub(crate) mod property_names {
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
+    /// What the document type a dynamic reference names must look like: named slots, each
+    /// describing a property it must have, and which of them must be filled (protocol
+    /// version 15).
+    pub const DOCUMENT_TYPE_REQUIREMENTS: &str = "documentTypeRequirements";
     /// `identityPublicKey` reference on the key id property itself: whose key
     /// the value names (`"$ownerId"`, the writer). Takes the place of
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.

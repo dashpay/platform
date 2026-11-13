@@ -337,6 +337,18 @@ pub struct PlatformWalletInfo {
     /// runs under the manager's read lock; a poisoned mutex degrades to
     /// "no memory" rather than failing a resume.
     pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
+    /// Outpoints of this wallet's coins that a ChainLocked transaction
+    /// spent, kept for the records the ChainLock dropped. With
+    /// `keep-finalized-transactions` off (the default) key-wallet drops a
+    /// record once a ChainLock covers it and keeps only its txid, so the
+    /// spender's inputs are gone with it; this is what is left of them, for
+    /// the store reconcile's spend verdicts
+    /// ([`classify_outpoints`](crate::manager::accessors::classify_outpoints)).
+    /// A ChainLocked spend is final: no fork the engine follows drops it.
+    /// In memory only, like key-wallet's own finalized txids: after a
+    /// restart neither the spender nor the funding is known, and the
+    /// verdict is `Unknown`.
+    pub finalized_spends: std::collections::HashSet<OutPoint>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
@@ -1484,6 +1496,41 @@ impl PlatformWallet {
             .as_ref()
             .and_then(|keys| keys.get(&account))
             .map(|ks| ks.default_address.to_raw_address_bytes())
+    }
+
+    /// A fresh Orchard payment address for `account` at a random
+    /// diversifier index, as the raw 43-byte representation
+    /// ([`AccountViewingKeys::fresh_address`](super::shielded::AccountViewingKeys::fresh_address)).
+    /// `Ok(None)` if the shielded sub-wallet hasn't been bound or
+    /// `account` isn't bound on it. Writes no state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the OS CSPRNG fails.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_fresh_address(
+        &self,
+        account: u32,
+    ) -> Result<Option<[u8; 43]>, PlatformWalletError> {
+        let guard = self.shielded_keys.read().await;
+        let Some(views) = guard.as_ref().and_then(|keys| keys.get(&account)) else {
+            return Ok(None);
+        };
+        Ok(Some(views.fresh_address()?.to_raw_address_bytes()))
+    }
+
+    /// Whether the raw `recipient` bytes are one of `account`'s own
+    /// Orchard addresses, at any diversifier index — the same test the
+    /// scan classifies sends by. A malformed recipient is `Some(false)`.
+    /// `None` if the shielded sub-wallet hasn't been bound or `account`
+    /// isn't bound on it.
+    #[cfg(feature = "shielded")]
+    pub async fn is_own_shielded_address(&self, account: u32, recipient: &[u8]) -> Option<bool> {
+        let guard = self.shielded_keys.read().await;
+        guard
+            .as_ref()
+            .and_then(|keys| keys.get(&account))
+            .map(|views| views.is_own_recipient(recipient))
     }
 
     /// Per-account default Orchard payment addresses (raw 43 bytes).

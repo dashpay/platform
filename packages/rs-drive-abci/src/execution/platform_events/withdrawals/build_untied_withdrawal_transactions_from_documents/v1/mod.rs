@@ -33,9 +33,10 @@ where
     /// block's `transaction`: `update_core_info` records V24, earlier in the block, at init
     /// chain or in the first block that moves the chain locked height to one where V24 is
     /// active, and forks never switch off, so a recorded V24 is active at the chain locked
-    /// height of that block and every later one. Until V24 is recorded, which can be a few
-    /// blocks after Core activated it, withdrawals stay at version 1, which Core always
-    /// accepts. Core is not asked. A withdrawal whose whole amount is below Core's dust
+    /// height of that block and every later one. Until V24 is recorded, withdrawals stay at
+    /// version 1, which Core always accepts. The record is the chain locked height at which
+    /// Platform first observed V24 active, not Core's activation height, and it can trail that
+    /// height without bound. Core is not asked. A withdrawal whose whole amount is below Core's dust
     /// threshold stays at version 1 (see `withdrawal_amount_is_core_dust`).
     ///
     /// The version is decided here once and kept in the untied transaction bytes, which every

@@ -9,10 +9,14 @@ fn main() {
     println!("cargo:rerun-if-changed=cbindgen.toml");
     println!("cargo:rerun-if-changed=src/");
 
+    // `OUT_DIR` is `target/<profile>/build/<package>-<hash>/out` up to Cargo 1.99 and
+    // `target/<profile>/build/<package>/<hash>/out` from Cargo 1.100, so the profile
+    // directory is the parent of `build`, whatever lies between `build` and `out`.
     let target_dir = Path::new(&out_dir)
         .ancestors()
-        .nth(3) // This line moves up to the target/<PROFILE> directory
-        .expect("Failed to find target dir");
+        .find(|dir| dir.file_name().is_some_and(|name| name == "build"))
+        .and_then(Path::parent)
+        .expect("OUT_DIR lies under target/<profile>/build");
 
     let include_dir = target_dir.join("include").join(&crate_name);
 
