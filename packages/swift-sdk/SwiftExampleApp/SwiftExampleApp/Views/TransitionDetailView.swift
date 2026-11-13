@@ -1262,7 +1262,12 @@ struct TransitionDetailView: View {
       )
     }
     var result: [String: Any] = ["message": describeDocumentEraseOutcome(outcome)]
-    if let observation = outcome.after ?? outcome.before {
+    let observation: DocumentHistoryLifecycle?
+    switch outcome {
+    case .notSubmitted(_, let before): observation = before
+    case .submitted(_, let after): observation = after
+    }
+    if let observation {
       result["lifecycle"] = observation.state.rawValue
       result["remainingRevisions"] = observation.remainingRevisions
     }

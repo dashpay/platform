@@ -88,12 +88,13 @@ struct SDK {}
 @main struct Main {
     @MainActor static func main() async throws {
         let erasing = DocumentHistoryLifecycle(state: .erasing, remainingRevisions: 50)
+        let deleted = DocumentHistoryLifecycle(state: .deleted, remainingRevisions: 50)
         let outcomes: [DocumentEraseOutcome] = [
             .notSubmitted(reason: .active, before: nil),
             .notSubmitted(reason: .absent, before: nil),
             .notSubmitted(reason: .preflightUnavailable, before: nil),
             .notSubmitted(reason: .notNewestOwner(Data()), before: erasing),
-            .submitted(before: erasing, after: nil),
+            .submitted(before: deleted, after: nil),
             .submitted(before: erasing, after: .init(state: .absent, remainingRevisions: 0)),
         ]
         for outcome in outcomes {
@@ -103,12 +104,25 @@ struct SDK {}
             precondition(wallet.calls == 1, "host must call the single Rust operation")
             let message = result["message"] as! String
             switch outcome {
-            case .notSubmitted(let reason, _):
+            case .notSubmitted(let reason, let before):
                 precondition(message.hasPrefix("Erase not submitted"))
                 if case .absent = reason { precondition(!message.contains("Erasure complete")) }
+                if let before {
+                    precondition(result["lifecycle"] as? String == before.state.rawValue)
+                    precondition(result["remainingRevisions"] as? UInt64 == before.remainingRevisions)
+                } else {
+                    precondition(result["lifecycle"] == nil && result["remainingRevisions"] == nil)
+                }
             case .submitted(_, let after):
                 precondition(message.hasPrefix("Erase submitted"))
-                if after == nil { precondition(message.contains("Lifecycle not read")) }
+                if let after {
+                    precondition(result["lifecycle"] as? String == after.state.rawValue)
+                    precondition(result["remainingRevisions"] as? UInt64 == after.remainingRevisions)
+                } else {
+                    precondition(message.contains("Lifecycle not read"))
+                    precondition(result["lifecycle"] == nil && result["remainingRevisions"] == nil,
+                        "a submitted erase must not display its stale preflight lifecycle")
+                }
             }
         }
         let wallet = Wallet(outcomes[0])

@@ -873,7 +873,7 @@ func describeDocumentEraseOutcome(_ outcome: DocumentEraseOutcome) -> String {
         case .active: explanation = "The document is active."
         case .absent: explanation = "No retained revisions exist."
         case .notNewestOwner(let owner):
-            explanation = "The newest retained revision belongs to \(owner.toBase58String()). Select that identity."
+            explanation = "The newest retained revision belongs to \(owner.toBase58String()). Erase from that identity (Settings → Document Erase)."
         case .preflightUnavailable:
             explanation = "Lifecycle or ownership could not be read; read history before retrying."
         }
