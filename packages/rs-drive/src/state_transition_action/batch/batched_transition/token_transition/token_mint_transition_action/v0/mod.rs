@@ -1,6 +1,7 @@
 mod transformer;
 
 use std::sync::Arc;
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
@@ -10,12 +11,18 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 pub struct TokenMintTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
-    /// The amount of tokens to create
+    /// The amount of tokens to create: with `random_minimum_amount` set, the most it creates,
+    /// added to the total supply when the block executes it
     pub mint_amount: u64,
     /// The identity to credit the token to
     pub identity_balance_holder_id: Identifier,
     /// A public note
     pub public_note: Option<String>,
+    /// The least the mint issues when its amount is random (protocol version 15): the
+    /// recipient receives an amount drawn from this to `mint_amount` from the block's random
+    /// beacon, and the rest is taken off the total supply again
+    /// (`Drive::settle_random_token_amounts`)
+    pub random_minimum_amount: Option<TokenAmount>,
 }
 
 /// Accessors for `TokenIssuanceTransitionActionV0`
@@ -31,6 +38,10 @@ pub trait TokenMintTransitionActionAccessorsV0 {
 
     /// Sets the amount of tokens to issuance
     fn set_mint_amount(&mut self, amount: u64);
+
+    /// The least the mint issues when its amount is random, `None` for a mint of exactly
+    /// `mint_amount`
+    fn random_minimum_amount(&self) -> Option<TokenAmount>;
 
     /// Consumes self and returns the identity balance holder ID
     fn identity_balance_holder_id(&self) -> Identifier;
@@ -88,6 +99,10 @@ impl TokenMintTransitionActionAccessorsV0 for TokenMintTransitionActionV0 {
 
     fn set_mint_amount(&mut self, amount: u64) {
         self.mint_amount = amount;
+    }
+
+    fn random_minimum_amount(&self) -> Option<TokenAmount> {
+        self.random_minimum_amount
     }
 
     fn identity_balance_holder_id(&self) -> Identifier {
@@ -184,6 +199,7 @@ mod tests {
             mint_amount,
             identity_balance_holder_id: Identifier::new([51u8; 32]),
             public_note: Some("mint note".to_string()),
+            random_minimum_amount: None,
         }
     }
 
@@ -241,6 +257,7 @@ mod tests {
             mint_amount: 0,
             identity_balance_holder_id: Identifier::new([0u8; 32]),
             public_note: None,
+            random_minimum_amount: None,
         };
         assert!(action_none.public_note_owned().is_none());
     }

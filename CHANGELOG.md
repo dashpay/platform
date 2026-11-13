@@ -27,6 +27,26 @@
   version 15). This is a source change for Rust code whichever protocol version it runs: a
   `GeneratedFrom` literal sets `range: None` for every function but a random one, and an
   exhaustive match on `SystemFunction` needs a `Random` arm.
+- **dpp, drive, rs-sdk (Rust API):** random token transfer and mint amounts (protocol
+  version 15) change these items for Rust code whichever protocol version it runs:
+  - `TokenEvent::build_historical_document_owned` and
+    `Drive::add_token_transaction_history_operations` take a `random_range` argument before
+    `block_info`. Pass `None` for the history of a fixed amount, which keeps its document id.
+  - `TokenTransferTransition` and `TokenMintTransition` gain a `V1` variant
+    (`TokenTransferTransitionV1`, `TokenMintTransitionV1`); `TokenOperationType` gains
+    `TokenReserveRandomTransfer`, `TokenReserveRandomMint` and `TokenRandomAmountHistory`; and
+    `BasicError` gains `RandomTokenMintNotAllowedError`. An exhaustive match on any of them
+    needs the new arms.
+  - `StateTransitionCreationOptions`, the drive actions `TokenTransferTransitionActionV0` and
+    `TokenMintTransitionActionV0`, and the rs-sdk `TokenTransferTransitionBuilder` and
+    `TokenMintTransitionBuilder` gain a public `random_minimum_amount` field. A struct literal
+    sets it to `None` for a fixed amount, or ends with `..Default::default()` where the type
+    has a default.
+  - The traits `TokenTransferTransitionV0Methods`, `TokenMintTransitionV0Methods`,
+    `TokenTransferTransitionActionAccessorsV0` and `TokenMintTransitionActionAccessorsV0` gain
+    a required `random_minimum_amount` method, and `TokenTransitionV0Methods` a required
+    `random_amount_range` method. An implementation outside these crates returns `None` for a
+    fixed amount.
 
 - **swift-sdk:** `SDK(network:)` builds the adaptive context provider in Auto mode
   instead of the trusted one (`contextProvider` defaults to `.adaptive`). An SDK that no

@@ -782,4 +782,108 @@ describe('TokenTransitions', () => {
       });
     });
   });
+
+  describe('randomMinimumAmount', () => {
+    const amount = BigInt(500);
+    const cases = [
+      {
+        name: 'TokenTransferTransition',
+        create: (randomMinimumAmount?: bigint) => new wasm.TokenTransferTransition({
+          base: baseTransition,
+          recipientId: ownerId,
+          amount,
+          ...(randomMinimumAmount === undefined ? {} : { randomMinimumAmount }),
+        }),
+      },
+      {
+        name: 'TokenMintTransition',
+        create: (randomMinimumAmount?: bigint) => new wasm.TokenMintTransition({
+          base: baseTransition,
+          issuedToIdentityId: ownerId,
+          amount,
+          ...(randomMinimumAmount === undefined ? {} : { randomMinimumAmount }),
+        }),
+      },
+    ];
+
+    cases.forEach(({ name, create }) => {
+      describe(name, () => {
+        it('should be undefined for a fixed amount', () => {
+          expect(create().randomMinimumAmount).to.equal(undefined);
+        });
+
+        it('should return the minimum it was created with', () => {
+          expect(create(BigInt(10)).randomMinimumAmount).to.equal(BigInt(10));
+        });
+
+        it('should set the minimum and clear it with null or undefined', () => {
+          const transition = create();
+
+          transition.randomMinimumAmount = BigInt(10);
+          expect(transition.randomMinimumAmount).to.equal(BigInt(10));
+
+          transition.randomMinimumAmount = null;
+          expect(transition.randomMinimumAmount).to.equal(undefined);
+
+          transition.randomMinimumAmount = BigInt(20);
+          transition.randomMinimumAmount = undefined;
+          expect(transition.randomMinimumAmount).to.equal(undefined);
+        });
+
+        it('should keep a minimum above Number.MAX_SAFE_INTEGER exactly', () => {
+          const minimum = BigInt(Number.MAX_SAFE_INTEGER) + BigInt(2);
+          const transition = create();
+
+          transition.randomMinimumAmount = minimum;
+
+          expect(transition.randomMinimumAmount).to.equal(minimum);
+        });
+
+        it('should refuse a minimum outside u64 and keep the previous one', () => {
+          const transition = create(BigInt(10));
+
+          expect(() => {
+            transition.randomMinimumAmount = BigInt(2) ** BigInt(64);
+          }).to.throw();
+          expect(() => {
+            transition.randomMinimumAmount = BigInt(-1);
+          }).to.throw();
+
+          expect(transition.randomMinimumAmount).to.equal(BigInt(10));
+        });
+
+        it('should keep the minimum and the amount through BatchTransition bytes', () => {
+          const batchOf = (transition: ReturnType<typeof create>) => wasm.BatchTransition
+            .fromBatchedTransitions(
+              [new wasm.BatchedTransition(new wasm.TokenTransition(transition))],
+              ownerId,
+              1,
+            );
+          const restore = (transition: ReturnType<typeof create>) => {
+            const tokenTransition = wasm.BatchTransition
+              .fromBytes(batchOf(transition).toBytes())
+              .transitions[0].toTransition();
+            if (!(tokenTransition instanceof wasm.TokenTransition)) {
+              throw new Error('expected a token transition');
+            }
+            const restored = tokenTransition.transition;
+            if (!(restored instanceof wasm.TokenTransferTransition)
+              && !(restored instanceof wasm.TokenMintTransition)) {
+              throw new Error('expected a token transfer or mint');
+            }
+            expect(restored.constructor.name).to.equal(name);
+            return restored;
+          };
+
+          const random = restore(create(BigInt(10)));
+          expect(random.randomMinimumAmount).to.equal(BigInt(10));
+          expect(random.amount).to.equal(amount);
+
+          const fixed = restore(create());
+          expect(fixed.randomMinimumAmount).to.equal(undefined);
+          expect(fixed.amount).to.equal(amount);
+        });
+      });
+    });
+  });
 });

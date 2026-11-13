@@ -23,7 +23,9 @@ use platform_version::version::feature_initial_protocol_versions::{
     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION,
 };
-use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
+use platform_version::version::{
+    PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION, PLATFORM_VERSIONS,
+};
 
 #[cfg(any(
     feature = "state-transition-signing",
@@ -102,7 +104,9 @@ use crate::state_transition::batch_transition::batched_transition::document_tran
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
-use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
+use crate::state_transition::batch_transition::{
+    BatchTransition, BatchTransitionSignable, TokenMintTransition, TokenTransferTransition,
+};
 use crate::state_transition::contract_fee_claim_transition::{
     ContractFeeClaimTransition, ContractFeeClaimTransitionSignable,
 };
@@ -1159,6 +1163,45 @@ fn batch_carries_a_version_2_document_base(batch_transition: &BatchTransition) -
         })
 }
 
+/// Whether `batch_transition` carries a token transfer or a token mint of format version 1, the
+/// format that can move a random amount.
+fn batch_carries_a_version_1_token_transfer_or_mint(batch_transition: &BatchTransition) -> bool {
+    batch_transition
+        .transitions_iter()
+        .any(|transition| match transition {
+            BatchedTransitionRef::Token(TokenTransition::Transfer(transfer)) => {
+                matches!(transfer, TokenTransferTransition::V1(_))
+            }
+            BatchedTransitionRef::Token(TokenTransition::Mint(mint)) => {
+                matches!(mint, TokenMintTransition::V1(_))
+            }
+            BatchedTransitionRef::Token(_) | BatchedTransitionRef::Document(_) => false,
+        })
+}
+
+/// The active range of a batch carrying a token transfer or a token mint of format version 1
+/// (a random amount), among `versions`, the protocol versions in order: from the first whose
+/// table admits a random token amount (`random_token_amount` is `Some`), and `NO_VERSION` while
+/// none does. The tables decide it, so the release that settles the amounts activates them by
+/// setting the slot in its table alone. Every table of protocol version 14 and earlier keeps it
+/// `None` (no binary of theirs decodes the format), so the start is never below 15.
+fn random_token_amount_active_version_range(
+    versions: &[PlatformVersion],
+) -> RangeInclusive<ProtocolVersion> {
+    versions
+        .iter()
+        .find(|platform_version| {
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .random_token_amount
+                .is_some()
+        })
+        .map_or(NO_VERSION, |platform_version| {
+            platform_version.protocol_version..=LATEST_VERSION
+        })
+}
+
 impl StateTransition {
     /// Decodes a transition from bytes that arrived from outside this node and refuses one
     /// whose version is not active at `platform_version`. Bytes left over after the transition
@@ -1248,6 +1291,16 @@ impl StateTransition {
                 active_version_range_for_contract(data_contract_update_transition.data_contract())
             }
             StateTransition::Batch(batch_transition) => {
+                // Version 1 of the token transfer and of the token mint (a random amount) is
+                // active from the first protocol version whose table admits a random token
+                // amount, and nowhere while none does: block execution does not settle the
+                // amounts yet, so a reservation would never be paid out. Binaries from before 15
+                // cannot decode one, so an earlier version rejects the batch without charging,
+                // exactly as they do. Checked first: the range starts at 15 at the earliest, the
+                // later start, so it holds whatever else the batch carries.
+                if batch_carries_a_version_1_token_transfer_or_mint(batch_transition) {
+                    return random_token_amount_active_version_range(PLATFORM_VERSIONS);
+                }
                 // Version 2 of the document base (the action fee agreement) exists from
                 // protocol version 14. Binaries from before it cannot decode one, so an
                 // earlier version rejects the batch without charging, exactly as they do.
@@ -3647,6 +3700,137 @@ mod tests {
         )
         .expect("expected protocol version 14 to decode a version 2 base");
         assert_eq!(recovered, version_2);
+    }
+
+    // Version 1 of the token transfer and of the token mint carries a random amount, which no
+    // table admits yet: block execution does not settle the amounts, so a reservation would
+    // never be paid out. New software must refuse the batch at every protocol version, 15
+    // included, though the format decodes; version 0 stays active everywhere its batch is.
+    #[test]
+    fn should_not_activate_a_version_1_token_transfer_or_mint_while_no_table_admits_it() {
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+        use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+        use crate::state_transition::batch_transition::token_mint_transition::{
+            TokenMintTransitionV0, TokenMintTransitionV1,
+        };
+        use crate::state_transition::batch_transition::token_transfer_transition::{
+            TokenTransferTransitionV0, TokenTransferTransitionV1,
+        };
+        use crate::state_transition::batch_transition::BatchTransitionV1;
+
+        let base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: Identifier::from([1u8; 32]),
+            token_id: Identifier::from([2u8; 32]),
+            using_group_info: None,
+        });
+        let batch = |token_transition: TokenTransition| {
+            StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Identifier::from([9u8; 32]),
+                transitions: vec![BatchedTransition::Token(token_transition)],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::new(vec![0u8; 65]),
+            }))
+        };
+        let transfer_v0 = TokenTransferTransitionV0 {
+            base: base.clone(),
+            amount: 100,
+            recipient_id: Identifier::from([3u8; 32]),
+            public_note: None,
+            shared_encrypted_note: None,
+            private_encrypted_note: None,
+        };
+        let mint_v0 = TokenMintTransitionV0 {
+            base,
+            issued_to_identity_id: Some(Identifier::from([3u8; 32])),
+            amount: 100,
+            public_note: None,
+        };
+
+        assert_eq!(
+            batch(TokenTransition::Transfer(TokenTransferTransition::V0(
+                transfer_v0.clone()
+            )))
+            .active_version_range(),
+            9..=LATEST_VERSION
+        );
+        assert_eq!(
+            batch(TokenTransition::Mint(TokenMintTransition::V0(
+                mint_v0.clone()
+            )))
+            .active_version_range(),
+            9..=LATEST_VERSION
+        );
+
+        let random_transfer = batch(TokenTransition::Transfer(TokenTransferTransition::V1(
+            TokenTransferTransitionV1::from_v0(transfer_v0, Some(10)),
+        )));
+        let random_mint = batch(TokenTransition::Mint(TokenMintTransition::V1(
+            TokenMintTransitionV1::from_v0(mint_v0, Some(10)),
+        )));
+        for random in [random_transfer, random_mint] {
+            assert_eq!(random.active_version_range(), NO_VERSION);
+            let bytes =
+                PlatformSerializable::serialize_to_bytes(&random).expect("serialize succeeds");
+            for platform_version in PLATFORM_VERSIONS {
+                assert!(
+                    matches!(
+                        StateTransition::deserialize_from_bytes_untrusted_in_version(
+                            &bytes,
+                            platform_version
+                        ),
+                        Err(ProtocolError::StateTransitionError(
+                            StateTransitionIsNotActiveError { .. }
+                        ))
+                    ),
+                    "expected protocol version {} to refuse a random token amount",
+                    platform_version.protocol_version
+                );
+            }
+            // The format itself decodes: only the gate refuses it
+            let recovered = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+                .expect("expected a version 1 token transition to decode");
+            assert_eq!(recovered, random);
+        }
+    }
+
+    // The release that settles random token amounts activates them by setting
+    // `random_token_amount` in its table: the active range starts at the first protocol version
+    // whose table has it, and is empty while none has it.
+    #[test]
+    fn should_activate_random_token_amounts_from_the_first_table_admitting_them() {
+        // No table admits it yet
+        assert_eq!(
+            random_token_amount_active_version_range(PLATFORM_VERSIONS),
+            NO_VERSION
+        );
+        // No binary of protocol version 14 or earlier decodes the format, so none of their
+        // tables may ever admit it
+        assert!(PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| platform_version.protocol_version < 15)
+            .all(|platform_version| platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .random_token_amount
+                .is_none()));
+
+        let mut versions = PLATFORM_VERSIONS.to_vec();
+        let version_15 = versions
+            .iter_mut()
+            .find(|platform_version| platform_version.protocol_version == 15)
+            .expect("platform version 15 exists");
+        version_15
+            .dpp
+            .state_transition_serialization_versions
+            .random_token_amount = Some(0);
+        let active = random_token_amount_active_version_range(&versions);
+        assert_eq!(active, 15..=LATEST_VERSION);
+        assert!(!active.contains(&14));
     }
 
     fn sample_format_1_batch_st_with_erase() -> StateTransition {

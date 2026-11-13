@@ -81,25 +81,68 @@ impl DriveHighLevelBatchOperationConverter for TokenMintTransitionAction {
                 }
 
                 if self.base().perform_action() {
-                    ops.push(TokenOperation(TokenOperationType::TokenMint {
-                        token_id: self.token_id(),
-                        identity_balance_holder_id: self.identity_balance_holder_id(),
-                        mint_amount: self.mint_amount(),
-                        allow_first_mint: false,
-                        allow_saturation: false,
-                    }));
+                    // A random mint (protocol version 15) adds the most it issues to the total
+                    // supply, holds it in a reservation and pays the recipient once the block's
+                    // random beacon is known (`Drive::settle_random_token_amounts`), and its
+                    // history holds the range's minimum until then. Only a version 1 mint carries a random minimum
+                    // amount, and no protocol version before 15 decodes one
+                    // (`StateTransition::active_version_range`), so every earlier version that
+                    // selects this generation takes the other branch, as it always did.
+                    let history_amount = match self.random_minimum_amount() {
+                        Some(minimum) => {
+                            ops.push(TokenOperation(TokenOperationType::TokenReserveRandomMint {
+                                token_id: self.token_id(),
+                                owner_id,
+                                recipient_id: self.identity_balance_holder_id(),
+                                identity_contract_nonce,
+                                minimum,
+                                maximum: self.mint_amount(),
+                                allow_first_mint: false,
+                            }));
+                            minimum
+                        }
+                        None => {
+                            ops.push(TokenOperation(TokenOperationType::TokenMint {
+                                token_id: self.token_id(),
+                                identity_balance_holder_id: self.identity_balance_holder_id(),
+                                mint_amount: self.mint_amount(),
+                                allow_first_mint: false,
+                                allow_saturation: false,
+                            }));
+                            self.mint_amount()
+                        }
+                    };
 
                     let token_configuration = self.base().token_configuration()?;
                     if token_configuration.keeps_history().keeps_minting_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::Mint(
-                                self.mint_amount(),
-                                self.identity_balance_holder_id(),
-                                self.public_note_owned(),
-                            ),
+                        let token_id = self.token_id();
+                        let random_range = self
+                            .random_minimum_amount()
+                            .map(|minimum| (minimum, self.mint_amount()));
+                        let event = TokenEvent::Mint(
+                            history_amount,
+                            self.identity_balance_holder_id(),
+                            self.public_note_owned(),
+                        );
+                        // A random mint's history document id also hashes its range, so a
+                        // proof of the document binds the range the amount was drawn from
+                        ops.push(TokenOperation(match random_range {
+                            Some((minimum, maximum)) => {
+                                TokenOperationType::TokenRandomAmountHistory {
+                                    token_id,
+                                    owner_id,
+                                    nonce: identity_contract_nonce,
+                                    event,
+                                    minimum,
+                                    maximum,
+                                }
+                            }
+                            None => TokenOperationType::TokenHistory {
+                                token_id,
+                                owner_id,
+                                nonce: identity_contract_nonce,
+                                event,
+                            },
                         }));
                     }
                 }

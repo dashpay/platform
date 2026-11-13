@@ -222,6 +222,14 @@ pub struct SystemLimits {
     ///   internal error. Raising the cap still requires delta-based pool balance writes and a
     ///   review of the other balance, nonce, counter and group dependencies above.
     ///
+    /// * A random token transfer or mint (protocol version 15) reserves its maximum in the
+    ///   token's escrow, creating the token's escrow tree when the state before the batch holds
+    ///   none. Two reservations of one token in a batch would each queue that creation, which
+    ///   GroveDB's consistency check refuses, so `refuse_repeated_token_balance_writes` refuses
+    ///   such a batch as an internal error. Raising the cap needs the reservations built against
+    ///   the batch's earlier operations (`add_to_token_order_escrow_operations` takes them) in
+    ///   place of that refusal.
+    ///
     /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
     ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.
     ///   It refuses nobody who could have paid only because a bundle-carrying sub-transition's

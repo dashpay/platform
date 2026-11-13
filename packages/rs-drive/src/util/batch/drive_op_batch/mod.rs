@@ -576,21 +576,25 @@ impl DriveOperation<'_> {
     }
 
     /// Refuses a batch whose token operations write one identity's balance of a token, one
-    /// token's total supply, or the total one token's shielded pool holds, more than once.
+    /// token's total supply, or the total one token's shielded pool holds, more than once, or
+    /// reserve two random amounts of one token.
     ///
     /// These writes compute the new value from the one committed before the batch too, but a
     /// transfer writes two balances, a mint or a burn a balance and the supply, and a shield
     /// or an unshield a balance and the pool total, so they cannot be merged into operations
-    /// of their own kinds. No state transition makes two of them on one key: a batch carries
-    /// one transition, and each writes a key at most once. A batch that did would lose all but
-    /// the last write, so it is refused instead.
+    /// of their own kinds. A random reservation (protocol version 15) creates its token's
+    /// escrow tree when the state before the batch holds none, so a second one of the token
+    /// would queue the tree's creation again, which GroveDB's consistency check refuses. No
+    /// state transition makes two of them on one key: a batch carries one transition, and each
+    /// writes a key at most once. A batch that did would lose all but the last write, or fail
+    /// as it applies, so it is refused instead.
     pub fn refuse_repeated_token_balance_writes(operations: &[Self]) -> Result<(), Error> {
         let mut written = BTreeSet::new();
         for key in operations.iter().flat_map(token_balance_writes) {
             if !written.insert(key) {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "a batch writes one token balance, token supply or token shielded pool \
-                     total more than once",
+                     total more than once, or reserves two random amounts of one token",
                 )));
             }
         }
@@ -608,12 +612,14 @@ enum BalanceKey {
 }
 
 /// A key a token operation writes: an identity's balance of a token, a token's total supply,
-/// or the total a token's shielded pool holds
+/// the total a token's shielded pool holds, or the escrow tree of a token, which a random
+/// reservation creates when the state before the batch holds none
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum TokenBalanceKey {
     Holder(Identifier, Identifier),
     Supply(Identifier),
     PoolTotal(Identifier),
+    RandomReservationEscrow(Identifier),
 }
 
 /// The keys `operation` writes if it is a token operation that moves tokens
@@ -672,6 +678,30 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
             TokenBalanceKey::Holder(*token_id, *recipient_id),
             TokenBalanceKey::PoolTotal(*token_id),
         ],
+        // Reserving a random transfer moves the most it moves from the sender into the token's
+        // escrow, and reserving a random mint raises the total supply by it and holds it in
+        // the escrow; both write the recipient's balance unchanged, and create the token's
+        // escrow tree when it has none. The settlement writes the rest once the block's beacon
+        // is known.
+        TokenOperationType::TokenReserveRandomTransfer {
+            token_id,
+            sender_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *sender_id),
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+            TokenBalanceKey::RandomReservationEscrow(*token_id),
+        ],
+        TokenOperationType::TokenReserveRandomMint {
+            token_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+            TokenBalanceKey::Supply(*token_id),
+            TokenBalanceKey::RandomReservationEscrow(*token_id),
+        ],
         // Minting into the pool raises the total supply and the pool total by the same amount
         // and burning from it lowers both; neither touches an identity's balance.
         TokenOperationType::TokenMintToPool { token_id, .. }
@@ -691,7 +721,8 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
         | TokenOperationType::TokenMarkPerpetualReleaseAsDistributed { .. }
         | TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed { .. }
         | TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed { .. }
-        | TokenOperationType::TokenHistory { .. } => vec![],
+        | TokenOperationType::TokenHistory { .. }
+        | TokenOperationType::TokenRandomAmountHistory { .. } => vec![],
     }
 }
 
@@ -1860,6 +1891,51 @@ mod tests {
             DriveOperation::refuse_repeated_token_balance_writes(&[mint(0, 1), burn(0, 2)])
                 .is_err()
         );
+    }
+
+    fn reserve_random_transfer(token_position: u8, from: u8, to: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenReserveRandomTransfer {
+            token_id: token(token_position),
+            sender_id: Identifier::new([from; 32]),
+            recipient_id: Identifier::new([to; 32]),
+            identity_contract_nonce: 1,
+            minimum: 1,
+            maximum: 5,
+        })
+    }
+
+    fn reserve_random_mint(token_position: u8, to: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenReserveRandomMint {
+            token_id: token(token_position),
+            owner_id: Identifier::new([9; 32]),
+            recipient_id: Identifier::new([to; 32]),
+            identity_contract_nonce: 1,
+            minimum: 1,
+            maximum: 5,
+            allow_first_mint: false,
+        })
+    }
+
+    #[test]
+    fn should_refuse_a_batch_that_reserves_two_random_amounts_of_one_token() {
+        // Both would create the token's escrow tree when it has none, though they write
+        // disjoint balances
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            reserve_random_transfer(0, 1, 2),
+            reserve_random_transfer(0, 3, 4),
+        ])
+        .is_err());
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            reserve_random_transfer(0, 1, 2),
+            reserve_random_mint(0, 4),
+        ])
+        .is_err());
+        // Reservations of two tokens each create their own token's escrow tree
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            reserve_random_transfer(0, 1, 2),
+            reserve_random_mint(1, 4),
+        ])
+        .is_ok());
     }
 
     #[test]
