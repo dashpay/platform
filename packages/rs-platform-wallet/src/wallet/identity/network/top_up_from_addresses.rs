@@ -14,8 +14,6 @@ use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentit
 use dash_sdk::platform::Fetch;
 
 use dpp::address_funds::PlatformAddress;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 
 use dash_sdk::query_types::AddressInfos;
@@ -218,20 +216,19 @@ impl IdentityWallet {
 }
 
 /// An SDK error of an address top-up as the wallet reports it: a nonce
-/// race and an empty input map promoted to their own errors, every other
-/// error kept typed under [`PlatformWalletError::Sdk`].
+/// race promoted to its own error, every other error kept typed under
+/// [`PlatformWalletError::Sdk`].
 fn top_up_error(e: dash_sdk::Error) -> PlatformWalletError {
     preserve_signer_key_unavailable_or(e, |e| {
-        promote_address_nonce_error(&e)
-            .or_else(|| no_inputs_as_invalid_parameter(&e))
-            .unwrap_or(PlatformWalletError::Sdk(e))
+        promote_address_nonce_error(&e).unwrap_or(PlatformWalletError::Sdk(e))
     })
 }
 
 /// The input map of an address-funded top-up from its funding rows: rows
 /// naming the same address are one input of their sum. A sum that overflows
-/// is refused with [`PlatformWalletError::InvalidParameter`]. No rows make an
-/// empty map, which the SDK refuses as a transition without inputs.
+/// is refused with [`PlatformWalletError::InvalidParameter`], and so are no
+/// rows at all: both routes call this before any network I/O, so an empty
+/// top-up is the caller's mistake whatever the identity lookup would say.
 pub(crate) fn funding_inputs(
     rows: impl IntoIterator<Item = (PlatformAddress, Credits)>,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
@@ -244,19 +241,12 @@ pub(crate) fn funding_inputs(
             ))
         })?;
     }
+    if inputs.is_empty() {
+        return Err(PlatformWalletError::InvalidParameter(
+            "no funding rows were provided".to_string(),
+        ));
+    }
     Ok(inputs)
-}
-
-/// The SDK's refusal of a transition without inputs, reported as the
-/// caller's mistake it is.
-fn no_inputs_as_invalid_parameter(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
-    matches!(
-        error.consensus_error(),
-        Some(ConsensusError::BasicError(
-            BasicError::TransitionNoInputsError(_)
-        ))
-    )
-    .then(|| PlatformWalletError::InvalidParameter(error.to_string()))
 }
 
 /// The submitted top-up's result once its proof is bound to this

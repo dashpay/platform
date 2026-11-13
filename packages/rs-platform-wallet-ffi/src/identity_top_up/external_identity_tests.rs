@@ -195,8 +195,8 @@ fn should_refuse_an_overflowing_funding_sum_on_both_exports() {
     assert_eq!(balance, UNTOUCHED);
 }
 
-/// No funding rows reach the library, whose refusal (the SDK's own
-/// empty-input check) comes back as an invalid parameter.
+/// No funding rows reach the library, which refuses them as an invalid
+/// parameter before looking the identity up.
 #[test]
 fn should_report_empty_inputs_as_an_invalid_parameter() {
     let (handle, signer) = wallet_handle(Some(platform_identity()));

@@ -371,23 +371,31 @@ async fn should_report_a_failed_recipient_lookup_as_not_sent() {
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
-/// An empty funding map is the caller's mistake on both routes: the SDK's
-/// own empty-input refusal comes back as `InvalidParameter`, with nothing
-/// signed or submitted.
+/// An empty funding map is the caller's mistake on both routes, refused as
+/// `InvalidParameter` before any network I/O, with nothing signed or
+/// submitted: whether Platform knows the identity, does not know it, or
+/// cannot be asked, the lookup never decides the error.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
-    let mut fixture = Fixture::new(true).await;
+    for on_platform in [Some(false), None, Some(true)] {
+        let mut fixture = Fixture::build(on_platform, AMOUNT).await;
 
-    let external = fixture.top_up_with(Vec::new()).await;
-    let managed = fixture.top_up_own_with(Vec::new()).await;
+        let external = fixture.top_up_with(Vec::new()).await;
+        let managed = fixture.top_up_own_with(Vec::new()).await;
+        let managed_unknown = fixture
+            .wallet
+            .top_up_from_addresses(&fixture.target, Vec::new(), &fixture.signer, settings())
+            .await;
 
-    for result in [external, managed] {
-        assert!(
-            matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
-            "got {result:?}"
-        );
+        for result in [external, managed, managed_unknown] {
+            assert!(
+                matches!(&result, Err(PlatformWalletError::InvalidParameter(reason))
+                    if reason == "no funding rows were provided"),
+                "{on_platform:?}: got {result:?}"
+            );
+        }
+        assert_eq!(fixture.submissions().await, (0, 0, 0));
     }
-    assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
 /// A handle to a wallet removed, or re-created under the same id, since it
