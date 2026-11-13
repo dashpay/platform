@@ -1970,11 +1970,10 @@ class PlatformWalletManager(
      *    an earlier identity debit is still unresolved, so this one was
      *    never built or broadcast.
      *
-     * Cancelling the calling coroutine does not stop the native call: the
-     * identity can still be debited and the shield land after this function
-     * has thrown `CancellationException`. Treat a cancelled call like
-     * `ShieldedSpendUnconfirmed`: let the next sync reconcile the outcome
-     * before retrying.
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the post-debit balance is still returned (see
+     * [opReturningCompletedResult]), so a completed identity debit is never
+     * hidden. Handle the return before the next suspension point.
      *
      * Blocks for the ~30s Halo 2 proof; the note arrives on the recipient's
      * next shielded sync pass.
@@ -1996,7 +1995,7 @@ class PlatformWalletManager(
         amount: Long,
         shieldedAccount: Int = 0,
         memo: String? = null,
-    ): Long = teardownGate.op {
+    ): Long = teardownGate.opReturningCompletedResult {
         require(identityId.size == 32) {
             "identityId must be exactly 32 bytes, got ${identityId.size}"
         }
