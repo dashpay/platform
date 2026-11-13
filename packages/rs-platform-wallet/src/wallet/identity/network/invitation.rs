@@ -99,6 +99,16 @@ impl IdentityWallet {
     /// the flush that follows writes what was put back. Only when that
     /// fails too is the failure reported, as a store or flush that failed
     /// is.
+    ///
+    /// A store or flush of this call's own that the backend failed is not
+    /// tried again, as it never was here. There the outcome is known: a
+    /// flush that failed transiently kept the record buffered for a later
+    /// one to write, and any other failure is the backend refusing or
+    /// dropping what it was given, which its contract says not to retry
+    /// (`PlatformWalletPersistence::flush`). The two answers stored again
+    /// are the ones that leave it unknown whether a record this call stored
+    /// and flushed without an error is on disk, and the second store is
+    /// what settles that.
     fn record_funded_invitation(&self, entry: InvitationEntry) -> Result<(), PlatformWalletError> {
         let mut inv_cs = InvitationChangeSet::default();
         inv_cs.invitations.insert(entry.out_point, entry);

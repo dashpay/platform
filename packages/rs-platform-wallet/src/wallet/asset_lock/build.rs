@@ -1526,19 +1526,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             });
             if let Err(error) = durable {
                 // The row may be buffered (a backend that restores a failed
-                // flush to its buffer) or committed (a store that succeeded
-                // before a failed flush, or one a flush still in progress
-                // took), and a later flush or a restart would
-                // then surface a resumable row for inputs released below. Its
-                // removal is queued behind it — stores apply removals after
-                // upserts — so the abandoned row does not outlive this call
-                // unless the backend refuses that write too. The funding index
-                // stays consumed, as for the pool gate above.
-                self.queue_asset_lock_changeset(AssetLockChangeSet {
-                    removed: [out_point].into(),
+                // flush to its buffer) or on disk (a store that succeeded
+                // before a failed flush, the row's own flush where another
+                // one failed or was in progress beside it, or a flush still
+                // in progress that took the row), and a restart would then
+                // resume a funding reported here as not made. So its removal
+                // is made durable too, before the inputs are released: only
+                // queued behind the row, it would be lost with the process
+                // where the row was not. A backend writes what it buffered in
+                // the order it was stored, and applies removals after
+                // upserts, so once the removal is on disk the row is not. The
+                // funding index stays consumed, as for the pool gate above.
+                let removed = self.persister.store_durably(PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        removed: [out_point].into(),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 });
                 drop(build_persist_guard);
+                // Released either way: nothing was sent, and the reservation
+                // and the fence live in memory, which no restart that could
+                // resume the row keeps. Holding them would only make a retry
+                // here select other inputs, leaving the unsent transaction
+                // valid beside it.
                 self.abandon_unsent_build(
                     in_broadcast_pin,
                     &funding_accounts,
@@ -1546,9 +1557,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     reservation_token,
                 )
                 .await;
-                return Err(PlatformWalletError::Persistence(format!(
-                    "shielded recipient was not made durable before dispatch: {error}"
-                )));
+                return Err(PlatformWalletError::Persistence(match removed {
+                    Ok(()) => {
+                        format!("shielded recipient was not made durable before dispatch: {error}")
+                    }
+                    Err(removal) => {
+                        tracing::error!(
+                            %out_point,
+                            %error,
+                            %removal,
+                            "an unsent shielded funding's row may be on disk, and its removal \
+                             is not known to be"
+                        );
+                        format!(
+                            "shielded recipient was not made durable before dispatch: {error}; \
+                             nothing was sent, but the removal of the unsent lock's row is not \
+                             known to be on disk, so a restart may still resume it: {removal}"
+                        )
+                    }
+                }));
             }
             self.track_asset_lock(tracked).await;
         } else {
@@ -1876,8 +1903,8 @@ mod tests {
 
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::changeset::{
-        ClientStartState, ClientWalletStartState, PersistenceError, PlatformWalletChangeSet,
-        PlatformWalletPersistence,
+        ClientStartState, ClientWalletStartState, PersistenceError, PersistenceErrorKind,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
@@ -1995,9 +2022,15 @@ mod tests {
         /// would, dropping what was buffered; the overtaken flush then
         /// succeeds over nothing.
         overtaken_by: Mutex<Option<WalletPersister>>,
+        /// Whether the overtaking flush fails transiently instead, putting
+        /// back what it took: the overtaken flush then writes it.
+        overtaking_puts_back: std::sync::atomic::AtomicBool,
         /// While set, a flush fails for good: the backend drops what it
         /// buffered.
         flush_drops_buffer: std::sync::atomic::AtomicBool,
+        /// While set, a flush fails transiently: the backend keeps what it
+        /// buffered.
+        flush_keeps_buffer: std::sync::atomic::AtomicBool,
     }
 
     impl CapturingPersistence {
@@ -2026,6 +2059,30 @@ mod tests {
                 .filter_map(|cs| cs.asset_locks.as_ref())
                 .flat_map(|al| al.removed.iter().copied())
                 .collect()
+        }
+
+        /// Outpoints of the asset-lock rows on disk, which a restart would
+        /// load: what the committed changesets leave, each one's removals
+        /// applied after its rows.
+        fn rows_on_disk(&self) -> Vec<OutPoint> {
+            let mut rows = std::collections::BTreeSet::new();
+            for locks in self
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .iter()
+                .take(
+                    self.committed_stores
+                        .load(std::sync::atomic::Ordering::SeqCst),
+                )
+                .filter_map(|cs| cs.asset_locks.as_ref())
+            {
+                rows.extend(locks.asset_locks.keys().copied());
+                for removed in &locks.removed {
+                    rows.remove(removed);
+                }
+            }
+            rows.into_iter().collect()
         }
 
         /// Outpoints of asset-lock rows stored across all changesets.
@@ -2108,19 +2165,41 @@ mod tests {
             // Taken in its own statement: the flush below comes back here.
             let overtaking = self.overtaken_by.lock().unwrap().take();
             if let Some(persister) = overtaking {
-                self.flush_drops_buffer
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                let overtook = persister.flush();
-                self.flush_drops_buffer
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
-                assert!(overtook.is_err_and(|error| !error.is_transient()));
-                return Ok(());
+                if self
+                    .overtaking_puts_back
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    self.flush_keeps_buffer
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    let overtook = persister.flush();
+                    self.flush_keeps_buffer
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    assert!(overtook.is_err_and(|error| error.is_transient()));
+                    // What it put back is written by this flush, below.
+                } else {
+                    self.flush_drops_buffer
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    let overtook = persister.flush();
+                    self.flush_drops_buffer
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    assert!(overtook.is_err_and(|error| !error.is_transient()));
+                    return Ok(());
+                }
             }
             if self
                 .flush_drops_buffer
                 .load(std::sync::atomic::Ordering::SeqCst)
             {
                 return Err(PersistenceError::backend("the database is corrupt"));
+            }
+            if self
+                .flush_keeps_buffer
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "the database is busy",
+                ));
             }
             if self.fail_flush || self.fail_on_flush == Some(count) {
                 return Err(PersistenceError::backend("simulated flush failure"));
@@ -3548,8 +3627,8 @@ mod tests {
     /// though the row's own flush then succeeded, over nothing: the recipient
     /// is recorded nowhere else, so a lock recovered after a kill would pay
     /// whatever address a resume names. The build is abandoned before
-    /// anything is broadcast, its row's removal queued, and its inputs come
-    /// back for the next one.
+    /// anything is broadcast, its row's removal stored behind it, and its
+    /// inputs come back for the next one.
     #[tokio::test]
     async fn should_not_send_a_shielded_funding_whose_recipient_row_another_flush_dropped() {
         let persistence = Arc::new(CapturingPersistence {
@@ -3592,8 +3671,9 @@ mod tests {
         assert_eq!(
             persistence.removed_outpoints(),
             persistence.stored_outpoints(),
-            "the abandoned row's removal is queued behind it"
+            "the abandoned row's removal is stored behind it"
         );
+        assert!(persistence.rows_on_disk().is_empty());
 
         let (_, out_point) = fund()
             .await
@@ -3608,6 +3688,121 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(out_point, Some([7; 43]))]
         );
+    }
+
+    /// A funding that pays a shielded recipient and is abandoned leaves no
+    /// row a restart would resume. Another flush of the wallet's records took
+    /// the row, failed transiently and put it back, and the row's own flush
+    /// then wrote it: the row is on disk, though not known to be, so the
+    /// build is abandoned. Its removal is written before the inputs are
+    /// released: only queued, it would be lost with the process, and the
+    /// restart would send a funding reported as not made.
+    #[tokio::test]
+    async fn should_leave_no_row_on_disk_for_a_shielded_funding_abandoned_after_its_row_was_written(
+    ) {
+        let persistence = Arc::new(CapturingPersistence {
+            records_shielded_recipients: true,
+            overtaking_puts_back: std::sync::atomic::AtomicBool::new(true),
+            ..Default::default()
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        *persistence.overtaken_by.lock().unwrap() = Some(manager.persister.clone());
+
+        let refused = manager
+            .broadcast_funded_asset_lock_tracked(
+                super::AssetLockBuildAmount::Exact(1_000_000),
+                &ASSET_LOCK_FUNDING_SOURCES,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                Some([7; 43]),
+                &signer,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+                if message.contains("shielded recipient was not made durable before dispatch")
+                    && !message.contains("restart")),
+            "{refused:?}"
+        );
+        assert!(
+            persistence.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert_eq!(broadcaster.calls(), 0, "nothing reached the wire");
+        assert!(manager.list_tracked_locks().await.is_empty());
+        assert_eq!(
+            persistence.stored_outpoints().len(),
+            1,
+            "the row was stored, and its own flush wrote it"
+        );
+        assert!(
+            persistence.rows_on_disk().is_empty(),
+            "a restart finds no row to resume"
+        );
+    }
+
+    /// An abandoned shielded funding whose row may be on disk, and whose
+    /// removal is not known to be, is not reported as a plain failure: the
+    /// error says a restart may still resume it. Nothing was sent, so its
+    /// inputs come back for the next funding all the same.
+    #[tokio::test]
+    async fn should_say_a_restart_may_resume_an_abandoned_shielded_funding_whose_removal_is_not_durable(
+    ) {
+        let persistence = Arc::new(CapturingPersistence {
+            records_shielded_recipients: true,
+            overtaking_puts_back: std::sync::atomic::AtomicBool::new(true),
+            // The row's flush, the one that overtakes it, then the removal's.
+            fail_on_flush: Some(3),
+            ..Default::default()
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let fund = || {
+            manager.broadcast_funded_asset_lock_tracked(
+                super::AssetLockBuildAmount::Exact(1_000_000),
+                &ASSET_LOCK_FUNDING_SOURCES,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                Some([7; 43]),
+                &signer,
+                None,
+                None,
+            )
+        };
+        *persistence.overtaken_by.lock().unwrap() = Some(manager.persister.clone());
+
+        let refused = fund().await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+                if message.contains("shielded recipient was not made durable before dispatch")
+                    && message.contains("a restart may still resume it")),
+            "{refused:?}"
+        );
+        assert_eq!(broadcaster.calls(), 0, "nothing reached the wire");
+        assert!(manager.list_tracked_locks().await.is_empty());
+        assert_eq!(
+            persistence.rows_on_disk().len(),
+            1,
+            "the row is on disk, its removal is not"
+        );
+
+        fund()
+            .await
+            .expect("the abandoned build released its inputs");
+        assert_eq!(broadcaster.calls(), 1);
     }
 
     /// The broadcast half returns when the broadcaster accepts the transaction:
