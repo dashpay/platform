@@ -3380,6 +3380,315 @@ mod tests {
         assert_eq!(detail["available"], 100);
     }
 
+    /// The recipient and signer are real; the wallet, its bound shielded account and the managed
+    /// identity are real too. Only the network is a mock: its answer for the identity's proved
+    /// balance is `proved_balance`, and it has no answer for anything else (the nonce fetch that
+    /// follows a passed balance check, so a call that reaches it stops there).
+    struct IdentityShieldFixture {
+        handle: Handle,
+        wallet_id: [u8; 32],
+        identity_id: [u8; 32],
+        store_path: std::path::PathBuf,
+        signer: *mut SignerHandle,
+    }
+
+    impl IdentityShieldFixture {
+        const SEED: [u8; 64] = [42; 64];
+
+        fn new(proved_balance: u64) -> Self {
+            use dash_sdk::query_types::IdentityBalance;
+            use dpp::identity::v0::IdentityV0;
+            use dpp::prelude::Identifier;
+
+            unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+                0
+            }
+            unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+                0
+            }
+            unsafe extern "C" fn sign(
+                _: *const c_void,
+                _: *const u8,
+                _: usize,
+                _: u8,
+                _: *const u8,
+                _: usize,
+                _: *mut c_void,
+                _: rs_sdk_ffi::SignCompletionCallback,
+            ) {
+                unreachable!("a refused identity shield signs nothing")
+            }
+            unsafe extern "C" fn can_sign(_: *const c_void, _: *const u8, _: usize, _: u8) -> bool {
+                false
+            }
+
+            let identity_id = Identifier::from([0x71; 32]);
+            let mut sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk");
+            runtime().block_on(async {
+                sdk.mock()
+                    .expect_fetch::<IdentityBalance, Identifier>(identity_id, Some(proved_balance))
+                    .await
+                    .expect("balance expectation");
+            });
+            let manager = crate::test_fixtures::mock_manager_on(
+                sdk,
+                crate::persistence::FFIPersister::new_with_persistence_capabilities(
+                    PersistenceCallbacks {
+                        on_changeset_begin_fn: Some(begin),
+                        on_changeset_end_fn: Some(end),
+                        on_persist_shielded_viewing_keys_fn: Some(
+                            crate::test_fixtures::noop_persist_viewing_keys,
+                        ),
+                        on_load_shielded_viewing_keys_fn: Some(
+                            crate::test_fixtures::noop_load_viewing_keys,
+                        ),
+                        on_load_shielded_viewing_keys_free_fn: Some(
+                            crate::test_fixtures::noop_free_viewing_keys,
+                        ),
+                        ..Default::default()
+                    },
+                    platform_wallet::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS.union(
+                        platform_wallet::changeset::PersistenceCapabilities::SHIELDED_VIEWING_KEYS,
+                    ),
+                ),
+            );
+            let store_path = std::env::temp_dir().join(format!(
+                "ffi-identity-shield-{}-{}.sqlite",
+                std::process::id(),
+                next_handle()
+            ));
+            let wallet_id = runtime().block_on(async {
+                let wallet = manager
+                    .create_wallet_from_seed_bytes(
+                        dashcore::Network::Testnet,
+                        &Self::SEED,
+                        WalletAccountCreationOptions::Default,
+                        Some(0),
+                    )
+                    .await
+                    .expect("create wallet");
+                manager
+                    .configure_shielded(&store_path)
+                    .await
+                    .expect("configure shielded");
+                let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+                wallet
+                    .bind_shielded(&Self::SEED, &[0], &coordinator)
+                    .await
+                    .expect("bind shielded");
+                wallet
+                    .wallet_manager()
+                    .write()
+                    .await
+                    .get_wallet_info_mut(&wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(
+                        dpp::identity::Identity::V0(IdentityV0 {
+                            id: identity_id,
+                            public_keys: Default::default(),
+                            balance: u64::MAX / 2,
+                            revision: 0,
+                        }),
+                        0,
+                        wallet.wallet_id(),
+                        wallet.persister(),
+                    )
+                    .expect("manage the identity");
+                wallet.wallet_id()
+            });
+            let signer = unsafe {
+                rs_sdk_ffi::dash_sdk_signer_create_with_ctx(
+                    std::ptr::null_mut(),
+                    sign,
+                    can_sign,
+                    None,
+                )
+            };
+            Self {
+                handle: PLATFORM_WALLET_MANAGER_STORAGE.insert(manager),
+                wallet_id,
+                identity_id: identity_id.to_buffer(),
+                store_path,
+                signer,
+            }
+        }
+
+        fn own_address(&self) -> [u8; 43] {
+            let mut out = [0u8; 43];
+            let mut present = false;
+            let result = unsafe {
+                crate::platform_wallet_manager_shielded_default_address(
+                    self.handle,
+                    self.wallet_id.as_ptr(),
+                    0,
+                    out.as_mut_ptr(),
+                    &mut present,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert!(present);
+            out
+        }
+
+        fn third_party_address() -> [u8; 43] {
+            platform_wallet::wallet::shielded::OrchardKeySet::from_seed(
+                &[0x24; 32],
+                dashcore::Network::Testnet,
+                0,
+            )
+            .expect("keys")
+            .default_address
+            .to_raw_address_bytes()
+        }
+
+        fn shield(
+            &self,
+            recipient: &[u8; 43],
+            memo: *const c_char,
+            out: *mut u64,
+        ) -> PlatformWalletFFIResult {
+            unsafe {
+                platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+                    self.handle,
+                    self.wallet_id.as_ptr(),
+                    0,
+                    self.identity_id.as_ptr(),
+                    recipient.as_ptr(),
+                    1_000_000,
+                    memo,
+                    self.signer,
+                    out,
+                )
+            }
+        }
+
+        /// Nothing was armed and no activity row was recorded for the account.
+        fn assert_nothing_armed_or_recorded(&self) {
+            let id = SubwalletId::new(self.wallet_id, 0);
+            let (redrives, activity) = PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(self.handle, |manager| {
+                    runtime().block_on(async {
+                        let coordinator =
+                            manager.shielded_coordinator().await.expect("coordinator");
+                        let store = coordinator.store().read().await;
+                        (
+                            store.pending_redrives(id).expect("redrives"),
+                            store.get_activity_ids(id).expect("activity"),
+                        )
+                    })
+                })
+                .expect("live manager");
+            assert!(redrives.is_empty(), "no redrive guard");
+            assert!(activity.is_empty(), "no activity row");
+        }
+    }
+
+    impl Drop for IdentityShieldFixture {
+        fn drop(&mut self) {
+            unsafe {
+                rs_sdk_ffi::dash_sdk_signer_destroy(self.signer);
+                let _ = platform_wallet_manager_destroy(self.handle);
+            }
+            let _ = std::fs::remove_file(&self.store_path);
+        }
+    }
+
+    const UNTOUCHED: u64 = 0xDEAD_BEEF;
+
+    /// The account's own address is not a third-party recipient: build failure before broadcast,
+    /// code 6, nothing armed or recorded, `out_new_balance` untouched.
+    #[test]
+    fn identity_recipient_shield_export_refuses_the_accounts_own_address_with_6() {
+        let fixture = IdentityShieldFixture::new(u64::MAX / 2);
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(&fixture.own_address(), std::ptr::null(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(result.code as i32, 6);
+        assert!(message_of(&result).contains("belongs to this shielded account"));
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A proved balance below the amount plus the fee floor is refused as code 39 with the
+    /// figures in the JSON detail; nothing is armed or recorded and `out_new_balance` is
+    /// untouched. The mock has no nonce answer, so the refusal is the balance check's.
+    #[test]
+    fn identity_recipient_shield_export_refuses_an_unfunded_identity_with_39() {
+        let fixture = IdentityShieldFixture::new(999_999);
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(
+            &IdentityShieldFixture::third_party_address(),
+            std::ptr::null(),
+            &mut out,
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits
+        );
+        assert_eq!(result.code as i32, 39);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&result)).unwrap();
+        assert_eq!(detail["available"], 999_999);
+        assert!(detail["required"].as_u64().unwrap() > 1_000_000, "{detail}");
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A balance that covers the amount and fee passes the check and reaches the identity nonce
+    /// fetch, where the mock (no network) stops the call. This is where the export path stops
+    /// without a network mock for the nonce, proof and broadcast.
+    #[test]
+    fn identity_recipient_shield_export_passes_the_balance_check_and_stops_at_the_nonce_fetch() {
+        let fixture = IdentityShieldFixture::new(u64::MAX / 2);
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(
+            &IdentityShieldFixture::third_party_address(),
+            std::ptr::null(),
+            &mut out,
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert!(message_of(&result).contains("fetch identity nonce"));
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A memo over 32 bytes is `ErrorInvalidParameter` and invalid UTF-8 is
+    /// `ErrorUtf8Conversion`, both before the wallet is touched, with a real wallet behind the
+    /// handle: nothing armed or recorded, `out_new_balance` untouched.
+    #[test]
+    fn identity_recipient_shield_export_refuses_a_bad_memo_with_a_real_wallet() {
+        let fixture = IdentityShieldFixture::new(u64::MAX / 2);
+        let recipient = IdentityShieldFixture::third_party_address();
+
+        let too_long = CString::new("a".repeat(MEMO_PAYLOAD_SIZE + 1)).unwrap();
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(&recipient, too_long.as_ptr(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(out, UNTOUCHED);
+
+        let not_utf8 = CString::new(vec![0xFF, 0xFE]).unwrap();
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(&recipient, not_utf8.as_ptr(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion
+        );
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
     /// A panic in the new export's body must become code 18 (never abort the host), under the
     /// export's own operation label.
     #[test]
