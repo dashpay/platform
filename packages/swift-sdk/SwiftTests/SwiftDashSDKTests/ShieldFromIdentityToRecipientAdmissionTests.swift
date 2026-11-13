@@ -37,13 +37,14 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         let entered = expectation(description: "spend entered the native call")
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
-        manager.nativeShieldFromIdentityToRecipientCall = { handle, wid, acct, ident, rcp, amt, _, newBalance in
+        manager.nativeShieldFromIdentityToRecipientCall = { handle, wid, acct, ident, rcp, amt, memo, _, newBalance in
             XCTAssertEqual(handle, 77)
             XCTAssertEqual(Data(bytes: wid, count: 32), Data(repeating: 1, count: 32))
             XCTAssertEqual(acct, 5)
             XCTAssertEqual(Data(bytes: ident, count: 32), Data(repeating: 2, count: 32))
             XCTAssertEqual(Data(bytes: rcp, count: 43), Data(repeating: 3, count: 43))
             XCTAssertEqual(amt, 123_456_789)
+            XCTAssertNil(memo, "no memo argument must reach the native call as NULL")
             entered.fulfill()
             XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
             newBalance.pointee = 7
@@ -98,7 +99,7 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         let entered = expectation(description: "spend entered the native call")
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
-        manager.nativeShieldFromIdentityToRecipientCall = { _, _, _, _, _, _, _, newBalance in
+        manager.nativeShieldFromIdentityToRecipientCall = { _, _, _, _, _, _, _, _, newBalance in
             entered.fulfill()
             XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
             newBalance.pointee = 7
@@ -129,5 +130,37 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         } catch PlatformWalletError.invalidHandle(let message) {
             XCTAssertFalse(message.contains("in flight"), "clearShielded still gated after the spend: \(message)")
         } catch {}
+    }
+
+    /// The `memo` argument reaches the native call: `nil` and an empty string
+    /// as a null pointer, text as the C string.
+    func testShouldForwardTheMemoToTheNativeCall() async throws {
+        let ok: PlatformWalletNativeTeardownCalls.Call = { _ in
+            PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        let calls = PlatformWalletNativeTeardownCalls(
+            spvStop: ok, platformAddressSyncStop: ok, shieldedSyncStop: ok,
+            dashPaySyncStop: ok, dpnsSyncStop: ok, destroy: ok)
+        let manager = PlatformWalletManager.makeForTesting(handle: 77, calls: calls)
+        let seen = MemoLog()
+        manager.nativeShieldFromIdentityToRecipientCall = { _, _, _, _, _, _, memo, _, _ in
+            seen.append(memo.map { String(cString: $0) })
+            return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        let signer = KeychainSigner(modelContainer: try DashModelContainer.createInMemory())
+        for memo in [nil, "", "hi"] as [String?] {
+            try await manager.shieldedShieldFromIdentityToRecipient(
+                walletId: Data(repeating: 1, count: 32), identityId: Data(repeating: 2, count: 32),
+                recipientRaw43: Data(repeating: 3, count: 43), amount: 1, memo: memo,
+                identitySigner: signer)
+        }
+        XCTAssertEqual(seen.values, [nil, nil, "hi"])
+    }
+
+    private final class MemoLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [String?] = []
+        func append(_ value: String?) { lock.withLock { items.append(value) } }
+        var values: [String?] { lock.withLock { items } }
     }
 }

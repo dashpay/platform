@@ -1304,7 +1304,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
 /// external Orchard recipient: the Type 21 `ShieldFromIdentity` transition with
 /// the note addressed to `recipient_raw_43` instead of the wallet's own
 /// shielded account. The identity is debited `amount` plus the metered fee plus
-/// the shielded compute fee. The memo is empty.
+/// the shielded compute fee.
+///
+/// `memo_text` is an optional NUL-terminated UTF-8 string attached to the recipient's note, with
+/// the same rules as `platform_wallet_manager_shielded_shield_to_recipient`: `null` or empty means
+/// no memo; a non-empty memo's UTF-8 byte length must be <= 32.
 ///
 /// A shielded sub-wallet must still be bound at `shielded_account`: its outgoing
 /// viewing key enables outgoing-note recovery, and the activity is recorded
@@ -1332,6 +1336,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `identity_id` must point to 32 readable bytes.
 /// - `recipient_raw_43` must point to 43 readable bytes.
+/// - `memo_text`, when non-null, must be a valid NUL-terminated UTF-8 C string for the duration
+///   of the call.
 /// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle`
 ///   that outlives this call and points at a `VTableSigner` with the callback
 ///   variant.
@@ -1344,6 +1350,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity_t
     identity_id: *const u8,
     recipient_raw_43: *const u8,
     amount: u64,
+    memo_text: *const c_char,
     signer_identity_handle: *const SignerHandle,
     out_new_balance: *mut u64,
 ) -> PlatformWalletFFIResult {
@@ -1357,6 +1364,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity_t
             identity_id,
             recipient_raw_43,
             amount,
+            memo_text,
             signer_identity_handle,
             out_new_balance,
         )
@@ -1376,6 +1384,7 @@ unsafe fn shielded_shield_from_identity_to_recipient_inner(
     identity_id: *const u8,
     recipient_raw_43: *const u8,
     amount: u64,
+    memo_text: *const c_char,
     signer_identity_handle: *const SignerHandle,
     out_new_balance: *mut u64,
 ) -> PlatformWalletFFIResult {
@@ -1389,6 +1398,26 @@ unsafe fn shielded_shield_from_identity_to_recipient_inner(
     let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
     let mut recipient = [0u8; 43];
     std::ptr::copy_nonoverlapping(recipient_raw_43, recipient.as_mut_ptr(), 43);
+
+    // Decode the optional memo string before resolving the wallet so a
+    // malformed memo fails fast without touching wallet state.
+    let memo_str = if memo_text.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(memo_text).to_str() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                    format!("memo_text is not valid UTF-8: {e}"),
+                );
+            }
+        }
+    };
+    let memo = match encode_memo_text(memo_str) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
 
     let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
         Ok(p) => p,
@@ -1410,7 +1439,7 @@ unsafe fn shielded_shield_from_identity_to_recipient_inner(
                 &identity_id,
                 &recipient,
                 amount,
-                [0u8; 36],
+                memo,
                 identity_signer,
                 &prover,
             )
@@ -2485,6 +2514,7 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_wallet::wallet::shielded::store::PendingRedrive;
     use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
+    use std::ffi::CString;
 
     #[test]
     fn encode_memo_text_none_is_empty() {
@@ -3146,6 +3176,16 @@ mod tests {
 
         /// Call the export with `NULL_HANDLE`, nulling the pointer argument named by `null`.
         fn call(&self, null: &str, out: *mut u64) -> PlatformWalletFFIResult {
+            self.call_with_memo(null, std::ptr::null(), out)
+        }
+
+        /// As [`Self::call`], with an explicit `memo_text`.
+        fn call_with_memo(
+            &self,
+            null: &str,
+            memo_text: *const c_char,
+            out: *mut u64,
+        ) -> PlatformWalletFFIResult {
             let pick = |name: &str, p: *const u8| {
                 if null == name {
                     std::ptr::null()
@@ -3161,6 +3201,7 @@ mod tests {
                     pick("identity_id", self.identity_id.as_ptr()),
                     pick("recipient", self.recipient.as_ptr()),
                     1,
+                    memo_text,
                     if null == "signer" {
                         std::ptr::null()
                     } else {
@@ -3183,6 +3224,59 @@ mod tests {
                 "a null {name} pointer must be rejected before the handle is resolved"
             );
         }
+    }
+
+    /// The memo is decoded before the handle is resolved: with an unknown handle, a memo over 32
+    /// UTF-8 bytes is refused with the siblings' `ErrorInvalidParameter`.
+    #[test]
+    fn shield_from_identity_to_recipient_refuses_a_memo_over_32_bytes() {
+        let args = ToRecipientArgs::new();
+        let memo = CString::new("a".repeat(MEMO_PAYLOAD_SIZE + 1)).unwrap();
+        let mut out: u64 = 0xDEAD_BEEF;
+        let result = args.call_with_memo("", memo.as_ptr(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            out, 0xDEAD_BEEF,
+            "out_new_balance must not be written on error"
+        );
+    }
+
+    /// A NULL, empty or valid (including exactly 32 bytes) memo passes the decode and reaches the
+    /// handle lookup, which is where an unknown handle is reported.
+    #[test]
+    fn shield_from_identity_to_recipient_accepts_no_memo_empty_and_valid_memos() {
+        let args = ToRecipientArgs::new();
+        let empty = CString::new("").unwrap();
+        let hi = CString::new("hi").unwrap();
+        let max = CString::new("a".repeat(MEMO_PAYLOAD_SIZE)).unwrap();
+        for memo in [std::ptr::null(), empty.as_ptr(), hi.as_ptr(), max.as_ptr()] {
+            let result = args.call_with_memo("", memo, std::ptr::null_mut());
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        }
+    }
+
+    /// A memo that is not UTF-8 is `ErrorUtf8Conversion`, as in the siblings.
+    #[test]
+    fn shield_from_identity_to_recipient_refuses_a_memo_that_is_not_utf8() {
+        let args = ToRecipientArgs::new();
+        let memo = CString::new(vec![0xFF, 0xFE]).unwrap();
+        let result = args.call_with_memo("", memo.as_ptr(), std::ptr::null_mut());
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion
+        );
+    }
+
+    /// The pointer checks keep their place ahead of the memo decode.
+    #[test]
+    fn shield_from_identity_to_recipient_checks_pointers_before_the_memo() {
+        let args = ToRecipientArgs::new();
+        let memo = CString::new("a".repeat(MEMO_PAYLOAD_SIZE + 1)).unwrap();
+        let result = args.call_with_memo("signer", memo.as_ptr(), std::ptr::null_mut());
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
     /// With every pointer valid and an unknown handle the export reports `ErrorInvalidHandle`

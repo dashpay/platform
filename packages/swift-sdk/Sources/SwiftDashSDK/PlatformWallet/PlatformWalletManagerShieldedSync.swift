@@ -86,7 +86,7 @@ public struct ShieldedSyncEvent: Sendable {
 /// `PlatformWalletManager.nativeShieldFromIdentityToRecipientCall`.
 typealias ShieldFromIdentityToRecipientCall = @Sendable (
     Handle, UnsafePointer<UInt8>, UInt32, UnsafePointer<UInt8>, UnsafePointer<UInt8>,
-    UInt64, OpaquePointer, UnsafeMutablePointer<UInt64>
+    UInt64, UnsafePointer<CChar>?, OpaquePointer, UnsafeMutablePointer<UInt64>
 ) -> PlatformWalletFFIResult
 
 extension PlatformWalletManager {
@@ -1128,6 +1128,10 @@ extension PlatformWalletManager {
     /// Returns the identity's proven post-debit balance; any unconfirmed
     /// outcome throws `.shieldedSpendUnconfirmed` (do not resubmit).
     ///
+    /// `memo` follows [`shieldedShieldToRecipient`]'s rules: `nil` / empty
+    /// means no memo; a non-empty memo's UTF-8 byte length must be at most 32
+    /// or the call throws `invalidParameter` (Rust owns the limit).
+    ///
     /// Admitted as an async native operation until the result is delivered:
     /// `shutdown()` waits for it, a call made once a shutdown has begun throws
     /// `invalidHandle` before any native work, and the synchronous wallet
@@ -1139,6 +1143,7 @@ extension PlatformWalletManager {
         identityId: Data,
         recipientRaw43: Data,
         amount: UInt64,
+        memo: String? = nil,
         identitySigner: KeychainSigner
     ) async throws -> UInt64 {
         guard isConfigured, handle != NULL_HANDLE else {
@@ -1196,10 +1201,20 @@ extension PlatformWalletManager {
                                     "recipientRaw43 baseAddress is nil"
                                 )
                             }
-                            try shield(
-                                handle, widPtr, shieldedAccount, idPtr, rcpPtr, amount,
-                                signerHandle, &newBalance
-                            ).check()
+                            // `nil` / empty → null pointer (no memo); otherwise
+                            // pass the text as a C string — Rust validates the
+                            // 32-byte limit and does the 36-byte encoding.
+                            let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                                try shield(
+                                    handle, widPtr, shieldedAccount, idPtr, rcpPtr, amount,
+                                    memoCStr, signerHandle, &newBalance
+                                ).check()
+                            }
+                            if let memo, !memo.isEmpty {
+                                try memo.withCString { try send($0) }
+                            } else {
+                                try send(nil)
+                            }
                         }
                     }
                 }
