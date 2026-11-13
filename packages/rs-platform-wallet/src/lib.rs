@@ -126,3 +126,8 @@ pub use key_wallet_manager;
 // the crate can pass it to `ManagedIdentity` mutation methods
 // (`set_dashpay_profile`, `record_dashpay_payment`, `add_identity`, …).
 pub use wallet::persister::WalletPersister;
+
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::tips::{
+    is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
+};
