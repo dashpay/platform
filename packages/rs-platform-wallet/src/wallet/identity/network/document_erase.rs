@@ -174,6 +174,10 @@ impl IdentityWallet {
     /// submission is an error whose outcome is unknown;
     /// neither that error nor a successful return triggers automatic retries.
     /// An unproved consensus refusal after broadcast also has an unknown outcome.
+    /// When more than one revision remains, deleted histories with gaps or
+    /// more than 65,536 retained revisions return `PreflightUnavailable` because
+    /// the newest owner cannot be established. This operation does not walk
+    /// history pages.
     pub async fn erase_document_and_observe_with_signer<S>(
         &self,
         submitting_identity_id: &Identifier,
@@ -254,14 +258,14 @@ impl IdentityWallet {
         if let DocumentLifecycleObservation::Observed(lifecycle) = &before {
             if lifecycle.state == DocumentHistoryState::Deleted {
                 let newest_revision = lifecycle.remaining_revisions;
-                newest_owner = history.as_ref().and_then(|history| {
-                    history
-                        .entries
-                        .iter()
-                        .find(|entry| entry.revision == newest_revision)
-                        .map(|entry| entry.document.owner_id())
-                });
-                if newest_owner.is_none() && newest_revision != 0 {
+                if newest_revision == 1 {
+                    newest_owner = history.as_ref().and_then(|history| {
+                        history
+                            .entries
+                            .first()
+                            .map(|entry| entry.document.owner_id())
+                    });
+                } else if newest_revision != 0 {
                     let newest_query = DocumentHistoryQuery {
                         filter: DocumentHistoryFilter::Revision(newest_revision),
                         ..query.clone()
@@ -318,6 +322,7 @@ mod tests {
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use crate::wallet::persister::NoPlatformPersistence;
     use dash_sdk::drive::query::document_history_drive_query::DocumentHistoryLifecycleTimes;
+    use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::version::PlatformVersion;
@@ -786,6 +791,9 @@ mod tests {
                 .await
                 .unwrap();
             let mut page = history(state, owner, newest);
+            if newest && state == DocumentHistoryState::Deleted {
+                page.lifecycle.as_mut().unwrap().remaining_revisions = 1;
+            }
             if !metadata {
                 page.lifecycle = None;
             }
@@ -822,6 +830,68 @@ mod tests {
                 matches!(outcome, DocumentEraseOutcome::NotSubmitted { reason, .. } if reason == expected)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn should_not_pay_to_erase_gapped_history_as_its_oldest_owner() {
+        use super::super::signing_key::tests::{available, wallet_with_signing_keys_on};
+        let contract = contract();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .unwrap();
+        let mut retained = history(DocumentHistoryState::Deleted, Identifier::default(), false);
+        retained.lifecycle.as_mut().unwrap().remaining_revisions = 2;
+        retained.entries[0].revision = 2;
+        retained.entries[0].document.set_revision(Some(2));
+        retained.entries.extend(
+            history(
+                DocumentHistoryState::Deleted,
+                Identifier::from([9; 32]),
+                true,
+            )
+            .entries,
+        );
+        // The preflight page exposes only revision 2, before the transfer.
+        retained.entries.truncate(1);
+        sdk.mock()
+            .expect_fetch(
+                history_query(&contract, DocumentHistoryFilter::StartAtTime(0)),
+                Some(retained),
+            )
+            .await
+            .unwrap();
+        // Revision-count lookup cannot resolve a gapped history. The missing
+        // Revision(2) expectation makes that read fail, as Drive would refuse it.
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let outcome = wallet
+            .identity()
+            .erase_and_observe_with_submit(
+                &Identifier::default(),
+                &contract.id(),
+                "note",
+                &Identifier::from([2; 32]),
+                &available(&[1]),
+                |_, _| async {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(matches!(
+            outcome,
+            DocumentEraseOutcome::NotSubmitted {
+                reason: DocumentEraseNotSubmittedReason::PreflightUnavailable,
+                ..
+            }
+        ));
     }
 
     #[test]
