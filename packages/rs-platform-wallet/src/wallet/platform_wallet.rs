@@ -595,6 +595,13 @@ impl PlatformWallet {
     /// rather than propagated — Platform already accepted the top-up, and
     /// a later sync reconciles.
     ///
+    /// A result proof that does not show the input addresses' nonces this
+    /// top-up was signed with as used does not prove it executed: it is
+    /// reported as `PlatformWalletError::Sdk` holding
+    /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
+    /// execute, so do not submit it again), and neither the identity balance
+    /// nor the addresses are updated from it; the next sync settles them.
+    ///
     /// Returns the identity's new credit balance.
     pub async fn top_up_from_addresses<S, I>(
         &self,
@@ -633,6 +640,13 @@ impl PlatformWallet {
     /// handle was taken is refused with
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// fetched, signed or broadcast. A caller must not hold the gate.
+    ///
+    /// A result proof that does not show the input addresses' nonces this
+    /// top-up was signed with as used does not prove it executed: it is
+    /// reported as `PlatformWalletError::Sdk` holding
+    /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
+    /// execute, so do not submit it again), and the addresses are not
+    /// updated from it; the next sync settles them.
     ///
     /// Returns the identity's new credit balance.
     pub async fn top_up_external_identity_from_addresses<S, I>(

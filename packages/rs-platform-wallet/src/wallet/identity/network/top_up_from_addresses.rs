@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AddressNonce, Identifier};
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
+use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddressesWithMetadata;
 use dash_sdk::platform::Fetch;
@@ -170,6 +171,14 @@ impl IdentityWallet {
 
     /// Build, sign, broadcast and wait for the top-up of `identity` from
     /// `inputs`, mapping the SDK error the way every address top-up reports it.
+    ///
+    /// The result proof of this transition authenticates only the state it
+    /// affects (the identity's balance and the input addresses as of the
+    /// proof's block), not that this transition executed. The result stands
+    /// only once the proof shows every input address at or past the nonce
+    /// this transition was signed with ([`bind_to_submitted_nonces`]);
+    /// otherwise the top-up is reported unconfirmed and nothing is
+    /// reconciled from it.
     async fn submit_top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity: &Identity,
@@ -177,22 +186,48 @@ impl IdentityWallet {
         address_signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
-        identity
-            .top_up_from_addresses_with_metadata(&self.sdk, inputs, address_signer, settings)
+        let inputs = fetch_inputs_with_nonce(&self.sdk, &inputs)
             .await
-            .map_err(|e| {
-                preserve_signer_key_unavailable_or(e, |e| {
-                    promote_address_nonce_error(&e)
-                        .or_else(|| no_inputs_as_invalid_parameter(&e))
-                        .unwrap_or_else(|| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Failed to top up identity from addresses: {}",
-                                e
-                            ))
-                        })
-                })
+            .map_err(top_up_error)?
+            .into_iter()
+            .map(|(address, (nonce, credits))| {
+                let next = nonce.checked_add(1).ok_or_else(|| {
+                    PlatformWalletError::InvalidParameter(format!(
+                        "{address:?} has used every nonce and can fund nothing more"
+                    ))
+                })?;
+                Ok((address, (next, credits)))
             })
+            .collect::<Result<BTreeMap<_, _>, PlatformWalletError>>()?;
+        let submitted = inputs
+            .iter()
+            .map(|(address, (nonce, _))| (*address, *nonce))
+            .collect();
+        let confirmed = identity
+            .top_up_from_addresses_with_nonce_with_metadata(
+                &self.sdk,
+                inputs,
+                address_signer,
+                settings,
+            )
+            .await
+            .map_err(top_up_error)?;
+        bind_to_submitted_nonces(&submitted, confirmed)
     }
+}
+
+/// An SDK error of an address top-up as the wallet reports it.
+fn top_up_error(e: dash_sdk::Error) -> PlatformWalletError {
+    preserve_signer_key_unavailable_or(e, |e| {
+        promote_address_nonce_error(&e)
+            .or_else(|| no_inputs_as_invalid_parameter(&e))
+            .unwrap_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to top up identity from addresses: {}",
+                    e
+                ))
+            })
+    })
 }
 
 /// The input map of an address-funded top-up from its funding rows: rows
@@ -224,4 +259,103 @@ fn no_inputs_as_invalid_parameter(error: &dash_sdk::Error) -> Option<PlatformWal
         ))
     )
     .then(|| PlatformWalletError::InvalidParameter(error.to_string()))
+}
+
+/// The submitted top-up's result once its proof is bound to this
+/// transition's address nonces (`submitted`).
+///
+/// An address nonce is used exactly once and only in order (Platform takes
+/// stored + 1), and only this wallet can sign for its input addresses. A
+/// proof showing every input address at or past the submitted nonce shows
+/// those nonces consumed: this top-up executed, or a transition this wallet
+/// signed with the same nonces did and this one never can. Either way it can
+/// no longer execute later, so the result stands. A proof showing an input
+/// address before its submitted nonce (or not at all) is a snapshot that does
+/// not reflect this top-up, which may still execute: it is reported as the
+/// SDK's unconfirmed outcome, never as done.
+fn bind_to_submitted_nonces(
+    submitted: &BTreeMap<PlatformAddress, AddressNonce>,
+    confirmed: (AddressInfos, Credits, ResponseMetadata),
+) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
+    for (address, nonce) in submitted {
+        let proved = confirmed.0.get(address).and_then(|info| info.as_ref());
+        if proved.is_none_or(|info| info.nonce < *nonce) {
+            return Err(PlatformWalletError::Sdk(
+                dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                    dash_sdk::Error::ExecutionNotProved(format!(
+                        "the identity top-up proof shows {address:?} at nonce {:?}, before \
+                         the submitted nonce {nonce}",
+                        proved.map(|info| info.nonce)
+                    )),
+                )),
+            ));
+        }
+    }
+    Ok(confirmed)
+}
+
+#[cfg(test)]
+mod nonce_binding_tests {
+    use super::*;
+    use dash_sdk::query_types::AddressInfo;
+
+    const FIRST: PlatformAddress = PlatformAddress::P2pkh([1; 20]);
+    const SECOND: PlatformAddress = PlatformAddress::P2pkh([2; 20]);
+
+    fn proved(nonces: &[(PlatformAddress, Option<AddressNonce>)]) -> AddressInfos {
+        AddressInfos::from_iter(nonces.iter().map(|(address, nonce)| {
+            (
+                *address,
+                nonce.map(|nonce| AddressInfo {
+                    address: *address,
+                    nonce,
+                    balance: 5,
+                }),
+            )
+        }))
+    }
+
+    fn bind(
+        proved_nonces: &[(PlatformAddress, Option<AddressNonce>)],
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
+        let submitted = BTreeMap::from([(FIRST, 4), (SECOND, 9)]);
+        bind_to_submitted_nonces(
+            &submitted,
+            (proved(proved_nonces), 777, ResponseMetadata::default()),
+        )
+    }
+
+    /// A proof that shows an input address before the nonce this top-up
+    /// was signed with is a snapshot from before it executed: the top-up
+    /// may still execute, so it is reported unconfirmed, not done.
+    #[test]
+    fn should_report_a_snapshot_before_the_submitted_nonces_as_unconfirmed() {
+        for proved_nonces in [
+            [(FIRST, Some(3)), (SECOND, Some(8))],
+            [(FIRST, Some(4)), (SECOND, Some(8))],
+            [(FIRST, Some(4)), (SECOND, None)],
+        ] {
+            let result = bind(&proved_nonces);
+            assert!(
+                matches!(
+                    &result,
+                    Err(PlatformWalletError::Sdk(e)) if e.is_state_transition_result_unconfirmed()
+                ),
+                "{proved_nonces:?}: {result:?}"
+            );
+        }
+    }
+
+    /// Every input address at (or past) the nonce this top-up was signed
+    /// with: the nonces it used are consumed, so the result stands.
+    #[test]
+    fn should_keep_a_result_whose_proof_shows_the_submitted_nonces_used() {
+        for proved_nonces in [
+            [(FIRST, Some(4)), (SECOND, Some(9))],
+            [(FIRST, Some(5)), (SECOND, Some(9))],
+        ] {
+            let (_, balance, _) = bind(&proved_nonces).expect("bound to the submitted nonces");
+            assert_eq!(balance, 777);
+        }
+    }
 }
