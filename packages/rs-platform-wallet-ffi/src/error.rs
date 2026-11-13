@@ -768,6 +768,15 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
 
+    /// Maps `PlatformWalletError::IdentityLookupFailed`: Platform could not be
+    /// asked for an identity the operation names (a transport or proof
+    /// failure of the lookup, not Platform's answer that the identity does not
+    /// exist, which is [`Self::ErrorIdentityNotFound`] (7)). Nothing was
+    /// signed, reserved or broadcast, so the operation may be retried as it
+    /// is; a host need not treat it as possibly delivered. Returned by the
+    /// external identity top-up from Platform addresses.
+    ErrorIdentityLookupFailed = 80,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1247,6 +1256,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // submit it again.
             PlatformWalletError::PublicContactRequestUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
+            }
+            // The recipient lookup failed before anything was signed or
+            // sent: a not-sent refusal, not an ambiguous SDK error.
+            PlatformWalletError::IdentityLookupFailed { .. } => {
+                PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3168,6 +3182,21 @@ mod private_contact_request_error_tests {
             map_spend_result(Err(unconfirmed()), "private contact request").code,
             PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
         );
+    }
+
+    /// A failed identity lookup, which sent nothing, reaches the host by its
+    /// own code rather than as the SDK error it wraps.
+    #[test]
+    fn should_report_a_failed_identity_lookup_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::IdentityLookupFailed {
+            identity_id: [7; 32].into(),
+            source: dash_sdk::Error::Generic("unreachable".to_string()),
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
+        );
+        assert_eq!(result.code as u32, 80);
     }
 
     /// A public contact request a loaded wallet refuses until its private
