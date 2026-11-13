@@ -15,7 +15,7 @@ import SwiftData
 /// }
 /// ```
 ///
-/// "Tradeable" is valid from protocol version 15. The Swift enum used to
+/// "Tradeable" is valid from protocol version 16. The Swift enum used to
 /// have only `notTradeable`, so the parser's `TokenTradeMode(rawValue:)`
 /// returned nil for it and the token kept the `notTradeable` default, which
 /// made `PersistentToken.isTradeable` report false for a tradeable token.

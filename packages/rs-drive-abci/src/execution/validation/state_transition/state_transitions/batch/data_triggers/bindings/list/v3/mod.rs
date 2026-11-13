@@ -20,7 +20,8 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 ///   sent as a document transition. Only the token marketplace transitions write orders:
 ///   creating one as a document is refused by `creationRestrictionMode` 2, and the types stay
 ///   mutable and deletable, so documents carry a revision and storage flags for the partial
-///   fills and closes the platform writes.
+///   fills and closes the platform writes. The contract exists from protocol version 16, so
+///   nothing matches these bindings under protocol version 15.
 ///
 /// Every other binding is v2's.
 #[inline(always)]

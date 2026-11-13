@@ -525,8 +525,9 @@ mod replacement_tests {
             // increases byte-billed contract-tree reads.
             // The app-connect and moderation charters contracts each add one sibling to the
             // genesis contracts tree, increasing the bytes billed when reading that tree
-            // (protocol 14 only). The decision proposals and token market contracts add two more
-            // at protocol 15, which reshape the tree so the contract read is billed fewer bytes (-47_280).
+            // (protocol 14 only). The decision proposals contract adds another at protocol
+            // 15, which reshapes the tree so the contract's node is billed fewer bytes to
+            // reach (-47_280).
             // DashPay v3's privateContactRequest type makes its sibling node larger (+2_860).
             1501720,
         )

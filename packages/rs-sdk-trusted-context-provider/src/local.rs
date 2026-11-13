@@ -193,6 +193,12 @@ impl ContractSource for LocalContextResolver {
 
 #[cfg(all(test, any(feature = "dpns-contract", feature = "all-system-contracts")))]
 mod tests {
+    /// The token marketplace starts with protocol version 16, which has no tables yet: the test
+    /// version that selects it stands in for it.
+    fn token_marketplace_version() -> &'static dpp::version::PlatformVersion {
+        &dpp::version::mocks::v5_test::TEST_PLATFORM_V5
+    }
+
     use std::sync::Arc;
 
     use dash_context_provider::ContractSource;
@@ -255,26 +261,26 @@ mod tests {
         assert_eq!(resolver.token_configuration(&token_id), Some(config));
     }
 
-    /// The token market contract does not exist before protocol version 15.
+    /// The token market contract does not exist before protocol version 16.
     /// The SPV and adaptive providers read contracts only from the resolver,
     /// so it must refuse a contract preloaded under that id there itself.
     #[test]
-    fn should_refuse_a_preloaded_token_market_contract_before_protocol_15() {
+    fn should_refuse_a_preloaded_token_market_contract_before_protocol_16() {
         let resolver = LocalContextResolver::new();
         let mut contract = app_contract();
         let id = SystemDataContract::TokenMarket.id();
         contract.set_id(id);
         resolver.add_known_data_contract(Arc::new(contract));
-        let pv14 = PlatformVersion::get(14).expect("protocol version 14");
         let pv15 = PlatformVersion::get(15).expect("protocol version 15");
+        let marketplace_version = token_marketplace_version();
 
-        assert!(resolver.data_contract(&id, pv14).unwrap().is_none());
-        assert!(ContractSource::get_data_contract(&resolver, &id, pv14)
+        assert!(resolver.data_contract(&id, pv15).unwrap().is_none());
+        assert!(ContractSource::get_data_contract(&resolver, &id, pv15)
             .unwrap()
             .is_none());
         assert_eq!(
             resolver
-                .data_contract(&id, pv15)
+                .data_contract(&id, marketplace_version)
                 .unwrap()
                 .map(|contract| contract.id()),
             Some(id)

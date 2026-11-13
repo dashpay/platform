@@ -44,7 +44,7 @@ impl Drive {
             total_identity_token_balances,
             // Token shielded pools do not exist before protocol version 14.
             total_token_shielded_pool_balances: 0,
-            // v0 predates the token order escrow (protocol version 15): zero leaves the
+            // v0 predates the token order escrow (protocol version 16): zero leaves the
             // conservation check of every protocol version that selects v0 as it was.
             total_token_order_escrow_balances: 0,
         })

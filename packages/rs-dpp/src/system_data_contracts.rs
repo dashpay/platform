@@ -1817,6 +1817,7 @@ mod token_market_tests {
     use crate::document::transfer::Transferable;
     use crate::nft::TradeMode;
     use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+    use platform_version::version::mocks::v5_test::TEST_PLATFORM_V5;
 
     /// The order types are what the marketplace transitions rely on: only they create orders,
     /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
@@ -1824,8 +1825,10 @@ mod token_market_tests {
     /// `depth` index sums what the order holds in escrow.
     #[test]
     fn should_load_the_order_types_the_marketplace_writes() {
+        // The token marketplace starts with protocol version 16, which has no tables yet: the
+        // test version that selects it stands in.
         let contract =
-            load_system_data_contract(SystemDataContract::TokenMarket, PlatformVersion::latest())
+            load_system_data_contract(SystemDataContract::TokenMarket, &TEST_PLATFORM_V5)
                 .expect("the token market contract loads with full validation");
         assert_eq!(contract.id(), token_market_contract::ID);
         assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
@@ -1908,10 +1911,15 @@ mod token_market_tests {
     }
 
     #[test]
-    fn should_not_exist_before_protocol_version_15() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
-        assert!(
-            load_system_data_contract(SystemDataContract::TokenMarket, platform_version).is_err()
-        );
+    fn should_not_exist_before_protocol_version_16() {
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the protocol version");
+            assert!(
+                load_system_data_contract(SystemDataContract::TokenMarket, platform_version)
+                    .is_err(),
+                "protocol version {protocol_version}"
+            );
+        }
     }
 }
