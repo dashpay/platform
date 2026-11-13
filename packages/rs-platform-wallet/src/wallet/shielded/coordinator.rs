@@ -2261,7 +2261,7 @@ impl NetworkShieldedCoordinator {
                 // out.
                 let own_addresses: Vec<Vec<u8>> = outgoing
                     .iter()
-                    .filter(|o| is_own_orchard_recipient(views, &o.recipient))
+                    .filter(|o| views.is_own_recipient(&o.recipient))
                     .map(|o| o.recipient.clone())
                     .collect();
 
@@ -2561,30 +2561,6 @@ fn build_per_wallet_summary(
         );
     }
     summary
-}
-
-/// Whether a 43-byte raw Orchard `recipient` belongs to the subwallet's
-/// own viewing keys — i.e. it's a self-change output, not a payment to
-/// someone else. Orchard addresses are diversified, so this can't be a
-/// fixed-address comparison; it tests the recipient against the IVK via
-/// `diversifier_index` (mirrors the `sender_ovk` account-selection check
-/// in `fund_from_asset_lock.rs`). A malformed recipient (wrong length /
-/// off-curve) returns `false` (treated as external) so a corrupt row
-/// can't silently mask a real send.
-fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> bool {
-    let raw: [u8; 43] = match recipient.try_into() {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let Some(addr) = Option::<grovedb_commitment_tree::PaymentAddress>::from(
-        grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(&raw),
-    ) else {
-        return false;
-    };
-    views
-        .incoming_viewing_key
-        .diversifier_index(&addr)
-        .is_some()
 }
 
 /// The evidence a sync pass has that an anchor was pruned: Platform's recorded

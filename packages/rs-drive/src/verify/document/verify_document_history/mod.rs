@@ -1,28 +1,45 @@
 mod v0;
+mod v1;
+
+#[cfg(all(test, feature = "server", feature = "verify"))]
+mod tests;
 
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::verify::RootHash;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
-use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+};
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
+use crate::verify::RootHash;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::version::PlatformVersion;
+
 impl Drive {
-    /// Verifies that the document's history is included in the proof.
+    /// Verifies the per-document timestamp-keyed history used through protocol version 14.
+    ///
+    /// # Parameters
+    /// `start_after_ms` excludes matching timestamps; `offset` optionally skips entries after
+    /// that bound for unproved queries. The platform version must select the timestamp-keyed reader.
+    ///
+    /// # Returns
+    /// The history result, or an error for an unsupported reader generation.
     #[allow(clippy::too_many_arguments)]
-    pub fn verify_document_history(
+    pub fn verify_document_history_after_time(
         proof: &[u8],
         contract_id: [u8; 32],
         document_type_name: &str,
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
-        start_at_ms: u64,
+        start_after_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<BTreeMap<u64, Document>>), Error> {
+        require_supported_grovedb_proof_envelope(proof, "document history proof")?;
         match platform_version
             .drive
             .methods
@@ -30,20 +47,43 @@ impl Drive {
             .document
             .verify_document_history
         {
-            0 => Drive::verify_document_history_v0(
+            0 => Self::verify_document_history_v0(
                 proof,
                 contract_id,
                 document_type_name,
                 document_type,
                 document_id,
-                start_at_ms,
+                start_after_ms,
                 limit,
                 offset,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_document_history".to_string(),
+                method: "verify_document_history_after_time".to_owned(),
                 known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Verifies a proved page and lifecycle from the per-type composite-keyed history tree.
+    pub fn verify_document_history(
+        query: &DocumentHistoryDriveQuery,
+        proof: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .document
+            .verify_document_history
+        {
+            1 => Drive::verify_document_history_v1(query, proof, document_type, platform_version),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_document_history".to_string(),
+                known_versions: vec![1],
                 received: version,
             })),
         }

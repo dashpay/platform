@@ -304,6 +304,21 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                                 )))))
                         }
 
+                        // In a vote among documents (protocol version 15) each document is a
+                        // contender of its own, kept under its id, which the check above
+                        // found no contender under: an identity may enter several. No
+                        // contract registered before that version declares the resolution,
+                        // so every other contest reads its owner's contender as it always did
+                        if contested_document_resource_vote_poll
+                            .index()
+                            .map_err(Error::Drive)?
+                            .contested_index
+                            .as_ref()
+                            .is_some_and(|contested| contested.resolution.contenders_are_documents())
+                        {
+                            return Ok(SimpleConsensusValidationResult::new());
+                        }
+
                         // we need to also make sure that we are not already a contestant
 
                         let (maybe_existing_contender, fee_result) = fetch_contender(platform.drive, contested_document_resource_vote_poll, owner_id, block_info, transaction, platform_version)?;

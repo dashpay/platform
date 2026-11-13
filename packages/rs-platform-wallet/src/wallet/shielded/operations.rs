@@ -502,7 +502,7 @@ struct ShieldRecipient {
 ///
 /// A `Some` address the account's own IVK recognizes (default or any
 /// diversified index — the same `diversifier_index` test the scan's
-/// `is_own_orchard_recipient` uses) is rejected instead of classified:
+/// `AccountViewingKeys::is_own_recipient` uses) is rejected instead of classified:
 /// its note WOULD be spendable here, so it is not a send, and
 /// recording it live as `Sent`/`Out` while a restore scan-derives a
 /// self-pay row would fork the two histories. Self-shields take the

@@ -201,6 +201,14 @@ struct ContentView: View {
             } message: { message in
                 Text(message)
             }
+            // Failures reported through `AppState.showError`, for example an
+            // SPV stop, SDK build or wallet-manager move that failed while
+            // Options rebuilt the SDK.
+            .alert("Error", isPresented: $platformState.showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(platformState.errorMessage)
+            }
         }
     }
 
@@ -495,7 +503,7 @@ struct ContentView: View {
         // changing the user's currently visible network.
         let recoveryManager: PlatformWalletManager
         do {
-            recoveryManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
+            recoveryManager = try await walletManagerStore.backgroundManager(for: restoredNetwork)
         } catch {
             let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + "failed to prepare wallet manager — \(error.localizedDescription)"

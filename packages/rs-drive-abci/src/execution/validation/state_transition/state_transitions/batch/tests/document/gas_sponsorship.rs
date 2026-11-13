@@ -60,6 +60,7 @@ pub(crate) mod gas_sponsorship_tests {
     use dpp::fee::epoch::{DEFAULT_EPOCHS_PER_ERA, PERPETUAL_STORAGE_ERAS};
     use dpp::fee::fee_result::FeeResult;
     use drive::drive::RootTree;
+    use drive::drive::document::paths::document_history_path;
     use drive::query::DriveDocumentQuery;
     use drive::util::batch::drive_op_batch::{
         DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
@@ -68,6 +69,7 @@ pub(crate) mod gas_sponsorship_tests {
     use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
     use drive::util::storage_flags::StorageFlags;
+    use drive::util::common::encode::encode_u64;
     use drive::util::test_helpers::setup_contract;
     use simple_signer::signer::SimpleSigner;
     use std::borrow::Cow;
@@ -467,6 +469,49 @@ pub(crate) mod gas_sponsorship_tests {
             storage_flags
                 .and_then(|storage_flags| storage_flags.owner_id().copied())
                 .map(Identifier::from)
+        }
+
+        fn assert_history_storage_owners(&self, revisions: &[(u64, u64, Identifier)]) {
+            let (card, _) = self.card_of(&self.user);
+            let mut path =
+                document_history_path(self.contract.id().as_slice(), "card", card.id().as_slice());
+            let owner = |path: &[Vec<u8>], key: &[u8], reference| {
+                let element = self
+                    .platform
+                    .drive
+                    .grove
+                    .get_raw(
+                        path.iter()
+                            .map(Vec::as_slice)
+                            .collect::<Vec<_>>()
+                            .as_slice()
+                            .into(),
+                        key,
+                        None,
+                        &self.platform_version.drive.grove_version,
+                    )
+                    .unwrap()
+                    .expect("expected the raw history element");
+                assert_eq!(element.is_reference(), reference);
+                StorageFlags::map_some_element_flags_ref(element.get_flags())
+                    .unwrap()
+                    .and_then(|flags| flags.owner_id().copied())
+                    .map(Identifier::from)
+            };
+            for (time, revision, expected) in revisions {
+                let key = [encode_u64(*time), encode_u64(*revision)].concat();
+                assert_eq!(owner(&path, &key, false), Some(*expected));
+            }
+            path.truncate(4);
+            path.push(vec![0]);
+            assert_eq!(
+                owner(&path, card.id().as_slice(), true),
+                Some(self.user.id())
+            );
+            assert_eq!(
+                self.stored_attack_index_reference_owner(),
+                Some(self.user.id())
+            );
         }
 
         /// The user's card as it is stored, with its storage flags
@@ -1749,10 +1794,9 @@ pub(crate) mod gas_sponsorship_tests {
     }
 
     #[tokio::test]
-    async fn should_hand_a_sponsored_history_version_to_the_user_who_rewrites_it_in_its_block() {
-        // A type keeping history stores each version under the block's time, so a second
-        // update in the same block rewrites the version the first wrote. The user's growth
-        // refunds the contract owner, and the version is the user's from then on.
+    async fn should_hand_a_sponsored_history_pointer_and_index_to_the_user_who_updates_it() {
+        // Each revision is immutable even within one block. The first user update hands
+        // the pointer and unchanged index entry over, while the sponsored revision stays.
         let setup = history_card_game();
         setup.give_the_user_game_tokens(5);
         let block = BlockInfo::default();
@@ -1765,16 +1809,25 @@ pub(crate) mod gas_sponsorship_tests {
         let (refunded_to_user, refunded_to_contract_owner) = settle(&setup, &growth, &block, false);
         assert_eq!(refunded_to_user, None);
         assert!(refunded_to_contract_owner.is_some_and(|refund| refund > 0));
+        setup.assert_history_storage_owners(&[
+            (0, 1, setup.contract_owner.id()),
+            (0, 2, setup.user.id()),
+        ]);
 
         let shrink = setup
             .card_replacement_describing(3, 4, 10, GasFeesPaidBy::DocumentOwner)
             .await;
         let (refunded_to_user, refunded_to_contract_owner) = settle(&setup, &shrink, &block, false);
-        assert!(
-            refunded_to_user.is_some_and(|refund| refund > 0),
-            "the user is refunded what the shrink frees of the version they now hold"
+        assert_eq!(
+            refunded_to_user, None,
+            "a shrink retains the larger revision"
         );
         assert_eq!(refunded_to_contract_owner, None);
+        setup.assert_history_storage_owners(&[
+            (0, 1, setup.contract_owner.id()),
+            (0, 2, setup.user.id()),
+            (0, 3, setup.user.id()),
+        ]);
     }
 
     #[tokio::test]
@@ -1811,9 +1864,8 @@ pub(crate) mod gas_sponsorship_tests {
 
     #[tokio::test]
     async fn should_leave_a_history_version_the_user_paid_for_with_the_user_in_a_later_block() {
-        // A version written in a later block than the sponsored one is a new element, paid for
-        // by the user: it names the user, so the user's shrink of it in that block refunds the
-        // user. The contract owner's version stays stored, and theirs.
+        // Later-block updates hand the pointer and unchanged index entry over too.
+        // Shrinking appends another revision and frees none of the stored versions.
         let setup = history_card_game();
         setup.give_the_user_game_tokens(5);
         let creation_block = BlockInfo::default();
@@ -1828,8 +1880,14 @@ pub(crate) mod gas_sponsorship_tests {
         let growth = setup
             .card_replacement_describing(2, 3, 200, GasFeesPaidBy::DocumentOwner)
             .await;
-        let (refunded_to_user, _) = settle(&setup, &growth, &later_block, false);
+        let (refunded_to_user, refunded_to_contract_owner) =
+            settle(&setup, &growth, &later_block, false);
         assert_eq!(refunded_to_user, None);
+        assert!(refunded_to_contract_owner.is_some_and(|refund| refund > 0));
+        setup.assert_history_storage_owners(&[
+            (0, 1, setup.contract_owner.id()),
+            (1000, 2, setup.user.id()),
+        ]);
 
         let shrink = setup
             .card_replacement_describing(3, 4, 10, GasFeesPaidBy::DocumentOwner)
@@ -1837,11 +1895,16 @@ pub(crate) mod gas_sponsorship_tests {
         let (refunded_to_user, refunded_to_contract_owner) =
             settle(&setup, &shrink, &later_block, false);
 
-        assert!(
-            refunded_to_user.is_some_and(|refund| refund > 0),
-            "the user is refunded what the shrink frees of the version they paid for"
+        assert_eq!(
+            refunded_to_user, None,
+            "a shrink retains the larger revision"
         );
         assert_eq!(refunded_to_contract_owner, None);
+        setup.assert_history_storage_owners(&[
+            (0, 1, setup.contract_owner.id()),
+            (1000, 2, setup.user.id()),
+            (1000, 3, setup.user.id()),
+        ]);
     }
 
     #[tokio::test]

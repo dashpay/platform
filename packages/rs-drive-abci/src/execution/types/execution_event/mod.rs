@@ -5,6 +5,7 @@ use crate::error::Error;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::block::epoch::Epoch;
+use dpp::decision_proposal::multiple_choice_proposal_processing_fee;
 use dpp::fee::Credits;
 use std::collections::BTreeMap;
 
@@ -314,6 +315,12 @@ impl ExecutionEvent<'_> {
                 // Read off the transitions as state validation left them: one it replaced with
                 // a nonce bump owes no action fee.
                 let action_fees = batch_action.resolved_action_fees()?;
+                // Each multiple choice proposal the batch creates (protocol version 15) pays a
+                // flat processing fee: it opens no poll, so it prefunds no votes. The fee
+                // schedules before that version carry 0, and no such proposal exists there.
+                let multiple_choice_proposal_fees = batch_action
+                    .multiple_choice_proposals_created()
+                    .saturating_mul(multiple_choice_proposal_processing_fee(platform_version));
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -323,7 +330,8 @@ impl ExecutionEvent<'_> {
                         added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
-                        additional_fixed_fee_cost: None,
+                        additional_fixed_fee_cost: (multiple_choice_proposal_fees > 0)
+                            .then_some(multiple_choice_proposal_fees),
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor,

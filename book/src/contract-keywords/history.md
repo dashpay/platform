@@ -1,6 +1,6 @@
 # History
 
-Platform can keep two kinds of history for a document type. `documentsKeepHistory` keeps every version of each document in Drive, under the document itself, so an application can read what a document said at any earlier time. The three `keeps*History` flags record events instead: each transfer, purchase or price update of a document becomes a record in the document history system contract, where it can be queried by document, by contract, by identity and by time.
+Platform can keep two kinds of history for a document type. `documentsKeepHistory` keeps every version of each document in Drive, so an application can read what a document said at any earlier time. The three `keeps*History` flags record events instead: each transfer, purchase or price update of a document becomes a record in the document history system contract, where it can be queried by document, by contract, by identity and by time.
 
 ## `documentsKeepHistory`
 
@@ -13,7 +13,7 @@ Keeps every version of every document of the type, not only the latest.
 | **Default** | the contract config's `documentsKeepHistoryContractDefault`, which is `false` unless the contract says otherwise |
 | **Since** | protocol version 1 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212). Adding or removing the key without changing its value is refused too, as a schema change (`IncompatibleDocumentTypeSchemaError`, 10246). |
-| **Errors** | `InvalidDocumentTransitionActionError` (10404) for a delete of a document of the type, from protocol version 14 |
+| **Errors** | `InvalidDocumentTransitionActionError` (10404) for a delete at protocol version 14, or when `canBeDeleted` refuses it |
 
 ### Example
 
@@ -31,23 +31,39 @@ Keeps every version of every document of the type, not only the latest.
 }
 ```
 
-Every edit of a profile adds a version, and every earlier version stays readable. `canBeDeleted: false` has to be written out, since a type that keeps history can never delete and the default is `true`.
+Every edit of a profile adds a version. This example explicitly prevents owner deletion; the usual default is `true`. Protocol version 14 requires `canBeDeleted: false` on a history type. From version 15, a deletable history type may remove the current document while retaining its revisions, and may separately allow their erasure with [`canBeErased`](deletion.md#canbeerased).
 
 ### How it works
 
-- Each document is stored as a small tree of its own: every version the document has had, keyed by the block time it was written at, and a pointer to the current one. A query by id or through an index sees the current version.
+- Through protocol version 14, each document is stored as a small tree of its own, with versions keyed by block time and a pointer to the current one. From protocol version 15, versions live in a separate history tree for the document type and retain both time and revision, including edits sharing a block time. A query by id or through an index sees the current version.
 - Every write that changes the document adds a version: a replace, and also a transfer, a price update or a purchase.
-- Nothing is ever removed. Drive refuses to delete a document whose type keeps history, so its owner's delete is refused (10404 from protocol version 14; before it, the delete failed inside Drive as an internal error), and the type can have neither moderator deletion nor a `ttl`.
+- Through protocol version 14, Drive refuses to delete a document whose type keeps history (10404 at version 14; before it, the delete failed inside Drive as an internal error). From version 15, an allowed owner delete removes the current pointer and indexes but retains every revision. Erase transitions may then remove retained revisions if the type declares `canBeErased: true`. History types still allow neither moderator deletion nor a `ttl`.
 - The `getDocumentHistory` query returns a document's versions from a given time on, each with the block time it was written at, at most 10 per request, and with a proof when asked.
-- Every version stays stored, paid for by the write that added it.
+- Each retained version is paid for by the write that added it. Erasure refunds removed storage to its recorded payer.
 - A doctype-level sum or average (`documentsSummable`, `documentsAverageable`) counts only each document's current version. See [Counts, Sums and Averages](aggregates.md).
+
+`getDocumentHistory` uses request and response version 0 through protocol version
+14. Its `start_at_ms` is exclusive, `offset` skips entries, and response entries
+contain `date` and document `value` bytes. Proved requests require an absent or
+zero offset.
+
+From protocol version 15, the query accepts version 1 only. It requires exactly
+one filter: inclusive `start_at_ms`, exclusive `start_after` with both time and
+revision, inclusive `start_at_revision`, or exact `revision`. Unproved responses
+carry entries with time, revision and document bytes, plus lifecycle metadata;
+proved responses carry one signed proof object containing one GroveDB proof of
+the page and lifecycle.
+The Rust SDK and its WASM/JavaScript bindings send version 1 and require proofs.
+On an updated node running protocol version 14 this returns the standard
+unsupported-query-version error; the SDK does not fall back to version 0.
 
 ### Rules at registration
 
 All refusals below are `InvalidContractStructure` (10231).
 
-- From protocol version 14, the type must set `canBeDeleted: false`. A contract registered earlier with both flags on stays readable, and its next update must turn `canBeDeleted` off on that type. See [Deletion](deletion.md).
+- At protocol version 14, the type must set `canBeDeleted: false`; an older contract with both flags on stays readable but must turn deletion off on its next update. From version 15, deletable history is admitted. Older types whose deletion flag is true become soft-deletable at activation without an update. See [Deletion](deletion.md).
 - Refused together with `ttl`, with `moderatorAbilities.delete` and with `indexOnly`.
+- From protocol version 15, refused together with a contested index.
 
 ## `keepsTransferHistory`
 
@@ -138,6 +154,7 @@ The document history contract is a system contract registered at protocol versio
 ## See also
 
 - [Creation, Transfers and Trading](ownership-and-trading.md), for the actions the three flags record
-- [Deletion](deletion.md) and [Time To Live](ttl.md), for why a type that keeps history can never lose a document
+- [Deletion](deletion.md) and [Time To Live](ttl.md), for owner deletion, erasure and the expiry restriction
+- [Keep-History Documents](../drive/keep-history-documents.md), for lifecycle states, temporal reads and proofs
 - [Counts, Sums and Averages](aggregates.md), for the aggregates of the history records
 - [Contract-Level Keys and config](contract-config.md), for `documentsKeepHistoryContractDefault` and the contract's own `keepsHistory`

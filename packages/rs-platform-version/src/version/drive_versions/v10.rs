@@ -24,6 +24,8 @@ use grovedb_version::version::v5::GROVE_V5;
 
 /// Drive version 10, introduced in protocol v15:
 ///
+/// * **Retained history** (protocol v15 note 35): per-type revision trees and one proof
+///   authenticate its page, count and lifecycle.
 /// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
 ///   nothing when its format version 1 bytes match the stored contract's, whatever format the
 ///   stored one is in, as contracts are stored compiled from this version
@@ -50,7 +52,8 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
-///   a masternode that left the list. It sets every `yes_no` method to `Some(0)`, so yes/no
+///   a masternode that left the list and deletes a contested resource vote a reference
+///   points at while that vote is stored. It sets every `yes_no` method to `Some(0)`, so yes/no
 ///   polls can be opened and voted on (`None`, not active, in every earlier table), and bumps
 ///   `contested_resource_insert.add_vote_poll_end_date_query_operations` to 1, which adds only
 ///   the entry when the batch already queues the end date's tree with other storage flags.
@@ -76,10 +79,12 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
 ///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
-///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
+///   also sets `remove_reference_for_index_level_for_contract_operations` to 2,
+///   `add_reference_for_index_level_for_contract_operations` to 1 and
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
-///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
-///   system credits update describe their layers as they are. Applying a batch is unchanged.
+///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete, an
+///   insert under a summable index and a system credits update describe their layers as they
+///   are. Applying a batch is unchanged.
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
@@ -111,9 +116,14 @@ use grovedb_version::version::v5::GROVE_V5;
 ///
 /// * **A single document at a block time** (protocol v15 note 31):
 ///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets `query.single_document_path_query` to 1, which
-///   stops a lookup in a document's history above the pointer to the latest version, and
-///   `verify_proof_keep_serialized` 1 verifies its proof outside a contest. A document with
-///   history that may be contested is refused at a block time.
+///   selects the newest retained revision at or before the time, taking the highest revision
+///   at equal times in the composite history layout. `verify_proof_keep_serialized` 1 verifies
+///   its proof outside a contest. A history document that may be contested is refused at a
+///   block time; explicitly contested queries ignore the time.
+///
+/// * **An insert writes no entry in an expired time range bucket** (protocol v15 note 36):
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
+///   `insert.add_indices_for_top_index_level_for_contract_operations` to 3.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -141,10 +151,10 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates; a single document at a block time
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time; no insert into an expired time range bucket
         batch_operations: DriveBatchOperationsMethodVersion {
+            convert_drive_operations_to_grove_operations: 2, // changed: sibling history deletes share their pending lifecycle container (note 41)
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
-            ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
@@ -166,7 +176,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private
     // document store's entries are read and proved by position range, a store's creation is
     // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
-    // keeps, refuses all three.
+    // keeps, refuses all three. History also uses branch-local pagination and parent echoes.
     grove_version: GROVE_V5,
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V2, // changed in v10: the flags update follows the written owner
     ..DRIVE_VERSION_V9

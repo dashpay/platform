@@ -257,6 +257,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             );
             let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
+                finalized_spends: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: {
@@ -705,6 +706,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
+                    // As `remove_wallet` does, while this load's wallet
+                    // still holds the id.
+                    self.forget_txo_reconcile(id);
                     if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),

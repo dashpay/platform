@@ -33,11 +33,11 @@ where
     ///   Platform holds exactly the quorums active at the signing height; version 0 also returns
     ///   it when Platform might not hold the quorum the chain lock was signed with
     /// * `Ok(None)` - Platform cannot tell on its own, so Core has to decide. Nothing about the
-    ///   signature is known yet: `verify_chain_lock_through_core` has to check it
+    ///   signature is known yet: `verify_chain_lock_through_core` has to check it. This is also
+    ///   the answer when Platform holds no quorum to verify against
     /// * `Err(Error::BLSError)` - The signature could not be deserialized
-    /// * `Err(Error::Execution)` - An unknown method version, no quorums to verify against, or
-    ///   from version 1 a platform version without DKG mining schedules or with a schedule whose
-    ///   interval is 0
+    /// * `Err(Error::Execution)` - An unknown method version, or from version 1 a platform
+    ///   version without DKG mining schedules or with a schedule whose interval is 0
     pub fn verify_chain_lock_locally(
         &self,
         round: u32,
