@@ -146,7 +146,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ADDR-01 | Query address info / multiple infos | Platform | Common | ✅ | | `AddressQueriesScreen` → `dash_sdk_address_fetch_info(s)`. |
 | ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Transfer Credits** (`TransferPlatformAddressScreen`) → `platform_address_wallet_transfer` (Keystore-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. |
 | ADDR-03 | Top up address from an existing (pending) asset lock | Cross | Thorough | ✅ | | Resume a stuck/pending Platform-address asset-lock funding: `IdentitiesHomeScreen` → `PendingAssetLocksList` → `ManagedPlatformWallet.resumeFundFromAssetLock` → `WalletManagerNative.walletResumeFundFromAssetLock`. Distinct from `ADDR-09`, which builds a **new** lock from Core. Needs a pending-lock fixture (an asset lock whose consume did not complete). |
-| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. |
+| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. The partial-amount overload `withdrawCredits(coreAddress, inputs, …)` has no screen here (none in SwiftExampleApp either); its input encoding is covered by `WithdrawalInputTest`. |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressSheet`, platform tab): QR + bech32m DIP-17 address + Copy. |
 | ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
 | ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
@@ -300,6 +300,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view → `dash_sdk_system_get_path_elements`. Enter `path` + `keys` JSON array; returns `[{key, element, type}]`. Use a **bounded** path. |
 | SYS-07 | Platform balance sync covers every registered wallet | Platform | — | ➖ | | Retired — the row verified a per-active-wallet staleness caveat that no longer exists: the Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (platform twin of `CORE-20`), and the cross-wallet receives (`SH-15`, `DOC-15`) already exercise it. |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
+| SYS-09 | Quorum Source picker + Proof Quorum Source indicator | Platform | Thorough | ✅ | | Settings → **Quorum Source** (`settings.quorumMode`, port of SwiftExampleApp's Options picker): pick Auto / SPV / Trusted; the choice applies to the current SDK at once and survives a relaunch. **Proof Quorum Source** (`settings.quorumSource`): in Auto it reads *Trusted (HTTP)* until SPV, started from the Sync tab, has synced, then *SPV*; SPV mode reads *SPV* at once (proofs fail closed until synced); Trusted reads *Trusted (HTTP)*. Proofs keep verifying in Auto while SPV syncs. |
 
 ---
 
@@ -313,7 +314,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 29 | yes |
-| Thorough | 41 | yes |
+| Thorough | 42 | yes |
 | Uncommon | 25 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
@@ -342,7 +343,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
-- **System / Diagnostics** — `SYS-01..08`
+- **System / Diagnostics** — `SYS-01..09`
 
 ### Tag index
 

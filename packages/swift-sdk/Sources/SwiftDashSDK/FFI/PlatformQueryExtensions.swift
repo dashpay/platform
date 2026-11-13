@@ -563,7 +563,7 @@ extension SDK {
 
     // MARK: - Trusted Context Management
 
-    /// Add a data contract to the trusted context provider cache
+    /// Add a data contract to the SDK's context provider cache
     /// This allows the SDK to use the contract without fetching it from the network
     public func addContractToContext(contractId: String, binaryData: Data) throws {
         guard self.handle != nil else {

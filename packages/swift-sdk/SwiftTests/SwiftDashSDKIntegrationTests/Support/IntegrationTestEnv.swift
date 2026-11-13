@@ -131,7 +131,10 @@ final class IntegrationTestEnv: @unchecked Sendable {
             "http://127.0.0.1:\(endpoints.platformDAPI)",
             forKey: "platformDAPIAddresses"
         )
-        let sdk = try SDK(network: .regtest)
+        // Trusted, explicitly: the env replaces its wallet manager, and tests
+        // build throwaway managers, on this one SDK while another manager is
+        // alive, and only one manager can serve an adaptive SDK.
+        let sdk = try SDK(network: .regtest, contextProvider: .trusted)
         let modelContainer = try DashModelContainer.createInMemory()
         let walletManager = try await MainActor.run {
             try PlatformWalletManager(sdk: sdk, modelContainer: modelContainer)
