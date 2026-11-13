@@ -96,6 +96,8 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?
     pub(in crate::data_contract) documents_can_be_deleted: bool,
+    /// Whether a deleted document's retained revisions may be erased.
+    pub(in crate::data_contract) documents_can_be_erased: bool,
     /// Whether the documents of this type leave state only when a `refersTo` with
     /// `consume` deletes them (`canBeDeleted: "onlyWhenConsumed"`, protocol version 14).
     /// Only ever `true` beside a `false` `documents_can_be_deleted`: the owner can not
@@ -364,6 +366,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_can_be_erased: false,
             documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
@@ -428,6 +431,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_can_be_erased: false,
             documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,

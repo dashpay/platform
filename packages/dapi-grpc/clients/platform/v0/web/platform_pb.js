@@ -60126,7 +60126,11 @@ proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryRes
 proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.toObject = function(includeInstance, msg) {
   var f, obj = {
     state: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    remainingRevisions: jspb.Message.getFieldWithDefault(msg, 2, "0")
+    remainingRevisions: jspb.Message.getFieldWithDefault(msg, 2, "0"),
+    deletedAtMs: jspb.Message.getFieldWithDefault(msg, 3, "0"),
+    erasingStartedAtMs: jspb.Message.getFieldWithDefault(msg, 4, "0"),
+    erasingFromTimeMs: jspb.Message.getFieldWithDefault(msg, 5, "0"),
+    erasingFromRevision: jspb.Message.getFieldWithDefault(msg, 6, "0")
   };
 
   if (includeInstance) {
@@ -60171,6 +60175,22 @@ proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryRes
       var value = /** @type {string} */ (reader.readUint64String());
       msg.setRemainingRevisions(value);
       break;
+    case 3:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setDeletedAtMs(value);
+      break;
+    case 4:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setErasingStartedAtMs(value);
+      break;
+    case 5:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setErasingFromTimeMs(value);
+      break;
+    case 6:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setErasingFromRevision(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -60214,6 +60234,34 @@ proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryRes
       f
     );
   }
+  f = message.getDeletedAtMs();
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
+      3,
+      f
+    );
+  }
+  f = message.getErasingStartedAtMs();
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
+      4,
+      f
+    );
+  }
+  f = message.getErasingFromTimeMs();
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
+      5,
+      f
+    );
+  }
+  f = message.getErasingFromRevision();
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
+      6,
+      f
+    );
+  }
 };
 
 
@@ -60222,7 +60270,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryRes
  */
 proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.State = {
   ACTIVE: 0,
-  ABSENT: 1
+  ABSENT: 1,
+  DELETED: 2,
+  ERASING: 3
 };
 
 /**
@@ -60258,6 +60308,78 @@ proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryRes
  */
 proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.setRemainingRevisions = function(value) {
   return jspb.Message.setProto3StringIntField(this, 2, value);
+};
+
+
+/**
+ * optional uint64 deleted_at_ms = 3;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.getDeletedAtMs = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.setDeletedAtMs = function(value) {
+  return jspb.Message.setProto3StringIntField(this, 3, value);
+};
+
+
+/**
+ * optional uint64 erasing_started_at_ms = 4;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.getErasingStartedAtMs = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.setErasingStartedAtMs = function(value) {
+  return jspb.Message.setProto3StringIntField(this, 4, value);
+};
+
+
+/**
+ * optional uint64 erasing_from_time_ms = 5;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.getErasingFromTimeMs = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.setErasingFromTimeMs = function(value) {
+  return jspb.Message.setProto3StringIntField(this, 5, value);
+};
+
+
+/**
+ * optional uint64 erasing_from_revision = 6;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.getErasingFromRevision = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 6, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.prototype.setErasingFromRevision = function(value) {
+  return jspb.Message.setProto3StringIntField(this, 6, value);
 };
 
 

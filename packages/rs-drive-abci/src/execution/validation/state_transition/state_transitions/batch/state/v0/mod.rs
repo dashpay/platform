@@ -18,6 +18,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::batch::action_validation::document::document_shielded_token_payment::validate_document_shielded_token_payment;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_erase_transition_action::DocumentEraseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
@@ -196,6 +197,17 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         )?
                     }
                     DocumentTransitionAction::PurchaseAction(purchase_action) => purchase_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?,
+                    // Protocols through 14 publish no erase bounds, so their accepted batches
+                    // never reach this arm.
+                    DocumentTransitionAction::EraseAction(erase_action) => erase_action
                         .validate_state(
                             platform,
                             owner_id,
