@@ -226,6 +226,21 @@ public struct DocumentHistoryLifecycle: Sendable {
         self.erasingFromRevision = erasingFromRevision
     }
 
+    init(ffi: DocumentLifecycleObservationFFI) throws {
+        switch ffi.state {
+        case 1: state = .active
+        case 2: state = .absent
+        case 3: state = .deleted
+        case 4: state = .erasing
+        default: throw DocumentEraseResultUnreadable()
+        }
+        remainingRevisions = ffi.remaining_revisions
+        deletedAtMs = ffi.deleted_at_ms
+        erasingStartedAtMs = ffi.erasing_started_at_ms
+        erasingFromTimeMs = ffi.erasing_from_time_ms
+        erasingFromRevision = ffi.erasing_from_revision
+    }
+
     /// Words for what an erase achieved, from the lifecycle read before it
     /// was submitted (nil when not read) and the one read after its absence
     /// was observed. The erase result itself proves only that the document

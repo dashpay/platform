@@ -1231,81 +1231,42 @@ struct TransitionDetailView: View {
           let signingIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
-
-    guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+    guard let walletId = signingIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter("Identity has no wallet linkage; cannot erase document history")
+    }
+    guard let contractText = formInputs["contractId"],
+          let contractId = Data.identifier(fromBase58: contractText) else {
       throw SDKError.invalidParameter("Data contract is required")
     }
-
     guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
       throw SDKError.invalidParameter("Document type is required")
     }
-
-    guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+    guard let documentText = formInputs["documentId"],
+          let documentId = Data.identifier(fromBase58: documentText) else {
       throw SDKError.invalidParameter("Document ID is required")
     }
-
-    // The selected identity signs and pays. It must own the document for
-    // the first erase; any identity may submit the ones after it.
-    let dppIdentity = DPPIdentity(
-      id: signingIdentity.identityId,
-      publicKeys: Dictionary(uniqueKeysWithValues: signingIdentity.identityPublicKeys.map { ($0.id, $0) }),
-      balance: UInt64(bitPattern: signingIdentity.balance),
-      revision: 0
-    )
-
-    // External-signer pattern (see executeDataContractCreate for the
-    // architectural rationale). Rust calls back through the
-    // `KeychainSigner` trampoline when it needs a signature.
     let signer = KeychainSigner(modelContainer: modelContext.container)
-
-    // The erase result only observes that the document is absent from
-    // ordinary reads, which it already was; what the erase achieved is read
-    // from the lifecycle before and after.
-    let before = try? await sdk.documentGetLifecycle(
-      dataContractId: contractId, documentType: documentType, documentId: documentId
-    )
-
-    if let before, before.state == .active || before.state == .absent {
-      return [
-        "message": "Erase not submitted",
-        "lifecycle": before.state.rawValue,
-        "remainingRevisions": before.remainingRevisions,
-        "progress": before.state == .absent
-          ? "No retained revisions exist."
-          : DocumentHistoryLifecycle.describeEraseProgress(before: before, after: before)
-      ]
+    let outcome: DocumentEraseOutcome
+    do {
+      outcome = try await wallet.eraseDocumentAndObserve(
+        submittingIdentityId: signingIdentity.identityId,
+        contractId: contractId,
+        documentType: documentType,
+        documentId: documentId,
+        signer: signer
+      )
+    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+      throw PlatformWalletError.transactionBroadcastUnconfirmed(
+        "Erase outcome unknown; do not resubmit automatically; read history first."
+      )
     }
-
-    try await sdk.documentErase(
-      contractId: contractId,
-      documentType: documentType,
-      documentId: documentId,
-      ownerIdentity: dppIdentity,
-      signer: signer.handle
-    )
-    _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
-
-    // The erase is broadcast and confirmed by this point, so the closing
-    // lifecycle read fails on its own terms: an unreadable observation is
-    // reported as unread, never as a failed erase the user would pay to
-    // submit a second time.
-    let after = try? await sdk.documentGetLifecycle(
-      dataContractId: contractId, documentType: documentType, documentId: documentId
-    )
-
-    guard let after else {
-      return [
-        "message": "Erase submitted; document absence observed under proof",
-        "progress": "Lifecycle not read; use Platform Queries → Get Document History to see what remains."
-      ]
+    var result: [String: Any] = ["message": describeDocumentEraseOutcome(outcome)]
+    if let observation = outcome.after ?? outcome.before {
+      result["lifecycle"] = observation.state.rawValue
+      result["remainingRevisions"] = observation.remainingRevisions
     }
-
-    return [
-      "message": "Erase submitted; document absence observed under proof",
-      "lifecycle": after.state.rawValue,
-      "remainingRevisions": after.remainingRevisions,
-      "progress": DocumentHistoryLifecycle.describeEraseProgress(before: before, after: after)
-    ]
+    return result
   }
 
   private func executeDocumentTransfer(sdk: SDK) async throws -> Any {
