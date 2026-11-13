@@ -394,7 +394,7 @@ async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
 /// was taken tops up nothing: refused before the identity is fetched,
 /// anything is signed or submitted.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_refuse_a_top_up_from_a_wallet_no_longer_current() {
+async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_both_routes() {
     let mut fixture = Fixture::new(true).await;
     let wallet_id = fixture.wallet.wallet_id();
     fixture
@@ -408,6 +408,12 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current() {
         matches!(&removed, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
             if *id == hex::encode(wallet_id)),
         "{removed:?}"
+    );
+    let removed_own = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(&removed_own, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+            if *id == hex::encode(wallet_id)),
+        "managed route: {removed_own:?}"
     );
 
     let recreated = fixture
@@ -428,6 +434,14 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current() {
             Err(PlatformWalletError::WalletRemovedBeforeSend(_))
         ),
         "{superseded:?}"
+    );
+    let superseded_own = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(
+            superseded_own,
+            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+        ),
+        "managed route: {superseded_own:?}"
     );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
@@ -601,7 +615,10 @@ async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
         }),
     )]);
     let new_balance = wallet
-        .top_up_external_identity_with(async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) })
+        .top_up_identity_with(
+            async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) },
+            "external identity top-up",
+        )
         .await
         .expect("a confirmed top-up");
 
