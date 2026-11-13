@@ -1844,11 +1844,10 @@ class PlatformWalletManager(
      * reconciles the outcome. A shield spends no notes, so nothing is
      * reserved wallet-side.
      *
-     * Cancelling the calling coroutine does not stop the native call: the
-     * shield can still be broadcast and land after this function has thrown
-     * `CancellationException`. Treat a cancelled call like
-     * `ShieldedSpendUnconfirmed`: let the next sync reconcile the outcome
-     * before retrying.
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, this still returns normally (see
+     * [opReturningCompletedResult]), so a completed shield is never hidden.
+     * Handle the return before the next suspension point.
      *
      * Blocks for the ~30s Halo 2 proof.
      *
@@ -1867,7 +1866,7 @@ class PlatformWalletManager(
         shieldedAccount: Int = 0,
         paymentAccount: Int = 0,
         memo: String? = null,
-    ): Unit = teardownGate.op {
+    ): Unit = teardownGate.opReturningCompletedResult {
         // Sign check only, before the native unsigned cast; zero is Rust's call.
         require(amount >= 0) { "amount must be non-negative, got $amount" }
         require(shieldedAccount >= 0) {
