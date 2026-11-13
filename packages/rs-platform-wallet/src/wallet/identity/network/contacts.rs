@@ -483,13 +483,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let contact_identity_id = contact_identity.id();
 
         // --- 1. Early-exit if the external account already exists. ---
+        //
+        // On this handle's wallet generation only: a wallet re-created under
+        // this id since may hold an account of its own, which would answer
+        // for this registration and clear a caller's queued one.
         {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                Transient(PlatformWalletError::WalletNotFound(hex::encode(
-                    self.wallet_id,
-                )))
-            })?;
+            let info = self.current_wallet_info(&wm).map_err(Transient)?;
             use key_wallet::account::account_collection::DashpayAccountKey;
             let key = DashpayAccountKey {
                 index: account_index,

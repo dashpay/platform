@@ -5,6 +5,8 @@
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(feature = "shielded")]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -106,6 +108,13 @@ pub struct WalletPersister {
     /// next process tracks what its load read from disk.
     #[cfg(feature = "shielded")]
     buffered_writes_lost: Arc<AtomicBool>,
+    /// How many flushes of this wallet's records are in progress: each is
+    /// counted from before it calls the backend until its outcome is
+    /// recorded in `buffered_writes_lost`, so while none is, that flag tells
+    /// of every flush that failed for good ([`Self::flush_durably`]). Shared
+    /// by the clones the wallet and the coordinator hold.
+    #[cfg(feature = "shielded")]
+    flushes_in_flight: Arc<AtomicUsize>,
     /// The largest size of DashPay's private contact request store a page
     /// this wallet read proved, in this process
     /// ([`Self::private_store_size_proved`]). In memory only.
@@ -159,6 +168,40 @@ struct DischargedPrivateEntries {
     journaled: BTreeMap<[u8; 32], (Identifier, Identifier)>,
 }
 
+/// Why the records stored for a wallet are not known to be durable
+/// ([`WalletPersister::flush_durably`]).
+#[cfg(feature = "shielded")]
+#[derive(Debug)]
+pub(crate) enum NotDurable {
+    /// A flush failed for good in this process, the backend dropping what it
+    /// buffered ([`WalletPersister::buffered_writes_lost`]).
+    Lost,
+    /// The flush this call made failed.
+    Flush(PersistenceError),
+    /// Another flush is in progress, and its outcome is not recorded yet.
+    OtherFlushInFlight,
+}
+
+/// One flush in progress, counted in [`WalletPersister`]'s
+/// `flushes_in_flight` until dropped.
+#[cfg(feature = "shielded")]
+struct FlushInFlight<'a>(&'a AtomicUsize);
+
+#[cfg(feature = "shielded")]
+impl<'a> FlushInFlight<'a> {
+    fn enter(in_flight: &'a AtomicUsize) -> Self {
+        in_flight.fetch_add(1, Ordering::SeqCst);
+        Self(in_flight)
+    }
+}
+
+#[cfg(feature = "shielded")]
+impl Drop for FlushInFlight<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 impl WalletPersister {
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
         Self {
@@ -174,6 +217,8 @@ impl WalletPersister {
             stored_private_markers: Arc::default(),
             #[cfg(feature = "shielded")]
             buffered_writes_lost: Arc::default(),
+            #[cfg(feature = "shielded")]
+            flushes_in_flight: Arc::default(),
             private_store_size_proved: Arc::default(),
             private_payment_restore_failure: Arc::default(),
             #[cfg(feature = "shielded")]
@@ -270,14 +315,16 @@ impl WalletPersister {
     /// Note `commitments`, of private requests a private sync read back and
     /// recorded, for their journal records to be discharged
     /// ([`Self::note_read_back_private_entries`]), once what records them is
-    /// durable: at once for a backend that commits inline, after a flush
-    /// otherwise. Those a transient flush failure left are kept, with every
-    /// one kept before, and noted by the next call whose flush succeeds: an
-    /// empty one retries them. Those any other failure left are dropped, as the
-    /// backend dropped the records they rest on. Their journal records, and so
-    /// the pairs they hold, stay until noted. The host's flush runs with none
-    /// of the persister's locks held, so a call during it, from another thread
-    /// or the flush itself, neither waits nor loses what it adds.
+    /// durable ([`Self::flush_durably`]): at once for a backend that commits
+    /// inline, after a flush otherwise. Those a transient flush failure left
+    /// are kept, with every one kept before, and noted by the next call whose
+    /// flush succeeds: an empty one retries them. So are those of a call made
+    /// while another flush is in progress, whose outcome is not known yet.
+    /// Those any other failure left are dropped, as the backend dropped the
+    /// records they rest on. Their journal records, and so the pairs they
+    /// hold, stay until noted. The host's flush runs with none of the
+    /// persister's locks held, so a call during it, from another thread or
+    /// the flush itself, neither waits nor loses what it adds.
     ///
     /// None is noted once a flush of the wallet's records failed for good in
     /// this process ([`Self::buffered_writes_lost`]): a request read back
@@ -299,53 +346,53 @@ impl WalletPersister {
         if pending.is_empty() {
             return;
         }
-        if !self.buffered_writes_lost() && !self.store_commits_inline() {
-            if let Err(error) = self.flush() {
-                if error.is_transient() {
-                    tracing::warn!(
-                        %error,
-                        kept = pending.len(),
-                        "private requests read back are not durably recorded; their journal \
-                         records stay until a later flush succeeds"
-                    );
-                    // A transient failure keeps the buffer: with any added
-                    // meanwhile.
-                    self.unflushed_read_back_entries().extend(pending);
-                } else {
-                    // Any other failure dropped the buffer, the records these
-                    // notices rest on with it: the notices go, so their journal
-                    // records, and the pairs they hold, stay. Their read is not
-                    // rewound: a read again would find the requests already
-                    // tracked, store nothing, and note them again over records
-                    // that never reached disk. The markers stored into that
-                    // buffer are forgotten, so the next comparison stores them
-                    // again (`Self::private_marker_stored`).
-                    tracing::error!(
-                        %error,
-                        dropped = pending.len(),
-                        "private requests read back are not durably recorded, and the backend \
-                         dropped what it buffered; their journal records stay"
-                    );
-                    self.stored_private_markers
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clear();
-                }
-                return;
+        match self.flush_durably() {
+            Ok(()) => self.note_read_back_private_entries(pending),
+            Err(NotDurable::Flush(error)) if error.is_transient() => {
+                tracing::warn!(
+                    %error,
+                    kept = pending.len(),
+                    "private requests read back are not durably recorded; their journal \
+                     records stay until a later flush succeeds"
+                );
+                // A transient failure keeps the buffer: with any added
+                // meanwhile.
+                self.unflushed_read_back_entries().extend(pending);
             }
-        }
-        // Read after the flush, not only before it: a flush that failed for
-        // good on another thread in between left nothing buffered, and the
-        // flush here then succeeded over records that never reached disk.
-        if self.buffered_writes_lost() {
-            tracing::warn!(
+            Err(NotDurable::OtherFlushInFlight) => {
+                tracing::warn!(
+                    kept = pending.len(),
+                    "private requests read back while another flush of this wallet's records \
+                     is in progress are not noted yet; a later call notes them"
+                );
+                self.unflushed_read_back_entries().extend(pending);
+            }
+            Err(NotDurable::Flush(error)) => {
+                // Any other failure dropped the buffer, the records these
+                // notices rest on with it: the notices go, so their journal
+                // records, and the pairs they hold, stay. Their read is not
+                // rewound: a read again would find the requests already
+                // tracked, store nothing, and note them again over records
+                // that never reached disk. The markers stored into that
+                // buffer are forgotten, so the next comparison stores them
+                // again (`Self::private_marker_stored`).
+                tracing::error!(
+                    %error,
+                    dropped = pending.len(),
+                    "private requests read back are not durably recorded, and the backend \
+                     dropped what it buffered; their journal records stay"
+                );
+                self.stored_private_markers
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clear();
+            }
+            Err(NotDurable::Lost) => tracing::warn!(
                 dropped = pending.len(),
                 "private requests read back after this wallet's records were lost are not \
                  noted; their journal records stay for the next process"
-            );
-            return;
+            ),
         }
-        self.note_read_back_private_entries(pending);
     }
 
     /// Whether the read-back of `commitment` waits for a flush that failed
@@ -561,12 +608,52 @@ impl WalletPersister {
     }
 
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
+        // In progress from before the backend is called until its outcome is
+        // recorded below (`Self::flush_durably`).
+        #[cfg(feature = "shielded")]
+        let _in_flight = FlushInFlight::enter(&self.flushes_in_flight);
         let flushed = self.inner.flush(self.wallet_id);
         #[cfg(feature = "shielded")]
         if flushed.as_ref().is_err_and(|error| !error.is_transient()) {
             self.buffered_writes_lost.store(true, Ordering::SeqCst);
         }
         flushed
+    }
+
+    /// Make every record stored for this wallet before the call durable, and
+    /// answer `Ok` only once it is: at once for a backend that commits
+    /// inline, after a flush that succeeds otherwise, and never once a flush
+    /// failed for good in this process ([`Self::buffered_writes_lost`]).
+    ///
+    /// A flush that succeeds proves nothing by itself: one that failed for
+    /// good just before it left nothing buffered, so it succeeds over records
+    /// that never reached disk. That failure is recorded only after the
+    /// backend returns, so between the two it shows nowhere but in the count
+    /// of flushes in progress. The flush here is therefore trusted only when,
+    /// after it, no flush is in progress and none has failed for good, read
+    /// in that order: every flush that began before then has recorded its
+    /// outcome. One that fails later drops only what was buffered after this
+    /// one wrote, so what this call answers for stays durable, and what the
+    /// caller does on the strength of it needs no lock held with the flush.
+    ///
+    /// While another flush is in progress the answer is
+    /// [`NotDurable::OtherFlushInFlight`], also for a call made from inside
+    /// a backend's own flush: the caller asks again later.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn flush_durably(&self) -> Result<(), NotDurable> {
+        if self.buffered_writes_lost() {
+            return Err(NotDurable::Lost);
+        }
+        if !self.store_commits_inline() {
+            self.flush().map_err(NotDurable::Flush)?;
+            if self.flushes_in_flight.load(Ordering::SeqCst) != 0 {
+                return Err(NotDurable::OtherFlushInFlight);
+            }
+        }
+        if self.buffered_writes_lost() {
+            return Err(NotDurable::Lost);
+        }
+        Ok(())
     }
 
     /// Whether a flush of this wallet's records failed for good in this
@@ -874,5 +961,82 @@ mod tests {
             !persister.has_read_back_private_entries(),
             "its flush succeeded over a buffer the other one dropped"
         );
+    }
+
+    /// A read-back is not noted while another flush of the wallet's records
+    /// is still inside the backend: that one may have dropped what was
+    /// buffered already, and its failure is recorded only once it returns.
+    /// The notice is kept, and dropped once the failure shows.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_note_no_read_back_while_another_flush_has_not_returned() {
+        struct Stalled {
+            flushes: AtomicU64,
+            entered: std::sync::Mutex<mpsc::Sender<()>>,
+            release: std::sync::Mutex<mpsc::Receiver<()>>,
+        }
+        impl PlatformWalletPersistence for Stalled {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.flushes.fetch_add(1, Ordering::SeqCst) != 0 {
+                    return Ok(());
+                }
+                // The first flush dropped what was buffered, and has not
+                // returned yet.
+                self.entered
+                    .lock()
+                    .expect("entered")
+                    .send(())
+                    .expect("the test waits");
+                self.release
+                    .lock()
+                    .expect("release")
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("released");
+                Err(PersistenceError::backend("the database is corrupt"))
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let (entered, has_entered) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let backend = Arc::new(Stalled {
+            flushes: AtomicU64::new(0),
+            entered: std::sync::Mutex::new(entered),
+            release: std::sync::Mutex::new(released),
+        });
+        let persister = WalletPersister::new([0; 32], backend as _);
+        let failing = {
+            let persister = persister.clone();
+            std::thread::spawn(move || persister.flush())
+        };
+        has_entered
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the first flush is inside the backend");
+
+        persister.note_read_back_once_durable([[1; 32]]);
+        let noted_meanwhile = persister.has_read_back_private_entries();
+        let kept = persister.read_back_awaiting_flush(&[1; 32]);
+        release.send(()).expect("the first flush waits");
+        let failed = failing.join().expect("the first flush returns");
+
+        assert!(failed.is_err_and(|error| !error.is_transient()));
+        assert!(!noted_meanwhile, "its own flush proves nothing yet");
+        assert!(kept, "kept for a later call");
+        persister.note_read_back_once_durable([]);
+        assert!(persister.buffered_writes_lost());
+        assert!(
+            !persister.has_read_back_private_entries(),
+            "the buffer was lost"
+        );
+        assert!(!persister.read_back_awaiting_flush(&[1; 32]));
     }
 }

@@ -3125,30 +3125,25 @@ impl PrivatePaymentRestore {
         restored
     }
 
-    /// Whether the requests the wallet tracks are durable now: at once for a
-    /// backend that commits inline, as each was stored before it was
-    /// tracked; after a flush that succeeds otherwise. Never once a flush of
-    /// the wallet's records failed for good in this process
-    /// (`WalletPersister::buffered_writes_lost`), which is read after the
-    /// flush here: one that failed for good on another thread just before it
-    /// left nothing buffered, so this one succeeds over records that never
-    /// reached disk.
+    /// Whether the requests the wallet tracks are durable now
+    /// (`WalletPersister::flush_durably`): at once for a backend that commits
+    /// inline, as each was stored before it was tracked; after a flush that
+    /// succeeds otherwise, with no other flush in progress and none that
+    /// failed for good in this process. A flush that succeeds right after
+    /// one that failed for good wrote nothing of what that one dropped.
     fn settled_requests_durable(&self) -> bool {
-        if self.persister.buffered_writes_lost() {
-            return false;
-        }
-        if !self.persister.store_commits_inline() {
-            if let Err(error) = self.persister.flush() {
+        match self.persister.flush_durably() {
+            Ok(()) => true,
+            Err(reason) => {
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
-                    %error,
-                    "the requests settling private payments are not flushed; their journal \
-                     records stay for a later restoration"
+                    ?reason,
+                    "the requests settling private payments are not known to be durable; \
+                     their journal records stay for a later restoration"
                 );
-                return false;
+                false
             }
         }
-        !self.persister.buffered_writes_lost()
     }
 
     fn restores_lock(&self) -> std::sync::MutexGuard<'_, PrivatePaymentRestores> {

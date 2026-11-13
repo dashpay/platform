@@ -1283,6 +1283,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// the unconfirmed public request to the recipient this request settles,
     /// released in the same lock it is recorded in. Only on this handle's
     /// wallet generation: the caller holds the generation's lifecycle gate.
+    ///
+    /// Once the request is recorded it is the request sent, whatever becomes
+    /// of the account: a registration that fails is logged and left to the
+    /// next sync, which registers it. Reporting it as a failure would have
+    /// the caller send again, and a request built past the one just recorded
+    /// is a second request.
     async fn record_sent_contact_request(
         &self,
         sender: &Identifier,
@@ -1310,8 +1316,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 managed.settle_unconfirmed_public_request(recipient, attempt);
             }
         }
-        self.register_contact_account(sender, recipient, account_index, contact_xpub)
-            .await?;
+        if let Err(error) = self
+            .register_contact_account(sender, recipient, account_index, contact_xpub)
+            .await
+        {
+            tracing::warn!(
+                sender = %sender,
+                recipient = %recipient,
+                %error,
+                "contact request recorded as sent; its receiving account is not registered yet, \
+                 the next sync registers it"
+            );
+        }
         Ok(request)
     }
 
@@ -1470,21 +1486,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             TransitionOutcome::StillPossible { .. } => false,
         };
         if found.is_none() && !settled {
-            if broadcast_again
-                && matches!(outcome, TransitionOutcome::StillPossible { .. })
-                && self
+            if broadcast_again && matches!(outcome, TransitionOutcome::StillPossible { .. }) {
+                // The lifecycle gate, from the check through the dispatch: a
+                // wallet removed in between has none of its requests pushed
+                // to the network after it is gone.
+                let _lifecycle = self.generation.payment_guard().await;
+                if self
                     .may_broadcast_held_public_request(sender, recipient, held.attempt)
                     .await
-            {
-                // The same bytes, so never a second request; an endpoint's
-                // answer proves nothing either way.
-                let delivery = broadcast_tracking_delivery(&self.sdk, &held.transition).await;
-                tracing::debug!(
-                    sender = %sender,
-                    recipient = %recipient,
-                    ?delivery,
-                    "unconfirmed public contact request broadcast again"
-                );
+                {
+                    // The same bytes, so never a second request; an
+                    // endpoint's answer proves nothing either way.
+                    let delivery = broadcast_tracking_delivery(&self.sdk, &held.transition).await;
+                    tracing::debug!(
+                        sender = %sender,
+                        recipient = %recipient,
+                        ?delivery,
+                        "unconfirmed public contact request broadcast again"
+                    );
+                }
             }
             return Ok(None);
         }
@@ -4474,7 +4494,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         built_from_ciphertext: &[u8],
     ) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        // On this handle's wallet generation only: the registration this
+        // completes ran without the lock, and a wallet re-created under this
+        // id since has its own marker to keep.
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
@@ -4566,7 +4589,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         shared_key: &[u8; 32],
     ) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        // On this handle's wallet generation only, as the marker above.
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
