@@ -267,15 +267,18 @@ impl MultipleChoiceProposalVote {
             .document_type_for_name(CHOICE_DOCUMENT_TYPE_NAME)
             .map_err(|e| Error::Protocol(e.into()))?;
         let choices = contenders
-            .to_contenders(&document_type.to_owned_document_type(), platform_version)?
-            .into_iter()
+            .contenders
+            .iter()
             .map(|(choice_id, contender)| {
-                let (document, vote_tally) = (contender.document().clone(), contender.vote_tally());
+                let mut contender = contender.try_to_contender(document_type, platform_version)?;
                 Ok((
-                    choice_id,
+                    *choice_id,
                     ChoiceInVote {
-                        choice: document.map(Choice::from_document).transpose()?,
-                        vote_tally,
+                        choice: contender
+                            .take_document()
+                            .map(Choice::from_document)
+                            .transpose()?,
+                        vote_tally: contender.vote_tally(),
                     },
                 ))
             })

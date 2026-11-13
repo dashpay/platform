@@ -637,3 +637,217 @@ impl WasmSdk {
         self.put_masternode_vote(pro_tx_hash, vote, signing).await
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod binding_tests {
+    use super::*;
+    use dash_sdk::dpp::block::block_info::BlockInfo;
+    use dash_sdk::dpp::decision_proposal::multiple_choice::choice_properties;
+    use dash_sdk::dpp::document::DocumentV0;
+    use dash_sdk::dpp::platform_value::Value;
+    use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+    use dash_sdk::platform::decision_proposals::multiple_choice::{Choice, ChoiceInVote};
+    use std::collections::BTreeMap;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    fn get(value: &JsValue, key: &str) -> JsValue {
+        Reflect::get(value, &JsValue::from_str(key)).expect("a property")
+    }
+
+    fn base58(id: Identifier) -> String {
+        IdentifierWasm::from(id).to_base58()
+    }
+
+    /// The choice `title` of the proposal `[7; 32]`, with the document id `id`.
+    fn choice(id: Identifier, title: &str) -> Choice {
+        Choice::from_document(
+            DocumentV0 {
+                id,
+                owner_id: Identifier::new([4; 32]),
+                properties: BTreeMap::from([
+                    (
+                        choice_properties::PROPOSAL_ID.to_string(),
+                        Value::Identifier([7; 32]),
+                    ),
+                    (
+                        choice_properties::TITLE.to_string(),
+                        Value::Text(title.to_string()),
+                    ),
+                ]),
+                ..Default::default()
+            }
+            .into(),
+        )
+        .expect("a choice")
+    }
+
+    fn choices_of(vote: &JsValue) -> Map {
+        let choices = get(vote, "choices");
+        assert!(choices.is_instance_of::<Map>(), "a Map: {choices:?}");
+        choices.unchecked_into()
+    }
+
+    fn finalization_block() -> BlockInfo {
+        BlockInfo {
+            time_ms: 1_700_000_000_000,
+            height: 7,
+            core_height: 5,
+            ..Default::default()
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_give_a_vote_with_no_choice_an_empty_map_and_nothing_else() {
+        let vote = vote_to_js(MultipleChoiceProposalVote::default()).expect("converts");
+        assert_eq!(choices_of(&vote).size(), 0);
+        for property in ["abstainVoteTally", "noneOfTheChoicesVoteTally", "result"] {
+            assert!(get(&vote, property).is_undefined(), "{property}");
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_give_a_running_vote_its_choices_by_document_id_with_their_tallies() {
+        let double_id = Identifier::new([1; 32]);
+        let keep_id = Identifier::new([2; 32]);
+        let vote = vote_to_js(MultipleChoiceProposalVote {
+            choices: BTreeMap::from([
+                (
+                    double_id,
+                    ChoiceInVote {
+                        choice: Some(choice(double_id, "Double it")),
+                        vote_tally: Some(12),
+                    },
+                ),
+                (
+                    keep_id,
+                    ChoiceInVote {
+                        choice: Some(choice(keep_id, "Keep it")),
+                        vote_tally: None,
+                    },
+                ),
+            ]),
+            abstain_vote_tally: Some(3),
+            none_of_the_choices_vote_tally: Some(1),
+            winner: None,
+        })
+        .expect("converts");
+
+        let choices = choices_of(&vote);
+        assert_eq!(choices.size(), 2);
+        let double = choices.get(&base58(double_id).into());
+        assert_eq!(get(&double, "voteTally").as_f64(), Some(12.0));
+        let document = get(&double, "choice");
+        assert_eq!(
+            get(&document, "documentTypeName").as_string().as_deref(),
+            Some(CHOICE_DOCUMENT_TYPE_NAME)
+        );
+        assert_eq!(
+            IdentifierWasm::try_from_options(&document, "id")
+                .expect("an id")
+                .to_base58(),
+            base58(double_id)
+        );
+        assert_eq!(
+            IdentifierWasm::try_from_options(&document, "dataContractId")
+                .expect("a contract id")
+                .to_base58(),
+            base58(DECISION_PROPOSALS_CONTRACT_ID)
+        );
+        let keep = choices.get(&base58(keep_id).into());
+        assert!(!get(&keep, "choice").is_undefined());
+        assert!(get(&keep, "voteTally").is_undefined());
+
+        assert_eq!(get(&vote, "abstainVoteTally").as_f64(), Some(3.0));
+        assert_eq!(get(&vote, "noneOfTheChoicesVoteTally").as_f64(), Some(1.0));
+        assert!(get(&vote, "result").is_undefined());
+    }
+
+    #[wasm_bindgen_test]
+    fn should_give_a_vote_that_kept_a_choice_its_id_and_every_final_tally() {
+        let double_id = Identifier::new([1; 32]);
+        let keep_id = Identifier::new([2; 32]);
+        let tally = |vote_tally| ChoiceInVote {
+            choice: None,
+            vote_tally: Some(vote_tally),
+        };
+        let vote = vote_to_js(MultipleChoiceProposalVote {
+            choices: BTreeMap::from([(double_id, tally(12)), (keep_id, tally(4))]),
+            abstain_vote_tally: Some(3),
+            none_of_the_choices_vote_tally: Some(1),
+            winner: Some((
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(double_id),
+                finalization_block(),
+            )),
+        })
+        .expect("converts");
+
+        let choices = choices_of(&vote);
+        for (choice_id, vote_tally) in [(double_id, 12.0), (keep_id, 4.0)] {
+            let entry = choices.get(&base58(choice_id).into());
+            assert!(get(&entry, "choice").is_undefined());
+            assert_eq!(get(&entry, "voteTally").as_f64(), Some(vote_tally));
+        }
+        let result = get(&vote, "result");
+        assert_eq!(
+            IdentifierWasm::try_from_options(&result, "keptChoiceId")
+                .expect("the kept choice")
+                .to_base58(),
+            base58(double_id)
+        );
+        let block = get(&result, "finalizationBlock");
+        assert_eq!(get(&block, "height"), JsValue::from(7u64));
+        assert_eq!(get(&block, "coreHeight").as_f64(), Some(5.0));
+        assert_eq!(get(&block, "timeMs"), JsValue::from(1_700_000_000_000u64));
+    }
+
+    #[wasm_bindgen_test]
+    fn should_give_a_vote_that_kept_no_choice_a_result_without_a_kept_choice() {
+        let vote = vote_to_js(MultipleChoiceProposalVote {
+            choices: BTreeMap::from([(
+                Identifier::new([1; 32]),
+                ChoiceInVote {
+                    choice: None,
+                    vote_tally: Some(2),
+                },
+            )]),
+            abstain_vote_tally: Some(0),
+            none_of_the_choices_vote_tally: Some(9),
+            winner: Some((
+                ContestedDocumentVotePollWinnerInfo::Locked,
+                finalization_block(),
+            )),
+        })
+        .expect("converts");
+
+        let result = get(&vote, "result");
+        assert!(result.is_object());
+        assert!(get(&result, "keptChoiceId").is_undefined());
+        assert!(get(&result, "finalizationBlock").is_object());
+        assert_eq!(get(&vote, "abstainVoteTally").as_f64(), Some(0.0));
+        assert_eq!(get(&vote, "noneOfTheChoicesVoteTally").as_f64(), Some(9.0));
+    }
+
+    #[wasm_bindgen_test]
+    fn should_read_a_masternode_answer_back_as_it_is_given() {
+        let choice_id = Identifier::new([1; 32]);
+        let options = |vote_choice: JsValue| {
+            let options = Object::new();
+            set(&options, "voteChoice", vote_choice).expect("sets");
+            JsValue::from(options)
+        };
+        for vote_choice in [
+            MultipleChoiceVoteChoice::Choice(choice_id),
+            MultipleChoiceVoteChoice::Abstain,
+            MultipleChoiceVoteChoice::NoneOfTheChoices,
+        ] {
+            let given = vote_choice_to_js(vote_choice).expect("converts");
+            assert_eq!(
+                vote_choice_from_options(&options(given), "voteChoice").expect("reads"),
+                vote_choice
+            );
+        }
+        assert!(vote_choice_from_options(&options("lock".into()), "voteChoice").is_err());
+        assert!(vote_choice_from_options(&options(JsValue::from(1)), "voteChoice").is_err());
+    }
+}
