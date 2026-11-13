@@ -23,6 +23,12 @@ pub(crate) struct PreparedTipAccount {
     clear_generation: u64,
 }
 
+impl PreparedTipAccount {
+    pub(crate) fn coordinator(&self) -> Option<Arc<NetworkShieldedCoordinator>> {
+        self.coordinator.upgrade()
+    }
+}
+
 pub const SHIELDED_IDENTITY_ACCOUNT_BASE: u32 = 0x4000_0000;
 
 pub fn shielded_identity_account_index(identity_index: u32) -> Result<u32, PlatformWalletError> {
