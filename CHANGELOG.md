@@ -22,6 +22,16 @@
 
 ### Changed
 
+- **swift-sdk:** `SDK(network:)` builds the adaptive context provider in Auto mode
+  instead of the trusted one (`contextProvider` defaults to `.adaptive`). An SDK that no
+  `PlatformWalletManager` serves verifies proofs as before, with the trusted quorum
+  service's keys. Once a manager configured with the SDK (`configure(sdk:)`) runs SPV
+  and it has synced, proofs are verified with SPV's quorum keys, and with the trusted
+  service's for any key SPV cannot serve. Only one manager serves an SDK: configuring a
+  second with the same SDK while the first holds it throws, so `await shutdown()` the old
+  manager first. Pass `contextProvider: .trusted` to keep the trusted service alone, or
+  `.spv` for proofs that must never be verified with its keys.
+
 - **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
   `epochs_per_era` or `previous_fee_versions`:
   `drive.calculate_fee(base_operations, drive_operations, &epoch, platform_version)`.
