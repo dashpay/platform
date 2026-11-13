@@ -36,8 +36,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// The keys come from the manager's own SPV client, read live on every
     /// lookup, and only while that client is running and synced; otherwise
-    /// the SDK's lookups fail closed. Starting and stopping SPV therefore
-    /// needs nothing more here.
+    /// SPV serves no key, so a strict SPV SDK's lookups fail closed and an
+    /// adaptive one in Auto asks its trusted provider. Starting and stopping
+    /// SPV therefore needs nothing more here.
     ///
     /// `lease` is claimed by the caller from the SDK's slot before this
     /// manager is built, so a slot another manager holds is refused before

@@ -1,6 +1,7 @@
 use crate::version::system_limits::SystemLimits;
 
 pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,

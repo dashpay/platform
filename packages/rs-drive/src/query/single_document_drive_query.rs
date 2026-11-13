@@ -117,6 +117,10 @@ impl SingleDocumentDriveQuery {
     /// 15 a document with history that may be contested is refused at a block time, as a
     /// contest's area keeps no history.
     ///
+    /// On the composite layout, the timed query includes a lifecycle record as well as the
+    /// revision. Its raw results must be interpreted by the single-document verifier:
+    /// deletion makes times at or after deletion absent, and erasure makes every time absent.
+    ///
     /// # Parameters
     ///
     /// - `platform_version`: The platform version, whose
@@ -184,7 +188,7 @@ mod tests {
     use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
     use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
-    use grovedb::SizedQuery;
+    use grovedb::{QueryItem, SizedQuery};
 
     fn keep_history_query(block_time_ms: Option<u64>) -> SingleDocumentDriveQuery {
         SingleDocumentDriveQuery {
@@ -663,9 +667,18 @@ mod tests {
             upper.extend([0xff; 8]);
             let mut versions = Query::new_with_direction(false);
             versions.insert_range_inclusive(encode_u64(0)..=upper);
-            let mut expected = history_lookup(versions);
-            expected.path[4] = vec![2];
-            assert!(!expected.query.query.add_parent_tree_on_subquery);
+            versions.limit = Some(1);
+            let lifecycle = Query::new_single_key(vec![9; 32]);
+            let mut history = Query::new_single_key(vec![9; 32]);
+            history.set_subquery(versions);
+            let mut branches = Query::new();
+            branches.insert_keys(vec![vec![1], vec![2]]);
+            branches.add_conditional_subquery(QueryItem::Key(vec![1]), None, Some(lifecycle));
+            branches.add_conditional_subquery(QueryItem::Key(vec![2]), None, Some(history));
+            let expected = PathQuery::new(
+                contract_document_type_path_vec(&[7; 32], "card"),
+                SizedQuery::new(branches, None, None),
+            );
             assert_eq!(
                 single_document(
                     SingleDocumentDriveQueryContestedStatus::NotContested,

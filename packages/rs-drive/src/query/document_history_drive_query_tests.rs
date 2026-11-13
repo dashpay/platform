@@ -306,14 +306,26 @@ fn should_reject_a_current_pointer_that_is_not_an_item() {
 }
 
 #[test]
-fn should_reject_a_present_reserved_lifecycle_record() {
+fn should_reject_lifecycle_metadata_for_an_active_document() {
+    use dpp::document::lifecycle::DocumentLifecycleRecord;
+    use dpp::serialization::PlatformSerializable;
+
     let fixture = Fixture::new();
     let query = fixture.query(DocumentHistoryFilter::StartAtTime(0), None);
     let mut rows = fixture.rows(&[1, 2, 3]);
-    rows.push(fixture.metadata_row(1, Some(Element::new_item(vec![1]))));
+    rows.push(
+        fixture.metadata_row(
+            1,
+            Some(Element::new_item(
+                DocumentLifecycleRecord::deleted_at(2000, 3, 3)
+                    .serialize_to_bytes()
+                    .unwrap(),
+            )),
+        ),
+    );
     assert_corrupt(
         fixture.decode(&query, rows),
-        "unexpected lifecycle record or history metadata path",
+        "a current document cannot also carry a lifecycle record",
     );
 }
 
@@ -386,4 +398,157 @@ fn should_reject_a_v1_history_query_before_the_history_tree_is_active() {
         method, known_versions, received: 0,
     }) if method == "DocumentHistoryDriveQuery::construct_path_query" && known_versions == vec![1])
     );
+}
+
+#[test]
+fn should_refuse_lifecycle_metadata_that_disagrees_with_retained_history() {
+    use dpp::document::lifecycle::{DocumentLifecycleRecord, DocumentLifecycleRecordV0};
+    use dpp::serialization::PlatformSerializable;
+
+    let fixture = Fixture::new();
+    let deleted = DocumentLifecycleRecord::deleted_at(2000, 3, 3);
+    let cases = [
+        (
+            DocumentLifecycleRecord::deleted_at(2000, 3, 2),
+            3,
+            "deleted count",
+        ),
+        (
+            DocumentLifecycleRecord::V0(DocumentLifecycleRecordV0 {
+                erasing_started_at_ms: 2001,
+                ..match deleted {
+                    DocumentLifecycleRecord::V0(record) => record,
+                }
+            }),
+            3,
+            "deleted erase fields",
+        ),
+        (
+            DocumentLifecycleRecord::V0(DocumentLifecycleRecordV0 {
+                erasing_from_time_ms: 2000,
+                ..match deleted {
+                    DocumentLifecycleRecord::V0(record) => record,
+                }
+            }),
+            3,
+            "deleted erase revision time",
+        ),
+        (
+            deleted.starting_erase_at(2001, 2000, 3),
+            3,
+            "erasing count must shrink",
+        ),
+        (
+            deleted.starting_erase_at(2001, 2000, 2),
+            2,
+            "erase start revision",
+        ),
+        (
+            deleted.starting_erase_at(1999, 2000, 3),
+            2,
+            "erase before delete",
+        ),
+        (
+            deleted.starting_erase_at(2001, 2001, 3),
+            2,
+            "erase revision time",
+        ),
+        (
+            DocumentLifecycleRecord::deleted_at(1999, 3, 3),
+            3,
+            "entry after delete",
+        ),
+        (
+            DocumentLifecycleRecord::deleted_at(2000, 2, 2),
+            2,
+            "entry revision after delete",
+        ),
+    ];
+    for (record, count, reason) in cases {
+        let rows = vec![
+            fixture.metadata_row(
+                1,
+                Some(Element::new_item(record.serialize_to_bytes().unwrap())),
+            ),
+            fixture.metadata_row(
+                2,
+                Some(Element::ProvableCountTree(Some(vec![1]), count, None)),
+            ),
+            fixture.entry_row(3),
+        ];
+        let error = fixture
+            .decode(
+                &fixture.query(DocumentHistoryFilter::StartAtTime(0), Some(10)),
+                rows,
+            )
+            .expect_err(reason);
+        let expected = if reason == "entry after delete" || reason == "entry revision after delete"
+        {
+            "retained revision is newer than its deletion record"
+        } else {
+            "lifecycle record disagrees with its retained history"
+        };
+        assert!(
+            matches!(error, Error::Drive(DriveError::CorruptedDocumentPath(message)) if message == expected),
+            "{reason}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn should_report_an_empty_history_tree_without_a_record_as_absent() {
+    use super::{DocumentHistoryLifecycleTimes, DocumentHistoryState};
+
+    let fixture = Fixture::new();
+    for filter in [
+        DocumentHistoryFilter::StartAtTime(0),
+        DocumentHistoryFilter::Revision(1),
+        DocumentHistoryFilter::StartAtRevision(1),
+    ] {
+        let result = fixture
+            .decode(
+                &fixture.query(filter, None),
+                vec![fixture.metadata_row(
+                    DOCUMENT_HISTORY_TREE_KEY,
+                    Some(Element::ProvableCountTree(None, 0, None)),
+                )],
+            )
+            .expect("an empty history tree without a lifecycle record is absent");
+        assert!(result.entries.is_empty());
+        let lifecycle = result.lifecycle.expect("authenticated absence metadata");
+        assert_eq!(lifecycle.state, DocumentHistoryState::Absent);
+        assert_eq!(lifecycle.remaining_revisions, 0);
+        assert_eq!(lifecycle.times, DocumentHistoryLifecycleTimes::default());
+    }
+}
+
+#[test]
+fn should_reject_a_lifecycle_record_without_retained_history() {
+    use dpp::document::lifecycle::DocumentLifecycleRecord;
+    use dpp::serialization::PlatformSerializable;
+
+    let fixture = Fixture::new();
+    let query = fixture.query(DocumentHistoryFilter::StartAtTime(0), None);
+    let deleted = DocumentLifecycleRecord::deleted_at(2000, 3, 3);
+    for record in [deleted, deleted.starting_erase_at(3000, 2000, 3)] {
+        for count in [None, Some(0)] {
+            let mut rows = vec![fixture.metadata_row(
+                1,
+                Some(Element::new_item(record.serialize_to_bytes().unwrap())),
+            )];
+            if let Some(count) = count {
+                rows.push(
+                    fixture.metadata_row(2, Some(Element::ProvableCountTree(None, count, None))),
+                );
+            }
+            assert_corrupt(
+                fixture.decode(&query, rows),
+                if count.is_some() {
+                    "an empty history tree must not remain in storage"
+                } else {
+                    "a lifecycle record survives its retained history"
+                },
+            );
+        }
+    }
 }

@@ -182,6 +182,14 @@ internal fun initializePlatformWalletNativeManager(
  * switching means closing this instance and creating a new one — see
  * [WalletManagerStore]; there is no reconfiguration path.
  *
+ * ## SPV quorum keys
+ *
+ * On an adaptive SDK ([Sdk.ContextProviderKind.ADAPTIVE], the default) the
+ * manager serves the SDK the quorum keys of its own SPV client, which the
+ * SDK uses to verify proofs once that client has synced. Only one manager
+ * serves an SDK: constructing a second on the same SDK while the first is
+ * open throws, so close a manager before constructing another on its SDK.
+ *
  * ## Lifecycle
  *
  * [AutoCloseable]. [close] stops the sync loops, destroys the native
