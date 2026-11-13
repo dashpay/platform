@@ -719,6 +719,13 @@ public class PlatformWalletManager: ObservableObject {
     /// injectable so ownership and shutdown admission are tested together.
     internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
 
+    /// Test seam for the native call behind
+    /// `shieldedShieldFromIdentityToRecipient`, so its shutdown admission is
+    /// tested without a signer or network; same contract as
+    /// [`nativeTeardownCalls`].
+    internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
+        platform_wallet_manager_shielded_shield_from_identity_to_recipient
+
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].
     internal var nativePollCalls = PlatformWalletNativePollCalls.live
@@ -1383,7 +1390,8 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
+    /// `clearShielded`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an
@@ -1404,7 +1412,7 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
-    private func ensureSyncNativeOpAllowed(_ name: String) throws {
+    func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
