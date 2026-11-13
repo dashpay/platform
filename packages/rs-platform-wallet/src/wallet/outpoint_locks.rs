@@ -62,33 +62,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::{OutPoint, Transaction, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
+use key_wallet::wallet::managed_wallet_info::masternode_collateral;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 use crate::changeset::{CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo, WalletId};
-
-/// The collateral `tx` registers when it is a ProRegTx: the outpoint its
-/// payload names, or, when that names a null txid, the ProRegTx's own output
-/// at that index. `None` for any other transaction, and for an own-output
-/// index past the outputs (such a registration names no coin).
-pub(crate) fn registration_collateral(tx: &Transaction) -> Option<OutPoint> {
-    let Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) =
-        &tx.special_transaction_payload
-    else {
-        return None;
-    };
-    let named = registration.collateral_outpoint;
-    if named.txid != Txid::all_zeros() {
-        return Some(named);
-    }
-    ((named.vout as usize) < tx.output.len()).then(|| OutPoint::new(tx.txid(), named.vout))
-}
 
 /// The collaterals that the masternode registrations among `records` keep
 /// out of coin selection.
@@ -103,7 +86,7 @@ pub fn registered_collaterals<'a>(
     records
         .into_iter()
         .filter_map(|record| {
-            let collateral = registration_collateral(&record.transaction)?;
+            let collateral = masternode_collateral(&record.transaction)?;
             let creates_it = collateral.txid == record.txid;
             (creates_it || record.is_confirmed()).then_some(collateral)
         })
@@ -238,7 +221,7 @@ impl PlatformWalletInfo {
     pub(crate) fn track_collaterals(&mut self, collaterals: &BTreeSet<OutPoint>) -> Vec<OutPoint> {
         let mut held = Vec::new();
         for outpoint in collaterals {
-            if self.tracked_collaterals.insert(*outpoint) && self.holds_coin(outpoint) {
+            if self.tracked_collaterals.insert(*outpoint) && self.core_wallet.holds_coin(outpoint) {
                 held.push(*outpoint);
             }
         }
@@ -265,7 +248,7 @@ impl PlatformWalletInfo {
         let arrived: Vec<OutPoint> = self
             .tracked_collaterals
             .iter()
-            .filter(|outpoint| outpoint.txid == txid && self.holds_coin(outpoint))
+            .filter(|outpoint| outpoint.txid == txid && self.core_wallet.holds_coin(outpoint))
             .copied()
             .collect();
         for outpoint in arrived {
@@ -275,16 +258,6 @@ impl PlatformWalletInfo {
                 result.state_modified = true;
             }
         }
-    }
-
-    /// Whether a funds account of this wallet holds `outpoint` as an unspent
-    /// coin.
-    fn holds_coin(&self, outpoint: &OutPoint) -> bool {
-        self.core_wallet
-            .accounts
-            .all_funding_accounts()
-            .iter()
-            .any(|account| account.utxos.contains_key(outpoint))
     }
 
     /// Lock `outpoints`, mirror the balance to the UI when any lock was
