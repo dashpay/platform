@@ -181,7 +181,7 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
-        self.bind_shielded_locked(seed, &accounts, coordinator)
+        self.bind_shielded_locked_unfenced(seed, &accounts, coordinator)
             .await?;
         self.persister()
             .flush()

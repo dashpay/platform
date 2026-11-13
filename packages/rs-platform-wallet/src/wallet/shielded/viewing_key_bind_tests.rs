@@ -705,6 +705,151 @@ async fn bind_after_wallet_removal_is_refused() {
     );
 }
 
+/// What `PlatformWalletManager::remove_wallet` does to this handle's
+/// shielded side once it holds `teardown`, the lifecycle gate of the
+/// wallet's generation.
+async fn finish_removal(
+    wallet: &PlatformWallet,
+    coordinator: &NetworkShieldedCoordinator,
+    teardown: tokio::sync::OwnedRwLockWriteGuard<()>,
+) {
+    wallet.mark_shielded_detached();
+    coordinator.unregister_wallet(wallet.wallet_id()).await;
+    drop(teardown);
+}
+
+/// A bind that starts while the wallet's removal is under way stores no
+/// viewing key. The attachment check alone is a point-in-time observation:
+/// the removal takes the lifecycle gate and only then marks the handle
+/// detached, so a bind checking in between would pass and store its key
+/// after the host deleted the wallet's rows. The bind waits at the gate
+/// instead, and is refused once the removal returns.
+#[tokio::test]
+async fn should_store_no_viewing_key_for_a_bind_admitted_behind_a_removal() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("bind_behind_removal"));
+    let seed = [0x42u8; 64];
+
+    // The removal holds the gate and has not marked the handle yet.
+    let teardown = wallet.generation().teardown_guard().await;
+    let mut bind = std::pin::pin!(wallet.bind_shielded(&seed, &[0], &coordinator));
+    assert!(
+        futures::poll!(bind.as_mut()).is_pending(),
+        "the bind must wait for the removal under way"
+    );
+    finish_removal(&wallet, &coordinator, teardown).await;
+
+    let err = bind.await.expect_err("a removed wallet must not bind");
+    assert!(
+        matches!(err, crate::PlatformWalletError::WalletNotFound(_)),
+        "{err:?}"
+    );
+    assert_eq!(
+        persister.stored_count(),
+        0,
+        "no viewing key may be stored once the removal returned"
+    );
+    assert!(coordinator.registered_subwallets().await.is_empty());
+}
+
+/// The same for `shielded_add_account`, the other writer of a viewing-key
+/// row: admitted behind a removal, it stores nothing and adds no account.
+#[tokio::test]
+async fn should_store_no_viewing_key_for_an_account_added_behind_a_removal() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("add_account_behind_removal"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("bind succeeds");
+    let stored_before = persister.stored_count();
+
+    let teardown = wallet.generation().teardown_guard().await;
+    let mut add = std::pin::pin!(wallet.shielded_add_account(&seed, 1));
+    assert!(
+        futures::poll!(add.as_mut()).is_pending(),
+        "the account add must wait for the removal under way"
+    );
+    finish_removal(&wallet, &coordinator, teardown).await;
+
+    let err = add
+        .await
+        .expect_err("a removed wallet must not add accounts");
+    assert!(
+        matches!(err, crate::PlatformWalletError::WalletNotFound(_)),
+        "{err:?}"
+    );
+    assert_eq!(
+        persister.stored_count(),
+        stored_before,
+        "no viewing key may be stored once the removal returned"
+    );
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+}
+
+/// A removal waits for a bind that already passed its attachment check, so
+/// the bind's viewing-key write lands before the removal returns and the
+/// host deletes the wallet's rows, never after.
+///
+/// Parks a bind inside the persister load, which follows the check and
+/// precedes the write, and asserts the removal cannot take the gate. The
+/// bind then finishes with the removal queued behind it, which it could
+/// not if anything in it took the gate a second time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_removal_until_a_bind_in_flight_returns() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("removal_behind_bind"));
+    let seed = [0x42u8; 64];
+
+    let release = persister.gate_next_load();
+    let entries_before = persister.load_entries();
+    let binder = {
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        tokio::spawn(async move { wallet.bind_shielded(&seed, &[0], &coordinator).await })
+    };
+    for _ in 0..400 {
+        if persister.load_entries() > entries_before {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert!(
+        persister.load_entries() > entries_before,
+        "the bind never reached the persister load"
+    );
+
+    let mut removal = std::pin::pin!(wallet.generation().teardown_guard());
+    assert!(
+        futures::poll!(removal.as_mut()).is_pending(),
+        "the removal must wait for the bind in flight"
+    );
+
+    release.send(()).expect("release the parked load");
+    binder
+        .await
+        .expect("bind task")
+        .expect("a bind admitted before the removal completes");
+    let stored = persister.stored_count();
+    assert!(
+        persister
+            .captured_viewing_keys()
+            .contains_key(&SubwalletId::new(wallet.wallet_id(), 0)),
+        "the bind stored its viewing key before the removal"
+    );
+
+    finish_removal(&wallet, &coordinator, removal.await).await;
+    assert_eq!(
+        persister.stored_count(),
+        stored,
+        "nothing is stored once the removal returned"
+    );
+    assert!(coordinator.registered_subwallets().await.is_empty());
+}
+
 /// `shielded_add_account` is the other writer of a subwallet's
 /// viewing-key row, so it owes the same refusal as the bind paths. An
 /// account missing from the in-memory map can still have durable rows

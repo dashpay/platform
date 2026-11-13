@@ -441,7 +441,8 @@ pub struct PlatformWallet {
     /// preparation) must not interleave with another bind, or the other
     /// bind's ordinary accounts are dropped and their live state purged.
     /// Taken at the top of every bind entry point and by
-    /// `shielded_add_account`, before `shield_guard`.
+    /// `shielded_add_account`, after the generation's lifecycle gate and
+    /// before `shield_guard`.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
     /// The tip account each identity's address was last prepared for in
@@ -899,6 +900,11 @@ impl PlatformWallet {
     /// Fails, before anything is derived, stored or registered, for a
     /// `coordinator` of another network than this wallet's.
     ///
+    /// Holds the wallet generation's lifecycle gate from the attachment
+    /// check until the keys are stored and installed, so a removal of the
+    /// wallet waits for a bind in flight, and a bind admitted after a
+    /// removal stores nothing. A caller must not hold the gate.
+    ///
     /// [`bind_shielded_from_persisted`]: Self::bind_shielded_from_persisted
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
     #[cfg(feature = "shielded")]
@@ -908,14 +914,18 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        // Fence generation teardown across attachment validation, host
+        // viewing-key persistence, and coordinator/handle installation.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _config = self.shielded_config_lock.lock().await;
-        self.bind_shielded_locked(seed, accounts, coordinator).await
+        self.bind_shielded_locked_unfenced(seed, accounts, coordinator)
+            .await
     }
 
     /// [`Self::bind_shielded`] for a caller already holding
-    /// `shielded_config_lock`.
+    /// `shielded_config_lock` and the generation lifecycle guard.
     #[cfg(feature = "shielded")]
-    pub(crate) async fn bind_shielded_locked(
+    pub(crate) async fn bind_shielded_locked_unfenced(
         &self,
         seed: &[u8],
         accounts: &[u32],
@@ -1051,7 +1061,8 @@ impl PlatformWallet {
     /// request. One of those without a persisted viewing key (an identity
     /// found since the last seed-backed bind) also returns `Ok(false)`.
     /// A `coordinator` of another network than this wallet's is refused
-    /// the same way.
+    /// the same way, and the wallet generation's lifecycle gate is held
+    /// the same way: a caller must not hold it.
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded_from_persisted(
         &self,
@@ -1060,6 +1071,9 @@ impl PlatformWallet {
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
         coordinator.ensure_network(self.sdk.network)?;
+        // Keep the generation alive from attachment validation through the
+        // persisted snapshot read and coordinator/handle installation.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
@@ -1356,6 +1370,10 @@ impl PlatformWallet {
     /// historical funds for a freshly-added account should drop
     /// the commitment-tree DB and call [`bind_shielded`] again
     /// with the full account list.
+    ///
+    /// Holds the wallet generation's lifecycle gate as
+    /// [`bind_shielded`](Self::bind_shielded) does: a caller must not
+    /// hold it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_add_account(
         &self,
@@ -1374,10 +1392,13 @@ impl PlatformWallet {
                 missing.bits(),
             )));
         }
-        self.ensure_shielded_attached()?;
         // Serialized with the binds: tip preparation rebinds a snapshot of
         // the account set, which would drop an account inserted mid-way.
+        // The lifecycle gate spans attachment validation through host
+        // persistence and the final handle mutation.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_attached()?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -1470,6 +1491,11 @@ impl PlatformWallet {
     /// user deleted, with the mnemonic already gone. An FVK discloses
     /// every incoming and outgoing note of its account, so the bind
     /// paths check here first, before writing anything.
+    ///
+    /// On its own this is a point-in-time observation. The bind paths and
+    /// `shielded_add_account` hold the generation's lifecycle gate from
+    /// this check through their host write, and the removal sets the flag
+    /// under the gate's exclusive side, so it cannot complete in between.
     #[cfg(feature = "shielded")]
     fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
