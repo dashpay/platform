@@ -15,9 +15,14 @@ use crate::services::platform_service::shielded_proof_failure_budget::{
     INVALID_SHIELDED_PROOF_CODE, SourceKey, orchard_action_count,
 };
 use base64::prelude::*;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
+use dapi_grpc::platform::v0::get_status_request::{self, GetStatusRequestV0};
+use dapi_grpc::platform::v0::get_status_response;
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetStatusRequest,
+    GetStatusResponse,
+};
 use dpp::state_transition::validate_state_transition_size;
-use dpp::version::PlatformVersion;
+use dpp::version::{PLATFORM_VERSIONS, PlatformVersion};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tonic::Request;
@@ -51,7 +56,8 @@ impl PlatformServiceImpl {
             state_transition: tx,
         } = request.into_inner();
 
-        validate_state_transition_bytes(&tx)?;
+        validate_state_transition_not_empty(&tx)?;
+        validate_state_transition_bytes_size(&tx, self.size_limit_version().await)?;
 
         let txid = Sha256::digest(&tx).to_vec();
         let txid_hex = hex::encode(&txid);
@@ -256,7 +262,79 @@ impl PlatformServiceImpl {
     }
 }
 
-fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
+/// How long a broadcast waits for Drive's status before it checks the size
+/// against [`MOST_PERMISSIVE_SIZE_VERSION`] instead.
+const ACTIVE_VERSION_LOOKUP_TIMEOUT: Duration = Duration::from_secs(2);
+
+impl PlatformServiceImpl {
+    /// The protocol version whose size limit a broadcast must meet: the one
+    /// the network runs now, from the cached `getStatus`. When the status
+    /// does not answer in [`ACTIVE_VERSION_LOOKUP_TIMEOUT`], or names a
+    /// version this build does not know, the most permissive known version,
+    /// so DAPI never refuses what the network could accept. Drive enforces
+    /// the active version's limit when it decodes.
+    async fn size_limit_version(&self) -> &'static PlatformVersion {
+        let request = Request::new(GetStatusRequest {
+            version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
+        });
+        let status = match tokio::time::timeout(
+            ACTIVE_VERSION_LOOKUP_TIMEOUT,
+            self.get_status_impl(request),
+        )
+        .await
+        {
+            Ok(Ok(response)) => Some(response.into_inner()),
+            Ok(Err(error)) => {
+                debug!(%error, "Status unavailable; checking the size against the largest known limit");
+                None
+            }
+            Err(_) => {
+                debug!("Status timed out; checking the size against the largest known limit");
+                None
+            }
+        };
+        active_platform_version(status.as_ref()).unwrap_or(MOST_PERMISSIVE_SIZE_VERSION)
+    }
+}
+
+/// The protocol version Drive reports as current in `status`, when this
+/// build knows it.
+fn active_platform_version(status: Option<&GetStatusResponse>) -> Option<&'static PlatformVersion> {
+    let get_status_response::Version::V0(status) = status?.version.as_ref()?;
+    let current = status
+        .version
+        .as_ref()?
+        .protocol
+        .as_ref()?
+        .drive
+        .as_ref()?
+        .current;
+    PlatformVersion::get(current).ok()
+}
+
+/// The known protocol version with the largest `max_state_transition_size`.
+const MOST_PERMISSIVE_SIZE_VERSION: &PlatformVersion =
+    &PLATFORM_VERSIONS[most_permissive_size_index(PLATFORM_VERSIONS)];
+
+/// The index in `versions` of the first version with the largest
+/// `max_state_transition_size`.
+const fn most_permissive_size_index(versions: &[PlatformVersion]) -> usize {
+    let mut most_permissive = 0;
+    let mut index = 1;
+    while index < versions.len() {
+        if versions[index].system_limits.max_state_transition_size
+            > versions[most_permissive]
+                .system_limits
+                .max_state_transition_size
+        {
+            most_permissive = index;
+        }
+        index += 1;
+    }
+    most_permissive
+}
+
+fn validate_state_transition_not_empty(tx: &[u8]) -> Result<(), DapiError> {
     if tx.is_empty() {
         debug!("State transition is empty");
         return Err(DapiError::InvalidArgument(
@@ -264,11 +342,14 @@ fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
         ));
     }
 
-    // `latest()` is a static upper bound, not the network's active version:
-    // every released version so far shares the same limit, and if a future
-    // version raises it, latest ≥ active keeps this a pure pre-filter —
-    // Drive still enforces the active version's limit authoritatively.
-    if let Err(e) = validate_state_transition_size(tx.len() as u64, PlatformVersion::latest()) {
+    Ok(())
+}
+
+fn validate_state_transition_bytes_size(
+    tx: &[u8],
+    platform_version: &PlatformVersion,
+) -> Result<(), DapiError> {
+    if let Err(e) = validate_state_transition_size(tx.len() as u64, platform_version) {
         let max_size = e.max_size_bytes();
         debug!(actual = tx.len(), max_size, "State transition is too large");
         return Err(DapiError::InvalidArgument(format!(
@@ -324,20 +405,85 @@ mod tests {
     use super::*;
 
     #[test]
-    fn state_transition_size_is_checked_before_broadcast_work() {
-        let max_size = PlatformVersion::latest()
-            .system_limits
-            .max_state_transition_size as usize;
+    fn should_pick_the_version_with_the_largest_size_limit() {
+        let with_limit = |limit| {
+            let mut version = PlatformVersion::latest().clone();
+            version.system_limits.max_state_transition_size = limit;
+            version
+        };
 
-        assert!(validate_state_transition_bytes(&vec![1; max_size]).is_ok());
+        assert_eq!(most_permissive_size_index(&[with_limit(100)]), 0);
+        assert_eq!(
+            most_permissive_size_index(&[with_limit(100), with_limit(300), with_limit(200)]),
+            1
+        );
+        assert_eq!(
+            most_permissive_size_index(&[with_limit(300), with_limit(100), with_limit(300)]),
+            0
+        );
+    }
+
+    #[test]
+    fn should_check_the_size_against_the_given_version_limit() {
+        let mut version = PlatformVersion::latest().clone();
+        version.system_limits.max_state_transition_size = 100;
+
+        assert!(validate_state_transition_bytes_size(&[1; 100], &version).is_ok());
         assert!(matches!(
-            validate_state_transition_bytes(&vec![1; max_size + 1]),
-            Err(DapiError::InvalidArgument(message)) if message.contains("maximum size")
+            validate_state_transition_bytes_size(&[1; 101], &version),
+            Err(DapiError::InvalidArgument(message)) if message.contains("maximum size of 100 bytes")
         ));
+    }
+
+    #[test]
+    fn should_refuse_an_empty_state_transition() {
+        assert!(validate_state_transition_not_empty(&[1]).is_ok());
         assert!(matches!(
-            validate_state_transition_bytes(&[]),
+            validate_state_transition_not_empty(&[]),
             Err(DapiError::InvalidArgument(message)) if message.contains("not specified")
         ));
+    }
+
+    fn status_with_current_version(current: u32) -> GetStatusResponse {
+        use get_status_response::GetStatusResponseV0;
+        use get_status_response::get_status_response_v0::{
+            Version, version::Protocol, version::protocol::Drive,
+        };
+
+        GetStatusResponse {
+            version: Some(get_status_response::Version::V0(GetStatusResponseV0 {
+                version: Some(Version {
+                    protocol: Some(Protocol {
+                        drive: Some(Drive {
+                            current,
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        }
+    }
+
+    #[test]
+    fn should_take_the_current_drive_version_from_the_status() {
+        let first = PLATFORM_VERSIONS[0].protocol_version;
+        let status = status_with_current_version(first);
+
+        assert_eq!(
+            active_platform_version(Some(&status)).map(|version| version.protocol_version),
+            Some(first)
+        );
+    }
+
+    #[test]
+    fn should_have_no_active_version_without_a_known_current_version() {
+        assert!(active_platform_version(None).is_none());
+        assert!(active_platform_version(Some(&GetStatusResponse::default())).is_none());
+        assert!(active_platform_version(Some(&status_with_current_version(0))).is_none());
+        assert!(active_platform_version(Some(&status_with_current_version(u32::MAX))).is_none());
     }
 
     #[test]

@@ -38,7 +38,7 @@ use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition:
 use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
-use dpp::version::PlatformVersion;
+use dpp::version::{PLATFORM_VERSIONS, PlatformVersion};
 use tonic::Request;
 
 /// Consensus code of `InvalidShieldedProofError`, the CheckTx answer for a
@@ -53,6 +53,11 @@ const FAILED_ACTIONS_ALLOWED: u32 = 4;
 /// Time for one failed action to drain, so a source that keeps failing gets
 /// two actions verified a minute.
 const ACTION_DRAIN_INTERVAL: Duration = Duration::from_secs(30);
+
+/// The most Orchard actions one bundle can carry under any protocol version
+/// this build knows: the largest bundle a source can have in flight.
+const MAX_SHIELDED_ACTIONS: u16 = largest_action_limit(PLATFORM_VERSIONS);
+const _: () = assert!(MAX_SHIELDED_ACTIONS > 0, "a zero bound would meter nothing");
 
 /// Sources tracked at once. When full, a source with nothing in flight and the
 /// least debt makes room.
@@ -131,42 +136,44 @@ pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
         return 0;
     };
     match state_transition {
-        StateTransition::Shield(ShieldTransition::V0(v0)) => v0.actions.len(),
-        StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(v0)) => v0.actions.len(),
-        StateTransition::Unshield(UnshieldTransition::V0(v0)) => v0.actions.len(),
+        StateTransition::Shield(ShieldTransition::V0(v0)) => bundle(v0.actions.len()),
+        StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(v0)) => {
+            bundle(v0.actions.len())
+        }
+        StateTransition::Unshield(UnshieldTransition::V0(v0)) => bundle(v0.actions.len()),
         StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => {
-            v0.actions.len()
+            bundle(v0.actions.len())
         }
         StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(v1)) => {
-            v1.actions.len()
+            bundle(v1.actions.len())
         }
         StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(v0)) => {
-            v0.actions.len()
+            bundle(v0.actions.len())
         }
         StateTransition::IdentityCreateFromShieldedPool(
             IdentityCreateFromShieldedPoolTransition::V0(v0),
-        ) => v0.actions.len(),
+        ) => bundle(v0.actions.len()),
         StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(v0)) => {
-            v0.actions.len()
+            bundle(v0.actions.len())
         }
         StateTransition::IdentityTopUpFromShieldedPool(
             IdentityTopUpFromShieldedPoolTransition::V0(v0),
-        ) => v0.actions.len(),
+        ) => bundle(v0.actions.len()),
         StateTransition::PrivateDocumentCreateFromShieldedPool(
             PrivateDocumentCreateFromShieldedPoolTransition::V0(v0),
-        ) => v0.actions.len(),
+        ) => bundle(v0.actions.len()),
         // A token pool transition carries two bundles, one against the token's
         // pool and one paying the fee from the credit shielded pool; Drive
         // verifies both.
         StateTransition::TokenShieldedTransferWithShieldedFee(
             TokenShieldedTransferWithShieldedFeeTransition::V0(v0),
-        ) => v0.token_actions.len() + v0.fee_actions.len(),
+        ) => bundle(v0.token_actions.len()) + bundle(v0.fee_actions.len()),
         StateTransition::TokenUnshieldWithShieldedFee(
             TokenUnshieldWithShieldedFeeTransition::V0(v0),
-        ) => v0.token_actions.len() + v0.fee_actions.len(),
+        ) => bundle(v0.token_actions.len()) + bundle(v0.fee_actions.len()),
         StateTransition::TokenPurchaseFromShieldedPool(
             TokenPurchaseFromShieldedPoolTransition::V0(v0),
-        ) => v0.token_actions.len() + v0.fee_actions.len(),
+        ) => bundle(v0.token_actions.len()) + bundle(v0.fee_actions.len()),
         // A batch carries a bundle for each token transition against a token's
         // shielded pool and each document whose token price is paid from one.
         StateTransition::Batch(batch) => batch
@@ -174,13 +181,13 @@ pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
             .map(|transition| match transition {
                 BatchedTransitionRef::Token(token_transition) => token_transition
                     .shielded_pool_actions()
-                    .map_or(0, |actions| actions.len()),
+                    .map_or(0, |actions| bundle(actions.len())),
                 BatchedTransitionRef::Document(document_transition) => document_transition
                     .base()
                     .token_payment_info_ref()
                     .as_ref()
                     .and_then(|info| info.shielded_payment())
-                    .map_or(0, |payment| payment.actions.len()),
+                    .map_or(0, |payment| bundle(payment.actions.len())),
             })
             .sum(),
         StateTransition::DataContractCreate(_)
@@ -203,6 +210,13 @@ pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
     }
 }
 
+/// The actions Drive can verify for one bundle: it refuses a bundle over the
+/// system limit before any proof work, so a larger one costs no more than the
+/// largest valid one. Each bundle of a transition is bounded on its own.
+fn bundle(actions: usize) -> usize {
+    actions.min(usize::from(MAX_SHIELDED_ACTIONS))
+}
+
 #[derive(Debug)]
 struct SourceBudget {
     /// When this source's failed actions have fully drained.
@@ -220,7 +234,8 @@ impl SourceBudget {
 /// Per source, failed Orchard actions still draining and the actions of
 /// broadcasts still waiting for Drive. A source with no failures may have one
 /// largest bundle's worth in flight, which is all the concurrency an honest
-/// sender needs. A source that failed recently gets one broadcast at a time,
+/// sender needs, or one broadcast of any size whose bundles together carry
+/// more. A source that failed recently gets one broadcast at a time,
 /// and only while its failures plus that broadcast stay within the allowance,
 /// so it cannot burst past the drain rate.
 pub struct ShieldedProofFailureBudget {
@@ -233,19 +248,36 @@ pub struct ShieldedProofFailureBudget {
 
 impl Default for ShieldedProofFailureBudget {
     fn default() -> Self {
-        // `latest()` is a static upper bound, as for the size pre-filter:
-        // Drive refuses a bundle over the active limit before any proof work.
-        let max_actions = PlatformVersion::latest()
-            .system_limits
-            .max_shielded_transition_actions;
         Self {
             sources: Mutex::new(HashMap::new()),
             failed_actions_allowed: FAILED_ACTIONS_ALLOWED,
-            max_in_flight_actions: u32::from(max_actions),
+            max_in_flight_actions: u32::from(MAX_SHIELDED_ACTIONS),
             drain_interval: ACTION_DRAIN_INTERVAL,
             max_sources: MAX_TRACKED_SOURCES,
         }
     }
+}
+
+/// The largest `max_shielded_transition_actions` in `versions`.
+///
+/// DAPI does not track which version the network runs, so the budget clamps a
+/// bundle to the most actions any version this build knows admits: a smaller
+/// bound would charge a bundle the active version still verifies for fewer
+/// actions than Drive checks. Drive refuses a bundle over the active limit
+/// before any proof work.
+const fn largest_action_limit(versions: &[PlatformVersion]) -> u16 {
+    let mut largest = 0;
+    let mut index = 0;
+    while index < versions.len() {
+        let limit = versions[index]
+            .system_limits
+            .max_shielded_transition_actions;
+        if limit > largest {
+            largest = limit;
+        }
+        index += 1;
+    }
+    largest
 }
 
 impl ShieldedProofFailureBudget {
@@ -269,11 +301,7 @@ impl ShieldedProofFailureBudget {
         if actions == 0 {
             return Ok(None);
         }
-        // Drive refuses more actions than the system limit before any proof
-        // work, so a larger bundle costs no more than the largest valid one.
-        let actions = u32::try_from(actions)
-            .unwrap_or(u32::MAX)
-            .min(self.max_in_flight_actions);
+        let actions = u32::try_from(actions).unwrap_or(u32::MAX);
 
         let mut sources = self
             .sources
@@ -283,7 +311,9 @@ impl ShieldedProofFailureBudget {
         if let Some(entry) = sources.get(&source) {
             let debt = entry.debt(now);
             if debt.is_zero() {
-                if entry.in_flight + actions > self.max_in_flight_actions {
+                if entry.in_flight != 0
+                    && entry.in_flight.saturating_add(actions) > self.max_in_flight_actions
+                {
                     return Err(Duration::from_secs(1));
                 }
             } else {
@@ -552,11 +582,85 @@ mod tests {
     fn should_charge_an_oversized_bundle_as_the_largest_valid_one() {
         let budget = budget();
         let now = Instant::now();
-        broadcast(&budget, SOURCE, 1_000, true, now).expect("a clean source is admitted");
+        let oversized = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+            ShieldedTransferTransitionV0 {
+                actions: actions(usize::from(MAX_SHIELDED_ACTIONS) + 1),
+                value_balance: 1,
+                anchor: [7; 32],
+                proof: vec![0; 100],
+                binding_signature: [0; 64],
+            },
+        ));
+        let count = orchard_action_count(&oversized.serialize_to_bytes().unwrap());
+        assert_eq!(count, 16);
+        broadcast(&budget, SOURCE, count, true, now).expect("a clean source is admitted");
         assert_eq!(
             broadcast(&budget, SOURCE, 2, true, now),
             Err(ACTION_DRAIN_INTERVAL * 14),
             "sixteen failed actions, less room for one two-action bundle"
+        );
+    }
+
+    #[test]
+    fn should_clamp_to_the_largest_action_limit_of_any_known_version() {
+        let with_limit = |limit| {
+            let mut version = PlatformVersion::latest().clone();
+            version.system_limits.max_shielded_transition_actions = limit;
+            version
+        };
+
+        assert_eq!(largest_action_limit(&[with_limit(16)]), 16);
+        assert_eq!(
+            largest_action_limit(&[with_limit(32), with_limit(16)]),
+            32,
+            "an older version that admits more actions still bounds the charge"
+        );
+        assert_eq!(
+            largest_action_limit(&[with_limit(8), with_limit(24), with_limit(16)]),
+            24
+        );
+    }
+
+    /// Drive bounds each bundle of a token pool transition on its own, so two
+    /// full bundles are charged twice the largest bundle, even to a source
+    /// that already has a settled broadcast behind it.
+    #[test]
+    fn should_charge_each_bundle_of_a_token_transition_up_to_the_limit() {
+        let largest = usize::from(MAX_SHIELDED_ACTIONS);
+        let transition = StateTransition::TokenShieldedTransferWithShieldedFee(
+            TokenShieldedTransferWithShieldedFeeTransition::V0(
+                TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                    data_contract_id: Identifier::from([9; 32]),
+                    token_contract_position: 0,
+                    token_id: Identifier::from([8; 32]),
+                    token_actions: actions(largest + 1),
+                    token_anchor: [7; 32],
+                    token_proof: vec![0; 100],
+                    token_binding_signature: [0; 64],
+                    fee_actions: actions(largest + 1),
+                    fee_anchor: [7; 32],
+                    fee_proof: vec![0; 100],
+                    fee_binding_signature: [0; 64],
+                    credit_amount: 1,
+                },
+            ),
+        );
+        let count = orchard_action_count(&transition.serialize_to_bytes().unwrap());
+        assert_eq!(count, 2 * largest);
+
+        let budget = budget();
+        let now = Instant::now();
+        broadcast(&budget, SOURCE, 1, false, now).expect("a clean source is admitted");
+        let reservation = budget
+            .try_reserve_at(SOURCE, count, now)
+            .expect("one broadcast fits when nothing else is in flight")
+            .unwrap();
+        assert_eq!(reservation.actions as usize, 2 * largest);
+        reservation.settle_at(true, now);
+        assert_eq!(
+            broadcast(&budget, SOURCE, 1, false, now),
+            Err(ACTION_DRAIN_INTERVAL * (2 * largest as u32 - FAILED_ACTIONS_ALLOWED + 1)),
+            "both bundles' failed actions drain before the next broadcast"
         );
     }
 
