@@ -1090,6 +1090,8 @@ mod storage_refund_clawback_tests {
                 block_address_balance_changes: Default::default(),
                 block_platform_state: (**platform_state).clone(),
                 proposer_results: None,
+                random_requests: Default::default(),
+                applied_randomness: None,
             });
 
             // verify_sum_trees is on by default, so this fails if the credits do not balance

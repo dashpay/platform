@@ -47,6 +47,22 @@
     a required `random_minimum_amount` method, and `TokenTransitionV0Methods` a required
     `random_amount_range` method. An implementation outside these crates returns `None` for a
     fixed amount.
+- **platform-version, dpp, drive-abci (Rust API):** same-block randomness through
+  `ApplyBlockRandomness` (protocol version 15) changes these items for Rust code whichever
+  protocol version it runs:
+  - `DriveAbciBlockEndMethodVersions` gains a public `apply_random_beacon` field. A struct
+    literal sets it to `None` in a table that does not draw from the beacon.
+  - `BasicError` gains `RandomBeaconUnavailableError` (code 10604). An exhaustive match needs
+    the new arm.
+  - drive-abci's `PlatformState` gains a public `switched_from_protocol_version` field,
+    `BlockExecutionContextV0` public `random_requests` and `applied_randomness` fields, and
+    `CleanedCommitInfo` public `beacon` and `app_hash` fields. A struct literal sets them to
+    `None`, and `random_requests` to `BlockRandomRequests::default()`.
+  - `PlatformStateV0Methods` gains the required methods `switched_from_protocol_version` and
+    `set_switched_from_protocol_version`, `BlockExecutionContextV0Getters` the required
+    methods `random_requests` and `applied_randomness`, and `BlockExecutionContextV0Setters`
+    the required method `set_applied_randomness`. An implementation outside drive-abci
+    returns `None`, an empty `BlockRandomRequests`, or ignores the value set.
 
 - **swift-sdk:** `SDK(network:)` builds the adaptive context provider in Auto mode
   instead of the trusted one (`contextProvider` defaults to `.adaptive`). An SDK that no

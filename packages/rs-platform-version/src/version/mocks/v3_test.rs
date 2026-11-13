@@ -172,6 +172,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 prune_shielded_pool_anchors: None,
                 record_token_shielded_pool_anchors: None,
                 expire_documents: None,
+                apply_random_beacon: None,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,

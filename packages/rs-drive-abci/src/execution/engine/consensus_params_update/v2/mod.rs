@@ -37,7 +37,14 @@ pub(super) fn consensus_params_update_v2(
         _ => false,
     };
     let consensus_version = if emergency_update {
-        1
+        // The emergency update raised Tenderdash to consensus version 1; it must not lower a
+        // protocol version that runs a later one (2 from protocol version 15, which needs
+        // Tenderdash to send each block's random beacon). Only protocol version 15 and later
+        // select this generation, and each runs consensus version 1 or more.
+        new_platform_version
+            .consensus
+            .tenderdash_consensus_version
+            .max(1) as i32
     } else {
         // Update versions or the evidence policy when they change
         if original_platform_version

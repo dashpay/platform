@@ -1437,15 +1437,8 @@ mod tests {
 
     #[test]
     fn should_refuse_a_where_entry_comparing_a_property_drawn_at_random() {
-        // No protocol version admits `sys.random.uniform` yet: the contract parses at the
-        // latest one with it admitted
-        let mut platform_version = PlatformVersion::latest().clone();
-        platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .random_generated_from = Some(0);
+        // Protocol version 15 admits `sys.random.uniform`
+        let platform_version = PlatformVersion::latest();
         let contract = DataContract::from_value(
             platform_value!({
                 "$formatVersion": "1",
@@ -1473,20 +1466,20 @@ mod tests {
                 },
             }),
             false,
-            &platform_version,
+            platform_version,
         )
         .expect("the contract parses");
         let card = contract
             .document_type_for_name("card")
             .expect("the card type");
-        let error = referenced_side_error(&contract, card, "rarity", &platform_version)
+        let error = referenced_side_error(&contract, card, "rarity", platform_version)
             .expect("the check runs");
         assert!(
             error.is_some_and(|reason| reason.contains("drawn at random")),
             "a where entry comparing the drawn rarity is refused"
         );
         assert_eq!(
-            referenced_side_error(&contract, card, "name", &platform_version)
+            referenced_side_error(&contract, card, "name", platform_version)
                 .expect("the check runs"),
             None
         );

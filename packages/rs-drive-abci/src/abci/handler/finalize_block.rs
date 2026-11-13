@@ -1,3 +1,4 @@
+use super::apply_block_randomness::apply_randomness;
 use super::process_proposal::execute_proposal;
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
@@ -149,7 +150,7 @@ where
             )))?;
 
     // Get current block platform version
-    let block_execution_context = app
+    let mut block_execution_context = app
         .block_execution_context()
         .write()
         .unwrap()
@@ -168,6 +169,64 @@ where
 
     #[cfg(debug_assertions)]
     phases.end_phase("setup");
+
+    // A block that receives a random beacon (the gate the batch transformer applies: its
+    // protocol version under the Tenderdash consensus version it runs under draws random
+    // values, from protocol version 15 on) must commit the state after its draws, so its commit
+    // must carry both the beacon and the app hash the precommits sign. Without the beacon the
+    // block would commit its placeholders and escrowed maximums, and without the app hash
+    // nothing would check the state it commits against the block id the commit signs. Such a
+    // commit is refused before anything is applied. The block that switches to protocol version
+    // 15 still runs under consensus version 1, and its commit carries neither.
+    let receives_random_beacon = block_execution_context
+        .block_platform_state()
+        .tenderdash_consensus_platform_version()?
+        .drive_abci
+        .methods
+        .block_end
+        .apply_random_beacon
+        .is_some();
+    if receives_random_beacon
+        && (request_finalize_block.commit.beacon.is_none()
+            || request_finalize_block.commit.app_hash.is_none())
+    {
+        return Err(AbciError::WrongFinalizeBlockReceived(format!(
+            "received a block for h: {} r: {} whose commit carries {}, but the block receives a random beacon, so its commit must carry the beacon and the app hash after the draws",
+            block_height,
+            request_finalize_block.commit.round,
+            match (
+                request_finalize_block.commit.beacon.is_some(),
+                request_finalize_block.commit.app_hash.is_some(),
+            ) {
+                (true, _) => "no app hash",
+                (false, true) => "no random beacon",
+                (false, false) => "neither a random beacon nor an app hash",
+            },
+        ))
+        .into());
+    }
+
+    // The commit's random beacon (Tenderdash consensus version 2, protocol version 15), unless
+    // this node applied it already when it voted in the commit round. A node finalizing a block
+    // it did not vote on (block sync, replay, a node that was not voting), or that it had to
+    // execute again above, applies it now in the block's transaction, so it commits the state
+    // the commit signs; `finalize_block_proposal` checks that state against the commit's app
+    // hash. Before consensus version 2 the commit carries no beacon and nothing is applied.
+    if let Some(beacon) = request_finalize_block.commit.beacon {
+        apply_randomness(
+            app.platform(),
+            &mut block_execution_context,
+            request_finalize_block.commit.round,
+            &beacon,
+            transaction,
+        )?;
+    }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase_if(
+        request_finalize_block.commit.beacon.is_some(),
+        "apply_randomness",
+    );
 
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request_finalize_block,
@@ -351,6 +410,10 @@ where
 mod tests {
     use super::*;
     use crate::abci::app::{FullAbciApplication, TransactionalApplication};
+    use crate::abci::handler::apply_block_randomness::tests::{
+        apply_card_contract, insert_placeholder_card, reserve_random_transfer_in, stored_rarity,
+        BEACON, OWNER, RECIPIENT, TOKEN_SUPPLY,
+    };
     use crate::config::{CheckpointStep, PlatformConfig};
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_execution_context::BlockExecutionContext;
@@ -364,15 +427,19 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::DataContract;
     use dpp::version::PlatformVersion;
+    use drive::drive::tokens::settle_random_token_amounts::RandomTokenRequest;
     use drive::grovedb::Transaction;
     use std::sync::{Arc, Mutex, RwLock};
     use tenderdash_abci::proto::abci::CommitInfo;
     use tenderdash_abci::proto::google::protobuf::Timestamp;
     use tenderdash_abci::proto::types::{
-        Block, BlockId, Data, EvidenceList, Header, PartSetHeader,
+        Block, BlockId, Data, EvidenceList, Header, PartSetHeader, StateId,
     };
     use tenderdash_abci::proto::version::Consensus;
+    use tenderdash_abci::proto::ToMillis;
+    use tenderdash_abci::signatures::Hashable;
     use tracing_subscriber::layer::SubscriberExt;
 
     /// An ABCI application whose `commit_transaction` always fails.
@@ -456,6 +523,8 @@ mod tests {
             block_address_balance_changes: Default::default(),
             block_platform_state: platform_state,
             proposer_results: None,
+            random_requests: Default::default(),
+            applied_randomness: None,
         }
         .into()
     }
@@ -473,6 +542,8 @@ mod tests {
                 quorum_hash: quorum_hash.to_vec(),
                 block_signature: vec![0u8; 96],
                 threshold_vote_extensions: vec![],
+                beacon: vec![],
+                app_hash: vec![],
             }),
             misbehavior: vec![],
             hash: BLOCK_HASH.to_vec(),
@@ -564,12 +635,13 @@ mod tests {
                 None,
             ));
 
-        let request = finalize_block_request(
+        let mut request = finalize_block_request(
             platform.config.abci.chain_id.clone(),
             quorum_hash,
             height,
             block_time_ms,
         );
+        commit_the_random_beacon(&mut request, committed_root(platform));
 
         finalize_block::<_, MockCoreRPCLike>(&app, request)
     }
@@ -597,14 +669,41 @@ mod tests {
                 previous_block_time_ms,
             ));
 
-        let request = finalize_block_request(
+        let mut request = finalize_block_request(
             platform.config.abci.chain_id.clone(),
             quorum_hash,
             height,
             block_time_ms,
         );
+        commit_the_random_beacon(&mut request, committed_root(platform));
 
         finalize_block::<_, MockCoreRPCLike>(app, request)
+    }
+
+    /// The root `platform` committed last: the state after the draws of a block that asks for
+    /// nothing, as the block runs in a transaction nothing has written to yet.
+    fn committed_root(platform: &TempPlatform<MockCoreRPCLike>) -> [u8; 32] {
+        platform
+            .drive
+            .grove
+            .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash")
+    }
+
+    /// Gives `request` the commit of a block that receives a random beacon (protocol version
+    /// 15 on): the beacon, and `app_hash`, the state after the block's draws, which the state
+    /// id of its block id binds.
+    fn commit_the_random_beacon(request: &mut proto::RequestFinalizeBlock, app_hash: [u8; 32]) {
+        let state_id = signed_state_id(request, &app_hash);
+        request
+            .block_id
+            .as_mut()
+            .expect("expected the block id")
+            .state_id = state_id;
+        let commit = request.commit.as_mut().expect("expected the commit info");
+        commit.beacon = BEACON.to_vec();
+        commit.app_hash = app_hash.to_vec();
     }
 
     /// The data contract block cache is promoted to the global cache by this handler, after
@@ -1267,5 +1366,339 @@ mod tests {
         finalize_real_block(&platform, &app, 3, next_interval_time, Some(second_time))
             .expect("third block after the restart");
         assert_eq!(registered_checkpoint_heights(&platform), vec![3]);
+    }
+
+    /// What finalizing a block with a commit's random beacon gives on a node that did not
+    /// apply it (block sync, replay, a node that did not vote).
+    struct FinalizedWithTheCommitBeacon {
+        /// The platform, holding the card contract
+        platform: TempPlatform<MockCoreRPCLike>,
+        /// The card contract
+        contract: DataContract,
+        /// The committed root before the block
+        root_before: [u8; 32],
+        /// The root the block's draws give
+        drawn_root: [u8; 32],
+        /// The random token transfer the block reserved and the commit's beacon settles
+        transfer: RandomTokenRequest,
+        /// What `finalize_block` returned
+        result: Result<proto::ResponseFinalizeBlock, Error>,
+    }
+
+    /// The state id the precommits of the block `request` finalizes sign over `app_hash`: the
+    /// hash of the header's state id holding that app hash.
+    fn signed_state_id(request: &proto::RequestFinalizeBlock, app_hash: &[u8]) -> Vec<u8> {
+        let header = request
+            .block
+            .as_ref()
+            .and_then(|block| block.header.as_ref())
+            .expect("expected the block header");
+        StateId {
+            height: header.height as u64,
+            app_hash: app_hash.to_vec(),
+            app_version: header
+                .version
+                .as_ref()
+                .expect("expected the header version")
+                .app,
+            core_chain_locked_height: header.core_chain_locked_height,
+            time: header
+                .time
+                .as_ref()
+                .expect("expected the block time")
+                .to_millis()
+                .expect("expected a valid block time"),
+        }
+        .calculate_msg_hash(&header.chain_id, request.height, request.round)
+        .expect("expected to hash the state id")
+    }
+
+    /// Finalizes a block that created one card holding the placeholder rarity and reserved one
+    /// random token transfer, with a commit
+    /// carrying the random beacon and the app hash `commit_app_hash` makes of the root the
+    /// draws give, on a node that did not apply the beacon. The block id carries the state id
+    /// of the app hash `block_id_app_hash` makes of that root, and the zero state id for `None`.
+    fn finalize_with_the_commit_beacon(
+        commit_app_hash: impl FnOnce([u8; 32]) -> Vec<u8>,
+        block_id_app_hash: impl FnOnce([u8; 32]) -> Option<[u8; 32]>,
+    ) -> FinalizedWithTheCommitBeacon {
+        finalize_with_a_commit(&BEACON, commit_app_hash, block_id_app_hash)
+    }
+
+    /// Like [`finalize_with_the_commit_beacon`], with a commit carrying `beacon`, none when
+    /// empty.
+    fn finalize_with_a_commit(
+        beacon: &[u8],
+        commit_app_hash: impl FnOnce([u8; 32]) -> Vec<u8>,
+        block_id_app_hash: impl FnOnce([u8; 32]) -> Option<[u8; 32]>,
+    ) -> FinalizedWithTheCommitBeacon {
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let mut config = PlatformConfig::default_testnet();
+        config.testing_configs.block_commit_signature_verification = false;
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let contract = apply_card_contract(&platform);
+        let root_before = platform
+            .drive
+            .grove
+            .root_hash(None, grove_version)
+            .unwrap()
+            .expect("expected a root hash");
+
+        let (drawn_root, transfer, result) = {
+            let app = FullAbciApplication::new(&platform.platform);
+            app.start_transaction();
+            let platform_state = (**platform.state.load()).clone();
+            let quorum_hash: [u8; 32] = platform_state.current_validator_set_quorum_hash().into();
+            let block_time_ms = 1_700_000_000_000u64;
+            let mut context = block_execution_context(platform_state, 1, block_time_ms, None);
+
+            let (drawn_root, transfer) = {
+                let transaction_guard = app.transaction.read().unwrap();
+                let transaction = transaction_guard.as_ref().expect("expected a transaction");
+                let card = insert_placeholder_card(&platform, &contract, transaction);
+                let transfer = reserve_random_transfer_in(&platform, transaction);
+                let BlockExecutionContext::V0(context_v0) = &mut context;
+                context_v0.random_requests.documents.push(card);
+                context_v0.random_requests.tokens.push(transfer.clone());
+
+                // The root the commit signs, from draws this test rolls back, so the block
+                // reaches `finalize_block` holding the placeholder as on a node that did not vote
+                transaction.set_savepoint();
+                let drawn_root = apply_randomness(
+                    &platform.platform,
+                    &mut context.clone(),
+                    0,
+                    &BEACON,
+                    transaction,
+                )
+                .expect("expected the draws to apply");
+                transaction
+                    .rollback_to_savepoint()
+                    .expect("expected to roll the draws back");
+                (drawn_root, transfer)
+            };
+
+            app.block_execution_context
+                .write()
+                .unwrap()
+                .replace(context);
+
+            let mut request = finalize_block_request(
+                platform.config.abci.chain_id.clone(),
+                quorum_hash,
+                1,
+                block_time_ms,
+            );
+            if let Some(app_hash) = block_id_app_hash(drawn_root) {
+                let state_id = signed_state_id(&request, &app_hash);
+                request
+                    .block_id
+                    .as_mut()
+                    .expect("expected the block id")
+                    .state_id = state_id;
+            }
+            let commit = request.commit.as_mut().expect("expected the commit info");
+            commit.beacon = beacon.to_vec();
+            commit.app_hash = commit_app_hash(drawn_root);
+
+            (
+                drawn_root,
+                transfer,
+                finalize_block::<_, MockCoreRPCLike>(&app, request),
+            )
+        };
+
+        FinalizedWithTheCommitBeacon {
+            platform,
+            contract,
+            root_before,
+            drawn_root,
+            transfer,
+            result,
+        }
+    }
+
+    #[test]
+    fn should_apply_the_commit_beacon_this_node_did_not_apply() {
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let platform_version = PlatformVersion::latest();
+        let FinalizedWithTheCommitBeacon {
+            platform,
+            contract,
+            drawn_root,
+            transfer,
+            result,
+            ..
+        } = finalize_with_the_commit_beacon(|drawn_root| drawn_root.to_vec(), Some);
+        result.expect("expected the block to finalize");
+
+        // The block commits the state the commit signs, and the next proposal finds it on disk
+        let committed_root = platform
+            .drive
+            .grove
+            .root_hash(None, grove_version)
+            .unwrap()
+            .expect("expected a root hash");
+        assert_eq!(committed_root, drawn_root);
+        assert_eq!(
+            platform.state.load().last_committed_block_app_hash(),
+            Some(drawn_root)
+        );
+        let transaction = platform.drive.grove.start_transaction();
+        assert!((1..=100).contains(&stored_rarity(&platform, &contract, &transaction)));
+
+        // The commit's beacon settled the transfer once: the reservation is gone, the recipient
+        // holds the drawn amount and the sender the rest of the supply
+        let balance = |identity_id: [u8; 32]| {
+            platform
+                .drive
+                .fetch_identity_token_balance(
+                    transfer.token_id.to_buffer(),
+                    identity_id,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch a token balance")
+        };
+        let paid = balance(RECIPIENT).expect("expected the recipient to hold the drawn amount");
+        assert!((transfer.minimum..=transfer.maximum).contains(&paid));
+        assert_eq!(balance(OWNER), Some(TOKEN_SUPPLY - paid));
+        assert_eq!(
+            platform
+                .drive
+                .fetch_token_order_escrow(
+                    transfer.token_id.to_buffer(),
+                    transfer.reservation_id(),
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to fetch the reservation"),
+            None
+        );
+    }
+
+    /// A block that receives a random beacon must commit the state after its draws: a commit
+    /// missing the beacon, the app hash the precommits sign, or both, is refused before
+    /// anything is applied, and nothing is committed.
+    #[test]
+    fn should_refuse_a_commit_missing_the_random_beacon_or_the_app_hash() {
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let no_app_hash = |_: [u8; 32]| Vec::new();
+        let drawn_app_hash = |drawn_root: [u8; 32]| drawn_root.to_vec();
+        for (beacon, commit_app_hash, missing) in [
+            (
+                &BEACON[..],
+                &no_app_hash as &dyn Fn([u8; 32]) -> Vec<u8>,
+                "no app hash",
+            ),
+            (&[][..], &drawn_app_hash, "no random beacon"),
+            (
+                &[][..],
+                &no_app_hash,
+                "neither a random beacon nor an app hash",
+            ),
+        ] {
+            let FinalizedWithTheCommitBeacon {
+                platform,
+                root_before,
+                result,
+                ..
+            } = finalize_with_a_commit(beacon, commit_app_hash, Some);
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(ref message)))
+                        if message.contains(&format!("whose commit carries {missing},"))
+                ),
+                "{missing}: {result:?}"
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .grove
+                    .root_hash(None, grove_version)
+                    .unwrap()
+                    .expect("expected a root hash"),
+                root_before,
+                "{missing}: nothing is committed"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_commit_signing_another_app_hash() {
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let FinalizedWithTheCommitBeacon {
+            platform,
+            root_before,
+            result,
+            ..
+        } = finalize_with_the_commit_beacon(|_| vec![9; 32], Some);
+        assert!(
+            matches!(
+                result,
+                Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(_)))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            platform
+                .drive
+                .grove
+                .root_hash(None, grove_version)
+                .unwrap()
+                .expect("expected a root hash"),
+            root_before,
+            "nothing is committed"
+        );
+    }
+
+    /// The precommits sign the block id, whose state id binds the app hash after the draws: a
+    /// commit whose block id carries the state id of another app hash, here the header's, the
+    /// state before the draws that a consensus version 1 precommit signs, is refused, and
+    /// nothing is committed.
+    #[test]
+    fn should_refuse_a_commit_whose_block_id_carries_another_state_id() {
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let FinalizedWithTheCommitBeacon {
+            platform,
+            root_before,
+            result,
+            ..
+        } = finalize_with_the_commit_beacon(|drawn_root| drawn_root.to_vec(), |_| Some(APP_HASH));
+        assert!(
+            matches!(
+                result,
+                Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(ref message)))
+                    if message.contains("state id")
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            platform
+                .drive
+                .grove
+                .root_hash(None, grove_version)
+                .unwrap()
+                .expect("expected a root hash"),
+            root_before,
+            "nothing is committed"
+        );
+
+        // The zero state id of a block id that carries none is refused too
+        let FinalizedWithTheCommitBeacon { result, .. } =
+            finalize_with_the_commit_beacon(|drawn_root| drawn_root.to_vec(), |_| None);
+        assert!(
+            matches!(
+                result,
+                Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(_)))
+            ),
+            "{result:?}"
+        );
     }
 }

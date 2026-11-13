@@ -59,6 +59,24 @@ pub trait PlatformStateV0Methods {
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
 
+    /// The protocol version of the last committed block, on the state of the block that
+    /// switches protocol versions; `None` on every other state, a committed one included.
+    fn switched_from_protocol_version(&self) -> Option<ProtocolVersion>;
+
+    /// The platform version whose Tenderdash consensus version
+    /// (`consensus.tenderdash_consensus_version`) the block of this state runs under.
+    /// Tenderdash applies the consensus parameters a block returns from the next height on, so
+    /// the block that switches protocol versions runs under the version it switches from, and
+    /// any other block under the current one. On a committed state, which check_tx reads, it is
+    /// the current one: the one the next block runs under, unless that block switches.
+    fn tenderdash_consensus_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
+        PlatformVersion::get(
+            self.switched_from_protocol_version()
+                .unwrap_or_else(|| self.current_protocol_version_in_consensus()),
+        )
+        .map_err(Error::from)
+    }
+
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash;
 
@@ -123,6 +141,9 @@ pub trait PlatformStateV0Methods {
 
     /// Sets the next epoch protocol version.
     fn set_next_epoch_protocol_version(&mut self, version: ProtocolVersion);
+
+    /// Records the protocol version the block of this state switches from, or clears it.
+    fn set_switched_from_protocol_version(&mut self, version: Option<ProtocolVersion>);
 
     /// Sets the current validator set quorum hash.
     fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash);
@@ -375,6 +396,10 @@ impl PlatformStateV0Methods for PlatformState {
         self.next_epoch_protocol_version
     }
 
+    fn switched_from_protocol_version(&self) -> Option<ProtocolVersion> {
+        self.switched_from_protocol_version
+    }
+
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash {
         self.current_validator_set_quorum_hash
@@ -452,6 +477,11 @@ impl PlatformStateV0Methods for PlatformState {
         // Carried only by the full record: it moves once per epoch at most, so
         // rewriting the record then is cheaper than writing it every block.
         self.heavy_fields_dirty = true;
+    }
+
+    fn set_switched_from_protocol_version(&mut self, version: Option<ProtocolVersion>) {
+        // Not part of any saved record, so nothing has to be written again
+        self.switched_from_protocol_version = version;
     }
 
     /// Sets the current validator set quorum hash.
@@ -889,6 +919,45 @@ mod tests {
         assert!(!leaves_dirty(|s| {
             s.next_validator_set_quorum_hash_mut();
         }));
+        // Never saved at all
+        assert!(!leaves_dirty(
+            |s| s.set_switched_from_protocol_version(Some(14))
+        ));
+    }
+
+    /// The block that switches protocol versions runs under the Tenderdash consensus version
+    /// of the one it switches from; any other block, and the next block of a committed state,
+    /// under the current one.
+    #[test]
+    fn should_run_the_switching_block_under_the_consensus_version_it_switches_from() {
+        let mut state = clean_state();
+        assert_eq!(state.switched_from_protocol_version(), None);
+        assert_eq!(
+            state
+                .tenderdash_consensus_platform_version()
+                .expect("a known version")
+                .protocol_version,
+            PlatformVersion::latest().protocol_version
+        );
+
+        state.set_switched_from_protocol_version(Some(14));
+        let consensus_platform_version = state
+            .tenderdash_consensus_platform_version()
+            .expect("a known version");
+        assert_eq!(consensus_platform_version.protocol_version, 14);
+        assert_eq!(
+            consensus_platform_version
+                .consensus
+                .tenderdash_consensus_version,
+            1
+        );
+        assert_eq!(
+            state
+                .current_platform_version()
+                .expect("a known version")
+                .protocol_version,
+            PlatformVersion::latest().protocol_version
+        );
     }
 
     fn masternode(pro_tx_hash: ProTxHash, node_type: MasternodeType) -> MasternodeListItem {

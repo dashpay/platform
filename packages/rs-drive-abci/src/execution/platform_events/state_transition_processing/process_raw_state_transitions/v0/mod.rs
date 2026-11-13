@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::PlatformState;
@@ -6,18 +7,29 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
 use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionOwned};
 use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
+use drive::drive::document::draw_random_document_properties::RandomDocumentRequest;
+use drive::drive::tokens::settle_random_token_amounts::{
+    RandomTokenRequest, RandomTokenRequestKind,
+};
 
+use crate::execution::types::block_random_requests::BlockRandomRequests;
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
     SuccessfullyDecodedStateTransition,
@@ -155,6 +167,23 @@ where
         // daily withdrawal limit adds to its daily maximum.
         let mut block_credit_mints: Credits = 0;
 
+        // Whether the block collects what its transitions ask its random beacon for: only from
+        // protocol version 15, whose `apply_random_beacon` draws the values once Tenderdash
+        // hands the beacon over. Every protocol version selects this generation, and the
+        // collection is inert before 15 twice over: nothing is collected while the step is
+        // `None`, which every earlier table sets, and what is collected lives only on the
+        // in-memory processing result and block execution context, which are neither
+        // serialized nor hashed. The block that switches to 15 receives no beacon, as Tenderdash
+        // still runs it under consensus version 1: the batch transformer refuses there whatever
+        // would ask the beacon for a value (`random_beacon_gate`), so all it collects are the
+        // creates of types that draw nothing, which no draw would change.
+        let collect_random_requests = platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .apply_random_beacon
+            .is_some();
+
         for decoded_state_transition in state_transition_container.into_iter() {
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
@@ -213,6 +242,17 @@ where
                         // in-memory processing result, which is neither serialized nor hashed.
                         let token_shielded_pools_touched =
                             token_shielded_pools_touched(&state_transition);
+
+                        // Remembered before the transition is consumed too: what an applied
+                        // transition asks the block's random beacon for (see
+                        // `collect_random_requests` above). Nothing caps how many a block
+                        // collects yet: the draw's cost is bounded, like the block's execution,
+                        // by the block's size and the proposer's processing time limit.
+                        let random_requests = if collect_random_requests {
+                            random_requests_of(&state_transition)
+                        } else {
+                            Ok(BlockRandomRequests::default())
+                        };
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -307,6 +347,16 @@ where
                         ) {
                             processing_result
                                 .add_token_shielded_pools_touched(token_shielded_pools_touched);
+                            // Likewise only a successful execution writes a placeholder or
+                            // reserves a random amount: a paid failure creates no document and
+                            // moves no token.
+                            processing_result.add_random_requests(random_requests.map_err(
+                                |message| {
+                                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                        message,
+                                    ))
+                                },
+                            )?);
                         }
 
                         // Store metrics
@@ -436,5 +486,226 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
         StateTransition::TokenUnshieldWithShieldedFee(st) => vec![st.token_id().to_buffer()],
         StateTransition::TokenPurchaseFromShieldedPool(st) => vec![st.token_id().to_buffer()],
         _ => vec![],
+    }
+}
+
+/// What a state transition asks the block's random beacon for (protocol version 15), in the
+/// order of its transitions: every document a batch creates, whose `sys.random` properties the
+/// draw fills (it leaves alone a document whose type declares none), and every token transfer
+/// or mint of a batch with a random minimum amount, whose reservation the settlement pays out.
+///
+/// The requests mirror what execution wrote: the reservation of a random amount is keyed by
+/// the token, the batch's owner and the transition's identity contract nonce, and holds the
+/// transition's amount, the most it moves. A random mint always names its recipient, as
+/// structure validation refuses one that does not; the error only reaches the caller, as a
+/// corrupted execution, should such a mint ever execute successfully.
+fn random_requests_of(
+    state_transition: &StateTransition,
+) -> Result<BlockRandomRequests, &'static str> {
+    let mut requests = BlockRandomRequests::default();
+    let StateTransition::Batch(batch) = state_transition else {
+        return Ok(requests);
+    };
+    let owner_id = batch.owner_id();
+    for transition in batch.transitions_iter() {
+        match transition {
+            BatchedTransitionRef::Document(document_transition) => {
+                if matches!(document_transition, DocumentTransition::Create(_)) {
+                    let base = document_transition.base();
+                    requests.documents.push(RandomDocumentRequest {
+                        contract_id: base.data_contract_id(),
+                        document_type_name: base.document_type_name().clone(),
+                        document_id: base.id(),
+                    });
+                }
+            }
+            BatchedTransitionRef::Token(token_transition) => {
+                let random_amount = match token_transition {
+                    TokenTransition::Transfer(transfer) => {
+                        transfer.random_minimum_amount().map(|minimum| {
+                            (
+                                minimum,
+                                transfer.amount(),
+                                RandomTokenRequestKind::Transfer {
+                                    recipient_id: transfer.recipient_id(),
+                                },
+                            )
+                        })
+                    }
+                    TokenTransition::Mint(mint) => match mint.random_minimum_amount() {
+                        Some(minimum) => {
+                            let recipient_id = mint
+                                .issued_to_identity_id()
+                                .ok_or("a random token mint names its recipient")?;
+                            Some((
+                                minimum,
+                                mint.amount(),
+                                RandomTokenRequestKind::Mint { recipient_id },
+                            ))
+                        }
+                        None => None,
+                    },
+                    _ => None,
+                };
+                if let Some((minimum, maximum, kind)) = random_amount {
+                    requests.tokens.push(RandomTokenRequest {
+                        token_id: token_transition.token_id(),
+                        owner_id,
+                        identity_contract_nonce: token_transition.identity_contract_nonce(),
+                        minimum,
+                        maximum,
+                        kind,
+                    });
+                }
+            }
+        }
+    }
+    Ok(requests)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_create_transition::{
+        DocumentCreateTransition, DocumentCreateTransitionV0,
+    };
+    use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+    use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
+    use dpp::state_transition::batch_transition::{
+        BatchTransition, BatchTransitionV1, TokenMintTransition, TokenTransferTransition,
+    };
+    use std::collections::BTreeMap;
+
+    const OWNER: [u8; 32] = [1; 32];
+    const TOKEN: [u8; 32] = [2; 32];
+    const RECIPIENT: [u8; 32] = [3; 32];
+    const CONTRACT: [u8; 32] = [4; 32];
+
+    fn batch(transitions: Vec<BatchedTransition>) -> StateTransition {
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from(OWNER),
+            transitions,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }))
+    }
+
+    fn transfer(random_minimum_amount: Option<u64>) -> BatchedTransition {
+        let mut transfer: TokenTransferTransition = TokenTransferTransitionV0 {
+            base: TokenBaseTransitionV0 {
+                identity_contract_nonce: 5,
+                token_contract_position: 0,
+                data_contract_id: Identifier::from(CONTRACT),
+                token_id: Identifier::from(TOKEN),
+                using_group_info: None,
+            }
+            .into(),
+            amount: 900,
+            recipient_id: Identifier::from(RECIPIENT),
+            public_note: None,
+            shared_encrypted_note: None,
+            private_encrypted_note: None,
+        }
+        .into();
+        transfer.set_random_minimum_amount(random_minimum_amount);
+        BatchedTransition::Token(TokenTransition::Transfer(transfer))
+    }
+
+    fn mint(
+        issued_to_identity_id: Option<Identifier>,
+        random_minimum_amount: Option<u64>,
+    ) -> BatchedTransition {
+        let mut mint: TokenMintTransition = TokenMintTransitionV0 {
+            base: TokenBaseTransitionV0 {
+                identity_contract_nonce: 6,
+                token_contract_position: 0,
+                data_contract_id: Identifier::from(CONTRACT),
+                token_id: Identifier::from(TOKEN),
+                using_group_info: None,
+            }
+            .into(),
+            issued_to_identity_id,
+            amount: 700,
+            public_note: None,
+        }
+        .into();
+        mint.set_random_minimum_amount(random_minimum_amount);
+        BatchedTransition::Token(TokenTransition::Mint(mint))
+    }
+
+    fn create(document_id: [u8; 32]) -> BatchedTransition {
+        let create: DocumentCreateTransition = DocumentCreateTransitionV0 {
+            base: DocumentBaseTransitionV0 {
+                id: Identifier::from(document_id),
+                identity_contract_nonce: 7,
+                document_type_name: "card".to_string(),
+                data_contract_id: Identifier::from(CONTRACT),
+            }
+            .into(),
+            entropy: [0; 32],
+            data: BTreeMap::new(),
+            prefunded_voting_balance: None,
+        }
+        .into();
+        BatchedTransition::Document(DocumentTransition::Create(create))
+    }
+
+    #[test]
+    fn should_collect_every_created_document_and_random_token_amount_in_order() {
+        let requests = random_requests_of(&batch(vec![
+            create([8; 32]),
+            transfer(Some(100)),
+            transfer(None),
+            mint(Some(Identifier::from(RECIPIENT)), Some(50)),
+            mint(Some(Identifier::from(RECIPIENT)), None),
+            create([9; 32]),
+        ]))
+        .expect("expected the requests");
+
+        let card = |document_id: [u8; 32]| RandomDocumentRequest {
+            contract_id: Identifier::from(CONTRACT),
+            document_type_name: "card".to_string(),
+            document_id: Identifier::from(document_id),
+        };
+        assert_eq!(requests.documents, vec![card([8; 32]), card([9; 32])]);
+        assert_eq!(
+            requests.tokens,
+            vec![
+                RandomTokenRequest {
+                    token_id: Identifier::from(TOKEN),
+                    owner_id: Identifier::from(OWNER),
+                    identity_contract_nonce: 5,
+                    minimum: 100,
+                    maximum: 900,
+                    kind: RandomTokenRequestKind::Transfer {
+                        recipient_id: Identifier::from(RECIPIENT),
+                    },
+                },
+                RandomTokenRequest {
+                    token_id: Identifier::from(TOKEN),
+                    owner_id: Identifier::from(OWNER),
+                    identity_contract_nonce: 6,
+                    minimum: 50,
+                    maximum: 700,
+                    kind: RandomTokenRequestKind::Mint {
+                        recipient_id: Identifier::from(RECIPIENT),
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_random_mint_that_names_no_recipient() {
+        assert!(random_requests_of(&batch(vec![mint(None, Some(50))])).is_err());
+        assert!(random_requests_of(&batch(vec![mint(None, None)]))
+            .expect("a mint of a fixed amount asks for nothing")
+            .is_empty());
     }
 }

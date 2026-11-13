@@ -36,10 +36,11 @@ mod tests {
     use tenderdash_abci::proto::abci::{CommitInfo, RequestFinalizeBlock, RequestProcessProposal};
     use tenderdash_abci::proto::google::protobuf::Timestamp;
     use tenderdash_abci::proto::types::{
-        Block, BlockId, Data, EvidenceList, Header, PartSetHeader,
+        Block, BlockId, Data, EvidenceList, Header, PartSetHeader, StateId,
     };
     use tenderdash_abci::proto::version::Consensus;
-    use tenderdash_abci::proto::FromMillis;
+    use tenderdash_abci::proto::{FromMillis, ToMillis};
+    use tenderdash_abci::signatures::Hashable;
     use tenderdash_abci::Application;
 
     const BLOCK_SPACING_MS: u64 = 1_000;
@@ -502,17 +503,39 @@ mod tests {
     }
 
     /// The request Tenderdash finalizes `proposal` with once it is committed in its own round,
-    /// with `app_hash` in the block header
+    /// with `app_hash` in the block header. From protocol version 15 the commit carries the
+    /// round's random beacon and the app hash after the block's draws, which the state id of
+    /// the block id binds; the block asks for nothing, so that app hash is the header's.
     fn finalize_request(
         proposal: &RequestProcessProposal,
         app_hash: Vec<u8>,
     ) -> RequestFinalizeBlock {
+        let state_id = StateId {
+            height: proposal.height as u64,
+            app_hash: app_hash.clone(),
+            app_version: proposal
+                .version
+                .as_ref()
+                .expect("expected the proposal version")
+                .app,
+            core_chain_locked_height: proposal.core_chain_locked_height,
+            time: proposal
+                .time
+                .as_ref()
+                .expect("expected the proposal time")
+                .to_millis()
+                .expect("expected a valid block time"),
+        }
+        .calculate_msg_hash(CHAIN_ID, proposal.height, proposal.round)
+        .expect("expected to hash the state id");
         RequestFinalizeBlock {
             commit: Some(CommitInfo {
                 round: proposal.round,
                 quorum_hash: proposal.quorum_hash.clone(),
                 block_signature: vec![0u8; 96],
                 threshold_vote_extensions: vec![],
+                beacon: vec![0x5E; 96],
+                app_hash: app_hash.clone(),
             }),
             misbehavior: vec![],
             hash: proposal.hash.clone(),
@@ -551,7 +574,7 @@ mod tests {
                     total: 0,
                     hash: vec![0u8; 32],
                 }),
-                state_id: vec![0u8; 32],
+                state_id,
             }),
         }
     }

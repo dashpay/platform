@@ -267,6 +267,8 @@ mod tests {
                 unsigned_withdrawal_transactions: Default::default(),
                 block_platform_state,
                 proposer_results: None,
+                random_requests: Default::default(),
+                applied_randomness: None,
                 block_address_balance_changes: Default::default(),
             };
 

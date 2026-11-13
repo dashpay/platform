@@ -89,6 +89,8 @@ mod tests {
             block_address_balance_changes: BTreeMap::new(),
             block_platform_state,
             proposer_results: None,
+            random_requests: Default::default(),
+            applied_randomness: None,
         });
 
         // When should_checkpoint version is None, the dispatcher returns Ok(None) directly
@@ -143,6 +145,8 @@ mod tests {
             block_address_balance_changes: BTreeMap::new(),
             block_platform_state,
             proposer_results: None,
+            random_requests: Default::default(),
+            applied_randomness: None,
         });
 
         let result = platform.should_checkpoint(&block_execution_context, &modified_version);

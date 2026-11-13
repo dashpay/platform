@@ -1,3 +1,4 @@
+use crate::execution::types::block_random_requests::BlockRandomRequests;
 use crate::execution::types::block_state_info::BlockStateInfo;
 use std::collections::BTreeMap;
 
@@ -30,6 +31,21 @@ pub struct ProposerResults {
     pub validator_set_quorum_hash: [u8; 32],
 }
 
+/// The random beacon applied to a block's state in the block's transaction, and what it gave.
+///
+/// A round's prevotes combine into exactly one beacon, so `ApplyBlockRandomness` may be asked
+/// again for the same round only with the same beacon, and is answered with the same app hash
+/// without drawing twice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppliedRandomness {
+    /// The round whose prevotes produced the beacon
+    pub round: u32,
+    /// The beacon: the threshold signature the round's prevotes combine into
+    pub beacon: Vec<u8>,
+    /// The app hash after the draws, which the round's precommits sign and the block commits
+    pub app_hash: [u8; 32],
+}
+
 /// V0 of the Block execution context
 #[derive(Debug, Clone)]
 pub struct BlockExecutionContextV0 {
@@ -45,6 +61,11 @@ pub struct BlockExecutionContextV0 {
     pub block_platform_state: PlatformState,
     /// The prepare proposal results if proposed by us
     pub proposer_results: Option<ProposerResults>,
+    /// What the block's transitions ask its random beacon for (protocol version 15; empty
+    /// before), drawn when `ApplyBlockRandomness` or `FinalizeBlock` hands the beacon over
+    pub random_requests: BlockRandomRequests,
+    /// The random beacon applied to the block's state in its transaction, if one was
+    pub applied_randomness: Option<AppliedRandomness>,
 }
 /// A trait defining getter methods for interacting with a BlockExecutionContextV0.
 pub trait BlockExecutionContextV0Getters {
@@ -62,6 +83,12 @@ pub trait BlockExecutionContextV0Getters {
 
     /// Returns a reference of the proposer_results field.
     fn proposer_results(&self) -> Option<&ProposerResults>;
+
+    /// Returns a reference of the random_requests field.
+    fn random_requests(&self) -> &BlockRandomRequests;
+
+    /// Returns a reference of the applied_randomness field.
+    fn applied_randomness(&self) -> Option<&AppliedRandomness>;
 }
 
 /// A trait defining setter methods for interacting with a BlockExecutionContextV0.
@@ -80,6 +107,9 @@ pub trait BlockExecutionContextV0Setters {
 
     /// Sets the proposer_results field.
     fn set_proposer_results(&mut self, results: Option<ProposerResults>);
+
+    /// Sets the applied_randomness field.
+    fn set_applied_randomness(&mut self, applied_randomness: Option<AppliedRandomness>);
 }
 
 /// A trait defining methods for interacting with a BlockExecutionContextV0.
@@ -140,6 +170,16 @@ impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
     fn proposer_results(&self) -> Option<&ProposerResults> {
         self.proposer_results.as_ref()
     }
+
+    /// Returns a reference to the random_requests field.
+    fn random_requests(&self) -> &BlockRandomRequests {
+        &self.random_requests
+    }
+
+    /// Returns a reference to the applied_randomness field.
+    fn applied_randomness(&self) -> Option<&AppliedRandomness> {
+        self.applied_randomness.as_ref()
+    }
 }
 
 impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
@@ -162,6 +202,10 @@ impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
     /// Sets the proposer_results field.
     fn set_proposer_results(&mut self, results: Option<ProposerResults>) {
         self.proposer_results = results;
+    }
+    /// Sets the applied_randomness field.
+    fn set_applied_randomness(&mut self, applied_randomness: Option<AppliedRandomness>) {
+        self.applied_randomness = applied_randomness;
     }
 }
 

@@ -129,6 +129,8 @@ mod tests {
             block_address_balance_changes: BTreeMap::new(),
             block_platform_state,
             proposer_results: None,
+            random_requests: Default::default(),
+            applied_randomness: None,
         })
     }
 

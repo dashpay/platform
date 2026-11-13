@@ -211,6 +211,9 @@ fn parse_request_variant(
         "VerifyVoteExtension" => {
             deserialize_to_loaded(inner, LoadedRequest::VerifyVoteExtension).map(Some)
         }
+        "ApplyBlockRandomness" => {
+            deserialize_to_loaded(inner, LoadedRequest::ApplyBlockRandomness).map(Some)
+        }
         "Flush" => Ok(None),
         other => Err(format!("unsupported request variant {}", other).into()),
     }
@@ -945,19 +948,53 @@ impl<'de> Deserializer<'de> for ParsedValue {
 
     fn deserialize_struct<V>(
         self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
+        name: &'static str,
+        fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        self.deserialize_map(visitor)
+        with_fields_older_logs_omit(name, fields, self).deserialize_map(visitor)
     }
 
     forward_to_deserialize_any! {
         char i8 i16 i32 i128 u8 u16 u32 u128
         unit_struct newtype_struct tuple tuple_struct
+    }
+}
+
+/// The byte fields Tenderdash added to a struct after earlier requests were logged: the random
+/// beacon and the app hash after the block's random draws, which `CommitInfo` and `Commit`
+/// carry from consensus version 2. A request logged before prints neither, and both were empty
+/// then.
+const FIELDS_OLDER_LOGS_OMIT: &[(&str, &[&str])] = &[
+    ("CommitInfo", &["beacon", "app_hash"]),
+    ("Commit", &["beacon", "app_hash"]),
+];
+
+/// `value`, a logged `name` struct, with each byte field older logs omit and it lacks set
+/// empty.
+fn with_fields_older_logs_omit(name: &str, fields: &[&str], value: ParsedValue) -> ParsedValue {
+    let Some((_, omitted)) = FIELDS_OLDER_LOGS_OMIT
+        .iter()
+        .find(|(struct_name, _)| *struct_name == name)
+    else {
+        return value;
+    };
+    match value {
+        ParsedValue::Object(mut map) => {
+            for field in omitted.iter().filter(|field| fields.contains(*field)) {
+                map.entry(field.to_string())
+                    .or_insert_with(|| ParsedValue::Array(Vec::new()));
+            }
+            ParsedValue::Object(map)
+        }
+        ParsedValue::Tagged { tag, value } => ParsedValue::Tagged {
+            tag,
+            value: Box::new(with_fields_older_logs_omit(name, fields, *value)),
+        },
+        other => other,
     }
 }
 
@@ -1102,6 +1139,47 @@ mod tests {
         let request_two = parse_from_log(TESTNET_FINALIZE_BLOCK_TWO);
         assert!(matches!(request_one, LoadedRequest::Finalize(_)));
         assert!(matches!(request_two, LoadedRequest::Finalize(_)));
+    }
+
+    /// Requests logged before consensus version 2 print `CommitInfo` and `Commit` without the
+    /// random beacon and the app hash after the draws; they parse as empty.
+    #[test]
+    fn should_read_the_commit_beacon_and_app_hash_older_logs_omit_as_empty() {
+        let LoadedRequest::Finalize(request) = parse_from_log(TESTNET_FINALIZE_BLOCK_TWO) else {
+            panic!("expected a finalize block request");
+        };
+        let commit = request.commit.expect("expected the commit info");
+        assert!(commit.beacon.is_empty() && commit.app_hash.is_empty());
+        let last_commit = request
+            .block
+            .and_then(|block| block.last_commit)
+            .expect("expected the last commit");
+        assert!(last_commit.beacon.is_empty() && last_commit.app_hash.is_empty());
+    }
+
+    /// From consensus version 2 the commit carries the beacon and the app hash, and Tenderdash
+    /// sends `ApplyBlockRandomness`.
+    #[test]
+    fn should_parse_the_randomness_of_consensus_version_2() {
+        let request = parse_from_log(
+            r#"Request { value: Some(ApplyBlockRandomness(RequestApplyBlockRandomness { hash: [1, 2], height: 7, round: 1, beacon: [3, 4] })) }"#,
+        );
+        let LoadedRequest::ApplyBlockRandomness(request) = request else {
+            panic!("expected an apply block randomness request, got {request:?}");
+        };
+        assert_eq!(
+            (request.hash, request.height, request.round, request.beacon),
+            (vec![1, 2], 7, 1, vec![3, 4])
+        );
+
+        let request = parse_from_log(
+            r#"Request { value: Some(FinalizeBlock(RequestFinalizeBlock { commit: Some(CommitInfo { round: 1, quorum_hash: [], block_signature: [], threshold_vote_extensions: [], beacon: [5], app_hash: [6] }), misbehavior: [], hash: [], height: 7, round: 1, block: None, block_id: None })) }"#,
+        );
+        let LoadedRequest::Finalize(request) = request else {
+            panic!("expected a finalize block request, got {request:?}");
+        };
+        let commit = request.commit.expect("expected the commit info");
+        assert_eq!((commit.beacon, commit.app_hash), (vec![5], vec![6]));
     }
 
     const TESTNET_INFO_ONE: &str = r#"Request { value: Some(Info(RequestInfo { version: "1.5.1", block_version: 14, p2p_version: 10, abci_version: "1.3.0" })) }"#;

@@ -51,6 +51,13 @@ where
 
         block_platform_state.set_genesis_block_info(None);
 
+        // A committed state runs no block: the next one runs under its protocol version's
+        // Tenderdash consensus version unless it switches again, which records that afresh.
+        // Added in place to this shipped generation: the field is in memory only, neither
+        // saved nor hashed, and only the batch transformer's random beacon gate reads it,
+        // which is inert before protocol version 15.
+        block_platform_state.set_switched_from_protocol_version(None);
+
         // Persist block state
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
 
@@ -224,6 +231,41 @@ mod tests {
         assert!(
             platform.state.load().genesis_block_info().is_none(),
             "genesis_block_info must always be cleared"
+        );
+    }
+
+    /// The protocol version a block switched from is the block's alone: the committed state,
+    /// which check_tx reads and the next block starts from, runs under its own.
+    #[test]
+    fn should_clear_the_protocol_version_the_committed_block_switched_from() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let loaded = platform.state.load();
+        let mut block_platform_state = loaded.as_ref().clone();
+        drop(loaded);
+        block_platform_state.set_switched_from_protocol_version(Some(14));
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .update_state_cache_v0(
+                make_extended_block_info(1),
+                block_platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("must succeed");
+
+        let committed = platform.state.load();
+        assert_eq!(committed.switched_from_protocol_version(), None);
+        assert_eq!(
+            committed
+                .tenderdash_consensus_platform_version()
+                .expect("a known version")
+                .protocol_version,
+            platform_version.protocol_version
         );
     }
 

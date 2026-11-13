@@ -2,6 +2,8 @@
 pub mod block_execution_context;
 /// A structure representing block fees
 pub(crate) mod block_fees;
+/// The random values a block asks its random beacon for
+pub mod block_random_requests;
 /// Block state info
 pub mod block_state_info;
 /// An execution event
