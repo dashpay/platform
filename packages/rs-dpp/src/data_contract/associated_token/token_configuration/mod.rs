@@ -1214,6 +1214,7 @@ mod marketplace_rules_tests {
     use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
     use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
+    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
 
     fn not_tradeable() -> TokenConfiguration {
         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
@@ -1232,16 +1233,12 @@ mod marketplace_rules_tests {
     }
 
     /// The protocol version that admits a tradeable token. While it has no tables of its own,
-    /// what it admits is tested with the latest tables under its number; once it has them, they
-    /// are the ones used.
-    fn protocol_version_admitting_tradeable() -> PlatformVersion {
+    /// the test version that selects the token marketplace stands in for it; once it has them,
+    /// they are the ones used.
+    fn protocol_version_admitting_tradeable() -> &'static PlatformVersion {
         PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
-            .cloned()
-            .unwrap_or_else(|_| {
-                let mut platform_version = PlatformVersion::latest().clone();
-                platform_version.protocol_version = TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
-                platform_version
-            })
+            .or_else(|_| PlatformVersion::get(TEST_PROTOCOL_VERSION_5))
+            .expect("expected a version that admits a tradeable token")
     }
 
     #[test]
@@ -1286,7 +1283,7 @@ mod marketplace_rules_tests {
         let configurations = BTreeMap::from([(0, tradeable())]);
         assert!(validate_token_configurations(
             &configurations,
-            &protocol_version_admitting_tradeable()
+            protocol_version_admitting_tradeable()
         )
         .is_valid());
     }
@@ -1297,7 +1294,7 @@ mod marketplace_rules_tests {
         configuration.set_transferable(false);
         let configurations = BTreeMap::from([(3, configuration)]);
         let result =
-            validate_token_configurations(&configurations, &protocol_version_admitting_tradeable());
+            validate_token_configurations(&configurations, protocol_version_admitting_tradeable());
         match result.errors.as_slice() {
             [error @ ConsensusError::BasicError(BasicError::NonTransferableTokenTradeableError(
                 inner,
@@ -1319,7 +1316,7 @@ mod marketplace_rules_tests {
         let platform_version = protocol_version_admitting_tradeable();
 
         let proposed =
-            configuration.validate_trade_mode(&TokenTradeMode::Tradeable, 0, &platform_version);
+            configuration.validate_trade_mode(&TokenTradeMode::Tradeable, 0, platform_version);
         assert!(matches!(
             proposed.errors.as_slice(),
             [ConsensusError::BasicError(
@@ -1330,7 +1327,7 @@ mod marketplace_rules_tests {
         configuration.apply_token_configuration_item(
             TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
         );
-        let applied = configuration.validate_marketplace_rules(0, &platform_version);
+        let applied = configuration.validate_marketplace_rules(0, platform_version);
         assert_eq!(applied.errors, proposed.errors);
     }
 

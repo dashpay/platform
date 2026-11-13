@@ -807,6 +807,7 @@ mod tests {
         use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
         use dpp::platform_value::BinaryData;
         use dpp::prelude::IdentityNonce;
+        use dpp::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
         use dpp::state_transition::batch_transition::batched_transition::token_config_update_transition::{TokenConfigUpdateTransition, TokenConfigUpdateTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
         use dpp::state_transition::batch_transition::BatchTransitionV1;
@@ -826,16 +827,12 @@ mod tests {
         }
 
         /// The protocol version that admits a tradeable token. While it has no tables of its own,
-        /// what it admits is tested with the latest tables under its number; once it has them, they
-        /// are the ones used.
-        fn protocol_version_admitting_tradeable() -> PlatformVersion {
+        /// the test version that selects the token marketplace stands in for it; once it has them,
+        /// they are the ones used.
+        fn protocol_version_admitting_tradeable() -> &'static PlatformVersion {
             PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
-                .cloned()
-                .unwrap_or_else(|_| {
-                    let mut platform_version = PlatformVersion::latest().clone();
-                    platform_version.protocol_version = TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
-                    platform_version
-                })
+                .or_else(|_| PlatformVersion::get(TEST_PROTOCOL_VERSION_5))
+                .expect("expected a version that admits a tradeable token")
         }
 
         /// A batch whose only transition sets a token's trade mode to `trade_mode`.
@@ -915,7 +912,7 @@ mod tests {
         #[test]
         fn should_allow_making_a_token_tradeable_from_protocol_version_16() {
             let result = trade_mode_update(TokenTradeMode::Tradeable)
-                .validate_is_allowed(&protocol_version_admitting_tradeable())
+                .validate_is_allowed(protocol_version_admitting_tradeable())
                 .expect("should not error");
             assert!(result.is_valid(), "{:?}", result.errors);
         }
@@ -959,12 +956,11 @@ mod tests {
 
         #[test]
         fn should_allow_a_contract_with_a_tradeable_token_from_protocol_version_16() {
-            let result = contract_create_with_trade_mode(
-                TokenTradeMode::Tradeable,
-                PlatformVersion::latest(),
-            )
-            .validate_is_allowed(&protocol_version_admitting_tradeable())
-            .expect("should not error");
+            let platform_version = protocol_version_admitting_tradeable();
+            let result =
+                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
             assert!(result.is_valid(), "{:?}", result.errors);
         }
     }
