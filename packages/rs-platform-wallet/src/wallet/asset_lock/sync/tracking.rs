@@ -122,7 +122,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.
-    #[cfg(any(feature = "shielded", test))]
+    #[cfg(feature = "shielded")]
     pub(crate) async fn tracked_operation_id(&self, out_point: &OutPoint) -> Option<[u8; 16]> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
