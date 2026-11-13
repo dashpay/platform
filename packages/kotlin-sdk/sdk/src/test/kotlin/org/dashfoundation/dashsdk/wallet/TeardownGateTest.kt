@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,5 +127,72 @@ class TeardownGateTest {
         withTimeout(5_000) { op.join() }
 
         assertArrayEquals(ByteArray(32), secret)
+    }
+
+    @Test
+    fun cancelledCallerStillReceivesACompletedResult() = runBlocking {
+        for (gate in listOf(TeardownGate(), null)) {
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val received = CompletableDeferred<Int>()
+
+            val op = launch(Dispatchers.Default) {
+                val result = gate.opReturningCompletedResult {
+                    entered.countDown()
+                    // A blocking native call does not observe cancellation; it
+                    // completes only after the caller has been cancelled.
+                    release.await()
+                    42
+                }
+                // No suspension between the call and here: the cancelled
+                // caller still sees the completed result.
+                received.complete(result)
+            }
+            assertTrue("blocking operation never started", entered.await(5, TimeUnit.SECONDS))
+            op.cancel()
+            release.countDown()
+            withTimeout(5_000) { op.join() }
+
+            assertTrue(op.isCancelled)
+            assertTrue("completed result was dropped", received.isCompleted)
+            assertEquals(42, received.await())
+            // The gate's slot was released on that path too.
+            gate?.let { withTimeout(5_000) { it.closeAndAwait() } }
+        }
+    }
+
+    @Test
+    fun cancellationBeforeTheBlockCompletesStillThrows() = runBlocking {
+        val gate = TeardownGate()
+        val entered = CompletableDeferred<Unit>()
+        val outcome = CompletableDeferred<Throwable?>()
+
+        val op = launch(Dispatchers.Default) {
+            outcome.complete(
+                runCatching {
+                    gate.opReturningCompletedResult {
+                        entered.complete(Unit)
+                        // Park until cancelled: the block never completes.
+                        CompletableDeferred<Int>().await()
+                    }
+                }.exceptionOrNull(),
+            )
+        }
+        entered.await()
+        op.cancelAndJoin()
+
+        assertTrue(outcome.isCompleted)
+        assertTrue(outcome.await() is CancellationException)
+        withTimeout(5_000) { gate.closeAndAwait() }
+    }
+
+    @Test
+    fun aFailedBlockThrowsItsOwnError() = runBlocking {
+        val gate = TeardownGate()
+        val error = runCatching {
+            gate.opReturningCompletedResult<Int> { throw IllegalStateException("native failed") }
+        }.exceptionOrNull()
+        assertTrue(error is IllegalStateException)
+        assertEquals("native failed", error?.message)
     }
 }
