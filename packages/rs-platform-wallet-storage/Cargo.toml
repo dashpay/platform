@@ -173,6 +173,11 @@ windows-native-keyring-store = { version = "=1.0.0", optional = true }
 platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 proptest = "1"
 assert_cmd = "2"
+# `sqlite_dashpay_sibling_payment.rs` encrypts the contact request a DashPay
+# external account is built from, and implements the contact-crypto provider
+# trait a payment-address reservation takes.
+platform-encryption = { path = "../rs-platform-encryption" }
+async-trait = "0.1"
 static_assertions = "1"
 filetime = "0.2"
 # Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
@@ -199,8 +204,10 @@ serial_test = "3"
 # outside — `cfg(test)` alone would satisfy it from within the crate.
 platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
 # The adapter is a tokio task; the durability test drives it and awaits its
-# join handle. Current-thread runtime only — nothing here needs threads.
-tokio = { version = "1", features = ["rt", "macros", "sync"] }
+# join handle. `sqlite_dashpay_sibling_payment.rs` shuts a whole
+# `PlatformWalletManager` down, whose OS-thread workers need a multi-thread
+# runtime.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync"] }
 # The adapter's cancellation handle — the test passes a never-fired token, but
 # the parameter is part of the public signature.
 tokio-util = { version = "0.7", default-features = false }
