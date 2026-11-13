@@ -85,6 +85,7 @@ use tokio::sync::RwLock;
 
 use super::activity::ShieldedActivityStatus;
 use super::activity_recorder::{identity_redrive_output_cmxs, IdentityRecoveryError};
+use super::anchor_cache::{fetch_recorded_anchor_set, FetchStamp, RecordedAnchorCache};
 use super::balance::{
     ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
 };
@@ -145,6 +146,14 @@ pub struct NetworkShieldedCoordinator {
     /// what closes the SQLite-WAL contention and the
     /// delete-while-open race the prior architecture had.
     store: Arc<RwLock<FileBackedShieldedStore>>,
+
+    /// Most recently fetched Platform recorded-anchor set, reused by the
+    /// spend path while fresh so a send can skip that round trip. Filled by
+    /// every fetch: sends, [`prefetch_recorded_anchors`], and the
+    /// stranded-reservation release pass. See [`RecordedAnchorCache`].
+    ///
+    /// [`prefetch_recorded_anchors`]: Self::prefetch_recorded_anchors
+    anchor_cache: RecordedAnchorCache,
 
     /// Flat registry of every bound `(walletId, accountIndex)`
     /// pair's viewing keys, populated by
@@ -413,6 +422,7 @@ impl NetworkShieldedCoordinator {
             network,
             db_path,
             store: Arc::new(RwLock::new(store)),
+            anchor_cache: RecordedAnchorCache::new(),
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
@@ -505,6 +515,44 @@ impl NetworkShieldedCoordinator {
     /// exists for tests and for migration scaffolding in Phase 1.
     pub fn store(&self) -> &Arc<RwLock<FileBackedShieldedStore>> {
         &self.store
+    }
+
+    /// The recorded-anchor cache the spend operations take alongside
+    /// [`store`](Self::store).
+    pub fn anchor_cache(&self) -> &RecordedAnchorCache {
+        &self.anchor_cache
+    }
+
+    /// Warm the recorded-anchor cache ahead of a spend — e.g. when a send
+    /// screen opens — so the send itself can skip the round trip that
+    /// downloads and proof-verifies Platform's recorded anchor set.
+    ///
+    /// No-op when the cache already holds a set the next spend could use, or
+    /// while another prefetch is in flight.
+    /// The set stays usable for [`RECORDED_ANCHOR_CACHE_TTL`] and only while
+    /// no sync appends to the commitment tree; a send after that fetches as
+    /// usual. Purely an optimization — an error here just means the send
+    /// fetches for itself.
+    ///
+    /// [`RECORDED_ANCHOR_CACHE_TTL`]: super::anchor_cache::RECORDED_ANCHOR_CACHE_TTL
+    pub async fn prefetch_recorded_anchors(&self) -> Result<(), PlatformWalletError> {
+        let tree_size = self
+            .store
+            .read()
+            .await
+            .tree_size()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        if self.anchor_cache.get(tree_size).is_some() {
+            return Ok(());
+        }
+        let Some(_in_flight) = self.anchor_cache.try_begin_prefetch() else {
+            return Ok(());
+        };
+        let fetch_started = FetchStamp::now();
+        let (recorded, height) = fetch_recorded_anchor_set(&self.sdk).await?;
+        self.anchor_cache
+            .insert(Arc::new(recorded), fetch_started, tree_size, height);
+        Ok(())
     }
 
     /// Register every account of a newly-bound shielded wallet so
@@ -1303,6 +1351,7 @@ impl NetworkShieldedCoordinator {
         // half-reset store. The generation bump also prevents an in-flight
         // bind from restoring a pre-Clear snapshot afterward.
         self.hydrated.write().await.clear();
+        self.anchor_cache.invalidate();
         self.clear_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 
@@ -1742,7 +1791,7 @@ impl NetworkShieldedCoordinator {
         // Gather anchored reservations across every synced subwallet, and the
         // journal records of their wallets. The common case is none, and then
         // the network round-trip is skipped.
-        let (stale, journal, tree_bounds) = {
+        let (stale, journal, tree_bounds, tree_size) = {
             let store = self.store.read().await;
             let mut stale: Vec<(SubwalletId, StalePendingSpend)> = Vec::new();
             for (id, _) in subwallets {
@@ -1761,7 +1810,7 @@ impl NetworkShieldedCoordinator {
                 subwallets.iter().map(|(id, _)| id.wallet_id),
             );
             let tree_bounds = heightless_tree_bounds(&*store, &stale, &journal);
-            (stale, journal, tree_bounds)
+            (stale, journal, tree_bounds, store.tree_size().ok())
         };
         if stale.is_empty() && journal.is_empty() {
             return None;
@@ -1799,12 +1848,22 @@ impl NetworkShieldedCoordinator {
             }
             None => None,
         };
+        let fetch_started = FetchStamp::now();
         match dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(&self.sdk).await {
             Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
+                let recorded: HashSet<[u8; 32]> = anchors.into_iter().collect();
+                if let Some(tree_size) = tree_size {
+                    self.anchor_cache.insert(
+                        Arc::new(recorded.clone()),
+                        fetch_started,
+                        tree_size,
+                        metadata.height,
+                    );
+                }
                 Some(PreScanEvidence {
                     stale,
                     journal,
-                    recorded: anchors.into_iter().collect(),
+                    recorded,
                     recorded_height: metadata.height,
                     heightless,
                 })
@@ -3343,11 +3402,19 @@ mod tests {
     /// Build a coordinator backed by a fresh file store under `dir`, with one
     /// wallet registered so `accounts` / `persisters` are both non-empty.
     async fn coordinator_with_one_wallet(dir: &std::path::Path) -> NetworkShieldedCoordinator {
+        coordinator_with_one_wallet_on(dir, dash_sdk::Sdk::new_mock()).await
+    }
+
+    /// [`coordinator_with_one_wallet`] over a caller-configured mock SDK.
+    async fn coordinator_with_one_wallet_on(
+        dir: &std::path::Path,
+        sdk: dash_sdk::Sdk,
+    ) -> NetworkShieldedCoordinator {
         std::fs::create_dir_all(dir).expect("create temp dir");
         let db_path = dir.join("tree.sqlite");
         let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
         let coordinator = NetworkShieldedCoordinator::new(
-            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(sdk),
             dashcore::Network::Testnet,
             db_path,
             store,
@@ -4850,6 +4917,55 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A mock SDK that answers the recorded-anchor query with `anchors`.
+    async fn sdk_with_recorded_anchors(anchors: &[[u8; 32]]) -> dash_sdk::Sdk {
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch(
+                dash_sdk::query_types::NoParamQuery {},
+                Some(dash_sdk::query_types::ShieldedAnchors(anchors.to_vec())),
+            )
+            .await
+            .expect("set recorded-anchor expectation");
+        sdk
+    }
+
+    /// The send-screen prefetch leaves a set the spend path can use at the
+    /// tree's current size, and a second call is served from it.
+    #[tokio::test]
+    async fn prefetch_recorded_anchors_populates_the_spend_cache() {
+        let dir = temp_dir("prefetch_anchors");
+        let anchor = [0x5Au8; 32];
+        let coordinator =
+            coordinator_with_one_wallet_on(&dir, sdk_with_recorded_anchors(&[anchor]).await).await;
+        let tree_size = coordinator.store.read().await.tree_size().unwrap();
+
+        coordinator
+            .prefetch_recorded_anchors()
+            .await
+            .expect("prefetch against the mocked anchor query");
+
+        let cached = coordinator
+            .anchor_cache()
+            .get(tree_size)
+            .expect("prefetched set is usable by the next spend");
+        assert!(cached.0.contains(&anchor));
+
+        // Already warm: no second fetch (the mock would serve one, so check
+        // the entry is the same allocation rather than a replacement).
+        coordinator
+            .prefetch_recorded_anchors()
+            .await
+            .expect("warm prefetch is a no-op");
+        let again = coordinator.anchor_cache().get(tree_size).unwrap();
+        assert!(
+            Arc::ptr_eq(&cached.0, &again.0),
+            "warm prefetch must not refetch"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Cancelled while inside the caught-up cooldown: the cooldown's
     /// skip summary would report one caught-up wallet, which the
     /// manager would stamp and announce as a completed pass. The
@@ -4869,6 +4985,125 @@ mod tests {
             "a cancelled pass must not borrow the cooldown's caught-up summary"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A prefetch that overlaps one already in flight doesn't fetch again.
+    #[tokio::test]
+    async fn prefetch_recorded_anchors_skips_while_another_is_in_flight() {
+        let dir = temp_dir("prefetch_in_flight");
+        let coordinator =
+            coordinator_with_one_wallet_on(&dir, sdk_with_recorded_anchors(&[[0x5D; 32]]).await)
+                .await;
+        let tree_size = coordinator.store.read().await.tree_size().unwrap();
+
+        let in_flight = coordinator.anchor_cache().try_begin_prefetch().unwrap();
+        coordinator.prefetch_recorded_anchors().await.unwrap();
+        assert!(coordinator.anchor_cache().get(tree_size).is_none());
+
+        drop(in_flight);
+        coordinator.prefetch_recorded_anchors().await.unwrap();
+        assert!(coordinator.anchor_cache().get(tree_size).is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The stranded-reservation release pass already fetches the recorded
+    /// set; that fetch also warms the spend path's cache. The release itself
+    /// must judge against the set it just fetched, never a cached one: a
+    /// fresh cached set that still lists the reservation's (since pruned)
+    /// anchor must not keep it alive.
+    #[tokio::test]
+    async fn stranded_release_prefetch_populates_the_spend_cache() {
+        let dir = temp_dir("release_populates_cache");
+        let anchor = [0x5Bu8; 32];
+        let coordinator =
+            coordinator_with_one_wallet_on(&dir, sdk_with_recorded_anchors(&[anchor]).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        {
+            let mut store = coordinator.store.write().await;
+            store.mark_pending(id, &[0xAA; 32]).expect("mark");
+            store
+                .set_pending_spend(id, &[0xAA; 32], [0xAB; 32], [0xAC; 32], Some(0))
+                .expect("arm");
+        }
+        let tree_size = coordinator.store.read().await.tree_size().unwrap();
+        let subwallets = vec![(
+            id,
+            OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+                .expect("derive viewing keys")
+                .viewing_keys(),
+        )];
+        // A fresh cached set from an earlier send still lists the
+        // reservation's anchor; Platform's current set (the mock) does not.
+        coordinator.anchor_cache().insert(
+            Arc::new([[0xAB; 32]].into_iter().collect()),
+            FetchStamp::now(),
+            tree_size,
+            100,
+        );
+
+        let evidence = coordinator
+            .prefetch_stranded_release(&subwallets)
+            .await
+            .expect("an armed reservation triggers the anchor fetch");
+
+        let recorded = &evidence.recorded;
+        assert_eq!(evidence.stale.len(), 1);
+        assert!(recorded.contains(&anchor));
+        assert!(
+            !recorded.contains(&[0xAB; 32]),
+            "the release judges against the fresh fetch, not the cache"
+        );
+        let cached = coordinator
+            .anchor_cache()
+            .get(tree_size)
+            .expect("release-pass fetch populated the spend cache");
+        assert!(
+            *cached.0 == *recorded && cached.1 == evidence.recorded_height,
+            "the fresh fetch replaced the cached set"
+        );
+
+        coordinator
+            .release_stranded_spends(
+                evidence.stale,
+                PrunedAnchorEvidence {
+                    recorded,
+                    height: evidence.recorded_height,
+                    scan_covered_height: Some(evidence.recorded_height),
+                    heightless: evidence.heightless.as_ref(),
+                },
+            )
+            .await;
+        assert!(
+            coordinator
+                .store
+                .read()
+                .await
+                .stale_pending_spends(id)
+                .unwrap()
+                .is_empty(),
+            "the pruned-anchor reservation is released"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Clear drops the cached set along with the tree it was pinned to.
+    #[tokio::test]
+    async fn clear_invalidates_the_recorded_anchor_cache() {
+        let dir = temp_dir("clear_anchor_cache");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        coordinator.anchor_cache().insert(
+            Arc::new([[0x5C; 32]].into_iter().collect()),
+            FetchStamp::now(),
+            0,
+            100,
+        );
+
+        coordinator.clear().await.expect("clear");
+
+        assert!(coordinator.anchor_cache().get(0).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
