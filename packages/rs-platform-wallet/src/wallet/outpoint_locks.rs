@@ -335,7 +335,10 @@ impl PlatformWallet {
     ///
     /// Unlocking a masternode collateral lets a send spend it, and spending
     /// it ends the masternode registration. The wallet never unlocks one on
-    /// its own. Processing the registration again (a rescan) locks it again.
+    /// its own. The unlock of a collateral lasts for the session: the next
+    /// load locks the collateral of every masternode the wallet knows again,
+    /// as Dash Core does at start, and so does processing the registration
+    /// again (a rescan). Any other outpoint stays unlocked.
     /// Returns `true` when the outpoint was locked.
     ///
     /// Persisted before this returns, like [`Self::lock_outpoint`].

@@ -315,9 +315,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             load_locks.extend(platform_info.lock_known_masternode_collaterals(
                 &self.tracked_masternodes_service().known_collaterals(),
             ));
-            if !load_locks.is_empty() {
-                load_locks_by_wallet.insert(wallet_id, load_locks);
-            }
             // A restored outbound-account marker says the contact's external
             // account was built from its current xpub, which suppresses the
             // startup rebuild. It must not vouch for a pool the host kept
@@ -505,6 +502,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         e
                     )));
                     break 'load;
+                }
+                // Only the locks of a snapshot that became the live wallet
+                // are stored: one skipped for a wallet already registered, or
+                // dropped for a fresh read, says nothing about the live one.
+                if !load_locks.is_empty() {
+                    load_locks_by_wallet.insert(wallet_id, load_locks);
                 }
                 let host_cursor = durable_cursors
                     .get(&wallet_id)

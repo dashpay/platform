@@ -204,7 +204,9 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_ST
 /// are persisted AND restored. Requires the extension trio
 /// `on_persist_wallet_changeset_outpoint_locks_fn` +
 /// `on_load_wallet_locked_outpoints_fn` +
-/// `on_load_wallet_locked_outpoints_free_fn`, and the host declaring the bit.
+/// `on_load_wallet_locked_outpoints_free_fn`, the wallet list load pair
+/// (`on_load_wallet_list_fn` + `on_load_wallet_list_free_fn`) that brings
+/// the stored locks back, and the host declaring the bit.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS: u64 = 1 << 16;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
@@ -2063,7 +2065,10 @@ impl FFIPersister {
         {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_MASTERNODES);
         }
-        if self.wallet_changeset_outpoint_locks_callback.is_some()
+        // The stored locks come back while the wallet list is loaded, so
+        // without that pair there is no restart to attest.
+        if wallet_restore
+            && self.wallet_changeset_outpoint_locks_callback.is_some()
             && self.load_wallet_locked_outpoints_callback.is_some()
             && self.load_wallet_locked_outpoints_free_callback.is_some()
         {
@@ -15383,36 +15388,56 @@ mod outpoint_lock_tests {
     }
 
     #[test]
-    fn should_attest_outpoint_locks_only_with_the_whole_trio_declared() {
+    fn should_attest_outpoint_locks_only_with_the_trio_and_the_wallet_list_declared() {
+        unsafe extern "C" fn no_wallets(
+            _context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = std::ptr::null();
+            *count = 0;
+            0
+        }
+        unsafe extern "C" fn free_no_wallets(
+            _context: *mut c_void,
+            _entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+        }
+        // The wallet list load is where the stored locks come back.
+        let with_wallet_list = || PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(no_wallets),
+            on_load_wallet_list_free_fn: Some(free_no_wallets),
+            ..PersistenceCallbacks::default()
+        };
+        let attests = |callbacks, declared, extensions| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                callbacks, declared, extensions,
+            )
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::OUTPOINT_LOCKS)
+        };
         let declared = PersistenceCapabilities::OUTPOINT_LOCKS;
-        let wired = FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks::default(),
-            declared,
-            trio(),
-        );
-        assert!(wired
-            .persistence_capabilities()
-            .contains(PersistenceCapabilities::OUTPOINT_LOCKS));
 
-        let undeclared = FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks::default(),
-            PersistenceCapabilities::NONE,
-            trio(),
+        assert!(attests(with_wallet_list(), declared, trio()));
+        assert!(
+            !attests(with_wallet_list(), PersistenceCapabilities::NONE, trio()),
+            "the host must declare the bit"
         );
-        assert!(!undeclared
-            .persistence_capabilities()
-            .contains(PersistenceCapabilities::OUTPOINT_LOCKS));
-
-        let without_free = FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks::default(),
-            declared,
-            PersistenceExtensionCallbacks {
-                load_wallet_locked_outpoints_free: None,
-                ..trio()
-            },
+        assert!(
+            !attests(
+                with_wallet_list(),
+                declared,
+                PersistenceExtensionCallbacks {
+                    load_wallet_locked_outpoints_free: None,
+                    ..trio()
+                },
+            ),
+            "the whole trio is required"
         );
-        assert!(!without_free
-            .persistence_capabilities()
-            .contains(PersistenceCapabilities::OUTPOINT_LOCKS));
+        assert!(
+            !attests(PersistenceCallbacks::default(), declared, trio()),
+            "without the wallet list load no lock is ever restored"
+        );
     }
 }
