@@ -85,6 +85,22 @@ internal object CreditsNative {
     ): Long
 
     /**
+     * Top up [identityId] (32 bytes), an identity this wallet does **not**
+     * manage, from the wallet's Platform-address inputs, signed per-address
+     * via [signerHandle]. The identity is fetched from Platform and never
+     * added to the wallet. Returns the identity's post-transition credit
+     * balance. ← Swift `ManagedPlatformWallet.topUpExternalIdentityFromAddresses`.
+     *
+     * @param inputsBlob same layout as [topUpFromAddresses].
+     */
+    external fun topUpExternalIdentityFromAddresses(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputsBlob: ByteArray,
+        signerHandle: Long,
+    ): Long
+
+    /**
      * Transfer credits from [fromIdentityId] (32 bytes) to one or more
      * Platform-address recipients, signed by the identity's transfer key
      * via [signerHandle]. Returns the sender's post-transfer credit balance.

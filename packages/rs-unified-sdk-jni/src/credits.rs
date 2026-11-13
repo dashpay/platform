@@ -12,6 +12,8 @@
 //! - [`platform_wallet_withdraw_credits_with_signer`] — identity → L1 address.
 //! - [`platform_wallet_top_up_from_addresses_with_signer`] — top up an
 //!   existing identity from Platform-address inputs (ID-06).
+//! - [`platform_wallet_top_up_external_identity_from_addresses_with_signer`]
+//!   — the same, for an identity the wallet does not manage.
 //! - [`platform_wallet_top_up_identity_with_funding_signer`] — top up an
 //!   existing identity from a **new Core asset lock** (ID-05); this one
 //!   takes a `MnemonicResolverHandle` (the Core asset-lock signer) rather
@@ -197,6 +199,52 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
         let mut out_balance: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_top_up_from_addresses_with_signer(
+                wallet_handle as Handle,
+                &id as *const [u8; 32],
+                inputs.as_ptr(),
+                inputs.len(),
+                signer_handle as *mut SignerHandle,
+                &mut out_balance as *mut u64,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_balance as i64
+    })
+}
+
+/// Top up an identity this wallet does **not** manage (someone else's)
+/// from one or more of the wallet's Platform-address inputs, signed
+/// per-address via `signerHandle`. Returns the identity's post-transition
+/// credit balance. The identity is fetched from Platform and never added
+/// to the wallet.
+///
+/// `inputsBlob` has the same layout as `topUpFromAddresses`. An empty
+/// input list is not checked here: the library owns that rule (an empty
+/// `Vec`'s pointer is non-null, so it reaches the library).
+///
+/// Wraps `platform_wallet_top_up_external_identity_from_addresses_with_signer`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpExternalIdentityFromAddresses(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    inputs_blob: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+        let Some(inputs) = decode_inputs_blob(env, &inputs_blob) else {
+            return 0;
+        };
+
+        let mut out_balance: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_top_up_external_identity_from_addresses_with_signer(
                 wallet_handle as Handle,
                 &id as *const [u8; 32],
                 inputs.as_ptr(),
