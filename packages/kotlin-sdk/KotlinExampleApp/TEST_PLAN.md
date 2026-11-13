@@ -182,6 +182,13 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | VOTE-11 | Edit a decision proposal's text | Platform | Thorough | ✅ | proposal | Detail → Edit Text (`decisionProposal.edit`, shown only when a local wallet identity filed it) → `editDecisionProposal.*` → `PlatformWalletManager.decisionProposals.edit` (one `platform_wallet_decision_proposal_edit` call; no signing key is chosen in the app). Accepted for a day after creation; an edit that changes nothing is refused before anything is broadcast, and an edit that raced another one is refused by Platform (consensus code 40106) rather than overwriting it. The dialog cannot be dismissed while it broadcasts. |
 | VOTE-12 | Masternode vote on a decision proposal (yes / no / abstain) | Platform | Thorough | ✅ | proposal, masternode | Detail → Vote (`decisionProposal.vote`) → `decisionProposalVote.choice` / `.proTxHash` / `.votingKey` / `.submit` → `dash_sdk_decision_proposal_cast_vote`. The voting key shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE). **Requires masternode voting credentials**; a vote from a regular wallet is refused (no voter identity). |
 | VOTE-13 | Read a masternode's answer on a decision proposal | Platform | Thorough | ✅ | proposal, masternode, read-only | Vote dialog → Read This Masternode's Answer (`decisionProposalVote.lookUp`) → `dash_sdk_decision_proposal_get_masternode_vote`. No answer once the poll finished. |
+| VOTE-14 | List multiple choice proposals (mine / newest, paged) | Platform | Thorough | ✅ | proposal, read-only | `QueriesListScreen` → Multiple Choice Proposals (`votingQueries.multipleChoiceProposalsLink`) → `MultipleChoiceProposalsScreen`: listing picker (`multipleChoiceProposals.listing`), identity picker for Mine (`multipleChoiceProposals.ownerPicker`), Load More (`multipleChoiceProposals.loadMore`). Needs protocol version 15; an earlier network shows a load error. |
+| VOTE-15 | Create a multiple choice proposal | Platform | Thorough | ✅ | proposal | `MultipleChoiceProposalsScreen` + (`multipleChoiceProposals.create`) → `CreateMultipleChoiceProposalScreen` (`createMultipleChoiceProposal.*`) → `PlatformWalletManager.multipleChoiceProposals.create` (one `platform_wallet_multiple_choice_proposal_create` call; the success section shows the returned id). The Proposer section shows the processing fee read from `dash_sdk_multiple_choice_proposal_get_processing_fee` (`createMultipleChoiceProposal.processingFee`, 0.2 DASH at protocol version 15), which Platform charges on top of the fees. The description document is three optional fields (`.descriptionDocumentId` / `.descriptionDocumentContractId` / `.descriptionDocumentType`); the switch `.open` says whether anyone may enter choices. While it broadcasts, system Back does nothing, and a rotation or a bottom-tab switch does not cancel it. Platform refuses a proposal with neither a description document nor a url. Protocol version 15. |
+| VOTE-16 | View a multiple choice proposal, its choices and its vote | Platform | Thorough | ✅ | proposal, read-only | `MultipleChoiceProposalDetailScreen` (row `multipleChoiceProposals.row.<id>`): the proposal, who enters choices (`multipleChoiceProposal.open`), the vote status (`multipleChoiceProposal.voteStatus`: no choice entered, voting open, or how it ended), every choice with its tally (`multipleChoiceProposal.choice.<choiceId>`), the none-of-the-choices and abstain tallies, and once the vote ended the kept choice (`multipleChoiceProposal.keptChoice`, read with `dash_sdk_multiple_choice_proposal_get_kept_choice`). |
+| VOTE-17 | Enter a choice for a multiple choice proposal | Platform | Thorough | ✅ | proposal | Detail → Enter a Choice (`multipleChoiceProposal.enterChoice`, shown when a loaded wallet holds an identity) → `enterProposalChoice.ownerPicker` / `.title` / `.description` / `.submitButton` → `PlatformWalletManager.multipleChoiceProposals.enterChoice` (one `platform_wallet_multiple_choice_proposal_enter_choice` call). The dialog shows the contest fund read from `dash_sdk_multiple_choice_proposal_get_choice_fund_to_join` (`enterProposalChoice.fund`), paid on top of the fees. The first choice opens the vote. Platform refuses a choice from anyone but the owner when the proposal is not open; the app does not pre-check it. The entry survives a rotation (the detail screen then shows its outcome), system Back does nothing while it broadcasts, and the action result names the new choice id. |
+| VOTE-18 | Edit a multiple choice proposal | Platform | Thorough | ✅ | proposal | Detail → Edit (`multipleChoiceProposal.edit`, shown only when a local wallet identity filed it) → `editMultipleChoiceProposal.*` → `PlatformWalletManager.multipleChoiceProposals.edit` (one `platform_wallet_multiple_choice_proposal_edit` call). Only the changed fields are sent; an emptied url, or three emptied description document fields, removes it. Accepted for two hours after creation (Platform refuses it afterwards; the app does not hide the button); an edit that changes nothing is refused before anything is broadcast, one that leaves neither a description document nor a url is refused by Platform, and one that raced another edit is refused with consensus code 40106. The dialog cannot be dismissed while it broadcasts. |
+| VOTE-19 | Masternode vote among a multiple choice proposal's choices (a choice / none of the choices / abstain) | Platform | Thorough | ✅ | proposal, masternode | Detail → Vote (`multipleChoiceProposal.vote`) → `multipleChoiceProposalVote.choice` (every choice of the running vote by title and id, then None of the choices and Abstain) / `.proTxHash` / `.votingKey` / `.submit` → `dash_sdk_multiple_choice_proposal_cast_vote`. The voting key shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE); the dialog cannot be dismissed while it broadcasts. **Requires masternode voting credentials**; a vote from a regular wallet is refused (no voter identity). |
+| VOTE-20 | Read a masternode's answer among a multiple choice proposal's choices | Platform | Thorough | ✅ | proposal, masternode, read-only | Vote dialog → Read This Masternode's Answer (`multipleChoiceProposalVote.lookUp`) → `dash_sdk_multiple_choice_proposal_get_masternode_vote`. No answer once the vote ended. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -314,7 +321,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 29 | yes |
-| Thorough | 42 | yes |
+| Thorough | 49 | yes |
 | Uncommon | 25 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
@@ -323,7 +330,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~80 |
+| Platform | ~87 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -337,7 +344,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Identity** — `ID-01..15`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
-- **Voting** — `VOTE-01..13`, `DPNS-05`, `DPNS-08`
+- **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
@@ -354,6 +361,6 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `TOK-18`, `TOK-19`
-- **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`
-- **proposal** (decision proposals, protocol version 15): `VOTE-08..13`
+- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
+- **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
+- **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`
