@@ -17,6 +17,7 @@ use dpp::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 /// Loads a stored contract the way Drive does: trusted bytes, no full validation.
 fn load(contract: &CorpusContract, platform_version: &PlatformVersion) -> DataContract {
@@ -80,6 +81,40 @@ fn should_load_every_corpus_contract_at_the_latest_protocol_version() {
     for contract in contracts() {
         let loaded = load(&contract, platform_version);
         assert_eq!(loaded.version(), contract.version);
+    }
+}
+
+/// No contract registered on either network holds more patterns, or a larger one, than
+/// consensus admits from protocol version 15, or than a mempool admits before it, where it
+/// also keeps out a schema declaring `format: regex`.
+#[test]
+fn should_hold_every_corpus_contract_within_the_schema_pattern_bounds() {
+    let latest = PlatformVersion::latest();
+    let before_the_rule = PlatformVersion::get(14).expect("expected protocol version 14");
+    for contract in contracts() {
+        let loaded = load(&contract, latest);
+        let document_schemas: BTreeMap<String, Value> = loaded
+            .document_schemas()
+            .into_iter()
+            .map(|(name, schema)| (name, schema.clone()))
+            .collect();
+        for result in [
+            DataContract::validate_schema_patterns(&document_schemas, loaded.schema_defs(), latest),
+            DataContract::validate_schema_patterns_for_mempool(
+                &document_schemas,
+                loaded.schema_defs(),
+                before_the_rule,
+            ),
+        ] {
+            let result = result.expect("expected the pattern bound to run");
+            assert!(
+                result.is_valid(),
+                "{:?} contract {} is over the pattern bound: {:?}",
+                contract.network,
+                contract.id,
+                result.errors
+            );
+        }
     }
 }
 

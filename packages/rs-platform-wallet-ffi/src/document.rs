@@ -388,6 +388,82 @@ pub unsafe extern "C" fn platform_wallet_document_delete_by_values(
     PlatformWalletFFIResult::ok()
 }
 
+/// Erase + broadcast a chunk of the retained revisions of the already
+/// deleted `document_id` on `contract_id`'s `document_type_name`, signed
+/// via the external `signer_handle` with key `signing_key_id` of
+/// `owner_identity_id`.
+///
+/// Goes through `IdentityWallet::erase_document_with_signer`. The first
+/// erase of a document must be signed by its owner; the erases after it
+/// may be signed by any identity, so `owner_identity_id` is the signing
+/// identity rather than necessarily the document's owner. On success the
+/// document's 32-byte id is written to `out_document_id`: the transition
+/// was broadcast and Platform proved the document absent from ordinary
+/// reads, which it already was before the erase, so success observes the
+/// affected state rather than proving this erase removed a revision.
+/// Erase returns no document body, so there is no JSON out-param; the
+/// lifecycle state and the number of revisions still retained are read
+/// from the document's history.
+///
+/// # Safety
+/// `owner_identity_id`, `contract_id`, and `document_id` must each point to
+/// 32 readable bytes. `document_type_name` must be a valid NUL-terminated
+/// string. `signer_handle` must refer to a live signer whose callbacks and
+/// context remain valid for this blocking call. `out_document_id` must
+/// point to 32 writable bytes. The buffers must not be mutated concurrently
+/// and the output buffer must not overlap any input.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_document_erase(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    signing_key_id: u32,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(signer_handle);
+    check_ptr!(document_type_name);
+    check_ptr!(out_document_id);
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_id_value = unwrap_result_or_return!(read_identifier(document_id));
+
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
+
+    let signer_addr = signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let result: Result<Identifier, PlatformWalletError> = block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            let erased_id: Identifier = identity_wallet
+                .erase_document_with_signer(
+                    &owner_id,
+                    &contract_id_value,
+                    &document_type_str,
+                    &document_id_value,
+                    signing_key_id,
+                    signer,
+                )
+                .await?;
+            Ok::<_, PlatformWalletError>(erased_id)
+        });
+        result
+    });
+    let result = unwrap_option_or_return!(option);
+    let erased_id = unwrap_result_or_return!(result);
+
+    let bytes = erased_id.to_buffer();
+    let dst = slice::from_raw_parts_mut(out_document_id, 32);
+    dst.copy_from_slice(&bytes);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Transfer + broadcast `document_id` on `contract_id`'s
 /// `document_type_name`, from `owner_identity_id` to `recipient_id`,
 /// signed via the external `signer_handle` with key `signing_key_id`.
