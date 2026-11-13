@@ -286,10 +286,11 @@ pub(crate) fn funding_inputs(
 /// it started from (`balance_before`).
 ///
 /// An address nonce is used exactly once and only in order (Platform takes
-/// stored + 1), and only this wallet can sign for its input addresses. A
-/// proof showing every input address at or past the submitted nonce shows
-/// those nonces consumed: this top-up executed, or a transition this wallet
-/// signed with the same nonces did and this one never can. Either way it can
+/// stored + 1), and only the holder of the input addresses' keys (the
+/// signer seam this top-up was signed through) can sign for them. A proof
+/// showing every input address at or past the submitted nonce shows those
+/// nonces consumed: this top-up executed, or a transition signed by the same
+/// seam with the same nonces did and this one never can. Either way it can
 /// no longer execute later. A proof showing an input address before its
 /// submitted nonce (or not at all) is a snapshot that does not reflect this
 /// top-up, which may still execute.
@@ -301,6 +302,19 @@ pub(crate) fn funding_inputs(
 /// (or of an identity that spent meanwhile, which reads the same way and
 /// errs on the safe side). Every refusal is the SDK's unconfirmed outcome,
 /// never done: the host must not pay again.
+///
+/// Residual limit: the two checks bind the proof to this transition's
+/// nonces and to some credit of the identity, not to this transition's
+/// execution. A competing transition signed by the same signer seam with
+/// the same nonces (which spends them elsewhere) together with an unrelated
+/// credit to the same identity in the same window satisfies both, and an
+/// unexecuted top-up is then reported done. Closing that fully needs an
+/// execution-bound proof of this transition. The wallet does not serialise
+/// address spends per input address in-process: the address top-up holds
+/// only the wallet generation's shared lifecycle gate (a read guard), and
+/// the per-wallet `shield_guard` single-flight covers the shield-class
+/// operations, not this path, so two concurrent spends from one address
+/// in one process can be signed with the same nonce.
 fn bind_to_submitted_nonces(
     submitted: &BTreeMap<PlatformAddress, AddressNonce>,
     balance_before: Credits,
