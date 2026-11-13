@@ -760,8 +760,13 @@ impl FileBackedShieldedStore {
                     return Err(corrupted("invalid nullifier width"));
                 }
                 let nullifiers: Vec<[u8; 32]> = nullifiers.as_chunks::<32>().0.to_vec();
-                let spend_context =
-                    spend_context.map_err(|()| corrupted("unreadable spend context"))?;
+                // A note spend whose context does not read keeps its reservations, in
+                // quarantine and never armed; any other record fails as before.
+                let context_unreadable = spend_context.is_err();
+                if context_unreadable && (note_spend_kind.is_none() || nullifiers.is_empty()) {
+                    return Err(corrupted("unreadable spend context"));
+                }
+                let spend_context = spend_context.unwrap_or(None);
                 Ok((
                     SubwalletId::new(wallet_id, account_index),
                     PendingRedrive {
@@ -775,9 +780,10 @@ impl FileBackedShieldedStore {
                         identity_user_abandoned,
                         spend_context,
                     },
+                    context_unreadable,
                 ))
             })();
-            let (id, redrive) = match decoded {
+            let (id, redrive, context_unreadable) = match decoded {
                 Ok(decoded) => decoded,
                 Err(error) => {
                     if let Some(kind) = note_spend_kind {
@@ -797,6 +803,24 @@ impl FileBackedShieldedStore {
                     return Err(error);
                 }
             };
+            if context_unreadable {
+                tracing::warn!(
+                    account_index,
+                    "quarantining a shielded note-spend recovery row whose spend context is \
+                     unreadable: its notes stay reserved and it is never re-broadcast"
+                );
+                if private_contact_payment.is_some()
+                    || note_spend_kind == Some(PRIVATE_DOCUMENT_CREATE_KIND)
+                {
+                    self.unloaded_private_contact_payments
+                        .insert(readable_wallet_id);
+                }
+                self.subwallets
+                    .entry(id)
+                    .or_default()
+                    .quarantine_redrive(&redrive);
+                continue;
+            }
             if let Some(payment) = private_contact_payment {
                 self.private_contact_payments
                     .insert((id, redrive.activity_id), payment);
@@ -2240,11 +2264,46 @@ mod tests {
                     [],
                 )
                 .unwrap();
-            let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
             assert!(
                 store.pending_redrives(id).unwrap().is_empty(),
                 "{damaged}: not loaded, so never re-broadcast unchecked"
             );
+            // The host restores its notes from a snapshot after the open: the ones the
+            // unreadable records spend stay reserved, out of selection and the balance.
+            for record in &saved {
+                store
+                    .save_note(
+                        id,
+                        &ShieldedNote {
+                            position: u64::from(record.activity_id[0]),
+                            cmx: [record.activity_id[0]; 32],
+                            nullifier: record.nullifiers[0],
+                            block_height: 1,
+                            is_spent: false,
+                            value: 10,
+                            note_data: vec![],
+                        },
+                    )
+                    .unwrap();
+            }
+            assert!(
+                store.get_unspent_notes(id).unwrap().is_empty(),
+                "{damaged}: the notes of an unresolved spend are not selectable"
+            );
+            assert_eq!(
+                store.spendable_balance(id).unwrap(),
+                0,
+                "{damaged}: nor spendable"
+            );
+            assert_eq!(
+                store.stale_pending_spends(id).unwrap().len(),
+                saved.len(),
+                "{damaged}: the prune backstop can still release them"
+            );
+            drop(store);
+            let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            assert!(store.pending_redrives(id).unwrap().is_empty());
             let rows: u32 = rusqlite::Connection::open(&path)
                 .unwrap()
                 .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
@@ -2253,6 +2312,31 @@ mod tests {
                 .unwrap();
             assert_eq!(rows, saved.len() as u32, "{damaged}: the rows are kept");
         }
+        // A quarantined record resolves as an armed one does: the scan seeing its
+        // nullifier drops the row.
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        store
+            .save_note(
+                id,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: [1; 32],
+                    nullifier: saved[0].nullifiers[0],
+                    block_height: 1,
+                    is_spent: false,
+                    value: 10,
+                    note_data: vec![],
+                },
+            )
+            .unwrap();
+        store.mark_spent(id, &saved[0].nullifiers[0]).unwrap();
+        let rows: u32 = rusqlite::Connection::open(&path)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, saved.len() as u32 - 1, "the resolved row is dropped");
         let _ = std::fs::remove_file(&path);
     }
 

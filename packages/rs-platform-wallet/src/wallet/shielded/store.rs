@@ -1077,6 +1077,11 @@ pub(super) struct SubwalletState {
     /// (mark_spent / clear_pending) drops the whole record — a
     /// transition lands or dies atomically for all its nullifiers.
     pub redrives: BTreeMap<[u8; 32], PendingRedrive>,
+    /// Records whose saved spend context did not read back, by activity id, with the
+    /// nullifiers they carry. Their reservations are held like an armed record's, but they
+    /// are never armed: no recovery pass can see them, so none re-broadcasts them. They go
+    /// as an armed record does, when any of their nullifiers resolves.
+    pub quarantined_redrives: BTreeMap<[u8; 32], Vec<[u8; 32]>>,
     /// Notes this subwallet SENT, recovered via OVK during the scan.
     /// Append-only send history in recording order.
     pub outgoing_notes: Vec<ShieldedOutgoingNote>,
@@ -1167,6 +1172,14 @@ impl SubwalletState {
         for id in &dropped {
             self.redrives.remove(id);
         }
+        let mut dropped = dropped;
+        self.quarantined_redrives.retain(|id, nullifiers| {
+            let hit = nullifiers.contains(nullifier);
+            if hit {
+                dropped.push(*id);
+            }
+            !hit
+        });
         dropped
     }
 
@@ -1300,6 +1313,22 @@ impl SubwalletState {
             self.drop_redrives_containing(nullifier);
         }
         removed
+    }
+
+    /// Hold the reservation of a record whose spend context is unreadable, without arming
+    /// it: its notes stay out of selection and the balance, and it is never re-broadcast.
+    pub(super) fn quarantine_redrive(&mut self, redrive: &PendingRedrive) {
+        for n in &redrive.nullifiers {
+            self.mark_pending(n);
+            self.set_pending_spend(
+                n,
+                redrive.anchor,
+                redrive.activity_id,
+                redrive.anchor_height,
+            );
+        }
+        self.quarantined_redrives
+            .insert(redrive.activity_id, redrive.nullifiers.clone());
     }
 
     /// Arm (or overwrite by activity id) a re-drivable record.
