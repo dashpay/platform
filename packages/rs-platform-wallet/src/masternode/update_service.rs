@@ -17,7 +17,9 @@
 
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
-use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
+use dashcore::blockdata::transaction::special_transaction::provider_registration::{
+    ProviderMasternodeType, ProviderRegistrationPayload,
+};
 use dashcore::blockdata::transaction::special_transaction::provider_update_service::{
     ProTxVersion, ProviderUpdateServicePayload,
 };
@@ -33,15 +35,16 @@ use dashcore::sml::masternode_list_entry::net_info::{
 use dashcore::sml::masternode_list_entry::{
     EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
 };
-use dashcore::{Address as DashAddress, Network, Transaction, Txid};
+use dashcore::{Address as DashAddress, Network, PlatformNodeId, Transaction, Txid};
 use dpp::bls::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
 use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use zeroize::Zeroizing;
 
+use super::list::{all_socket_addresses, MasternodeListSummary};
 use super::locator::bls_public_keys;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -98,7 +101,38 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
 ) -> Result<Txid, PlatformWalletError> {
     let signed =
         prepare_masternode_update_service(wallet, spv, params, operator_secret, signer).await?;
-    wallet.core().broadcast_finalized_transaction(&signed).await
+    broadcast_special_transaction_guarded(wallet.core(), &signed).await
+}
+
+/// Broadcast a prepared masternode special transaction under the wallet
+/// generation's lifecycle gate. The prepare paths drop every manager lock
+/// across their awaits (network fetches, the external signer), so the host
+/// can remove — or re-create — the wallet between signing and this send;
+/// broadcasting then would publish a dead generation's transaction, which
+/// can conflict with inputs a re-created generation has since selected
+/// (`dashpay/platform#4185`). The gate is held across BOTH the liveness
+/// check and the send, so a teardown cannot interleave between them —
+/// the same protection `core_wallet_broadcast_signed_transaction` gives
+/// the prepare-then-broadcast flow. On a dead generation the transaction
+/// is abandoned (generation-bound, so a logged no-op after a genuine
+/// removal) and the send refused.
+pub(crate) async fn broadcast_special_transaction_guarded<B>(
+    core: &CoreWallet<B>,
+    signed: &SignedCoreTransaction,
+) -> Result<Txid, PlatformWalletError>
+where
+    B: TransactionBroadcaster + ?Sized,
+{
+    let _lifecycle = core.generation_payment_guard().await;
+    if !core.is_current_generation().await {
+        core.abandon_transaction(signed).await;
+        return Err(PlatformWalletError::WalletNotFound(
+            "the wallet was removed (or re-created) while the transaction was being \
+             prepared; it was NOT broadcast and its funding reservation was reconciled"
+                .to_string(),
+        ));
+    }
+    core.broadcast_finalized_transaction(signed).await
 }
 
 /// Everything [`execute_masternode_update_service`] does except the
@@ -145,10 +179,7 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
                 script_payout.clone(),
             )
         },
-        // The pinned dash-spv does not expose the coinbase of the masternode
-        // list diffs it applies, so the list alone tells whether V24 is
-        // active.
-        None::<std::future::Ready<_>>,
+        spv.latest_coinbase(),
     )
     .await?;
 
@@ -206,45 +237,29 @@ fn refused_after_v24(payload: &ProviderUpdateServicePayload) -> bool {
 /// version-3 entry's payload is the same on both sides of V24, so for those
 /// the list's view is final.
 ///
-/// Without a coinbase source (`latest_coinbase` is `None`) the list's view
-/// is final for every entry. The list shows V24 only once some entry is
-/// version 3, so right after activation, until a version-3 provider
-/// transaction is mined, a legacy evonode still gets the version-2 payload:
-/// Core refuses it and discourages the peers that relay it, and the inputs
-/// stay reserved until the reservation expires. Refusing every such build
-/// instead would block every evonode update before V24 as well.
+/// `latest_coinbase` is awaited only when the list's view gives a payload
+/// Core refuses after V24. It yields the coinbase payload of the newest
+/// block a masternode list diff proved it in, as the SPV client keeps it.
+/// Core requires coinbase payload version 4 or later exactly while V24 is
+/// active, so such a version rebuilds the placeholder for V24 and a lower
+/// one keeps it. This is what covers the stretch right after activation,
+/// when every list entry is still legacy and the list alone shows nothing.
 ///
-/// With a coinbase source, `latest_coinbase` is awaited only when the list's
-/// view gives a payload Core refuses after V24. It yields the coinbase
-/// payload of the highest block whose masternode list diff the SPV client
-/// applied with one. Core requires coinbase payload version 4 or later
-/// exactly while V24 is active, so such a version rebuilds the placeholder
-/// for V24 and a lower one keeps it.
-///
-/// A source that has no coinbase yet leaves V24 unknown and fails the build
-/// with a retryable [`PlatformWalletError::TransactionBuild`]. An SPV client
-/// that keeps the coinbase in memory only has none after a restart until the
-/// session's first masternode list diff arrives. Right after V24 activates,
-/// until a diff for a block past activation arrives, the coinbase still
-/// reads as pre-V24 and the version-2 payload built then is refused; a retry
-/// builds version 3.
-///
-/// A coinbase taken from a diff without checking its merkle proof and the
-/// payload's merkle roots is chosen by the peer that served the diff. A
-/// lying peer can only get this transaction refused and the wallet
-/// disconnected by the peers that relay it; no funds are at risk.
+/// No coinbase leaves V24 unknown and fails the build with a retryable
+/// [`PlatformWalletError::TransactionBuild`]. The coinbase is not checked
+/// against the tip: after a restart it is the one stored before, until
+/// sync proves a newer one, and right after V24 activates, until a diff
+/// for a block past activation arrives, it still reads as pre-V24. The
+/// version-2 payload built then is refused; a retry builds version 3.
 async fn update_service_placeholder(
     list_shows_v24: bool,
     build: impl Fn(bool) -> Result<ProviderUpdateServicePayload, PlatformWalletError>,
-    latest_coinbase: Option<impl Future<Output = Option<CoinbasePayload>>>,
+    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
     let placeholder = build(list_shows_v24)?;
     if !refused_after_v24(&placeholder) {
         return Ok(placeholder);
     }
-    let Some(latest_coinbase) = latest_coinbase else {
-        return Ok(placeholder);
-    };
     let coinbase = latest_coinbase.await.ok_or_else(|| {
         PlatformWalletError::TransactionBuild(
             "cannot tell whether Dash Core's V24 fork is active (the SPV client has no \
@@ -265,37 +280,527 @@ async fn fetch_operator_reward(
     wallet: &PlatformWallet,
     pro_tx_hash: &[u8; 32],
 ) -> Result<u16, PlatformWalletError> {
-    let display = display_hex(pro_tx_hash);
+    fetch_registration_payload(wallet, pro_tx_hash)
+        .await
+        .map(|registration| registration.operator_reward)
+}
+
+/// The explicit service values a stage-two reactivation re-asserts —
+/// captured from the list entry BEFORE a registrar update erased them,
+/// since a ProUpRegTx that changes the operator key resets the entry's
+/// service fields. For an evonode all three platform values are required;
+/// for a regular masternode all must be `None`.
+#[derive(Debug, Clone)]
+pub struct UpdateServiceValues {
+    /// Core P2P endpoint as `"ip:port"`.
+    pub service_address: String,
+    pub platform_node_id: Option<[u8; 20]>,
+    pub platform_p2p_port: Option<u16>,
+    pub platform_http_port: Option<u16>,
+}
+
+/// [`execute_masternode_update_service`] with caller-supplied service
+/// values instead of copying the live list entry — the reactivation half of
+/// an operator-key rotation, whose ProUpRegTx left the entry banned with
+/// its service fields reset (so there is nothing to copy).
+///
+/// Every other preflight is unchanged: the entry must still exist, the
+/// operator secret must match ITS operator key (after a rotation confirms,
+/// that is the new wallet key), and the payout rule reads the ProRegTx's
+/// `operatorReward`. The payload version follows Dash Core v24's rules
+/// (see [`prepare_update_service_placeholder_from_values`]); an entry whose
+/// version-3 address map still lists addresses is refused, which a reset
+/// entry never is.
+pub async fn execute_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+    pro_tx_hash: [u8; 32],
+    values: UpdateServiceValues,
+    operator_payout_address: Option<String>,
+    operator_secret: Zeroizing<[u8; 32]>,
+    signer: &S,
+) -> Result<Txid, PlatformWalletError> {
+    let signed = prepare_masternode_update_service_with_values(
+        wallet,
+        spv,
+        pro_tx_hash,
+        values,
+        operator_payout_address,
+        operator_secret,
+        signer,
+    )
+    .await?;
+    broadcast_special_transaction_guarded(wallet.core(), &signed).await
+}
+
+/// Prepare-only sibling of
+/// [`execute_masternode_update_service_with_values`]; ownership contract as
+/// [`prepare_masternode_update_service`].
+pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+    pro_tx_hash: [u8; 32],
+    values: UpdateServiceValues,
+    operator_payout_address: Option<String>,
+    operator_secret: Zeroizing<[u8; 32]>,
+    signer: &S,
+) -> Result<SignedCoreTransaction, PlatformWalletError> {
+    let entries = spv
+        .masternode_list_entries()
+        .await
+        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+    let (entry, list_shows_v24) = update_service_target(&entries, &pro_tx_hash)?;
+
+    verify_operator_secret(entry.operator_public_key.as_ref(), &operator_secret)?;
+
+    let summaries: Vec<MasternodeListSummary> = entries
+        .iter()
+        .map(MasternodeListSummary::from_entry)
+        .collect();
+    let summary = MasternodeListSummary::from_entry(entry);
+    validate_update_service_values(wallet.network(), &summary, &values, &summaries)?;
+
+    let operator_reward = fetch_operator_reward(wallet, &pro_tx_hash).await?;
+    let script_payout = resolve_operator_payout_script(
+        operator_reward,
+        operator_payout_address.as_deref(),
+        wallet.network(),
+    )?;
+
+    let placeholder = values_placeholder(
+        entry,
+        list_shows_v24,
+        &values,
+        script_payout,
+        &summaries,
+        spv.latest_coinbase(),
+    )
+    .await?;
+
+    build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
+}
+
+/// The values placeholder for the V24 state Core will check it against
+/// (see [`update_service_placeholder`]), with every endpoint it ends up
+/// listing checked against the rest of the masternode list.
+async fn values_placeholder(
+    entry: &MasternodeListEntry,
+    list_shows_v24: bool,
+    values: &UpdateServiceValues,
+    script_payout: ScriptBuf,
+    summaries: &[MasternodeListSummary],
+    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    let placeholder = update_service_placeholder(
+        list_shows_v24,
+        |v24_active| {
+            prepare_update_service_placeholder_from_values(
+                entry,
+                v24_active,
+                values,
+                script_payout.clone(),
+            )
+        },
+        latest_coinbase,
+    )
+    .await?;
+    require_unused_endpoints(&placeholder, summaries)?;
+    Ok(placeholder)
+}
+
+/// Refuse a payload listing an endpoint another masternode already
+/// advertises. Core's `CheckProUpServTx` checks every address a payload
+/// submits, not only the Core P2P one: a version-3 evonode map also lists
+/// the Platform P2P and HTTPS endpoints at the same IP, and each must be
+/// unused (`bad-protx-dup-netinfo-entry`). [`validate_update_service_values`]
+/// sees only the values, before the version is known, so the map that was
+/// actually built is checked here, before anything is funded.
+fn require_unused_endpoints(
+    payload: &ProviderUpdateServicePayload,
+    summaries: &[MasternodeListSummary],
+) -> Result<(), PlatformWalletError> {
+    let target = payload.pro_tx_hash.to_byte_array();
+    let endpoints = all_socket_addresses(&payload.service_address);
+    for other in summaries.iter().filter(|other| other.pro_tx_hash != target) {
+        if let Some(taken) = endpoints
+            .iter()
+            .find(|endpoint| other.service_addresses.contains(endpoint))
+        {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "{taken} is already advertised by masternode {} \
+                 (`bad-protx-dup-netinfo-entry`); every address this update registers, the \
+                 platform ones included, must be unused",
+                display_hex(&other.pro_tx_hash)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Build the placeholder payload from caller-supplied values. The same
+/// evonode/regular gating as the entry-copy path: `mn_type` set explicitly
+/// so the serializer cannot silently drop the platform triplet, all three
+/// platform values required for an evonode and forbidden for a regular
+/// masternode.
+///
+/// The version follows the same Dash Core v24 rules as
+/// [`prepare_update_service_placeholder`], with the values standing in for
+/// the entry's reset service fields:
+/// - an entry whose version-3 address map still lists addresses is refused:
+///   the values name one address, so they would replace the whole map. A
+///   registrar update never leaves such an entry behind (it empties the
+///   map), so this is not a reactivation;
+/// - a version-3 entry with an emptied map is re-asserted at version 3,
+///   with the map built from the values;
+/// - a legacy evonode is written at version 3 once V24 is active
+///   (`v24_active`), as Core then refuses an evonode update below it;
+/// - any other legacy entry stays at version 2.
+pub(crate) fn prepare_update_service_placeholder_from_values(
+    entry: &MasternodeListEntry,
+    v24_active: bool,
+    values: &UpdateServiceValues,
+    script_payout: ScriptBuf,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    let entry_is_v3 = match &entry.service_address {
+        MasternodeNetInfo::Extended(net_info) if !net_info.purposes.is_empty() => {
+            return Err(PlatformWalletError::InvalidParameter(
+                "this masternode still advertises a version-3 address map; the supplied values \
+                 name a single address and would replace the whole map, so use the plain \
+                 update-service (unban) path, which re-asserts the map as it is"
+                    .to_string(),
+            ));
+        }
+        MasternodeNetInfo::Extended(_) => true,
+        MasternodeNetInfo::Legacy(_) => false,
+    };
+    let service: SocketAddr = values.service_address.parse().map_err(|e| {
+        PlatformWalletError::InvalidParameter(format!(
+            "service address is not a valid ip:port: {e}"
+        ))
+    })?;
+
+    let (mn_type, platform) = match &entry.mn_type {
+        EntryMasternodeType::HighPerformance { .. } => {
+            let (Some(node_id), Some(p2p), Some(http)) = (
+                values.platform_node_id,
+                values.platform_p2p_port,
+                values.platform_http_port,
+            ) else {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "an evonode payload requires the platform node id, P2P port and HTTP port"
+                        .to_string(),
+                ));
+            };
+            (
+                ProviderMasternodeType::HighPerformance,
+                Some((PlatformNodeId::from_byte_array(node_id), p2p, http)),
+            )
+        }
+        EntryMasternodeType::Regular => {
+            if values.platform_node_id.is_some()
+                || values.platform_p2p_port.is_some()
+                || values.platform_http_port.is_some()
+            {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "platform values were given, but this masternode is not an evonode".to_string(),
+                ));
+            }
+            (ProviderMasternodeType::Regular, None)
+        }
+    };
+
+    // The version and the address form are chosen together, as in
+    // `prepare_update_service_placeholder`.
+    let (version, service_address, scalar_platform_ports) = match platform {
+        Some((_, p2p, http)) if entry_is_v3 || v24_active => {
+            let net_info = legacy_evonode_net_info(service, p2p, http);
+            require_core_accepts_converted_net_info(&net_info)?;
+            (
+                ProTxVersion::ExtAddr,
+                MasternodeNetInfo::Extended(net_info),
+                None,
+            )
+        }
+        Some((_, p2p, http)) => (
+            ProTxVersion::BasicBLS,
+            MasternodeNetInfo::Legacy(service),
+            Some((p2p, http)),
+        ),
+        None if entry_is_v3 => {
+            let net_info = ExtNetInfo {
+                // The only ExtNetInfo version Core defines.
+                version: 1,
+                purposes: vec![(
+                    NetInfoPurpose::CoreP2P,
+                    vec![service_entry(service.ip(), service.port())],
+                )],
+            };
+            require_core_accepts_converted_net_info(&net_info)?;
+            (
+                ProTxVersion::ExtAddr,
+                MasternodeNetInfo::Extended(net_info),
+                None,
+            )
+        }
+        None => (
+            ProTxVersion::BasicBLS,
+            MasternodeNetInfo::Legacy(service),
+            None,
+        ),
+    };
+    let (scalar_p2p_port, scalar_http_port) = scalar_platform_ports.unzip();
+
+    Ok(ProviderUpdateServicePayload {
+        version: version as u16,
+        mn_type: Some(mn_type as u16),
+        pro_tx_hash: Txid::from_byte_array(entry.pro_reg_tx_hash.to_byte_array()),
+        service_address,
+        script_payout,
+        inputs_hash: InputsHash::all_zeros(),
+        platform_node_id: platform.map(|(node_id, _, _)| node_id),
+        platform_p2p_port: scalar_p2p_port,
+        platform_http_port: scalar_http_port,
+        payload_sig: BLSSignature::from([0u8; 96]),
+    })
+}
+
+/// Mainnet consensus constants from Core's chainparams. The port rules
+/// below compare against the MAINNET values on every network — Core reads
+/// them via `MainParams()` regardless of the active chain.
+const MAINNET_CORE_P2P_PORT: u16 = 9999;
+const MAINNET_PLATFORM_P2P_PORT: u16 = 26656;
+const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
+
+/// Core's `CNetAddr::IsRoutable` restricted to IPv4: everything except the
+/// reserved ranges (RFC 1918/2544/3927/5737/6598, loopback, 0/8,
+/// broadcast). Spelled out because std's `is_global` is unstable.
+fn ipv4_is_routable(ip: Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    let shared = octets[0] == 100 && (octets[1] & 0b1100_0000) == 64; // RFC 6598
+    let benchmarking = octets[0] == 198 && (octets[1] & 0xFE) == 18; // RFC 2544
+    !(ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || octets[0] == 0
+        || shared
+        || benchmarking)
+}
+
+/// Refuse caller-supplied service values a version-2 ProUpServTx cannot
+/// carry, before any funding or signing — mirroring the checks Core runs in
+/// `MnNetInfo::ValidateService`, `CheckProviderNetworkFields` and
+/// `CheckProUpServTx`'s uniqueness pass. The entry-copy (unban) path needs
+/// none of this: it re-asserts the entry's own live values, which the
+/// network already accepted.
+///
+/// The version-2 rules are applied whichever version the payload is built
+/// at. They are at least as strict as the version-3 address map's, apart
+/// from the ports Core refuses only there, which
+/// [`prepare_update_service_placeholder_from_values`] checks on the map it
+/// builds. So values accepted before V24 stay accepted after it.
+///
+/// Presence gating of the platform triplet (all three for an evonode, none
+/// for a regular masternode) stays with the placeholder builder; this
+/// validates the values that were given.
+pub(crate) fn validate_update_service_values(
+    network: Network,
+    entry: &MasternodeListSummary,
+    values: &UpdateServiceValues,
+    summaries: &[MasternodeListSummary],
+) -> Result<(), PlatformWalletError> {
+    let service: SocketAddr = values.service_address.parse().map_err(|e| {
+        PlatformWalletError::InvalidParameter(format!(
+            "service address is not a valid ip:port: {e}"
+        ))
+    })?;
+
+    // MnNetInfo::ValidateService: IPv4 only, a real port, routable off
+    // regtest, and the port rule — the mainnet default Core P2P port on
+    // mainnet, never it anywhere else.
+    let IpAddr::V4(ip) = service.ip() else {
+        return Err(PlatformWalletError::InvalidParameter(
+            "the service address must be IPv4 — consensus accepts only IPv4 services in a \
+             version-2 payload (`bad-protx-netinfo-addr-type`)"
+                .to_string(),
+        ));
+    };
+    if service.port() == 0 {
+        return Err(PlatformWalletError::InvalidParameter(
+            "the service port must not be 0".to_string(),
+        ));
+    }
+    // `CNetAddr::IsValid` runs before (and independent of) the network's
+    // routability requirement, so the unspecified and broadcast addresses
+    // are rejected on EVERY network — the regtest exemption below covers
+    // only private-but-valid addresses.
+    if ip.is_unspecified() || ip.is_broadcast() {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "service address {ip} is not a valid address on any network \
+             (`bad-protx-netinfo-entry`)"
+        )));
+    }
+    if network != Network::Regtest && !ipv4_is_routable(ip) {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "service address {ip} is not routable — consensus rejects reserved and private \
+             ranges (`bad-protx-netinfo-addr-unroutable`)"
+        )));
+    }
+    let on_mainnet = network == Network::Mainnet;
+    if on_mainnet != (service.port() == MAINNET_CORE_P2P_PORT) {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "service port {}: consensus requires port {MAINNET_CORE_P2P_PORT} on mainnet and \
+             forbids it on every other network (`bad-protx-netinfo-port`)",
+            service.port()
+        )));
+    }
+
+    // CheckProviderNetworkFields, for whichever platform values were given.
+    if let Some(node_id) = values.platform_node_id {
+        if node_id == [0u8; 20] {
+            return Err(PlatformWalletError::InvalidParameter(
+                "the platform node id must not be all zeroes (`bad-protx-platform-nodeid`)"
+                    .to_string(),
+            ));
+        }
+    }
+    for (port, name, mainnet_default) in [
+        (
+            values.platform_p2p_port,
+            "platform P2P",
+            MAINNET_PLATFORM_P2P_PORT,
+        ),
+        (
+            values.platform_http_port,
+            "platform HTTP",
+            MAINNET_PLATFORM_HTTP_PORT,
+        ),
+    ] {
+        let Some(port) = port else { continue };
+        // Not a consensus rule off mainnet — Core's
+        // `CheckProviderNetworkFields` accepts a single zero platform port
+        // in a v2 payload (only BOTH zero collides in its dup-ports
+        // equality) — but no node can serve on port 0, so a caller-supplied
+        // zero is an input error caught before funding.
+        if port == 0 {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the {name} port must not be 0"
+            )));
+        }
+        if on_mainnet && port != mainnet_default {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the {name} port must be {mainnet_default} on mainnet, got {port}"
+            )));
+        }
+        if port == MAINNET_CORE_P2P_PORT {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the {name} port must not be the mainnet Core P2P port \
+                 ({MAINNET_CORE_P2P_PORT})"
+            )));
+        }
+        if port == service.port() {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the {name} port must differ from the Core P2P service port \
+                 (`bad-protx-platform-dup-ports`)"
+            )));
+        }
+    }
+    if let (Some(p2p), Some(http)) = (values.platform_p2p_port, values.platform_http_port) {
+        if p2p == http {
+            return Err(PlatformWalletError::InvalidParameter(
+                "the platform P2P and HTTP ports must differ \
+                 (`bad-protx-platform-dup-ports`)"
+                    .to_string(),
+            ));
+        }
+    }
+
+    // CheckProUpServTx's uniqueness pass: the service endpoint and platform
+    // node id are unique properties across the whole list — checked against
+    // EVERY endpoint other entries advertise (an extended entry registers
+    // each address of its endpoint map), excluding the target itself.
+    for other in summaries
+        .iter()
+        .filter(|other| other.pro_tx_hash != entry.pro_tx_hash)
+    {
+        if other.service_addresses.contains(&service) {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "service address {service} is already advertised by masternode {} \
+                 (`bad-protx-dup-netinfo-entry`)",
+                display_hex(&other.pro_tx_hash)
+            )));
+        }
+        if let Some(node_id) = values.platform_node_id {
+            if other.platform_node_id == Some(node_id) {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "the platform node id is already used by masternode {} \
+                     (`bad-protx-dup-platformnodeid`)",
+                    display_hex(&other.pro_tx_hash)
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Fetch a transaction via DAPI Core and bind it to the txid the caller
+/// asked for — the reply is unauthenticated, so nothing from it is trusted
+/// until the decoded transaction hashes back to the request. A request
+/// failure keeps its typed [`PlatformWalletError::Sdk`] shape so callers
+/// can classify transport and retryable errors; the invalid-data shapes are
+/// reserved for successful responses whose contents fail validation.
+pub(crate) async fn fetch_transaction_checked(
+    wallet: &PlatformWallet,
+    txid_wire: &[u8; 32],
+    what: &str,
+) -> Result<dashcore::Transaction, PlatformWalletError> {
+    let display = display_hex(txid_wire);
     let fetched = wallet
         .sdk()
         .get_transaction(&display)
-        .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "failed to fetch the registration transaction: {e}"
-            ))
-        })?
+        .await?
         .ok_or_else(|| {
-            PlatformWalletError::InvalidParameter(format!(
-                "registration transaction {display} was not found; cannot determine the \
-                 operator reward"
-            ))
+            PlatformWalletError::InvalidParameter(format!("{what} {display} was not found"))
         })?;
-    operator_reward_from_registration(pro_tx_hash, &fetched.transaction)
+    let transaction = fetched.transaction;
+    let expected = Txid::from_byte_array(*txid_wire);
+    let actual = transaction.txid();
+    if actual != expected {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "DAPI returned transaction {actual} for requested {what} {expected}"
+        )));
+    }
+    Ok(transaction)
 }
 
-/// Read `operatorReward` out of a fetched registration transaction,
-/// binding the response to the request first: DAPI's get-transaction reply
-/// is not authenticated, so the decoded transaction must hash to the
-/// requested proTxHash before its payload is trusted. Only the operator
-/// reward is read from it; the service values come from the synced
-/// masternode list's entry for that proTxHash. Without the hash check a
-/// reply carrying an unrelated zero-reward ProRegTx would steer
-/// [`resolve_operator_payout_script`] into clearing a real operator payout.
-pub(crate) fn operator_reward_from_registration(
+/// The masternode's full ProRegTx via DAPI Core, txid-bound. The registrar
+/// update needs the whole transaction: an internal collateral is one of its
+/// own outputs.
+pub(crate) async fn fetch_registration_transaction(
+    wallet: &PlatformWallet,
     pro_tx_hash: &[u8; 32],
-    transaction: &dashcore::Transaction,
-) -> Result<u16, PlatformWalletError> {
+) -> Result<dashcore::Transaction, PlatformWalletError> {
+    fetch_transaction_checked(wallet, pro_tx_hash, "registration transaction").await
+}
+
+/// [`fetch_registration_transaction`] reduced to its payload. Shared by the
+/// payout rule here and the registrar update's owner-key verification — the
+/// ProRegTx is the one place the immutable `keyIDOwner` lives.
+pub(crate) async fn fetch_registration_payload(
+    wallet: &PlatformWallet,
+    pro_tx_hash: &[u8; 32],
+) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
+    let transaction = fetch_registration_transaction(wallet, pro_tx_hash).await?;
+    registration_payload_from_fetched(pro_tx_hash, transaction)
+}
+
+/// Txid-bind and unwrap a fetched registration transaction's payload.
+pub(crate) fn registration_payload_from_fetched(
+    pro_tx_hash: &[u8; 32],
+    transaction: dashcore::Transaction,
+) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
     let expected = Txid::from_byte_array(*pro_tx_hash);
     let actual = transaction.txid();
     if actual != expected {
@@ -304,13 +809,28 @@ pub(crate) fn operator_reward_from_registration(
              {expected}"
         )));
     }
-    match &transaction.special_transaction_payload {
-        Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => {
-            Ok(registration.operator_reward)
-        }
+    match transaction.special_transaction_payload {
+        Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => Ok(registration),
         _ => Err(PlatformWalletError::InvalidParameter(format!(
             "transaction {expected} is not a provider registration transaction"
         ))),
+    }
+}
+
+/// Consensus accepts only P2PKH and P2SH payout scripts in provider
+/// transactions (`bad-protx-payee`) — anything else (a witness program,
+/// say) would fund and sign a transaction the mempool refuses.
+pub(crate) fn require_standard_payout_script(
+    script: &dashcore::blockdata::script::Script,
+) -> Result<(), PlatformWalletError> {
+    if script.is_p2pkh() || script.is_p2sh() {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::InvalidParameter(
+            "the payout address must be a standard P2PKH or P2SH address — consensus rejects \
+             every other payout script type"
+                .to_string(),
+        ))
     }
 }
 
@@ -353,7 +873,9 @@ pub(crate) fn resolve_operator_payout_script(
                         "operator payout address is for another network: {e}"
                     ))
                 })?;
-            Ok(address.script_pubkey())
+            let script = address.script_pubkey();
+            require_standard_payout_script(&script)?;
+            Ok(script)
         }
     }
 }
@@ -378,9 +900,6 @@ pub(crate) fn verify_operator_secret(
     }
     Ok(())
 }
-
-/// The Platform P2P port Core requires of a mainnet evonode before version 3.
-const MAINNET_PLATFORM_P2P_PORT: u16 = 26656;
 
 /// The placeholder payload for the builder: every field final except the two
 /// selection-dependent ones (`inputs_hash`, `payload_sig`), which are zeroed
@@ -755,7 +1274,7 @@ where
         .await
 }
 
-fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
+pub(crate) fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
     let mut display = *pro_tx_hash;
     display.reverse();
     hex::encode(display)
@@ -763,7 +1282,7 @@ fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::list::test_support::{evonode_entry, masternode_entry};
+    use super::super::list::test_support::{evonode, evonode_entry, masternode, masternode_entry};
     use super::super::list::MasternodeListSummary;
     use super::super::record::core_v24_vectors::{decode, EVO_PRO_UP_SERV_TX};
     use super::*;
@@ -1365,7 +1884,7 @@ mod tests {
                     ScriptBuf::new(),
                 )
             },
-            Some(latest_coinbase),
+            latest_coinbase,
         )
         .await
     }
@@ -1414,7 +1933,7 @@ mod tests {
                     ScriptBuf::new(),
                 )
             },
-            Some(async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) }),
+            async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) },
         )
         .await
         .expect_err("another port is refused on mainnet");
@@ -1477,39 +1996,6 @@ mod tests {
                     && message.contains("try again")),
             "got {err:?}"
         );
-    }
-
-    /// Without a coinbase source the list alone decides: a legacy evonode
-    /// next to only legacy entries keeps version 2, and a version-3
-    /// neighbour converts it. Refusing the build instead would block every
-    /// evonode update until V24 activates.
-    #[tokio::test]
-    async fn should_keep_the_lists_view_of_v24_without_a_coinbase_source() {
-        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
-        let build = |list_shows_v24| {
-            update_service_placeholder(
-                list_shows_v24,
-                |v24_active| {
-                    prepare_update_service_placeholder(
-                        &entry,
-                        Network::Devnet,
-                        v24_active,
-                        Some(26656),
-                        ScriptBuf::new(),
-                    )
-                },
-                None::<std::future::Ready<_>>,
-            )
-        };
-
-        let before_v24 = build(false)
-            .await
-            .expect("an evonode update is built before V24");
-        assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
-        assert_eq!(before_v24.platform_p2p_port, Some(26656));
-
-        let shown_by_list = build(true).await.expect("a version-3 neighbour shows V24");
-        assert_matches_core_v3_vector(shown_by_list);
     }
 
     /// Only an evonode payload below version 3 changes with V24, so only
@@ -1875,11 +2361,11 @@ mod tests {
         let transaction = registration_transaction(500);
         let matching = transaction.txid().to_byte_array();
 
-        let reward = operator_reward_from_registration(&matching, &transaction)
+        let registration = registration_payload_from_fetched(&matching, transaction.clone())
             .expect("a matching registration transaction is accepted");
-        assert_eq!(reward, 500);
+        assert_eq!(registration.operator_reward, 500);
 
-        let err = operator_reward_from_registration(&[0x99; 32], &transaction)
+        let err = registration_payload_from_fetched(&[0x99; 32], transaction)
             .expect_err("a transaction that does not hash to the request must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidIdentityData(_)));
 
@@ -1887,9 +2373,607 @@ mod tests {
         let mut not_registration = registration_transaction(0);
         not_registration.special_transaction_payload = None;
         let plain_txid = not_registration.txid().to_byte_array();
-        let err = operator_reward_from_registration(&plain_txid, &not_registration)
+        let err = registration_payload_from_fetched(&plain_txid, not_registration)
             .expect_err("a non-registration transaction must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// A legacy entry as a registrar update leaves it: Core resets the
+    /// address to `0.0.0.0:0`.
+    fn reset_legacy_entry(seed: u8, evo: bool) -> MasternodeListEntry {
+        MasternodeListEntry {
+            service_address: MasternodeNetInfo::Legacy(
+                "0.0.0.0:0".parse().expect("socket address"),
+            ),
+            ..operator_entry(seed, evo)
+        }
+    }
+
+    /// A version-3 entry as a registrar update leaves it: an address map
+    /// with no addresses.
+    fn reset_v3_entry(seed: u8, evo: bool) -> MasternodeListEntry {
+        MasternodeListEntry {
+            version: 3,
+            service_address: MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![],
+            }),
+            ..operator_entry(seed, evo)
+        }
+    }
+
+    fn evonode_values() -> UpdateServiceValues {
+        UpdateServiceValues {
+            service_address: "34.214.48.66:19999".to_string(),
+            platform_node_id: Some([0x77; 20]),
+            platform_p2p_port: Some(26656),
+            platform_http_port: Some(1443),
+        }
+    }
+
+    fn service(ip: [u8; 4], port: u16) -> NetInfoEntry {
+        NetInfoEntry::Service {
+            network: Bip155Network::Ipv4,
+            addr: ip.to_vec(),
+            port,
+        }
+    }
+
+    /// Stage two of a rotation supplies values explicitly: the entry's own
+    /// service state was reset by the registrar update, so nothing is copied.
+    #[test]
+    fn should_build_a_version_2_evonode_payload_from_values_before_v24() {
+        let entry = reset_legacy_entry(0x66, true);
+        let payload = prepare_update_service_placeholder_from_values(
+            &entry,
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+        )
+        .expect("values placeholder");
+        assert_eq!(payload.version, ProTxVersion::BasicBLS as u16);
+        assert_eq!(
+            payload.service_address,
+            MasternodeNetInfo::Legacy("34.214.48.66:19999".parse().expect("socket address"))
+        );
+        assert_eq!(
+            payload.mn_type,
+            Some(ProviderMasternodeType::HighPerformance as u16)
+        );
+        assert_eq!(
+            payload.platform_node_id,
+            Some(PlatformNodeId::from_byte_array([0x77; 20]))
+        );
+        assert_eq!(payload.platform_p2p_port, Some(26656));
+        assert_eq!(payload.platform_http_port, Some(1443));
+    }
+
+    /// A masternode other than the target advertising `endpoint`.
+    fn neighbour_at(endpoint: &str) -> MasternodeListSummary {
+        let endpoint: SocketAddr = endpoint.parse().expect("socket address");
+        MasternodeListSummary {
+            service_address: Some(endpoint),
+            service_addresses: vec![endpoint],
+            ..masternode(0x21)
+        }
+    }
+
+    /// Right after V24 activates every entry is still legacy, so the list
+    /// shows nothing, while Core already refuses a version-2 evonode update.
+    /// The coinbase shows V24, so the reactivation after an operator
+    /// rotation is built at version 3; before V24 it stays version 2.
+    #[tokio::test]
+    async fn should_reactivate_at_the_version_the_coinbase_shows_when_every_entry_is_legacy() {
+        let entry = reset_legacy_entry(0x66, true);
+        let values = evonode_values();
+        let build = |coinbase_version| {
+            values_placeholder(&entry, false, &values, ScriptBuf::new(), &[], async move {
+                Some(coinbase(coinbase_version))
+            })
+        };
+
+        let after_v24 = build(4).await.expect("a V24 coinbase builds version 3");
+        assert_eq!(after_v24.version, ProTxVersion::ExtAddr as u16);
+        assert!(matches!(
+            after_v24.service_address,
+            MasternodeNetInfo::Extended(_)
+        ));
+
+        let before_v24 = build(3).await.expect("a pre-V24 coinbase keeps version 2");
+        assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
+
+        let err = values_placeholder(
+            &entry,
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+            &[],
+            async { None },
+        )
+        .await
+        .expect_err("V24 is unknown without a coinbase");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains("try again")),
+            "got {err:?}"
+        );
+    }
+
+    /// A version-3 map registers the Platform P2P and HTTPS endpoints next
+    /// to the Core one, and Core refuses the update when another masternode
+    /// already advertises any of them. A version-2 payload registers only
+    /// the Core address, so the same neighbours do not block it.
+    #[tokio::test]
+    async fn should_refuse_a_version_3_map_listing_an_endpoint_another_masternode_advertises() {
+        let entry = reset_legacy_entry(0x66, true);
+        for taken in [
+            "34.214.48.66:19999",
+            "34.214.48.66:26656",
+            "34.214.48.66:1443",
+        ] {
+            let err = values_placeholder(
+                &entry,
+                true,
+                &evonode_values(),
+                ScriptBuf::new(),
+                &[neighbour_at(taken)],
+                coinbase_not_read(),
+            )
+            .await
+            .expect_err("an endpoint in use is refused");
+            assert!(
+                matches!(&err, PlatformWalletError::InvalidParameter(message)
+                    if message.contains(taken) && message.contains("bad-protx-dup-netinfo-entry")),
+                "{taken}: got {err:?}"
+            );
+        }
+
+        // The target's own endpoints and unrelated ones do not collide.
+        let own = MasternodeListSummary {
+            pro_tx_hash: entry.pro_reg_tx_hash.to_byte_array(),
+            ..neighbour_at("34.214.48.66:26656")
+        };
+        values_placeholder(
+            &entry,
+            true,
+            &evonode_values(),
+            ScriptBuf::new(),
+            &[own, neighbour_at("34.214.48.66:26657")],
+            coinbase_not_read(),
+        )
+        .await
+        .expect("no other masternode advertises these endpoints");
+
+        // Version 2 registers the Core address only.
+        values_placeholder(
+            &entry,
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+            &[neighbour_at("34.214.48.66:26656")],
+            async { Some(coinbase(3)) },
+        )
+        .await
+        .expect("a platform port is not a registered address at version 2");
+    }
+
+    /// Once V24 is active Core refuses an evonode update below version 3,
+    /// for a reset legacy entry and a reset version-3 entry alike.
+    #[test]
+    fn should_build_a_version_3_evonode_payload_from_values_after_v24() {
+        let expected = MasternodeNetInfo::Extended(ExtNetInfo {
+            version: 1,
+            purposes: vec![
+                (
+                    NetInfoPurpose::CoreP2P,
+                    vec![service([34, 214, 48, 66], 19999)],
+                ),
+                (
+                    NetInfoPurpose::PlatformP2P,
+                    vec![service([34, 214, 48, 66], 26656)],
+                ),
+                (
+                    NetInfoPurpose::PlatformHttps,
+                    vec![service([34, 214, 48, 66], 1443)],
+                ),
+            ],
+        });
+        for (entry, v24_active) in [
+            (reset_legacy_entry(0x66, true), true),
+            (reset_v3_entry(0x66, true), true),
+            // A version-3 entry proves V24 whatever the caller's view says.
+            (reset_v3_entry(0x66, true), false),
+        ] {
+            let payload = prepare_update_service_placeholder_from_values(
+                &entry,
+                v24_active,
+                &evonode_values(),
+                ScriptBuf::new(),
+            )
+            .expect("values placeholder");
+            assert_eq!(payload.version, ProTxVersion::ExtAddr as u16);
+            assert_eq!(payload.service_address, expected);
+            assert_eq!(
+                payload.platform_node_id,
+                Some(PlatformNodeId::from_byte_array([0x77; 20]))
+            );
+            assert_eq!(payload.platform_p2p_port, None);
+            assert_eq!(payload.platform_http_port, None);
+            // The version and the address form agree, so it encodes.
+            base_payload_bytes(&payload);
+        }
+    }
+
+    #[test]
+    fn should_keep_a_regular_masternode_at_its_entry_version_when_built_from_values() {
+        let values = plain_values("34.214.48.67:19999");
+        for v24_active in [false, true] {
+            let payload = prepare_update_service_placeholder_from_values(
+                &reset_legacy_entry(0x67, false),
+                v24_active,
+                &values,
+                ScriptBuf::new(),
+            )
+            .expect("regular values placeholder");
+            assert_eq!(payload.version, ProTxVersion::BasicBLS as u16);
+            assert_eq!(
+                payload.service_address,
+                MasternodeNetInfo::Legacy("34.214.48.67:19999".parse().expect("socket address"))
+            );
+            assert_eq!(
+                payload.mn_type,
+                Some(ProviderMasternodeType::Regular as u16)
+            );
+            assert_eq!(payload.platform_node_id, None);
+        }
+
+        let payload = prepare_update_service_placeholder_from_values(
+            &reset_v3_entry(0x67, false),
+            true,
+            &values,
+            ScriptBuf::new(),
+        )
+        .expect("regular version-3 values placeholder");
+        assert_eq!(payload.version, ProTxVersion::ExtAddr as u16);
+        assert_eq!(
+            payload.service_address,
+            MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![(
+                    NetInfoPurpose::CoreP2P,
+                    vec![service([34, 214, 48, 67], 19999)],
+                )],
+            })
+        );
+        base_payload_bytes(&payload);
+    }
+
+    #[test]
+    fn should_refuse_values_that_do_not_fit_the_masternode_type() {
+        let incomplete = UpdateServiceValues {
+            platform_p2p_port: None,
+            ..evonode_values()
+        };
+        let err = prepare_update_service_placeholder_from_values(
+            &reset_legacy_entry(0x66, true),
+            false,
+            &incomplete,
+            ScriptBuf::new(),
+        )
+        .expect_err("an evonode needs the full platform triplet");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let err = prepare_update_service_placeholder_from_values(
+            &reset_legacy_entry(0x67, false),
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+        )
+        .expect_err("platform values on a regular masternode are refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// The values name one address; an address map that still lists
+    /// addresses would lose the rest.
+    #[test]
+    fn should_refuse_values_for_an_entry_whose_address_map_lists_addresses() {
+        let err = prepare_update_service_placeholder_from_values(
+            &core_v3_evonode_entry(),
+            true,
+            &evonode_values(),
+            ScriptBuf::new(),
+        )
+        .expect_err("a live version-3 entry is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// A port Core v24 refuses in a version-3 address map is refused before
+    /// anything is built.
+    #[test]
+    fn should_refuse_values_core_v24_refuses_in_a_version_3_address_map() {
+        let values = UpdateServiceValues {
+            platform_http_port: Some(80),
+            ..evonode_values()
+        };
+        let err = prepare_update_service_placeholder_from_values(
+            &reset_legacy_entry(0x66, true),
+            true,
+            &values,
+            ScriptBuf::new(),
+        )
+        .expect_err("port 80 is refused in a version-3 address map");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    fn plain_values(service: &str) -> UpdateServiceValues {
+        UpdateServiceValues {
+            service_address: service.to_string(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        }
+    }
+
+    /// Core's `MnNetInfo::ValidateService` rules on a caller-supplied
+    /// service: IPv4 only, a real port, routable off regtest, and the
+    /// mainnet-port rule in both directions.
+    #[test]
+    fn values_validation_enforces_core_service_rules() {
+        let entry = MasternodeListSummary::from_entry(&operator_entry(0x66, false));
+        let summaries = vec![entry.clone(), masternode(0x22)];
+        let check = |network, service: &str| {
+            validate_update_service_values(network, &entry, &plain_values(service), &summaries)
+        };
+
+        check(Network::Testnet, "34.214.48.68:19999").expect("a routable IPv4 service passes");
+
+        for (label, service) in [
+            ("IPv6", "[2001:db8::1]:19999"),
+            ("port zero", "34.214.48.68:0"),
+            ("private (RFC 1918)", "10.0.0.5:19999"),
+            ("loopback", "127.0.0.1:19999"),
+            ("documentation (RFC 5737)", "203.0.113.5:19999"),
+            ("shared (RFC 6598)", "100.64.0.1:19999"),
+            ("benchmarking (RFC 2544)", "198.18.0.1:19999"),
+            ("mainnet port off mainnet", "34.214.48.68:9999"),
+        ] {
+            assert!(
+                check(Network::Testnet, service).is_err(),
+                "{label} must be refused"
+            );
+        }
+
+        check(Network::Regtest, "10.0.0.5:19999").expect("regtest does not require routability");
+
+        // `CNetAddr::IsValid` runs on every network, before the
+        // routability gate: the unspecified and broadcast addresses are
+        // refused even where routability is not required.
+        for service in ["0.0.0.0:19999", "255.255.255.255:19999"] {
+            for network in [Network::Regtest, Network::Testnet] {
+                assert!(
+                    check(network, service).is_err(),
+                    "{service} must be refused on {network:?}"
+                );
+            }
+        }
+
+        check(Network::Mainnet, "34.214.48.68:9999")
+            .expect("mainnet requires the default Core P2P port");
+        check(Network::Mainnet, "34.214.48.68:19999")
+            .expect_err("a non-default Core P2P port is refused on mainnet");
+    }
+
+    /// Core's `CheckProviderNetworkFields` rules on the platform triplet:
+    /// non-null node id, mainnet-default platform ports on mainnet, and no
+    /// port collisions with each other, the Core service port, or the
+    /// mainnet Core P2P port.
+    #[test]
+    fn values_validation_enforces_platform_field_rules() {
+        let entry = MasternodeListSummary::from_entry(&operator_entry(0x66, true));
+        let summaries = vec![entry.clone()];
+        let values = |service: &str, node: [u8; 20], p2p: u16, http: u16| UpdateServiceValues {
+            service_address: service.to_string(),
+            platform_node_id: Some(node),
+            platform_p2p_port: Some(p2p),
+            platform_http_port: Some(http),
+        };
+        let check = |network, v: &UpdateServiceValues| {
+            validate_update_service_values(network, &entry, v, &summaries)
+        };
+
+        check(
+            Network::Testnet,
+            &values("34.214.48.68:19999", [0x77; 20], 22000, 22001),
+        )
+        .expect("a valid testnet platform triplet passes");
+
+        for (label, v) in [
+            (
+                "an all-zero platform node id",
+                values("34.214.48.68:19999", [0u8; 20], 22000, 22001),
+            ),
+            (
+                "equal platform ports",
+                values("34.214.48.68:19999", [0x77; 20], 22000, 22000),
+            ),
+            (
+                "the mainnet Core P2P port as platform P2P port",
+                values("34.214.48.68:19999", [0x77; 20], 9999, 22001),
+            ),
+            (
+                "the mainnet Core P2P port as platform HTTP port",
+                values("34.214.48.68:19999", [0x77; 20], 22000, 9999),
+            ),
+            (
+                "the Core service port as platform P2P port",
+                values("34.214.48.68:19999", [0x77; 20], 19999, 22001),
+            ),
+            (
+                "a zero platform P2P port",
+                values("34.214.48.68:19999", [0x77; 20], 0, 22001),
+            ),
+            (
+                "a zero platform HTTP port",
+                values("34.214.48.68:19999", [0x77; 20], 22000, 0),
+            ),
+        ] {
+            assert!(
+                check(Network::Testnet, &v).is_err(),
+                "{label} must be refused"
+            );
+        }
+
+        check(
+            Network::Mainnet,
+            &values("34.214.48.68:9999", [0x77; 20], 26656, 443),
+        )
+        .expect("the mainnet platform defaults pass");
+        assert!(
+            check(
+                Network::Mainnet,
+                &values("34.214.48.68:9999", [0x77; 20], 22000, 443),
+            )
+            .is_err(),
+            "a non-default platform P2P port is refused on mainnet"
+        );
+        assert!(
+            check(
+                Network::Mainnet,
+                &values("34.214.48.68:9999", [0x77; 20], 26656, 8080),
+            )
+            .is_err(),
+            "a non-default platform HTTP port is refused on mainnet"
+        );
+    }
+
+    /// Core's uniqueness pass: the service endpoint and platform node id
+    /// must not be advertised by ANY other masternode — including a
+    /// secondary endpoint of an extended entry's map, which is exactly what
+    /// `service_addresses` carries beyond the primary. The target's own
+    /// values are excluded.
+    #[test]
+    fn values_validation_enforces_network_wide_uniqueness() {
+        let mut entry = MasternodeListSummary::from_entry(&operator_entry(0x66, true));
+        let own: SocketAddr = "34.214.48.70:19999".parse().expect("socket address");
+        entry.service_address = Some(own);
+        entry.service_addresses = vec![own];
+
+        let mut other = evonode(0x22);
+        let other_primary: SocketAddr = "34.214.48.71:19999".parse().expect("socket address");
+        let other_secondary: SocketAddr = "34.214.48.72:19999".parse().expect("socket address");
+        other.service_address = Some(other_primary);
+        other.service_addresses = vec![other_primary, other_secondary];
+        let other_node_id = other.platform_node_id.expect("evonode node id");
+        let summaries = vec![entry.clone(), other.clone()];
+
+        let with_node = |service: &str, node: [u8; 20]| UpdateServiceValues {
+            service_address: service.to_string(),
+            platform_node_id: Some(node),
+            platform_p2p_port: Some(22000),
+            platform_http_port: Some(22001),
+        };
+
+        validate_update_service_values(
+            Network::Testnet,
+            &entry,
+            &with_node("34.214.48.70:19999", [0x99; 20]),
+            &summaries,
+        )
+        .expect("re-asserting the target's own address passes — self is excluded");
+
+        assert!(
+            validate_update_service_values(
+                Network::Testnet,
+                &entry,
+                &with_node("34.214.48.71:19999", [0x99; 20]),
+                &summaries,
+            )
+            .is_err(),
+            "another entry's primary endpoint is refused"
+        );
+        assert!(
+            validate_update_service_values(
+                Network::Testnet,
+                &entry,
+                &with_node("34.214.48.72:19999", [0x99; 20]),
+                &summaries,
+            )
+            .is_err(),
+            "another entry's SECONDARY endpoint is refused — the endpoint map counts"
+        );
+        assert!(
+            validate_update_service_values(
+                Network::Testnet,
+                &entry,
+                &with_node("34.214.48.73:19999", other_node_id),
+                &summaries,
+            )
+            .is_err(),
+            "another entry's platform node id is refused"
+        );
+        validate_update_service_values(
+            Network::Testnet,
+            &entry,
+            &with_node(
+                "34.214.48.73:19999",
+                entry.platform_node_id.expect("own node id"),
+            ),
+            &summaries,
+        )
+        .expect("re-asserting the target's own node id passes");
+    }
+
+    /// Regression for the review's teardown race on the execute paths:
+    /// they sign, then broadcast, and the host can remove (or re-create)
+    /// the wallet in between. The guarded broadcast must take the
+    /// generation gate, see the dead generation, refuse the send, and
+    /// leave the broadcaster untouched.
+    #[tokio::test]
+    async fn removed_wallet_transaction_is_refused_not_broadcast() {
+        let (wallet_manager, wallet_id, generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(RecordingBroadcaster::default());
+        let core = CoreWallet::new(
+            sdk,
+            wallet_manager.clone(),
+            wallet_id,
+            broadcaster.clone(),
+            generation,
+        );
+
+        let entry = operator_entry(0x44, true);
+        let placeholder = prepare_update_service_placeholder(
+            &entry,
+            Network::Testnet,
+            false,
+            Some(26656),
+            ScriptBuf::new(),
+        )
+        .expect("placeholder");
+        let prepared =
+            build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
+                .await
+                .expect("signs");
+
+        // The host removes the wallet between signing and the send.
+        wallet_manager
+            .write()
+            .await
+            .remove_wallet(&wallet_id)
+            .expect("the test wallet is registered");
+
+        let err = broadcast_special_transaction_guarded(&core, &prepared)
+            .await
+            .expect_err("a dead generation's transaction must be refused");
+        assert!(matches!(err, PlatformWalletError::WalletNotFound(_)));
+        assert!(
+            broadcaster
+                .sent
+                .lock()
+                .expect("broadcaster lock")
+                .is_empty(),
+            "nothing may reach the network for a removed wallet"
+        );
     }
 
     #[tokio::test]
