@@ -3912,8 +3912,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let walletDescriptor = FetchDescriptor<PersistentWallet>(
                     predicate: PersistentWallet.predicate(walletId: walletId)
                 )
-                guard let wallet = try modelFetcher.fetch(walletDescriptor, in: backgroundContext).first,
-                      let networkRaw = wallet.networkRaw else {
+                let wallet = try modelFetcher.fetch(walletDescriptor, in: backgroundContext).first
+                guard let networkRaw = wallet?.networkRaw ?? network?.rawValue else {
                     return false
                 }
                 for overlay in profiles {
@@ -3929,7 +3929,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     } else {
                         // Resolve the profile so SwiftData can snapshot it during rollback.
                         let profileDescriptor = FetchDescriptor<PersistentDashpayProfile>(
-                            predicate: PersistentDashpayProfile.predicate(identityId: identityId)
+                            predicate: #Predicate {
+                                $0.identity.identityId == identityId && $0.networkRaw == networkRaw
+                            }
                         )
                         let existing = try modelFetcher.fetch(profileDescriptor, in: backgroundContext).first
                         try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
