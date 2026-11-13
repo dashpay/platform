@@ -346,7 +346,7 @@ fn consensus_or_protocol_generation_3_error(error: ProtocolError) -> ProtocolErr
 /// records the stray keys those contracts do carry, and fails if a document
 /// meta-schema ever declares one of them as a keyword.
 #[allow(clippy::too_many_arguments)]
-fn try_from_schema_generation_3(
+pub(super) fn try_from_schema_generation_3(
     data_contract_id: Identifier,
     data_contract_system_version: u16,
     contract_config_version: u16,
@@ -357,6 +357,7 @@ fn try_from_schema_generation_3(
     data_contact_config: &DataContractConfig,
     full_validation: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    generation: &common::ParserGeneration,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
     let mut operations = SchemaReadBilling {
@@ -375,6 +376,7 @@ fn try_from_schema_generation_3(
         data_contact_config,
         full_validation,
         &mut operations,
+        generation,
         platform_version,
     );
     // A parse that ran the repeated-key walk records one schema size, at least the values the
@@ -443,6 +445,7 @@ fn parse_generation_3(
     data_contact_config: &DataContractConfig,
     full_validation: bool,
     validation_operations: &mut SchemaReadBilling<'_, impl Extend<ProtocolValidationOperation>>,
+    generation: &common::ParserGeneration,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
     // Generation 3 refuses `-` in a document type name, as meta-schema v3
@@ -544,69 +547,7 @@ fn parse_generation_3(
         // `apply_deleted_only_when_consumed` below records the consumption.
         deleted_only_when_consumed,
         validation_operations,
-        &common::ParserGeneration {
-            // Generation 3 exists if and only if `document_type_schema` is 3 —
-            // CONTRACT_VERSIONS_V6 and V7 are the only tables that select this
-            // parser, and the only tables naming meta-schema v3. So every constant
-            // here is a property of the generation, not of a platform version,
-            // and none of them is read out of a table.
-            document_type_schema_version: 3,
-            // Meta-schema v3 carries the `keeps*History` flags forward from v2,
-            // so they are unconditionally part of this generation's grammar.
-            // This is the conditional that was dead in the copied core: at
-            // schema 3 the old `document_type_schema >= 2` could only be true.
-            admit_history: true,
-            // Count indexes arrived at PV12; every version selecting this
-            // generation is far past that boundary.
-            admit_count_indexes: true,
-            meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // RANKED / TIME RANGE: the keyword admissions that make this
-            // generation 3, read from the shared generation → admission
-            // mapping so the registration-cost re-parse can never drift
-            // from what this parser accepts.
-            admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
-            ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
-            ranked_index_structure_check: validate_no_ranked_prefix_overlap,
-            admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
-            admit_integer_range: IndexGrammarAdmissions::for_schema_generation(3).integer_range,
-            // INDEX ONLY: the `terminal` index keyword, admitted from the
-            // same shared generation → admission mapping as the two above.
-            admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
-            // PREALLOCATED: the fourth generation-3 index keyword, from the
-            // same shared mapping.
-            admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
-            // OUTLIVES DELETE: from the same shared mapping.
-            admit_index_outlives_delete: IndexGrammarAdmissions::for_schema_generation(3)
-                .outlives_delete,
-            // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
-            // same shared mapping.
-            admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
-                .skip_if_absent,
-            // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
-            // shared mapping.
-            admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
-                .summable_off_count_index,
-            // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
-            // rather than a keyword, read from the same shared mapping so the
-            // registration-cost re-parse and the validator agree on it.
-            admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(
-                3,
-            )
-            .range_countable_implies_countable,
-            // NO LOCKING RESOLUTION: a contested index resolved without a Lock
-            // choice, a generation-3 value from the same shared mapping.
-            admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
-                .no_locking_resolution,
-            // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
-            // fields for its moderators carries (checked by `apply_moderator_abilities`).
-            admit_moderation_stamp_indexes: true,
-            // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
-            // moderated reference (`apply_derived_index_properties`).
-            admit_derived_index_properties: true,
-            // INDEXED ARRAYS: an index keyed by the elements of a typed array
-            // (`validate_indexed_array_index`).
-            admit_indexed_arrays: true,
-        },
+        generation,
         platform_version,
     )?;
 
@@ -784,10 +725,22 @@ fn parse_generation_3(
     validate_random_declarations_after_moderation(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
 
+    if generation.admit_lifecycle {
+        let can_be_erased = common::parse_can_be_erased_keyword(&v2.schema)?;
+        common::apply_can_be_erased(&mut v2, can_be_erased, name)?;
+        if full_validation {
+            common::reject_contested_keep_history(&v2, name)?;
+        }
+    }
+
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
     // default (`true` when the key is omitted).
-    if full_validation && v2.documents_keep_history() && v2.documents_can_be_deleted() {
+    if !generation.admit_lifecycle
+        && full_validation
+        && v2.documents_keep_history()
+        && v2.documents_can_be_deleted()
+    {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{}\" sets both `documentsKeepHistory: true` and \
@@ -2095,6 +2048,7 @@ impl DocumentType {
             data_contact_config,
             full_validation,
             validation_operations,
+            &PARSER_GENERATION,
             platform_version,
         )
         .map(DocumentType::V2)
@@ -2119,6 +2073,66 @@ mod contested_summed_value_bounds_tests;
 mod delete_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
 mod derived_index_property_tests;
+/// Grammar owned by parser generation 3.
+pub(super) const PARSER_GENERATION: common::ParserGeneration = common::ParserGeneration {
+    admit_lifecycle: false,
+    // CONTRACT_VERSIONS_V6 selects this parser with meta-schema v3. Parser
+    // generation 4 also uses that schema and extends this grammar. These
+    // constants belong to the parser generation rather than its version table.
+    document_type_schema_version: 3,
+    // Meta-schema v3 carries the `keeps*History` flags forward from v2,
+    // so they are unconditionally part of this generation's grammar.
+    // This is the conditional that was dead in the copied core: at
+    // schema 3 the old `document_type_schema >= 2` could only be true.
+    admit_history: true,
+    // Count indexes arrived at PV12; every version selecting this
+    // generation is far past that boundary.
+    admit_count_indexes: true,
+    meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
+    // RANKED / TIME RANGE: the keyword admissions that make this
+    // generation 3, read from the shared generation → admission
+    // mapping so the registration-cost re-parse can never drift
+    // from what this parser accepts.
+    admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
+    ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
+    ranked_index_structure_check: validate_no_ranked_prefix_overlap,
+    admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
+    admit_integer_range: IndexGrammarAdmissions::for_schema_generation(3).integer_range,
+    // INDEX ONLY: the `terminal` index keyword, admitted from the
+    // same shared generation → admission mapping as the two above.
+    admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
+    // PREALLOCATED: the fourth generation-3 index keyword, from the
+    // same shared mapping.
+    admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
+    // OUTLIVES DELETE: from the same shared mapping.
+    admit_index_outlives_delete: IndexGrammarAdmissions::for_schema_generation(3).outlives_delete,
+    // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
+    // same shared mapping.
+    admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3).skip_if_absent,
+    // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
+    // shared mapping.
+    admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
+        .summable_off_count_index,
+    // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
+    // rather than a keyword, read from the same shared mapping so the
+    // registration-cost re-parse and the validator agree on it.
+    admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(3)
+        .range_countable_implies_countable,
+    // NO LOCKING RESOLUTION: a contested index resolved without a Lock
+    // choice, a generation-3 value from the same shared mapping.
+    admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
+        .no_locking_resolution,
+    // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
+    // fields for its moderators carries (checked by `apply_moderator_abilities`).
+    admit_moderation_stamp_indexes: true,
+    // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
+    // moderated reference (`apply_derived_index_properties`).
+    admit_derived_index_properties: true,
+    // INDEXED ARRAYS: an index keyed by the elements of a typed array
+    // (`validate_indexed_array_index`).
+    admit_indexed_arrays: true,
+};
+
 #[cfg(test)]
 mod documents_ttl_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -2249,6 +2263,7 @@ mod tests {
             &config,
             full_validation,
             &mut vec![],
+            &PARSER_GENERATION,
             platform_version,
         )
     }

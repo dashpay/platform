@@ -789,6 +789,8 @@ typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecyc
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active = 0,
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Deleted = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Erasing = 3,
 };
 
 GPBEnumDescriptor *GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_EnumDescriptor(void);
@@ -7481,11 +7483,15 @@ GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Ent
 typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber) {
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_State = 1,
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_RemainingRevisions = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_DeletedAtMs = 3,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_ErasingStartedAtMs = 4,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_ErasingFromTimeMs = 5,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_ErasingFromRevision = 6,
 };
 
 /**
- * Where the historical document stands: still current, or gone with
- * nothing retained. Later protocol versions add the states between.
+ * Whether the document is current, deleted with retained revisions,
+ * undergoing erasure, or absent with nothing retained.
  **/
 GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle : GPBMessage
 
@@ -7493,6 +7499,21 @@ GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lif
 
 /** Revisions the history still retains for the document. */
 @property(nonatomic, readwrite) uint64_t remainingRevisions;
+
+/** Zero unless the document has been deleted. */
+@property(nonatomic, readwrite) uint64_t deletedAtMs;
+
+/** Zero unless an authorized erasure has started. */
+@property(nonatomic, readwrite) uint64_t erasingStartedAtMs;
+
+/** Timestamp of the newest revision retained when the erasure started. */
+@property(nonatomic, readwrite) uint64_t erasingFromTimeMs;
+
+/**
+ * History sequence of the newest revision retained when the erasure
+ * started.
+ **/
+@property(nonatomic, readwrite) uint64_t erasingFromRevision;
 
 @end
 

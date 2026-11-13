@@ -72,6 +72,8 @@ pub struct DriveDocumentExpirationMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
+    pub fetch_document_lifecycle: OptionalFeatureVersion,
+
     pub query_documents: FeatureVersion,
     /// Chained document queries (provable semi-join): the version slot
     /// shared by the no-proof and the two-proof execution paths.
@@ -213,6 +215,12 @@ pub struct DriveDocumentUpdateMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentDeleteMethodVersions {
+    /// Prices the third-party balance updates caused by an erase; inactive before protocol 15.
+    pub erase_refund_recipient_cost: OptionalFeatureVersion,
+    pub erase_document_for_contract_operations: OptionalFeatureVersion,
+    pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
+    pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,
+
     pub add_estimation_costs_for_remove_document_to_primary_storage: FeatureVersion,
     pub delete_document_for_contract: FeatureVersion,
     pub delete_document_for_contract_id: FeatureVersion,

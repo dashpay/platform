@@ -59,4 +59,36 @@ describe('document history versioned wire format', () => {
       assert.deepEqual(Buffer.from(Request.encode(request).finish()), bytes);
     });
   });
+
+  it('should preserve deleted and erasing lifecycle metadata across published clients', () => {
+    [2, 3].forEach((state) => {
+      const bytes = Buffer.from([
+        0x12, 16, 0x0a, 14, 0x12, 12,
+        8, state, 16, 1, 24, 5, 32, 6, 40, 4, 48, 7,
+      ]);
+      [nodeMessages, webMessages].forEach((messages) => {
+        const response = messages.GetDocumentHistoryResponse.deserializeBinary(bytes);
+        const lifecycle = response.getV1().getHistory().getLifecycle();
+        assert.equal(lifecycle.getState(), state);
+        assert.equal(lifecycle.getRemainingRevisions(), '1');
+        assert.equal(lifecycle.getDeletedAtMs(), '5');
+        assert.equal(lifecycle.getErasingStartedAtMs(), '6');
+        assert.equal(lifecycle.getErasingFromTimeMs(), '4');
+        assert.equal(lifecycle.getErasingFromRevision(), '7');
+        assert.deepEqual(Buffer.from(response.serializeBinary()), bytes);
+      });
+      [protobufMessages, driveMessages].forEach((messages) => {
+        const Response = messages.org.dash.platform.dapi.v0.GetDocumentHistoryResponse;
+        const response = Response.decode(bytes);
+        const { lifecycle } = response.v1.history;
+        assert.equal(lifecycle.state, state);
+        assert.equal(lifecycle.remainingRevisions.toString(), '1');
+        assert.equal(lifecycle.deletedAtMs.toString(), '5');
+        assert.equal(lifecycle.erasingStartedAtMs.toString(), '6');
+        assert.equal(lifecycle.erasingFromTimeMs.toString(), '4');
+        assert.equal(lifecycle.erasingFromRevision.toString(), '7');
+        assert.deepEqual(Buffer.from(Response.encode(response).finish()), bytes);
+      });
+    });
+  });
 });

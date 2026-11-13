@@ -354,7 +354,7 @@ impl Drive {
     /// the entry and the deletion its creation prepaid, and prices them the same way when it
     /// executes (`update_document_for_contract_operations` v1).
     #[allow(clippy::too_many_arguments)]
-    fn add_document_ttl_operations(
+    pub(super) fn add_document_ttl_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         ttl_seconds: u32,

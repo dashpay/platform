@@ -15,7 +15,11 @@ use crate::version::system_limits::SystemLimits;
 ///   (`private_document_store_min_chunk_power`, `private_document_store_max_chunk_power`), all
 ///   `None` before. A `PrivateDocumentCreateFromShieldedPool` appends at most 16 entries
 ///   (`max_private_document_entries_per_transition`, `None` before).
+/// * Retained-history erasure: one transition removes at most 100 revisions
+///   (`max_document_revisions_erased_per_transition`, `None` before), as enforced by
+///   `erase_document_for_contract_operations` 0.
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: Some(100), // one bounded lifecycle erasure chunk (note 41)
     max_compiled_contract_size: Some(1_048_576), // changed: contracts stored compiled take at most 1 MiB
     max_private_document_entry_size: Some(4096), // changed: a private document type's entries take at most 4096 bytes
     private_document_store_target_chunk_bytes: Some(1024 * 1024), // changed: a private type's store keeps a compacted chunk near 1 MiB

@@ -6934,6 +6934,18 @@ export namespace GetDocumentHistoryResponse {
       getRemainingRevisions(): string;
       setRemainingRevisions(value: string): void;
 
+      getDeletedAtMs(): string;
+      setDeletedAtMs(value: string): void;
+
+      getErasingStartedAtMs(): string;
+      setErasingStartedAtMs(value: string): void;
+
+      getErasingFromTimeMs(): string;
+      setErasingFromTimeMs(value: string): void;
+
+      getErasingFromRevision(): string;
+      setErasingFromRevision(value: string): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): Lifecycle.AsObject;
       static toObject(includeInstance: boolean, msg: Lifecycle): Lifecycle.AsObject;
@@ -6948,11 +6960,17 @@ export namespace GetDocumentHistoryResponse {
       export type AsObject = {
         state: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap],
         remainingRevisions: string,
+        deletedAtMs: string,
+        erasingStartedAtMs: string,
+        erasingFromTimeMs: string,
+        erasingFromRevision: string,
       }
 
       export interface StateMap {
         ACTIVE: 0;
         ABSENT: 1;
+        DELETED: 2;
+        ERASING: 3;
       }
 
       export const State: StateMap;

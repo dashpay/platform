@@ -7,6 +7,7 @@ use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Value;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_json_value;
+use grovedb::batch::KeyInfoPath;
 use serde_json::json;
 
 #[test]

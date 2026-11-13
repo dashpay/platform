@@ -490,6 +490,30 @@ internal object WalletManagerNative {
     ): ByteArray
 
     /**
+     * Withdraw exactly the listed amounts from the listed platform addresses
+     * (EXPLICIT input selection) to a Core L1 address, wallet-signed. Same
+     * composite call, network check and changeset blob as
+     * [walletPlatformAddressWithdraw]. The amount and fee semantics are
+     * documented on the public
+     * [org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.withdrawCredits]
+     * overload that takes inputs.
+     *
+     * @param inputsBlob `u32 rowCount` then per row `u8 addressType,
+     *   u8[20] hash, u64 credits` (big-endian).
+     * @param coreAddress base58 Core address.
+     * @param coreFeePerByte must be a Fibonacci-sequence value.
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     */
+    external fun walletPlatformAddressWithdrawExplicit(
+        walletHandle: Long,
+        accountIndex: Int,
+        inputsBlob: ByteArray,
+        coreAddress: String,
+        coreFeePerByte: Int,
+        signerHandle: Long,
+    ): ByteArray
+
+    /**
      * Preflight an AUTO withdrawal without signing / broadcasting / consuming
      * a Core address. Returns `long[3]` = `[canWithdraw (0/1),
      * netWithdrawable, estimatedFee]` (figures 0 unless canWithdraw). The UI
