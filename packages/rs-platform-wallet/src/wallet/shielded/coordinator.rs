@@ -1546,9 +1546,11 @@ impl NetworkShieldedCoordinator {
                 if cancel.is_cancelled() {
                     break;
                 }
+                let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
+                    persister.as_ref(),
                     *id,
                     &recorded,
                     cancel,
@@ -1596,6 +1598,26 @@ impl NetworkShieldedCoordinator {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
         }
 
+        // Identity creates held for their outcome read with no node kept for them: scheduled
+        // from the record journal, whatever reservations are left.
+        if !cancelled {
+            self.redrive_unkept_identity_creates(&subwallets, cancel)
+                .await;
+        }
+
+        // Identity creates held for their outcome read: the scan kept their
+        // records and did not confirm their rows, as their notes spent do not
+        // show whether the identity was created. Each whose notes this scan
+        // (or an earlier one) saw spent is read at the node it was delivered
+        // to, and each proven outcome is written onto this pass's changeset
+        // after the scan's rows, so the host keeps it.
+        let settled_identity_creates = if cancelled {
+            Vec::new()
+        } else {
+            self.settle_held_identity_creates(&subwallets, &mut notes.changeset, cancel)
+                .await
+        };
+
         // Identity-funded shields have no input nullifiers and use an
         // outputs-only empty-tree anchor, so the ordinary stale-reservation
         // pass can never schedule them. After activity derivation has first
@@ -1620,34 +1642,10 @@ impl NetworkShieldedCoordinator {
         }
 
         // The note-side changeset already carries saves, synced
-        // indices, AND the scan-detected spends, so split it per
-        // WalletId directly — each per-wallet `WalletPersister.store`
-        // only sees its own wallet's deltas.
-        let consolidated = notes.changeset.clone();
-        if !Merge::is_empty(&consolidated) {
-            let per_wallet = consolidated.split_by_wallet_id();
-            let persisters = self.persisters.read().await;
-            for (wallet_id, cs) in per_wallet {
-                let Some(persister) = persisters.get(&wallet_id) else {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        "Shielded sync changeset dropped: no persister registered (host inconsistency)"
-                    );
-                    continue;
-                };
-                let full = crate::changeset::PlatformWalletChangeSet {
-                    shielded: Some(cs),
-                    ..Default::default()
-                };
-                if let Err(e) = persister.store(full) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "Failed to queue shielded changeset from coordinator"
-                    );
-                }
-            }
-        }
+        // indices, AND the scan-detected spends, so it goes to each
+        // wallet's persister as it is.
+        self.persist_pass_changeset(&notes.changeset, settled_identity_creates)
+            .await;
 
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
@@ -1916,6 +1914,35 @@ impl NetworkShieldedCoordinator {
                         continue;
                     }
                 };
+                // An identity create whose outcome is proven keeps its notes reserved and its
+                // record until the sync pass replays its spent notes and row and the host
+                // holds them: releasing them here would hand back spent notes.
+                let proven_held = match store.pending_redrives(id) {
+                    Ok(records) => records.iter().any(|record| {
+                        record
+                            .identity_outcome
+                            .is_some_and(super::store::IdentityCreateOutcome::is_proven)
+                            && record.nullifiers.contains(&nullifier)
+                    }),
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: pending_redrives failed; skipping entry"
+                        );
+                        continue;
+                    }
+                };
+                if proven_held {
+                    tracing::debug!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        nullifier = %hex::encode(nullifier),
+                        "shielded reservation release: a proven identity create holds it; kept"
+                    );
+                    continue;
+                }
                 if !still_same {
                     // Resolved (landed and reconciled, result-wait
                     // confirmed) or re-armed by a retry while this pass
@@ -2345,7 +2372,26 @@ impl NetworkShieldedCoordinator {
                 .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
                 .collect();
             let confirmations = derived.confirmations;
+            // Identity creates held for their outcome read: their outputs seen
+            // on chain do not show whether the identity was created, so their
+            // rows and records wait for that read.
+            let held: HashSet<[u8; 32]> = redrives
+                .iter()
+                .filter(|redrive| redrive.held_for_identity_outcome())
+                .map(|redrive| redrive.activity_id)
+                .collect();
             for entry in derived.new_entries {
+                // A held create's row is rebuilt unconfirmed: its outputs seen
+                // on chain do not show that its identity was created.
+                let entry = if held.contains(&entry.id) {
+                    super::activity_recorder::with_status(
+                        &entry,
+                        super::activity::ShieldedActivityStatus::Pending,
+                        None,
+                    )
+                } else {
+                    entry
+                };
                 let overlapped: std::collections::BTreeSet<[u8; 32]> = entry
                     .note_cmxs
                     .iter()
@@ -2373,7 +2419,9 @@ impl NetworkShieldedCoordinator {
                     })?
                     .into_iter()
                     .filter_map(|(owner, redrive)| {
-                        (!redrive.nullifiers.is_empty() && redrive.activity_id == entry.id)
+                        (!redrive.nullifiers.is_empty()
+                            && !redrive.held_for_identity_outcome()
+                            && redrive.activity_id == entry.id)
                             .then_some(owner)
                     })
                     .collect();
@@ -2402,6 +2450,9 @@ impl NetworkShieldedCoordinator {
                         crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                     })?;
                 let Some(stored) = stored else { continue };
+                if held.contains(&entry_id) {
+                    continue;
+                }
                 // Chain truth wins: a row marked Failed by a client-side
                 // post-broadcast error whose outputs are later observed
                 // on-chain was not actually a failure — upgrade it. (We
@@ -2462,6 +2513,138 @@ impl NetworkShieldedCoordinator {
             }
         }
         Ok(())
+    }
+
+    /// Queue this pass's `changeset` on each wallet's persister, split per
+    /// `WalletId` directly — each per-wallet `WalletPersister.store` only
+    /// sees its own wallet's deltas — then drop the records of the
+    /// `settled_identity_creates` whose rows it carries once their wallet's
+    /// store is durable.
+    async fn persist_pass_changeset(
+        &self,
+        changeset: &crate::changeset::ShieldedChangeSet,
+        settled_identity_creates: Vec<(SubwalletId, Vec<[u8; 32]>)>,
+    ) {
+        // A wallet with settled identity creates is flushed after its store:
+        // their records go only once the host holds their rows durably.
+        let settling: HashSet<WalletId> = settled_identity_creates
+            .iter()
+            .map(|(id, _)| id.wallet_id)
+            .collect();
+        let mut held_durably: BTreeMap<WalletId, bool> = BTreeMap::new();
+        if !Merge::is_empty(changeset) {
+            let per_wallet = changeset.clone().split_by_wallet_id();
+            let persisters = self.persisters.read().await;
+            for (wallet_id, cs) in per_wallet {
+                let Some(persister) = persisters.get(&wallet_id) else {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "Shielded sync changeset dropped: no persister registered (host inconsistency)"
+                    );
+                    held_durably.insert(wallet_id, false);
+                    continue;
+                };
+                let full = crate::changeset::PlatformWalletChangeSet {
+                    shielded: Some(cs),
+                    ..Default::default()
+                };
+                let stored = match persister.store(full) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(wallet_id),
+                            error = %e,
+                            "Failed to queue shielded changeset from coordinator"
+                        );
+                        false
+                    }
+                };
+                let durable = stored
+                    && (!settling.contains(&wallet_id)
+                        || persister.store_commits_inline()
+                        || match persister.flush() {
+                            Ok(()) => true,
+                            Err(e) => {
+                                tracing::warn!(
+                                    wallet_id = %hex::encode(wallet_id),
+                                    error = %e,
+                                    "Shielded changeset not flushed; settled identity creates \
+                                     keep their records for the next pass"
+                                );
+                                false
+                            }
+                        });
+                held_durably.insert(wallet_id, durable);
+            }
+        }
+        for (id, activity_ids) in settled_identity_creates {
+            // A settled create's row and spent notes are on the changeset: its
+            // record goes only once its wallet's store of it is durable.
+            if held_durably.get(&id.wallet_id) != Some(&true) {
+                continue;
+            }
+            super::operations::retire_settled_identity_creates(&self.store, id, &activity_ids)
+                .await;
+        }
+    }
+
+    /// Re-broadcast each held identity create of `subwallets` that has no node kept for it to one
+    /// node, kept for its outcome read ([`super::operations::redrive_unkept_identity_creates`]).
+    /// Scheduled from the record journal on every completed pass, not from reservations or
+    /// recorded anchors: a scan that saw a create's notes spent cleared its reservations but kept
+    /// its record.
+    async fn redrive_unkept_identity_creates(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        cancel: &CancellationToken,
+    ) {
+        for (id, _) in subwallets {
+            if cancel.is_cancelled() {
+                break;
+            }
+            let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
+            super::operations::redrive_unkept_identity_creates(
+                &self.sdk,
+                &self.store,
+                persister.as_ref(),
+                *id,
+                cancel,
+            )
+            .await;
+        }
+    }
+
+    /// Settle the identity creates of `subwallets` held for their outcome
+    /// read onto `changeset`
+    /// ([`super::operations::settle_held_identity_creates`]), each with its
+    /// wallet's persister. Returns, per subwallet, the activity ids whose
+    /// records go once `changeset` is durable.
+    async fn settle_held_identity_creates(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        changeset: &mut crate::changeset::ShieldedChangeSet,
+        cancel: &CancellationToken,
+    ) -> Vec<(SubwalletId, Vec<[u8; 32]>)> {
+        let mut settled = Vec::new();
+        for (id, _) in subwallets {
+            if cancel.is_cancelled() {
+                break;
+            }
+            let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
+            let activity_ids = super::operations::settle_held_identity_creates(
+                &self.sdk,
+                &self.store,
+                persister.as_ref(),
+                *id,
+                changeset,
+                cancel,
+            )
+            .await;
+            if !activity_ids.is_empty() {
+                settled.push((*id, activity_ids));
+            }
+        }
+        settled
     }
 
     /// Build a pass summary in which every registered wallet is
@@ -2804,7 +2987,8 @@ mod tests {
     use crate::changeset::ShieldedChangeSet;
     use crate::wallet::shielded::activity::compute_activity_id;
     use crate::wallet::shielded::store::{
-        InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
+        IdentityCreateOutcome, InMemoryShieldedStore, PendingRedrive, PrivateContactPayment,
+        ShieldedNote,
     };
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
@@ -2901,6 +3085,8 @@ mod tests {
         .into();
         (
             PendingRedrive {
+                outcome_endpoint: None,
+                identity_outcome: None,
                 activity_id: compute_activity_id(&cmxs),
                 anchor: [1; 32],
                 nullifiers: vec![],
@@ -3331,6 +3517,1039 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // ── Identity creates held for their outcome read, across scan passes ──
+    //
+    // The scan itself reads Platform; these tests stand in for it with the
+    // store writes it makes (`mark_spent` for the input it sees spent, the
+    // output note it receives), then run the pass's own post-scan steps in
+    // its order: `derive_activity_into_changeset`, then
+    // `settle_held_identity_creates`, then `persist_pass_changeset`.
+
+    /// The node the held identity creates are delivered to.
+    const HELD_ENDPOINT: &str = "http://127.0.0.1:3011";
+    /// The identity create's identity, real input, output and activity row.
+    const CREATE_IDENTITY: [u8; 32] = [0x44; 32];
+    const CREATE_INPUT: [u8; 32] = [0x51; 32];
+    const CREATE_OUTPUT: [u8; 32] = [0x52; 32];
+    const CREATE_ROW: [u8; 32] = [0x53; 32];
+    const CREATE_ANCHOR: [u8; 32] = [0x54; 32];
+
+    /// The identity create spending the wallet's note `CREATE_INPUT`, padded
+    /// with an explicit dummy spend to two actions.
+    fn held_identity_create_transition() -> StateTransition {
+        use dpp::address_funds::PlatformAddress;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+
+        let action = |nullifier, cmx| SerializedAction {
+            nullifier,
+            rk: [2; 32],
+            cmx,
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        IdentityCreateFromShieldedPoolTransitionV0 {
+            public_keys: vec![],
+            denomination: 1_000_000,
+            actions: vec![
+                action(CREATE_INPUT, CREATE_OUTPUT),
+                action([0xD1; 32], [0xD2; 32]),
+            ],
+            anchor: CREATE_ANCHOR,
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            send_to_address_on_creation_failure: PlatformAddress::P2pkh([7; 20]),
+            identity_id: CREATE_IDENTITY.into(),
+        }
+        .into()
+    }
+
+    /// A mock SDK whose address list holds `HELD_ENDPOINT`, and whose proven
+    /// reads show the create's nullifiers spent and its identity absent, or
+    /// `created`. Every answer of a mock SDK is at height 0.
+    async fn sdk_reading_held_create(created: bool) -> dash_sdk::Sdk {
+        use dash_sdk::query_types::{
+            MostRecentShieldedAnchor, NoParamQuery, ShieldedAnchors, ShieldedNullifierStatus,
+            ShieldedNullifierStatuses, ShieldedNullifiersQuery,
+        };
+        use dpp::identity::Identity;
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        let mut addresses = sdk.address_list().clone();
+        addresses.add(HELD_ENDPOINT.parse().expect("an address"));
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![CREATE_ANCHOR])))
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                NoParamQuery {},
+                Some(MostRecentShieldedAnchor(CREATE_ANCHOR)),
+            )
+            .await
+            .unwrap();
+        let nullifiers = vec![CREATE_INPUT, [0xD1; 32]];
+        let statuses = nullifiers
+            .iter()
+            .map(|nullifier| ShieldedNullifierStatus {
+                nullifier: *nullifier,
+                is_spent: true,
+            })
+            .collect();
+        sdk.mock()
+            .expect_fetch(
+                ShieldedNullifiersQuery(nullifiers),
+                Some(ShieldedNullifierStatuses(statuses)),
+            )
+            .await
+            .unwrap();
+        let identity = created.then(|| {
+            Identity::new_with_id_and_keys(
+                CREATE_IDENTITY.into(),
+                BTreeMap::new(),
+                dpp::version::PlatformVersion::latest(),
+            )
+            .unwrap()
+        });
+        sdk.mock()
+            .expect_fetch(dpp::prelude::Identifier::from(CREATE_IDENTITY), identity)
+            .await
+            .unwrap();
+        sdk
+    }
+
+    /// [`coordinator_with_one_wallet`] on `sdk`, over the store under `dir`
+    /// (opened again when it exists).
+    async fn coordinator_on(
+        dir: &std::path::Path,
+        sdk: dash_sdk::Sdk,
+    ) -> NetworkShieldedCoordinator {
+        coordinator_on_host(dir, sdk, Arc::new(NoPlatformPersistence)).await
+    }
+
+    /// [`coordinator_on`] with `host` as the wallet's persister.
+    async fn coordinator_on_host(
+        dir: &std::path::Path,
+        sdk: dash_sdk::Sdk,
+        host: Arc<dyn crate::changeset::PlatformWalletPersistence>,
+    ) -> NetworkShieldedCoordinator {
+        std::fs::create_dir_all(dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut account_views = BTreeMap::new();
+        account_views.insert(0u32, views);
+        let persister = WalletPersister::new([0x11; 32], host);
+        coordinator
+            .register_wallet([0x11; 32], account_views, persister)
+            .await
+            .expect("register wallet");
+        coordinator
+    }
+
+    /// The identity create, delivered and unconfirmed: its note, its
+    /// pending activity row and its recovery record, held for its outcome
+    /// read at `HELD_ENDPOINT` when `held`.
+    async fn arm_identity_create(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        held: bool,
+    ) {
+        arm_identity_create_row_and_input(coordinator, id).await;
+        let mut store = coordinator.store().write().await;
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: CREATE_ROW,
+                    anchor: CREATE_ANCHOR,
+                    nullifiers: vec![CREATE_INPUT],
+                    st_bytes: held_identity_create_transition()
+                        .serialize_to_bytes()
+                        .unwrap(),
+                    attempts: 0,
+                    anchor_height: Some(5),
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    outcome_endpoint: held.then(|| HELD_ENDPOINT.to_string()),
+                    identity_outcome: held.then_some(IdentityCreateOutcome::Awaiting),
+                },
+            )
+            .unwrap();
+    }
+
+    /// The create's input note and its pending activity row.
+    async fn arm_identity_create_row_and_input(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+    ) {
+        use crate::wallet::shielded::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+        };
+
+        let mut store = coordinator.store().write().await;
+        let mut input = test_note(CREATE_INPUT, 0, false);
+        input.cmx = [0x56; 32];
+        store.save_note(id, &input).unwrap();
+        store
+            .save_activity(
+                id,
+                &ShieldedActivityEntry {
+                    id: CREATE_ROW,
+                    kind: ShieldedActivityKind::ShieldedSpend,
+                    direction: ShieldedDirection::Out,
+                    amount: 1_000_000,
+                    fee: Some(0),
+                    counterparty: None,
+                    memo: None,
+                    block_height: None,
+                    status: ShieldedActivityStatus::Pending,
+                    created_at_ms: 1,
+                    min_note_position: None,
+                    note_cmxs: vec![CREATE_OUTPUT],
+                    spent_nullifiers: vec![CREATE_INPUT],
+                },
+            )
+            .unwrap();
+    }
+
+    /// What the host's snapshot restores after a restart for the create the
+    /// scan saw: its input spent, its output, its pending row.
+    async fn restore_host_snapshot(coordinator: &NetworkShieldedCoordinator, id: SubwalletId) {
+        arm_identity_create_row_and_input(coordinator, id).await;
+        scan_sees_identity_create(coordinator, id, 40).await;
+    }
+
+    /// What a scan that reaches the create's block writes: its input seen
+    /// spent, its output received at `height`.
+    async fn scan_sees_identity_create(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        height: u64,
+    ) {
+        let mut store = coordinator.store().write().await;
+        store.mark_spent(id, &CREATE_INPUT).unwrap();
+        let mut output = test_note([0x55; 32], 1, false);
+        output.cmx = CREATE_OUTPUT;
+        output.block_height = height;
+        store.save_note(id, &output).unwrap();
+    }
+
+    /// The pass's post-scan steps, in its order.
+    async fn post_scan_steps(coordinator: &NetworkShieldedCoordinator, id: SubwalletId) {
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let subwallets = vec![(id, keys)];
+        let mut changeset = ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut changeset)
+            .await
+            .unwrap();
+        coordinator
+            .redrive_unkept_identity_creates(&subwallets, &CancellationToken::new())
+            .await;
+        let settled = coordinator
+            .settle_held_identity_creates(&subwallets, &mut changeset, &CancellationToken::new())
+            .await;
+        coordinator
+            .persist_pass_changeset(&changeset, settled)
+            .await;
+    }
+
+    /// How [`RecordingHost`] takes a store.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum HostMode {
+        /// Each store is durable at once.
+        Inline,
+        /// Stores are buffered; a flush fails transiently and keeps them.
+        FlushFails,
+        /// Every store fails.
+        StoreFails,
+    }
+
+    /// A host persister that keeps the activity rows it holds durably by id,
+    /// last write wins, as the Swift persistence callback does, and the
+    /// nullifiers of the notes it holds spent.
+    struct RecordingHost {
+        mode: std::sync::Mutex<HostMode>,
+        buffered: std::sync::Mutex<Vec<crate::wallet::shielded::activity::ShieldedActivityEntry>>,
+        durable: std::sync::Mutex<
+            BTreeMap<[u8; 32], crate::wallet::shielded::activity::ShieldedActivityEntry>,
+        >,
+        buffered_spent: std::sync::Mutex<Vec<[u8; 32]>>,
+        durable_spent: std::sync::Mutex<std::collections::BTreeSet<[u8; 32]>>,
+    }
+
+    impl RecordingHost {
+        fn new(mode: HostMode) -> Arc<Self> {
+            Arc::new(Self {
+                mode: std::sync::Mutex::new(mode),
+                buffered: Default::default(),
+                durable: Default::default(),
+                buffered_spent: Default::default(),
+                durable_spent: Default::default(),
+            })
+        }
+
+        fn mode(&self) -> HostMode {
+            *self.mode.lock().unwrap()
+        }
+
+        fn set_mode(&self, mode: HostMode) {
+            *self.mode.lock().unwrap() = mode;
+        }
+
+        /// The row `id` the host holds durably.
+        fn durable_row(
+            &self,
+            id: &[u8; 32],
+        ) -> Option<crate::wallet::shielded::activity::ShieldedActivityEntry> {
+            self.durable.lock().unwrap().get(id).cloned()
+        }
+
+        /// Whether the host holds the note of `nullifier` spent durably.
+        fn holds_spent(&self, nullifier: &[u8; 32]) -> bool {
+            self.durable_spent.lock().unwrap().contains(nullifier)
+        }
+
+        /// A process exit: what was not flushed is gone.
+        fn crash(&self) {
+            self.buffered.lock().unwrap().clear();
+            self.buffered_spent.lock().unwrap().clear();
+        }
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for RecordingHost {
+        fn store_commits_inline(&self) -> bool {
+            self.mode() == HostMode::Inline
+        }
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            let shielded = changeset.shielded.unwrap_or_default();
+            let spent: Vec<[u8; 32]> = shielded.nullifiers_spent.into_values().flatten().collect();
+            let rows: Vec<_> = shielded.activity_entries.into_values().flatten().collect();
+            match self.mode() {
+                HostMode::StoreFails => Err(crate::changeset::PersistenceError::backend_with_kind(
+                    crate::changeset::PersistenceErrorKind::Fatal,
+                    "the host refused the write",
+                )),
+                HostMode::Inline => {
+                    let mut durable = self.durable.lock().unwrap();
+                    for row in rows {
+                        durable.insert(row.id, row);
+                    }
+                    self.durable_spent.lock().unwrap().extend(spent);
+                    Ok(())
+                }
+                HostMode::FlushFails => {
+                    self.buffered.lock().unwrap().extend(rows);
+                    self.buffered_spent.lock().unwrap().extend(spent);
+                    Ok(())
+                }
+            }
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            if self.mode() == HostMode::FlushFails {
+                return Err(crate::changeset::PersistenceError::backend_with_kind(
+                    crate::changeset::PersistenceErrorKind::Transient,
+                    "simulated SQLITE_BUSY",
+                ));
+            }
+            let mut durable = self.durable.lock().unwrap();
+            for row in self.buffered.lock().unwrap().drain(..) {
+                durable.insert(row.id, row);
+            }
+            self.durable_spent
+                .lock()
+                .unwrap()
+                .extend(self.buffered_spent.lock().unwrap().drain(..));
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
+    }
+
+    /// The create's activity row: its status and height.
+    async fn create_row(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+    ) -> (
+        crate::wallet::shielded::activity::ShieldedActivityStatus,
+        Option<u64>,
+    ) {
+        let row = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &CREATE_ROW)
+            .unwrap()
+            .expect("the row");
+        (row.status, row.block_height)
+    }
+
+    /// Without a node to read its outcome at, the create is what the scan
+    /// makes of it, as before: its record goes with its notes and its
+    /// outputs seen confirm its row. This is the sequence the held creates
+    /// below are protected from.
+    #[tokio::test]
+    async fn should_leave_an_unheld_identity_create_to_the_scan() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("unheld_create");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, false).await;
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Confirmed, Some(40))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The scan reaches a held create before anything settles it: the scan
+    /// keeps its record and its pending row, the pass reads its outcome at
+    /// its node, and the proven outcome stands through later scans.
+    #[tokio::test]
+    async fn should_settle_a_held_identity_create_the_scan_saw_first() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_scan_first");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        let keys = coordinator.accounts.read().await[&id].clone();
+        coordinator
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap()
+                .len(),
+            1,
+            "the scan keeps the held record"
+        );
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Pending, None),
+            "and leaves its row to the outcome read"
+        );
+
+        post_scan_steps(&coordinator, id).await;
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        // A later pass sees the same outputs.
+        scan_sees_identity_create(&coordinator, id, 41).await;
+        post_scan_steps(&coordinator, id).await;
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A row the scan already confirmed with a height (as it did before the
+    /// create was held) gives way to the proven outcome.
+    #[tokio::test]
+    async fn should_let_a_proven_outcome_win_over_a_scan_confirmed_row() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+        use crate::wallet::shielded::activity_recorder::with_status;
+
+        let dir = temp_dir("held_confirmed_row");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+        {
+            let mut store = coordinator.store().write().await;
+            let row = store
+                .get_activity_by_entry_id(id, &CREATE_ROW)
+                .unwrap()
+                .unwrap();
+            store
+                .save_activity(
+                    id,
+                    &with_status(&row, ShieldedActivityStatus::Confirmed, Some(40)),
+                )
+                .unwrap();
+        }
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A create settled before the scan reaches it (the direct path proved
+    /// its notes spent and its identity absent): its record keeps the
+    /// outcome until the pass writes its row, and its row stays failed when
+    /// the scan later sees its outputs.
+    #[tokio::test]
+    async fn should_keep_a_settled_identity_create_failed_when_the_scan_sees_its_outputs() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_settled_first");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+
+        super::super::operations::settle_inputs_consumed_identity_create(
+            coordinator.store(),
+            None,
+            id.wallet_id,
+            id,
+            Some(&CREATE_ROW),
+            &[CREATE_INPUT],
+            7,
+        )
+        .await;
+        let records = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap();
+        assert_eq!(
+            records[0].identity_outcome,
+            Some(IdentityCreateOutcome::InputsConsumed {
+                consumed_by_height: 7
+            })
+        );
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(7))
+        );
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create the scan saw before a restart: the reopened store keeps
+    /// its record and node, and the next pass settles it, for good. A create
+    /// whose identity the node proves is confirmed instead.
+    #[tokio::test]
+    async fn should_settle_a_held_identity_create_after_a_restart() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        for created in [false, true] {
+            let dir = temp_dir(&format!("held_restart_{created}"));
+            let id = SubwalletId::new([0x11; 32], 0);
+            {
+                let coordinator = coordinator_on(&dir, dash_sdk::Sdk::new_mock()).await;
+                arm_identity_create(&coordinator, id, true).await;
+                scan_sees_identity_create(&coordinator, id, 40).await;
+                let keys = coordinator.accounts.read().await[&id].clone();
+                coordinator
+                    .derive_activity_into_changeset(
+                        &[(id, keys)],
+                        &mut ShieldedChangeSet::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
+
+            let coordinator = coordinator_on(&dir, sdk_reading_held_create(created).await).await;
+            // The host's snapshot restores the notes and the pending row (the
+            // store keeps neither across a restart); the spent input is
+            // replayed through `mark_spent`, as the restore does.
+            restore_host_snapshot(&coordinator, id).await;
+            let records = coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap();
+            assert_eq!(records.len(), 1, "created {created}");
+            assert_eq!(records[0].outcome_endpoint.as_deref(), Some(HELD_ENDPOINT));
+            post_scan_steps(&coordinator, id).await;
+            let expected = if created {
+                ShieldedActivityStatus::Confirmed
+            } else {
+                ShieldedActivityStatus::InputsConsumed
+            };
+            assert_eq!(
+                create_row(&coordinator, id).await.0,
+                expected,
+                "created {created}"
+            );
+            let path = coordinator.db_path.clone();
+            drop(coordinator);
+            assert!(
+                FileBackedShieldedStore::open_path(&path, 100)
+                    .unwrap()
+                    .pending_redrives(id)
+                    .unwrap()
+                    .is_empty(),
+                "created {created}: settled for good"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// A held create whose live row is gone: the scan rebuilds its row from
+    /// its outputs, under the create's own activity id, unconfirmed, and the
+    /// proven outcome is written after it in the same pass. The host ends on
+    /// the proven outcome, and so does a later pass.
+    #[tokio::test]
+    async fn should_leave_the_host_on_the_proven_outcome_when_the_scan_rebuilds_the_row() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_rebuilt_row");
+        let host = RecordingHost::new(HostMode::Inline);
+        let coordinator =
+            coordinator_on_host(&dir, sdk_reading_held_create(false).await, host.clone()).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let rebuilt_id = compute_activity_id(&[CREATE_OUTPUT]);
+        {
+            let mut store = coordinator.store().write().await;
+            let mut input = test_note(CREATE_INPUT, 0, false);
+            input.cmx = [0x56; 32];
+            store.save_note(id, &input).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: rebuilt_id,
+                        anchor: CREATE_ANCHOR,
+                        nullifiers: vec![CREATE_INPUT],
+                        st_bytes: held_identity_create_transition()
+                            .serialize_to_bytes()
+                            .unwrap(),
+                        attempts: 0,
+                        anchor_height: Some(5),
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        outcome_endpoint: Some(HELD_ENDPOINT.to_string()),
+                        identity_outcome: Some(IdentityCreateOutcome::Awaiting),
+                    },
+                )
+                .unwrap();
+        }
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        let row = host
+            .durable_row(&rebuilt_id)
+            .expect("the host holds the row");
+        assert_eq!(
+            (row.status, row.block_height),
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+        scan_sees_identity_create(&coordinator, id, 41).await;
+        post_scan_steps(&coordinator, id).await;
+        assert_eq!(
+            host.durable_row(&rebuilt_id).unwrap().status,
+            ShieldedActivityStatus::InputsConsumed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The proven outcome's write does not reach the host durably: a flush
+    /// that fails, then a process exit before any later flush, or a store
+    /// the host refuses. The record keeps the outcome across the restart,
+    /// and the next pass writes the row from it, without reading the node
+    /// again, and only then drops the record.
+    #[tokio::test]
+    async fn should_keep_a_proven_outcome_until_the_host_holds_its_row() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        for mode in [HostMode::FlushFails, HostMode::StoreFails] {
+            let dir = temp_dir(&format!("held_undurable_{mode:?}"));
+            let id = SubwalletId::new([0x11; 32], 0);
+            let host = RecordingHost::new(HostMode::Inline);
+            {
+                let coordinator =
+                    coordinator_on_host(&dir, sdk_reading_held_create(false).await, host.clone())
+                        .await;
+                arm_identity_create(&coordinator, id, true).await;
+                // The host holds the pending row.
+                let pending = coordinator
+                    .store()
+                    .read()
+                    .await
+                    .get_activity_by_entry_id(id, &CREATE_ROW)
+                    .unwrap()
+                    .unwrap();
+                host.durable.lock().unwrap().insert(CREATE_ROW, pending);
+                host.set_mode(mode);
+
+                scan_sees_identity_create(&coordinator, id, 40).await;
+                post_scan_steps(&coordinator, id).await;
+
+                assert_eq!(
+                    create_row(&coordinator, id).await.0,
+                    ShieldedActivityStatus::InputsConsumed,
+                    "{mode:?}: proven in memory"
+                );
+                assert_eq!(
+                    host.durable_row(&CREATE_ROW).unwrap().status,
+                    ShieldedActivityStatus::Pending,
+                    "{mode:?}: not on the host"
+                );
+                host.crash();
+            }
+            let path = dir.join("tree.sqlite");
+            let records = FileBackedShieldedStore::open_path(&path, 100)
+                .unwrap()
+                .pending_redrives(id)
+                .unwrap();
+            assert_eq!(records.len(), 1, "{mode:?}: the record stays");
+            assert_eq!(
+                records[0].identity_outcome,
+                Some(IdentityCreateOutcome::InputsConsumed {
+                    consumed_by_height: 0
+                }),
+                "{mode:?}: with its outcome"
+            );
+
+            // The restart: a node that answers nothing, and the host's
+            // snapshot, still pending.
+            host.set_mode(HostMode::Inline);
+            let coordinator =
+                coordinator_on_host(&dir, dash_sdk::Sdk::new_mock(), host.clone()).await;
+            restore_host_snapshot(&coordinator, id).await;
+            post_scan_steps(&coordinator, id).await;
+
+            let row = host.durable_row(&CREATE_ROW).unwrap();
+            assert_eq!(
+                (row.status, row.block_height),
+                (ShieldedActivityStatus::InputsConsumed, Some(0)),
+                "{mode:?}: written from the kept outcome"
+            );
+            drop(coordinator);
+            assert!(
+                FileBackedShieldedStore::open_path(&path, 100)
+                    .unwrap()
+                    .pending_redrives(id)
+                    .unwrap()
+                    .is_empty(),
+                "{mode:?}: dropped once durable"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// The result wait proves the create's inputs consumed, but the host
+    /// refuses the store of its spent note and its failed row. The next pass,
+    /// with the host back, finds the note already spent in memory, so its scan
+    /// emits nothing for it: the settlement puts the spent note on the pass
+    /// changeset with the failed row, and the record goes only then. After a
+    /// restart the host holds both, and no record is left to correct them.
+    #[tokio::test]
+    async fn should_replay_the_spent_notes_with_the_kept_outcome() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_replayed_spends");
+        let id = SubwalletId::new([0x11; 32], 0);
+        let host = RecordingHost::new(HostMode::Inline);
+        let coordinator = coordinator_on_host(&dir, dash_sdk::Sdk::new_mock(), host.clone()).await;
+        arm_identity_create(&coordinator, id, true).await;
+        host.set_mode(HostMode::StoreFails);
+        let persister = coordinator
+            .persisters
+            .read()
+            .await
+            .get(&id.wallet_id)
+            .cloned();
+        super::super::operations::settle_inputs_consumed_identity_create(
+            coordinator.store(),
+            persister.as_ref(),
+            id.wallet_id,
+            id,
+            Some(&CREATE_ROW),
+            &[CREATE_INPUT],
+            0,
+        )
+        .await;
+        assert!(!host.holds_spent(&CREATE_INPUT), "the store was refused");
+        assert!(host.durable_row(&CREATE_ROW).is_none());
+
+        host.set_mode(HostMode::Inline);
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+        drop(coordinator);
+
+        assert!(
+            host.holds_spent(&CREATE_INPUT),
+            "the spent note is replayed"
+        );
+        let row = host
+            .durable_row(&CREATE_ROW)
+            .expect("the host holds the row");
+        assert_eq!(
+            (row.status, row.block_height),
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        assert!(
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100)
+                .unwrap()
+                .pending_redrives(id)
+                .unwrap()
+                .is_empty()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create whose outcome is proven but which has no row of its own
+    /// id (its pending row never reached the store, and the scan rebuilt its
+    /// outputs under another cluster's id): nothing is written for it, and its
+    /// record, the only evidence of its outcome, stays.
+    #[tokio::test]
+    async fn should_keep_a_proven_identity_create_without_its_row() {
+        let dir = temp_dir("held_rowless");
+        let id = SubwalletId::new([0x11; 32], 0);
+        let host = RecordingHost::new(HostMode::Inline);
+        let coordinator = coordinator_on_host(&dir, dash_sdk::Sdk::new_mock(), host.clone()).await;
+        let rowless = [0x99; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            let mut input = test_note(CREATE_INPUT, 0, false);
+            input.cmx = [0x56; 32];
+            store.save_note(id, &input).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: rowless,
+                        anchor: CREATE_ANCHOR,
+                        nullifiers: vec![CREATE_INPUT],
+                        st_bytes: held_identity_create_transition()
+                            .serialize_to_bytes()
+                            .unwrap(),
+                        attempts: 0,
+                        anchor_height: Some(5),
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        outcome_endpoint: Some(HELD_ENDPOINT.to_string()),
+                        identity_outcome: Some(IdentityCreateOutcome::InputsConsumed {
+                            consumed_by_height: 7,
+                        }),
+                    },
+                )
+                .unwrap();
+        }
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert!(host.durable_row(&rowless).is_none());
+        let records = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap();
+        assert_eq!(records.len(), 1, "the record stays");
+        assert_eq!(
+            records[0].identity_outcome,
+            Some(IdentityCreateOutcome::InputsConsumed {
+                consumed_by_height: 7
+            })
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A create held from its save whose node was not kept yet (its
+    /// broadcast still in flight, or a restart before it returned): the scan
+    /// that sees its notes spent keeps its record and does not confirm its
+    /// row, and nothing reads it.
+    #[tokio::test]
+    async fn should_hold_an_identity_create_before_its_node_is_kept() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_no_node");
+        let coordinator = coordinator_on(&dir, dash_sdk::Sdk::new_mock()).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, false).await;
+        {
+            let mut store = coordinator.store().write().await;
+            let mut record = store.pending_redrives(id).unwrap().remove(0);
+            record.identity_outcome = Some(IdentityCreateOutcome::Awaiting);
+            store.arm_redrive(id, record).unwrap();
+        }
+
+        for height in [40, 41] {
+            scan_sees_identity_create(&coordinator, id, height).await;
+            post_scan_steps(&coordinator, id).await;
+        }
+
+        let records = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].attempts, 0, "nothing was read");
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Pending, None)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create whose node was never kept, after a scan saw its notes spent and so cleared
+    /// their reservations: no reservation or recorded anchor schedules it any more. The pass
+    /// schedules it from its record, sends it to one node, keeps that node, and proves its outcome
+    /// there.
+    #[tokio::test]
+    async fn should_settle_a_held_identity_create_with_no_node_once_its_reservations_are_gone() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_no_node_spent");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, false).await;
+        {
+            let mut store = coordinator.store().write().await;
+            let mut record = store.pending_redrives(id).unwrap().remove(0);
+            record.identity_outcome = Some(IdentityCreateOutcome::Awaiting);
+            store.arm_redrive(id, record).unwrap();
+        }
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .stale_pending_spends(id)
+                .unwrap()
+                .is_empty(),
+            "no reservation is left to schedule it"
+        );
+
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create whose node never proves its outcome: once its reads
+    /// are spent it is not read again, and it stays unconfirmed, held, for
+    /// every later scan that sees its outputs. One whose re-broadcasts spent
+    /// the shared attempts still gets one read, which settles it.
+    #[tokio::test]
+    async fn should_leave_a_held_identity_create_unconfirmed_once_its_reads_are_spent() {
+        use super::super::operations::MAX_REDRIVE_ATTEMPTS;
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_budget");
+        let coordinator = coordinator_on(&dir, dash_sdk::Sdk::new_mock()).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+
+        for height in 40..40 + u64::from(MAX_REDRIVE_ATTEMPTS) + 2 {
+            scan_sees_identity_create(&coordinator, id, height).await;
+            post_scan_steps(&coordinator, id).await;
+        }
+
+        let records = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap();
+        assert_eq!(records.len(), 1, "still held");
+        assert_eq!(
+            records[0].attempts,
+            MAX_REDRIVE_ATTEMPTS + 1,
+            "read no more once its attempts are past the budget"
+        );
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Pending, None)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let dir = temp_dir("held_budget_redriven");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        arm_identity_create(&coordinator, id, true).await;
+        for _ in 0..MAX_REDRIVE_ATTEMPTS {
+            coordinator
+                .store()
+                .write()
+                .await
+                .bump_redrive_attempts(id, &CREATE_ROW)
+                .unwrap();
+        }
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
     fn temp_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -3475,6 +4694,8 @@ mod tests {
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let guard_id = SubwalletId::new([0x11; 32], 0);
         let identity_guard = super::super::store::PendingRedrive {
+            outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [0x31; 32],
             anchor: [0x32; 32],
             nullifiers: vec![],
@@ -3852,6 +5073,8 @@ mod tests {
             .expect("old account")
             .clone();
         let identity_guard = super::super::store::PendingRedrive {
+            outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [0x71; 32],
             anchor: [0x72; 32],
             nullifiers: vec![],
@@ -3966,6 +5189,8 @@ mod tests {
             .arm_redrive(
                 id,
                 super::super::store::PendingRedrive {
+                    outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id: [0x71; 32],
                     anchor: [0x72; 32],
                     nullifiers: vec![],
@@ -4467,6 +5692,8 @@ mod tests {
                     .arm_redrive(
                         id,
                         PendingRedrive {
+                            outcome_endpoint: None,
+                            identity_outcome: None,
                             activity_id: *activity,
                             anchor: *anchor,
                             nullifiers: vec![*nullifier],
@@ -4531,6 +5758,47 @@ mod tests {
             }
         }
 
+        // An identity create proven unable to execute, restored with its reservation and
+        // record but not its row, so its settlement waits: its anchor is pruned like the first
+        // spend's, in the same pass that would settle it.
+        let proven = ([0x41; 32], [0x42; 32], [0x43; 32], SET_HEIGHT - 5);
+        {
+            let mut store = coordinator.store().write().await;
+            let (nullifier, anchor, activity, anchor_height) = proven;
+            let note = ShieldedNote {
+                position: 2,
+                cmx: [0x4F; 32],
+                nullifier,
+                block_height: 1,
+                is_spent: false,
+                value: 1_000,
+                note_data: vec![0u8; 115],
+            };
+            store.save_note(id, &note).expect("note");
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .set_pending_spend(id, &nullifier, anchor, activity, Some(anchor_height))
+                .expect("anchored");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        outcome_endpoint: Some("http://127.0.0.1:3010".to_string()),
+                        identity_outcome: Some(IdentityCreateOutcome::InputsConsumed {
+                            consumed_by_height: 7,
+                        }),
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(anchor_height),
+                    },
+                )
+                .expect("record");
+        }
         sdk.mock()
             .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
         coordinator.sync(true, &CancellationToken::new()).await;
@@ -4544,6 +5812,11 @@ mod tests {
             state(&store, spends[1].0, spends[1].2),
             held,
             "an anchor read above the set may be newer than it"
+        );
+        assert_eq!(
+            state(&store, proven.0, proven.2),
+            (true, true, None),
+            "a proven identity create keeps its record and spent note for its settlement"
         );
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
@@ -4572,6 +5845,8 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        outcome_endpoint: None,
+                        identity_outcome: None,
                         activity_id: activity,
                         anchor,
                         nullifiers: vec![nullifier],
@@ -4671,6 +5946,8 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        outcome_endpoint: None,
+                        identity_outcome: None,
                         activity_id: activity,
                         anchor,
                         nullifiers: vec![nullifier],

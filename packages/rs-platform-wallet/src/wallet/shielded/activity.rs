@@ -71,6 +71,12 @@ pub enum ShieldedActivityStatus {
     /// The user stopped automatic recovery without proof of success or failure.
     /// A later scan may still confirm the original payment.
     Unknown,
+    /// Proven by reads that it can never execute and that its inputs are
+    /// spent: written for an identity create from the pool (Type 20) whose
+    /// nullifiers are all spent and whose identity is absent at or above the
+    /// height they were spent by. Its paid failure path and the same notes
+    /// spent by another transition read the same.
+    InputsConsumed,
 }
 
 /// The classified kind of a shielded operation.

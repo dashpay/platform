@@ -796,6 +796,21 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedIdentityCreateInputsConsumed` (native code 77). An
+         * identity create from the shielded pool did not create its identity
+         * and can never execute, as proven reads show: its notes are spent and
+         * the identity is absent. The wallet marked the notes spent. Not
+         * retryable: the notes are gone. The reads do not say what spent them:
+         * Platform's paid failure path for this transition (which credits the
+         * denomination minus a penalty to its fallback address) is one
+         * possible cause, the same notes spent by another transition (another
+         * device with this wallet's keys) another.
+         * ← Swift `PlatformWalletError.shieldedIdentityCreateInputsConsumed`.
+         */
+        class ShieldedIdentityCreateInputsConsumed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1004,6 +1019,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            77 -> PlatformWallet.ShieldedIdentityCreateInputsConsumed(message, cause) // ErrorShieldedIdentityCreateInputsConsumed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

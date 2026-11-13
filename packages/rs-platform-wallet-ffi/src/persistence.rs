@@ -4779,7 +4779,7 @@ fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirecti
 }
 
 /// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
-/// 1 Confirmed, 2 Failed, 3 Unknown).
+/// 1 Confirmed, 2 Failed, 3 Unknown, 4 InputsConsumed).
 #[cfg(feature = "shielded")]
 fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
     match s {
@@ -4787,6 +4787,7 @@ fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
         ShieldedActivityStatus::Confirmed => 1,
         ShieldedActivityStatus::Failed => 2,
         ShieldedActivityStatus::Unknown => 3,
+        ShieldedActivityStatus::InputsConsumed => 4,
     }
 }
 
@@ -4798,6 +4799,7 @@ fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
         1 => ShieldedActivityStatus::Confirmed,
         2 => ShieldedActivityStatus::Failed,
         3 => ShieldedActivityStatus::Unknown,
+        4 => ShieldedActivityStatus::InputsConsumed,
         other => {
             tracing::warn!(
                 status = other,
@@ -4820,6 +4822,7 @@ mod activity_status_tests {
             (ShieldedActivityStatus::Confirmed, 1),
             (ShieldedActivityStatus::Failed, 2),
             (ShieldedActivityStatus::Unknown, 3),
+            (ShieldedActivityStatus::InputsConsumed, 4),
         ] {
             assert_eq!(activity_status_tag(&status), tag);
             assert_eq!(activity_status_from_tag(tag), status);

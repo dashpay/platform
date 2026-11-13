@@ -1113,6 +1113,31 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// The shielded identity create (Type 20) did not create its identity and can never execute,
+    /// as proven reads show: every nullifier it spends is spent at or before
+    /// `consumed_by_height`, and the identity `identity_id` is absent at a height at or above it.
+    /// Its notes are gone, so the wallet marks them spent and marks its activity row failed; the
+    /// create's recovery record keeps the outcome until the sync pass has written that row
+    /// durably. Nothing is to be re-submitted.
+    ///
+    /// The reads show that the inputs are taken, not what took them. One possible cause is
+    /// Platform's paid failure path for this transition (a key-state check failing in the block),
+    /// which credits the denomination minus a penalty to the transition's
+    /// `send_to_address_on_creation_failure`; another is the same notes spent by another
+    /// transition (another device holding this wallet's keys), which credits nothing there. This
+    /// error does not say which. `reason` carries the result-wait failure that led to the reads,
+    /// for diagnostics; it is not part of the proof.
+    #[error(
+        "Shielded identity create {identity_id} did not create its identity and can no longer \
+         execute: its notes are spent (by height {consumed_by_height}) and the identity does not \
+         exist: {reason}"
+    )]
+    ShieldedIdentityCreateInputsConsumed {
+        identity_id: Identifier,
+        consumed_by_height: u64,
+        reason: String,
+    },
+
     /// A previous identity-funded shield is unresolved. This new call did not
     /// build or broadcast a transaction; wait for the original payment's sync.
     #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
