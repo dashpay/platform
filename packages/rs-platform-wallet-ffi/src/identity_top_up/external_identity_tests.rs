@@ -1,5 +1,6 @@
 //! The external-identity top-up export: its argument guards, and an identity
 //! Platform does not know reported as code 7 through the real wallet handle.
+//! A panic in either address top-up export is reported as code 20.
 
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -268,4 +269,48 @@ fn should_report_an_identity_platform_does_not_know_as_not_found() {
             .identity_count()
     });
     assert_eq!(identities, 0);
+}
+
+/// A panic inside either address top-up export (here its blocking wait,
+/// entered from inside a runtime) comes back as the "may have executed"
+/// code 20, not as an unwind through the C ABI that ends the host, and the
+/// balance out is not written.
+#[test]
+fn should_turn_a_panic_in_either_export_into_the_unconfirmed_code() {
+    let (handle, signer) = wallet_handle(Some(platform_identity()));
+    let id = IDENTITY;
+    let rows = [input(0)];
+    let mut balance = UNTOUCHED;
+    let out: *mut u64 = &mut balance;
+
+    let (external, managed) = tokio::runtime::Runtime::new()
+        .expect("a runtime")
+        .block_on(async {
+            let external = unsafe { top_up(handle, &id, rows.as_ptr(), 1, signer, out) };
+            let managed = unsafe {
+                platform_wallet_top_up_from_addresses_with_signer(
+                    handle,
+                    &id,
+                    rows.as_ptr(),
+                    1,
+                    signer,
+                    out,
+                )
+            };
+            (external, managed)
+        });
+
+    release(handle, signer);
+    for mut result in [external, managed] {
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(message.contains("panicked"), "{message}");
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+    }
+    assert_eq!(balance, UNTOUCHED);
 }
