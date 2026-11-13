@@ -20,6 +20,7 @@ use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, Owned
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -3316,5 +3317,63 @@ fn should_cover_applied_delete_fees_for_migrated_history_with_multi_epoch_contra
             ..BlockInfo::default_with_time(5000)
         },
         "migrated-multi-epoch-contract-flags",
+    );
+}
+
+#[cfg(test)]
+mod raw_conversion_tests;
+
+#[test]
+fn should_refuse_erase_refund_cost_before_lifecycle_activation_even_with_a_chunk_limit() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let epoch = Epoch::new(0).unwrap();
+    let mut released = PlatformVersion::get(14).unwrap().clone();
+    released
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(100);
+    let result = drive.erase_refund_recipient_cost(&epoch, &released);
+    assert!(
+        matches!(result, Err(Error::Drive(DriveError::VersionNotActive { method, .. }))
+            if method == "erase_refund_recipient_cost"),
+        "an erase limit cannot activate an inactive fee method"
+    );
+}
+
+#[test]
+fn should_refuse_inactive_and_unknown_erase_refund_cost_versions() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let epoch = Epoch::new(0).unwrap();
+    let mut version = latest().clone();
+    version
+        .drive
+        .methods
+        .document
+        .delete
+        .erase_refund_recipient_cost = None;
+    assert!(matches!(
+        drive.erase_refund_recipient_cost(&epoch, &version),
+        Err(Error::Drive(DriveError::VersionNotActive { method, known_versions }))
+            if method == "erase_refund_recipient_cost" && known_versions == vec![0]
+    ));
+    version
+        .drive
+        .methods
+        .document
+        .delete
+        .erase_refund_recipient_cost = Some(1);
+    assert!(matches!(
+        drive.erase_refund_recipient_cost(&epoch, &version),
+        Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received: 1 }))
+            if method == "erase_refund_recipient_cost" && known_versions == vec![0]
+    ));
+    version
+        .drive
+        .methods
+        .document
+        .delete
+        .erase_refund_recipient_cost = Some(0);
+    assert_eq!(
+        drive.erase_refund_recipient_cost(&epoch, &version).unwrap(),
+        drive.erase_refund_recipient_cost(&epoch, latest()).unwrap()
     );
 }

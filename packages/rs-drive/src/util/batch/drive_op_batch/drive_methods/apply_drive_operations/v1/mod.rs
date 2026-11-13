@@ -684,7 +684,7 @@ mod tests {
                     Err(Error::Drive(DriveError::NotSupported(_)))
                 ));
             }
-            for version in [legacy, platform_version] {
+            for version in [legacy, PlatformVersion::get(14).unwrap(), platform_version] {
                 assert!(matches!(
                     drive.convert_drive_operations_to_grove_operations(
                         vec![pool_credit(amount)],

@@ -208,6 +208,8 @@ pub struct DriveDocumentUpdateMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentDeleteMethodVersions {
+    /// Prices the third-party balance updates caused by an erase; inactive before protocol 15.
+    pub erase_refund_recipient_cost: OptionalFeatureVersion,
     pub erase_document_for_contract_operations: OptionalFeatureVersion,
     pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
     pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,

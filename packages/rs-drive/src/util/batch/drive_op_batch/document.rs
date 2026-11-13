@@ -924,6 +924,14 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
+                // Only history deletes use pending siblings to share the lazy lifecycle container.
+                // Released force-delete handlers refuse history types.
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
                 // The deletion a document's own owner runs, without its `canBeDeleted` guard;
                 // it removes the expirations tree entry of a type with a `ttl` itself.
                 drive.force_delete_document_for_contract_operations(
@@ -932,7 +940,7 @@ impl DocumentOperationType<'_> {
                     document_type,
                     block_info,
                     None,
-                    None,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -956,12 +964,20 @@ impl DocumentOperationType<'_> {
                 )
                 .resolve(contract)?;
 
+                // Only history deletes use pending siblings to share the lazy lifecycle container.
+                // Released force-delete handlers refuse history types.
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
                 force_delete_consumed_document_operations(
                     drive,
                     consumed_document,
                     contract,
                     document_type,
-                    None,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
