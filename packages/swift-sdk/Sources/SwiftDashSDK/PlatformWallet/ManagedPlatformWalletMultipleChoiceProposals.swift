@@ -34,7 +34,8 @@ extension ManagedPlatformWallet {
     ///
     /// Lifetime contract: as `createDocument`, the `signer` is pinned with
     /// `withExtendedLifetime` across the synchronous FFI call (Rust holds a
-    /// `passUnretained` ctx pointer to it).
+    /// `passUnretained` ctx pointer to it), and so is the wallet, whose
+    /// deinit destroys the handle the call uses.
     ///
     /// - Parameters:
     ///   - ownerIdentityId: The proposer's 32-byte identity id.
@@ -55,18 +56,19 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         let signerHandle = signer.handle
         let ownerBytes = [UInt8](ownerIdentityId)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) { [self] in
             var proposalIdBytes = [UInt8](repeating: 0, count: 32)
             // Receives an owned canonical-document JSON C string on success;
             // freed with `platform_wallet_string_free` below.
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
 
-            // Pin `signer` for the whole FFI call (see `createDocument` for
-            // why a bare `_ = signer` is unreliable under -O). Rust reads the
-            // params synchronously inside the call, so the `withFFI` scope is
-            // long enough.
-            let result = try withExtendedLifetime(signer) {
+            // Pin the wallet and `signer` for the whole FFI call (see
+            // `createDocument` for why a bare `_ = signer` is unreliable
+            // under -O): a wallet deinit mid-call would destroy the handle
+            // the FFI is still using. Rust reads the params synchronously
+            // inside the call, so the `withFFI` scope is long enough.
+            let result = try withExtendedLifetime((self, signer)) {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try params.withFFI { paramsPtr in
                         proposalIdBytes.withUnsafeMutableBufferPointer { outBp in
@@ -112,8 +114,9 @@ extension ManagedPlatformWallet {
     /// was created, and one that leaves it with neither a description
     /// document nor a url.
     ///
-    /// Lifetime contract: as `createDocument`, the `signer` is pinned with
-    /// `withExtendedLifetime` across the synchronous FFI call.
+    /// Lifetime contract: the wallet and the `signer` are pinned with
+    /// `withExtendedLifetime` across the synchronous FFI call, as the create
+    /// pins them.
     ///
     /// - Parameters:
     ///   - ownerIdentityId: The proposer's 32-byte identity id.
@@ -142,12 +145,13 @@ extension ManagedPlatformWallet {
         let signerHandle = signer.handle
         let ownerBytes = [UInt8](ownerIdentityId)
         let proposalBytes = [UInt8](proposalId)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) { [self] in
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
 
-            // Pin `signer` for the whole FFI call (see `createDocument`).
-            let result = try withExtendedLifetime(signer) {
+            // Pin the wallet and `signer` for the whole FFI call, as the
+            // create does.
+            let result = try withExtendedLifetime((self, signer)) {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try proposalBytes.withUnsafeBufferPointer { proposalBp -> PlatformWalletFFIResult in
                         try edit.withFFI { editPtr in
@@ -188,8 +192,9 @@ extension ManagedPlatformWallet {
     /// is not open from anyone but its owner, and one entered once the vote's
     /// join window closed. A choice is never edited.
     ///
-    /// Lifetime contract: as `createDocument`, the `signer` is pinned with
-    /// `withExtendedLifetime` across the synchronous FFI call.
+    /// Lifetime contract: the wallet and the `signer` are pinned with
+    /// `withExtendedLifetime` across the synchronous FFI call, as the create
+    /// pins them.
     ///
     /// - Parameters:
     ///   - ownerIdentityId: The 32-byte id of the identity entering the
@@ -217,13 +222,14 @@ extension ManagedPlatformWallet {
         let signerHandle = signer.handle
         let ownerBytes = [UInt8](ownerIdentityId)
         let proposalBytes = [UInt8](proposalId)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) { [self] in
             var choiceIdBytes = [UInt8](repeating: 0, count: 32)
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
 
-            // Pin `signer` for the whole FFI call (see `createDocument`).
-            let result = try withExtendedLifetime(signer) {
+            // Pin the wallet and `signer` for the whole FFI call, as the
+            // create does.
+            let result = try withExtendedLifetime((self, signer)) {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try proposalBytes.withUnsafeBufferPointer { proposalBp -> PlatformWalletFFIResult in
                         try params.withFFI { paramsPtr in

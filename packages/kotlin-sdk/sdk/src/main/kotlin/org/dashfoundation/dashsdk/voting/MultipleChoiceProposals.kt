@@ -7,6 +7,7 @@ import org.dashfoundation.dashsdk.ffi.MultipleChoiceProposalsNative
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 /**
  * Multiple choice proposals (protocol version 15): questions whose answers are the choices
@@ -164,6 +165,12 @@ class MultipleChoiceProposals internal constructor(private val sdk: Sdk) {
  * / `_enter_choice`): the wallet builds the document (or reads the stored proposal and edits
  * it), picks the signing key, broadcasts and waits for Platform to confirm. Nothing is
  * decided or checked here.
+ *
+ * Cancellation: native code cannot see a coroutine's cancellation, so a write can complete
+ * after its caller was cancelled. Each call then still returns what Platform confirmed
+ * (see [opReturningCompletedResult]) instead of throwing, so a paid create or choice is
+ * never hidden from a caller that would otherwise pay for it again. The coroutine stays
+ * cancelled: handle the result before the next suspension point.
  */
 class MultipleChoiceProposalTransactions internal constructor(private val gate: TeardownGate?) {
 
@@ -182,7 +189,7 @@ class MultipleChoiceProposalTransactions internal constructor(private val gate: 
         ownerId: ByteArray,
         params: MultipleChoiceProposalParams,
         signerHandle: Long,
-    ): CreatedMultipleChoiceProposal = gate.op {
+    ): CreatedMultipleChoiceProposal = gate.opReturningCompletedResult {
         val proposalId = ByteArray(ID_SIZE)
         val documentJson = mapNativeErrors {
             MultipleChoiceProposalsNative.create(
@@ -222,7 +229,7 @@ class MultipleChoiceProposalTransactions internal constructor(private val gate: 
         proposalId: ByteArray,
         edit: MultipleChoiceProposalEdit,
         signerHandle: Long,
-    ): String = gate.op {
+    ): String = gate.opReturningCompletedResult {
         val descriptionDocument = edit.descriptionDocument.toNative()
         val url = edit.url.toNative()
         mapNativeErrors {
@@ -261,7 +268,7 @@ class MultipleChoiceProposalTransactions internal constructor(private val gate: 
         proposalId: ByteArray,
         params: ProposalChoiceParams,
         signerHandle: Long,
-    ): EnteredProposalChoice = gate.op {
+    ): EnteredProposalChoice = gate.opReturningCompletedResult {
         val choiceId = ByteArray(ID_SIZE)
         val documentJson = mapNativeErrors {
             MultipleChoiceProposalsNative.enterChoice(

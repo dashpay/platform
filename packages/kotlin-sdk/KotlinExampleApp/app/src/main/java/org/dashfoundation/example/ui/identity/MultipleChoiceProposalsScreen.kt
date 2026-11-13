@@ -513,7 +513,7 @@ fun CreateMultipleChoiceProposalScreen(
                 }
                 LabeledContent(
                     "Processing fee",
-                    processingFee?.let { formatCredits(it.toLong()) }
+                    processingFee?.let { formatCredits(it) }
                         ?: if (processingFeeError == null) "Loading…" else "Unavailable",
                     modifier = Modifier.testTag("createMultipleChoiceProposal.processingFee"),
                 )

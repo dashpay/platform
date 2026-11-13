@@ -737,7 +737,7 @@ private fun EnterChoiceDialog(
                 )
                 LabeledContent(
                     "Contest fund",
-                    fund?.let { formatCredits(it.toLong()) }
+                    fund?.let { formatCredits(it) }
                         ?: if (fundError == null) "Loading…" else "Unavailable",
                     modifier = Modifier.testTag("enterProposalChoice.fund"),
                 )
