@@ -12,7 +12,7 @@ use crate::persistence::{
     FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
     LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
     LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
+    PersistAssetLockShieldedRecipientFn, PersistDashpayProfilesFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
@@ -408,6 +408,7 @@ unsafe fn persistence_extension_callbacks(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
         ),
+        persist_dashpay_profiles: slot!(on_persist_dashpay_profiles_fn, PersistDashpayProfilesFn),
     }
 }
 
@@ -1691,6 +1692,39 @@ mod tests {
         };
         let read = unsafe { persistence_extension_callbacks(&with) };
         assert!(read.wallet_dashpay_backfill.is_some());
+    }
+
+    #[test]
+    fn should_size_gate_authoritative_dashpay_profile_slot() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const crate::identity_persistence::ContactProfileRowFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let offset = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_dashpay_profiles_fn
+        );
+        let mut extension = PersistenceCallbacksExtension {
+            on_persist_dashpay_profiles_fn: Some(persist),
+            ..Default::default()
+        };
+        for size in [
+            offset,
+            offset + std::mem::size_of::<Option<PersistDashpayProfilesFn>>() - 1,
+        ] {
+            extension.struct_size = size;
+            assert!(unsafe { persistence_extension_callbacks(&extension) }
+                .persist_dashpay_profiles
+                .is_none());
+        }
+        extension.struct_size = std::mem::size_of::<PersistenceCallbacksExtension>();
+        assert!(unsafe { persistence_extension_callbacks(&extension) }
+            .persist_dashpay_profiles
+            .is_some());
     }
 
     #[test]

@@ -190,9 +190,12 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `onLoadPrivateContactScanState`, so a relaunch resumes the private contact
  * request sync where it stopped. Empty after the migration: the first sync
  * reads the store from its start, as every sync did before.
+ *
+ * Version 17 adds nullable Core, Platform, and shielded payment addresses
+ * to cached owner and contact profiles.
  */
 @Database(
-    version = 16,
+    version = 17,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -730,6 +733,17 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        /** v16 → v17: optional public payment addresses on cached profiles. */
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+                    for (column in listOf("corePaymentAddress", "platformPaymentAddress", "shieldedAddress")) {
+                        db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` BLOB")
+                    }
+                }
+            }
+        }
+
         /**
          * v15 -> v16: the two private contact request scan state tables, see
          * the version-16 class doc above. Created empty.
@@ -783,6 +797,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
+                    MIGRATION_16_17,
                 )
                 .build()
 

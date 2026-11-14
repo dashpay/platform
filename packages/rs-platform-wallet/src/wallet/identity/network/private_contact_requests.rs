@@ -6795,7 +6795,7 @@ mod tests {
                 &alice_crypto,
             ));
             let mut cx = Context::from_waker(Waker::noop());
-            let wallet_manager = old.wallet_manager();
+            let wallet_manager = &old.wallet_manager;
             let mut held = wallet_manager.write().await;
             let mut gated = false;
             for _ in 0..200 {
@@ -9680,7 +9680,7 @@ mod tests {
             restore.as_mut().poll(&mut cx).is_pending(),
             "waits for the store"
         );
-        let mut held_wallet = alice_wallet.wallet_manager().write().await;
+        let mut held_wallet = alice_wallet.wallet_manager.write().await;
         drop(held_store);
         // The restoration reads its journal snapshot, then waits for the wallet.
         assert!(
@@ -9768,7 +9768,7 @@ mod tests {
             restore.as_mut().poll(&mut cx).is_pending(),
             "waits for the store"
         );
-        let mut held_wallet = wallet.wallet_manager().write().await;
+        let mut held_wallet = wallet.wallet_manager.write().await;
         drop(held_store);
         // The restoration reads the redrive records, then waits for the
         // wallet before it opens the entry.
@@ -9966,12 +9966,14 @@ mod tests {
             .await;
             let dir = tempfile::tempdir().expect("temporary shielded store");
             let db_path = dir.path().join("tree.sqlite");
-            let coordinator = Arc::new(NetworkShieldedCoordinator::new(
-                Arc::clone(&wallet.identity().sdk),
-                Network::Testnet,
-                db_path.clone(),
-                FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
-            ));
+            manager
+                .configure_shielded(&db_path)
+                .await
+                .expect("configured");
+            let coordinator = manager
+                .shielded_coordinator()
+                .await
+                .expect("the manager's coordinator");
             // Bound, the coordinator holds the wallet's persister, on which it
             // notes the discharge.
             wallet
@@ -12835,7 +12837,6 @@ mod tests {
 
         // The restart: the reply is not in the store and the host restores
         // nothing; only the bind can.
-        let after = coordinator_at(db_path);
         let restarted_manager = PlatformWalletManager::new(
             Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
             kept,
@@ -12890,6 +12891,14 @@ mod tests {
             "{public:?}"
         );
 
+        restarted_manager
+            .configure_shielded(&db_path)
+            .await
+            .expect("configured");
+        let after = restarted_manager
+            .shielded_coordinator()
+            .await
+            .expect("the manager's coordinator");
         restarted
             .bind_shielded(&seed(BOB_PHRASE), &[0], &after)
             .await

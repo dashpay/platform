@@ -52,6 +52,11 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+pub mod tips;
+pub use tips::{
+    is_shielded_identity_account, shielded_identity_account_index, ShieldedTipSource,
+    SHIELDED_IDENTITY_ACCOUNT_BASE,
+};
 #[cfg(test)]
 mod viewing_key_bind_tests;
 #[cfg(test)]

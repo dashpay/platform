@@ -38,9 +38,14 @@ use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+#[cfg(feature = "shielded")]
+use crate::validated_shielded_address;
+use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+#[cfg(feature = "shielded")]
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
@@ -55,6 +60,7 @@ use {
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
     },
+    super::shielded::tips::PreparedTipAccount,
     super::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore,
     },
@@ -384,6 +390,7 @@ pub struct PlatformWallet {
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager_reader: WalletManagerReader,
     // Sub-wallets that hold a broadcaster are monomorphized with
     // `SpvBroadcaster` — the only production broadcaster in use.
     // Swapping this out to another broadcaster is a three-line flip
@@ -434,6 +441,23 @@ pub struct PlatformWallet {
     /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes changes to the bound shielded account set. A bind
+    /// replaces the registration with the accounts it was given, so a
+    /// caller that reads the current set and binds an augmented copy (tip
+    /// preparation) must not interleave with another bind, or the other
+    /// bind's ordinary accounts are dropped and their live state purged.
+    /// Taken at the top of every bind entry point and by
+    /// `shielded_add_account`, before `shield_guard`.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
+    /// The tip account each identity's address was last prepared for in
+    /// this session, after its slot was proved with the seed. Publication
+    /// of a wallet tip address requires it, so an address is published only
+    /// for the identity and slot it was prepared for, and invalidated by a
+    /// coordinator Clear. `Arc` so cloned wallet handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) prepared_tip_accounts:
+        Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -453,6 +477,12 @@ pub struct PlatformWallet {
     /// handles share them.
     #[cfg(feature = "shielded")]
     private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
+    /// The manager-owned network coordinator slot. Wallet operations resolve
+    /// the configured coordinator through this slot so callers cannot pair a
+    /// wallet with a different same-network coordinator.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_coordinator:
+        Option<Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>>,
 }
 
 impl PlatformWallet {
@@ -505,9 +535,9 @@ impl PlatformWallet {
         Arc::clone(&self.sdk)
     }
 
-    /// Get a reference to the shared wallet manager lock.
-    pub fn wallet_manager(&self) -> &Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
-        &self.wallet_manager
+    /// Read the shared wallet manager. Mutations use [`Self::state_mut`].
+    pub fn wallet_manager(&self) -> &WalletManagerReader {
+        &self.wallet_manager_reader
     }
 
     /// Get the lock-free balance for UI reads.
@@ -542,11 +572,18 @@ impl PlatformWallet {
 
     /// Write-lock the wallet manager and return a guard that derefs to this
     /// wallet's `PlatformWalletInfo` (with `DerefMut`).
-    pub async fn state_mut(&self) -> WalletStateWriteGuard<'_> {
-        WalletStateWriteGuard {
-            guard: self.wallet_manager.write().await,
+    /// Holds the identity-placement write lock first, so replacing the manager
+    /// or removing/re-adding an identity cannot race a tip operation.
+    /// Returns `WalletNotFound` if this handle's generation is no longer current.
+    pub async fn state_mut(&self) -> Result<WalletStateWriteGuard<'_>, PlatformWalletError> {
+        let placement = self.identity.identity_placement.write().await;
+        let mut guard = self.wallet_manager.write().await;
+        self.identity.current_wallet_info_mut(&mut guard)?;
+        Ok(WalletStateWriteGuard {
+            guard,
             wallet_id: self.wallet_id,
-        }
+            _placement: placement,
+        })
     }
 
     /// Blocking read-lock.
@@ -559,15 +596,21 @@ impl PlatformWallet {
 
     /// Blocking write-lock.
     ///
+    /// Holds identity placement before wallet state, like [`Self::state_mut`].
     /// Uses `tokio::sync::RwLock::blocking_write` — must NOT be
     /// called from within a tokio async context. Exists so sync
     /// callers (e.g. SPV-driven transaction processing) can reach
     /// mutation methods that require the wallet-manager write lock.
-    pub fn state_mut_blocking(&self) -> WalletStateWriteGuard<'_> {
-        WalletStateWriteGuard {
-            guard: self.wallet_manager.blocking_write(),
+    /// Returns `WalletNotFound` if this handle's generation is no longer current.
+    pub fn state_mut_blocking(&self) -> Result<WalletStateWriteGuard<'_>, PlatformWalletError> {
+        let placement = self.identity.identity_placement.blocking_write();
+        let mut guard = self.wallet_manager.blocking_write();
+        self.identity.current_wallet_info_mut(&mut guard)?;
+        Ok(WalletStateWriteGuard {
+            guard,
             wallet_id: self.wallet_id,
-        }
+            _placement: placement,
+        })
     }
 
     // -----------------------------------------------------------------
@@ -724,16 +767,18 @@ impl PlatformWallet {
     }
 
     /// Non-blocking write-lock. Returns `None` if the lock is currently
-    /// held by any reader or writer. Same safety properties as
+    /// held by any reader or writer, identity placement is in use, or this handle's
+    /// generation is no longer current. Same safety properties as
     /// [`try_state`]: never panics, never blocks.
     pub fn try_state_mut(&self) -> Option<WalletStateWriteGuard<'_>> {
-        self.wallet_manager
-            .try_write()
-            .ok()
-            .map(|guard| WalletStateWriteGuard {
-                guard,
-                wallet_id: self.wallet_id,
-            })
+        let placement = self.identity.identity_placement.try_write().ok()?;
+        let mut guard = self.wallet_manager.try_write().ok()?;
+        self.identity.current_wallet_info_mut(&mut guard).ok()?;
+        Some(WalletStateWriteGuard {
+            guard,
+            wallet_id: self.wallet_id,
+            _placement: placement,
+        })
     }
 
     /// Construct a PlatformWallet from a WalletManager that already contains
@@ -752,6 +797,36 @@ impl PlatformWallet {
         broadcaster: Arc<SpvBroadcaster>,
         sync_fault: Arc<std::sync::atomic::AtomicBool>,
         durable_cursors: crate::changeset::DurableCursors,
+    ) -> Self {
+        Self::new_with_coordinator_slot(
+            sdk,
+            wallet_id,
+            wallet_manager,
+            generation,
+            lock_notify,
+            persister,
+            broadcaster,
+            sync_fault,
+            durable_cursors,
+            #[cfg(feature = "shielded")]
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_coordinator_slot(
+        sdk: Arc<dash_sdk::Sdk>,
+        wallet_id: WalletId,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        generation: Arc<WalletGeneration>,
+        lock_notify: Arc<tokio::sync::Notify>,
+        persister: Arc<dyn PlatformWalletPersistence>,
+        broadcaster: Arc<SpvBroadcaster>,
+        sync_fault: Arc<std::sync::atomic::AtomicBool>,
+        durable_cursors: crate::changeset::DurableCursors,
+        #[cfg(feature = "shielded")] shielded_coordinator: Option<
+            Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+        >,
     ) -> Self {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets
@@ -809,6 +884,7 @@ impl PlatformWallet {
             document_erase_gate: Default::default(),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            identity_placement: Arc::new(tokio::sync::RwLock::new(())),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -822,6 +898,7 @@ impl PlatformWallet {
         Self {
             wallet_id,
             sdk,
+            wallet_manager_reader: WalletManagerReader::new(Arc::clone(&wallet_manager)),
             wallet_manager,
             core,
             identity,
@@ -834,10 +911,45 @@ impl PlatformWallet {
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
+            shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]
             private_payment_restores: Arc::default(),
+            #[cfg(feature = "shielded")]
+            shielded_coordinator,
         }
+    }
+
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn resolve_shielded_coordinator(
+        &self,
+        supplied: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>, PlatformWalletError> {
+        if supplied.network() != self.network() {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                supplied.network(),
+                self.network(),
+            )));
+        }
+        if let Some(slot) = &self.shielded_coordinator {
+            let configured = slot.read().await.clone().ok_or_else(|| {
+                PlatformWalletError::ShieldedStoreError(
+                    "shielded support is not configured on this wallet manager".to_string(),
+                )
+            })?;
+            if !Arc::ptr_eq(&configured, supplied) {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "the supplied shielded coordinator is not owned by this wallet manager"
+                        .to_string(),
+                ));
+            }
+            return Ok(configured);
+        }
+        Ok(Arc::clone(supplied))
     }
 
     /// Bind a shielded (Orchard) sub-wallet to this `PlatformWallet`.
@@ -873,6 +985,24 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
+        // Fence generation teardown across attachment validation, host
+        // viewing-key persistence, and coordinator/handle installation.
+        let _lifecycle = self.core().generation_payment_guard().await;
+        let _config = self.shielded_config_lock.lock().await;
+        self.bind_shielded_locked_unfenced(seed, accounts, &coordinator)
+            .await
+    }
+
+    /// [`Self::bind_shielded`] for a caller already holding
+    /// `shielded_config_lock` and the generation lifecycle guard.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn bind_shielded_locked_unfenced(
+        &self,
+        seed: &[u8],
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<(), PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
@@ -898,12 +1028,29 @@ impl PlatformWallet {
         // snapshot predates a Clear.
         let snapshot_generation = coordinator.clear_generation();
         let network = self.sdk.network;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        accounts.extend(self.discovered_tip_accounts().await?);
+        // Keep retired tip accounts scanning, including identities removed from
+        // the local manager after their address was published.
+        let start = self
+            .persister
+            .load()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_identity_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
-            // `accounts` may contain duplicates; the BTreeMap
-            // dedups by definition. The full keyset (with its
-            // `SpendAuthorizingKey`) is dropped at the end of
+        for &account in &accounts {
+            // The full keyset (with its `SpendAuthorizingKey`) is dropped at the end of
             // this iteration — only the viewing half survives.
             let ks = OrchardKeySet::from_seed(seed, network, account)?;
             account_views.insert(account, ks.viewing_keys());
@@ -921,11 +1068,6 @@ impl PlatformWallet {
         // treat it like the malformed-row case below: surface it rather
         // than silently mixing two keys' state. The recovery is a
         // shielded Clear, which drops both sides at once.
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while binding shielded viewing keys: {e}"
-            ))
-        })?;
         for (account, views) in &account_views {
             let id = SubwalletId::new(self.wallet_id, *account);
             if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
@@ -990,6 +1132,11 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
+        // Keep the generation alive from attachment validation through the
+        // persisted snapshot read and coordinator/handle installation.
+        let _lifecycle = self.core().generation_payment_guard().await;
+        let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -1015,9 +1162,25 @@ impl PlatformWallet {
                 "persister load failed while rebinding shielded viewing keys: {e}"
             ))
         })?;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        // Newly discovered identities require their tip accounts too. Missing
+        // FVKs must trigger seed-backed binding: skipping them would report a
+        // successful restart while silently omitting recoverable tip history.
+        accounts.extend(self.discovered_tip_accounts().await?);
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_identity_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
+        for &account in &accounts {
             let id = SubwalletId::new(self.wallet_id, account);
             let Some(fvk_bytes) = start.shielded.viewing_keys.get(&id) else {
                 return Ok(false);
@@ -1032,7 +1195,7 @@ impl PlatformWallet {
         }
         // Hand the already-loaded snapshot to the install step so the
         // restore doesn't pay a second full persister load.
-        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
+        self.install_shielded_views(account_views, &coordinator, start, snapshot_generation)
             .await?;
         Ok(true)
     }
@@ -1288,6 +1451,12 @@ impl PlatformWallet {
                 missing.bits(),
             )));
         }
+        // Serialized with the binds: tip preparation rebinds a snapshot of
+        // the account set, which would drop an account inserted mid-way.
+        // The lifecycle gate spans attachment validation through host
+        // persistence and the final handle mutation.
+        let _lifecycle = self.core().generation_payment_guard().await;
+        let _config = self.shielded_config_lock.lock().await;
         self.ensure_shielded_attached()?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
@@ -2215,8 +2384,9 @@ impl PlatformWallet {
     /// local `IdentityManager`; on a successful broadcast the proof-verified identity is registered
     /// there (mirroring `register_from_addresses`) so the host persister emits the
     /// `IdentityChangeSet` / `IdentityKeysChangeSet` that creates the app's identity row. A failed
-    /// registration after a successful broadcast is logged and swallowed — the identity already
-    /// exists on chain, so the next sync heals the local row. Returns the new identity's id.
+    /// registration after a successful broadcast returns
+    /// [`PlatformWalletError::IdentityCreatedButNotRegistered`], carrying the created identity's
+    /// id. Creation must not be re-submitted in that case.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
@@ -2238,6 +2408,23 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
+        {
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            if let Some(occupant) = info
+                .identity_manager
+                .wallet_identities
+                .get(&self.wallet_id)
+                .and_then(|identities| identities.get(&identity_index))
+            {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Cannot create an identity at index {identity_index}: the slot holds identity {}",
+                    occupant.identity.id()
+                )));
+            }
+        }
         let (identity_id, identity) = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
@@ -2262,36 +2449,22 @@ impl PlatformWallet {
         // Register the proof-verified identity in the local manager at its HD slot, exactly like
         // `register_from_addresses`' Step 3 — this drives the host persister's
         // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
-        // The broadcast already succeeded; a registration failure here (e.g. the slot is already
-        // occupied locally) is logged and swallowed rather than surfaced as an error, since the
-        // identity exists on chain and the next sync heals the local view.
         {
             let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity,
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            identity_index,
-                            error = %e,
-                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
-                             identity in the local manager failed; the on-chain identity exists and \
-                             the next sync will heal the local row"
-                        );
-                    }
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::IdentityCreatedButNotRegistered {
+                    identity_id,
+                    reason: "wallet was removed from the manager".to_string(),
                 }
-                None => {
-                    tracing::warn!(
-                        identity_index,
-                        "IdentityCreateFromShieldedPool broadcast succeeded but the wallet info was \
-                         not found in the manager; skipping local registration (heals on next sync)"
-                    );
-                }
-            }
+            })?;
+            info.identity_manager
+                .add_identity(identity, identity_index, self.wallet_id, &self.persister)
+                .map_err(
+                    |error| PlatformWalletError::IdentityCreatedButNotRegistered {
+                        identity_id,
+                        reason: error.to_string(),
+                    },
+                )?;
         }
 
         Ok(identity_id)
@@ -2810,8 +2983,8 @@ impl PlatformWallet {
     /// `Wallet::add_account`.
     ///
     /// Returns [`ApplyError::WalletNotFound`](crate::wallet::ApplyError::WalletNotFound)
-    /// if the wallet has been removed from the manager between handle
-    /// acquisition and this call.
+    /// if this handle's wallet has been removed or replaced in the manager
+    /// between handle acquisition and this call.
     ///
     /// Consumes the changeset by value — `apply_changeset` drains
     /// every map straight into the wallet maps with no clones.
@@ -2832,10 +3005,18 @@ impl PlatformWallet {
         });
 
         {
+            // An identity entry can move an identity to another slot.
+            // Placement lock first; see `identity_placement`.
+            let _placement = if changeset.identities.is_some() {
+                Some(self.identity.identity_placement.write().await)
+            } else {
+                None
+            };
             let mut wm = self.wallet_manager.write().await;
-            let (wallet, info) = wm
-                .get_wallet_mut_and_info_mut(&self.wallet_id)
-                .ok_or(crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
+            let (wallet, info) = self
+                .identity
+                .current_wallet_and_info_mut(&mut wm)
+                .map_err(|_| crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
             info.apply_changeset(wallet, changeset)?;
         }
 
@@ -2895,6 +3076,7 @@ impl Clone for PlatformWallet {
             wallet_id: self.wallet_id,
             sdk: self.sdk.clone(),
             wallet_manager: self.wallet_manager.clone(),
+            wallet_manager_reader: self.wallet_manager_reader.clone(),
             core: self.core.clone(),
             identity: self.identity.clone(),
             platform: self.platform.clone(),
@@ -2906,9 +3088,85 @@ impl Clone for PlatformWallet {
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
             #[cfg(feature = "shielded")]
+            shielded_config_lock: self.shielded_config_lock.clone(),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
+            #[cfg(feature = "shielded")]
+            shielded_coordinator: self.shielded_coordinator.clone(),
+        }
+    }
+}
+
+impl PlatformWallet {
+    /// Create (`create`) or update `identity_id`'s DashPay profile. A
+    /// shielded address that is one of this wallet's dedicated tip addresses
+    /// must have been prepared for this identity at the slot it holds, and
+    /// the placement lock is held through a write that sets one, so the slot
+    /// cannot change before it lands. Wallet removal waits for the complete
+    /// write; removed or replaced wallet handles cannot publish.
+    pub async fn write_dashpay_profile<S>(
+        &self,
+        identity_id: &Identifier,
+        input: ProfileUpdate,
+        signer: &S,
+        create: bool,
+    ) -> Result<DashPayProfile, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id(),
+            )));
+        }
+        let sets_shielded = matches!(input.shielded_address, PaymentAddressUpdate::Set(_));
+        #[cfg(not(feature = "shielded"))]
+        if sets_shielded {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Shielded address publication requires shielded support".to_string(),
+            ));
+        }
+        #[cfg(feature = "shielded")]
+        let prepared_coordinator = if sets_shielded {
+            self.prepared_tip_accounts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(identity_id)
+                .and_then(PreparedTipAccount::coordinator)
+        } else {
+            None
+        };
+        #[cfg(feature = "shielded")]
+        let _coordinator_operation = match prepared_coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.operation_guard().await),
+            None => None,
+        };
+        let _placement = if sets_shielded {
+            Some(self.identity.identity_placement.read().await)
+        } else {
+            None
+        };
+        #[cfg(feature = "shielded")]
+        if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
+            if let Some(address) = validated_shielded_address(bytes) {
+                self.check_tip_address_publication(identity_id, &address)
+                    .await?;
+            }
+        }
+        let dashpay = self.identity.dashpay();
+        if create {
+            dashpay
+                .create_profile_with_external_signer(identity_id, input, signer)
+                .await
+        } else {
+            dashpay
+                .update_profile_with_external_signer(identity_id, input, signer)
+                .await
         }
     }
 }
@@ -2924,6 +3182,40 @@ impl std::fmt::Debug for PlatformWallet {
 // ---------------------------------------------------------------------------
 // Wallet state guard types — lock WalletManager, deref to PlatformWalletInfo
 // ---------------------------------------------------------------------------
+
+/// Shared read access without exposing an unlocked identity-placement mutation path.
+/// Use [`PlatformWallet::state_mut`] to change a live wallet's state.
+///
+/// ```compile_fail
+/// async fn bypass(reader: &platform_wallet::wallet::platform_wallet::WalletManagerReader) {
+///     reader.write().await;
+/// }
+/// ```
+#[derive(Clone)]
+pub struct WalletManagerReader {
+    inner: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+}
+
+impl WalletManagerReader {
+    pub(crate) fn new(inner: Arc<RwLock<WalletManager<PlatformWalletInfo>>>) -> Self {
+        Self { inner }
+    }
+
+    pub async fn read(&self) -> RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+        self.inner.read().await
+    }
+
+    pub fn blocking_read(&self) -> RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+        self.inner.blocking_read()
+    }
+
+    pub fn try_read(
+        &self,
+    ) -> Result<RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>>, tokio::sync::TryLockError>
+    {
+        self.inner.try_read()
+    }
+}
 
 /// Read guard that locks `WalletManager` and derefs to this wallet's
 /// `PlatformWalletInfo`. Also provides `.wallet()` for key material access.
@@ -2955,6 +3247,7 @@ impl Deref for WalletStateReadGuard<'_> {
 pub struct WalletStateWriteGuard<'a> {
     guard: RwLockWriteGuard<'a, WalletManager<PlatformWalletInfo>>,
     wallet_id: WalletId,
+    _placement: RwLockWriteGuard<'a, ()>,
 }
 
 impl<'a> WalletStateWriteGuard<'a> {
@@ -3505,6 +3798,127 @@ fn check_recipient_hrp(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod state_generation_tests {
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWalletManager;
+    use dashcore::Network;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    struct NoopEvents;
+    impl EventHandler for NoopEvents {}
+    impl PlatformEventHandler for NoopEvents {}
+
+    #[cfg(not(feature = "shielded"))]
+    #[tokio::test]
+    async fn should_reject_shielded_profile_addresses_without_shielded_support() {
+        let manager = PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEvents),
+        );
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let signer = simple_signer::signer::SimpleSigner::default();
+        let result = wallet
+            .write_dashpay_profile(
+                &Identifier::from([7; 32]),
+                ProfileUpdate {
+                    shielded_address: PaymentAddressUpdate::Set(vec![0; 43]),
+                    ..Default::default()
+                },
+                &signer,
+                false,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::InvalidIdentityData(message))
+                if message.contains("requires shielded support")
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_reject_mutations_from_a_removed_wallet_generation() {
+        async fn assert_profile_write_refused(wallet: &PlatformWallet) {
+            let signer = simple_signer::signer::SimpleSigner::default();
+            for create in [true, false] {
+                assert!(matches!(
+                    wallet
+                        .write_dashpay_profile(
+                            &Identifier::default(),
+                            ProfileUpdate::default(),
+                            &signer,
+                            create,
+                        )
+                        .await,
+                    Err(PlatformWalletError::WalletNotFound(_))
+                ));
+            }
+        }
+
+        let manager = PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEvents),
+        );
+        let old = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let id = old.wallet_id();
+        manager.remove_wallet(&id).await.unwrap();
+        assert_profile_write_refused(&old).await;
+        assert!(matches!(
+            old.state_mut().await,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        let current = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        assert_eq!(current.wallet_id(), id);
+        assert_profile_write_refused(&old).await;
+        assert!(matches!(
+            old.state_mut().await,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(old.try_state_mut().is_none());
+        let blocking_old = Arc::clone(&old);
+        assert!(tokio::task::spawn_blocking(move || matches!(
+            blocking_old.state_mut_blocking(),
+            Err(PlatformWalletError::WalletNotFound(_))
+        ))
+        .await
+        .unwrap());
+        assert!(
+            matches!(old.apply(PlatformWalletChangeSet::default()).await,
+            Err(crate::wallet::ApplyError::WalletNotFound(wallet_id)) if wallet_id == id)
+        );
+        assert!(current.state_mut().await.is_ok());
+        assert!(current.try_state_mut().is_some());
+    }
 }
 
 #[cfg(all(test, feature = "shielded"))]

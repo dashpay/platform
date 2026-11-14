@@ -705,6 +705,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&self.sync_fault),
             Arc::clone(&self.durable_cursors),
         );
+        #[cfg(feature = "shielded")]
+        let platform_wallet = {
+            let mut wallet = platform_wallet;
+            wallet.shielded_coordinator = Some(Arc::clone(&self.shielded_coordinator));
+            wallet
+        };
 
         // Restore the platform-address provider from the slice read above —
         // the only area wired up today. `from_persisted` skips the live

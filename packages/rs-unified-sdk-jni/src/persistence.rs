@@ -53,11 +53,11 @@ use jni::sys::jstring;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
-    AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI, CoreAddressEntryFFI, DashPayBackfillCoveredContactFFI,
-    DpnsNameStateFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
-    IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI, OutPointFFI,
-    PaymentRestoreEntryFFI, PersistenceCallbacks, PersistenceCallbacksExtension,
+    AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI,
+    ContactProfileRowFFI, ContactRequestFFI, ContactRequestRemovalFFI, CoreAddressEntryFFI,
+    DashPayBackfillCoveredContactFFI, DpnsNameStateFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
+    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI,
+    OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks, PersistenceCallbacksExtension,
     PlatformAddressFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
     ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI,
     TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
@@ -226,6 +226,12 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// publication fails closed.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
     extension_for(BridgeOverrides {
+        dashpay_profiles: bridge_overrides(
+            env,
+            bridge,
+            "onPersistDashpayProfile",
+            PERSIST_DASHPAY_PROFILE_DESCRIPTOR,
+        ),
         sweeps: bridge_overrides(
             env,
             bridge,
@@ -328,6 +334,7 @@ struct BridgeOverrides {
     /// vouches for the contact requests read before it, which an inherited
     /// no-op contact upsert never keeps.
     private_contact_scan_state: bool,
+    dashpay_profiles: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -335,6 +342,9 @@ struct BridgeOverrides {
 fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
+        on_persist_dashpay_profiles_fn: overrides
+            .dashpay_profiles
+            .then_some(tramp_persist_dashpay_profiles),
         on_persist_wallet_changeset_sweeps_fn: if overrides.sweeps {
             Some(tramp_persist_wallet_changeset_sweeps)
         } else {
@@ -1739,13 +1749,28 @@ unsafe fn persist_identity_upsert(
     let public_message = cstr_opt(env, e.dashpay_profile_public_message)?;
     let avatar_hash = env.byte_array_from_slice(&e.dashpay_profile_avatar_hash)?;
     let avatar_fp = env.byte_array_from_slice(&e.dashpay_profile_avatar_fingerprint)?;
+    let core_payment_address = if e.dashpay_profile_core_payment_address_present {
+        JObject::from(env.byte_array_from_slice(&e.dashpay_profile_core_payment_address)?)
+    } else {
+        JObject::null()
+    };
+    let platform_payment_address = if e.dashpay_profile_platform_payment_address_present {
+        JObject::from(env.byte_array_from_slice(&e.dashpay_profile_platform_payment_address)?)
+    } else {
+        JObject::null()
+    };
+    let shielded_address = if e.dashpay_profile_shielded_address_present {
+        JObject::from(env.byte_array_from_slice(&e.dashpay_profile_shielded_address)?)
+    } else {
+        JObject::null()
+    };
 
     let code = env
         .call_method(
             bridge,
             "onPersistIdentityUpsert",
             "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-             Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+             Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I",
             &[
                 wid.into(),
                 (&identity_id).into(),
@@ -1767,6 +1792,9 @@ unsafe fn persist_identity_upsert(
                 (&avatar_fp).into(),
                 JValue::Bool(e.dashpay_profile_avatar_fingerprint_present as u8),
                 (&public_message).into(),
+                (&core_payment_address).into(),
+                (&platform_payment_address).into(),
+                (&shielded_address).into(),
             ],
         )?
         .i()?;
@@ -1790,11 +1818,26 @@ unsafe fn persist_identity_upsert(
             let public_message = cstr_opt(env, row.public_message)?;
             let avatar_hash = env.byte_array_from_slice(&row.avatar_hash)?;
             let avatar_fp = env.byte_array_from_slice(&row.avatar_fingerprint)?;
+            let core_payment_address = if row.core_payment_address_present {
+                JObject::from(env.byte_array_from_slice(&row.core_payment_address)?)
+            } else {
+                JObject::null()
+            };
+            let platform_payment_address = if row.platform_payment_address_present {
+                JObject::from(env.byte_array_from_slice(&row.platform_payment_address)?)
+            } else {
+                JObject::null()
+            };
+            let shielded_address = if row.shielded_address_present {
+                JObject::from(env.byte_array_from_slice(&row.shielded_address)?)
+            } else {
+                JObject::null()
+            };
             env.call_method(
                 bridge,
                 "onPersistContactProfileDelta",
                 "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
-                 [BZ[BZLjava/lang/String;J)I",
+                 [BZ[BZLjava/lang/String;J[B[B[B)I",
                 &[
                     wid.into(),
                     (&identity_id).into(),
@@ -1809,6 +1852,9 @@ unsafe fn persist_identity_upsert(
                     JValue::Bool(row.avatar_fingerprint_present as u8),
                     (&public_message).into(),
                     JValue::Long(row.checked_at_ms as i64),
+                    (&core_payment_address).into(),
+                    (&platform_payment_address).into(),
+                    (&shielded_address).into(),
                 ],
             )?
             .i()
@@ -1818,6 +1864,72 @@ unsafe fn persist_identity_upsert(
         }
     }
     Ok(0)
+}
+
+const PERSIST_DASHPAY_PROFILE_DESCRIPTOR: &str =
+    "([B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I";
+
+unsafe extern "C" fn tramp_persist_dashpay_profiles(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    rows_ptr: *const ContactProfileRowFFI,
+    rows_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for row in slice_or_empty(rows_ptr, rows_count) {
+            let code = env.with_local_frame(16, |env| {
+                let contact_id = env.byte_array_from_slice(&row.contact_id)?;
+                let display = cstr_opt(env, row.display_name)?;
+                let bio = cstr_opt(env, row.bio)?;
+                let avatar_url = cstr_opt(env, row.avatar_url)?;
+                let public_message = cstr_opt(env, row.public_message)?;
+                let avatar_hash = env.byte_array_from_slice(&row.avatar_hash)?;
+                let avatar_fp = env.byte_array_from_slice(&row.avatar_fingerprint)?;
+                let core_payment_address = if row.core_payment_address_present {
+                    JObject::from(env.byte_array_from_slice(&row.core_payment_address)?)
+                } else {
+                    JObject::null()
+                };
+                let platform_payment_address = if row.platform_payment_address_present {
+                    JObject::from(env.byte_array_from_slice(&row.platform_payment_address)?)
+                } else {
+                    JObject::null()
+                };
+                let shielded_address = if row.shielded_address_present {
+                    JObject::from(env.byte_array_from_slice(&row.shielded_address)?)
+                } else {
+                    JObject::null()
+                };
+                env.call_method(
+                    bridge,
+                    "onPersistDashpayProfile",
+                    PERSIST_DASHPAY_PROFILE_DESCRIPTOR,
+                    &[
+                        (&wid).into(),
+                        (&contact_id).into(),
+                        JValue::Bool(row.is_present as u8),
+                        (&display).into(),
+                        (&bio).into(),
+                        (&avatar_url).into(),
+                        (&avatar_hash).into(),
+                        JValue::Bool(row.avatar_hash_present as u8),
+                        (&avatar_fp).into(),
+                        JValue::Bool(row.avatar_fingerprint_present as u8),
+                        (&public_message).into(),
+                        (&core_payment_address).into(),
+                        (&platform_payment_address).into(),
+                        (&shielded_address).into(),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
 }
 
 // ── Identity keys ─────────────────────────────────────────────────────
@@ -2667,6 +2779,7 @@ struct IdentityRestoreStaged {
     ignored_senders: Vec<[u8; 32]>,
     payments: Vec<PaymentRestoreStaged>,
     contact_profiles: Vec<ContactProfileRestoreStaged>,
+    dashpay_profile: Option<ContactProfileRestoreStaged>,
 }
 
 /// Staged DashPay payment-history row: FFI struct with `txid` / `memo`
@@ -2693,6 +2806,21 @@ struct ContactProfileRestoreStaged {
     bio: Option<CString>,
     avatar_url: Option<CString>,
     public_message: Option<CString>,
+}
+
+fn seal_profile(profile: ContactProfileRestoreStaged) -> ContactProfileRestoreEntryFFI {
+    let ContactProfileRestoreStaged {
+        mut row,
+        display_name,
+        bio,
+        avatar_url,
+        public_message,
+    } = profile;
+    row.display_name = opt_cstring_into_raw(display_name);
+    row.bio = opt_cstring_into_raw(bio);
+    row.avatar_url = opt_cstring_into_raw(avatar_url);
+    row.public_message = opt_cstring_into_raw(public_message);
+    row
 }
 
 /// Staged DashPay contact-restore row: FFI struct with every pointer
@@ -2888,6 +3016,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                              ignored_senders,
                              payments,
                              contact_profiles,
+                             dashpay_profile,
                          }| {
                             let keys: Vec<IdentityKeyRestoreFFI> = keys
                                 .into_iter()
@@ -2960,26 +3089,12 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                                 .collect();
                             (entry.payments, entry.payments_count) = vec_into_raw(payments);
 
+                            entry.dashpay_profile =
+                                dashpay_profile.map_or(ptr::null(), |profile| {
+                                    Box::into_raw(Box::new(seal_profile(profile))) as *const _
+                                });
                             let contact_profiles: Vec<ContactProfileRestoreEntryFFI> =
-                                contact_profiles
-                                    .into_iter()
-                                    .map(
-                                        |ContactProfileRestoreStaged {
-                                             mut row,
-                                             display_name,
-                                             bio,
-                                             avatar_url,
-                                             public_message,
-                                         }| {
-                                            row.display_name = opt_cstring_into_raw(display_name);
-                                            row.bio = opt_cstring_into_raw(bio);
-                                            row.avatar_url = opt_cstring_into_raw(avatar_url);
-                                            row.public_message =
-                                                opt_cstring_into_raw(public_message);
-                                            row
-                                        },
-                                    )
-                                    .collect();
+                                contact_profiles.into_iter().map(seal_profile).collect();
                             (entry.contact_profiles, entry.contact_profiles_count) =
                                 vec_into_raw(contact_profiles);
                             entry
@@ -3845,6 +3960,18 @@ fn build_identity_restore(
         contact_profiles.push(cp);
     }
 
+    let owned_profile = env
+        .get_field(
+            holder,
+            "dashpayProfile",
+            "Lorg/dashfoundation/dashsdk/ffi/ContactProfileRestoreData;",
+        )?
+        .l()?;
+    let dashpay_profile = if owned_profile.is_null() {
+        None
+    } else {
+        Some(build_contact_profile_restore(env, &owned_profile)?)
+    };
     let entry = IdentityRestoreEntryFFI {
         identity_id,
         balance,
@@ -3865,6 +3992,7 @@ fn build_identity_restore(
         ignored_senders_count: 0,
         contact_profiles: ptr::null(),
         contact_profiles_count: 0,
+        dashpay_profile: ptr::null(),
     };
     Ok(IdentityRestoreStaged {
         entry,
@@ -3873,6 +4001,7 @@ fn build_identity_restore(
         ignored_senders,
         payments,
         contact_profiles,
+        dashpay_profile,
     })
 }
 
@@ -3941,6 +4070,24 @@ fn build_contact_profile_restore(
             Err(_) => ([0u8; 8], false),
         };
 
+    let bytes = read_bytes_field_vec(env, holder, "corePaymentAddress")?;
+    let (core_payment_address, core_payment_address_present) =
+        match <[u8; 21]>::try_from(bytes.as_slice()) {
+            Ok(value) => (value, true),
+            Err(_) => ([0; 21], false),
+        };
+    let bytes = read_bytes_field_vec(env, holder, "platformPaymentAddress")?;
+    let (platform_payment_address, platform_payment_address_present) =
+        match <[u8; 21]>::try_from(bytes.as_slice()) {
+            Ok(value) => (value, true),
+            Err(_) => ([0; 21], false),
+        };
+    let bytes = read_bytes_field_vec(env, holder, "shieldedAddress")?;
+    let (shielded_address, shielded_address_present) = match <[u8; 43]>::try_from(bytes.as_slice())
+    {
+        Ok(value) => (value, true),
+        Err(_) => ([0; 43], false),
+    };
     Ok(ContactProfileRestoreStaged {
         row: ContactProfileRestoreEntryFFI {
             contact_id,
@@ -3951,6 +4098,12 @@ fn build_contact_profile_restore(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: ptr::null(),
             checked_at_ms,
         },
@@ -4307,6 +4460,16 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                         e.identities_count,
                     ));
                 for ident in idents.iter() {
+                    if !ident.dashpay_profile.is_null() {
+                        let profile = Box::from_raw(
+                            ident.dashpay_profile as *mut ContactProfileRestoreEntryFFI,
+                        );
+                        free_raw_cstring(profile.display_name);
+                        free_raw_cstring(profile.bio);
+                        free_raw_cstring(profile.avatar_url);
+                        free_raw_cstring(profile.public_message);
+                    }
+
                     if !ident.keys.is_null() && ident.keys_count > 0 {
                         let keys: Box<[IdentityKeyRestoreFFI]> =
                             Box::from_raw(std::ptr::slice_from_raw_parts_mut(
@@ -5185,6 +5348,10 @@ fn read_bytes_field_vec(
 /// [`nativeVerifyPersistenceBridgeDescriptors`] resolves the whole table up
 /// front instead; keep this table in sync with the `call_method` sites.
 const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
+    (
+        "onPersistDashpayProfile",
+        PERSIST_DASHPAY_PROFILE_DESCRIPTOR,
+    ),
     ("persistenceCapabilitiesVersion", "()I"),
     ("persistenceCapabilitiesBits", "()J"),
     ("onChangesetBegin", "([B)I"),
@@ -5253,13 +5420,13 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+         Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I",
     ),
     ("onPersistIdentityRemoval", "([B[B)I"),
     (
         "onPersistContactProfileDelta",
         "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
-         [BZ[BZLjava/lang/String;J)I",
+         [BZ[BZLjava/lang/String;J[B[B[B)I",
     ),
     ("onPersistIdentityKeyUpsert", IDENTITY_KEY_UPSERT_DESCRIPTOR),
     ("onPersistIdentityKeyRemoval", "([B[BI)I"),
@@ -5473,6 +5640,7 @@ mod tests {
                 header,
                 backfill,
                 private_contact_scan_state: false,
+                dashpay_profiles: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5485,6 +5653,7 @@ mod tests {
             header: false,
             backfill: false,
             private_contact_scan_state: false,
+            dashpay_profiles: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
@@ -5502,6 +5671,7 @@ mod tests {
                 header: false,
                 backfill: false,
                 private_contact_scan_state: wired,
+                dashpay_profiles: false,
             });
             assert_eq!(
                 extension.on_persist_private_contact_scan_state_fn.is_some(),
@@ -5646,6 +5816,47 @@ mod tests {
         assert_eq!(jint_height(i32::MAX as u32).unwrap(), i32::MAX);
         assert!(jint_height(i32::MAX as u32 + 1).is_err());
         assert!(jint_height(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn should_negotiate_only_overridden_dashpay_profile_callback_and_match_descriptor() {
+        let names = [
+            "[B",
+            "[B",
+            "boolean",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String",
+            "[B",
+            "boolean",
+            "[B",
+            "boolean",
+            "java.lang.String",
+            "[B",
+            "[B",
+            "[B",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+        assert_eq!(
+            method_descriptor(&names, "int"),
+            PERSIST_DASHPAY_PROFILE_DESCRIPTOR
+        );
+        assert!(BRIDGE_METHOD_TABLE.contains(&(
+            "onPersistDashpayProfile",
+            PERSIST_DASHPAY_PROFILE_DESCRIPTOR
+        )));
+        for wired in [false, true] {
+            let extension = extension_for(BridgeOverrides {
+                sweeps: false,
+                header: false,
+                backfill: false,
+                private_contact_scan_state: false,
+                dashpay_profiles: wired,
+            });
+            assert_eq!(extension.on_persist_dashpay_profiles_fn.is_some(), wired);
+        }
     }
 
     #[test]
