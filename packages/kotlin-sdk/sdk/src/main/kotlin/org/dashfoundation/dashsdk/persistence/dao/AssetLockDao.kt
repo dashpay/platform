@@ -110,6 +110,10 @@ interface AssetLockDao {
     @Query("SELECT * FROM asset_locks WHERE outPointHex = :outPointHex")
     suspend fun getByOutPointHex(outPointHex: String): AssetLockEntity?
 
+    /** Record the payment intent sidecar on an existing row. */
+    @Query("UPDATE asset_locks SET paymentIntent = :intent WHERE outPointHex = :outPointHex")
+    suspend fun setPaymentIntent(outPointHex: String, intent: ByteArray)
+
     /**
      * Strongest lifecycle status any asset lock funded by [txidHex] has
      * reached, or null when the transaction funds no tracked lock.

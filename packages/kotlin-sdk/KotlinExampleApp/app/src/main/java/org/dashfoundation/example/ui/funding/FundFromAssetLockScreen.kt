@@ -60,7 +60,11 @@ import org.dashfoundation.example.util.toHex
  * lock + amount were fixed at original build time), still picks a fresh
  * recipient, and routes Submit to
  * [ManagedPlatformWallet.resumeFundFromAssetLock] instead of
- * `fundFromAssetLock`, seeded with the parsed outpoint. The
+ * `fundFromAssetLock`, seeded with the parsed outpoint. A lock built by
+ * `fundFromAssetLockExternal` carries its recipients
+ * (`AssetLockEntity.paymentIntent`) and resumes through
+ * [ManagedPlatformWallet.resumeFundFromAssetLockExternal] with exactly those
+ * instead, never as an owned top-up. The
  * [PendingPlatformFundFromAssetLocksList] orphan surface opens the screen in
  * this mode.
  */
@@ -247,6 +251,25 @@ fun FundFromAssetLockScreen(
                         recipientHash = recipientHash,
                         recipientType = recipientType,
                     ) {
+                        if (lock.paymentIntent != null) {
+                            // The lock was built to pay someone else and
+                            // recorded who: resume it with exactly those
+                            // recipients. An owned resume (the picked address)
+                            // would be refused — it must never return the
+                            // payment to this wallet.
+                            val recorded = checkNotNull(w.assetLockPaymentIntent(txid, vout)) {
+                                "The asset lock no longer carries its recorded recipients."
+                            }
+                            val updates = w.resumeFundFromAssetLockExternal(
+                                outPointTxid = txid,
+                                outPointVout = vout,
+                                platformAccountIndex = platformAccountIndex,
+                                recipients = recorded,
+                                signerHandle = mgr.signerHandle,
+                                coreSignerHandle = mgr.mnemonicResolverHandle,
+                            )
+                            return@startFunding updates.firstOrNull()?.balance ?: 0L
+                        }
                         val updates = w.resumeFundFromAssetLock(
                             outPointTxid = txid,
                             outPointVout = vout,

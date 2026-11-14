@@ -869,27 +869,17 @@ class ManagedPlatformWallet internal constructor(
      * rejected before anything is broadcast, while here it is a valid and
      * IRREVERSIBLE payment to a stranger.
      *
-     * ## Failure and resume — bind the recipients to the lock
-     * The lock is tracked as `AssetLockFundingType.AssetLockAddressTopUp`,
-     * exactly like an owned funding. The tracked lock stores NO recipients
-     * and NO owned/external flag: Rust only knows the outpoint, its status
-     * and its proof. If the Platform step fails, the lock stays non-Consumed
-     * and shows as resumable, and resume takes the recipients from the caller
-     * again. Therefore:
-     * - Persist the recipient list (address and amount) under an id of your
-     *   own BEFORE calling this.
-     * - In [onAssetLockBuilt], durably record the reported outpoint against
-     *   that id. It is the only link between the persisted recipients and
-     *   the lock: with more than one funding in flight, matching by amount
-     *   or timing can pick the wrong lock after a restart.
-     * - Resume a lock recorded this way with exactly its list through
-     *   [resumeFundFromAssetLockExternal]. Any other route is wrong:
-     *   [resumeFundFromAssetLock] with this list fails closed (its owned-only
-     *   pre-flight rejects the third-party output before submit), but with an
-     *   owned-only list — e.g. a generic "resume top-up" screen that picks a
-     *   fresh own address — it succeeds and returns the whole lock to the
-     *   wallet, leaving the payee unpaid; and resuming with a different list
-     *   silently pays the new list.
+     * ## Failure and resume
+     * The SDK records the recipient list with the asset lock (its payment
+     * intent, stored in `AssetLockEntity.paymentIntent`) before the lock is
+     * broadcast, so you do not have to associate the outpoint with the
+     * recipients yourself; [onAssetLockBuilt] is informational. If the
+     * Platform step fails, the lock stays non-Consumed and resumable: read its
+     * recipients with [assetLockPaymentIntent] and resume with exactly that
+     * list through [resumeFundFromAssetLockExternal]. Any other resume —
+     * [resumeFundFromAssetLock] with an owned list (which would return the
+     * whole lock to the wallet and leave the payee unpaid), or a different
+     * list — is refused by `platform-wallet` before anything is submitted.
      *
      * @param amountDuffs amount to lock, in Core duffs.
      * @param fundingAccountIndex standard-family source index — see
@@ -908,10 +898,10 @@ class ManagedPlatformWallet internal constructor(
      *   outpoint, after the lock transaction is signed and before the lock's
      *   row is persisted or the lock is broadcast; it is not called when the
      *   build itself fails. It runs on the SDK's runtime thread, inside this
-     *   call: record the outpoint synchronously (durably, to survive a
-     *   restart) before returning, keep it short, and do not call any wallet
-     *   or SDK function from it. It cannot stop the funding: an exception it
-     *   throws is discarded and the lock is still broadcast and submitted.
+     *   call: keep it short and do not call any wallet or SDK function from
+     *   it. It cannot stop the funding and recovery does not depend on it: an
+     *   exception it throws is discarded and the lock is still broadcast and
+     *   submitted.
      * @return updated balances for the recipients that belong to this wallet
      *   — in practice only the remainder address. The third party's credit
      *   is proven on Platform but has no local row, so it is not included.
@@ -951,6 +941,34 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * The recipient list an asset lock recorded when it was built by
+     * [fundFromAssetLockExternal] (its payment intent), or `null` when the
+     * lock funds this wallet, was tracked before intents were recorded, or is
+     * not tracked. Route recovery by it: a lock with an intent resumes only
+     * through [resumeFundFromAssetLockExternal] with exactly this list.
+     *
+     * @param outPointTxid 32-byte raw txid (little-endian wire order).
+     * @param outPointVout funding output index.
+     */
+    suspend fun assetLockPaymentIntent(
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+    ): List<FundRecipient>? = gate.op {
+        require(outPointTxid.size == 32) {
+            "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
+        }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
+        val blob = mapNativeErrors {
+            WalletManagerNative.walletAssetLockPaymentIntent(
+                walletHandle = handle,
+                outPointTxid = outPointTxid,
+                outPointVout = outPointVout,
+            )
+        } ?: return@op null
+        decodePaymentIntent(blob)
+    }
+
+    /**
      * Resume a stuck external-recipient funding from an already-tracked asset
      * lock by outpoint — port of
      * `ManagedPlatformAddressWallet.resumeFundFromAssetLockExternal`.
@@ -958,13 +976,11 @@ class ManagedPlatformWallet internal constructor(
      * Sibling of [resumeFundFromAssetLock] (same resume-by-outpoint shape)
      * and of [fundFromAssetLockExternal] (same relaxed recipient rules).
      *
-     * The recipients are a PARAMETER, not something recovered from the
-     * tracked lock: Rust never learns the destination of an address-funding
-     * asset lock. Pass exactly the list persisted before the original
-     * [fundFromAssetLockExternal] call, found through the outpoint its
-     * `onAssetLockBuilt` reported. The asset lock is a bearer input,
-     * not a commitment to a destination, so a different list pays the new
-     * list.
+     * The lock recorded its recipients when it was built: pass exactly the
+     * list [assetLockPaymentIntent] returns for it. A different list is
+     * refused by `platform-wallet` before anything is submitted
+     * (`ASSET_LOCK_RECIPIENT_MISMATCH`). A lock tracked before intents were
+     * recorded carries none and pays whatever list is passed.
      *
      * @param outPointTxid 32-byte raw txid (little-endian wire order).
      * @param outPointVout funding output index.
@@ -1488,6 +1504,32 @@ class ManagedPlatformWallet internal constructor(
          * and it derives the fee-paying output itself
          * (`remainder_fee_strategy`) — Kotlin never computes a fee strategy.
          */
+        /** Payment-intent kind byte for Platform-address recipients. */
+        private const val PAYMENT_INTENT_KIND_PLATFORM_ADDRESSES = 1
+
+        /**
+         * Decode the blob `walletAssetLockPaymentIntent` returns: a kind
+         * byte, then the [encodeRecipients] row shape. Pure unmarshalling;
+         * the recipients are Rust's.
+         */
+        internal fun decodePaymentIntent(blob: ByteArray): List<FundRecipient> {
+            val input = java.io.DataInputStream(blob.inputStream())
+            val kind = input.readUnsignedByte()
+            check(kind == PAYMENT_INTENT_KIND_PLATFORM_ADDRESSES) {
+                "unknown asset-lock payment intent kind $kind"
+            }
+            val count = input.readInt()
+            val recipients = List(count) {
+                val addressType = input.readUnsignedByte()
+                val hash = ByteArray(20).also(input::readFully)
+                val hasCredits = input.readUnsignedByte() != 0
+                val credits = input.readLong()
+                FundRecipient(addressType, hash, if (hasCredits) credits else null)
+            }
+            check(input.available() == 0) { "trailing bytes in asset-lock payment intent" }
+            return recipients
+        }
+
         internal fun encodeRecipients(recipients: List<FundRecipient>): ByteArray {
             val out = java.io.ByteArrayOutputStream()
             val dos = java.io.DataOutputStream(out)

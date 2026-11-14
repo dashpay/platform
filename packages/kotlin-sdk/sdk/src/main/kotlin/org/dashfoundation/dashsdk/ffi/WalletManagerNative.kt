@@ -448,6 +448,17 @@ internal object WalletManagerNative {
         coreSignerHandle: Long,
     ): ByteArray
 
+    /**
+     * The payment intent a tracked asset lock recorded (a kind byte, then
+     * the recipients blob shape), or `null` when it carries none; binds
+     * `platform_wallet_get_asset_lock_payment_intent`.
+     */
+    external fun walletAssetLockPaymentIntent(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+    ): ByteArray?
+
     // ── Wallet-signed Platform-address credit movement (ADDR-02/04) ───
 
     /**

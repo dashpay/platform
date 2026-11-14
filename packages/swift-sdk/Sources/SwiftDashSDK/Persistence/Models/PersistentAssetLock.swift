@@ -219,6 +219,22 @@ public final class PersistentAssetLock {
     /// published, V4 schema (`schema-releases.json` registers 3.0.0 only).
     public var shieldedRecipientRaw43: Data?
 
+    /// What the lock was built to pay when that is not this wallet — the
+    /// recipients of `fundFromAssetLockExternal` — in the opaque form Rust
+    /// hands over (`AssetLockPaymentIntent::to_bytes`, at most
+    /// `PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN` bytes). Written by
+    /// Rust with the row before the lock is dispatched and immutable
+    /// afterwards: a resume pays these recipients or is refused
+    /// (`assetLockRecipientMismatch`), so recovery never refunds the payment
+    /// to the wallet. Read the recipients through
+    /// `ManagedPlatformWallet.assetLockPaymentIntent(txid:vout:)`, never by parsing
+    /// these bytes. `nil` for owned fundings and for locks tracked before
+    /// intents were recorded.
+    ///
+    /// Default `nil` keeps SwiftData's lightweight migration safe. Lands in
+    /// the live, not yet published, V5 schema.
+    public var paymentIntent: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -234,7 +250,8 @@ public final class PersistentAssetLock {
         statusRaw: Int,
         proofBytes: Data? = nil,
         operationId: Data? = nil,
-        shieldedRecipientRaw43: Data? = nil
+        shieldedRecipientRaw43: Data? = nil,
+        paymentIntent: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -247,6 +264,7 @@ public final class PersistentAssetLock {
         self.proofBytes = proofBytes
         self.operationId = operationId
         self.shieldedRecipientRaw43 = shieldedRecipientRaw43
+        self.paymentIntent = paymentIntent
         self.createdAt = Date()
         self.updatedAt = Date()
     }

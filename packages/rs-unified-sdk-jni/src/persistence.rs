@@ -265,6 +265,17 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
         ),
+        payment_intent: bridge_overrides(
+            env,
+            bridge,
+            "onPersistAssetLockPaymentIntent",
+            PERSIST_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onLoadAssetLockPaymentIntent",
+            LOAD_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR,
+        ),
     })
 }
 
@@ -328,6 +339,11 @@ struct BridgeOverrides {
     /// vouches for the contact requests read before it, which an inherited
     /// no-op contact upsert never keeps.
     private_contact_scan_state: bool,
+    /// `onPersistAssetLockPaymentIntent` and `onLoadAssetLockPaymentIntent`:
+    /// an inherited no-op store would acknowledge the recipients of an
+    /// external payment it never kept, and a restart would then let the
+    /// lock be consumed back into the wallet.
+    payment_intent: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -363,6 +379,12 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         on_load_private_contact_scan_state_wallets_free_fn: overrides
             .private_contact_scan_state
             .then_some(tramp_load_private_contact_scan_state_wallets_free),
+        on_persist_asset_lock_payment_intent_fn: overrides
+            .payment_intent
+            .then_some(tramp_persist_asset_lock_payment_intent),
+        on_load_asset_lock_payment_intent_fn: overrides
+            .payment_intent
+            .then_some(tramp_load_asset_lock_payment_intent),
         ..Default::default()
     }
 }
@@ -1148,6 +1170,14 @@ const LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR: &str = "([B)[[B";
 /// Descriptor of `NativePersistenceBridge.onLoadPrivateContactScanStateWallets`:
 /// `() -> walletIds`, the 32-byte ids packed back to back.
 const LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR: &str = "()[B";
+
+/// Descriptor of `NativePersistenceBridge.onPersistAssetLockPaymentIntent`:
+/// `(walletId, outPoint, intent)`.
+const PERSIST_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR: &str = "([B[B[B)I";
+
+/// Descriptor of `NativePersistenceBridge.onLoadAssetLockPaymentIntent`:
+/// `(walletId, outPoint)` → the stored bytes, or null for none.
+const LOAD_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR: &str = "([B[B)[B";
 
 fn pack_private_positions(rows: &[PrivateContactRequestsPositionFFI]) -> Vec<u8> {
     let mut packed = Vec::with_capacity(rows.len() * PRIVATE_POSITION_ENTRY_LEN);
@@ -2190,6 +2220,72 @@ unsafe extern "C" fn tramp_persist_asset_locks(
         }
         Ok(0)
     })
+}
+
+/// The payment-intent sidecar of one asset-lock row: the wallet's opaque
+/// bytes, stored as given.
+unsafe extern "C" fn tramp_persist_asset_lock_payment_intent(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    intent: *const u8,
+    intent_len: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let outpoint = bytes(env, out_point, 36)?;
+        let intent = bytes(env, intent, intent_len)?;
+        env.call_method(
+            bridge,
+            "onPersistAssetLockPaymentIntent",
+            PERSIST_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR,
+            &[(&wid).into(), (&outpoint).into(), (&intent).into()],
+        )?
+        .i()
+    })
+}
+
+/// Read the payment-intent sidecar of one restored row. A Kotlin exception
+/// (a missing or unreadable row) fails the load; null is "no intent".
+unsafe extern "C" fn tramp_load_asset_lock_payment_intent(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_intent: *mut u8,
+    intent_capacity: usize,
+    out_intent_len: *mut usize,
+) -> i32 {
+    *out_found = false;
+    *out_intent_len = 0;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let outpoint = bytes(env, out_point, 36)?;
+        let stored = env
+            .call_method(
+                bridge,
+                "onLoadAssetLockPaymentIntent",
+                LOAD_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR,
+                &[(&wid).into(), (&outpoint).into()],
+            )?
+            .l()?;
+        if stored.is_null() {
+            return Ok(None);
+        }
+        env.convert_byte_array(JByteArray::from(stored)).map(Some)
+    });
+    let Some(stored) = loaded else {
+        return ERR_JNI;
+    };
+    if let Some(intent) = stored {
+        if intent.is_empty() || intent.len() > intent_capacity {
+            return ERR_JNI;
+        }
+        std::ptr::copy_nonoverlapping(intent.as_ptr(), out_intent, intent.len());
+        *out_intent_len = intent.len();
+        *out_found = true;
+    }
+    0
 }
 
 // ── Invitations (DIP-13) ──────────────────────────────────────────────
@@ -5251,6 +5347,14 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR,
     ),
     (
+        "onPersistAssetLockPaymentIntent",
+        PERSIST_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR,
+    ),
+    (
+        "onLoadAssetLockPaymentIntent",
+        LOAD_ASSET_LOCK_PAYMENT_INTENT_DESCRIPTOR,
+    ),
+    (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
          Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
@@ -5473,6 +5577,7 @@ mod tests {
                 header,
                 backfill,
                 private_contact_scan_state: false,
+                payment_intent: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5485,9 +5590,34 @@ mod tests {
             header: false,
             backfill: false,
             private_contact_scan_state: false,
+            payment_intent: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
+    }
+
+    /// The payment-intent pair is wired only for a bridge that implements
+    /// both its store and its load, so `FFIPersister` attests
+    /// `ASSET_LOCK_PAYMENT_INTENTS` only for a bridge that keeps them.
+    #[test]
+    fn the_payment_intent_slots_are_wired_only_for_a_bridge_that_stores_and_loads_them() {
+        for wired in [false, true] {
+            let extension = extension_for(BridgeOverrides {
+                sweeps: false,
+                header: false,
+                backfill: false,
+                private_contact_scan_state: false,
+                payment_intent: wired,
+            });
+            assert_eq!(
+                extension.on_persist_asset_lock_payment_intent_fn.is_some(),
+                wired
+            );
+            assert_eq!(
+                extension.on_load_asset_lock_payment_intent_fn.is_some(),
+                wired
+            );
+        }
     }
 
     /// The scan-state trio is wired only for a bridge that implements both
@@ -5502,6 +5632,7 @@ mod tests {
                 header: false,
                 backfill: false,
                 private_contact_scan_state: wired,
+                payment_intent: false,
             });
             assert_eq!(
                 extension.on_persist_private_contact_scan_state_fn.is_some(),

@@ -60,6 +60,17 @@ data class AssetLockEntity(
     val recipientPlatformAddressHash: ByteArray? = null,
     /** 0 = P2PKH, 1 = P2SH; Swift `UInt8?` → [Int]?. Null iff hash is null. */
     val recipientPlatformAddressType: Int? = null,
+    /**
+     * What the lock was built to pay when that is not this wallet — the
+     * recipients of `fundFromAssetLockExternal` — in Rust's opaque form
+     * (Swift `paymentIntent`). Written by Rust with the row before the lock
+     * is broadcast and immutable afterwards: a resume pays these recipients
+     * or is refused, so recovery never refunds the payment to the wallet.
+     * Read the recipients with `ManagedPlatformWallet.assetLockPaymentIntent`,
+     * never by parsing these bytes. `null` for owned fundings and for rows
+     * stored before intents were recorded.
+     */
+    val paymentIntent: ByteArray? = null,
     val createdAt: Date = Date(),
     /** Swift names this `updatedAt` (not `lastUpdated`). */
     val updatedAt: Date = Date(),
