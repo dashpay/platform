@@ -266,6 +266,161 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     PlatformWalletFFIResult::ok()
 }
 
+/// Top up someone else's identity — one this wallet does not manage — by
+/// building and broadcasting a new Core asset lock from the wallet's
+/// balance. The external counterpart of
+/// [`platform_wallet_top_up_identity_with_funding_signer`].
+///
+/// Wraps
+/// `IdentityWallet::top_up_external_identity_with_funding` with
+/// `AssetLockFunding::FromWalletBalance`: the identity is fetched from
+/// Platform, the lock is funded from the wallet's unbound top-up account and
+/// its row records `identity_id` before the broadcast, so an interrupted
+/// top-up resumes to this identity only
+/// ([`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`]).
+/// Nothing is written to the wallet's identities. On success
+/// `out_new_balance` receives the identity's proved post-transition balance.
+///
+/// Errors before anything is built: `ErrorInvalidParameter` for an amount
+/// below [`MIN_TOP_UP_DUFFS`], `ErrorIdentityNotFound` (7) for an identity
+/// Platform does not know, and a persistence error when the host's persister
+/// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
+/// reported as the SDK error for now; it becomes `ErrorIdentityLookupFailed`
+/// (80) with dashpay/platform#5860. Once the lock is built, a failure may
+/// leave it tracked and resumable.
+///
+/// # Safety
+/// Same contract as [`platform_wallet_top_up_identity_with_funding_signer`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    amount_duffs: u64,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(identity_id);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_new_balance);
+    *out_new_balance = 0;
+    if amount_duffs < MIN_TOP_UP_DUFFS {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`amount_duffs` is below the minimum top-up asset-lock balance",
+        );
+    }
+    let identity_id = Identifier::from(*identity_id);
+    let core_signer_addr = core_signer_handle as usize;
+
+    // Read what the call needs out of the registry, then release it before
+    // the top-up awaits the network and the host's signer and persister.
+    let (identity_wallet, wallet_id, network) = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            (
+                wallet.identity().clone(),
+                wallet.wallet_id(),
+                wallet.sdk().network,
+            )
+        }));
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the handle is pinned alive
+        // for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        identity_wallet
+            .top_up_external_identity_with_funding(
+                &identity_id,
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs,
+                    account_index,
+                },
+                &asset_lock_signer,
+                None,
+            )
+            .await
+    });
+    *out_new_balance = unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod top_up_external_with_funding_guard_tests {
+    use super::*;
+    use crate::error::PlatformWalletFFIResultCode;
+
+    fn dangling_core_signer() -> *mut MnemonicResolverHandle {
+        std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr()
+    }
+
+    #[test]
+    fn should_refuse_null_pointers_a_sub_floor_amount_and_an_unknown_wallet() {
+        let id = [0u8; 32];
+        let mut balance = 7u64;
+        let call = |identity: *const [u8; 32],
+                    amount: u64,
+                    signer: *mut MnemonicResolverHandle,
+                    out: *mut u64| unsafe {
+            platform_wallet_top_up_external_identity_with_funding_signer(
+                u64::MAX,
+                identity,
+                amount,
+                0,
+                signer,
+                out,
+            )
+        };
+        assert_eq!(
+            call(
+                std::ptr::null(),
+                MIN_TOP_UP_DUFFS,
+                dangling_core_signer(),
+                &mut balance
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+        assert_eq!(
+            call(&id, MIN_TOP_UP_DUFFS, std::ptr::null_mut(), &mut balance).code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+        assert_eq!(
+            call(
+                &id,
+                MIN_TOP_UP_DUFFS,
+                dangling_core_signer(),
+                std::ptr::null_mut()
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+        assert_eq!(
+            call(
+                &id,
+                MIN_TOP_UP_DUFFS - 1,
+                dangling_core_signer(),
+                &mut balance
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            balance, 0,
+            "the out-param is reset before any fallible work"
+        );
+        assert_eq!(
+            call(&id, MIN_TOP_UP_DUFFS, dangling_core_signer(), &mut balance).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
+    }
+}
+
 #[cfg(test)]
 mod top_up_with_funding_guard_tests {
     use super::*;

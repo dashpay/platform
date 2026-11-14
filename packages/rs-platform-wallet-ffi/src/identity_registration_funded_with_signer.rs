@@ -346,6 +346,79 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     PlatformWalletFFIResult::ok()
 }
 
+/// Resume an interrupted unbound identity top-up to the identity its lock
+/// recorded — the caller names no identity, so a recovery cannot pay someone
+/// else's top-up into one of the host's identities. Wraps
+/// `IdentityWallet::resume_identity_top_up_to_recorded_recipient`: a recorded
+/// identity the wallet manages is topped up as a managed identity (its local
+/// balance updated), any other as an external one.
+///
+/// On success `out_identity_id` receives the identity paid and
+/// `out_new_balance` its proved new balance. Errors: `ErrorAssetLockNotTracked`
+/// (23), `ErrorAssetLockAlreadyConsumed` (24), `ErrorAssetLockRecipientUnknown`
+/// (81) for a lock recording no identity (assign one first with
+/// [`platform_wallet_assign_identity_top_up_recipient`]), and the funding
+/// mismatch error for a lock that is not an unbound top-up. Bound top-up locks
+/// keep resuming through
+/// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`].
+///
+/// # Safety
+/// - `out_point` must be a valid, non-null `*const OutPointFFI`.
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`; the caller retains ownership.
+/// - `out_identity_id` must point to 32 writable bytes and
+///   `out_new_balance` must be a valid `*mut u64`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_resume_identity_top_up_to_recorded_recipient_signer(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_identity_id: *mut [u8; 32],
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_point);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_identity_id);
+    check_ptr!(out_new_balance);
+    *out_identity_id = [0; 32];
+    *out_new_balance = 0;
+    let out_point_ffi = *out_point;
+    let out_point = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+    let core_signer_addr = core_signer_handle as usize;
+
+    // Read what the call needs out of the registry, then release it before
+    // the resume awaits the network and the host's signer and persister.
+    let (identity_wallet, wallet_id, network) = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            (
+                wallet.identity().clone(),
+                wallet.wallet_id(),
+                wallet.sdk().network,
+            )
+        }));
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the handle is pinned alive
+        // for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        identity_wallet
+            .resume_identity_top_up_to_recorded_recipient(out_point, &asset_lock_signer, None)
+            .await
+    });
+    let (identity_id, new_balance) = unwrap_result_or_return!(result);
+    *out_identity_id = identity_id.to_buffer();
+    *out_new_balance = new_balance;
+    PlatformWalletFFIResult::ok()
+}
+
 /// Assign the identity an unassigned unbound identity top-up lock pays, as
 /// the user chose it. A lock is unassigned when it records no identity
 /// (`identity_recipient_unassigned` on the tracked-lock lists): it was rebuilt
@@ -428,6 +501,56 @@ mod topup_existing_lock_guard_tests {
             )
         };
         assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn should_refuse_a_recorded_recipient_resume_with_a_null_pointer_or_an_unknown_wallet() {
+        let op = zero_out_point();
+        let mut identity = [9u8; 32];
+        let mut balance = 9u64;
+        let call = |op: *const OutPointFFI,
+                    signer: *mut MnemonicResolverHandle,
+                    identity: *mut [u8; 32],
+                    balance: *mut u64| unsafe {
+            platform_wallet_resume_identity_top_up_to_recorded_recipient_signer(
+                u64::MAX,
+                op,
+                signer,
+                identity,
+                balance,
+            )
+        };
+        for code in [
+            call(
+                std::ptr::null(),
+                dangling_core_signer(),
+                &mut identity,
+                &mut balance,
+            )
+            .code,
+            call(&op, std::ptr::null_mut(), &mut identity, &mut balance).code,
+            call(
+                &op,
+                dangling_core_signer(),
+                std::ptr::null_mut(),
+                &mut balance,
+            )
+            .code,
+            call(
+                &op,
+                dangling_core_signer(),
+                &mut identity,
+                std::ptr::null_mut(),
+            )
+            .code,
+        ] {
+            assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+        assert_eq!(
+            call(&op, dangling_core_signer(), &mut identity, &mut balance).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
+        assert_eq!((identity, balance), ([0; 32], 0));
     }
 
     #[test]
