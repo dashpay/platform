@@ -17,7 +17,7 @@ use dash_sdk::dapi_grpc::tonic::metadata::MetadataValue;
 use dash_sdk::dapi_grpc::tonic::Status;
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
+use dash_sdk::query_types::{AddressInfo, AddressInfos};
 use dash_sdk::{Error as SdkError, RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
@@ -180,9 +180,10 @@ impl Fixture {
                 .map_err(|status| transport_error(&wait_request, status)),
         );
         sdk.mock().load_expectations_sync(directory.path()).unwrap();
-        // The managed route reads Platform's balance before signing.
+        // The top-up reads the identity, and its balance, from Platform
+        // before signing.
         sdk.mock()
-            .expect_fetch::<IdentityBalance, Identifier>(identity.id(), Some(identity.balance()))
+            .expect_fetch::<Identity, Identifier>(identity.id(), Some(identity.clone()))
             .await
             .unwrap();
         sdk.mock()
@@ -238,20 +239,20 @@ impl Fixture {
         broadcasts: usize,
         waits: usize,
     ) -> String {
-        let error = self
-            .wallet
-            .top_up_from_addresses(
-                &self.identity_id,
-                BTreeMap::from([(ADDRESS, AMOUNT)]),
-                &self.signer,
-                Some(PutSettings {
-                    request_settings: RequestSettings {
-                        retries: Some(0),
-                        ..Default::default()
-                    },
+        #[allow(deprecated)]
+        let top_up = self.wallet.top_up_from_addresses(
+            &self.identity_id,
+            BTreeMap::from([(ADDRESS, AMOUNT)]),
+            &self.signer,
+            Some(PutSettings {
+                request_settings: RequestSettings {
+                    retries: Some(0),
                     ..Default::default()
-                }),
-            )
+                },
+                ..Default::default()
+            }),
+        );
+        let error = top_up
             .await
             .expect_err("a refused or unverified top-up must never succeed");
         // This is the same blanket conversion used by the production FFI entry point.

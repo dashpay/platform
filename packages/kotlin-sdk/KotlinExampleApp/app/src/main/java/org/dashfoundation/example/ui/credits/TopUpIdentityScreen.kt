@@ -49,8 +49,8 @@ import org.dashfoundation.example.util.hexToBytes
  * ([org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.addressesWithBalances]),
  * greedily packs them up to the requested amount (largest-balance-first,
  * matching Swift's `buildInputs`), then credits the identity through
- * `platform_wallet_top_up_from_addresses_with_signer`
- * ([org.dashfoundation.dashsdk.credits.IdentityCredits.topUpFromAddresses]).
+ * `platform_wallet_top_up_identity_from_addresses_with_signer`
+ * ([org.dashfoundation.dashsdk.credits.IdentityCredits.topUpIdentityFromAddresses]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,7 +139,7 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                                 "$amt credits."
                             return@launch
                         }
-                        mgr.identityCredits.topUpFromAddresses(
+                        mgr.identityCredits.topUpIdentityFromAddresses(
                             walletHandle = w.handle,
                             identityId = idBytes,
                             inputs = inputs,

@@ -30,6 +30,7 @@ use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
+use platform_wallet_ffi::error::PlatformWalletFFIResult;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_transfer::PlatformAddressCreditOutputFFI;
@@ -165,14 +166,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_withdra
 
 // ── Top up (existing identity ← Platform-address inputs) ───────────────
 
-/// Top up an existing identity's credit balance from one or more
-/// Platform-address inputs, signed per-address via `signerHandle` (the
-/// platform-address signer). Returns the post-transition credit balance.
+/// Top up an identity's credit balance from one or more Platform-address
+/// inputs, whoever owns the identity (the wallet's or someone else's),
+/// signed per-address via `signerHandle` (the platform-address signer).
+/// Returns the identity's post-transition credit balance.
 ///
 /// `inputsBlob` layout (big-endian): `u32 rowCount` then per row
 /// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`.
 ///
-/// Wraps `platform_wallet_top_up_from_addresses_with_signer`.
+/// Wraps `platform_wallet_top_up_identity_from_addresses_with_signer`, which
+/// fetches the identity from Platform, never adds it to the wallet, and
+/// updates the balance of an identity the wallet manages.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpIdentityFromAddresses(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    inputs_blob: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    address_top_up(
+        &mut env,
+        wallet_handle,
+        identity_id,
+        inputs_blob,
+        signer_handle,
+        platform_wallet_ffi::platform_wallet_top_up_identity_from_addresses_with_signer,
+    )
+}
+
+/// Top up an identity the wallet manages from one or more Platform-address
+/// inputs, signed per-address via `signerHandle` (the platform-address
+/// signer). Returns the post-transition credit balance.
+///
+/// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
+/// identity; this one refuses an identity the wallet does not manage.
+///
+/// `inputsBlob` layout as for `topUpIdentityFromAddresses`.
+///
+/// Wraps the deprecated `platform_wallet_top_up_from_addresses_with_signer`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFromAddresses(
     mut env: JNIEnv,
@@ -182,7 +215,34 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
     inputs_blob: JByteArray,
     signer_handle: jlong,
 ) -> jlong {
-    guard(&mut env, 0i64, |env| {
+    address_top_up(
+        &mut env,
+        wallet_handle,
+        identity_id,
+        inputs_blob,
+        signer_handle,
+        platform_wallet_ffi::platform_wallet_top_up_from_addresses_with_signer,
+    )
+}
+
+/// The marshalling the address top-up bridges share: decode the arguments,
+/// call `export` and return the balance it writes, or throw its error.
+fn address_top_up(
+    env: &mut JNIEnv,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    inputs_blob: JByteArray,
+    signer_handle: jlong,
+    export: unsafe extern "C" fn(
+        Handle,
+        *const [u8; 32],
+        *const IdentityFundingInputFFI,
+        usize,
+        *mut SignerHandle,
+        *mut u64,
+    ) -> PlatformWalletFFIResult,
+) -> jlong {
+    guard(env, 0i64, |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return 0;
         };
@@ -196,7 +256,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
 
         let mut out_balance: u64 = 0;
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_top_up_from_addresses_with_signer(
+            export(
                 wallet_handle as Handle,
                 &id as *const [u8; 32],
                 inputs.as_ptr(),

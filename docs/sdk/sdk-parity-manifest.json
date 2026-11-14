@@ -73,6 +73,7 @@
     "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
     "platform_wallet_top_up_external_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
+    "platform_wallet_top_up_identity_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
@@ -1435,7 +1436,8 @@
       "area": "shared_policy",
       "shared_apis": [
         "platform_address_wallet_addresses_with_balances",
-        "platform_wallet_top_up_from_addresses_with_signer"
+        "platform_wallet_top_up_from_addresses_with_signer",
+        "platform_wallet_top_up_identity_from_addresses_with_signer"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -1474,7 +1476,8 @@
       "title": "Top up an identity the wallet does not manage from Platform addresses",
       "area": "correctness",
       "shared_apis": [
-        "platform_wallet_top_up_external_identity_from_addresses_with_signer"
+        "platform_wallet_top_up_external_identity_from_addresses_with_signer",
+        "platform_wallet_top_up_identity_from_addresses_with_signer"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -1482,13 +1485,13 @@
           "sdk": "supported",
           "example_app": "unsupported",
           "restart": "not_applicable",
-          "reason": "ManagedPlatformWallet.topUpExternalIdentityFromAddresses bridges the export; the example app has no screen that pays to someone else's identity."
+          "reason": "ManagedPlatformWallet.topUpIdentityFromAddresses (and the deprecated topUpExternalIdentityFromAddresses) bridges the export; the example app has no screen that pays to someone else's identity."
         },
         "kotlin": {
-          "sdk": "unsupported",
+          "sdk": "supported",
           "example_app": "unsupported",
           "restart": "not_applicable",
-          "reason": "No JNI bridge or Kotlin wrapper for the external identity top-up yet."
+          "reason": "IdentityCredits.topUpIdentityFromAddresses bridges the export through JNI; the example app has no screen that pays to someone else's identity."
         }
       },
       "verification": [
@@ -1498,6 +1501,14 @@
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ExternalIdentityTopUpTests.swift",
           "id": "testMarshalsArgumentsAndReturnsTheBalanceTheExportWrites",
           "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ExternalIdentityTopUpTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/credits/IdentityAddressTopUpTest.kt",
+          "id": "top up of any identity marshals to its own bridge and returns its balance",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
           "covers_restart": false
         }
       ]

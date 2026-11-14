@@ -69,13 +69,33 @@ internal object CreditsNative {
     )
 
     /**
-     * Top up [identityId] (32 bytes) from Platform-address inputs, signed
-     * per-address via [signerHandle] (the platform-address signer).
-     * Returns the post-transition credit balance.
+     * Top up [identityId] (32 bytes), whoever owns the identity, from
+     * Platform-address inputs, signed per-address via [signerHandle] (the
+     * platform-address signer). Rust fetches the identity from Platform,
+     * never adds it to the wallet, and updates the balance of an identity
+     * the wallet manages. Returns the identity's post-transition credit
+     * balance.
      *
      * @param inputsBlob big-endian: `u32 rowCount` then per row
      *   `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`.
      *   Built by [org.dashfoundation.dashsdk.credits.FundingInput.encode].
+     */
+    external fun topUpIdentityFromAddresses(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputsBlob: ByteArray,
+        signerHandle: Long,
+    ): Long
+
+    /**
+     * Top up [identityId] (32 bytes), an identity the wallet manages, from
+     * Platform-address inputs, signed per-address via [signerHandle] (the
+     * platform-address signer). Returns the post-transition credit balance.
+     *
+     * **Deprecated:** use [topUpIdentityFromAddresses], which tops up any
+     * identity; this one refuses an identity the wallet does not manage.
+     *
+     * @param inputsBlob as for [topUpIdentityFromAddresses].
      */
     external fun topUpFromAddresses(
         walletHandle: Long,

@@ -1,4 +1,4 @@
-//! Both address top-up exports wait for the host signer without holding the
+//! Every address top-up export waits for the host signer without holding the
 //! wallet handle registry: while a signature is pending, destroying another
 //! wallet handle and reading a balance must both complete.
 
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
+use dash_sdk::query_types::{AddressInfo, AddressInfos};
 use dash_sdk::SdkBuilder;
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::{Identity, IdentityV0};
@@ -27,6 +27,7 @@ use rs_sdk_ffi::{
 use super::{
     platform_wallet_top_up_external_identity_from_addresses_with_signer as top_up_external,
     platform_wallet_top_up_from_addresses_with_signer as top_up_managed,
+    platform_wallet_top_up_identity_from_addresses_with_signer as top_up_any,
 };
 use crate::error::PlatformWalletFFIResult;
 use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
@@ -131,11 +132,6 @@ async fn wallets() -> (Handle, Handle) {
     });
     sdk.mock()
         .expect_fetch::<Identity, _>(Identifier::from(IDENTITY), Some(identity.clone()))
-        .await
-        .unwrap();
-    // The managed route reads Platform's balance before signing.
-    sdk.mock()
-        .expect_fetch::<IdentityBalance, Identifier>(Identifier::from(IDENTITY), Some(0))
         .await
         .unwrap();
     let manager = PlatformWalletManager::new(
@@ -261,6 +257,11 @@ fn registry_is_free_while_the_signer_is_pending(export: Export) {
         "only {done_before_release:?} finished while the export waited for the signer: \
          the wallet registry stayed locked"
     );
+}
+
+#[test]
+fn should_not_hold_the_wallet_registry_while_the_top_up_of_any_identity_waits_for_the_signer() {
+    registry_is_free_while_the_signer_is_pending(top_up_any);
 }
 
 #[test]
