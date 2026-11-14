@@ -326,7 +326,7 @@ pub struct DurableCursorState {
     /// cursor entry it outlives its wallet, so a removed wallet's handles,
     /// its same-id successor's and the manager count every flush of the id
     /// in one place ([`FlushLedger`](crate::changeset::flush_ledger::FlushLedger)).
-    pub flush_ledgers: FlushLedgers,
+    pub(crate) flush_ledgers: FlushLedgers,
 }
 
 impl DurableCursorState {

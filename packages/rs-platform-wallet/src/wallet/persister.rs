@@ -222,8 +222,10 @@ impl WalletPersister {
 
     /// A handle that counts its flushes in `flush_ledger`, the one every
     /// flush of `wallet_id`'s records on `inner` is counted in
-    /// ([`FlushLedgers`](crate::changeset::FlushLedgers)).
-    pub fn with_flush_ledger(
+    /// ([`FlushLedgers`](crate::changeset::flush_ledger::FlushLedgers)). Inside the crate
+    /// only: a ledger made elsewhere would count some of the id's flushes
+    /// apart from the rest.
+    pub(crate) fn with_flush_ledger(
         wallet_id: WalletId,
         inner: Arc<dyn PlatformWalletPersistence>,
         flush_ledger: Arc<FlushLedger>,
@@ -308,6 +310,33 @@ impl WalletPersister {
             Some(marker) => stored.markers.insert(owner, marker),
             None => stored.markers.remove(&owner),
         };
+    }
+
+    /// Store `changeset`, which carries `owner`'s position record with the
+    /// marker `marker`, and note the marker as stored
+    /// ([`Self::note_private_marker_stored`]): only when the store succeeded
+    /// and no flush of the wallet id's records failed for good since before
+    /// it. One that did may have dropped the record from the buffer, so the
+    /// marker is then not known stored and the next comparison stores the
+    /// record again. The count is compared under the lock the marker is
+    /// noted in, so a loss recorded later forgets it there
+    /// ([`Self::stored_markers`]).
+    pub(crate) fn store_private_marker_record(
+        &self,
+        owner: Identifier,
+        marker: bool,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        let losses_before = self.flush_ledger.lost();
+        let outcome = self.store(changeset);
+        let mut stored = self.stored_markers();
+        if outcome.is_ok() && stored.losses == losses_before {
+            stored.markers.insert(owner, marker);
+        } else {
+            stored.markers.remove(&owner);
+        }
+        drop(stored);
+        outcome
     }
 
     /// The markers noted as stored, forgotten first when a flush of the
@@ -1107,6 +1136,72 @@ mod tests {
             persister.private_marker_stored(&owner),
             Some(false),
             "noted after the loss"
+        );
+    }
+
+    /// A marker is not noted as stored when a flush of the wallet id's
+    /// records failed for good between its record's store and the note: the
+    /// record may have been in the buffer that flush dropped, so the next
+    /// comparison stores it again. One whose store nothing overtook is noted.
+    #[test]
+    fn should_not_note_a_marker_whose_store_another_flush_dropped() {
+        /// Buffers what is stored, and once `other` is set every store is
+        /// overtaken: a flush through that handle, as one from another
+        /// thread, takes the buffer and fails for good before the store
+        /// returns.
+        struct Overtaken {
+            other: OnceLock<WalletPersister>,
+            fails_for_good: AtomicBool,
+        }
+        impl PlatformWalletPersistence for Overtaken {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                if let Some(other) = self.other.get() {
+                    self.fails_for_good.store(true, Ordering::SeqCst);
+                    let overtaking = other.flush();
+                    self.fails_for_good.store(false, Ordering::SeqCst);
+                    assert!(overtaking.is_err_and(|error| !error.is_transient()));
+                }
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.fails_for_good.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend("the database is corrupt"));
+                }
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let backend = Arc::new(Overtaken {
+            other: OnceLock::new(),
+            fails_for_good: AtomicBool::new(false),
+        });
+        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+        let owner = Identifier::from([9; 32]);
+
+        persister
+            .store_private_marker_record(owner, true, PlatformWalletChangeSet::default())
+            .expect("stored");
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            Some(true),
+            "nothing overtook its store"
+        );
+
+        let _ = backend.other.set(persister.clone());
+        persister
+            .store_private_marker_record(owner, false, PlatformWalletChangeSet::default())
+            .expect("the store itself succeeds");
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            None,
+            "its record may have been in the buffer the other flush dropped"
         );
     }
 

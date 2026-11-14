@@ -18,7 +18,7 @@ use crate::wallet::platform_wallet::WalletId;
 /// same-id successor's alike ([`FlushLedgers`]). Every flush of the wallet's
 /// records goes through [`Self::flush`].
 #[derive(Debug, Default)]
-pub struct FlushLedger {
+pub(crate) struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
     /// the backend until its outcome is recorded in `failed` and `lost`, so
     /// while none is, they tell of every flush that failed. One whose backend
@@ -116,11 +116,11 @@ impl FlushLedger {
 /// The [`FlushLedger`] of each wallet id, for the wallets of one manager. An
 /// entry outlives its wallet, as the backend's buffer under the id does.
 #[derive(Debug, Default)]
-pub struct FlushLedgers(Mutex<BTreeMap<WalletId, Arc<FlushLedger>>>);
+pub(crate) struct FlushLedgers(Mutex<BTreeMap<WalletId, Arc<FlushLedger>>>);
 
 impl FlushLedgers {
     /// The ledger of `wallet_id`'s records, made on first use.
-    pub fn of(&self, wallet_id: WalletId) -> Arc<FlushLedger> {
+    pub(crate) fn of(&self, wallet_id: WalletId) -> Arc<FlushLedger> {
         Arc::clone(
             self.0
                 .lock()
