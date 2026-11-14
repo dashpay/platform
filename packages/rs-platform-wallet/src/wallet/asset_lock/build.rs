@@ -1535,9 +1535,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // queued behind the row, it would be lost with the process
                 // where the row was not. A backend writes what it buffered in
                 // the order it was stored, and applies removals after
-                // upserts, so once the removal is on disk the row is not. The
+                // upserts, so once the removal is on disk the row is not:
+                // unless a flush still in progress took the row without it
+                // and writes it afterwards, which the removal's store does
+                // not answer for (`WalletPersister::withdraw_durably`). The
                 // funding index stays consumed, as for the pool gate above.
-                let removed = self.persister.store_durably(PlatformWalletChangeSet {
+                let removed = self.persister.withdraw_durably(PlatformWalletChangeSet {
                     asset_locks: Some(AssetLockChangeSet {
                         removed: [out_point].into(),
                         ..Default::default()
@@ -1563,7 +1566,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                     Err(removal) => removal,
                 };
-                // Only the removal on disk proves the row is gone. No way the
+                // Only the removal on disk, with no flush left that could
+                // write the row after it, proves the row is gone. No way the
                 // row's own store or flush failed does: a backend that does
                 // not roll a failed round back may have written the row
                 // before a later part of the store failed, one that keeps a
@@ -1898,7 +1902,7 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
     use std::time::Duration;
 
     use dashcore::OutPoint;
@@ -2058,6 +2062,16 @@ mod tests {
         /// host that does not roll a failed round back and whose later
         /// callback failed.
         lock_store_fails_after_writing: bool,
+        /// Once set, the next flush finds what was buffered taken by a flush
+        /// through this persister, begun on another thread, that has not
+        /// returned: it succeeds over nothing. The other flush writes what
+        /// it took, behind anything written meanwhile, when it is let go
+        /// (`let_stalled_flush_write`, or the next flush that writes).
+        stalled_by: Mutex<Option<WalletPersister>>,
+        /// Where the flush begun on the other thread stalls.
+        stall_point: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
+        /// The stalled flush: how to let it go, and how to hear it returned.
+        stalled_flush: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
     }
 
     impl CapturingPersistence {
@@ -2110,6 +2124,18 @@ mod tests {
                 }
             }
             rows.into_iter().collect()
+        }
+
+        /// Lets a flush stalled on another thread write what it took, and
+        /// waits until it has returned. Does nothing when none is stalled.
+        fn let_stalled_flush_write(&self) {
+            let stalled = self.stalled_flush.lock().unwrap().take();
+            if let Some((let_go, has_returned)) = stalled {
+                let_go.send(()).expect("the stalled flush waits");
+                has_returned
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("the stalled flush returns");
+            }
         }
 
         /// Outpoints of asset-lock rows stored across all changesets.
@@ -2199,6 +2225,38 @@ mod tests {
                 .flushes
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
                 + 1;
+            // The flush begun on another thread: it took what was buffered,
+            // and writes it only once it is let go.
+            let stall_point = self.stall_point.lock().unwrap().take();
+            if let Some((entered, let_go)) = stall_point {
+                let taken = self.stored.lock().unwrap().clone();
+                entered.send(()).expect("the flush it overtook waits");
+                let_go
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("let go");
+                let mut stored = self.stored.lock().unwrap();
+                stored.extend(taken);
+                self.committed_stores
+                    .store(stored.len(), std::sync::atomic::Ordering::SeqCst);
+                return Ok(());
+            }
+            let stalled_by = self.stalled_by.lock().unwrap().take();
+            if let Some(persister) = stalled_by {
+                let (entered, has_entered) = mpsc::channel();
+                let (let_go, released) = mpsc::channel();
+                let (returned, has_returned) = mpsc::channel();
+                *self.stall_point.lock().unwrap() = Some((entered, released));
+                std::thread::spawn(move || {
+                    let flushed = persister.flush();
+                    assert!(flushed.is_ok(), "{flushed:?}");
+                    let _ = returned.send(());
+                });
+                has_entered
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("the other flush is inside the backend");
+                *self.stalled_flush.lock().unwrap() = Some((let_go, has_returned));
+                return Ok(());
+            }
             // Taken in its own statement: the flush below comes back here.
             let overtaking = self.overtaken_by.lock().unwrap().take();
             if let Some(persister) = overtaking {
@@ -2251,6 +2309,9 @@ mod tests {
                 self.stored.lock().unwrap().len(),
                 std::sync::atomic::Ordering::SeqCst,
             );
+            // A flush still stalled writes what it took behind this one, and
+            // has returned by the time this one does.
+            self.let_stalled_flush_write();
             Ok(())
         }
 
@@ -4039,6 +4100,45 @@ mod tests {
             persistence.rows_on_disk().len(),
             1,
             "the other flush wrote the row, and nothing wrote its removal"
+        );
+    }
+
+    /// The same where a flush still in progress took the row: the removal
+    /// stored behind it would be written first, and the row after it, by a
+    /// flush that then returns without a failure for anything to see. The
+    /// removal is not answered for while that flush is in progress, so the
+    /// inputs stay reserved, and the flush writes the row in the end.
+    #[tokio::test]
+    async fn should_keep_the_inputs_of_an_abandoned_shielded_funding_whose_row_a_flush_in_progress_took(
+    ) {
+        let persistence = Arc::new(CapturingPersistence {
+            records_shielded_recipients: true,
+            ..Default::default()
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        *persistence.stalled_by.lock().unwrap() = Some(manager.persister.clone());
+
+        expect_an_abandoned_shielded_funding_to_keep_its_inputs(&manager, &signer, &broadcaster)
+            .await;
+        assert!(
+            persistence.stalled_by.lock().unwrap().is_none(),
+            "a flush took the row and stalled"
+        );
+        assert!(
+            persistence.rows_on_disk().is_empty(),
+            "nothing is on disk while that flush is in progress"
+        );
+
+        persistence.let_stalled_flush_write();
+        assert_eq!(
+            persistence.rows_on_disk().len(),
+            1,
+            "the flush that took the row wrote it in the end"
         );
     }
 
