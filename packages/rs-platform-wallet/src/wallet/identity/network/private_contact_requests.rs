@@ -769,17 +769,17 @@ fn store_private_position(
     changeset
         .private_contact_requests_positions
         .insert(owner, position);
-    match persister.store(changeset.into()) {
-        Ok(()) => {
-            persister.note_private_marker_stored(owner, Some(position.private_payments_unresolved))
-        }
-        Err(error) => {
-            persister.note_private_marker_stored(owner, None);
-            tracing::warn!(
-                owner = %owner, position = position.position, %error,
-                "private read position not stored; the next launch reads from the last one stored"
-            );
-        }
+    // Noted as stored only when no flush of the wallet's records failed for
+    // good since before the store: one that did may have dropped the record.
+    if let Err(error) = persister.store_private_marker_record(
+        owner,
+        position.private_payments_unresolved,
+        changeset.into(),
+    ) {
+        tracing::warn!(
+            owner = %owner, position = position.position, %error,
+            "private read position not stored; the next launch reads from the last one stored"
+        );
     }
 }
 
@@ -6968,6 +6968,88 @@ mod tests {
             );
         })
         .await;
+    }
+
+    /// A request recorded as sent is not recorded over a newer one the wallet
+    /// tracks for the pair, as a sweep read in one that another device of the
+    /// identity sent while this one was being looked up or broadcast: the
+    /// newer request stays tracked and is answered as the request sent. One
+    /// that is not older is recorded.
+    #[tokio::test]
+    async fn should_keep_a_newer_tracked_request_when_an_older_one_is_recorded_as_sent() {
+        use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let manager = manager_on(Arc::new(NoPersistence)).await;
+        let wallet = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let xpub = alice_crypto
+            .receiving_xpub(&"m/9'/1'/15'/0'".parse::<DerivationPath>().expect("a path"))
+            .await
+            .expect("an xpub");
+        let older = 7;
+        let newer = older + (1 << ACCOUNT_REFERENCE_VERSION_SHIFT);
+        let newest = older + (2 << ACCOUNT_REFERENCE_VERSION_SHIFT);
+        // As a sweep reads in a rotation past the request being recorded.
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("the sender")
+                .add_sent_contact_request(public_request(&alice, &bob, newer), &iw.persister)
+                .expect("recorded");
+        }
+        let tracked = |wallet: Arc<PlatformWallet>| async move {
+            managed(&wallet, ALICE, |managed| {
+                managed
+                    .dashpay()
+                    .outgoing_request(&Identifier::from(BOB))
+                    .map(|request| request.account_reference)
+            })
+            .await
+        };
+        let view = wallet.identity().dashpay();
+
+        let answered = view
+            .record_sent_contact_request(
+                &alice.id(),
+                &bob.id(),
+                public_request(&alice, &bob, older),
+                0,
+                xpub,
+            )
+            .await
+            .expect("answered");
+        assert_eq!(
+            answered.account_reference, newer,
+            "the tracked request is the request sent"
+        );
+        assert_eq!(
+            tracked(Arc::clone(&wallet)).await,
+            Some(newer),
+            "the newer request stays tracked"
+        );
+
+        let answered = view
+            .record_sent_contact_request(
+                &alice.id(),
+                &bob.id(),
+                public_request(&alice, &bob, newest),
+                0,
+                xpub,
+            )
+            .await
+            .expect("recorded");
+        assert_eq!(answered.account_reference, newest);
+        assert_eq!(
+            tracked(wallet).await,
+            Some(newest),
+            "one that is not older is recorded"
+        );
     }
 
     /// Every flush of the records under a wallet id is counted in one place,

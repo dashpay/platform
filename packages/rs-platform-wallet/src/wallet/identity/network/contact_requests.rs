@@ -1298,7 +1298,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// next sync, which registers it. Reporting it as a failure would have
     /// the caller send again, and a request built past the one just recorded
     /// is a second request.
-    async fn record_sent_contact_request(
+    ///
+    /// A request older than the one the wallet tracks for the pair is not
+    /// recorded over it ([`predates`]). The lookup that found it, or the
+    /// broadcast that confirmed it, ran with no lock held, and a sweep may
+    /// have read in a newer request meanwhile, one another device of the
+    /// identity sent. Recording the older one over it would have the next
+    /// rotation build from a reference already used. The tracked request is
+    /// then answered as the request sent, and its account is left to the
+    /// sweep that read it in.
+    pub(super) async fn record_sent_contact_request(
         &self,
         sender: &Identifier,
         recipient: &Identifier,
@@ -1313,6 +1322,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity_mut(sender)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
+            let newer = managed
+                .dashpay()
+                .outgoing_request(recipient)
+                .filter(|tracked| predates(&request, tracked))
+                .cloned();
+            if let Some(newer) = newer {
+                tracing::info!(
+                    sender = %sender,
+                    recipient = %recipient,
+                    account_reference = request.account_reference,
+                    tracked_reference = newer.account_reference,
+                    "a newer contact request is tracked for the pair; the older one is not \
+                     recorded over it"
+                );
+                return Ok(newer);
+            }
             track_sent_contact_request(managed, &request, &self.persister)?;
         }
         self.register_sent_request_account(sender, recipient, account_index, contact_xpub)

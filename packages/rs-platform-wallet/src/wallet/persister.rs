@@ -94,10 +94,12 @@ pub struct WalletPersister {
     /// The marker each identity's position record was last stored with in
     /// this session (`PrivateContactRequestsPosition::private_payments_unresolved`):
     /// a record whose marker, its identity's and the journal's together,
-    /// differs from it is stored again. Absent when none was stored, or the
-    /// last store or its flush failed. Shared by the clones the wallet and
-    /// the coordinator hold. In memory only.
-    stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
+    /// differs from it is stored again. Absent when none was stored, when the
+    /// last store or its flush failed, or once any flush of the wallet id's
+    /// records failed for good since it was noted
+    /// ([`StoredPrivateMarkers`]). Shared by the clones the wallet and the
+    /// coordinator hold. In memory only.
+    stored_private_markers: Arc<std::sync::Mutex<StoredPrivateMarkers>>,
     /// What is known of the flushes of the records stored under this
     /// wallet's id: how many are in progress, and how many failed for good,
     /// the backend dropping what it buffered. Every flush of the id is
@@ -166,6 +168,20 @@ struct DischargedPrivateEntries {
     journaled: BTreeMap<[u8; 32], (Identifier, Identifier)>,
 }
 
+/// The marker each identity's position record was last stored with
+/// ([`WalletPersister::note_private_marker_stored`]), with how many flushes of
+/// the wallet id's records had failed for good when they were noted. One more
+/// since dropped what the backend had buffered, whoever made that flush, and
+/// a store noted here may still have been in it: so none is known stored any
+/// longer, and all are forgotten ([`WalletPersister::stored_markers`]).
+#[derive(Default)]
+struct StoredPrivateMarkers {
+    markers: BTreeMap<Identifier, bool>,
+    /// The ledger's count of flushes failed for good that `markers` were
+    /// noted under ([`FlushLedger::lost`]).
+    losses: u64,
+}
+
 /// Why records stored for a wallet are not known to be durable
 /// ([`WalletPersister::store_durably`], [`WalletPersister::flush_durably`]).
 #[derive(Debug, thiserror::Error)]
@@ -206,8 +222,10 @@ impl WalletPersister {
 
     /// A handle that counts its flushes in `flush_ledger`, the one every
     /// flush of `wallet_id`'s records on `inner` is counted in
-    /// ([`FlushLedgers`](crate::changeset::FlushLedgers)).
-    pub fn with_flush_ledger(
+    /// ([`FlushLedgers`](crate::changeset::flush_ledger::FlushLedgers)). Inside the crate
+    /// only: a ledger made elsewhere would count some of the id's flushes
+    /// apart from the rest.
+    pub(crate) fn with_flush_ledger(
         wallet_id: WalletId,
         inner: Arc<dyn PlatformWalletPersistence>,
         flush_ledger: Arc<FlushLedger>,
@@ -287,25 +305,63 @@ impl WalletPersister {
     /// `marker`, or, with `None`, that whether it was is not known: its last
     /// store or flush failed ([`Self::private_marker_stored`]).
     pub(crate) fn note_private_marker_stored(&self, owner: Identifier, marker: Option<bool>) {
+        let mut stored = self.stored_markers();
+        match marker {
+            Some(marker) => stored.markers.insert(owner, marker),
+            None => stored.markers.remove(&owner),
+        };
+    }
+
+    /// Store `changeset`, which carries `owner`'s position record with the
+    /// marker `marker`, and note the marker as stored
+    /// ([`Self::note_private_marker_stored`]): only when the store succeeded
+    /// and no flush of the wallet id's records failed for good since before
+    /// it. One that did may have dropped the record from the buffer, so the
+    /// marker is then not known stored and the next comparison stores the
+    /// record again. The count is compared under the lock the marker is
+    /// noted in, so a loss recorded later forgets it there
+    /// ([`Self::stored_markers`]).
+    pub(crate) fn store_private_marker_record(
+        &self,
+        owner: Identifier,
+        marker: bool,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        let losses_before = self.flush_ledger.lost();
+        let outcome = self.store(changeset);
+        let mut stored = self.stored_markers();
+        if outcome.is_ok() && stored.losses == losses_before {
+            stored.markers.insert(owner, marker);
+        } else {
+            stored.markers.remove(&owner);
+        }
+        drop(stored);
+        outcome
+    }
+
+    /// The markers noted as stored, forgotten first when a flush of the
+    /// wallet id's records failed for good since they were noted: this
+    /// handle's flush, another handle's or the manager's, as the ledger
+    /// counts them all. The next comparison then stores each marker again.
+    fn stored_markers(&self) -> std::sync::MutexGuard<'_, StoredPrivateMarkers> {
         let mut stored = self
             .stored_private_markers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match marker {
-            Some(marker) => stored.insert(owner, marker),
-            None => stored.remove(&owner),
-        };
+        let losses = self.flush_ledger.lost();
+        if stored.losses != losses {
+            stored.markers.clear();
+            stored.losses = losses;
+        }
+        stored
     }
 
     /// The marker `owner`'s position record was last stored with in this
-    /// session, if one was and its store did not fail since
+    /// session, if one was, its store did not fail since, and no flush of the
+    /// wallet id's records failed for good since
     /// ([`Self::note_private_marker_stored`]).
     pub(crate) fn private_marker_stored(&self, owner: &Identifier) -> Option<bool> {
-        self.stored_private_markers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(owner)
-            .copied()
+        self.stored_markers().markers.get(owner).copied()
     }
 
     /// Note the commitments of private contact request entries a private sync
@@ -384,7 +440,8 @@ impl WalletPersister {
                 // rewound: a read again would find the requests already
                 // tracked, store nothing, and note them again over records
                 // that never reached disk. The markers stored into that
-                // buffer are forgotten, so the next comparison stores them
+                // buffer are forgotten, as after any flush the ledger counts
+                // as failed for good, so the next comparison stores them
                 // again (`Self::private_marker_stored`).
                 tracing::error!(
                     %error,
@@ -392,10 +449,6 @@ impl WalletPersister {
                     "private requests read back are not durably recorded, and the backend \
                      dropped what it buffered; their journal records stay"
                 );
-                self.stored_private_markers
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clear();
             }
             Err(NotDurable::Lost) => tracing::warn!(
                 dropped = pending.len(),
@@ -1011,6 +1064,145 @@ mod tests {
             );
             assert_eq!(backend.durable.load(Ordering::SeqCst), 1, "on disk");
         }
+    }
+
+    /// A marker noted as stored is forgotten once a flush of the wallet id's
+    /// records fails for good, whoever made it: the store it was noted for
+    /// may still have been in the buffer that flush dropped, so the next
+    /// comparison stores the marker again. A flush that fails keeping what it
+    /// took forgets nothing, and a marker noted after the loss is kept.
+    #[test]
+    fn should_forget_stored_markers_once_any_flush_of_the_wallet_id_fails_for_good() {
+        /// A buffering backend whose flush fails, for good or not.
+        struct Failing {
+            for_good: AtomicBool,
+        }
+        impl PlatformWalletPersistence for Failing {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Err(if self.for_good.load(Ordering::SeqCst) {
+                    PersistenceError::backend("the database is corrupt")
+                } else {
+                    PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the database is locked",
+                    )
+                })
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let backend = Arc::new(Failing {
+            for_good: AtomicBool::new(false),
+        });
+        let ledger = Arc::new(FlushLedger::default());
+        let wallet_id: WalletId = [3; 32];
+        let persister = WalletPersister::with_flush_ledger(
+            wallet_id,
+            Arc::clone(&backend) as _,
+            Arc::clone(&ledger),
+        );
+        // A handle of a wallet removed, or created since, under the id.
+        let other =
+            WalletPersister::with_flush_ledger(wallet_id, Arc::clone(&backend) as _, ledger);
+        let owner = Identifier::from([9; 32]);
+
+        persister.note_private_marker_stored(owner, Some(true));
+        assert!(other.flush().is_err_and(|error| error.is_transient()));
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            Some(true),
+            "a flush that kept what it took dropped no store"
+        );
+
+        backend.for_good.store(true, Ordering::SeqCst);
+        assert!(other.flush().is_err_and(|error| !error.is_transient()));
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            None,
+            "not known stored once the buffer was dropped"
+        );
+
+        persister.note_private_marker_stored(owner, Some(false));
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            Some(false),
+            "noted after the loss"
+        );
+    }
+
+    /// A marker is not noted as stored when a flush of the wallet id's
+    /// records failed for good between its record's store and the note: the
+    /// record may have been in the buffer that flush dropped, so the next
+    /// comparison stores it again. One whose store nothing overtook is noted.
+    #[test]
+    fn should_not_note_a_marker_whose_store_another_flush_dropped() {
+        /// Buffers what is stored, and once `other` is set every store is
+        /// overtaken: a flush through that handle, as one from another
+        /// thread, takes the buffer and fails for good before the store
+        /// returns.
+        struct Overtaken {
+            other: OnceLock<WalletPersister>,
+            fails_for_good: AtomicBool,
+        }
+        impl PlatformWalletPersistence for Overtaken {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                if let Some(other) = self.other.get() {
+                    self.fails_for_good.store(true, Ordering::SeqCst);
+                    let overtaking = other.flush();
+                    self.fails_for_good.store(false, Ordering::SeqCst);
+                    assert!(overtaking.is_err_and(|error| !error.is_transient()));
+                }
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.fails_for_good.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend("the database is corrupt"));
+                }
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let backend = Arc::new(Overtaken {
+            other: OnceLock::new(),
+            fails_for_good: AtomicBool::new(false),
+        });
+        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+        let owner = Identifier::from([9; 32]);
+
+        persister
+            .store_private_marker_record(owner, true, PlatformWalletChangeSet::default())
+            .expect("stored");
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            Some(true),
+            "nothing overtook its store"
+        );
+
+        let _ = backend.other.set(persister.clone());
+        persister
+            .store_private_marker_record(owner, false, PlatformWalletChangeSet::default())
+            .expect("the store itself succeeds");
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            None,
+            "its record may have been in the buffer the other flush dropped"
+        );
     }
 
     /// Buffers what is stored. Its first flush finds the buffer empty:
