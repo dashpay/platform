@@ -602,14 +602,14 @@ mod tradeable {
     }
 
     /// Sends the contract owner's update of the token's trade mode to `Tradeable` to the mempool
-    /// and then in one block, and returns what check_tx refused it with, the block's result and
+    /// and then in one block, at protocol version 15, and returns what check_tx refused it with, the block's result and
     /// the trade mode the token has afterwards.
     async fn make_tradeable(
         non_transferable: bool,
     ) -> (Vec<ConsensusError>, StateTransitionExecutionResult, bool) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(15).expect("expected protocol version 15");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(15)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -718,37 +718,30 @@ mod tradeable {
         (check_tx_errors, result, is_tradeable)
     }
 
-    /// The rule reads only the contract the action carries, so it runs with the batch's advanced
-    /// structure and the mempool refuses the update too.
+    /// Before protocol version 16 nothing can trade a token, so an update that makes one tradeable
+    /// is refused unpaid as not active, in the mempool and in a block, whether or not the token
+    /// is transferable: the refusal comes before the transferable rule (10281), which the update
+    /// first reaches at protocol version 16.
     #[tokio::test]
-    async fn should_refuse_making_a_non_transferable_token_tradeable_with_a_paid_error_10281() {
-        let (check_tx_errors, result, is_tradeable) = make_tradeable(true).await;
-        assert_matches!(
-            check_tx_errors.as_slice(),
-            [ConsensusError::BasicError(
-                BasicError::NonTransferableTokenTradeableError(_)
-            )]
-        );
-        assert_matches!(
-            result,
-            PaidConsensusError {
-                error: error @ ConsensusError::BasicError(
-                    BasicError::NonTransferableTokenTradeableError(_)
-                ),
-                ..
-            } if error.code() == 10281
-        );
-        assert!(!is_tradeable);
-    }
-
-    #[tokio::test]
-    async fn should_make_a_transferable_token_tradeable_from_protocol_version_15() {
-        let (check_tx_errors, result, is_tradeable) = make_tradeable(false).await;
-        assert!(check_tx_errors.is_empty(), "{check_tx_errors:?}");
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        );
-        assert!(is_tradeable);
+    async fn should_refuse_making_a_token_tradeable_unpaid_as_not_active_at_protocol_version_15() {
+        for non_transferable in [false, true] {
+            let (check_tx_errors, result, is_tradeable) = make_tradeable(non_transferable).await;
+            assert_matches!(
+                check_tx_errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                    if error.state_transition_type()
+                        == "TokenConfigUpdateMarketplaceTradeModeTradeable"
+                        && error.required_protocol_version() == 16,
+                "non_transferable {non_transferable}: {check_tx_errors:?}"
+            );
+            assert_matches!(
+                &result,
+                StateTransitionExecutionResult::UnpaidConsensusError(
+                    error @ ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                ) if error.code() == 10603,
+                "non_transferable {non_transferable}: {result:?}"
+            );
+            assert!(!is_tradeable);
+        }
     }
 }

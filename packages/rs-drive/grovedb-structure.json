@@ -792,7 +792,7 @@
             "kinds": [
               "BigSumTree"
             ],
-            "since": 15,
+            "since": 16,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/tokens/paths.rs",
             "book": "data-model/token-marketplace.md",
@@ -813,7 +813,7 @@
                 "kinds": [
                   "SumTree"
                 ],
-                "since": 15,
+                "since": 16,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                 "description": "The escrowed listings of one token; created with its first listing.",
@@ -834,7 +834,7 @@
                       "SumItem"
                     ],
                     "value": "token amount",
-                    "since": 15,
+                    "since": 16,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                     "description": "What one open listing still holds.",
@@ -2044,7 +2044,7 @@
             "kinds": [
               "SumTree"
             ],
-            "since": 15,
+            "since": 16,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
             "book": "data-model/token-marketplace.md",
@@ -2066,7 +2066,7 @@
                   "SumItem"
                 ],
                 "value": "credits",
-                "since": 15,
+                "since": 16,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
                 "description": "What one open offer still holds.",
@@ -6551,10 +6551,7 @@
       "tree": {
         "hex": "80",
         "left": {
-          "hex": "40",
-          "left": {
-            "hex": "20"
-          }
+          "hex": "40"
         },
         "right": {
           "hex": "c0"
@@ -6658,10 +6655,7 @@
             "hex": "20"
           },
           "right": {
-            "hex": "5c",
-            "right": {
-              "hex": "60"
-            }
+            "hex": "5c"
           }
         },
         "right": {

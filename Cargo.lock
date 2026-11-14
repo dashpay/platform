@@ -6653,6 +6653,7 @@ dependencies = [
  "hex",
  "js-sys",
  "lru",
+ "platform-version",
  "reqwest 0.12.28",
  "rs-dapi-client",
  "serde",

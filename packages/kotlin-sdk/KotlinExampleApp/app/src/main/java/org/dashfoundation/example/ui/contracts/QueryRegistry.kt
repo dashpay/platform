@@ -1,7 +1,6 @@
 package org.dashfoundation.example.ui.contracts
 
 import org.dashfoundation.dashsdk.Sdk
-import org.dashfoundation.dashsdk.voting.DecisionProposal
 import org.dashfoundation.example.ui.identity.decode32ByteHex
 
 /**
@@ -598,6 +597,105 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             ?.toString()
     },
 
+    // ── Multiple Choice Proposals (protocol version 15) ───────────────────
+    // The typed reads of `Sdk.multipleChoiceProposals`, shown as their
+    // Kotlin values. `MultipleChoiceProposalsScreen` is the full flow (list,
+    // file, edit, enter a choice, vote); these rows run each read on its own.
+    QueryDefinition(
+        name = "getMultipleChoiceProposal",
+        label = "Get Multiple Choice Proposal",
+        description = "Fetch a multiple choice proposal by its base58 id.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.fetch(inputs.getValue("proposalId").trim())?.toString()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalsByOwner",
+        label = "Get Multiple Choice Proposals by Owner",
+        description = "The multiple choice proposals an identity filed, in the order it filed them.",
+        inputs = listOf(
+            QueryInput("ownerId", "Owner Identity ID", required = true),
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.listByOwner(
+            ownerId = inputs.getValue("ownerId").trim(),
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalsByCreatedAt",
+        label = "Get Multiple Choice Proposals by Creation",
+        description = "Every multiple choice proposal, newest first.",
+        inputs = listOf(
+            QueryInput("limit", "Limit", required = false, placeholder = "20"),
+            QueryInput("startAfter", "Start after proposal ID", required = false),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.listByCreatedAt(
+            limit = inputs["limit"]?.trim()?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.trim()?.takeIf { it.isNotEmpty() },
+        ).describeProposals()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalVote",
+        label = "Get Multiple Choice Proposal Vote",
+        description = "The choices of a proposal with their tallies, and how the vote ended once it did.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.vote(inputs.getValue("proposalId").trim()).toString()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalKeptChoice",
+        label = "Get Multiple Choice Proposal Kept Choice",
+        description = "The choice a proposal's finished vote kept.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        sdk.multipleChoiceProposals.keptChoice(inputs.getValue("proposalId").trim())?.toString()
+    },
+    QueryDefinition(
+        name = "getMasternodeMultipleChoiceVote",
+        label = "Get Masternode Multiple Choice Vote",
+        description = "A masternode's answer among a proposal's choices while the vote runs.",
+        inputs = listOf(
+            QueryInput("proTxHash", "pro_tx_hash (64 hex chars, wire order)", required = true),
+            QueryInput("proposalId", "Proposal ID", required = true),
+        ),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        val proTxHash = requireNotNull(decode32ByteHex(inputs.getValue("proTxHash"))) {
+            "pro_tx_hash must be 32 bytes (64 hex characters)"
+        }
+        sdk.multipleChoiceProposals
+            .masternodeVote(proTxHash, inputs.getValue("proposalId").trim())
+            ?.toString()
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalProcessingFee",
+        label = "Get Multiple Choice Proposal Processing Fee",
+        description = "What creating a multiple choice proposal adds to the processing fee, in credits.",
+        inputs = emptyList(),
+        runsInDiagnostics = false,
+    ) { sdk, _ ->
+        "${sdk.multipleChoiceProposals.processingFee()} credits"
+    },
+    QueryDefinition(
+        name = "getMultipleChoiceProposalChoiceFundToJoin",
+        label = "Get Choice Fund to Join",
+        description = "The contest fund a choice entered now for a proposal pays, in credits.",
+        inputs = listOf(QueryInput("proposalId", "Proposal ID", required = true)),
+        runsInDiagnostics = false,
+    ) { sdk, inputs ->
+        "${sdk.multipleChoiceProposals.choiceFundToJoin(inputs.getValue("proposalId").trim())} credits"
+    },
+
     // ── Protocol & Version ────────────────────────────────────────────────
     QueryDefinition(
         name = "getProtocolVersionUpgradeState",
@@ -898,7 +996,10 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
     },
 )
 
-/** A decision proposal listing page as text: its size, then one proposal per line. */
-private fun List<DecisionProposal>.describeProposals(): String =
+/**
+ * A decision proposal listing page (yes/no or multiple choice) as text: its size, then one
+ * proposal per line.
+ */
+private fun List<Any>.describeProposals(): String =
     "$size proposal" + (if (size == 1) "" else "s") +
         joinToString(separator = "\n", prefix = if (isEmpty()) "" else "\n")

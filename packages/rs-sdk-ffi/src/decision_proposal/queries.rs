@@ -23,7 +23,10 @@ use std::ffi::c_char;
 ///
 /// # Safety
 /// `start_after` must be null or point to a NUL-terminated string.
-unsafe fn page(limit: u32, start_after: *const c_char) -> Result<DocumentsPage, FFIError> {
+pub(super) unsafe fn page(
+    limit: u32,
+    start_after: *const c_char,
+) -> Result<DocumentsPage, FFIError> {
     Ok(DocumentsPage {
         limit: (limit > 0).then_some(limit),
         start_after: optional_identifier(start_after, "start_after")?,

@@ -508,6 +508,149 @@ mod tests {
         assert_eq!(identity_balance, expected_identity_balance);
     }
 
+    /// The asset lock's one-time key is checked by recovering the public key, which takes any S
+    /// and either header form. A third party can replace an identity create's signature with its
+    /// high-S twin, or with the twin whose header names an uncompressed key, and change the
+    /// transition's hash. Protocol version 14 accepts each twin, for replay; from protocol
+    /// version 15 a block refuses each unpaid, with the error of a signature that does not
+    /// verify, and leaves the asset lock unused. The signature the key made is accepted at both.
+    #[tokio::test]
+    async fn should_refuse_an_asset_lock_signature_twin_from_protocol_version_15() {
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::tests::utils::{high_s_twin, uncompressed_header_twin};
+
+        let latest = PlatformVersion::latest().protocol_version;
+        let twins: [(&str, fn(&[u8]) -> Vec<u8>); 2] = [
+            ("high-S twin", high_s_twin),
+            ("uncompressed header twin", uncompressed_header_twin),
+        ];
+        // (protocol version, the twins submitted before the signature itself). The asset lock is
+        // consumed by the first transition a block accepts, so at 14 each twin gets its own
+        // platform, as does the signature.
+        for (protocol_version, submitted) in [
+            (14, &twins[..0]),
+            (14, &twins[..1]),
+            (14, &twins[1..]),
+            (latest, &twins[..]),
+        ] {
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("expected platform version for the requested protocol_version");
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .with_config(PlatformConfig {
+                    testing_configs: PlatformTestConfig {
+                        disable_instant_lock_signature_verification: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_state = platform.state.load();
+            let mut signer = SimpleSigner::default();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                None,
+            );
+            let identity: Identity = IdentityV0 {
+                id: asset_lock_proof
+                    .create_identifier()
+                    .expect("expected an identifier"),
+                public_keys: BTreeMap::from([(0, master_key)]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let signed: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                    &identity,
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("expected an identity create transition");
+            let signature = signed.signature().expect("signed").to_vec();
+
+            let process = |transition: &StateTransition| {
+                let transaction = platform.drive.grove.start_transaction();
+                let result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[transition.serialize_to_bytes().expect("serializes")],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit");
+                result
+            };
+
+            let mut asset_lock_used = false;
+            for (twin_label, twin) in submitted {
+                let mut malleated = signed.clone();
+                malleated.set_signature(twin(&signature).into());
+                let result = process(&malleated);
+                if protocol_version == 14 {
+                    assert_eq!(
+                        result.valid_count(),
+                        1,
+                        "protocol version 14 accepts the {twin_label}: {:?}",
+                        result.execution_results()
+                    );
+                    asset_lock_used = true;
+                } else {
+                    assert_matches!(
+                        result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                        )],
+                        "protocol version {protocol_version} refuses the {twin_label}"
+                    );
+                }
+            }
+            if !asset_lock_used {
+                // No twin was accepted, so the asset lock is unused and the signature the key
+                // made still creates.
+                let result = process(&signed);
+                assert_eq!(
+                    result.valid_count(),
+                    1,
+                    "protocol version {protocol_version} accepts the signature: {:?}",
+                    result.execution_results()
+                );
+            }
+        }
+    }
+
     /// Neither the InstantSend lock nor the transition's signature covers an instant proof's
     /// asset-lock payload length prefix, and every node has always read the payload whatever
     /// length the prefix announces. Anyone relaying a pending IdentityCreate can change the

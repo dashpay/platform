@@ -69,7 +69,7 @@ export interface MasternodeYesNoVote {
 "#;
 
 /// Sets `key` on `object`.
-fn set(object: &Object, key: &str, value: JsValue) -> Result<(), WasmSdkError> {
+pub(crate) fn set(object: &Object, key: &str, value: JsValue) -> Result<(), WasmSdkError> {
     Reflect::set(object, &key.into(), &value)
         .map(|_| ())
         .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}`")))
@@ -85,7 +85,7 @@ fn yes_no_vote_poll(vote_poll: &VotePollWasm) -> Result<YesNoVotePoll, WasmSdkEr
     }
 }
 
-fn block_to_js(block: &BlockInfo) -> Result<JsValue, WasmSdkError> {
+pub(crate) fn block_to_js(block: &BlockInfo) -> Result<JsValue, WasmSdkError> {
     let object = Object::new();
     set(&object, "height", BigInt::from(block.height).into())?;
     set(&object, "coreHeight", JsValue::from(block.core_height))?;

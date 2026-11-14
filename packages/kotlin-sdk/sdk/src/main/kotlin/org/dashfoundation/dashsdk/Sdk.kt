@@ -84,6 +84,16 @@ class Sdk private constructor(
         org.dashfoundation.dashsdk.voting.DecisionProposals(this)
     }
 
+    /**
+     * Multiple choice proposal reads, the amounts a proposal and a choice cost, and the
+     * masternode vote among a proposal's choices (protocol version 15); mirrors the Swift
+     * SDK's `SDK+MultipleChoiceProposals.swift`. Creating and editing a proposal and
+     * entering a choice go through `PlatformWalletManager.multipleChoiceProposals`.
+     */
+    val multipleChoiceProposals: org.dashfoundation.dashsdk.voting.MultipleChoiceProposals by lazy {
+        org.dashfoundation.dashsdk.voting.MultipleChoiceProposals(this)
+    }
+
     /** Evonode proposed-epoch-block queries. */
     val evonodes: org.dashfoundation.dashsdk.queries.Evonodes by lazy {
         org.dashfoundation.dashsdk.queries.Evonodes(this)

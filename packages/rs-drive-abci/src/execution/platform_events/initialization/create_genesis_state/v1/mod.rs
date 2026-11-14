@@ -99,8 +99,9 @@ impl<C> Platform<C> {
             );
         }
 
-        // The token market contract activates with protocol version 15: a chain born at 15
-        // registers it at genesis, an older chain gets it from `transition_to_version_15`.
+        // The token market contract activates with the token marketplace, at protocol version
+        // 16: a chain born at that version or later registers it at genesis, an older chain
+        // gets it from the upgrade to it.
         if platform_version.protocol_version >= TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
             system_data_contract_types.insert(
                 SystemDataContract::TokenMarket,
@@ -156,6 +157,7 @@ mod tests {
         use dpp::data_contracts::SystemDataContract;
         use dpp::prelude::Identifier;
         use drive::config::DriveConfig;
+        use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
         use platform_version::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 
         #[test]
@@ -330,14 +332,21 @@ mod tests {
             }
         }
 
-        /// The token market contract joins the genesis state at protocol version 15.
+        /// The token market contract joins the genesis state at protocol version 16, with the
+        /// token marketplace. That version has no tables yet, so the test version that selects
+        /// the marketplace stands in for it.
         #[test]
-        pub fn should_register_the_token_market_contract_only_from_protocol_version_15() {
+        pub fn should_register_the_token_market_contract_only_from_protocol_version_16() {
             let token_market_id = SystemDataContract::TokenMarket.id();
 
             for (platform_version, expected) in [
                 (PlatformVersion::get(14).expect("protocol 14"), false),
-                (PlatformVersion::latest(), true),
+                (PlatformVersion::get(15).expect("protocol 15"), false),
+                (
+                    PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
+                        .expect("the token marketplace test version"),
+                    true,
+                ),
             ] {
                 let initial_protocol_version = platform_version.protocol_version;
                 let platform = TestPlatformBuilder::new()

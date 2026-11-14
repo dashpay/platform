@@ -69,6 +69,13 @@ fun formatDuffs(duffs: Long): String = formatDashAmount(duffs.toDouble() / 100_0
 fun formatCredits(credits: Long): String =
     formatDashAmount(credits.toDouble() / 100_000_000_000.0)
 
+/**
+ * [formatCredits] for an amount the SDK reads as unsigned (a fee, a contest fund): it is
+ * never narrowed to [Long], which would show an amount past [Long.MAX_VALUE] as negative.
+ */
+fun formatCredits(credits: ULong): String =
+    formatDashAmount(credits.toDouble() / 100_000_000_000.0)
+
 private fun formatDashAmount(dash: Double): String {
     val formatter = java.text.DecimalFormat("#,##0.########")
     return "${formatter.format(dash)} DASH"

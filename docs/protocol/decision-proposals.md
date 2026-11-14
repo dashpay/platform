@@ -406,5 +406,30 @@ A multiple choice proposal and its choices are ordinary documents and an
 ordinary contest: the SDKs' document create builds both (a `choice` create is
 given its contest fund like any contested create), and their contested resource
 queries and masternode vote read and answer the vote, with a choice's document
-id wherever they name a contender by an identity id. They have no helpers of
-their own yet.
+id wherever they name a contender by an identity id.
+
+The Rust SDK (`dash_sdk::platform::decision_proposals::multiple_choice`), the
+JavaScript SDKs (`sdk.decisionProposals.multipleChoice` in `@dashevo/evo-sdk`,
+the `*MultipleChoiceProposal*` methods of `@dashevo/wasm-sdk`) and the mobile
+SDKs (the `dash_sdk_multiple_choice_proposal_*` C functions of `rs-sdk-ffi` and
+the `platform_wallet_multiple_choice_proposal_*` ones of
+`rs-platform-wallet-ffi`, wrapped by the Swift SDK and by the Kotlin SDK's
+`Sdk.multipleChoiceProposals` and `PlatformWalletManager.multipleChoiceProposals`)
+have helpers over those:
+
+- build a proposal, its edit and a choice as documents to create or replace;
+- give the proposal's processing fee and the fund a choice entered now pays;
+- list proposals by owner and by creation time;
+- read the vote by the proposal's id: every choice with its tally while it
+  runs, the result with every choice's final tally afterwards, and the choice
+  that was kept;
+- build a masternode's vote from a choice's document id, abstain, or none of
+  the choices (a lock), and read the answer a masternode gave.
+
+The contest a proposal's choices run in is named from the proposal's id alone
+(`dpp::decision_proposal::multiple_choice::multiple_choice_proposal_vote_poll`).
+The helpers write what they are given: which descriptions, texts and choices
+Platform takes is checked by the contract, on chain. The mobile SDKs create
+and edit a proposal and enter a choice through the platform wallet, which signs
+and puts the document, where the Rust and JavaScript helpers return the document
+to put.

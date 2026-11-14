@@ -7,7 +7,7 @@ use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v3::STATE_TRANSITION_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v4::STATE_TRANSITION_SERIALIZATION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_state_transition_versions::v5::STATE_TRANSITION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
@@ -115,8 +115,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for the token market contract, note 17, and
-///    DashPay, note 24, not for DPNS.)
+///    (The bindings move to 3 for DashPay, note 24, not for DPNS.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -128,13 +127,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    consensus reads the total as it reads any other. `parse_property_constraints`
 ///    0 (protocol version 14) reads such a binding as an integer and refuses it.
 ///
-/// 5. **Tradeable tokens**: `TokenTradeMode::Tradeable`
-///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`) lets a token's holders list it and make
-///    offers for it. Before this version a contract whose token is tradeable, and a
-///    `TokenConfigUpdate` that makes a token tradeable, are refused unpaid as not active
-///    (`StateTransitionNotActiveError`, 10603), the refusal older software gives by failing to
-///    decode the mode. A tradeable token must be transferable (`NonTransferableTokenTradeableError`,
-///    10281): contract create and update refuse it unpaid, and the batch `advanced_structure` 2
+/// 5. **Tradeable tokens, decoded and not yet admitted**: `TokenTradeMode::Tradeable` lets a
+///    token's holders list it and make offers for it. This version decodes the mode and admits
+///    no token that has it: a contract whose token is tradeable, and a `TokenConfigUpdate` that
+///    makes a token tradeable, are refused unpaid as not active (`StateTransitionNotActiveError`,
+///    10603) below `TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION` (16), the refusal
+///    software older than this version gives by failing to decode the mode. The transitions
+///    that place and fill orders come with protocol version 16, and the stored form of the mode
+///    is not final before them, so no contract stores it under this version. The rules a
+///    tradeable token is held to are in place for the version that admits one: it must be
+///    transferable (`NonTransferableTokenTradeableError`, 10281), which contract create and
+///    update refuse unpaid, and the batch `advanced_structure` 2
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
 ///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
 ///    earlier keep the batch `advanced_structure` 1.
@@ -430,26 +433,19 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the complete evidence policy at activation, including a zero byte budget.
 ///     Protocol v14 and earlier retain their existing evidence limits.
 ///
-/// 17. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
-///     genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
-///     through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
-///     per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
-///     PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`, a SumTree of the credits open offers hold. Its
-///     `calculate_total_tokens_balance` 2 counts the escrowed tokens on the balance side of the
-///     token conservation check; the credit check already counts every prefunded specialized
-///     balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
-///     escrow key sits two levels into the prefunded specialized balances layer, below the keys
-///     the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
-///     deeper description of that layer another write of the batch registered, and
-///     `apply_drive_operations` 2 (note 14) keeps it whatever the order of the batch's writes.
-///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
-///     `ask` and `bid` types hold the open orders, each with the token's decimals when it was
-///     placed, which prices its fills and keys its `book` and `depth` index entries
-///     (`tokenId`, `decimals`, `price`) so prices of different scales never mix: registered at
-///     genesis from this version and
-///     stored without storage flags by `transition_to_version_15`. Users cannot write them:
-///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
-///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
+/// 17. **No token marketplace yet**: the token marketplace starts with protocol version 16
+///     (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`), and nothing of it is part of this version.
+///     Its escrow trees are not created (`create_initial_state_structure` stays at 4 and
+///     `transition_to_version_15` inserts none), the token conservation check does not read an
+///     escrow (`calculate_total_tokens_balance` stays at 1), the escrow methods (`order_escrow`)
+///     are `None`, the token market contract does not exist (`token_market: 0`, registered
+///     neither at genesis nor by the upgrade, and absent from the system contract cache), and
+///     no tradeable token is admitted (note 5). The code of all of it is present and selected by
+///     no protocol version's tables; the test version `TEST_PLATFORM_V5` selects it on top of
+///     this version's tables so it stays tested. The data trigger `bindings` 3
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`), which this version selects for DashPay (note
+///     24), also list the rejects of a replace or a delete of a token market order: they match
+///     the token market contract's id only, so nothing reaches them before that contract exists.
 ///
 /// 18. **Core fork activations recorded in state**: `update_core_info` 1
 ///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) asks Core, in a block that moves the chain locked
@@ -565,7 +561,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     trigger. Every property is stored as v2 stores it (DashPay keeps sized integer
 ///     types off, so the key indexes stay i64), so documents written under v1 and v2
 ///     read back unchanged. The data trigger `bindings` 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`,
-///     which also add note 17's order rejects) drop the DashPay contact request create and
+///     which also list the token market order rejects, note 17) drop the DashPay contact request create and
 ///     profile create and replace triggers, which made the identity, writer and type byte
 ///     checks and refused with `DataTriggerConditionError` (40500). Protocol v14 keeps
 ///     DashPay v2 and bindings 2, and earlier versions the contract and bindings they had.
@@ -913,13 +909,29 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `validate_schema_patterns` and `registration_cost` 2, so a block accepts there what it
 ///     accepted before, and a contract registered earlier is not checked again when it is
 ///     read.
+///
+/// 43. **One signature form where the key is recovered**: an ECDSA signature checked by
+///     recovering its public key and comparing the key's HASH160 (an identity-signed
+///     transition's ECDSA_HASH160 key, masternode votes included; a P2PKH address witness;
+///     the one-time key of an asset lock funding an identity create, a top-up, an address
+///     funding or a shield) stays valid with S replaced by `n - S` and the recovery id's
+///     parity flipped, and with its header rewritten from that of a compressed key
+///     (`31 + id`) to that of an uncompressed one (`27 + id`), so a third party could change
+///     a transition's hash. `verify_hash_signature` 1 (`STATE_TRANSITION_METHOD_VERSIONS_V3`)
+///     refuses a signature whose S is in the upper half of the curve order or whose header
+///     does not name a compressed key, with the error each path gives a signature that does
+///     not verify, unpaid as before. Signing produces low-S signatures under the compressed
+///     key's header, so no honest signer is affected. The checks that verify against a
+///     public key already refuse high-S. Protocol v14 and earlier keep
+///     `verify_hash_signature` 0, so the blocks committed under them replay with the same
+///     results.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: insert.add_document_for_contract_operations 2, delete.delete_document_for_contract_operations 1, delete.remove_document_from_primary_storage 1 and its estimate 1, query.fetch_document_lifecycle Some(0), and the erase/lifecycle estimate and erase_refund_recipient_cost selectors Some(0); batch_operations.convert_drive_operations_to_grove_operations 2; state transition method versions v5: document_delete_transition 1 and document_erase_transition Some(0); verify methods v4: single_document.verify_proof 1 extend retained history (note 41); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: insert.add_document_for_contract_operations 2, delete.delete_document_for_contract_operations 1, delete.remove_document_from_primary_storage 1 and its estimate 1, query.fetch_document_lifecycle Some(0), and the erase/lifecycle estimate and erase_refund_recipient_cost selectors Some(0); batch_operations.convert_drive_operations_to_grove_operations 2; state transition method versions v5: document_delete_transition 1 and document_erase_transition Some(0); verify methods v4: single_document.verify_proof 1 extend retained history (note 41); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle (note 41)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle (note 41)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: getDocumentHistory accepts V1 only
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -929,7 +941,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V6, // changed: document type update 2 preserves erasure constraints (note 41)
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V4, // changed: document erase bounds Some(0) admit the appended kind (note 41)
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: verify_hash_signature 1 refuses a high-S signature and an uncompressed-key header where the key is recovered (note 43)
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
         document_versions: DOCUMENT_VERSIONS_V4,
@@ -940,7 +952,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); DashPay v3 states what its data triggers checked (note 24)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25); a multiple choice proposal pays a 0.2 Dash processing fee on create (note 40)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25); max_document_revisions_erased_per_transition caps an erase at 100 revisions (note 41)
     consensus: ConsensusVersions {

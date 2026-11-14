@@ -156,10 +156,12 @@ impl TokenConfiguration {
     }
 
     /// A tradeable token (`marketplaceRules.tradeMode` `Tradeable`) is admitted from protocol
-    /// version 15 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`): below it the mode is refused as
-    /// not active, the refusal software that predates the marketplace gives by failing to decode
-    /// it. A tradeable token must also be transferable, since filling a listing or an offer moves
-    /// the token from one identity to another. Checked on contract create and update.
+    /// version 16 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`): below it the mode is
+    /// refused as not active. Software that predates protocol version 15 gives that refusal by
+    /// failing to decode the mode; protocol version 15 decodes it and refuses it here, as it has
+    /// no way to trade a token. A tradeable token must also be transferable, since filling a
+    /// listing or an offer moves the token from one identity to another. Checked on contract
+    /// create and update.
     pub fn validate_marketplace_rules(
         &self,
         token_contract_position: TokenContractPosition,
@@ -1212,6 +1214,7 @@ mod marketplace_rules_tests {
     use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
     use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
+    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
 
     fn not_tradeable() -> TokenConfiguration {
         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
@@ -1229,6 +1232,15 @@ mod marketplace_rules_tests {
         PlatformVersion::get(14).expect("expected protocol version 14")
     }
 
+    /// The protocol version that admits a tradeable token. While it has no tables of its own,
+    /// the test version that selects the token marketplace stands in for it; once it has them,
+    /// they are the ones used.
+    fn protocol_version_admitting_tradeable() -> &'static PlatformVersion {
+        PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+            .or_else(|_| PlatformVersion::get(TEST_PROTOCOL_VERSION_5))
+            .expect("expected a version that admits a tradeable token")
+    }
+
     #[test]
     fn should_accept_a_token_that_is_not_tradeable_at_every_protocol_version() {
         let configurations = BTreeMap::from([(0, not_tradeable())]);
@@ -1237,31 +1249,43 @@ mod marketplace_rules_tests {
         }
     }
 
+    /// Protocol version 15 decodes the mode, creates the marketplace's state and still refuses
+    /// the mode: every version below the one that admits it does.
     #[test]
-    fn should_refuse_a_tradeable_token_as_not_active_before_protocol_version_15() {
+    fn should_refuse_a_tradeable_token_as_not_active_before_protocol_version_16() {
         let configurations = BTreeMap::from([(1, tradeable())]);
-        let result = validate_token_configurations(&configurations, protocol_version_14());
-        match result.errors.as_slice() {
-            [error
-            @ ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(inner))] => {
-                assert_eq!(inner.state_transition_type(), "TokenTradeModeTradeable");
-                assert_eq!(inner.current_protocol_version(), 14);
-                assert_eq!(
-                    inner.required_protocol_version(),
-                    TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-                );
-                assert_eq!(error.code(), 10603);
+        let protocol_version_15 = PlatformVersion::get(15).expect("expected protocol version 15");
+        for platform_version in [protocol_version_14(), protocol_version_15] {
+            let result = validate_token_configurations(&configurations, platform_version);
+            match result.errors.as_slice() {
+                [error @ ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(
+                    inner,
+                ))] => {
+                    assert_eq!(inner.state_transition_type(), "TokenTradeModeTradeable");
+                    assert_eq!(
+                        inner.current_protocol_version(),
+                        platform_version.protocol_version
+                    );
+                    assert_eq!(
+                        inner.required_protocol_version(),
+                        TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
+                    );
+                    assert_eq!(inner.required_protocol_version(), 16);
+                    assert_eq!(error.code(), 10603);
+                }
+                other => panic!("expected StateTransitionNotActiveError, got {other:?}"),
             }
-            other => panic!("expected StateTransitionNotActiveError, got {other:?}"),
         }
     }
 
     #[test]
-    fn should_accept_a_tradeable_transferable_token_from_protocol_version_15() {
+    fn should_accept_a_tradeable_transferable_token_from_protocol_version_16() {
         let configurations = BTreeMap::from([(0, tradeable())]);
-        assert!(
-            validate_token_configurations(&configurations, PlatformVersion::latest()).is_valid()
-        );
+        assert!(validate_token_configurations(
+            &configurations,
+            protocol_version_admitting_tradeable()
+        )
+        .is_valid());
     }
 
     #[test]
@@ -1269,7 +1293,8 @@ mod marketplace_rules_tests {
         let mut configuration = tradeable();
         configuration.set_transferable(false);
         let configurations = BTreeMap::from([(3, configuration)]);
-        let result = validate_token_configurations(&configurations, PlatformVersion::latest());
+        let result =
+            validate_token_configurations(&configurations, protocol_version_admitting_tradeable());
         match result.errors.as_slice() {
             [error @ ConsensusError::BasicError(BasicError::NonTransferableTokenTradeableError(
                 inner,
@@ -1288,12 +1313,10 @@ mod marketplace_rules_tests {
     fn should_refuse_making_a_non_transferable_token_tradeable_through_its_configuration_item() {
         let mut configuration = not_tradeable();
         configuration.set_transferable(false);
+        let platform_version = protocol_version_admitting_tradeable();
 
-        let proposed = configuration.validate_trade_mode(
-            &TokenTradeMode::Tradeable,
-            0,
-            PlatformVersion::latest(),
-        );
+        let proposed =
+            configuration.validate_trade_mode(&TokenTradeMode::Tradeable, 0, platform_version);
         assert!(matches!(
             proposed.errors.as_slice(),
             [ConsensusError::BasicError(
@@ -1304,7 +1327,7 @@ mod marketplace_rules_tests {
         configuration.apply_token_configuration_item(
             TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
         );
-        let applied = configuration.validate_marketplace_rules(0, PlatformVersion::latest());
+        let applied = configuration.validate_marketplace_rules(0, platform_version);
         assert_eq!(applied.errors, proposed.errors);
     }
 

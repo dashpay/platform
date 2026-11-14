@@ -17,7 +17,7 @@ pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
 /// The contract's definitions for `platform_version`. Version 0, the value the tables of
-/// protocol versions below 15 carry, names no schema generation and is refused like any
+/// protocol versions below 16 carry, names no schema generation and is refused like any
 /// unknown version: the contract does not exist before its activation.
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.token_market {
@@ -56,10 +56,13 @@ mod tests {
     }
 
     #[test]
-    fn should_load_the_schema_at_the_latest_platform_version() {
+    fn should_load_the_schema_at_the_token_marketplace_test_version() {
+        use platform_version::version::mocks::v5_test::TEST_PLATFORM_V5;
         use v1::document_types::{ask, bid};
 
-        let schema = load_documents_schemas(PlatformVersion::latest()).expect("schema loads");
+        // The token marketplace starts with protocol version 16, which has no tables yet: the
+        // test version that selects it stands in for it.
+        let schema = load_documents_schemas(&TEST_PLATFORM_V5).expect("schema loads");
         let declared = |name: &str, properties: &[&str], summed: &str| {
             let document_type = schema
                 .get(name)
@@ -126,14 +129,17 @@ mod tests {
 
     #[test]
     fn should_refuse_to_load_below_the_activation_version() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
-        assert!(matches!(
-            load_documents_schemas(platform_version),
-            Err(Error::UnknownVersionMismatch { received: 0, .. })
-        ));
-        assert!(matches!(
-            load_definitions(platform_version),
-            Err(Error::UnknownVersionMismatch { received: 0, .. })
-        ));
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the protocol version");
+            assert!(matches!(
+                load_documents_schemas(platform_version),
+                Err(Error::UnknownVersionMismatch { received: 0, .. })
+            ));
+            assert!(matches!(
+                load_definitions(platform_version),
+                Err(Error::UnknownVersionMismatch { received: 0, .. })
+            ));
+        }
     }
 }

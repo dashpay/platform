@@ -81,7 +81,7 @@ pub struct DecisionProposalEditFFI {
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string that outlives
 /// the call.
-unsafe fn required_string(
+pub(crate) unsafe fn required_string(
     ptr: *const c_char,
     field: &str,
 ) -> Result<String, PlatformWalletFFIResult> {
