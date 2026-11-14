@@ -233,6 +233,7 @@ fn reconstruct_candidates(
             Some(TrackedAssetLock {
                 operation_id: None,
                 shielded_recipient: None,
+                identity_recipient: None,
                 out_point,
                 transaction: record.transaction.clone(),
                 account_index,
@@ -768,6 +769,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction: tx.clone(),
                     account_index: 0,
@@ -1005,6 +1007,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction: tx.clone(),
                         account_index: 0,

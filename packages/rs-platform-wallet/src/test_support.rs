@@ -933,17 +933,34 @@ pub(crate) async fn platform_wallet_in(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: WalletId,
 ) -> PlatformWallet {
-    let (network, generation) = {
+    let network = {
         let manager = wallet_manager.read().await;
-        let (wallet, info) = manager
+        let (wallet, _) = manager
             .get_wallet_and_info(&wallet_id)
             .expect("wallet present");
-        (wallet.network, Arc::clone(&info.generation))
+        wallet.network
     };
     let sdk = SdkBuilder::new_mock()
         .with_network(network)
         .build()
         .expect("mock sdk");
+    platform_wallet_with_sdk(wallet_manager, wallet_id, sdk).await
+}
+
+/// [`platform_wallet_in`] over a caller-built (for example, mock-primed) SDK.
+#[cfg(test)]
+pub(crate) async fn platform_wallet_with_sdk(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+    sdk: dash_sdk::Sdk,
+) -> PlatformWallet {
+    let generation = {
+        let manager = wallet_manager.read().await;
+        let (_, info) = manager
+            .get_wallet_and_info(&wallet_id)
+            .expect("wallet present");
+        Arc::clone(&info.generation)
+    };
     let spv = Arc::new(SpvRuntime::new(
         Arc::clone(&wallet_manager),
         Arc::new(PlatformEventManager::new(Vec::new())),

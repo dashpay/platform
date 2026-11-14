@@ -36,7 +36,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use dashcore::OutPoint;
 use dpp::address_funds::{OrchardAddress, PlatformAddress, ORCHARD_ADDRESS_SIZE};
 
-use crate::changeset::{ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
+use crate::changeset::{AssetLockRecipient, ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
@@ -398,7 +398,7 @@ impl PlatformWallet {
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
-                Some(recipient.to_raw_bytes()),
+                Some(AssetLockRecipient::Shielded(recipient.to_raw_bytes())),
                 asset_lock_signer,
                 on_asset_lock_built,
             )
@@ -1289,6 +1289,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,

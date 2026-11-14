@@ -38,6 +38,19 @@ pub struct TrackedAssetLockFFI {
     /// The raw 43-byte Orchard recipient a resume of this lock pays, valid
     /// only when `has_shielded_recipient` is true (all zero otherwise).
     pub shielded_recipient_raw_43: [u8; 43],
+    /// Whether `identity_recipient_32` carries the identity an unbound
+    /// identity top-up (funding type 2) pays. A resume of the lock pays that
+    /// identity and refuses any other.
+    pub has_identity_recipient: bool,
+    /// The identity a resume of this lock pays, valid only when
+    /// `has_identity_recipient` is true (all zero otherwise).
+    pub identity_recipient_32: [u8; 32],
+    /// An unbound identity top-up, not consumed, that records no identity
+    /// (rebuilt from the chain, for example after a restore from the seed):
+    /// no resume pays it until the user assigns it a recipient with
+    /// `platform_wallet_assign_identity_top_up_recipient`. Hosts list it
+    /// for the user rather than resuming it into one of their identities.
+    pub identity_recipient_unassigned: bool,
 }
 
 /// Destroy an AssetLockManager handle.
@@ -95,6 +108,12 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                     has_proof: lock.proof.is_some(),
                     has_shielded_recipient: lock.shielded_recipient.is_some(),
                     shielded_recipient_raw_43: lock.shielded_recipient.unwrap_or([0; 43]),
+                    has_identity_recipient: lock.identity_recipient.is_some(),
+                    identity_recipient_32: lock
+                        .identity_recipient
+                        .map(|identity| identity.to_buffer())
+                        .unwrap_or([0; 32]),
+                    identity_recipient_unassigned: lock.is_unassigned_identity_top_up(),
                 }
             })
             .collect();

@@ -163,6 +163,18 @@ fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
 /// the next stage's responsibility (e.g.
 /// [`crate::platform_wallet_register_identity_with_funding_signer`]).
 ///
+/// # Recorded recipients
+///
+/// This export hands back the proof and key path of any tracked lock, with
+/// no check of whom the lock was built to pay. A lock that records a
+/// recipient (`has_identity_recipient` / `has_shielded_recipient` on the
+/// tracked-lock lists) must be consumed only for that recipient: the record
+/// is wallet policy, not something the signature enforces, and whoever holds
+/// the key can sign the lock to anyone. To top up an identity from a tracked
+/// lock, use
+/// [`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
+/// which pays the identity the lock records and no other.
+///
 /// # Timeouts
 ///
 /// `timeout_secs` bounds only the stages that still have to WAIT for a

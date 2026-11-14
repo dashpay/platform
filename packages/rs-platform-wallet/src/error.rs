@@ -675,6 +675,42 @@ pub enum PlatformWalletError {
         requested: crate::changeset::ShieldedRecipientRaw,
     },
 
+    /// An unbound identity top-up lock is being resumed (or assigned) to a
+    /// different identity than the one its tracked row recorded. The recorded
+    /// identity is the one the user confirmed; nothing was submitted or paid.
+    /// Resume with the recorded identity instead. The FFI reports it with the
+    /// same code as [`Self::AssetLockRecipientMismatch`].
+    #[error(
+        "Asset lock {out_point} was built to top up identity {recorded} and cannot be resumed to {requested}"
+    )]
+    AssetLockIdentityRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: Identifier,
+        requested: Identifier,
+    },
+
+    /// An unbound identity top-up lock records no recipient (it was rebuilt
+    /// from the chain, for example after a restore from the seed, and its
+    /// credit output names no identity), so no resume pays it: it may have
+    /// been meant for someone else's identity. Nothing was submitted or paid.
+    /// The funds stay recoverable: assign the lock a recipient the user
+    /// chooses, then resume it.
+    #[error("Asset lock {0} records no identity to top up; assign a recipient before resuming it")]
+    AssetLockRecipientUnknown(dashcore::OutPoint),
+
+    /// A bound identity top-up lock pays the wallet's identity at its
+    /// registration index, but the wallet holds no identity there yet (for
+    /// example, identities are still being discovered after a restore).
+    /// Nothing was submitted or paid; resume after the identity is loaded.
+    #[error(
+        "Asset lock {out_point} tops up the wallet's identity at index {identity_index}, \
+         which this wallet does not hold yet"
+    )]
+    AssetLockIdentityNotLoaded {
+        out_point: dashcore::OutPoint,
+        identity_index: u32,
+    },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
