@@ -143,6 +143,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .and_then(|lock| lock.shielded_recipient)
     }
 
+    /// What a tracked lock was built to pay when that is not the wallet
+    /// itself, if the row recorded it (see `TrackedAssetLock::payment_intent`).
+    pub async fn tracked_payment_intent(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<crate::changeset::AssetLockPaymentIntent> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .and_then(|lock| lock.payment_intent.clone())
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///

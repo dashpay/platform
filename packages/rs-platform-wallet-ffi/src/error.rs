@@ -649,11 +649,14 @@ pub enum PlatformWalletFFIResultCode {
     /// consolidating the coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
-    /// A shielded funding is being resumed to a different Orchard recipient
-    /// than the one its tracked asset lock recorded when it was built. Nothing
-    /// was submitted and nothing was paid; resume with the recorded recipient
-    /// (the row exposes it). Rows tracked before the recipient was recorded
-    /// carry none and accept the caller's.
+    /// A resume would pay something other than what its tracked asset lock
+    /// recorded when it was built: a shielded funding resumed to a different
+    /// Orchard recipient, or a lock built to pay third-party Platform
+    /// addresses (it carries a payment intent) resumed as an owned top-up or
+    /// to other recipients. Nothing was submitted and nothing was paid;
+    /// resume with the recorded recipient(s) (the row exposes them). Rows
+    /// tracked before recipients were recorded carry none and accept the
+    /// caller's.
     ErrorAssetLockRecipientMismatch = 61,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
@@ -1218,7 +1221,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
             }
-            PlatformWalletError::AssetLockRecipientMismatch { .. } => {
+            PlatformWalletError::AssetLockRecipientMismatch { .. }
+            | PlatformWalletError::AssetLockPaymentIntentMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
             }
             // A quiesce/drain barrier that did not complete within budget

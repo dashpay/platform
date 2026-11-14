@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::{AssetLockChangeSet, SHIELDED_RECIPIENT_SIZE};
+use platform_wallet::changeset::{
+    AssetLockChangeSet, AssetLockPaymentIntent, SHIELDED_RECIPIENT_SIZE,
+};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -63,6 +65,7 @@ impl_persistable_blob!(AssetLockEntryWire);
 struct AssetLockRecoveryRow {
     operation_id: Option<Vec<u8>>,
     shielded_recipient: Option<Vec<u8>>,
+    payment_intent: Option<Vec<u8>>,
     lifecycle_blob: Vec<u8>,
 }
 
@@ -123,6 +126,7 @@ impl AssetLockEntryWire {
             proof,
             operation_id: None,
             shielded_recipient: None,
+            payment_intent: None,
         })
     }
 }
@@ -149,8 +153,8 @@ pub fn apply(
         // batches fold before reaching the store.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
-                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, shielded_recipient) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, shielded_recipient, payment_intent) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
              ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
                 status = excluded.status, \
                 account_index = excluded.account_index, \
@@ -158,19 +162,21 @@ pub fn apply(
                 amount_duffs = excluded.amount_duffs, \
                 lifecycle_blob = excluded.lifecycle_blob, \
                 operation_id = COALESCE(excluded.operation_id, asset_locks.operation_id), \
-                shielded_recipient = COALESCE(excluded.shielded_recipient, asset_locks.shielded_recipient) \
+                shielded_recipient = COALESCE(excluded.shielded_recipient, asset_locks.shielded_recipient), \
+                payment_intent = COALESCE(excluded.payment_intent, asset_locks.payment_intent) \
              WHERE asset_locks.status != 'consumed' OR excluded.status = 'consumed'",
         )?;
         for (op, entry) in &cs.asset_locks {
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
             let existing: Option<AssetLockRecoveryRow> = tx.query_row(
-                "SELECT operation_id, shielded_recipient, lifecycle_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                "SELECT operation_id, shielded_recipient, payment_intent, lifecycle_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![wallet_id.as_slice(), &op_bytes[..]],
                 |row| Ok(AssetLockRecoveryRow {
                     operation_id: row.get(0)?,
                     shielded_recipient: row.get(1)?,
-                    lifecycle_blob: row.get(2)?,
+                    payment_intent: row.get(2)?,
+                    lifecycle_blob: row.get(3)?,
                 }),
             ).optional()?;
             // The operation UUID and the shielded recipient are immutable once
@@ -201,6 +207,22 @@ pub fn apply(
                     ));
                 }
             }
+            let payment_intent = entry
+                .payment_intent
+                .as_ref()
+                .map(AssetLockPaymentIntent::to_bytes);
+            if let (Some(incoming), Some(stored)) = (
+                payment_intent.as_deref(),
+                existing
+                    .as_ref()
+                    .and_then(|row| row.payment_intent.as_deref()),
+            ) {
+                if incoming != stored {
+                    return Err(WalletStorageError::blob_decode(
+                        "asset lock payment intent cannot change",
+                    ));
+                }
+            }
             // Both terminal variants project to SQL `consumed`, but the blob
             // retains stronger proof-gated completion and must never regress.
             if let Some(stored) = &existing {
@@ -226,6 +248,7 @@ pub fn apply(
                 shielded_recipient
                     .as_ref()
                     .map(|recipient| recipient.as_slice()),
+                payment_intent,
             ])?;
         }
     }
@@ -314,6 +337,7 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 ///
 /// Malformed fields and entry mismatches are always fatal. Status drift is
 /// policy-controlled: Recovery uses the blob status with consumption sticky.
+#[allow(clippy::too_many_arguments)]
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,
@@ -321,6 +345,7 @@ fn decode_row(
     typed_status: &str,
     operation_id: Option<Vec<u8>>,
     shielded_recipient: Option<Vec<u8>>,
+    payment_intent: Option<Vec<u8>>,
     ctx: &LoadCtx,
 ) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
     let outpoint = blob::decode_outpoint(op_bytes)?;
@@ -339,6 +364,13 @@ fn decode_row(
                 WalletStorageError::blob_decode(
                     "asset_locks.shielded_recipient must contain 43 bytes",
                 )
+            })
+        })
+        .transpose()?;
+    entry.payment_intent = payment_intent
+        .map(|bytes| {
+            AssetLockPaymentIntent::from_bytes(&bytes).map_err(|_| {
+                WalletStorageError::blob_decode("asset_locks.payment_intent is malformed")
             })
         })
         .transpose()?;
@@ -385,6 +417,7 @@ fn decode_row(
         proof: entry.proof,
         operation_id: entry.operation_id,
         shielded_recipient: entry.shielded_recipient,
+        payment_intent: entry.payment_intent,
     };
     Ok((account_index, outpoint, tracked))
 }
@@ -400,7 +433,7 @@ pub fn load_state(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient, payment_intent \
          FROM asset_locks WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -414,6 +447,7 @@ pub fn load_state(
         let status: String = row.get(5)?;
         let operation_id: Option<Vec<u8>> = row.get(6)?;
         let shielded_recipient: Option<Vec<u8>> = row.get(7)?;
+        let payment_intent: Option<Vec<u8>> = row.get(8)?;
         let (acct, outpoint, tracked) = decode_row(
             &op_bytes,
             account_index,
@@ -421,6 +455,7 @@ pub fn load_state(
             &status,
             operation_id,
             shielded_recipient,
+            payment_intent,
             ctx,
         )?;
         out.entry(acct).or_default().insert(outpoint, tracked);
@@ -441,7 +476,7 @@ pub fn load_unconsumed(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient, payment_intent \
          FROM asset_locks WHERE wallet_id = ?1 AND (status != 'consumed' OR operation_id IS NOT NULL)",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -455,6 +490,7 @@ pub fn load_unconsumed(
         let status: String = row.get(5)?;
         let operation_id: Option<Vec<u8>> = row.get(6)?;
         let shielded_recipient: Option<Vec<u8>> = row.get(7)?;
+        let payment_intent: Option<Vec<u8>> = row.get(8)?;
         let (acct, outpoint, tracked) = decode_row(
             &op_bytes,
             account_index,
@@ -462,6 +498,7 @@ pub fn load_unconsumed(
             &status,
             operation_id,
             shielded_recipient,
+            payment_intent,
             ctx,
         )?;
         if tracked.status.is_consumed() && tracked.operation_id.is_none() {
@@ -527,6 +564,7 @@ mod tests {
             identity_index: 0,
             operation_id: None,
             shielded_recipient: None,
+            payment_intent: None,
             amount_duffs: 1000,
             status,
             proof,
@@ -566,6 +604,7 @@ mod tests {
                 proof: tracked.proof,
                 operation_id: tracked.operation_id,
                 shielded_recipient: tracked.shielded_recipient,
+                payment_intent: tracked.payment_intent,
             })
             .expect("stored asset lock must load back")
     }
@@ -757,6 +796,7 @@ mod tests {
             identity_index: 0,
             operation_id: None,
             shielded_recipient: None,
+            payment_intent: None,
             amount_duffs: 1000,
             status: AssetLockStatus::Built,
             proof: None,

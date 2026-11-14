@@ -39,6 +39,7 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         identity_index: 0,
         operation_id: None,
         shielded_recipient: None,
+        payment_intent: None,
         amount_duffs: 1000,
         status,
         proof: None,
@@ -446,4 +447,119 @@ fn sqlite_advertises_asset_lock_shielded_recipients() {
 
 fn recipient_bytes(seed_byte: u8) -> ShieldedRecipientRaw {
     [seed_byte; SHIELDED_RECIPIENT_SIZE]
+}
+
+fn payment_intent(hash: u8) -> platform_wallet::changeset::AssetLockPaymentIntent {
+    use dpp::address_funds::PlatformAddress;
+    platform_wallet::changeset::AssetLockPaymentIntent::PlatformAddresses(
+        [
+            (PlatformAddress::P2pkh([hash; 20]), Some(1_000_000)),
+            (PlatformAddress::P2pkh([0x01; 20]), None),
+        ]
+        .into(),
+    )
+}
+
+/// The recipients of an external payment survive a reopen with the row, a
+/// later snapshot without them keeps them, a snapshot naming others is
+/// refused, and a row stored before the column existed loads with none.
+#[test]
+fn should_preserve_the_payment_intent_and_reject_a_change() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xAC);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x37);
+    let legacy = op(0x38);
+    let store = |persister: &platform_wallet_storage::SqlitePersister,
+                 out_point: OutPoint,
+                 row: AssetLockEntry| {
+        persister.store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(out_point, row)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+    };
+    let mut recorded = entry(outpoint, AssetLockStatus::Built);
+    recorded.payment_intent = Some(payment_intent(0x21));
+    store(&persister, outpoint, recorded).unwrap();
+    store(
+        &persister,
+        outpoint,
+        entry(outpoint, AssetLockStatus::Broadcast),
+    )
+    .unwrap();
+    let mut redirected = entry(outpoint, AssetLockStatus::ChainLocked);
+    redirected.payment_intent = Some(payment_intent(0x22));
+    assert!(store(&persister, outpoint, redirected).is_err());
+    store(
+        &persister,
+        legacy,
+        entry(legacy, AssetLockStatus::Broadcast),
+    )
+    .unwrap();
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&outpoint];
+    assert_eq!(restored.payment_intent, Some(payment_intent(0x21)));
+    assert_eq!(restored.status, AssetLockStatus::Broadcast);
+    assert_eq!(locks[&0][&legacy].payment_intent, None);
+    // The column never changes once set.
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET payment_intent = ?1 WHERE payment_intent IS NOT NULL",
+            [payment_intent(0x23).to_bytes()]
+        )
+        .is_err());
+}
+
+/// A stored intent that cannot be read fails the load rather than yielding a
+/// row with no intent, which a resume would consume as an owned top-up.
+#[test]
+fn should_fail_the_load_when_a_stored_payment_intent_is_malformed() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xAD);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x39);
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, entry(outpoint, AssetLockStatus::Built))]
+                        .into_iter()
+                        .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "UPDATE asset_locks SET payment_intent = ?1",
+        [vec![0x09_u8, 0, 1]],
+    )
+    .unwrap();
+    assert!(
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .is_err()
+    );
+}
+
+#[test]
+fn sqlite_advertises_asset_lock_payment_intents() {
+    let (persister, _tmp, _) = fresh_persister();
+    assert!(persister
+        .persistence_capabilities()
+        .contains(platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS));
 }
