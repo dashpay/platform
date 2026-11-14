@@ -185,7 +185,12 @@ where
 {
     let (wallet_manager, wallet_id, balance, _signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let sdk = Arc::new(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .build()
+            .unwrap(),
+    );
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&wallet_manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
