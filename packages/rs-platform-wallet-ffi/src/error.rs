@@ -1079,6 +1079,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::IdentityNotFound(..) => {
                 PlatformWalletFFIResultCode::ErrorIdentityNotFound
             }
+            // A bound top-up lock whose identity (at its registration index)
+            // is not loaded yet: the identity is not found locally, and
+            // nothing was submitted.
+            PlatformWalletError::AssetLockIdentityNotLoaded { .. } => {
+                PlatformWalletFFIResultCode::ErrorIdentityNotFound
+            }
             // The two shielded broadcast/wait variants. Today nothing routes
             // them through this blanket impl — the dedicated match in
             // `platform_wallet_manager_shielded_identity_create_from_pool`
@@ -2634,6 +2640,22 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
         );
         assert!(message_of(&result).contains(&format!("{recorded}")));
+    }
+
+    /// A bound top-up lock whose identity the wallet has not loaded yet
+    /// crosses as "identity not found": nothing was submitted.
+    #[test]
+    fn should_report_a_bound_lock_without_its_identity_as_identity_not_found() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockIdentityNotLoaded {
+            out_point: dashcore::OutPoint::null(),
+            identity_index: 3,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert!(message_of(&result).contains("index 3"));
     }
 
     #[test]

@@ -284,6 +284,16 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
 /// `true`; every generic top-up/crash-recovery surface must pass `false`
 /// and is refused invitation locks by the funding resolver.
 ///
+/// `identity_id` must be one of this wallet's own identities; any other is
+/// refused (`ErrorIdentityNotFound` (7) for one the wallet does not hold),
+/// even when the lock records it. An unbound
+/// top-up lock pays only the identity it recorded: another identity is
+/// `ErrorAssetLockRecipientMismatch` (61), and a lock recording none is
+/// `ErrorAssetLockRecipientUnknown` (81). For crash recovery prefer
+/// [`platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
+/// which takes no identity, pays the one the lock is for (in this wallet or
+/// not), and resumes bound and unbound top-up locks alike.
+///
 /// # Safety
 /// - `out_point` must be a valid, non-null `*const OutPointFFI`; the caller
 ///   retains ownership.
@@ -346,21 +356,27 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     PlatformWalletFFIResult::ok()
 }
 
-/// Resume an interrupted unbound identity top-up to the identity its lock
-/// recorded — the caller names no identity, so a recovery cannot pay someone
-/// else's top-up into one of the host's identities. Wraps
-/// `IdentityWallet::resume_identity_top_up_to_recorded_recipient`: a recorded
-/// identity the wallet manages is topped up as a managed identity (its local
-/// balance updated), any other as an external one.
+/// Resume an interrupted identity top-up to the identity its lock pays — the
+/// caller names no identity, so a recovery cannot pay someone else's top-up
+/// into one of the host's identities, and needs no classification of its
+/// own: this resumes every identity top-up lock. Wraps
+/// `IdentityWallet::resume_identity_top_up_to_recorded_recipient`:
+///
+/// - a bound top-up lock pays the wallet's identity at the lock's
+///   registration index;
+/// - an unbound top-up lock pays the identity its row recorded.
+///
+/// An identity the wallet holds is topped up as a managed identity (its
+/// local balance updated), any other as an external one.
 ///
 /// On success `out_identity_id` receives the identity paid and
 /// `out_new_balance` its proved new balance. Errors: `ErrorAssetLockNotTracked`
-/// (23), `ErrorAssetLockAlreadyConsumed` (24), `ErrorAssetLockRecipientUnknown`
-/// (81) for a lock recording no identity (assign one first with
+/// (23), `ErrorAssetLockAlreadyConsumed` (24), `ErrorIdentityNotFound` (7)
+/// for a bound lock whose identity the wallet has not loaded yet (resume
+/// once identities are synced), `ErrorAssetLockRecipientUnknown` (81) for an
+/// unbound lock recording no identity (assign one first with
 /// [`platform_wallet_assign_identity_top_up_recipient`]), and the funding
-/// mismatch error for a lock that is not an unbound top-up. Bound top-up locks
-/// keep resuming through
-/// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`].
+/// mismatch error for a lock that is not an identity top-up.
 ///
 /// # Safety
 /// - `out_point` must be a valid, non-null `*const OutPointFFI`.

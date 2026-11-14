@@ -427,39 +427,11 @@ impl IdentityWallet {
             )
             .await?;
 
-        // Step 4 (best-effort): persist the new balance + clean up the
-        // tracked lock.
-        //
-        // Platform has ALREADY accepted the top-up, so a missing local
-        // wallet must NOT propagate as `Err` — the caller would report
-        // failure for credits that exist on chain, and the early return
-        // would skip the `consume_asset_lock` below, leaving the spent
-        // lock in the Resumable Funding list where a Resume gets
-        // Platform's deterministic "lock already consumed" rejection.
-        // The stale local balance self-heals on the next identity
-        // re-sync. Same posture as register's Step 4.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                        new_balance = managed.persist_confirmed_balance(
-                            new_balance,
-                            BlockTime::from(metadata),
-                            &self.persister,
-                        );
-                    }
-                }
-                None => {
-                    tracing::warn!(
-                        identity = %identity_id,
-                        "top_up_identity_with_funding: top-up accepted on Platform \
-                         but wallet info was not found locally; skipping balance \
-                         persistence"
-                    );
-                }
-            }
-        }
+        // Step 4 (best-effort): persist the new balance. The tracked lock was
+        // already consumed in step 3.
+        new_balance = self
+            .record_top_up_balance(identity_id, new_balance, metadata)
+            .await;
         Ok(new_balance)
     }
 
@@ -478,8 +450,9 @@ impl IdentityWallet {
     ///    persister declaring `ASSET_LOCK_IDENTITY_RECIPIENTS`.
     /// 3. Submit the `IdentityTopUp` with the same IS→CL fallbacks as the
     ///    managed top-up, and return the identity's proved new balance.
-    /// 4. Consume the tracked lock. Nothing is written to the identity
-    ///    manager: the identity is not this wallet's.
+    /// 4. Consume the tracked lock. Nothing is added to the identity
+    ///    manager; if the wallet does hold this identity, its local balance
+    ///    is updated as on the managed route.
     ///
     /// `funding` may also be an existing unbound lock that recorded this
     /// identity; a lock recording another identity is refused.
@@ -496,7 +469,7 @@ impl IdentityWallet {
         let funding = apply_top_up_minimum(funding)?;
         let identity = self.fetch_identity_to_pay(identity_id).await?;
 
-        let (new_balance, _metadata) = self
+        let (new_balance, metadata) = self
             .submit_top_up_with_funding(
                 &identity,
                 funding,
@@ -506,7 +479,11 @@ impl IdentityWallet {
                 settings,
             )
             .await?;
-        Ok(new_balance)
+        // The caller may name an identity this wallet holds after all; its
+        // local balance then follows Platform's, as on the managed route.
+        Ok(self
+            .record_top_up_balance(identity_id, new_balance, metadata)
+            .await)
     }
 
     /// Assign the identity an unassigned unbound top-up lock pays
@@ -552,20 +529,25 @@ impl IdentityWallet {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))
     }
 
-    /// Resume an interrupted unbound identity top-up to the identity its lock
-    /// recorded, whoever's it is. The caller names no identity, so a host's
-    /// recovery cannot redirect someone else's top-up into one of its own
-    /// identities.
+    /// Resume an interrupted identity top-up to the identity its lock pays.
+    /// The caller names no identity, so a host's recovery cannot redirect
+    /// someone else's top-up into one of its own identities, and needs no
+    /// classifier of its own: this one call resumes any top-up lock.
     ///
-    /// A recorded identity this wallet manages is topped up through
+    /// - A bound top-up lock (`IdentityTopUp`) pays the wallet's identity at
+    ///   its registration index, read from the lock's derivation path. If
+    ///   the wallet does not hold that identity yet, the result is
+    ///   [`PlatformWalletError::AssetLockIdentityNotLoaded`].
+    /// - An unbound top-up lock (`IdentityTopUpNotBound`) pays the identity
+    ///   its row recorded. One that records none (rebuilt from the chain) is
+    ///   [`PlatformWalletError::AssetLockRecipientUnknown`] until the user
+    ///   assigns one.
+    ///
+    /// An identity this wallet holds is topped up through
     /// [`Self::top_up_identity_with_funding`] (which also updates its local
     /// balance); any other through
     /// [`Self::top_up_external_identity_with_funding`]. Returns the identity
-    /// paid and its proved new balance.
-    ///
-    /// A lock that records no identity (rebuilt from the chain) is
-    /// [`PlatformWalletError::AssetLockRecipientUnknown`] until the user
-    /// assigns one; a lock that is not an unbound top-up is
+    /// paid and its proved new balance. Any other lock is
     /// [`PlatformWalletError::AssetLockFundingMismatch`].
     pub async fn resume_identity_top_up_to_recorded_recipient<AS>(
         &self,
@@ -581,22 +563,44 @@ impl IdentityWallet {
             .tracked_resume_metadata(&out_point)
             .await
             .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-        if lock.funding_type != AssetLockFundingType::IdentityTopUpNotBound {
-            return Err(not_an_unbound_top_up(
-                out_point,
-                lock.funding_type,
-                lock.identity_index,
-            ));
-        }
-        let identity_id = lock
-            .identity_recipient
-            .ok_or(PlatformWalletError::AssetLockRecipientUnknown(out_point))?;
-        let managed = {
+        let (identity_id, managed) = {
             let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id).is_some_and(|info| {
-                info.identity_manager.identity(&identity_id).is_some()
-                    && info.identity_manager.identity_index(&identity_id).is_some()
-            })
+            let identities = wm
+                .get_wallet_info(&self.wallet_id)
+                .map(|info| &info.identity_manager);
+            match lock.funding_type {
+                AssetLockFundingType::IdentityTopUp => {
+                    let identity_id = identities
+                        .and_then(|manager| manager.wallet_identities.get(&self.wallet_id))
+                        .and_then(|by_index| by_index.get(&lock.identity_index))
+                        .map(|managed| managed.identity.id())
+                        .ok_or(PlatformWalletError::AssetLockIdentityNotLoaded {
+                            out_point,
+                            identity_index: lock.identity_index,
+                        })?;
+                    (identity_id, true)
+                }
+                AssetLockFundingType::IdentityTopUpNotBound => {
+                    let identity_id = lock
+                        .identity_recipient
+                        .ok_or(PlatformWalletError::AssetLockRecipientUnknown(out_point))?;
+                    // Only a signing-capable identity of this wallet takes
+                    // the managed route: an observed one has no index.
+                    let managed = identities.is_some_and(|manager| {
+                        manager
+                            .wallet_identity(&self.wallet_id, &identity_id)
+                            .is_some()
+                    });
+                    (identity_id, managed)
+                }
+                _ => {
+                    return Err(not_an_unbound_top_up(
+                        out_point,
+                        lock.funding_type,
+                        lock.identity_index,
+                    ))
+                }
+            }
         };
         let funding = AssetLockFunding::FromExistingAssetLock {
             out_point,
@@ -615,6 +619,41 @@ impl IdentityWallet {
             .await?
         };
         Ok((identity_id, new_balance))
+    }
+
+    /// Record a top-up's proved new balance on the identity, if this wallet
+    /// holds it, and return the balance to report. Best-effort: Platform has
+    /// ALREADY accepted the top-up, so a missing local wallet must NOT
+    /// propagate as `Err` (the caller would report failure for credits that
+    /// exist on chain). The stale local balance self-heals on the next
+    /// identity re-sync. Same posture as register's step 4.
+    async fn record_top_up_balance(
+        &self,
+        identity_id: &Identifier,
+        new_balance: u64,
+        metadata: ResponseMetadata,
+    ) -> u64 {
+        let mut wm = self.wallet_manager.write().await;
+        match wm.get_wallet_info_mut(&self.wallet_id) {
+            Some(info) => info
+                .identity_manager
+                .managed_identity_mut(identity_id)
+                .map_or(new_balance, |managed| {
+                    managed.persist_confirmed_balance(
+                        new_balance,
+                        BlockTime::from(metadata),
+                        &self.persister,
+                    )
+                }),
+            None => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    "identity top-up accepted on Platform but wallet info was not found \
+                     locally; skipping balance persistence"
+                );
+                new_balance
+            }
+        }
     }
 
     /// Steps 2–3 of a Core-funded top-up, shared by the managed
@@ -995,6 +1034,58 @@ mod tests {
         ));
     }
 
+    /// A top-up's proved balance lands on the identity when this wallet holds
+    /// it, on either route; an identity it does not hold is left alone.
+    #[tokio::test]
+    async fn should_record_a_top_up_balance_on_an_identity_the_wallet_holds() {
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let wallet = platform_wallet_in(wallet_manager, wallet_id).await;
+        let own = Identifier::from([0x67u8; 32]);
+        {
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .add_identity_unstored(
+                    Identity::V0(IdentityV0 {
+                        id: own,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet.wallet_id(),
+                )
+                .unwrap();
+        }
+
+        let reported = wallet
+            .identity()
+            .record_top_up_balance(&own, 7_000_000, ResponseMetadata::default())
+            .await;
+        assert_eq!(reported, 7_000_000);
+        let wm = wallet.identity().wallet_manager.read().await;
+        let identities = &wm
+            .get_wallet_info(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager;
+        assert_eq!(
+            identities.identity(&own).unwrap().identity.balance(),
+            7_000_000
+        );
+        drop(wm);
+
+        let stranger = Identifier::from([0x68u8; 32]);
+        assert_eq!(
+            wallet
+                .identity()
+                .record_top_up_balance(&stranger, 5, ResponseMetadata::default())
+                .await,
+            5
+        );
+    }
+
     /// An assignment is permanent, so an identity Platform does not know is
     /// refused before anything is recorded: the lock stays unassigned.
     #[tokio::test]
@@ -1022,13 +1113,14 @@ mod tests {
         assert!(tracked[0].is_unassigned_identity_top_up());
     }
 
-    /// The resume names no identity: it pays the one the lock recorded, or
-    /// nobody. A lock that is not an unbound top-up, or records no identity,
-    /// is refused; a recorded identity this wallet does not manage takes the
+    /// The resume names no identity: it pays the one the lock recorded (or,
+    /// for a bound lock, the wallet's identity at its index), or nobody. A
+    /// lock that is not a top-up, a bound lock whose identity is not loaded,
+    /// and an unbound lock recording no identity are refused; a recorded identity this wallet does not manage takes the
     /// external route (here Platform does not know it, so nothing is paid).
     /// Every refused lock stays tracked.
     #[tokio::test]
-    async fn should_resume_an_unbound_top_up_only_to_its_recorded_identity() {
+    async fn should_resume_a_top_up_lock_only_to_the_identity_it_pays() {
         let recorded = Identifier::from([0x63u8; 32]);
         let (wallet, signer) = wallet_where_platform_answers(recorded, None).await;
         let resume = |out_point| {
@@ -1043,10 +1135,47 @@ mod tests {
             Err(PlatformWalletError::AssetLockNotTracked(o)) if o == missing
         ));
 
+        let registration =
+            track_lock(&wallet, 4, AssetLockFundingType::IdentityRegistration, None).await;
+        assert!(matches!(
+            resume(registration).await,
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+
+        // A bound lock pays the wallet's identity at its index: none is
+        // loaded at index 0, so nothing is paid.
         let bound = track_lock(&wallet, 0, AssetLockFundingType::IdentityTopUp, None).await;
         assert!(matches!(
             resume(bound).await,
-            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+            Err(PlatformWalletError::AssetLockIdentityNotLoaded { out_point, identity_index: 0 })
+                if out_point == bound
+        ));
+        // With an identity loaded at the lock's index, the lock resolves to
+        // it and takes the managed route, which refuses a consumed lock.
+        let own = Identifier::from([0x64u8; 32]);
+        let bound_to_own = track_lock(&wallet, 5, AssetLockFundingType::IdentityTopUp, None).await;
+        {
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet.wallet_id()).unwrap();
+            info.identity_manager
+                .add_identity_unstored(
+                    Identity::V0(IdentityV0 {
+                        id: own,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    3,
+                    wallet.wallet_id(),
+                )
+                .unwrap();
+            let lock = info.tracked_asset_locks.get_mut(&bound_to_own).unwrap();
+            lock.identity_index = 3;
+            lock.status = AssetLockStatus::Consumed;
+        }
+        assert!(matches!(
+            resume(bound_to_own).await,
+            Err(PlatformWalletError::AssetLockAlreadyConsumed(o)) if o == bound_to_own
         ));
 
         let unassigned = track_lock(
@@ -1073,7 +1202,7 @@ mod tests {
             Err(PlatformWalletError::IdentityNotFound(id)) if id == recorded
         ));
 
-        assert_eq!(wallet.asset_locks().list_tracked_locks().await.len(), 3);
+        assert_eq!(wallet.asset_locks().list_tracked_locks().await.len(), 5);
     }
 
     /// Pins the IS-timeout discriminator: only `FinalityTimeout`

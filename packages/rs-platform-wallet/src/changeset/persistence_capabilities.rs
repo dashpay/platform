@@ -157,7 +157,7 @@ impl PersistenceCapabilities {
     /// and an unbound lock without one cannot be resumed until a recipient is
     /// assigned, so the wallet does not build an unbound top-up lock for a
     /// backend that would lose it on restart.
-    pub const ASSET_LOCK_IDENTITY_RECIPIENTS: Self = Self(1 << 16);
+    pub const ASSET_LOCK_IDENTITY_RECIPIENTS: Self = Self(1 << 17);
 
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
@@ -165,7 +165,15 @@ impl PersistenceCapabilities {
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 16;
+    const HIGHEST_DECLARED_BIT: u32 = 17;
+
+    /// Bits claimed by an open pull request on another branch, so they are
+    /// not reused here and are skipped by `every_declared_bit_has_a_stable_name`
+    /// until that change merges forward and names them. Bit 16 is
+    /// `OUTPOINT_LOCKS` (dashpay/platform#5890, against `v5.1-dev`); remove it
+    /// from this list when that constant arrives.
+    #[cfg(test)]
+    const RESERVED_BITS: &'static [u32] = &[16];
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -350,7 +358,7 @@ mod tests {
         );
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits(),
-            0x10000
+            0x20000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
@@ -385,6 +393,15 @@ mod tests {
         // every `names()`-based diagnostic — exactly what this test exists
         // to prevent. Walking the whole width cannot go stale.
         for shift in 0..=PersistenceCapabilities::HIGHEST_DECLARED_BIT {
+            if PersistenceCapabilities::RESERVED_BITS.contains(&shift) {
+                assert!(
+                    PersistenceCapabilities::from_bits_retain(1u64 << shift)
+                        .names()
+                        .is_empty(),
+                    "bit 1 << {shift} is named, so it is no longer only reserved"
+                );
+                continue;
+            }
             let bit = PersistenceCapabilities::from_bits_retain(1u64 << shift);
             assert_eq!(
                 bit.names().len(),

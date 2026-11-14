@@ -698,6 +698,19 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} records no identity to top up; assign a recipient before resuming it")]
     AssetLockRecipientUnknown(dashcore::OutPoint),
 
+    /// A bound identity top-up lock pays the wallet's identity at its
+    /// registration index, but the wallet holds no identity there yet (for
+    /// example, identities are still being discovered after a restore).
+    /// Nothing was submitted or paid; resume after the identity is loaded.
+    #[error(
+        "Asset lock {out_point} tops up the wallet's identity at index {identity_index}, \
+         which this wallet does not hold yet"
+    )]
+    AssetLockIdentityNotLoaded {
+        out_point: dashcore::OutPoint,
+        identity_index: u32,
+    },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 

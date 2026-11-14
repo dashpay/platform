@@ -204,6 +204,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         ),
         PlatformWalletError,
     > {
+        // An unbound top-up lock pays only the identity its tracked row
+        // records, and this form tracks nothing: the lock would surface
+        // later, rebuilt from the chain, with no recipient. The funded
+        // pipeline builds those, recording the recipient first.
+        if funding_type == AssetLockFundingType::IdentityTopUpNotBound {
+            return Err(PlatformWalletError::InvalidParameter(
+                "an unbound identity top-up lock must record its recipient; build it through \
+                 the funded top-up, not the build-only API"
+                    .to_string(),
+            ));
+        }
         let (transaction, path, token, accounts, pin, _funding_pools) = self
             .build_asset_lock_transaction_fenced(
                 amount,
@@ -1641,7 +1652,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // still-tracked row would be resumable while its inputs are
                 // re-spendable.
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
-                if operation.is_some() && removed_built_row {
+                // A row stored durably before the broadcast (a drain, or a lock
+                // recording its recipient) is removed durably too. Otherwise a
+                // lost removal would bring the `Built` row back after a
+                // restart, resumable to its recipient, while the inputs
+                // released below fund the user's next attempt: the same
+                // recipient could then be paid twice.
+                if (operation.is_some() || recipient_must_be_durable) && removed_built_row {
+                    let kind = if operation.is_some() {
+                        "drain"
+                    } else {
+                        "recipient-carrying"
+                    };
                     if let Err(error) = self.persister.store(PlatformWalletChangeSet {
                         asset_locks: Some(cs_untrack),
                         ..Default::default()
@@ -1651,15 +1673,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         // the removal may have committed, and a generic resume
                         // must never dispatch a row with uncertain durability.
                         return Err(PlatformWalletError::Persistence(format!(
-                            "could not durably remove rejected drain asset lock: {error}"
+                            "could not durably remove rejected {kind} asset lock: {error}"
                         )));
                     }
-                    // Drains run on inline-committing backends only (see
-                    // `require_wallet_drain_persistence`), so the removal is
-                    // already durable: a failed host notification must not
-                    // strand its context or inputs.
                     if let Err(error) = self.persister.flush() {
-                        tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
+                        if operation.is_some() {
+                            // Drains run on inline-committing backends only
+                            // (see `require_wallet_drain_persistence`), so the
+                            // removal is already durable: a failed host
+                            // notification must not strand its context or
+                            // inputs.
+                            tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
+                        } else {
+                            // A buffered backend may not have committed the
+                            // removal: keep the inputs and fence pending, as
+                            // for a failed store above.
+                            return Err(PlatformWalletError::Persistence(format!(
+                                "could not durably remove rejected {kind} asset lock: {error}"
+                            )));
+                        }
                     }
                 } else {
                     self.queue_asset_lock_changeset(cs_untrack);
@@ -2625,8 +2657,8 @@ mod tests {
 
     /// Builds, tracks and broadcasts one unbound identity top-up lock from the
     /// wallet balance, paying `recipient`, without waiting for its proof.
-    async fn fund_unbound_top_up(
-        manager: &AssetLockManager<CountingOkBroadcaster>,
+    async fn fund_unbound_top_up<B: TransactionBroadcaster>(
+        manager: &AssetLockManager<B>,
         signer: &WalletSigner,
         recipient: Option<crate::changeset::AssetLockRecipient>,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
@@ -2846,6 +2878,89 @@ mod tests {
                 .await,
             Err(PlatformWalletError::AssetLockNotTracked(_))
         ));
+    }
+
+    /// A lock recording its recipient was stored durably before the
+    /// broadcast, so a definite rejection removes its row durably too: a
+    /// removal left queued could be lost, and the `Built` row would come back
+    /// after a restart, resumable to the same recipient while its inputs fund
+    /// the user's next attempt. A removal that cannot be flushed is reported,
+    /// not swallowed.
+    #[tokio::test]
+    async fn should_durably_remove_a_rejected_lock_that_records_its_recipient() {
+        use crate::changeset::AssetLockRecipient;
+
+        let identity = dpp::prelude::Identifier::from([0x56; 32]);
+        let fund = |persistence: Arc<CapturingPersistence>| async move {
+            let (manager, signer) = funded_asset_lock_manager_with_persistence(
+                Arc::new(AlwaysRejectedBroadcaster),
+                Arc::clone(&persistence),
+            )
+            .await;
+            fund_unbound_top_up(
+                &manager,
+                &signer,
+                Some(AssetLockRecipient::Identity(identity)),
+            )
+            .await
+            .map(|_| ())
+        };
+
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let result = fund(Arc::clone(&persistence)).await;
+        assert!(
+            !matches!(result, Ok(()) | Err(PlatformWalletError::Persistence(_))),
+            "{result:?}"
+        );
+        assert_eq!(persistence.removed_outpoints().len(), 1);
+        assert_eq!(
+            persistence
+                .committed_stores
+                .load(std::sync::atomic::Ordering::SeqCst),
+            persistence.stored.lock().unwrap().len(),
+            "the removal was flushed, not left queued"
+        );
+        let flushes = persistence
+            .flushes
+            .load(std::sync::atomic::Ordering::SeqCst);
+
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            fail_on_flush: Some(flushes),
+            ..Default::default()
+        });
+        let result = fund(Arc::clone(&persistence)).await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::Persistence(message))
+                if message.contains("could not durably remove rejected")),
+            "{result:?}"
+        );
+    }
+
+    /// The build-only API tracks nothing, so it builds no unbound top-up
+    /// lock: one would later be rebuilt from the chain with no recipient.
+    #[tokio::test]
+    async fn should_refuse_an_unbound_top_up_lock_from_the_build_only_api() {
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::new(CountingOkBroadcaster::default())).await;
+        let result = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityTopUpNotBound,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
+            "{result:?}"
+        );
     }
 
     /// An assignment whose store fails still holds in memory, so a second

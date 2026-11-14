@@ -255,7 +255,8 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// its row records `identity_id` before the broadcast, so an interrupted
 /// top-up resumes to this identity only
 /// ([`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`]).
-/// Nothing is written to the wallet's identities. On success
+/// No identity is added to the wallet (one the wallet already holds gets its
+/// local balance updated). On success
 /// `out_new_balance` receives the identity's proved post-transition balance.
 ///
 /// Errors before anything is built: `ErrorInvalidParameter` for an amount
@@ -263,8 +264,13 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// Platform does not know, and a persistence error when the host's persister
 /// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
 /// reported as the SDK error for now; it becomes `ErrorIdentityLookupFailed`
-/// (80) with dashpay/platform#5860. Once the lock is built, a failure may
-/// leave it tracked and resumable.
+/// (80) with dashpay/platform#5860.
+///
+/// Once the lock is built, a failure may leave it tracked: it then appears on
+/// the tracked-lock lists recording `identity_id`. Do not build a new lock to
+/// retry; resume that one with
+/// [`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
+/// or the identity may be paid twice.
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_top_up_identity_with_funding_signer`].
