@@ -30,7 +30,6 @@ use crate::changeset::{
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::InBroadcastPin;
-use crate::wallet::persister::NotDurable;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
@@ -1546,19 +1545,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     ..Default::default()
                 });
                 drop(build_persist_guard);
-                // Whether the row can outlive this call without its removal.
-                // Not once the removal is on disk. Not where the backend
-                // refused the row, which leaves nothing to remove. And not
-                // where the row's own flush failed and the removal's did
-                // too: the removal was then accepted behind the row, and the
-                // backend keeps, writes or drops the two together. Anything
-                // else leaves it open: the row's own flush succeeded beside
-                // another one, so the row may be on disk, or the removal was
-                // refused or met another flush while the row waited.
-                let removal = match (&error, removed) {
-                    (_, Ok(()))
-                    | (NotDurable::Store(_), Err(_))
-                    | (NotDurable::Flush(_), Err(NotDurable::Flush(_))) => {
+                let removal = match removed {
+                    Ok(()) => {
                         // Nothing was sent and no row is left to resume: an
                         // abort like the pool gate's, and the inputs come
                         // back for the next build.
@@ -1573,14 +1561,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             "shielded recipient was not made durable before dispatch: {error}"
                         )));
                     }
-                    (_, Err(removal)) => removal,
+                    Err(removal) => removal,
                 };
-                // The row may be on disk, or reach it with a later flush,
-                // where a restart resumes and sends it, so whether this
-                // funding is made is not known here. It is reported as that,
-                // not as a failure, and the inputs stay reserved and fenced
-                // as after a send that may have gone out: a row is never
-                // resumable while its inputs are re-spendable (see the
+                // Only the removal on disk proves the row is gone. No way the
+                // row's own store or flush failed does: a backend that does
+                // not roll a failed round back may have written the row
+                // before a later part of the store failed, one that keeps a
+                // failed store or flush for later writes the row then, and a
+                // flush that failed may have run beside another that wrote
+                // it. So the row may be on disk, or reach it with a later
+                // flush, where a restart resumes and sends it, and whether
+                // this funding is made is not known here. It is reported as
+                // that, not as a failure, and the inputs stay reserved and
+                // fenced as after a send that may have gone out: a row is
+                // never resumable while its inputs are re-spendable (see the
                 // broadcast below), and a caller told the funding failed
                 // would build it again from other inputs, a second lock
                 // beside the one the restart sends. The fence ends on an
@@ -2057,6 +2051,13 @@ mod tests {
         /// While set, a flush fails transiently: the backend keeps what it
         /// buffered.
         flush_keeps_buffer: std::sync::atomic::AtomicBool,
+        /// Whether the overtaking flush succeeds instead, writing what was
+        /// buffered: the overtaken flush then fails.
+        overtaking_commits: std::sync::atomic::AtomicBool,
+        /// A store of asset-lock rows writes them and then fails, as on a
+        /// host that does not roll a failed round back and whose later
+        /// callback failed.
+        lock_store_fails_after_writing: bool,
     }
 
     impl CapturingPersistence {
@@ -2174,11 +2175,21 @@ mod tests {
                     hook();
                 }
             }
+            let fails_after_writing = self.lock_store_fails_after_writing
+                && changeset
+                    .asset_locks
+                    .as_ref()
+                    .is_some_and(|locks| !locks.asset_locks.is_empty());
             let mut stored = self.stored.lock().expect("capturing persistence mutex");
             stored.push(changeset);
-            if self.commits_inline {
+            if self.commits_inline || fails_after_writing {
                 self.committed_stores
                     .store(stored.len(), std::sync::atomic::Ordering::SeqCst);
+            }
+            if fails_after_writing {
+                return Err(PersistenceError::backend(
+                    "simulated failure after the row was written",
+                ));
             }
             Ok(())
         }
@@ -2192,6 +2203,12 @@ mod tests {
             let overtaking = self.overtaken_by.lock().unwrap().take();
             if let Some(persister) = overtaking {
                 if self
+                    .overtaking_commits
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    persister.flush().expect("the overtaking flush commits");
+                    return Err(PersistenceError::backend("simulated flush failure"));
+                } else if self
                     .overtaking_puts_back
                     .load(std::sync::atomic::Ordering::SeqCst)
                 {
@@ -3919,6 +3936,110 @@ mod tests {
             "{rebuild:?}"
         );
         assert_eq!(broadcaster.calls(), 0);
+    }
+
+    /// Funds a shielded recipient over a backend set up to fail, expecting
+    /// the build to be abandoned with its outcome unknown and its inputs
+    /// kept: nothing is sent or tracked, and the next funding finds the one
+    /// coin the wallet holds still reserved.
+    async fn expect_an_abandoned_shielded_funding_to_keep_its_inputs(
+        manager: &AssetLockManager<CountingOkBroadcaster>,
+        signer: &WalletSigner,
+        broadcaster: &CountingOkBroadcaster,
+    ) {
+        let fund = || {
+            manager.broadcast_funded_asset_lock_tracked(
+                super::AssetLockBuildAmount::Exact(1_000_000),
+                &ASSET_LOCK_FUNDING_SOURCES,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                Some([7; 43]),
+                signer,
+                None,
+                None,
+            )
+        };
+        let refused = fund().await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::TransactionBroadcastUnconfirmed(message))
+                if message.contains("a restart may still resume it")),
+            "{refused:?}"
+        );
+        assert!(manager.list_tracked_locks().await.is_empty());
+        let rebuild = fund().await;
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
+            "{rebuild:?}"
+        );
+        assert_eq!(broadcaster.calls(), 0, "nothing reached the wire");
+    }
+
+    /// The same on a host that does not roll a failed round back: the row is
+    /// written before a later part of its store fails, so the backend
+    /// refuses the store with the row on disk, and refuses the removal too.
+    /// A refused store is no proof that nothing was written.
+    #[tokio::test]
+    async fn should_keep_the_inputs_of_an_abandoned_shielded_funding_whose_refused_store_wrote_its_row(
+    ) {
+        let persistence = Arc::new(CapturingPersistence {
+            records_shielded_recipients: true,
+            commits_inline: true,
+            lock_store_fails_after_writing: true,
+            fail_remove_store: true,
+            ..Default::default()
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        expect_an_abandoned_shielded_funding_to_keep_its_inputs(&manager, &signer, &broadcaster)
+            .await;
+        assert_eq!(
+            persistence.rows_on_disk().len(),
+            1,
+            "the refused store left its row on disk"
+        );
+    }
+
+    /// The same where another flush of the wallet's records wrote the row
+    /// just before the row's own flush failed, and the removal's flush fails
+    /// too: neither answer says the row is on disk, and it is.
+    #[tokio::test]
+    async fn should_keep_the_inputs_of_an_abandoned_shielded_funding_whose_row_another_flush_wrote()
+    {
+        let persistence = Arc::new(CapturingPersistence {
+            records_shielded_recipients: true,
+            overtaking_commits: std::sync::atomic::AtomicBool::new(true),
+            // The row's flush, the one that overtakes it, then the removal's.
+            fail_on_flush: Some(3),
+            ..Default::default()
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        *persistence.overtaken_by.lock().unwrap() = Some(manager.persister.clone());
+
+        expect_an_abandoned_shielded_funding_to_keep_its_inputs(&manager, &signer, &broadcaster)
+            .await;
+        assert!(
+            persistence.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert_eq!(
+            persistence.rows_on_disk().len(),
+            1,
+            "the other flush wrote the row, and nothing wrote its removal"
+        );
     }
 
     /// The broadcast half returns when the broadcaster accepts the transaction:
