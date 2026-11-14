@@ -78,6 +78,7 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
             status: AssetLockStatus::RecoveredFromChain,
             proof: Some(proof),
             shielded_recipient: None,
+            identity_recipient: None,
         },
         BTreeMap::from([(0, keys)]),
     )
@@ -161,6 +162,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                         status: row.status.clone(),
                         proof: row.proof.clone(),
                         shielded_recipient: row.shielded_recipient,
+                        identity_recipient: row.identity_recipient,
                     },
                 )
             })

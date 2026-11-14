@@ -346,6 +346,55 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     PlatformWalletFFIResult::ok()
 }
 
+/// Assign the identity an unassigned unbound identity top-up lock pays, as
+/// the user chose it. A lock is unassigned when it records no identity
+/// (`identity_recipient_unassigned` on the tracked-lock lists): it was rebuilt
+/// from the chain, for example after a restore from the seed, and its credit
+/// output names none, so no resume pays it. The assignment is stored durably
+/// before it takes effect; afterwards
+/// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`] pays
+/// this identity from the lock and refuses any other.
+///
+/// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint,
+/// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock,
+/// `ErrorAssetLockRecipientMismatch` (61) when the lock already records a
+/// different identity (assigning the recorded one again is a no-op), and a
+/// persistence error when the host's persister does not keep identity
+/// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS`) or the store fails. A lock
+/// that is not an unbound identity top-up is refused.
+///
+/// # Safety
+/// - `out_point` must be a valid, non-null `*const OutPointFFI`.
+/// - `identity_id` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_assign_identity_top_up_recipient(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    identity_id: *const [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_point);
+    check_ptr!(identity_id);
+    let out_point_ffi = *out_point;
+    let out_point = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+    let identity_id = Identifier::from(*identity_id);
+    // Clone the manager out of the registry, so the registry is not held while
+    // the assignment awaits the wallet and calls the host's persister.
+    let asset_locks = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| std::sync::Arc::clone(
+            wallet.asset_locks()
+        )));
+    let result = block_on_worker(async move {
+        asset_locks
+            .assign_identity_top_up_recipient(&out_point, identity_id)
+            .await
+    });
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod topup_existing_lock_guard_tests {
     use super::*;
@@ -379,6 +428,27 @@ mod topup_existing_lock_guard_tests {
             )
         };
         assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn should_refuse_an_assignment_with_a_null_pointer_or_an_unknown_wallet() {
+        let op = zero_out_point();
+        let id = [7u8; 32];
+        let null_out_point =
+            unsafe { platform_wallet_assign_identity_top_up_recipient(0, std::ptr::null(), &id) };
+        assert_eq!(
+            null_out_point.code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+        let null_identity =
+            unsafe { platform_wallet_assign_identity_top_up_recipient(0, &op, std::ptr::null()) };
+        assert_eq!(
+            null_identity.code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+        let unknown_wallet =
+            unsafe { platform_wallet_assign_identity_top_up_recipient(u64::MAX, &op, &id) };
+        assert_eq!(unknown_wallet.code, PlatformWalletFFIResultCode::NotFound);
     }
 
     #[test]

@@ -109,6 +109,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let lock = TrackedAssetLock {
                 operation_id: None,
                 shielded_recipient: None,
+                identity_recipient: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -2226,6 +2227,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2363,6 +2365,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2589,6 +2592,7 @@ mod tests {
         let lock = TrackedAssetLock {
             operation_id: None,
             shielded_recipient: None,
+            identity_recipient: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2867,6 +2871,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4379,6 +4384,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4894,6 +4900,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5019,6 +5026,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5523,6 +5531,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5629,6 +5638,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5909,6 +5919,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6055,6 +6066,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -6258,6 +6270,7 @@ mod tests {
                             status,
                             proof: None,
                             shielded_recipient: None,
+                            identity_recipient: None,
                         },
                     );
             }

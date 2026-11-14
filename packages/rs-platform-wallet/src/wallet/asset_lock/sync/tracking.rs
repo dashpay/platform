@@ -5,9 +5,11 @@ use dashcore::OutPoint;
 use std::collections::BTreeMap;
 
 use crate::changeset::changeset::AssetLockChangeSet;
-use crate::changeset::changeset::PlatformWalletChangeSet;
+use crate::changeset::changeset::{AssetLockEntry, PlatformWalletChangeSet};
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
+use dpp::prelude::Identifier;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -114,11 +116,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
         u32,
         AssetLockStatus,
+        Option<dpp::prelude::Identifier>,
     )> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
+            .map(|lock| {
+                (
+                    lock.funding_type,
+                    lock.identity_index,
+                    lock.status.clone(),
+                    lock.identity_recipient,
+                )
+            })
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.
@@ -141,6 +151,72 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
             .and_then(|lock| lock.shielded_recipient)
+    }
+
+    /// Assign the identity an unbound identity top-up lock pays, for a lock
+    /// that records none (see [`TrackedAssetLock::is_unassigned_identity_top_up`]):
+    /// one rebuilt from the chain after a restore, whose credit output names
+    /// no identity. The user chooses the identity; afterwards a resume pays it
+    /// and refuses any other, exactly as for a lock built with a recipient.
+    ///
+    /// The assignment is made durable before it takes effect, so it is
+    /// refused on a backend that cannot keep it
+    /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]) and when
+    /// the store fails. Assigning the identity a lock already records is a
+    /// no-op; assigning another one is
+    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`]. Only an
+    /// unbound top-up lock that is not consumed can be assigned.
+    pub async fn assign_identity_top_up_recipient(
+        &self,
+        out_point: &OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        self.require_identity_recipient_persistence()?;
+        let entry = {
+            let wm = self.wallet_manager.read().await;
+            let lock = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| {
+                    PlatformWalletError::WalletNotFound(
+                        "Wallet info not found in wallet manager".to_string(),
+                    )
+                })?
+                .tracked_asset_locks
+                .get(out_point)
+                .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
+            check_identity_recipient_assignable(lock, identity)?;
+            if lock.identity_recipient.is_some() {
+                return Ok(());
+            }
+            let mut entry = AssetLockEntry::from(lock);
+            entry.identity_recipient = Some(identity);
+            entry
+        };
+        self.persister
+            .store(PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(*out_point, entry)].into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .and_then(|()| self.persister.flush())
+            .map_err(|error| {
+                PlatformWalletError::Persistence(format!(
+                    "asset-lock identity recipient was not made durable: {error}"
+                ))
+            })?;
+        let mut wm = self.wallet_manager.write().await;
+        let lock = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
+            .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
+        // Re-checked under the write guard: the row may have been consumed or
+        // assigned while the store ran. The durable row already carries this
+        // identity, and a conflicting one would have refused that store.
+        check_identity_recipient_assignable(lock, identity)?;
+        lock.identity_recipient = Some(identity);
+        Ok(())
     }
 
     /// Track a new asset lock in memory, returning a changeset describing
@@ -713,5 +789,37 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 );
             }
         }
+    }
+}
+
+/// Whether `lock` may be assigned `identity` as its recipient: an unconsumed
+/// unbound top-up lock recording no identity, or this one already.
+fn check_identity_recipient_assignable(
+    lock: &TrackedAssetLock,
+    identity: Identifier,
+) -> Result<(), PlatformWalletError> {
+    if lock.funding_type != AssetLockFundingType::IdentityTopUpNotBound {
+        return Err(PlatformWalletError::AssetLockFundingMismatch {
+            out_point: lock.out_point,
+            expected_funding_type: AssetLockFundingType::IdentityTopUpNotBound,
+            expected_identity_index: 0,
+            actual_funding_type: lock.funding_type,
+            actual_identity_index: lock.identity_index,
+        });
+    }
+    if lock.status.is_consumed() {
+        return Err(PlatformWalletError::AssetLockAlreadyConsumed(
+            lock.out_point,
+        ));
+    }
+    match lock.identity_recipient {
+        Some(recorded) if recorded != identity => {
+            Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                out_point: lock.out_point,
+                recorded,
+                requested: identity,
+            })
+        }
+        _ => Ok(()),
     }
 }

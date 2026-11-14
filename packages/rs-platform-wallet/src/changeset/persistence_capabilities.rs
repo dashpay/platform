@@ -150,13 +150,22 @@ impl PersistenceCapabilities {
     /// is marked.
     pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 15);
 
+    /// The identity an unbound identity top-up (`IdentityTopUpNotBound`) was
+    /// built to pay survives store/load with its row, so a resume after
+    /// restart pays that identity and refuses another. Required, unlike
+    /// [`Self::ASSET_LOCK_SHIELDED_RECIPIENTS`]: the recipient is not on chain
+    /// and an unbound lock without one cannot be resumed until a recipient is
+    /// assigned, so the wallet does not build an unbound top-up lock for a
+    /// backend that would lose it on restart.
+    pub const ASSET_LOCK_IDENTITY_RECIPIENTS: Self = Self(1 << 16);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 15;
+    const HIGHEST_DECLARED_BIT: u32 = 16;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -278,6 +287,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
                 "private_contact_request_scan_state",
             ),
+            (
+                PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
+                "asset_lock_identity_recipients",
+            ),
         ];
 
         KNOWN
@@ -295,7 +308,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+    PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -334,6 +347,10 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits(),
             0x8000
+        );
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits(),
+            0x10000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(

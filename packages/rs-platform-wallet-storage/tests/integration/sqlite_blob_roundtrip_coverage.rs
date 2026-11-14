@@ -53,6 +53,7 @@ fn entry(op: OutPoint, status: AssetLockStatus, proof: Option<AssetLockProof>) -
         identity_index: 0,
         operation_id: None,
         shielded_recipient: None,
+        identity_recipient: None,
         amount_duffs: 1000,
         status,
         proof,

@@ -198,6 +198,15 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS:
 /// un-ignore stores the sender's removal and the read-position rewind it
 /// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 15;
+/// The identity an unbound identity top-up was built (or assigned) to pay
+/// survives store and load with its row, so a resume after restart pays that
+/// identity and refuses another. Attested when the host wires both
+/// `on_persist_asset_lock_identity_recipient_fn` and
+/// `on_load_asset_lock_identity_recipient_fn` next to the legacy asset-lock
+/// persist/load callbacks and the wallet-list restore pair. Required: the
+/// wallet builds no unbound top-up lock, and assigns no recipient, for a host
+/// that does not declare it.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: u64 = 1 << 16;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -456,6 +465,29 @@ pub type FreePrivateContactScanStateWalletsFn = unsafe extern "C" fn(
     wallet_ids_count: usize,
 );
 
+/// Associate the immutable 32-byte identity id an unbound identity top-up pays
+/// with a 36-byte raw outpoint. Runs after the legacy asset-lock upsert (and the
+/// other sidecars), inside the same atomic changeset. All three byte pointers
+/// are readable for the duration of the callback. A host must refuse (non-zero)
+/// a different identity for an outpoint that already records one.
+pub type PersistAssetLockIdentityRecipientFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    identity_id_32: *const u8,
+) -> i32;
+
+/// Read the optional identity recipient for a restored outpoint.
+/// `out_identity_id_32` points to 32 writable bytes. An unreadable or missing
+/// asset-lock row must return an error, not a successful `out_found = false`.
+pub type LoadAssetLockIdentityRecipientFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_identity_id_32: *mut u8,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -709,6 +741,28 @@ pub struct PersistenceCallbacksExtension {
             wallet_ids_count: usize,
         ),
     >,
+    /// Additive sidecar for the identity an unbound identity top-up pays (see
+    /// [`PersistAssetLockIdentityRecipientFn`]). Appended under the same
+    /// version for the same reason as the slots above. Both slots, the legacy
+    /// asset-lock persist callback and the wallet-list restore pair are
+    /// required before the host can attest `ASSET_LOCK_IDENTITY_RECIPIENTS`.
+    pub on_persist_asset_lock_identity_recipient_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            identity_id_32: *const u8,
+        ) -> i32,
+    >,
+    pub on_load_asset_lock_identity_recipient_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            out_found: *mut bool,
+            out_identity_id_32: *mut u8,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -736,6 +790,8 @@ impl Default for PersistenceCallbacksExtension {
             on_load_private_contact_scan_state_free_fn: None,
             on_load_private_contact_scan_state_wallets_fn: None,
             on_load_private_contact_scan_state_wallets_free_fn: None,
+            on_persist_asset_lock_identity_recipient_fn: None,
+            on_load_asset_lock_identity_recipient_fn: None,
         }
     }
 }
@@ -764,6 +820,8 @@ pub struct PersistenceExtensionCallbacks {
     pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
     pub load_private_contact_scan_state_wallets: Option<LoadPrivateContactScanStateWalletsFn>,
     pub load_private_contact_scan_state_wallets_free: Option<FreePrivateContactScanStateWalletsFn>,
+    pub persist_asset_lock_identity_recipient: Option<PersistAssetLockIdentityRecipientFn>,
+    pub load_asset_lock_identity_recipient: Option<LoadAssetLockIdentityRecipientFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1908,6 +1966,20 @@ impl FFIPersister {
         {
             capabilities =
                 capabilities.union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS);
+        }
+        if wallet_restore
+            && self.callbacks.on_persist_asset_locks_fn.is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_identity_recipient
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_identity_recipient
+                .is_some()
+        {
+            capabilities =
+                capabilities.union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS);
         }
         if self
             .tracked_masternodes_callbacks
@@ -3057,6 +3129,35 @@ impl PlatformWalletPersistence for FFIPersister {
                      shielded asset-lock funding is not persisted with its row"
                 );
             }
+            // The identity recipient is a third sidecar. The wallet records one
+            // only for a host that attests `ASSET_LOCK_IDENTITY_RECIPIENTS`,
+            // which needs this slot, so a recipient with no slot to take it
+            // fails the round, as a UUID does, rather than being dropped.
+            for entry in al_cs.asset_locks.values() {
+                let Some(identity) = entry.identity_recipient else {
+                    continue;
+                };
+                let Some(cb) = self
+                    .tracked_masternodes_callbacks
+                    .persist_asset_lock_identity_recipient
+                else {
+                    outcome.record(1);
+                    continue;
+                };
+                let out_point = outpoint_to_bytes(&entry.out_point);
+                let identity = identity.to_buffer();
+                let rc = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        out_point.as_ptr(),
+                        identity.as_ptr(),
+                    )
+                };
+                if rc != 0 {
+                    outcome.record(rc);
+                }
+            }
         }
 
         // Send invitation changeset — DIP-13 sent-invitation records, one
@@ -3875,6 +3976,17 @@ impl PlatformWalletPersistence for FFIPersister {
                 .load_asset_lock_shielded_recipient
             {
                 load_asset_lock_shielded_recipients(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_identity_recipient
+            {
+                load_asset_lock_identity_recipients(
                     cb,
                     self.callbacks.context,
                     &entry.wallet_id,
@@ -6705,6 +6817,39 @@ fn load_asset_lock_shielded_recipients(
     Ok(())
 }
 
+/// Rehydrate the identity-recipient sidecar after decoding the frozen legacy
+/// rows. A failed read invalidates the whole load: a row that silently lost
+/// its recipient would reload as an unassigned lock.
+fn load_asset_lock_identity_recipients(
+    callback: LoadAssetLockIdentityRecipientFn,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+) -> Result<(), PersistenceError> {
+    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
+        let out_point = outpoint_to_bytes(&lock.out_point);
+        let mut found = false;
+        let mut raw = [0u8; 32];
+        let rc = unsafe {
+            callback(
+                context,
+                wallet_id.as_ptr(),
+                out_point.as_ptr(),
+                &mut found,
+                raw.as_mut_ptr(),
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                "Loading asset-lock identity recipient failed",
+            ));
+        }
+        lock.identity_recipient = found.then(|| Identifier::from(raw));
+    }
+    Ok(())
+}
+
 /// One round's private contact request scan state in its FFI shape (see
 /// [`PersistPrivateContactScanStateFn`]).
 struct PrivateContactScanStateRows {
@@ -7062,6 +7207,7 @@ fn build_unused_asset_locks(
             amount: spec.amount_duffs,
             operation_id: None,
             shielded_recipient: None,
+            identity_recipient: None,
             status,
             proof,
         };
@@ -11436,6 +11582,7 @@ mod tests {
                 proof: None,
                 operation_id,
                 shielded_recipient: None,
+                identity_recipient: None,
             };
             let (entries, _storage) = build_asset_lock_entries(&[&entry]);
             let wallet = WalletRestoreEntryFFI {
@@ -11560,6 +11707,7 @@ mod tests {
             proof: None,
             operation_id: None,
             shielded_recipient: Some(raw),
+            identity_recipient: None,
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -11656,6 +11804,152 @@ mod tests {
                 )
                 .persistence_capabilities()
                 .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
+            );
+        }
+    }
+
+    /// The identity-recipient sidecar round-trips next to the frozen row: a
+    /// host with both slots gets every recorded identity on store and hands
+    /// it back on load, and attests the bit only with both slots. A host
+    /// without the persist slot fails the round instead of dropping the
+    /// recipient, since the wallet records one only for an attesting host.
+    #[test]
+    fn should_roundtrip_identity_recipients_and_fail_a_round_without_the_slot() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let identity = Identifier::from([0x44u8; 32]);
+        unsafe extern "C" fn load_recipient(
+            context: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            found: *mut bool,
+            output: *mut u8,
+        ) -> i32 {
+            let stored = *(context as *const Option<[u8; 32]>);
+            *found = stored.is_some();
+            if let Some(stored) = stored {
+                std::ptr::copy_nonoverlapping(stored.as_ptr(), output, 32);
+            }
+            0
+        }
+        let entry = platform_wallet::changeset::AssetLockEntry {
+            out_point: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([5; 32]),
+                vout: 0,
+            },
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 2,
+            funding_type: AssetLockFundingType::IdentityTopUpNotBound,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: platform_wallet::AssetLockStatus::Broadcast,
+            proof: None,
+            operation_id: None,
+            shielded_recipient: None,
+            identity_recipient: Some(identity),
+        };
+        let (entries, _storage) = build_asset_lock_entries(&[&entry]);
+        let wallet = WalletRestoreEntryFFI {
+            tracked_asset_locks: entries.as_ptr(),
+            tracked_asset_locks_count: entries.len(),
+            ..Default::default()
+        };
+        let mut restored = build_unused_asset_locks(&wallet).expect("valid persisted lock");
+        assert_eq!(
+            restored[&2][&entry.out_point].identity_recipient, None,
+            "legacy ABI has no recipient field"
+        );
+        for stored in [None, Some(identity.to_buffer())] {
+            load_asset_lock_identity_recipients(
+                load_recipient,
+                (&stored as *const Option<[u8; 32]>).cast_mut().cast(),
+                &[42; 32],
+                &mut restored,
+            )
+            .expect("valid recipient sidecar");
+            assert_eq!(
+                restored[&2][&entry.out_point].identity_recipient,
+                stored.map(Identifier::from)
+            );
+        }
+
+        let changeset = PlatformWalletChangeSet {
+            asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
+                asset_locks: [(entry.out_point, entry.clone())].into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let callbacks = || PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            on_persist_asset_locks_fn: Some(noop_asset_locks),
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
+        let legacy = FFIPersister::new(callbacks());
+        assert!(legacy.store([42; 32], changeset.clone()).is_err());
+        assert!(!legacy
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS));
+
+        unsafe extern "C" fn persist_recipient(
+            context: *mut c_void,
+            wallet: *const u8,
+            _: *const u8,
+            recipient: *const u8,
+        ) -> i32 {
+            assert_eq!(slice::from_raw_parts(wallet, 32), &[42; 32]);
+            let seen = slice::from_raw_parts(recipient, 32);
+            *(context as *mut Option<[u8; 32]>) = Some(seen.try_into().unwrap());
+            0
+        }
+        let mut seen: Option<[u8; 32]> = None;
+        let extensions = PersistenceExtensionCallbacks {
+            persist_asset_lock_identity_recipient: Some(persist_recipient),
+            load_asset_lock_identity_recipient: Some(load_recipient),
+            ..Default::default()
+        };
+        let writer = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: std::ptr::addr_of_mut!(seen).cast(),
+                ..callbacks()
+            },
+            PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
+            extensions,
+        );
+        assert!(writer
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS));
+        writer
+            .store([42; 32], changeset)
+            .expect("recipient sidecar persisted with the base row");
+        assert_eq!(seen, Some(identity.to_buffer()));
+        for incomplete in [
+            PersistenceExtensionCallbacks {
+                persist_asset_lock_identity_recipient: None,
+                ..extensions
+            },
+            PersistenceExtensionCallbacks {
+                load_asset_lock_identity_recipient: None,
+                ..extensions
+            },
+        ] {
+            assert!(
+                !FFIPersister::new_with_persistence_capabilities_and_extensions(
+                    callbacks(),
+                    PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
+                    incomplete,
+                )
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
             );
         }
     }
@@ -12102,6 +12396,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_private_contact_scan_state_wallets_free_fn
             ) + std::mem::size_of::<Option<FreePrivateContactScanStateWalletsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_identity_recipient_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_identity_recipient_fn
+            ) + std::mem::size_of::<Option<PersistAssetLockIdentityRecipientFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_identity_recipient_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_identity_recipient_fn
+            ) + std::mem::size_of::<Option<LoadAssetLockIdentityRecipientFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -12167,6 +12481,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS,
             PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS,
+            PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE,
@@ -14470,6 +14788,7 @@ mod tests {
             proof: None,
             operation_id: None,
             shielded_recipient: None,
+            identity_recipient: None,
         };
         let out_point = entry.out_point;
         let host = Arc::new(Host {

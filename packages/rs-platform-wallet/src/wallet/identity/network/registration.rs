@@ -72,6 +72,7 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
+use crate::changeset::AssetLockRecipient;
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
@@ -421,7 +422,9 @@ impl IdentityWallet {
                 funding,
                 AssetLockFundingType::IdentityTopUp,
                 identity_index,
-                None,
+                // A resumed unbound top-up lock pays this identity only if
+                // its row recorded it; a new lock is bound and records nothing.
+                Some(AssetLockRecipient::Identity(*identity_id)),
                 asset_lock_signer,
                 None,
             )

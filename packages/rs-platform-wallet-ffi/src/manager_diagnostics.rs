@@ -288,6 +288,12 @@ pub unsafe extern "C" fn platform_wallet_tracked_asset_locks_list(
             registration_index: s.registration_index,
             instant_lock_present: s.instant_lock_present,
             chain_lock_height: s.chain_lock_height,
+            has_identity_recipient: s.identity_recipient.is_some(),
+            identity_recipient: s
+                .identity_recipient
+                .map(|identity| identity.to_buffer())
+                .unwrap_or([0; 32]),
+            identity_recipient_unassigned: s.identity_recipient_unassigned,
         })
         .collect();
     let count = entries.len();
