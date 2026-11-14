@@ -12,7 +12,7 @@ use dashcore::{OutPoint, Transaction};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::changeset::{AssetLockEntry, ShieldedRecipientRaw};
+use crate::changeset::{AssetLockEntry, AssetLockPaymentIntent, ShieldedRecipientRaw};
 
 /// Asset lock status on Core chain.
 ///
@@ -152,6 +152,13 @@ pub struct TrackedAssetLock {
     /// funding type and for shielded locks tracked before the recipient was
     /// recorded (those keep accepting the resuming caller's recipient).
     pub shielded_recipient: Option<ShieldedRecipientRaw>,
+    /// What the lock was built to pay when that is not the wallet itself
+    /// (see [`AssetLockPaymentIntent`]), recorded with the row before the
+    /// lock is dispatched and immutable afterwards. A resume pays exactly
+    /// these recipients or is refused, so recovery can never consume the
+    /// lock as an owned top-up. `None` for owned fundings and for locks
+    /// tracked before intents were recorded (those resume as before).
+    pub payment_intent: Option<AssetLockPaymentIntent>,
 }
 
 impl From<&TrackedAssetLock> for AssetLockEntry {
@@ -167,6 +174,7 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
             status: lock.status.clone(),
             proof: lock.proof.clone(),
             shielded_recipient: lock.shielded_recipient,
+            payment_intent: lock.payment_intent.clone(),
         }
     }
 }

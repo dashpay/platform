@@ -150,13 +150,23 @@ impl PersistenceCapabilities {
     /// is marked.
     pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 15);
 
+    /// The payment intent of an asset lock that pays someone other than the
+    /// wallet (`AssetLockEntry::payment_intent`, today the recipients of
+    /// `fund_from_asset_lock_external`) survives store/load with its row, so a
+    /// resume after restart pays the recorded recipients or refuses, and never
+    /// consumes the lock as an owned top-up. With it, the row is durable
+    /// before the lock is sent. Reported, not required: a backend without it
+    /// keeps the best-effort row every other funding has and loads such rows
+    /// with no intent (the pre-intent behaviour).
+    pub const ASSET_LOCK_PAYMENT_INTENTS: Self = Self(1 << 16);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 15;
+    const HIGHEST_DECLARED_BIT: u32 = 16;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -278,6 +288,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
                 "private_contact_request_scan_state",
             ),
+            (
+                PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS,
+                "asset_lock_payment_intents",
+            ),
         ];
 
         KNOWN
@@ -295,7 +309,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+    PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -334,6 +348,10 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits(),
             0x8000
+        );
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS.bits(),
+            0x10000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(

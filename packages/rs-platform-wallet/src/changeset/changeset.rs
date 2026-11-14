@@ -48,6 +48,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
+use crate::changeset::asset_lock_payment_intent::AssetLockPaymentIntent;
 use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity,
@@ -1629,19 +1630,25 @@ pub struct AssetLockEntry {
         )
     )]
     pub shielded_recipient: Option<ShieldedRecipientRaw>,
+    /// What the lock was built to pay when that is not the wallet itself
+    /// (see [`AssetLockPaymentIntent`]); `None` for owned fundings and for
+    /// legacy rows. Like `shielded_recipient`, immutable once recorded.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub payment_intent: Option<AssetLockPaymentIntent>,
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association and shielded recipient
-    /// when folding or replaying a possibly stale snapshot. Returns false for
-    /// a conflicting UUID or recipient: the caller must discard the whole
-    /// snapshot so its lifecycle cannot be attached to a different operation
-    /// or redirect a pending shielded funding.
+    /// Preserve the immutable operation association, shielded recipient and
+    /// payment intent when folding or replaying a possibly stale snapshot.
+    /// Returns false for a conflicting UUID, recipient or intent: the caller
+    /// must discard the whole snapshot so its lifecycle cannot be attached to
+    /// a different operation or redirect a pending funding.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
         previous_shielded_recipient: Option<ShieldedRecipientRaw>,
+        previous_payment_intent: Option<&AssetLockPaymentIntent>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1662,6 +1669,17 @@ impl AssetLockEntry {
                 return false;
             }
             self.shielded_recipient = Some(previous_recipient);
+        }
+        if let Some(previous_intent) = previous_payment_intent {
+            if self
+                .payment_intent
+                .as_ref()
+                .is_some_and(|incoming| incoming != previous_intent)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting payment intent");
+                return false;
+            }
+            self.payment_intent = Some(previous_intent.clone());
         }
         true
     }
@@ -1684,9 +1702,11 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry
-                    .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
-                {
+                if !entry.preserve_recovery_metadata(
+                    existing.operation_id,
+                    existing.shielded_recipient,
+                    existing.payment_intent.as_ref(),
+                ) {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
@@ -1696,6 +1716,7 @@ impl Merge for AssetLockChangeSet {
                     // association or recipient carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
                     existing.shielded_recipient = entry.shielded_recipient;
+                    existing.payment_intent = entry.payment_intent;
                     continue;
                 }
             }
@@ -2844,6 +2865,51 @@ mod tests {
     /// stale reconstruction/enrichment snapshot after (or before) the
     /// live flow's consumption write, the fold must never regress
     /// Consumed — while Consumed itself must still land over anything.
+    /// A row serialized before payment intents existed still reads, with
+    /// no intent, and a recorded intent survives the round trip.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn should_read_an_asset_lock_row_without_a_payment_intent() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let mut entry = AssetLockEntry {
+            operation_id: None,
+            shielded_recipient: None,
+            payment_intent: Some(AssetLockPaymentIntent::PlatformAddresses(
+                [(dpp::address_funds::PlatformAddress::P2pkh([0x5a; 20]), None)].into(),
+            )),
+            out_point: OutPoint {
+                txid: Txid::from_byte_array([0x62; 32]),
+                vout: 0,
+            },
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 1,
+            status: AssetLockStatus::Broadcast,
+            proof: None,
+        };
+        let json = serde_json::to_value(&entry).expect("row serializes");
+        let restored: AssetLockEntry = serde_json::from_value(json.clone()).expect("row reads");
+        assert_eq!(restored, entry);
+
+        let mut legacy = json;
+        legacy
+            .as_object_mut()
+            .expect("row is an object")
+            .remove("payment_intent");
+        let restored: AssetLockEntry = serde_json::from_value(legacy).expect("legacy row reads");
+        entry.payment_intent = None;
+        assert_eq!(restored, entry);
+    }
+
     #[test]
     fn asset_lock_merge_never_regresses_consumed() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -2855,6 +2921,7 @@ mod tests {
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
             shielded_recipient: None,
+            payment_intent: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2947,6 +3014,33 @@ mod tests {
             .get_mut(&outpoint)
             .unwrap()
             .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
+
+        // The payment intent follows the same rule.
+        let intent = |hash: u8| {
+            AssetLockPaymentIntent::PlatformAddresses(
+                [(dpp::address_funds::PlatformAddress::P2pkh([hash; 20]), None)].into(),
+            )
+        };
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .payment_intent = Some(intent(0x73));
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].payment_intent,
+            Some(intent(0x73))
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .payment_intent = Some(intent(0x74));
         let expected = recorded.clone();
         recorded.merge(redirected);
         assert_eq!(recorded.asset_locks, expected.asset_locks);
@@ -3599,6 +3693,7 @@ mod tests {
                         AssetLockEntry {
                             operation_id: None,
                             shielded_recipient: None,
+                            payment_intent: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

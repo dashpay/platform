@@ -463,24 +463,18 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 /// [`platform_address_wallet_resume_fund_from_asset_lock_signer`] (same
 /// resume-by-outpoint shape).
 ///
-/// ## Why the recipients are a parameter and not recovered from state
+/// ## The recipients must be the ones the lock recorded
 ///
-/// The tracked asset lock records the L1 outpoint, its status and its
-/// proof — it does NOT record who the credits were destined for. Nothing
-/// on the Rust side ever learns the recipient set: it is chosen by the
-/// host at ST-submit time and, for a third-party payment, is not even
-/// derivable from the wallet's own key material. So a resume must be
-/// told the recipients again, exactly as the shielded resume entry point
-/// is (`platform_wallet_manager_shielded_resume_fund_from_asset_lock`).
-///
-/// The practical consequence is worth stating plainly: a resume with a
-/// DIFFERENT recipient set than the original attempt is accepted, and
-/// pays the new set. That is the correct behaviour for a flow whose
-/// first attempt never landed on Platform — the asset lock is a bearer
-/// input, not a commitment to a destination — but it does mean the host
-/// is responsible for round-tripping the intended recipient (which is
-/// what `PersistentAssetLock.recipientPlatformAddressHash` /
-/// `recipientIsExternal` exist for on the Swift side).
+/// The lock recorded its recipients when it was built (its payment intent,
+/// `has_payment_intent` on `TrackedAssetLockFFI`; read them with
+/// `platform_wallet_get_asset_lock_payment_intent`). Pass exactly those back: a
+/// resume with a different recipient set, or any resume of this lock
+/// through the owned entry point, is refused with
+/// `ErrorAssetLockRecipientMismatch` before anything is submitted, so the
+/// lock is never consumed into the wallet instead of paying the payee. The
+/// host does not have to keep its own outpoint → recipients association.
+/// A lock tracked before intents were recorded carries none and pays
+/// whatever recipient set the caller passes, as before.
 ///
 /// ## `fee_strategy` / `fee_strategy_count` are IGNORED
 ///

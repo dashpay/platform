@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.Companion.decodePaymentIntent
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.Companion.encodeRecipients
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.FundRecipient
@@ -97,6 +98,28 @@ class FundFromAssetLockRecipientTest {
             assertThrows(IllegalArgumentException::class.java) {
                 AssetLockBuiltOutPoint.fromRawBytes(ByteArray(size))
             }
+        }
+    }
+
+    // ── Payment intent ────────────────────────────────────────────────
+
+    /**
+     * The recorded recipients come back as the list the external resume
+     * takes: the kind byte, then the same row shape [encodeRecipients] writes.
+     */
+    @Test
+    fun `should decode a recorded payment intent into the resume recipient list`() {
+        val recipients = listOf(recipient(1, 1_000_000L), recipient(2, null))
+        val blob = byteArrayOf(1) + encodeRecipients(recipients)
+        assertEquals(recipients, decodePaymentIntent(blob))
+    }
+
+    @Test
+    fun `should refuse an unknown payment intent kind or trailing bytes`() {
+        val rows = encodeRecipients(listOf(recipient(1, null)))
+        assertThrows(IllegalStateException::class.java) { decodePaymentIntent(byteArrayOf(9) + rows) }
+        assertThrows(IllegalStateException::class.java) {
+            decodePaymentIntent(byteArrayOf(1) + rows + byteArrayOf(0))
         }
     }
 }

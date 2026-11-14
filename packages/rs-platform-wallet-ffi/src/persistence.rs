@@ -198,6 +198,26 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS:
 /// un-ignore stores the sender's removal and the read-position rewind it
 /// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 15;
+/// The payment intent of an asset lock that pays someone other than the
+/// wallet (today the recipients of an external Platform-address payment)
+/// survives store and load with its row, so a resume after restart pays the
+/// recorded recipients or is refused, and never consumes the lock as an owned
+/// top-up. Attested when the host wires both
+/// `on_persist_asset_lock_payment_intent_fn` and
+/// `on_load_asset_lock_payment_intent_fn` next to the legacy asset-lock
+/// persist/load callbacks; with it the row is stored and flushed before the
+/// lock is sent. Reported, never required: a host without the slots keeps the
+/// best-effort row and loads such rows with no intent.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS: u64 = 1 << 16;
+/// Capacity of the buffer `on_load_asset_lock_payment_intent_fn` writes into:
+/// the largest intent the wallet ever hands to
+/// `on_persist_asset_lock_payment_intent_fn`.
+/// A literal so cbindgen emits it; pinned to the wallet's bound below.
+pub const PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN: usize = 4096;
+const _: () = assert!(
+    PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN
+        == platform_wallet::changeset::ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE
+);
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -380,6 +400,38 @@ pub type LoadAssetLockShieldedRecipientFn = unsafe extern "C" fn(
     out_point: *const u8,
     out_found: *mut bool,
     out_recipient_raw_43: *mut u8,
+) -> i32;
+
+/// Associate the immutable payment intent of an asset lock with a 36-byte raw
+/// outpoint. `intent` is `intent_len` (1..=`PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN`)
+/// opaque bytes the host stores as given and hands back on load; only the
+/// wallet reads them (`platform_wallet_get_asset_lock_payment_intent` shows
+/// a tracked lock's recipients). Runs after the legacy asset-lock upsert and the other
+/// sidecars, inside the same atomic changeset. Every pointer is readable for
+/// the duration of the callback. A host holding different bytes for the
+/// outpoint returns an error: the intent never changes once stored.
+pub type PersistAssetLockPaymentIntentFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    intent: *const u8,
+    intent_len: usize,
+) -> i32;
+
+/// Read the optional payment intent for a restored outpoint, including
+/// consumed rows. `out_intent` points to `intent_capacity`
+/// (`PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN`) writable bytes; the
+/// host copies the stored bytes there and their length to `out_intent_len`.
+/// An unreadable or missing asset-lock row must return an error, not a
+/// successful `out_found = false`.
+pub type LoadAssetLockPaymentIntentFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_intent: *mut u8,
+    intent_capacity: usize,
+    out_intent_len: *mut usize,
 ) -> i32;
 
 /// Store a round's private contact request scan state for `wallet_id`
@@ -709,6 +761,32 @@ pub struct PersistenceCallbacksExtension {
             wallet_ids_count: usize,
         ),
     >,
+    /// Additive sidecar for the payment intent of an asset lock that pays
+    /// someone other than the wallet (see [`PersistAssetLockPaymentIntentFn`]).
+    /// Appended under the same version for the same reason as the slots
+    /// above. Both slots plus the legacy persist/load callbacks are required
+    /// before the host can attest `ASSET_LOCK_PAYMENT_INTENTS`. A host without
+    /// them is never handed an intent and loads rows with none.
+    pub on_persist_asset_lock_payment_intent_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            intent: *const u8,
+            intent_len: usize,
+        ) -> i32,
+    >,
+    pub on_load_asset_lock_payment_intent_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            out_found: *mut bool,
+            out_intent: *mut u8,
+            intent_capacity: usize,
+            out_intent_len: *mut usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -736,6 +814,8 @@ impl Default for PersistenceCallbacksExtension {
             on_load_private_contact_scan_state_free_fn: None,
             on_load_private_contact_scan_state_wallets_fn: None,
             on_load_private_contact_scan_state_wallets_free_fn: None,
+            on_persist_asset_lock_payment_intent_fn: None,
+            on_load_asset_lock_payment_intent_fn: None,
         }
     }
 }
@@ -764,6 +844,8 @@ pub struct PersistenceExtensionCallbacks {
     pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
     pub load_private_contact_scan_state_wallets: Option<LoadPrivateContactScanStateWalletsFn>,
     pub load_private_contact_scan_state_wallets_free: Option<FreePrivateContactScanStateWalletsFn>,
+    pub persist_asset_lock_payment_intent: Option<PersistAssetLockPaymentIntentFn>,
+    pub load_asset_lock_payment_intent: Option<LoadAssetLockPaymentIntentFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1908,6 +1990,19 @@ impl FFIPersister {
         {
             capabilities =
                 capabilities.union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS);
+        }
+        if wallet_restore
+            && self.callbacks.on_persist_asset_locks_fn.is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_payment_intent
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_payment_intent
+                .is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS);
         }
         if self
             .tracked_masternodes_callbacks
@@ -3057,6 +3152,41 @@ impl PlatformWalletPersistence for FFIPersister {
                      shielded asset-lock funding is not persisted with its row"
                 );
             }
+            // The payment intent is a third additive sidecar, with the same
+            // host-without-the-slot rule as the shielded recipient.
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_payment_intent
+            {
+                for entry in al_cs.asset_locks.values() {
+                    let Some(intent) = entry.payment_intent.as_ref() else {
+                        continue;
+                    };
+                    let out_point = outpoint_to_bytes(&entry.out_point);
+                    let bytes = intent.to_bytes();
+                    let rc = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            out_point.as_ptr(),
+                            bytes.as_ptr(),
+                            bytes.len(),
+                        )
+                    };
+                    if rc != 0 {
+                        outcome.record(rc);
+                    }
+                }
+            } else if al_cs
+                .asset_locks
+                .values()
+                .any(|entry| entry.payment_intent.is_some())
+            {
+                tracing::debug!(
+                    "host has no payment-intent persistence slot; the recipients of an \
+                     external asset-lock payment are not persisted with its row"
+                );
+            }
         }
 
         // Send invitation changeset — DIP-13 sent-invitation records, one
@@ -3875,6 +4005,17 @@ impl PlatformWalletPersistence for FFIPersister {
                 .load_asset_lock_shielded_recipient
             {
                 load_asset_lock_shielded_recipients(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_payment_intent
+            {
+                load_asset_lock_payment_intents(
                     cb,
                     self.callbacks.context,
                     &entry.wallet_id,
@@ -6705,6 +6846,54 @@ fn load_asset_lock_shielded_recipients(
     Ok(())
 }
 
+/// Rehydrate the payment-intent sidecar after decoding the frozen legacy rows.
+/// A failed read, an over-long length or bytes the wallet cannot read
+/// invalidate the whole load: a row that silently lost its intent would let
+/// a resume consume a third-party payment into the wallet.
+fn load_asset_lock_payment_intents(
+    callback: LoadAssetLockPaymentIntentFn,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+) -> Result<(), PersistenceError> {
+    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
+        let out_point = outpoint_to_bytes(&lock.out_point);
+        let mut found = false;
+        let mut buffer = vec![0u8; PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN];
+        let mut len = 0usize;
+        let rc = unsafe {
+            callback(
+                context,
+                wallet_id.as_ptr(),
+                out_point.as_ptr(),
+                &mut found,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &mut len,
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                "Loading asset-lock payment intent failed",
+            ));
+        }
+        lock.payment_intent = if found {
+            let bytes = buffer.get(..len).ok_or_else(|| {
+                PersistenceError::backend("tracked asset locks: payment intent too long")
+            })?;
+            Some(
+                platform_wallet::changeset::AssetLockPaymentIntent::from_bytes(bytes).map_err(
+                    |_| PersistenceError::backend("tracked asset locks: malformed payment intent"),
+                )?,
+            )
+        } else {
+            None
+        };
+    }
+    Ok(())
+}
+
 /// One round's private contact request scan state in its FFI shape (see
 /// [`PersistPrivateContactScanStateFn`]).
 struct PrivateContactScanStateRows {
@@ -7062,6 +7251,7 @@ fn build_unused_asset_locks(
             amount: spec.amount_duffs,
             operation_id: None,
             shielded_recipient: None,
+            payment_intent: None,
             status,
             proof,
         };
@@ -11436,6 +11626,7 @@ mod tests {
                 proof: None,
                 operation_id,
                 shielded_recipient: None,
+                payment_intent: None,
             };
             let (entries, _storage) = build_asset_lock_entries(&[&entry]);
             let wallet = WalletRestoreEntryFFI {
@@ -11517,6 +11708,172 @@ mod tests {
         }
     }
 
+    /// The payment-intent sidecar round-trips next to the frozen row: a host
+    /// with the slots gets every recorded intent on store and hands it back on
+    /// load; a row without one loads with none (as every row stored before
+    /// intents existed); unreadable bytes fail the load; a host without the
+    /// slots is not failed and never attests the bit.
+    #[test]
+    fn should_roundtrip_payment_intents_and_tolerate_a_host_without_the_slots() {
+        use dpp::address_funds::PlatformAddress;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use platform_wallet::changeset::AssetLockPaymentIntent;
+
+        let intent = AssetLockPaymentIntent::PlatformAddresses(
+            [
+                (PlatformAddress::P2pkh([0x44; 20]), Some(1_000_000)),
+                (PlatformAddress::P2pkh([0x01; 20]), None),
+            ]
+            .into(),
+        );
+        unsafe extern "C" fn load_intent(
+            context: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            found: *mut bool,
+            output: *mut u8,
+            capacity: usize,
+            len: *mut usize,
+        ) -> i32 {
+            let stored = &*(context as *const Option<Vec<u8>>);
+            *found = stored.is_some();
+            if let Some(stored) = stored {
+                assert!(stored.len() <= capacity);
+                std::ptr::copy_nonoverlapping(stored.as_ptr(), output, stored.len());
+                *len = stored.len();
+            }
+            0
+        }
+        let entry = platform_wallet::changeset::AssetLockEntry {
+            out_point: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([5; 32]),
+                vout: 0,
+            },
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 2,
+            funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: platform_wallet::AssetLockStatus::Broadcast,
+            proof: None,
+            operation_id: None,
+            shielded_recipient: None,
+            payment_intent: Some(intent.clone()),
+        };
+        let (entries, _storage) = build_asset_lock_entries(&[&entry]);
+        let wallet = WalletRestoreEntryFFI {
+            tracked_asset_locks: entries.as_ptr(),
+            tracked_asset_locks_count: entries.len(),
+            ..Default::default()
+        };
+        let mut restored = build_unused_asset_locks(&wallet).expect("valid persisted lock");
+        assert_eq!(
+            restored[&2][&entry.out_point].payment_intent, None,
+            "legacy ABI has no intent field"
+        );
+        for stored in [None, Some(intent.clone())] {
+            let bytes = stored.as_ref().map(AssetLockPaymentIntent::to_bytes);
+            load_asset_lock_payment_intents(
+                load_intent,
+                (&bytes as *const Option<Vec<u8>>).cast_mut().cast(),
+                &[42; 32],
+                &mut restored,
+            )
+            .expect("valid intent sidecar");
+            assert_eq!(restored[&2][&entry.out_point].payment_intent, stored);
+        }
+        let malformed = Some(vec![0x09u8, 0, 1]);
+        assert!(load_asset_lock_payment_intents(
+            load_intent,
+            (&malformed as *const Option<Vec<u8>>).cast_mut().cast(),
+            &[42; 32],
+            &mut restored,
+        )
+        .is_err());
+
+        let changeset = PlatformWalletChangeSet {
+            asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
+                asset_locks: [(entry.out_point, entry.clone())].into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let callbacks = || PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            on_persist_asset_locks_fn: Some(noop_asset_locks),
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
+        let legacy = FFIPersister::new(callbacks());
+        legacy
+            .store([42; 32], changeset.clone())
+            .expect("a host without the intent slot still stores the row");
+        assert!(!legacy
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS));
+
+        unsafe extern "C" fn persist_intent(
+            context: *mut c_void,
+            wallet: *const u8,
+            _: *const u8,
+            intent: *const u8,
+            len: usize,
+        ) -> i32 {
+            assert_eq!(slice::from_raw_parts(wallet, 32), &[42; 32]);
+            *(context as *mut Option<Vec<u8>>) = Some(slice::from_raw_parts(intent, len).to_vec());
+            0
+        }
+        let mut seen: Option<Vec<u8>> = None;
+        let extensions = PersistenceExtensionCallbacks {
+            persist_asset_lock_payment_intent: Some(persist_intent),
+            load_asset_lock_payment_intent: Some(load_intent),
+            ..Default::default()
+        };
+        let writer = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: std::ptr::addr_of_mut!(seen).cast(),
+                ..callbacks()
+            },
+            PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS,
+            extensions,
+        );
+        assert!(writer
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS));
+        writer
+            .store([42; 32], changeset)
+            .expect("intent sidecar persisted with the base row");
+        assert_eq!(seen, Some(intent.to_bytes()));
+        for incomplete in [
+            PersistenceExtensionCallbacks {
+                persist_asset_lock_payment_intent: None,
+                ..extensions
+            },
+            PersistenceExtensionCallbacks {
+                load_asset_lock_payment_intent: None,
+                ..extensions
+            },
+        ] {
+            assert!(
+                !FFIPersister::new_with_persistence_capabilities_and_extensions(
+                    callbacks(),
+                    PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS,
+                    incomplete,
+                )
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS)
+            );
+        }
+    }
+
     /// The recipient sidecar round-trips next to the frozen row: a host with
     /// the slots gets every recorded recipient on store and hands it back on
     /// load; a host without the slots is not failed (the row stores, the
@@ -11560,6 +11917,7 @@ mod tests {
             proof: None,
             operation_id: None,
             shielded_recipient: Some(raw),
+            payment_intent: None,
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -12102,6 +12460,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_private_contact_scan_state_wallets_free_fn
             ) + std::mem::size_of::<Option<FreePrivateContactScanStateWalletsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_payment_intent_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_payment_intent_fn
+            ) + std::mem::size_of::<Option<PersistAssetLockPaymentIntentFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_payment_intent_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_payment_intent_fn
+            ) + std::mem::size_of::<Option<LoadAssetLockPaymentIntentFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -12171,6 +12549,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE,
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS,
+            PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
@@ -14470,6 +14852,7 @@ mod tests {
             proof: None,
             operation_id: None,
             shielded_recipient: None,
+            payment_intent: None,
         };
         let out_point = entry.out_point;
         let host = Arc::new(Host {

@@ -37,8 +37,10 @@ struct FundFromAssetLockPlatformAddressView: View {
     /// build time) and routes Submit to
     /// `ManagedPlatformAddressWallet.resumeFundFromAssetLock` instead
     /// of building a fresh lock. The user still picks the recipient
-    /// platform address because the orphan lock doesn't carry that
-    /// information — it's set at ST-submission time.
+    /// platform address for an owned lock. A lock built by
+    /// `fundFromAssetLockExternal` carries its recipients
+    /// (`PersistentAssetLock.paymentIntent`) and resumes through
+    /// `resumeFundFromAssetLockExternal` with exactly those instead.
     var resumeFromLock: PersistentAssetLock? = nil
 
     /// All persisted accounts. Filtered down to the wallet's Core
@@ -556,22 +558,46 @@ struct FundFromAssetLockPlatformAddressView: View {
                 )
                 return
             }
-            body = {
-                let updates = try await addressWallet.resumeFundFromAssetLock(
-                    outPointTxid: parsed.txid,
-                    outPointVout: parsed.vout,
-                    platformAccountIndex: platformAcct,
-                    recipients: [
-                        ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
-                            addressType: recipientType,
-                            hash: recipientHash,
-                            credits: nil
+            if lock.paymentIntent != nil {
+                // The lock was built to pay someone else and recorded who:
+                // resume it with exactly those recipients. An owned resume
+                // (the picked address below) would be refused by the SDK —
+                // it must never return the payment to this wallet.
+                body = {
+                    guard case .platformAddresses(let recipients)? = try managedHolder.assetLockPaymentIntent(
+                        txid: parsed.txid, vout: parsed.vout
+                    ) else {
+                        throw PlatformWalletError.invalidParameter(
+                            "The asset lock no longer carries its recorded recipients."
                         )
-                    ],
-                    signer: signer
-                )
-                return updates
-                    .first(where: { $0.hash == recipientHash })?.balance ?? 0
+                    }
+                    let updates = try await addressWallet.resumeFundFromAssetLockExternal(
+                        outPointTxid: parsed.txid,
+                        outPointVout: parsed.vout,
+                        platformAccountIndex: platformAcct,
+                        recipients: recipients,
+                        signer: signer
+                    )
+                    return updates.first?.balance ?? 0
+                }
+            } else {
+                body = {
+                    let updates = try await addressWallet.resumeFundFromAssetLock(
+                        outPointTxid: parsed.txid,
+                        outPointVout: parsed.vout,
+                        platformAccountIndex: platformAcct,
+                        recipients: [
+                            ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
+                                addressType: recipientType,
+                                hash: recipientHash,
+                                credits: nil
+                            )
+                        ],
+                        signer: signer
+                    )
+                    return updates
+                        .first(where: { $0.hash == recipientHash })?.balance ?? 0
+                }
             }
         } else {
             // Fresh build path: needs the funding account + amount

@@ -2531,6 +2531,87 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// The payment intent a tracked asset lock recorded when it was built to pay
+/// someone other than the wallet (`platform_wallet_get_asset_lock_payment_intent`),
+/// or null when the lock carries none or is not tracked.
+///
+/// Blob: `u8 kind` (1 = Platform addresses), then the recipients in the
+/// shape `ManagedPlatformWallet.encodeRecipients` writes and
+/// `walletResumeFundFromAssetLockExternal` reads: `i32 count`, then per row
+/// `u8 addressType, u8[20] hash, u8 hasCredits, i64 credits` (big-endian).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletAssetLockPaymentIntent(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    out_point_txid: JByteArray,
+    out_point_vout: jni::sys::jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if out_point_vout < 0 {
+            throw_sdk_exception(env, 1, "outPointVout must be non-negative");
+            return ptr::null_mut();
+        }
+        let txid = match env.convert_byte_array(&out_point_txid) {
+            Ok(b) if b.len() == 32 => b,
+            Ok(_) => {
+                throw_sdk_exception(env, 1, "outPointTxid must be exactly 32 bytes");
+                return ptr::null_mut();
+            }
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "outPointTxid was null/invalid");
+                return ptr::null_mut();
+            }
+        };
+        let mut txid_arr = [0u8; 32];
+        txid_arr.copy_from_slice(&txid);
+        let mut found = false;
+        let mut kind = 0u8;
+        let mut recipients: *mut platform_wallet_ffi::AssetLockPaymentRecipientFFI =
+            ptr::null_mut();
+        let mut count = 0usize;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_asset_lock_payment_intent(
+                wallet_handle as Handle,
+                &txid_arr,
+                out_point_vout as u32,
+                &mut found,
+                &mut kind,
+                &mut recipients,
+                &mut count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let rows = if recipients.is_null() || count == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(recipients, count) }
+        };
+        let mut blob = Vec::with_capacity(5 + rows.len() * 30);
+        blob.push(kind);
+        blob.extend_from_slice(&(rows.len() as i32).to_be_bytes());
+        for row in rows {
+            blob.extend_from_slice(&row.address);
+            blob.push(u8::from(row.has_amount));
+            blob.extend_from_slice(&(row.amount_credits as i64).to_be_bytes());
+        }
+        unsafe {
+            platform_wallet_ffi::platform_wallet_free_asset_lock_payment_recipients(
+                recipients, count,
+            )
+        };
+        if !found {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 // ── Wallet-signed Platform-address credit movement (ADDR-02/04, #3923) ─
 //
 // Transfer / withdraw platform-address credits, signed by the wallet's

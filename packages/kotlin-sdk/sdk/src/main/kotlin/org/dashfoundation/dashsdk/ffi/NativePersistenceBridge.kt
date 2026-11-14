@@ -114,6 +114,18 @@ abstract class NativePersistenceBridge {
         const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
 
         /**
+         * `PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS` (bit 16,
+         * `0x10000`): the payment intent of an asset lock that pays someone
+         * other than the wallet (the recipients of
+         * `fundFromAssetLockExternal`) is stored with its row
+         * ([onPersistAssetLockPaymentIntent]) and restored at load
+         * ([onLoadAssetLockPaymentIntent]), so a resume after restart pays
+         * those recipients or is refused and never refunds the sender. Rust
+         * honours the declaration only for a bridge that overrides both.
+         */
+        const val CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS: Long = 1L shl 16
+
+        /**
          * Packed row widths of [onPersistPrivateContactScanState] and
          * [onLoadPrivateContactScanState]: a read position is the identity
          * id (32), the position (u64, little-endian), the key fingerprint
@@ -805,6 +817,28 @@ abstract class NativePersistenceBridge {
 
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
+    /**
+     * `on_persist_asset_lock_payment_intent_fn`: associate the payment intent
+     * of an asset lock with its row, after the row's upsert in the same
+     * round. [intent] is the wallet's opaque form — store it as given; only
+     * Rust reads it. A recorded intent never changes: return non-zero when
+     * the row holds different bytes. Descriptor `([B[B[B)I`.
+     */
+    open fun onPersistAssetLockPaymentIntent(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        intent: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_payment_intent_fn`: the bytes stored by
+     * [onPersistAssetLockPaymentIntent] for a restored row, or `null` for a
+     * row without one. Throw when the row is missing or cannot be read: a
+     * row that silently lost its intent could be consumed as an owned
+     * top-up. Descriptor `([B[B)[B`.
+     */
+    open fun onLoadAssetLockPaymentIntent(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 

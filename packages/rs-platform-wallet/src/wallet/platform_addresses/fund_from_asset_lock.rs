@@ -26,6 +26,7 @@
 //!    tracked outpoint so the row is marked `Consumed` (terminal)
 //!    and dropped from the in-memory tracked-lock map.
 
+use crate::changeset::AssetLockPaymentIntent;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
@@ -232,6 +233,23 @@ impl PlatformAddressWallet {
     /// while the sender's remainder output resolves and is credited as
     /// usual.
     ///
+    /// # Recovery
+    ///
+    /// The recipient map is recorded on the tracked lock as its
+    /// [`AssetLockPaymentIntent`] before the lock is sent (durably, when the
+    /// persistence backend attests
+    /// [`ASSET_LOCK_PAYMENT_INTENTS`](crate::changeset::PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS)),
+    /// so the caller does not have to associate the outpoint with its
+    /// recipients itself, and `on_asset_lock_built` is informational only.
+    /// A lock left behind by a failed or interrupted call is resumed with
+    /// `AssetLockFunding::FromExistingAssetLock` through this entry point and
+    /// the recorded recipients (`AssetLockManager::tracked_payment_intent`).
+    /// Any other resume of it — through [`PlatformAddressWallet::fund_from_asset_lock`],
+    /// or to other recipients — is refused with
+    /// [`PlatformWalletError::AssetLockPaymentIntentMismatch`] before anything
+    /// is submitted, so the payment is made or not at all, and is never
+    /// consumed back into the wallet.
+    ///
     /// See [`PlatformAddressWallet::fund_from_asset_lock`] for the
     /// argument-by-argument reference, the latency budget and the
     /// cancellation contract — all of which apply verbatim.
@@ -315,6 +333,19 @@ impl PlatformAddressWallet {
             self.sdk.version(),
         )?;
 
+        // Step 1d: an external payment records its recipients with the lock
+        // (`TrackedAssetLock::payment_intent`) before the lock is sent, and a
+        // resume must name the same ones. The resolver refuses any other
+        // resume of such a lock — this owned path included — so a lock built
+        // to pay a third party is paid to it or not at all, and never
+        // consumed back into the wallet. Owned fundings record nothing.
+        let payment_intent = match ownership {
+            RecipientOwnership::AllOwned => None,
+            RecipientOwnership::ExternalExplicitOutputs => {
+                Some(AssetLockPaymentIntent::PlatformAddresses(addresses.clone()))
+            }
+        };
+
         // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
         // BIP44 funding family for the Core asset-lock tx. The
         // `destination_index = 0` argument is unused by this funding
@@ -326,11 +357,12 @@ impl PlatformAddressWallet {
             tracked_out_point,
         } = match self
             .asset_locks
-            .resolve_funding_with_is_timeout_fallback(
+            .resolve_funding_with_intent(
                 funding,
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
                 None,
+                payment_intent,
                 asset_lock_signer,
                 on_asset_lock_built,
             )
@@ -848,7 +880,7 @@ mod tests {
     use dashcore::OutPoint;
     use dpp::version::LATEST_PLATFORM_VERSION;
     use key_wallet::account::account_collection::PlatformPaymentAccountKey;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     #[derive(Debug)]
     struct NullAddressSigner;
@@ -1581,5 +1613,356 @@ mod tests {
         address_infos.insert(p2pkh(2), Some(info(p2pkh(2))));
         validate_address_infos_complete(&addresses, &address_infos)
             .expect("complete proof must pass");
+    }
+
+    /// What a backend saw, in order: each asset-lock changeset it was handed
+    /// and each flush.
+    #[derive(Debug)]
+    enum Recorded {
+        Store(crate::changeset::AssetLockChangeSet),
+        Flush,
+    }
+
+    /// Records asset-lock rounds and attests `capabilities`.
+    struct IntentRecordingPersister {
+        capabilities: crate::changeset::PersistenceCapabilities,
+        events: Mutex<Vec<Recorded>>,
+    }
+
+    impl IntentRecordingPersister {
+        fn new(capabilities: crate::changeset::PersistenceCapabilities) -> Self {
+            Self {
+                capabilities,
+                events: Mutex::new(Vec::new()),
+            }
+        }
+
+        /// The first stored row for `out_point`, and whether a flush
+        /// followed it before any other asset-lock round.
+        fn first_row(
+            &self,
+            out_point: &OutPoint,
+        ) -> Option<(crate::changeset::AssetLockEntry, bool)> {
+            let events = self.events.lock().unwrap();
+            let index = events.iter().position(|event| {
+                matches!(event, Recorded::Store(cs) if cs.asset_locks.contains_key(out_point))
+            })?;
+            let Recorded::Store(cs) = &events[index] else {
+                unreachable!("position matched a store")
+            };
+            let flushed_next = matches!(events.get(index + 1), Some(Recorded::Flush));
+            Some((cs.asset_locks[out_point].clone(), flushed_next))
+        }
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for IntentRecordingPersister {
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            self.capabilities
+        }
+
+        fn store(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if let Some(asset_locks) = changeset.asset_locks {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(Recorded::Store(asset_locks));
+            }
+            Ok(())
+        }
+
+        fn flush(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.events.lock().unwrap().push(Recorded::Flush);
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    /// An external payment of 1_000_000 credits to a third party, with the
+    /// wallet's own next address as the remainder.
+    async fn external_recipients(
+        wallet: &crate::wallet::PlatformWallet,
+    ) -> BTreeMap<PlatformAddress, Option<Credits>> {
+        let remainder = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        BTreeMap::from([(remainder, None), (p2pkh(0x77), Some(1_000_000))])
+    }
+
+    /// Builds an external payment on a backend attesting
+    /// `ASSET_LOCK_PAYMENT_INTENTS`, with an `on_asset_lock_built` observer
+    /// that records nothing (as a host callback that threw would). Returns
+    /// the wallet, the backend, the recipients and the row the backend
+    /// stored for the built lock.
+    async fn external_payment_with_recorded_row() -> (
+        Arc<crate::PlatformWalletManager<IntentRecordingPersister>>,
+        Arc<crate::wallet::PlatformWallet>,
+        Arc<IntentRecordingPersister>,
+        BTreeMap<PlatformAddress, Option<Credits>>,
+        crate::changeset::AssetLockEntry,
+        crate::test_support::WalletSigner,
+    ) {
+        let persister = Arc::new(IntentRecordingPersister::new(
+            crate::changeset::PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS,
+        ));
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(persister.clone()).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+        let recipients = external_recipients(&wallet).await;
+        let seen = Mutex::new(Vec::new());
+        // The host's callback records nothing: recoverability must not
+        // depend on it.
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                0,
+                recipients.clone(),
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the never-started SPV client refuses to send");
+        let built = seen.into_inner().unwrap();
+        assert_eq!(built.len(), 1);
+        let (row, flushed) = persister
+            .first_row(&built[0])
+            .expect("the built lock's row was stored");
+        assert!(flushed, "the row must be flushed before the lock is sent");
+        (manager, wallet, persister, recipients, row, signer)
+    }
+
+    /// Re-installs `row` as a tracked lock whose Core finality is proven, as
+    /// a restart finds an external payment whose Platform submit failed.
+    async fn restart_with_failed_submit(
+        wallet: &crate::wallet::PlatformWallet,
+        row: &crate::changeset::AssetLockEntry,
+    ) {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        let mut wm = wallet.wallet_manager().write().await;
+        let info = wm
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .expect("wallet registered");
+        info.tracked_asset_locks.insert(
+            row.out_point,
+            crate::wallet::asset_lock::tracked::TrackedAssetLock {
+                operation_id: row.operation_id,
+                out_point: row.out_point,
+                transaction: row.transaction.clone(),
+                account_index: row.account_index,
+                funding_type: row.funding_type,
+                identity_index: row.identity_index,
+                amount: row.amount_duffs,
+                status: crate::AssetLockStatus::ChainLocked,
+                proof: Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: 42,
+                    out_point: row.out_point,
+                })),
+                shielded_recipient: row.shielded_recipient,
+                payment_intent: row.payment_intent.clone(),
+            },
+        );
+    }
+
+    /// AC 1 + 2: an external payment records its recipients on the lock row
+    /// and flushes it before the lock is sent, whatever the host's built-lock
+    /// callback did with the outpoint.
+    #[tokio::test]
+    async fn should_record_the_external_recipients_durably_before_the_lock_is_sent() {
+        let (_manager, _wallet, _persister, recipients, row, _signer) =
+            external_payment_with_recorded_row().await;
+        assert_eq!(
+            row.payment_intent,
+            Some(AssetLockPaymentIntent::PlatformAddresses(recipients))
+        );
+        assert_eq!(
+            row.funding_type,
+            AssetLockFundingType::AssetLockAddressTopUp
+        );
+    }
+
+    /// An owned funding records no intent and keeps its best-effort row.
+    #[tokio::test]
+    async fn should_record_no_intent_for_an_owned_top_up() {
+        let persister = Arc::new(IntentRecordingPersister::new(
+            crate::changeset::PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS,
+        ));
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(persister.clone()).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+        let mut recipients = external_recipients(&wallet).await;
+        recipients.retain(|_, amount| amount.is_none());
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+        wallet
+            .platform()
+            .fund_from_asset_lock(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                0,
+                recipients,
+                vec![],
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the never-started SPV client refuses to send");
+        let built = seen.into_inner().unwrap();
+        let (row, _) = persister.first_row(&built[0]).expect("row stored");
+        assert_eq!(row.payment_intent, None);
+    }
+
+    /// AC 1 + 3: after a restart, an external payment whose Platform submit
+    /// failed cannot be resumed as an owned top-up (which would refund the
+    /// sender), nor to other recipients. The refusal leaves the lock tracked
+    /// and unconsumed, and the recorded recipients still resolve it.
+    #[tokio::test]
+    async fn should_refuse_an_owned_resume_of_an_external_payment_after_restart() {
+        let (_manager, wallet, _persister, recipients, row, signer) =
+            external_payment_with_recorded_row().await;
+        restart_with_failed_submit(&wallet, &row).await;
+        let resume = || AssetLockFunding::FromExistingAssetLock {
+            out_point: row.out_point,
+            consume_invitation_voucher: false,
+        };
+
+        let mut owned = recipients.clone();
+        owned.retain(|_, amount| amount.is_none());
+        let refused = wallet
+            .platform()
+            .fund_from_asset_lock(
+                resume(),
+                0,
+                owned,
+                vec![],
+                &NullAddressSigner,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .expect_err("an owned resume of an external payment must be refused");
+        assert!(
+            matches!(
+                &refused,
+                PlatformWalletError::AssetLockPaymentIntentMismatch { out_point, recorded }
+                    if *out_point == row.out_point
+                        && **recorded == AssetLockPaymentIntent::PlatformAddresses(recipients.clone())
+            ),
+            "{refused:?}"
+        );
+
+        let mut redirected = recipients.clone();
+        redirected.remove(&p2pkh(0x77));
+        redirected.insert(p2pkh(0x78), Some(1_000_000));
+        let refused = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                resume(),
+                0,
+                redirected,
+                &NullAddressSigner,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .expect_err("an external resume to other recipients must be refused");
+        assert!(
+            matches!(
+                refused,
+                PlatformWalletError::AssetLockPaymentIntentMismatch { .. }
+            ),
+            "{refused:?}"
+        );
+
+        let tracked = wallet.platform().asset_locks.list_tracked_locks().await;
+        let lock = tracked
+            .iter()
+            .find(|lock| lock.out_point == row.out_point)
+            .expect("a refused resume leaves the lock tracked");
+        assert!(!lock.status.is_consumed());
+
+        let resolved = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_with_intent(
+                resume(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                None,
+                Some(AssetLockPaymentIntent::PlatformAddresses(recipients)),
+                &signer,
+                None,
+            )
+            .await
+            .expect("the recorded recipients resume the lock");
+        assert!(matches!(
+            resolved,
+            FundingResolution::Resolved(ResolvedFunding {
+                tracked_out_point: Some(out_point),
+                ..
+            }) if out_point == row.out_point
+        ));
+    }
+
+    /// A lock tracked before intents were recorded carries none and resumes
+    /// through the owned path exactly as before.
+    #[tokio::test]
+    async fn should_resume_a_lock_without_an_intent_as_before() {
+        let (_manager, wallet, _persister, _recipients, mut row, signer) =
+            external_payment_with_recorded_row().await;
+        row.payment_intent = None;
+        restart_with_failed_submit(&wallet, &row).await;
+        let resolved = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_with_intent(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point: row.out_point,
+                    consume_invitation_voucher: false,
+                },
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                None,
+                None,
+                &signer,
+                None,
+            )
+            .await
+            .expect("a legacy row resumes through the owned path");
+        assert!(matches!(resolved, FundingResolution::Resolved(_)));
     }
 }

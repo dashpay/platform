@@ -233,7 +233,7 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion16WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion17WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
@@ -241,9 +241,10 @@ class DashDatabaseTest {
         // 11 → 12 adds the identity key usage limits columns on top,
         // 12 → 13 the contract bounds kind, 13 → 14 the token
         // once-per-identity distribution block, 14 → 15 the DashPay
-        // backfill record columns on `wallets`, and 15 → 16 the private
-        // contact request scan state tables.
-        assertEquals(16, db.openHelper.readableDatabase.version)
+        // backfill record columns on `wallets`, 15 → 16 the private
+        // contact request scan state tables, and 16 → 17 the asset lock
+        // payment intent column.
+        assertEquals(17, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")

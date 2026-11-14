@@ -9,9 +9,10 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
-    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
-    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
-    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockPaymentIntentFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
+    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockPaymentIntentFn,
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
@@ -407,6 +408,14 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
+        persist_asset_lock_payment_intent: slot!(
+            on_persist_asset_lock_payment_intent_fn,
+            PersistAssetLockPaymentIntentFn
+        ),
+        load_asset_lock_payment_intent: slot!(
+            on_load_asset_lock_payment_intent_fn,
+            LoadAssetLockPaymentIntentFn
         ),
     }
 }

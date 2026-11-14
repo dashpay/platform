@@ -34,7 +34,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::changeset::ShieldedRecipientRaw;
+use crate::changeset::{AssetLockPaymentIntent, ShieldedRecipientRaw};
 use dashcore::OutPoint;
 use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
@@ -520,6 +520,42 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.resolve_funding_with_intent(
+            funding,
+            funding_type,
+            destination_index,
+            shielded_recipient,
+            None,
+            asset_lock_signer,
+            on_built,
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_with_is_timeout_fallback`] for a funding that
+    /// pays someone other than the wallet. A fresh lock records
+    /// `payment_intent` on its row before it is sent. A resumed lock must
+    /// carry the intent it was built with: a lock that recorded one is
+    /// refused unless `payment_intent` is exactly that intent, so every flow
+    /// that passes none (an owned top-up, an identity funding, a shielded
+    /// funding) is refused before it waits for a proof or reaches Platform,
+    /// and recovery can never consume a third-party payment into the wallet.
+    /// A lock tracked before intents were recorded carries none and resumes
+    /// as before.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn resolve_funding_with_intent<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
+        payment_intent: Option<AssetLockPaymentIntent>,
+        asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
@@ -532,6 +568,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         funding_type,
                         destination_index,
                         shielded_recipient,
+                        payment_intent.clone(),
                         asset_lock_signer,
                         on_built,
                     )
@@ -603,6 +640,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         funding_type,
                         destination_index,
                         shielded_recipient,
+                        payment_intent.clone(),
                         asset_lock_signer,
                         on_built,
                     )
@@ -631,6 +669,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
                 if status.is_consumed() {
                     return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+                }
+                if let Some(recorded) = self.tracked_payment_intent(&out_point).await {
+                    if payment_intent.as_ref() != Some(&recorded) {
+                        return Err(PlatformWalletError::AssetLockPaymentIntentMismatch {
+                            out_point,
+                            recorded: Box::new(recorded),
+                        });
+                    }
                 }
                 // Invitation vouchers are bearer instruments: the credit
                 // output's private key was exported into a shared link, so
@@ -980,6 +1026,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        payment_intent: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,

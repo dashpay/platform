@@ -6,7 +6,7 @@
 use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
-use crate::changeset::ShieldedRecipientRaw;
+use crate::changeset::{AssetLockPaymentIntent, ShieldedRecipientRaw};
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
 use key_wallet::account::AccountType;
@@ -932,6 +932,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             None,
+            None,
             signer,
             None,
         )
@@ -948,6 +949,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         shielded_recipient: Option<ShieldedRecipientRaw>,
+        payment_intent: Option<AssetLockPaymentIntent>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -958,6 +960,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             shielded_recipient,
+            payment_intent,
             signer,
             on_built,
         )
@@ -984,6 +987,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             None,
+            None,
             signer,
             None,
         )
@@ -1002,6 +1006,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         shielded_recipient: Option<ShieldedRecipientRaw>,
+        payment_intent: Option<AssetLockPaymentIntent>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -1012,6 +1017,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             shielded_recipient,
+            payment_intent,
             signer,
             on_built,
         )
@@ -1034,6 +1040,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         shielded_recipient: Option<ShieldedRecipientRaw>,
+        payment_intent: Option<AssetLockPaymentIntent>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
@@ -1045,6 +1052,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 funding_type,
                 identity_index,
                 shielded_recipient,
+                payment_intent,
                 signer,
                 None,
                 on_built,
@@ -1136,6 +1144,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 funding_type,
                 identity_index,
                 shielded_recipient,
+                None,
                 signer,
                 Some(operation),
                 on_built,
@@ -1165,6 +1174,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             source_index,
             funding_type,
             identity_index,
+            None,
             None,
             signer,
             operation,
@@ -1201,9 +1211,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// The build → persist → track → broadcast pipeline every funded lock
     /// goes through. `shielded_recipient` is the Orchard address a shielded
-    /// funding (Type 18) will pay; it is recorded on the row created here,
-    /// so it is exactly as durable before dispatch as `operation_id`: flushed
-    /// before the broadcast for a drain, queued before it otherwise.
+    /// funding (Type 18) will pay, and `payment_intent` what a lock paying
+    /// someone other than the wallet pays; both are recorded on the row
+    /// created here, so they are exactly as durable before dispatch as
+    /// `operation_id`: flushed before the broadcast for a drain, and for a
+    /// backend that can record them, queued before it otherwise.
     #[allow(clippy::too_many_arguments)]
     async fn broadcast_funded_asset_lock_tracked<S: ExtendedPubKeySigner>(
         &self,
@@ -1213,12 +1225,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         shielded_recipient: Option<ShieldedRecipientRaw>,
+        payment_intent: Option<AssetLockPaymentIntent>,
         signer: &S,
         operation: Option<&AssetLockOperationContext>,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         if operation.is_some() {
             self.require_wallet_drain_persistence()?;
+        }
+        // Refused while nothing is built: every backend that records intents
+        // loads them into a buffer of the documented maximum size.
+        if payment_intent
+            .as_ref()
+            .is_some_and(|intent| !intent.fits_storage())
+        {
+            return Err(PlatformWalletError::AssetLockTransaction(
+                "the payment has too many recipients to record with its asset lock; \
+                 nothing was built"
+                    .into(),
+            ));
         }
         // Serialize build→persist so a concurrent build cannot interleave its
         // pool snapshot with ours. The snapshot is collected under the build's
@@ -1445,12 +1470,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // Only where the backend can record a recipient at all: a host without
         // the capability keeps the best-effort row every other funding has.
+        // A payment intent takes the same path: the recipients a lock pays a
+        // third party exist nowhere else, so a host that can keep them gets
+        // the row before anything is sent (whatever its `on_built` observer
+        // did with the outpoint).
+        let capabilities = self.persister.persistence_capabilities();
         let recipient_must_be_durable = operation.is_none()
-            && shielded_recipient.is_some()
-            && self
-                .persister
-                .persistence_capabilities()
-                .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS);
+            && ((shielded_recipient.is_some()
+                && capabilities.contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS))
+                || (payment_intent.is_some()
+                    && capabilities.contains(PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS)));
+        if payment_intent.is_some() && !recipient_must_be_durable {
+            tracing::warn!(
+                "the persistence backend does not record asset-lock payment intents; the \
+                 recipients of this external payment survive only in memory"
+            );
+        }
         let tracked = TrackedAssetLock {
             operation_id: operation.map(|context| context.operation_id),
             out_point,
@@ -1462,6 +1497,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             status: AssetLockStatus::Built,
             proof: None,
             shielded_recipient,
+            payment_intent,
         };
         if let Some(operation) = operation {
             operation.retain_checkpoint(tracked.clone());
@@ -1531,8 +1567,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     reservation_token,
                 )
                 .await;
+                let recipient = if tracked.payment_intent.is_some() {
+                    "payment intent"
+                } else {
+                    "shielded recipient"
+                };
                 return Err(PlatformWalletError::Persistence(format!(
-                    "shielded recipient was not made durable before dispatch: {error}"
+                    "{recipient} was not made durable before dispatch: {error}"
                 )));
             }
             self.track_asset_lock(tracked).await;
@@ -2135,6 +2176,7 @@ mod tests {
                                     status: entry.status.clone(),
                                     proof: entry.proof.clone(),
                                     shielded_recipient: entry.shielded_recipient,
+                                    payment_intent: entry.payment_intent.clone(),
                                 },
                             );
                     }

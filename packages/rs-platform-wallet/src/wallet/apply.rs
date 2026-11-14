@@ -384,6 +384,7 @@ impl PlatformWalletInfo {
                     if !entry.preserve_recovery_metadata(
                         existing.operation_id,
                         existing.shielded_recipient,
+                        existing.payment_intent.as_ref(),
                     ) {
                         continue;
                     }
@@ -392,6 +393,7 @@ impl PlatformWalletInfo {
                     {
                         existing.operation_id = entry.operation_id;
                         existing.shielded_recipient = entry.shielded_recipient;
+                        existing.payment_intent = entry.payment_intent;
                         continue;
                     }
                 }
@@ -408,6 +410,7 @@ impl PlatformWalletInfo {
                         status: entry.status,
                         proof: entry.proof,
                         shielded_recipient: entry.shielded_recipient,
+                        payment_intent: entry.payment_intent,
                     },
                 );
             }
@@ -777,6 +780,7 @@ mod tests {
             AssetLockEntry {
                 operation_id: None,
                 shielded_recipient: None,
+                payment_intent: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -855,6 +859,7 @@ mod tests {
             status,
             proof: None,
             shielded_recipient: None,
+            payment_intent: None,
         }
     }
 
@@ -929,6 +934,45 @@ mod tests {
         apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.shielded_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+    }
+
+    #[test]
+    fn should_preserve_the_payment_intent_when_applying_stale_snapshots() {
+        use crate::changeset::AssetLockPaymentIntent;
+        use dpp::address_funds::PlatformAddress;
+        let intent = |hash: u8| {
+            AssetLockPaymentIntent::PlatformAddresses(
+                [
+                    (PlatformAddress::P2pkh([hash; 20]), Some(1_000)),
+                    (PlatformAddress::P2pkh([0x01; 20]), None),
+                ]
+                .into(),
+            )
+        };
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
+        recorded.payment_intent = Some(intent(0x91));
+        apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
+
+        // A stale snapshot without the intent (reconstruction, a status
+        // advance from an older row) keeps it.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.payment_intent, Some(intent(0x91)));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        // A snapshot naming other recipients is dropped whole.
+        let mut redirected = recovery_asset_lock(AssetLockStatus::ChainLocked, None);
+        redirected.payment_intent = Some(intent(0x92));
+        apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.payment_intent, Some(intent(0x91)));
         assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
     }
 

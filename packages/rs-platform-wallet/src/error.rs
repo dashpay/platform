@@ -675,6 +675,20 @@ pub enum PlatformWalletError {
         requested: crate::changeset::ShieldedRecipientRaw,
     },
 
+    /// An asset lock built to pay someone other than the wallet (it recorded
+    /// a payment intent, e.g. the recipients of `fund_from_asset_lock_external`)
+    /// is being resumed through a flow that would pay something else: an
+    /// owned top-up, an identity or shielded funding, or an external payment
+    /// to different recipients. Nothing is paid and the lock stays tracked.
+    /// Resume it through the flow it was built for, with `recorded`.
+    #[error(
+        "Asset lock {out_point} was built to pay {recorded:?} and cannot be resumed to pay anything else"
+    )]
+    AssetLockPaymentIntentMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: Box<crate::changeset::AssetLockPaymentIntent>,
+    },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 

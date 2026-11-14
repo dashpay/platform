@@ -671,6 +671,13 @@ public enum PlatformWalletError: LocalizedError {
     /// (`PersistentAssetLock.shieldedRecipientRaw43` /
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
+    ///
+    /// Also raised when a lock built by `fundFromAssetLockExternal` (it
+    /// carries a payment intent, `TrackedAssetLock.hasPaymentIntent`) is
+    /// resumed as an owned top-up, through another funding flow, or to other
+    /// recipients. Resume it through `resumeFundFromAssetLockExternal` with
+    /// the recipients `ManagedPlatformWallet.assetLockPaymentIntent(txid:vout:)`
+    /// returns.
     case assetLockRecipientMismatch(String)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a

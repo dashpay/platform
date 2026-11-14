@@ -1289,6 +1289,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    payment_intent: None,
                     out_point,
                     transaction,
                     account_index: 0,
