@@ -442,14 +442,15 @@ pub struct PlatformWallet {
     /// bind's ordinary accounts are dropped and their live state purged.
     /// Taken at the top of every bind entry point and by
     /// `shielded_add_account`, after the generation's lifecycle gate and
-    /// before `shield_guard`.
+    /// the coordinator's operation admission, and before `shield_guard`.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
     /// The tip account each identity's address was last prepared for in
     /// this session, after its slot was proved with the seed. Publication
     /// of a wallet tip address requires it, so an address is published only
     /// for the identity and slot it was prepared for, and invalidated by a
-    /// coordinator Clear. `Arc` so cloned wallet handles share it.
+    /// coordinator Clear and by the wallet's removal. `Arc` so cloned wallet
+    /// handles share it.
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
         Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
@@ -905,6 +906,13 @@ impl PlatformWallet {
     /// wallet waits for a bind in flight, and a bind admitted after a
     /// removal stores nothing. A caller must not hold the gate.
     ///
+    /// Holds the coordinator's operation admission the same way, so a
+    /// Clear waits for a bind in flight and the host, which wipes its own
+    /// rows once the Clear returns, wipes the viewing keys the bind stored.
+    /// A bind that waited for a Clear registers the wallet and restores
+    /// nothing: the rows it reads may be the ones the host is about to
+    /// wipe. A caller must not hold the admission either.
+    ///
     /// [`bind_shielded_from_persisted`]: Self::bind_shielded_from_persisted
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
     #[cfg(feature = "shielded")]
@@ -914,25 +922,36 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        coordinator.ensure_network(self.sdk.network)?;
+        // Sampled before the first wait, so the install can tell that the
+        // snapshot predates a Clear this bind waited for.
+        let snapshot_generation = coordinator.clear_generation();
         // Fence generation teardown across attachment validation, host
         // viewing-key persistence, and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
+        // And a Clear across the same span: one that completed between the
+        // host load and the host store would have this bind write viewing
+        // keys after the host wiped its rows.
+        let _operation = coordinator.operation_guard().await;
         let _config = self.shielded_config_lock.lock().await;
-        self.bind_shielded_locked_unfenced(seed, accounts, coordinator)
+        self.bind_shielded_locked_unfenced(seed, accounts, coordinator, snapshot_generation)
             .await
     }
 
-    /// [`Self::bind_shielded`] for a caller already holding
-    /// `shielded_config_lock` and the generation lifecycle guard.
+    /// [`Self::bind_shielded`] for a caller that checked the coordinator's
+    /// network and already holds the generation lifecycle guard, the
+    /// coordinator's operation admission and `shielded_config_lock`.
+    /// `snapshot_generation` is the coordinator's clear generation, sampled
+    /// before the caller waited for the admission.
     #[cfg(feature = "shielded")]
     pub(crate) async fn bind_shielded_locked_unfenced(
         &self,
         seed: &[u8],
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
-        coordinator.ensure_network(self.sdk.network)?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -953,9 +972,6 @@ impl PlatformWallet {
         // dropped must not persist viewing keys the host can no longer
         // delete (see `ensure_shielded_attached`).
         self.ensure_shielded_attached()?;
-        // Sampled before the load below so the install can tell that the
-        // snapshot predates a Clear.
-        let snapshot_generation = coordinator.clear_generation();
         let network = self.sdk.network;
         let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
         accounts.extend(self.discovered_tip_accounts().await?);
@@ -1061,8 +1077,9 @@ impl PlatformWallet {
     /// request. One of those without a persisted viewing key (an identity
     /// found since the last seed-backed bind) also returns `Ok(false)`.
     /// A `coordinator` of another network than this wallet's is refused
-    /// the same way, and the wallet generation's lifecycle gate is held
-    /// the same way: a caller must not hold it.
+    /// the same way, and the wallet generation's lifecycle gate and the
+    /// coordinator's operation admission are held the same way: a caller
+    /// must not hold either.
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded_from_persisted(
         &self,
@@ -1071,9 +1088,14 @@ impl PlatformWallet {
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
         coordinator.ensure_network(self.sdk.network)?;
+        // Sampled before the first wait, so the install can tell that the
+        // snapshot predates a Clear this bind waited for.
+        let snapshot_generation = coordinator.clear_generation();
         // Keep the generation alive from attachment validation through the
         // persisted snapshot read and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
+        // A Clear waits for this bind, as for a seed bind.
+        let _operation = coordinator.operation_guard().await;
         let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
@@ -1092,9 +1114,6 @@ impl PlatformWallet {
             ));
         }
         self.ensure_shielded_attached()?;
-        // Sampled before the load so the install can tell that the
-        // snapshot predates a Clear.
-        let snapshot_generation = coordinator.clear_generation();
         let start = self
             .persister
             .load()
@@ -1520,10 +1539,21 @@ impl PlatformWallet {
     /// bind either commit fully before the unregister purges it, or see
     /// the flag and refuse. Setting it afterwards would leave the
     /// window this closes.
+    ///
+    /// Also drops the identity accounts prepared in this session. A removed
+    /// wallet is no longer registered or persisted, so a handle that
+    /// outlives the removal must not report an account as prepared. The
+    /// removal runs under the lifecycle gate's exclusive side and a
+    /// preparation records under its shared side, so none is recorded
+    /// afterwards.
     #[cfg(feature = "shielded")]
     pub(crate) fn mark_shielded_detached(&self) {
         self.shielded_detached
             .store(true, std::sync::atomic::Ordering::Release);
+        self.prepared_tip_accounts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     /// Bound ZIP-32 account indices on the shielded sub-wallet,

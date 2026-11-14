@@ -912,23 +912,21 @@ async fn add_account_rejects_a_viewing_key_change_for_a_persisted_account() {
     );
 }
 
-/// A bind that read the host snapshot before a Clear must not put that
-/// snapshot back afterwards.
+/// A bind that waited for a Clear must not restore the host snapshot it
+/// then reads.
 ///
-/// The snapshot has to be read before the install transaction opens (the
-/// seedless path reconstructs its keys from it, and a host callback must
-/// not run under the coordinator's lifecycle mutex), so serializing the
-/// transaction alone cannot cover this: Clear takes the mutex, finishes,
-/// and the host then wipes its own rows — while a bind still holds the
-/// pre-Clear notes and watermark in hand. Restoring them resurrects
-/// history the user deleted and re-arms a watermark that reports
-/// caught-up, so the cold rebuild from index 0 that Clear promises never
-/// runs.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn bind_does_not_restore_a_snapshot_that_predates_a_clear() {
+/// The host wipes its own rows only once the Clear returns, so a bind
+/// admitted right behind the Clear can still read the pre-Clear notes and
+/// watermark. Restoring them resurrects history the user deleted and
+/// re-arms a watermark that reports caught-up, so the cold rebuild from
+/// index 0 that Clear promises never runs. The bind samples the clear
+/// generation before it waits, so its install sees the Clear and restores
+/// nothing.
+#[tokio::test]
+async fn should_not_restore_a_snapshot_for_a_bind_admitted_behind_a_clear() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_during_bind"));
+    let coordinator = coordinator_at(&temp_dir("bind_behind_clear"));
     let id = SubwalletId::new(wallet.wallet_id(), 0);
 
     // Pre-Clear host state: one note and a high watermark.
@@ -951,44 +949,27 @@ async fn bind_does_not_restore_a_snapshot_that_predates_a_clear() {
     );
     persister.serve_subwallets(snapshot);
 
-    // Park the bind inside load(): it has sampled the clear generation
-    // and is about to read the pre-Clear snapshot.
-    let release = persister.gate_next_load();
-    let bind = {
-        let wallet = wallet.clone();
-        let coordinator = Arc::clone(&coordinator);
-        tokio::spawn(async move {
-            wallet
-                .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
-                .await
-        })
-    };
-    // Wait for the bind to actually REACH the gate. Without this
-    // handshake the Clear below could land before the bind samples the
-    // generation — a different ordering, which the fix is not about and
-    // which would make this test pass either way.
-    for _ in 0..400 {
-        if persister.load_entries() > 0 {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-    assert!(
-        persister.load_entries() > 0,
-        "bind never reached the persister load"
+    // Admission is held, so the Clear queues for it and the bind queues
+    // behind the Clear (the lock is fair: a waiting writer goes before a
+    // later reader). Releasing it admits the Clear first, and the bind
+    // then reads the rows the host has not wiped yet.
+    let admission = coordinator.operation_guard().await;
+    let (cleared, bound, ()) = tokio::join!(
+        coordinator.clear(),
+        wallet.bind_shielded(&[0x42u8; 64], &[0], &coordinator),
+        async move { drop(admission) },
     );
-
-    // The user taps Clear and it completes — store purged, registries
-    // dropped — then the host wipes its own rows.
-    coordinator.clear().await.expect("clear succeeds");
-
-    release.send(()).expect("release the parked load");
-    bind.await.expect("bind task").expect("bind succeeds");
+    cleared.expect("clear succeeds");
+    bound.expect("bind succeeds");
+    assert!(
+        persister.load_calls() > 0,
+        "the bind read the host snapshot"
+    );
 
     let store = coordinator.store().read().await;
     assert!(
         store.get_all_notes(id).unwrap().is_empty(),
-        "a snapshot read before the Clear must not be restored after it — those notes \
+        "a snapshot read behind the Clear must not be restored after it: those notes \
          are exactly what the user asked to delete"
     );
     assert_eq!(
@@ -996,6 +977,108 @@ async fn bind_does_not_restore_a_snapshot_that_predates_a_clear() {
         0,
         "the pre-Clear watermark must not come back; it would report caught-up and \
          suppress the cold rebuild from index 0"
+    );
+}
+
+/// Park `bind` inside its host load, and require a Clear started meanwhile
+/// to wait until the bind has returned.
+async fn assert_clear_waits_for_bind<F>(
+    persister: &CapturingPersistence,
+    coordinator: &NetworkShieldedCoordinator,
+    bind: F,
+) -> F::Output
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let entries_before = persister.load_entries();
+    let release = persister.gate_next_load();
+    let bind = tokio::spawn(bind);
+    for _ in 0..400 {
+        if persister.load_entries() > entries_before {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert!(
+        persister.load_entries() > entries_before,
+        "the bind never reached the persister load"
+    );
+
+    let mut clear = std::pin::pin!(coordinator.clear());
+    assert!(
+        futures::poll!(clear.as_mut()).is_pending(),
+        "the Clear must wait for the bind in flight"
+    );
+    release.send(()).expect("release the parked load");
+    let bound = bind.await.expect("bind task");
+    clear.await.expect("clear succeeds");
+    bound
+}
+
+/// A Clear waits for a bind in flight. The host wipes its own rows once the
+/// Clear returns, so a Clear that completed while a bind sat between its
+/// host load and its host store would have the bind write its viewing keys
+/// after that wipe: rows for shielded state the user cleared. Waiting puts
+/// the bind's write before the Clear, and so before the wipe.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("clear_waits_for_bind"));
+
+    let bind = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        async move {
+            wallet
+                .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+                .await
+        }
+    };
+    assert_clear_waits_for_bind(&persister, &coordinator, bind)
+        .await
+        .expect("bind succeeds");
+    assert!(
+        !persister.captured_viewing_keys().is_empty(),
+        "the bind stored its viewing key, and did so before the Clear ran"
+    );
+    assert!(
+        coordinator.registered_subwallets().await.is_empty(),
+        "the Clear ran after the bind and dropped its registration"
+    );
+}
+
+/// The seedless bind is held the same way: it restores the notes and
+/// watermark of the snapshot it loaded, so a Clear completing while it sat
+/// in that load must wait as well.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("clear_waits_for_persisted_bind"));
+    wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+    persister.serve_viewing_keys(persister.captured_viewing_keys());
+
+    let bind = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        async move {
+            wallet
+                .bind_shielded_from_persisted(&[0], &coordinator)
+                .await
+        }
+    };
+    let found = assert_clear_waits_for_bind(&persister, &coordinator, bind)
+        .await
+        .expect("persisted bind succeeds");
+    assert!(found, "the bind found its persisted key");
+    assert!(
+        coordinator.registered_subwallets().await.is_empty(),
+        "the Clear ran after the bind and dropped its registration"
     );
 }
 
@@ -1469,7 +1552,7 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
         address
     );
     assert_eq!(
-        wallet.prepared_shielded_identity_account(&id),
+        wallet.prepared_shielded_identity_account(&id).await,
         Some(shielded_identity_account_index(5).unwrap())
     );
 }
@@ -1944,7 +2027,7 @@ async fn should_refuse_tip_preparation_on_a_coordinator_of_another_network() {
         "{refused:?}"
     );
     assert_eq!(wallet.shielded_account_indices().await, bound_before);
-    assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
 }
 
 /// A bind derives its viewing keys for the wallet's network, so both bind
@@ -2032,7 +2115,7 @@ async fn should_refuse_tip_preparation_when_the_derived_key_is_not_the_master_ke
             matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
             "index {index}: {refused:?}"
         );
-        assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+        assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
     }
 }
 
@@ -2058,7 +2141,7 @@ async fn should_refuse_a_tip_preparation_admitted_behind_a_clear() {
         matches!(prepared, Err(crate::PlatformWalletError::ShieldedNotBound)),
         "{prepared:?}"
     );
-    assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
     assert!(coordinator.registered_subwallets().await.is_empty());
 }
 
@@ -2074,6 +2157,7 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
         .unwrap();
     let account = wallet
         .prepared_shielded_identity_account(&id)
+        .await
         .expect("the preparation stands");
     assert_eq!(
         wallet.shielded_default_address(account).await,
@@ -2081,12 +2165,12 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
     );
 
     coordinator.clear().await.unwrap();
-    assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
     wallet
         .bind_shielded(&seed, &[0], &coordinator)
         .await
         .unwrap();
-    assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
 
     assert_eq!(
         wallet
@@ -2096,7 +2180,129 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
         address
     );
     assert_eq!(
-        wallet.prepared_shielded_identity_account(&id),
+        wallet.prepared_shielded_identity_account(&id).await,
         Some(account)
     );
+}
+
+/// Move the fixture's identity from slot 2 to slot 3, as its removal and a
+/// rediscovery at another index do. It then carries the MASTER key the seed
+/// derives at each of the two slots, so the seed proves either one.
+async fn move_identity_to_slot_three(
+    wallet: &PlatformWallet,
+    seed: &[u8],
+    id: &dpp::prelude::Identifier,
+) {
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    let mut second_master = seed_master_key(seed, 3)
+        .remove(&0)
+        .expect("the master key derived at slot 3");
+    second_master.set_id(1);
+    let mut wm = wallet.wallet_manager.write().await;
+    let manager = &mut wm
+        .get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager;
+    let mut identity = manager.remove_identity(id, wallet.persister()).unwrap();
+    identity.add_public_key(second_master);
+    manager
+        .add_identity(identity, 3, wallet.wallet_id(), wallet.persister())
+        .unwrap();
+}
+
+/// The preparation proves the identity's slot, releases the wallet-manager
+/// lock, and binds the account that slot selects. An identity moved to
+/// another slot in between has another account, so the preparation must
+/// neither hand out nor record the address of the one it bound.
+#[tokio::test]
+async fn should_refuse_a_tip_preparation_whose_identity_moved_while_it_bound() {
+    use crate::shielded_identity_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_identity_moved").await;
+    let (reached, resume) = super::tips::test_hooks::pause_after_snapshot(&wallet);
+    let preparing = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+                .await
+        })
+    };
+    reached.await.expect("preparation reached its snapshot");
+    move_identity_to_slot_three(&wallet, &seed, &id).await;
+    resume.send(()).unwrap();
+
+    let refused = preparing.await.unwrap();
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("moved to another slot")),
+        "{refused:?}"
+    );
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+
+    // Prepared again, the identity gets the account of the slot it holds.
+    let address = wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let account = shielded_identity_account_index(3).unwrap();
+    assert_eq!(
+        wallet.shielded_default_address(account).await,
+        Some(address)
+    );
+    assert_eq!(
+        wallet.prepared_shielded_identity_account(&id).await,
+        Some(account)
+    );
+}
+
+/// A preparation stands for the slot the identity held when it was made.
+/// Moved to another slot, the identity has another account, and the old
+/// one must not be reported as prepared for it; nor for an identity the
+/// wallet no longer holds.
+#[tokio::test]
+async fn should_not_report_a_prepared_account_for_an_identity_that_left_its_slot() {
+    use crate::shielded_identity_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_identity_left_slot").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert_eq!(
+        wallet.prepared_shielded_identity_account(&id).await,
+        Some(shielded_identity_account_index(2).unwrap())
+    );
+
+    move_identity_to_slot_three(&wallet, &seed, &id).await;
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+
+    wallet
+        .wallet_manager
+        .write()
+        .await
+        .get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager
+        .remove_identity(&id, wallet.persister())
+        .unwrap();
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+}
+
+/// A removed wallet is no longer registered or persisted, so a handle that
+/// outlives the removal must not report an account as prepared.
+#[tokio::test]
+async fn should_drop_prepared_accounts_when_the_wallet_is_removed() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_wallet_removed").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert!(wallet
+        .prepared_shielded_identity_account(&id)
+        .await
+        .is_some());
+
+    let teardown = wallet.generation().teardown_guard().await;
+    finish_removal(&wallet, &coordinator, teardown).await;
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
 }

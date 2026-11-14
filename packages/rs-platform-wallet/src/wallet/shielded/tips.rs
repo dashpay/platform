@@ -9,10 +9,11 @@
 //! another diversifier in the same account, so all old addresses remain covered.
 
 use super::NetworkShieldedCoordinator;
-use crate::wallet::platform_wallet::PlatformWallet;
+use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
+use key_wallet_manager::WalletManager;
 use std::sync::{Arc, PoisonError, Weak};
 
 pub(crate) struct PreparedTipAccount {
@@ -181,7 +182,7 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
-        self.bind_shielded_locked_unfenced(seed, &accounts, coordinator)
+        self.bind_shielded_locked_unfenced(seed, &accounts, coordinator, clear_generation)
             .await?;
         self.persister()
             .flush()
@@ -192,6 +193,20 @@ impl PlatformWallet {
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
         if coordinator.clear_generation() != clear_generation {
             return Err(PlatformWalletError::ShieldedNotBound);
+        }
+        // The wallet-manager lock was released after the proof above, so the
+        // identity can have been removed and added back at another slot while
+        // the account was bound. Prove its slot again and record under that
+        // lock, which every change of a slot takes for writing: what is
+        // recorded is the account of the slot the identity holds as it is
+        // recorded.
+        let wm = self.wallet_manager.read().await;
+        if self.verified_tip_account_in(&wm, seed, identity_id)? != account {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "The identity moved to another slot while its tip account was prepared; \
+                 prepare its tip address again"
+                    .to_string(),
+            ));
         }
         self.prepared_tip_accounts
             .lock()
@@ -204,20 +219,39 @@ impl PlatformWallet {
                     clear_generation,
                 },
             );
+        drop(wm);
         Ok(address)
     }
 
     /// The shielded account prepared for `identity_id` in this session
     /// ([`Self::prepare_shielded_identity_address`]), while the preparation
-    /// stands: its coordinator is alive and has not been cleared since.
-    /// `None` otherwise. A recorded identity index alone is not proof of the
-    /// account, so this is what tells a caller that the seed proved it.
-    pub fn prepared_shielded_identity_account(&self, identity_id: &Identifier) -> Option<u32> {
+    /// stands: its coordinator is alive and has not been cleared since, the
+    /// wallet has not been removed, and the identity still holds the slot
+    /// that selects the account. `None` otherwise. A recorded identity index
+    /// alone is not proof of the account, so this is what tells a caller
+    /// that the seed proved it.
+    ///
+    /// An identity removed and added back at another slot after its
+    /// preparation has another account: the preparation of the old one no
+    /// longer stands, and the identity is prepared again.
+    pub async fn prepared_shielded_identity_account(
+        &self,
+        identity_id: &Identifier,
+    ) -> Option<u32> {
+        let wm = self.wallet_manager.read().await;
+        let current = wm
+            .get_wallet_info(&self.wallet_id())?
+            .identity_manager
+            .managed_identity(identity_id)
+            .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
+            .and_then(|identity| identity.identity_index)
+            .and_then(|index| shielded_identity_account_index(index).ok())?;
         self.prepared_tip_accounts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(identity_id)
             .and_then(PreparedTipAccount::standing_account)
+            .filter(|prepared| *prepared == current)
     }
 
     /// The tip account of a wallet-owned identity's slot, proved with the
@@ -231,6 +265,17 @@ impl PlatformWallet {
         identity_id: &Identifier,
     ) -> Result<u32, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
+        self.verified_tip_account_in(&wm, seed, identity_id)
+    }
+
+    /// [`Self::verified_tip_account`] under a wallet-manager lock the caller
+    /// holds.
+    fn verified_tip_account_in(
+        &self,
+        wm: &WalletManager<PlatformWalletInfo>,
+        seed: &[u8],
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
         let info = wm
             .get_wallet_info(&self.wallet_id())
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
