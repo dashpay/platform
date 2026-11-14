@@ -756,7 +756,11 @@ impl PlatformWallet {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets
         // (currently just `AssetLockManager` — see Item 8 sub-step 1a).
-        let wallet_persister = WalletPersister::new(wallet_id, persister);
+        let wallet_persister = WalletPersister::with_flush_ledger(
+            wallet_id,
+            persister,
+            durable_cursors.flush_ledgers.of(wallet_id),
+        );
 
         let core = CoreWallet::new(
             Arc::clone(&sdk),
@@ -3126,21 +3130,21 @@ impl PrivatePaymentRestore {
         restored
     }
 
-    /// Whether the requests the wallet tracks are durable now: at once for a
-    /// backend that commits inline, as each was stored before it was
-    /// tracked; after a flush that succeeds otherwise.
+    /// Whether the requests the wallet tracks are durable now
+    /// (`WalletPersister::flush_durably`): at once for a backend that commits
+    /// inline, as each was stored before it was tracked; after a flush that
+    /// succeeds otherwise, with no other flush in progress and none that
+    /// failed for good in this process. A flush that succeeds right after
+    /// one that failed for good wrote nothing of what that one dropped.
     fn settled_requests_durable(&self) -> bool {
-        if self.persister.store_commits_inline() {
-            return true;
-        }
-        match self.persister.flush() {
+        match self.persister.flush_durably() {
             Ok(()) => true,
-            Err(error) => {
+            Err(reason) => {
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
-                    %error,
-                    "the requests settling private payments are not flushed; their journal \
-                     records stay for a later restoration"
+                    ?reason,
+                    "the requests settling private payments are not known to be durable; \
+                     their journal records stay for a later restoration"
                 );
                 false
             }
@@ -3267,10 +3271,7 @@ impl PrivatePaymentRestore {
             .into_iter()
             .filter(|commitment| !self.persister.read_back_awaiting_flush(commitment))
             .collect();
-        if !settled.is_empty()
-            && !self.persister.buffered_writes_lost()
-            && self.settled_requests_durable()
-        {
+        if !settled.is_empty() && self.settled_requests_durable() {
             let store = if wait {
                 Some(self.coordinator.store().write().await)
             } else {

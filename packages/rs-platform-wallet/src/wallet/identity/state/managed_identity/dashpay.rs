@@ -192,14 +192,15 @@ pub struct DashPayState {
     /// restored from the shielded store's unconfirmed spends.
     pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
 
-    /// The public requests to each recipient being sent, by attempt: each
+    /// The public request to each recipient being sent, by its attempt: it
     /// claims the pair from before its channel is decided until it is
-    /// submitted and recorded, and while one does no private request to the
-    /// recipient is reserved, as a reserved one refuses a public send. A
-    /// claim is released only by its own attempt, whose id is process-wide,
-    /// so a send that outlived its wallet's removal and re-creation under the
-    /// same id cannot release a claim of the new wallet. In memory only.
-    pub(super) public_contact_request_claims: BTreeMap<Identifier, BTreeSet<u64>>,
+    /// submitted and recorded, and while it does no private request to the
+    /// recipient is reserved, as a reserved one refuses a public send, and
+    /// no other public one is signed. A claim is released only by its own
+    /// attempt, whose id is process-wide, so a send that outlived its
+    /// wallet's removal and re-creation under the same id cannot release a
+    /// claim of the new wallet. In memory only.
+    pub(super) public_contact_request_claims: BTreeMap<Identifier, u64>,
 
     /// The public request to each recipient whose broadcast may have been
     /// delivered while no proof settled its outcome: it may still execute, so
@@ -478,6 +479,14 @@ impl DashPayState {
     /// identity since load, if one did ([`Self::private_contact_requests_read`]).
     pub(crate) fn private_store_read_height(&self) -> Option<u64> {
         self.private_store_read_height
+    }
+
+    /// Whether this identity's read of the private store was rewound
+    /// (`ManagedIdentity::rewind_private_store_read`) and has not reached
+    /// the store's end again: until it does, what the wallet tracks may miss
+    /// a private request the store holds.
+    pub(crate) fn private_store_read_rewound(&self) -> bool {
+        !self.private_contact_requests_read && self.private_store_read_floor.is_some()
     }
 
     /// How this identity and `contact` exchanged private requests, from the

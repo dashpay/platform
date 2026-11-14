@@ -64,6 +64,7 @@ use crate::changeset::changeset::{
     fold_same_txid_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
     HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
 };
+use crate::changeset::flush_ledger::FlushLedgers;
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::changeset::traits::PlatformWalletPersistence;
@@ -321,6 +322,11 @@ pub struct DurableCursorState {
     /// wallet left (see [`RewindBarrier::retire`]). A leaf lock: taken under
     /// the manager lock on both sides, never held across an await.
     pub retired: std::sync::Mutex<BTreeMap<WalletId, RetiredBarrier>>,
+    /// Per wallet id, what is known of the flushes of its records: like a
+    /// cursor entry it outlives its wallet, so a removed wallet's handles,
+    /// its same-id successor's and the manager count every flush of the id
+    /// in one place ([`FlushLedger`](crate::changeset::flush_ledger::FlushLedger)).
+    pub(crate) flush_ledgers: FlushLedgers,
 }
 
 impl DurableCursorState {

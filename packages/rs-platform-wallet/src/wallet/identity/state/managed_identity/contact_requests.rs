@@ -1096,32 +1096,37 @@ impl ManagedIdentity {
         Some(self.insert_private_reply(recipient, None))
     }
 
-    /// Claim the pair with `recipient` for a public request about to be
-    /// sent, under a new attempt it returns: until that attempt releases it
+    /// Claim the pair with `recipient` for the one public request that may
+    /// be being sent to it, under a new attempt it returns; `None` when
+    /// another send holds the claim. Until that attempt releases it
     /// ([`Self::release_public_contact_request`]), no private request to the
-    /// recipient is reserved. Concurrent public sends each hold their own.
-    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> u64 {
+    /// recipient is reserved and no other public one is signed: two sends
+    /// built from the same tracked requests would each sign one.
+    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> Option<u64> {
+        if self
+            .dashpay
+            .public_contact_request_claims
+            .contains_key(&recipient)
+        {
+            return None;
+        }
         let attempt = next_contact_request_attempt();
         self.dashpay
             .public_contact_request_claims
-            .entry(recipient)
-            .or_default()
-            .insert(attempt);
-        attempt
+            .insert(recipient, attempt);
+        Some(attempt)
     }
 
     /// Release the claim `attempt` took ([`Self::claim_public_contact_request`]);
-    /// another attempt's claim on the pair stays.
+    /// a claim another attempt took on the pair since stays.
     pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier, attempt: u64) {
-        if let Some(claims) = self
+        if self
             .dashpay
             .public_contact_request_claims
-            .get_mut(recipient)
+            .get(recipient)
+            .is_some_and(|claimed| *claimed == attempt)
         {
-            claims.remove(&attempt);
-            if claims.is_empty() {
-                self.dashpay.public_contact_request_claims.remove(recipient);
-            }
+            self.dashpay.public_contact_request_claims.remove(recipient);
         }
     }
 
