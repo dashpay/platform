@@ -419,17 +419,23 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_top_up_to_recorded_reci
 /// the user chose it. A lock is unassigned when it records no identity
 /// (`identity_recipient_unassigned` on the tracked-lock lists): it was rebuilt
 /// from the chain, for example after a restore from the seed, and its credit
-/// output names none, so no resume pays it. The assignment is stored durably
-/// before it takes effect; afterwards
+/// output names none, so no resume pays it. Afterwards
 /// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`] pays
 /// this identity from the lock and refuses any other.
+///
+/// The identity is looked up on Platform first, because an assignment is
+/// permanent: an identity Platform does not know is `ErrorIdentityNotFound`
+/// (7) and nothing is assigned; a failed lookup is the SDK's error.
 ///
 /// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint,
 /// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock,
 /// `ErrorAssetLockRecipientMismatch` (61) when the lock already records a
 /// different identity (assigning the recorded one again is a no-op), and a
 /// persistence error when the host's persister does not keep identity
-/// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS`) or the store fails. A lock
+/// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS`) or the store fails. After a
+/// failed store the assignment still holds for this session and another
+/// identity is refused (61); calling again with the same identity retries
+/// the store. A lock
 /// that is not an unbound identity top-up is refused.
 ///
 /// # Safety
@@ -445,15 +451,15 @@ pub unsafe extern "C" fn platform_wallet_assign_identity_top_up_recipient(
     check_ptr!(identity_id);
     let out_point = dashcore::OutPoint::from(&*out_point);
     let identity_id = Identifier::from(*identity_id);
-    // Clone the manager out of the registry, so the registry is not held while
-    // the assignment awaits the wallet and calls the host's persister.
-    let asset_locks = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| std::sync::Arc::clone(
-            wallet.asset_locks()
-        )));
+    // Clone the identity wallet out of the registry, so the registry is not
+    // held while the assignment looks the identity up on Platform, awaits the
+    // wallet and calls the host's persister.
+    let identity_wallet = unwrap_option_or_return!(
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone())
+    );
     let result = block_on_worker(async move {
-        asset_locks
-            .assign_identity_top_up_recipient(&out_point, identity_id)
+        identity_wallet
+            .assign_identity_top_up_recipient(&out_point, &identity_id)
             .await
     });
     unwrap_result_or_return!(result);

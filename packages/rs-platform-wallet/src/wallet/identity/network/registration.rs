@@ -394,7 +394,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        check_top_up_amount(&funding)?;
+        let funding = apply_top_up_minimum(funding)?;
         // Step 1: retrieve the identity + its HD index.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
@@ -493,15 +493,8 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        check_top_up_amount(&funding)?;
-        // TODO(dashpay/platform#5860): report a failed lookup as
-        // `PlatformWalletError::IdentityLookupFailed` (FFI 80) once #5860
-        // merges, as its external top-up from Platform addresses does. Until
-        // then it surfaces as the plain SDK error; either way nothing is built.
-        let identity = Identity::fetch(&self.sdk, *identity_id)
-            .await
-            .map_err(PlatformWalletError::Sdk)?
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        let funding = apply_top_up_minimum(funding)?;
+        let identity = self.fetch_identity_to_pay(identity_id).await?;
 
         let (new_balance, _metadata) = self
             .submit_top_up_with_funding(
@@ -514,6 +507,49 @@ impl IdentityWallet {
             )
             .await?;
         Ok(new_balance)
+    }
+
+    /// Assign the identity an unassigned unbound top-up lock pays
+    /// ([`TrackedAssetLock::is_unassigned_identity_top_up`]), after checking
+    /// that Platform knows it: an assignment is permanent, so a mistyped id
+    /// would otherwise strand the lock. An unknown identity is
+    /// [`PlatformWalletError::IdentityNotFound`] and nothing is assigned.
+    /// Afterwards a resume pays this identity and refuses any other.
+    ///
+    /// Also refused on a backend that cannot keep the assignment
+    /// (`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`), for a lock
+    /// that is not an unassigned unbound top-up, and for a lock recording
+    /// another identity
+    /// ([`PlatformWalletError::AssetLockIdentityRecipientMismatch`]). If the
+    /// store fails, the error is returned and the assignment holds for this
+    /// session; assigning the same identity again retries the store.
+    ///
+    /// [`TrackedAssetLock::is_unassigned_identity_top_up`]: crate::wallet::asset_lock::tracked::TrackedAssetLock::is_unassigned_identity_top_up
+    pub async fn assign_identity_top_up_recipient(
+        &self,
+        out_point: &dashcore::OutPoint,
+        identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        self.fetch_identity_to_pay(identity_id).await?;
+        self.asset_locks
+            .assign_identity_top_up_recipient(out_point, *identity_id)
+            .await
+    }
+
+    /// Fetch an identity this wallet may not manage, before anything pays it.
+    async fn fetch_identity_to_pay(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Identity, PlatformWalletError> {
+        // TODO(dashpay/platform#5860): report a failed lookup as
+        // `PlatformWalletError::IdentityLookupFailed` (FFI 80) once #5860
+        // merges, as its external top-up from Platform addresses does. Until
+        // then it surfaces as the plain SDK error; either way nothing is built
+        // or assigned.
+        Identity::fetch(&self.sdk, *identity_id)
+            .await
+            .map_err(PlatformWalletError::Sdk)?
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))
     }
 
     /// Resume an interrupted unbound identity top-up to the identity its lock
@@ -706,19 +742,40 @@ impl IdentityWallet {
 /// cost, so this constant must include it.)
 pub const MIN_TOP_UP_DUFFS: u64 = 50_500;
 
-/// Refuse a new top-up lock below [`MIN_TOP_UP_DUFFS`] before anything is
-/// looked up, built or broadcast. An existing lock's amount is already fixed.
-fn check_top_up_amount(funding: &AssetLockFunding) -> Result<(), PlatformWalletError> {
+/// Hold a new top-up lock to [`MIN_TOP_UP_DUFFS`] before anything is looked
+/// up, built or broadcast. An amount below it is refused; a drain gets it as
+/// its floor, which the builder enforces on the built lock before tracking or
+/// broadcasting it. An existing lock's amount is already fixed.
+fn apply_top_up_minimum(
+    funding: AssetLockFunding,
+) -> Result<AssetLockFunding, PlatformWalletError> {
+    let floor = |minimum: Option<u64>| Some(minimum.unwrap_or(0).max(MIN_TOP_UP_DUFFS));
     match funding {
         AssetLockFunding::FromWalletBalance { amount_duffs, .. }
-            if *amount_duffs < MIN_TOP_UP_DUFFS =>
+            if amount_duffs < MIN_TOP_UP_DUFFS =>
         {
             Err(PlatformWalletError::InvalidParameter(format!(
                 "a top-up of {amount_duffs} duffs is below the minimum top-up asset-lock \
                  balance of {MIN_TOP_UP_DUFFS} duffs"
             )))
         }
-        _ => Ok(()),
+        AssetLockFunding::DrainAccountBalance {
+            account,
+            minimum_lock_duffs,
+        } => Ok(AssetLockFunding::DrainAccountBalance {
+            account,
+            minimum_lock_duffs: floor(minimum_lock_duffs),
+        }),
+        AssetLockFunding::DrainWalletBalance {
+            account_index,
+            minimum_lock_duffs,
+            operation,
+        } => Ok(AssetLockFunding::DrainWalletBalance {
+            account_index,
+            minimum_lock_duffs: floor(minimum_lock_duffs),
+            operation,
+        }),
+        funding => Ok(funding),
     }
 }
 
@@ -903,6 +960,66 @@ mod tests {
             );
         }
         assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
+    }
+
+    /// A drain cannot build a top-up lock below the minimum either: its floor
+    /// is raised to [`MIN_TOP_UP_DUFFS`], a higher floor is kept, and an amount
+    /// at the minimum passes unchanged.
+    #[test]
+    fn should_hold_every_new_top_up_funding_to_the_minimum() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
+
+        let drain = |minimum_lock_duffs| AssetLockFunding::DrainAccountBalance {
+            account: AssetLockFundingAccount::Bip44 { account_index: 0 },
+            minimum_lock_duffs,
+        };
+        let floor_of = |funding| match apply_top_up_minimum(funding) {
+            Ok(AssetLockFunding::DrainAccountBalance {
+                minimum_lock_duffs, ..
+            }) => minimum_lock_duffs,
+            other => panic!("a drain stays a drain: {other:?}"),
+        };
+        assert_eq!(floor_of(drain(None)), Some(MIN_TOP_UP_DUFFS));
+        assert_eq!(floor_of(drain(Some(1))), Some(MIN_TOP_UP_DUFFS));
+        assert_eq!(
+            floor_of(drain(Some(MIN_TOP_UP_DUFFS + 1))),
+            Some(MIN_TOP_UP_DUFFS + 1)
+        );
+        assert!(matches!(
+            apply_top_up_minimum(AssetLockFunding::FromWalletBalance {
+                amount_duffs: MIN_TOP_UP_DUFFS,
+                account_index: 0,
+            }),
+            Ok(AssetLockFunding::FromWalletBalance { amount_duffs, .. })
+                if amount_duffs == MIN_TOP_UP_DUFFS
+        ));
+    }
+
+    /// An assignment is permanent, so an identity Platform does not know is
+    /// refused before anything is recorded: the lock stays unassigned.
+    #[tokio::test]
+    async fn should_refuse_to_assign_an_identity_platform_does_not_know() {
+        let unknown = Identifier::from([0x66u8; 32]);
+        let (wallet, _signer) = wallet_where_platform_answers(unknown, None).await;
+        let out_point = track_lock(
+            &wallet,
+            0,
+            AssetLockFundingType::IdentityTopUpNotBound,
+            None,
+        )
+        .await;
+
+        let result = wallet
+            .identity()
+            .assign_identity_top_up_recipient(&out_point, &unknown)
+            .await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::IdentityNotFound(id)) if id == unknown),
+            "{result:?}"
+        );
+        let tracked = wallet.asset_locks().list_tracked_locks().await;
+        assert!(tracked[0].is_unassigned_identity_top_up());
     }
 
     /// The resume names no identity: it pays the one the lock recorded, or

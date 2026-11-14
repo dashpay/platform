@@ -149,39 +149,41 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// one rebuilt from the chain after a restore, whose credit output names
     /// no identity. The user chooses the identity; afterwards a resume pays it
     /// and refuses any other, exactly as for a lock built with a recipient.
+    /// Callers outside the crate go through
+    /// `IdentityWallet::assign_identity_top_up_recipient`, which first checks
+    /// that Platform knows the identity.
     ///
-    /// The assignment is made durable before it takes effect, so it is
-    /// refused on a backend that cannot keep it
-    /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]) and when
-    /// the store fails. Assigning the identity a lock already records is a
-    /// no-op; assigning another one is
-    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`]. Only an
-    /// unbound top-up lock that is not consumed can be assigned.
-    pub async fn assign_identity_top_up_recipient(
+    /// Refused on a backend that cannot keep the assignment
+    /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]). The
+    /// identity is recorded in memory first and then stored and flushed, so
+    /// memory always holds what a failed flush leaves queued for the next
+    /// one: a later assignment of another identity is
+    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`] rather than
+    /// a change the store would drop. If the store fails, the error is
+    /// returned and the assignment holds for this session; assigning the
+    /// same identity again stores it again, so a retry makes it durable.
+    /// Only an unbound top-up lock that is not consumed can be assigned.
+    pub(crate) async fn assign_identity_top_up_recipient(
         &self,
         out_point: &OutPoint,
         identity: Identifier,
     ) -> Result<(), PlatformWalletError> {
         self.require_identity_recipient_persistence()?;
         let entry = {
-            let wm = self.wallet_manager.read().await;
+            let mut wm = self.wallet_manager.write().await;
             let lock = wm
-                .get_wallet_info(&self.wallet_id)
+                .get_wallet_info_mut(&self.wallet_id)
                 .ok_or_else(|| {
                     PlatformWalletError::WalletNotFound(
                         "Wallet info not found in wallet manager".to_string(),
                     )
                 })?
                 .tracked_asset_locks
-                .get(out_point)
+                .get_mut(out_point)
                 .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
             check_identity_recipient_assignable(lock, identity)?;
-            if lock.identity_recipient.is_some() {
-                return Ok(());
-            }
-            let mut entry = AssetLockEntry::from(lock);
-            entry.identity_recipient = Some(identity);
-            entry
+            lock.identity_recipient = Some(identity);
+            AssetLockEntry::from(&*lock)
         };
         self.persister
             .store(PlatformWalletChangeSet {
@@ -196,18 +198,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 PlatformWalletError::Persistence(format!(
                     "asset-lock identity recipient was not made durable: {error}"
                 ))
-            })?;
-        let mut wm = self.wallet_manager.write().await;
-        let lock = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
-            .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
-        // Re-checked under the write guard: the row may have been consumed or
-        // assigned while the store ran. The durable row already carries this
-        // identity, and a conflicting one would have refused that store.
-        check_identity_recipient_assignable(lock, identity)?;
-        lock.identity_recipient = Some(identity);
-        Ok(())
+            })
     }
 
     /// Track a new asset lock in memory, returning a changeset describing

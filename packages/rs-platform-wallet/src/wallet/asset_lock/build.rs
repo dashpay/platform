@@ -2764,10 +2764,10 @@ mod tests {
     }
 
     /// An unbound top-up lock that records no recipient (as one rebuilt from
-    /// the chain does) is unassigned; assigning it an identity stores the
-    /// identity durably, then records it in memory. Assigning the same
-    /// identity again is a no-op, another identity is refused, and so is any
-    /// assignment on a backend that cannot keep it.
+    /// the chain does) is unassigned; assigning it an identity records it and
+    /// stores it. Assigning the same identity again stores it again, another
+    /// identity is refused, and so is any assignment on a backend that cannot
+    /// keep it.
     #[tokio::test]
     async fn should_assign_an_unassigned_unbound_top_up_lock_once() {
         use crate::changeset::AssetLockRecipient;
@@ -2828,8 +2828,8 @@ mod tests {
         manager
             .assign_identity_top_up_recipient(&out_point, assigned)
             .await
-            .expect("assigning the recorded identity again is a no-op");
-        assert_eq!(persistence.stored.lock().unwrap().len(), stores_before + 1);
+            .expect("assigning the recorded identity again succeeds");
+        assert_eq!(persistence.stored.lock().unwrap().len(), stores_before + 2);
         assert!(matches!(
             manager
                 .assign_identity_top_up_recipient(&out_point, built_for)
@@ -2846,6 +2846,85 @@ mod tests {
                 .await,
             Err(PlatformWalletError::AssetLockNotTracked(_))
         ));
+    }
+
+    /// An assignment whose store fails still holds in memory, so a second
+    /// assignment cannot pick another identity than the one a later flush of
+    /// the queued row would write; assigning the same identity again retries
+    /// the store and makes it durable.
+    #[tokio::test]
+    async fn should_keep_a_failed_assignment_so_no_other_identity_can_replace_it() {
+        use crate::changeset::AssetLockRecipient;
+
+        let first = dpp::prelude::Identifier::from([0x54; 32]);
+        let second = dpp::prelude::Identifier::from([0x55; 32]);
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let (_, out_point) =
+            fund_unbound_top_up(&manager, &signer, Some(AssetLockRecipient::Identity(first)))
+                .await
+                .expect("an unbound top-up lock builds and broadcasts");
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&manager.wallet_id)
+                .unwrap()
+                .tracked_asset_locks
+                .get_mut(&out_point)
+                .unwrap()
+                .identity_recipient = None;
+        }
+
+        persistence
+            .fail_lock_store
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(matches!(
+            manager
+                .assign_identity_top_up_recipient(&out_point, first)
+                .await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            Some(first),
+            "the failed assignment holds for this session"
+        );
+        assert!(matches!(
+            manager.assign_identity_top_up_recipient(&out_point, second).await,
+            Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                recorded,
+                requested,
+                ..
+            }) if recorded == first && requested == second
+        ));
+
+        persistence
+            .fail_lock_store
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let stores_before = persistence.stored.lock().unwrap().len();
+        manager
+            .assign_identity_top_up_recipient(&out_point, first)
+            .await
+            .expect("assigning the same identity again retries the store");
+        let stored = persistence.stored.lock().unwrap();
+        assert_eq!(stored.len(), stores_before + 1);
+        assert_eq!(
+            stored[stores_before]
+                .asset_locks
+                .as_ref()
+                .unwrap()
+                .asset_locks[&out_point]
+                .identity_recipient,
+            Some(first)
+        );
     }
 
     /// Only an unbound top-up lock takes an assigned recipient, and only on a
