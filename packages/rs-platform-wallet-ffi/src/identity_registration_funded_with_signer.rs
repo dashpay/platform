@@ -435,9 +435,10 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_top_up_to_recorded_reci
 /// the user chose it. A lock is unassigned when it records no identity
 /// (`identity_recipient_unassigned` on the tracked-lock lists): it was rebuilt
 /// from the chain, for example after a restore from the seed, and its credit
-/// output names none, so no resume pays it. Afterwards
-/// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`] pays
-/// this identity from the lock and refuses any other.
+/// output names none, so no resume pays it. Afterwards resume it with
+/// [`platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
+/// which pays this identity, whether or not this wallet holds it, and
+/// refuses any other.
 ///
 /// The identity is looked up on Platform first, because an assignment is
 /// permanent: an identity Platform does not know is `ErrorIdentityNotFound`

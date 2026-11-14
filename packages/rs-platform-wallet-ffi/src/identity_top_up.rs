@@ -171,8 +171,11 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 /// credit balance Platform returns; the local `ManagedIdentity` balance is
 /// updated + queued for persistence inside the library call.
 ///
-/// `amount_duffs` must be at least [`MIN_TOP_UP_DUFFS`](platform_wallet::wallet::identity::network::MIN_TOP_UP_DUFFS); the wallet rejects a
-/// smaller amount with `ErrorInvalidParameter` before any lock is built.
+/// `amount_duffs` must be at least Platform's top-up minimum for the SDK's
+/// protocol version
+/// ([`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs),
+/// 50_500 duffs under fee v1); the wallet rejects a smaller amount with
+/// `ErrorInvalidParameter` before any lock is built.
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -260,7 +263,7 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// `out_new_balance` receives the identity's proved post-transition balance.
 ///
 /// Errors before anything is built: `ErrorInvalidParameter` for an amount
-/// below [`MIN_TOP_UP_DUFFS`](platform_wallet::wallet::identity::network::MIN_TOP_UP_DUFFS), `ErrorIdentityNotFound` (7) for an identity
+/// below [`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs), `ErrorIdentityNotFound` (7) for an identity
 /// Platform does not know, and a persistence error when the host's persister
 /// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
 /// reported as the SDK error for now; it becomes `ErrorIdentityLookupFailed`
@@ -331,7 +334,9 @@ pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_s
 mod top_up_with_funding_guard_tests {
     use super::*;
     use crate::error::PlatformWalletFFIResultCode;
-    use platform_wallet::wallet::identity::network::MIN_TOP_UP_DUFFS;
+
+    /// Any amount: every guard under test answers before the minimum check.
+    const AMOUNT_DUFFS: u64 = 50_500;
 
     /// A non-null but never-dereferenced core-signer pointer. Every guard
     /// under test returns before the handle is used, so a dangling pointer
@@ -347,7 +352,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_identity_with_funding_signer(
                 0,
                 std::ptr::null(),
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 dangling_core_signer(),
                 &mut balance,
@@ -364,7 +369,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_identity_with_funding_signer(
                 0,
                 &id,
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 std::ptr::null_mut(),
                 &mut balance,
@@ -380,7 +385,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_identity_with_funding_signer(
                 0,
                 &id,
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 dangling_core_signer(),
                 std::ptr::null_mut(),
@@ -402,7 +407,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_external_identity_with_funding_signer(
                 u64::MAX,
                 identity,
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 signer,
                 out,
