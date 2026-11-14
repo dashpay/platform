@@ -1545,27 +1545,65 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let mut changeset = AssetLockChangeSet::default();
             changeset.asset_locks.insert(out_point, (&tracked).into());
-            let durable = self
-                .persister
-                .store(PlatformWalletChangeSet {
-                    asset_locks: Some(changeset),
-                    ..Default::default()
-                })
-                .and_then(|()| self.persister.flush());
-            if let Err(error) = durable {
-                // The row may be buffered (a backend that restores a failed
-                // flush to its buffer) or committed (a store that succeeded
-                // before a failed flush), and a later flush or a restart would
-                // then surface a resumable row for inputs released below. Its
-                // removal is queued behind it — stores apply removals after
-                // upserts — so the abandoned row does not outlive this call
-                // unless the backend refuses that write too. The funding index
-                // stays consumed, as for the pool gate above.
-                self.queue_asset_lock_changeset(AssetLockChangeSet {
-                    removed: [out_point].into(),
+            // `Err(true, _)`: the row was stored but not flushed, so it may be
+            // buffered or committed. `Err(false, _)`: the store refused it.
+            let durable = match self.persister.store(PlatformWalletChangeSet {
+                asset_locks: Some(changeset),
+                ..Default::default()
+            }) {
+                Ok(()) => self.persister.flush().map_err(|error| (true, error)),
+                Err(error) => Err((false, error)),
+            };
+            if let Err((row_stored, error)) = durable {
+                // A stored row may be buffered (a backend that restores a
+                // failed flush to its buffer) or committed (a store that
+                // succeeded before a failed flush), and a later flush or a
+                // restart would then surface a resumable row. Its removal is
+                // stored behind it — stores apply removals after upserts, and
+                // a buffered removal commits with the row it cancels — so the
+                // abandoned row does not outlive this call. If the store
+                // refuses the removal of a stored row, the row may outlive it:
+                // releasing its inputs would let the user's retry be funded
+                // while a restart re-broadcasts the abandoned lock and pays the
+                // recipient a second time. The reservation and the in-broadcast
+                // fence then stay held, as for an uncertain removal after a
+                // rejected broadcast. The funding index stays consumed, as for
+                // the pool gate above.
+                let removal = self.persister.store(PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        removed: [out_point].into(),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 });
                 drop(build_persist_guard);
+                let kind = if identity_recipient.is_some() {
+                    "identity"
+                } else {
+                    "shielded"
+                };
+                match removal {
+                    Err(removal_error) if row_stored => {
+                        tracing::warn!(
+                            %out_point,
+                            %error,
+                            %removal_error,
+                            "abandoned asset lock's row may survive; keeping its inputs reserved"
+                        );
+                        in_broadcast_pin.settle_pending_spend();
+                        return Err(PlatformWalletError::Persistence(format!(
+                            "{kind} recipient was not made durable before dispatch, and the \
+                             abandoned row's removal was refused ({removal_error}), so its \
+                             inputs stay reserved: {error}"
+                        )));
+                    }
+                    Err(removal_error) => tracing::warn!(
+                        %out_point,
+                        %removal_error,
+                        "could not queue the removal of an asset lock row the store refused"
+                    ),
+                    Ok(()) => {}
+                }
                 self.abandon_unsent_build(
                     in_broadcast_pin,
                     &funding_accounts,
@@ -1573,11 +1611,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     reservation_token,
                 )
                 .await;
-                let kind = if identity_recipient.is_some() {
-                    "identity"
-                } else {
-                    "shielded"
-                };
                 return Err(PlatformWalletError::Persistence(format!(
                     "{kind} recipient was not made durable before dispatch: {error}"
                 )));
@@ -2793,6 +2826,69 @@ mod tests {
                 assert_eq!(tracked[0].identity_recipient, Some(identity));
             }
         }
+    }
+
+    /// A lock row stored but not flushed before the broadcast has its removal
+    /// stored behind it before the inputs are released, so a later flush
+    /// commits both and the abandoned lock never comes back. When the store
+    /// refuses that removal, the row may survive a restart and be
+    /// re-broadcast after the user's retry, so the inputs stay reserved and
+    /// the error says so.
+    #[tokio::test]
+    async fn should_durably_remove_a_lock_row_that_was_not_made_durable() {
+        use crate::changeset::AssetLockRecipient;
+
+        let identity = dpp::prelude::Identifier::from([0x57; 32]);
+        let fund = |persistence: Arc<CapturingPersistence>| async move {
+            let broadcaster = Arc::new(CountingOkBroadcaster::default());
+            let (manager, signer) = funded_asset_lock_manager_with_persistence(
+                Arc::clone(&broadcaster),
+                Arc::clone(&persistence),
+            )
+            .await;
+            let result = fund_unbound_top_up(
+                &manager,
+                &signer,
+                Some(AssetLockRecipient::Identity(identity)),
+            )
+            .await;
+            assert_eq!(broadcaster.calls(), 0);
+            assert!(manager.list_tracked_locks().await.is_empty());
+            result.map(|_| ())
+        };
+        let persistence = || CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        };
+
+        // The row's flush fails: its removal is stored behind it, and the
+        // inputs are released.
+        let row_flush_fails = Arc::new(CapturingPersistence {
+            fail_flush: true,
+            ..persistence()
+        });
+        let result = fund(Arc::clone(&row_flush_fails)).await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::Persistence(message))
+                if message.contains("identity recipient was not made durable")
+                    && !message.contains("stay reserved")),
+            "{result:?}"
+        );
+        assert_eq!(row_flush_fails.removed_outpoints().len(), 1);
+
+        // The store also refuses the removal: the inputs stay reserved.
+        let result = fund(Arc::new(CapturingPersistence {
+            fail_flush: true,
+            fail_remove_store: true,
+            ..persistence()
+        }))
+        .await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::Persistence(message))
+                if message.contains("stay reserved")),
+            "{result:?}"
+        );
     }
 
     /// An unbound top-up lock that records no recipient (as one rebuilt from
