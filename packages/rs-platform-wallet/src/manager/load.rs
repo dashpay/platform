@@ -11,12 +11,14 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
+use crate::wallet::outpoint_locks::persist_outpoint_locks;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dashcore::OutPoint;
 use dpp::prelude::Identifier;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
@@ -140,6 +142,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut inserted_in_wallets: Vec<(WalletId, Arc<crate::wallet::core::WalletGeneration>)> =
             Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
+        // The outpoints this load locked in each wallet (the replay of
+        // unconfirmed sends, and the collateral of the masternodes the wallet
+        // already knows), stored once the load is past its rollback point.
+        let mut load_locks_by_wallet: BTreeMap<WalletId, Vec<OutPoint>> = BTreeMap::new();
 
         // Each wallet's start state, and whether it was re-read under the
         // durable-cursor lock that `held` still holds (see the publication
@@ -190,6 +196,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // `update_state` and `update_balance` are both on: the balance
             // this produces is what `generation.set(..)` mirrors a few lines
             // below, and the UI reads that.
+            // A replayed ProRegTx locks its collateral here, and no wallet
+            // event carries that lock to the persister: it is stored with the
+            // other locks this load makes. Once the registration confirms it
+            // leaves this list and is never replayed again.
+            let mut replay_locks = Vec::new();
             if !unconfirmed_outgoing_txs.is_empty() {
                 let mut replayed = 0usize;
                 for tx in &unconfirmed_outgoing_txs {
@@ -202,6 +213,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                             true,
                         )
                         .await;
+                    replay_locks.extend(result.locked_outpoints);
                     if result.is_relevant {
                         replayed += 1;
                     }
@@ -291,7 +303,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 dpns_name_states: std::collections::BTreeMap::new(),
                 dashpay_backfill,
                 rewind_barrier: Default::default(),
+                tracked_collaterals: Default::default(),
             };
+            // Keep the collateral of every masternode the wallet already
+            // knows out of coin selection before the wallet is published, so
+            // nothing can spend it in between: registrations restored into
+            // its history without a transaction check, and tracked
+            // masternodes whose registration has been fetched. See
+            // `wallet::outpoint_locks`.
+            let mut load_locks = replay_locks;
+            load_locks.extend(platform_info.lock_known_masternode_collaterals(
+                &self.tracked_masternodes_service().known_collaterals(),
+            ));
             // A restored outbound-account marker says the contact's external
             // account was built from its current xpub, which suppresses the
             // startup rebuild. It must not vouch for a pool the host kept
@@ -479,6 +502,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         e
                     )));
                     break 'load;
+                }
+                // Only the locks of a snapshot that became the live wallet
+                // are stored: one skipped for a wallet already registered, or
+                // dropped for a fresh read, says nothing about the live one.
+                if !load_locks.is_empty() {
+                    load_locks_by_wallet.insert(wallet_id, load_locks);
                 }
                 let host_cursor = durable_cursors
                     .get(&wallet_id)
@@ -720,6 +749,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
             return Err(err);
         }
+
+        // The locks this load made are stored here, since no wallet event
+        // carries them. See `wallet::outpoint_locks`.
+        persist_outpoint_locks(&*self.persister, load_locks_by_wallet);
 
         // Past the rollback point. A store configured before this load
         // restores the held wallets' private payments now, with no keys and
@@ -2198,5 +2231,176 @@ mod private_payment_hold_tests {
         manager.load_from_persistor().await.expect("loaded");
         assert!(!held(&manager, bound).await, "restored by the load");
         assert!(pair_held(&manager, bound).await, "the pair is held");
+    }
+}
+
+#[cfg(test)]
+mod masternode_collateral_load_tests {
+    //! A load locks the collateral of the masternodes the manager already
+    //! knows, including one whose registration the wallet never processed.
+
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use dashcore::{BlockHash, OutPoint, Transaction};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::Wallet;
+
+    use crate::changeset::{
+        ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::masternode::{RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot};
+    use crate::test_support::{NoopTestEventHandler, MASTERNODE_COLLATERAL_DUFFS};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    const SPARE: u64 = 500_000_000;
+
+    /// Hands back one wallet and one tracked masternode, and records the
+    /// outpoint locks it is asked to store.
+    struct TrackedCollateralPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+        tracked: TrackedMasternode,
+        stored_locks: Mutex<Vec<(WalletId, BTreeMap<OutPoint, bool>)>>,
+    }
+
+    impl PlatformWalletPersistence for TrackedCollateralPersister {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if let Some(core) = changeset.core {
+                if !core.outpoint_locks.is_empty() {
+                    self.stored_locks
+                        .lock()
+                        .expect("stored locks")
+                        .push((wallet_id, core.outpoint_locks));
+                }
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                self.wallet.compute_wallet_id(),
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.managed.clone(),
+                    identity_manager: IdentityManagerStartState::default(),
+                    unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
+                },
+            );
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+
+        fn load_tracked_masternodes(
+            &self,
+            _network: dashcore::Network,
+        ) -> Result<Vec<TrackedMasternode>, PersistenceError> {
+            Ok(vec![self.tracked.clone()])
+        }
+    }
+
+    /// The user tracks a masternode whose collateral sits in this wallet but
+    /// whose registration the wallet never processed (funded and signed
+    /// elsewhere). After a load the collateral is locked: it is out of the
+    /// spendable balance and out of every send's coin selection, and the
+    /// lock is stored.
+    #[tokio::test]
+    async fn should_lock_a_tracked_masternodes_collateral_on_load() {
+        let mut ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(
+            &ctx.receive_address,
+            0..1,
+            &[MASTERNODE_COLLATERAL_DUFFS, SPARE],
+        );
+        ctx.check_transaction(
+            &funding,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
+        .await;
+        let collateral = OutPoint::new(funding.txid(), 0);
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let tracked = TrackedMasternode {
+            pro_tx_hash: [0x42; 32],
+            label: None,
+            added_at: 0,
+            snapshot: TrackedMasternodeSnapshot {
+                registration: Some(RegistrationDetails {
+                    height: 2,
+                    collateral: (collateral.txid.to_byte_array(), collateral.vout),
+                    owner_key_hash: [0x01; 20],
+                    voting_key_hash: [0x02; 20],
+                    operator_public_key: [0x03; 48],
+                    payout_script: Vec::new(),
+                    service_address: None,
+                    is_evonode: false,
+                    platform_node_id: None,
+                    platform_http_port: None,
+                }),
+                ..Default::default()
+            },
+        };
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(TrackedCollateralPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+            tracked,
+            stored_locks: Mutex::new(Vec::new()),
+        });
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            Arc::new(NoopTestEventHandler) as _,
+        ));
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("the loaded wallet must be registered");
+        assert_eq!(
+            wallet.locked_outpoints().await.expect("locks"),
+            vec![collateral]
+        );
+        assert_eq!(wallet.balance().locked(), MASTERNODE_COLLATERAL_DUFFS);
+        assert_eq!(
+            wallet
+                .core()
+                .pooled_spendable_balance(&[AccountTypePreference::BIP44][..], 0)
+                .await
+                .expect("pooled balance"),
+            SPARE,
+            "coin selection sees only the spare coin"
+        );
+        assert_eq!(
+            *persister.stored_locks.lock().expect("stored locks"),
+            vec![(wallet_id, BTreeMap::from([(collateral, true)]))],
+            "the load stores the lock it made"
+        );
     }
 }

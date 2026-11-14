@@ -15,6 +15,7 @@ use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::registered_collaterals;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -220,6 +221,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   entry is replayed through `mark_instant_send_utxos` after the UTXO
 ///   restore, so instant-locked funds come back instant-locked instead of
 ///   waiting for the next sync to re-learn them.
+/// - **Locked outpoints** (masternode collateral and outpoints locked by
+///   hand): every `outpoint_locks` entry is handed to
+///   `ManagedWalletInfo::lock_outpoint` (an unlock to `unlock_outpoint`), so
+///   a locked coin comes back in the locked balance and out of coin
+///   selection, including one whose coin arrives only after the load.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
@@ -300,11 +306,28 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
+    // Locked outpoints first: a lock needs no coin behind it, and the
+    // `update_balance()` below sets every restored coin's flag from the lock
+    // set, whatever flag the coin was restored with.
+    for (outpoint, locked) in &core.outpoint_locks {
+        if *locked {
+            wallet_info.lock_outpoint(*outpoint);
+        } else {
+            wallet_info.unlock_outpoint(outpoint);
+        }
+    }
+
+    // A masternode registration among the stored records locks its
+    // collateral too. A database from before locks were stored has no lock
+    // rows, and the history is not replayed below, so nothing later in the
+    // load could make these locks from it.
+    for collateral in registered_collaterals(&core.records) {
+        wallet_info.lock_outpoint(collateral);
+    }
+
     // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
-    // records, but they cannot be replayed here — injecting one needs the raw
-    // `dashcore::Transaction`, and this crate persists only the abstracted
-    // `TransactionRecord` blob. History re-warms on the next scan and is not a
-    // balance input.
+    // records, but they are not replayed into the accounts here. History
+    // re-warms on the next scan and is not a balance input.
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
