@@ -64,6 +64,43 @@ branch's diff.
 6. **Blocks 98–99 are terminal sentinels** (`NotFound`, `ErrorUnknown`) and are
    not an allocation frontier. New codes go after the highest allocated value
    below them.
+7. **Give a new code its payment-delivery class** in
+   `PlatformWalletFFIResultCode::payment_delivery` (the match has no wildcard
+   arm, so the crate does not compile until you do), and a new
+   `PlatformWalletError` variant its class in
+   `PlatformWalletError::payment_delivery` (same guard). A code is `NotSent`
+   only when every failure it reports was raised before anything was
+   dispatched or proves nothing was sent; any doubt, or a code that failures
+   of both classes share, is `MaybeSent`. Swift's `PlatformWalletError` needs
+   the new case in `resultCode` as well.
+
+## Payment delivery: retry or wait
+
+Every `PlatformWalletFFIResult` carries `payment_delivery`
+(`PlatformWalletFFIPaymentDelivery`): `None` on success, `NotSent` when the
+failed payment never left the wallet (a retry may be offered), `MaybeSent`
+when it may have left (wait for sync, never offer a second payment). The class
+is the Rust wallet's (`PlatformWalletError::payment_delivery`), set on the
+result by the `From<PlatformWalletError>` conversion and by
+`map_spend_result`, so it survives a fold into a shared code such as
+`ErrorWalletOperation`. A result built from a code alone gets the class that
+code's failures share (`platform_wallet_ffi_result_code_payment_delivery`),
+which is never `NotSent` for a code that can report a payment that may have
+left.
+
+**Hosts decide "retry" or "wait" from this field, never from lists of codes.**
+Kotlin exposes it as `DashSdkError.delivery`; Swift as
+`PlatformWalletError.delivery`, which reads the code's shared class because
+the Swift error enum has no room for per-error data, so it says `.maybeSent`
+for the shared codes (6, 99, …) where Kotlin can say `NOT_SENT`.
+
+Where a payment holds a tracked asset lock (`FinalityTimeout`,
+`AssetLockInputContested`, `AssetLockRecipientMismatch`), the class is
+`MaybeSent` and the payment goes on by resuming that lock
+(`PlatformWalletError::held_asset_lock` in Rust; the outpoint also rides the
+message). Code 21 (`ErrorAddressNonceMismatch`) is `MaybeSent`: a nonce verdict
+no proof backs can follow an earlier dispatch that landed, so a re-fetch and
+re-sign may pay twice.
 
 ## Merged allocations (`v4.2-dev`)
 

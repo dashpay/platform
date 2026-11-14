@@ -596,7 +596,27 @@ pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError
 /// withdraw) to a typed FFI result, mirroring the identity-create sibling's
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
+///
+/// Every failure carries its error's own payment-delivery class, so the
+/// arms that fold an error into a shared code (`ErrorWalletOperation`) keep
+/// whether it may have left the wallet.
 pub(crate) fn map_spend_result(
+    result: Result<(), PlatformWalletError>,
+    operation: &str,
+) -> PlatformWalletFFIResult {
+    let delivery = result
+        .as_ref()
+        .err()
+        .map(PlatformWalletError::payment_delivery);
+    let mapped = spend_result_code(result, operation);
+    match delivery {
+        Some(delivery) => mapped.with_payment_delivery(delivery),
+        None => mapped,
+    }
+}
+
+/// The code and message [`map_spend_result`] reports for `result`.
+fn spend_result_code(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
@@ -1073,7 +1093,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
-        ),
+        )
+        .with_payment_delivery(e.payment_delivery()),
     }
 }
 

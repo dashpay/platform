@@ -2,7 +2,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::changeset::PersistenceErrorKind;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{PaymentDelivery, PlatformWalletError};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -218,6 +218,9 @@ pub enum PlatformWalletFFIResultCode {
     /// expected nonce values travel in the result `message` (the typed
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
+    /// Its payment delivery is nonetheless `MaybeSent`: a verdict no proof
+    /// backs can follow an earlier dispatch of the same transition that
+    /// landed, so the re-fetched nonce may sign a second payment.
     ErrorAddressNonceMismatch = 21,
     /// Atomic Core selection found no or insufficient unreserved UTXOs.
     ErrorCoreInsufficientFunds = 22,
@@ -789,6 +792,141 @@ pub enum PlatformWalletFFIResultCode {
     ErrorUnknown = 99,
 }
 
+impl PlatformWalletFFIResultCode {
+    /// The [`PlatformWalletFFIPaymentDelivery`] every failure reported under
+    /// this code shares, which [`PlatformWalletFFIResult::err`] stamps on a
+    /// result by default: `NotSent` only where every failure the code reports
+    /// is raised before anything was dispatched or proves nothing was sent,
+    /// `MaybeSent` for the rest, including every code that failures of both
+    /// classes share (`ErrorWalletOperation`, `ErrorUnknown`, …), and `None`
+    /// for `Success` alone. A result converted from a
+    /// [`PlatformWalletError`] carries that error's own class instead, which
+    /// may be `NotSent` under a code that says `MaybeSent` but is never
+    /// `MaybeSent` under a code that says `NotSent` (pinned by
+    /// `payment_delivery_tests`).
+    ///
+    /// No wildcard arm: a new code does not compile until it is given a
+    /// class.
+    pub const fn payment_delivery(self) -> PlatformWalletFFIPaymentDelivery {
+        use PlatformWalletFFIPaymentDelivery::{MaybeSent, NotSent};
+
+        match self {
+            Self::Success => PlatformWalletFFIPaymentDelivery::None,
+            // Refused before anything was built or dispatched.
+            Self::ErrorInvalidHandle
+            | Self::ErrorInvalidParameter
+            | Self::ErrorNullPointer
+            | Self::ErrorIdentityNotFound
+            | Self::ErrorContactNotFound
+            | Self::ErrorInvalidNetwork
+            | Self::ErrorInvalidIdentifier
+            | Self::ErrorWalletAlreadyExists
+            | Self::ErrorSigningKeyUnavailable
+            | Self::ErrorMasternodeListUnavailable
+            | Self::ErrorIdentityBalanceUnavailable
+            | Self::ErrorSpvProcessRestartRequired
+            | Self::ErrorShutdownIncomplete
+            | Self::ErrorContestedNameNotTradable
+            | Self::ErrorProtocolVersionNotActive
+            | Self::ErrorSdkPinnedBelowProtocolVersion
+            | Self::NotFound => NotSent,
+            // Persistence and selection, which precede any broadcast.
+            Self::ErrorPersisterLoadTransient
+            | Self::ErrorPersisterLoadFatal
+            | Self::ErrorPersisterStoreTransient
+            | Self::ErrorPersisterStoreFatal
+            | Self::ErrorPersisterStoreConstraint
+            | Self::ErrorPersisterRestore
+            | Self::ErrorArithmeticOverflow
+            | Self::ErrorNoSelectableInputs
+            | Self::ErrorCoreInsufficientFunds
+            | Self::ErrorAssetLockNotTracked
+            | Self::ErrorAssetLockFundingMismatch
+            | Self::ErrorAssetLockInsufficientFunds
+            | Self::ErrorShieldedInsufficientBalance
+            | Self::ErrorShieldedNoRecordedAnchor
+            | Self::ErrorStaleReservationToken
+            | Self::ErrorReservationWalletMismatch
+            | Self::ErrorAssetLockInputConflict => NotSent,
+            // Refused before any contact request was sealed, paid or sent.
+            Self::ErrorPrivateContactRequestNeedsPrivateReply
+            | Self::ErrorShieldedBuildRequired
+            | Self::ErrorPrivateContactPaymentsNotRestored
+            | Self::ErrorPrivateContactRecoveryUnsupported
+            | Self::ErrorPrivateContactStoreNotRead => NotSent,
+            // Proven never sent.
+            Self::ErrorShieldedBroadcastFailed | Self::ErrorTransactionBroadcastRejected => NotSent,
+            // May have been sent, or an earlier payment for the same intent
+            // is unresolved, or an asset lock is held for the payment.
+            Self::ErrorShieldedBroadcastUnconfirmed
+            | Self::ErrorShieldedSpendUnconfirmed
+            | Self::ErrorTransactionBroadcastUnconfirmed
+            | Self::ErrorMasternodeWithdrawalUnconfirmed
+            | Self::ErrorPublicContactRequestUnconfirmed
+            | Self::ErrorPrivateContactRequestPending
+            | Self::ErrorReservationTokenConsumed
+            | Self::ErrorShieldedIdentityDebitPending
+            | Self::ErrorShieldedRecoveryCorrupted
+            | Self::ErrorShieldedRecoveryKeysRequired
+            | Self::ErrorAddressNonceMismatch
+            | Self::ErrorDocumentNotForSale
+            | Self::ErrorDocumentPriceChanged
+            | Self::ErrorInsufficientIdentityCredits
+            | Self::ErrorAssetLockAlreadyConsumed
+            | Self::ErrorAssetLockInputContested
+            | Self::ErrorAssetLockTooManyInputs
+            | Self::ErrorAssetLockRecipientMismatch => MaybeSent,
+            // Shared by failures of both classes, or raised after a payment
+            // went out (a result that could not be marshalled back).
+            Self::ErrorSerialization
+            | Self::ErrorDeserialization
+            | Self::ErrorWalletOperation
+            | Self::ErrorMemoryAllocation
+            | Self::ErrorUtf8Conversion
+            | Self::ErrorUnknown => MaybeSent,
+        }
+    }
+}
+
+/// Whether a failed payment may have left the wallet, carried on every
+/// [`PlatformWalletFFIResult`] as `payment_delivery`. Mirror of
+/// [`PaymentDelivery`], plus [`Self::None`] for a successful result.
+///
+/// Hosts decide "retry" or "wait" from this, never from lists of result
+/// codes: `NotSent` may offer a retry, `MaybeSent` waits for sync and never
+/// offers a second payment.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformWalletFFIPaymentDelivery {
+    /// The result is a success.
+    None = 0,
+    /// The payment never left the wallet and can never execute.
+    NotSent = 1,
+    /// The payment may have left the wallet, and may execute or already has.
+    MaybeSent = 2,
+}
+
+impl From<PaymentDelivery> for PlatformWalletFFIPaymentDelivery {
+    fn from(delivery: PaymentDelivery) -> Self {
+        match delivery {
+            PaymentDelivery::NotSent => Self::NotSent,
+            PaymentDelivery::MaybeSent => Self::MaybeSent,
+        }
+    }
+}
+
+/// The payment-delivery class every failure reported under `code` shares
+/// (see [`PlatformWalletFFIResultCode::payment_delivery`]), for a host that
+/// holds a result code without its result. A result's own
+/// `payment_delivery` field is at least as precise and is what a host reads
+/// when it has the result.
+#[no_mangle]
+pub extern "C" fn platform_wallet_ffi_result_code_payment_delivery(
+    code: PlatformWalletFFIResultCode,
+) -> PlatformWalletFFIPaymentDelivery {
+    code.payment_delivery()
+}
+
 /// Which family a consensus rejection belongs to, paired with the numeric
 /// `consensus_code` on [`PlatformWalletFFIResult`].
 ///
@@ -855,6 +993,12 @@ pub struct PlatformWalletFFIResult {
     /// The family `consensus_code` belongs to, or
     /// [`PlatformWalletFFIConsensusErrorKind::None`] when there is no code.
     pub consensus_kind: PlatformWalletFFIConsensusErrorKind,
+    /// Whether the failed payment may have left the wallet:
+    /// [`PlatformWalletFFIPaymentDelivery::None`] on success, otherwise the
+    /// class of the wallet error behind the failure, or the class its code
+    /// shares ([`PlatformWalletFFIResultCode::payment_delivery`]) when no
+    /// wallet error is behind it.
+    pub payment_delivery: PlatformWalletFFIPaymentDelivery,
 }
 
 impl Drop for PlatformWalletFFIResult {
@@ -875,6 +1019,7 @@ impl PlatformWalletFFIResult {
             message: std::ptr::null_mut(),
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
+            payment_delivery: PlatformWalletFFIPaymentDelivery::None,
         }
     }
 
@@ -886,6 +1031,7 @@ impl PlatformWalletFFIResult {
             message: c_msg.into_raw(),
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
+            payment_delivery: code.payment_delivery(),
         }
     }
 
@@ -906,6 +1052,15 @@ impl PlatformWalletFFIResult {
         self
     }
 
+    /// Stamp the payment-delivery class of the wallet error behind an
+    /// already-built result, which is at least as precise as the class its
+    /// code shares. Leaves `code` and `message` alone, like
+    /// [`Self::with_consensus_error`].
+    pub(crate) fn with_payment_delivery(mut self, delivery: PaymentDelivery) -> Self {
+        self.payment_delivery = delivery.into();
+        self
+    }
+
     /// A `Success`-coded result that still carries an advisory `message`.
     ///
     /// Used by non-error outcomes that want to convey a human-readable
@@ -923,6 +1078,7 @@ impl PlatformWalletFFIResult {
             message: c_msg.into_raw(),
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
+            payment_delivery: PlatformWalletFFIPaymentDelivery::None,
         }
     }
 }
@@ -1020,6 +1176,16 @@ fn trade_error_json_detail(
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        let delivery = error.payment_delivery();
+        Self::from_wallet_error_parts(error).with_payment_delivery(delivery)
+    }
+}
+
+impl PlatformWalletFFIResult {
+    /// The code, message and consensus verdict of the `From<PlatformWalletError>`
+    /// conversion; the caller stamps the error's payment-delivery class on
+    /// whichever result this returns.
+    fn from_wallet_error_parts(error: PlatformWalletError) -> Self {
         // Preserve the SDK's submission phase before any diagnostic can be
         // interpreted as a definitive nonce, balance or marketplace refusal.
         if matches!(
@@ -3319,5 +3485,172 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityNotFound
         );
         assert_eq!(result.code as u32, 7);
+    }
+}
+
+#[cfg(test)]
+mod payment_delivery_tests {
+    use super::*;
+    #[cfg(feature = "shielded")]
+    use crate::shielded_send::map_spend_result;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::prelude::Identifier;
+
+    fn out_point() -> dashcore::OutPoint {
+        dashcore::OutPoint::new(dashcore::Txid::from_byte_array([3; 32]), 1)
+    }
+
+    /// Wallet errors of every class and every shared code.
+    fn errors() -> Vec<PlatformWalletError> {
+        vec![
+            PlatformWalletError::ShieldedBroadcastFailed("refused".into()),
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "transfer",
+                reason: "timeout".into(),
+            },
+            PlatformWalletError::ShieldedBroadcastMaybeDelivered("transport".into()),
+            PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".into()),
+            PlatformWalletError::TransactionBroadcast("rejected".into()),
+            PlatformWalletError::TransactionBroadcastUnconfirmed("timeout".into()),
+            PlatformWalletError::StaleReservation,
+            PlatformWalletError::PreparedPaymentAddressTaken("taken".into()),
+            PlatformWalletError::WalletRemovedBeforeSend("w".into()),
+            PlatformWalletError::InputMidBroadcast {
+                outpoint: out_point(),
+            },
+            PlatformWalletError::InputSumOverflow,
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available: 1,
+                required: 2,
+            },
+            PlatformWalletError::AssetLockFundsAwaitingFinality { waiting: 1 },
+            PlatformWalletError::AssetLockNotTracked(out_point()),
+            PlatformWalletError::AssetLockAlreadyConsumed(out_point()),
+            PlatformWalletError::FinalityTimeout(out_point()),
+            PlatformWalletError::AssetLockTransaction("funded".into()),
+            PlatformWalletError::AddressNonceMismatch {
+                address: PlatformAddress::P2pkh([7; 20]),
+                provided_nonce: 1,
+                expected_nonce: 2,
+            },
+            PlatformWalletError::PlatformShieldCapacityExceeded {
+                available: 1,
+                required: 2,
+            },
+            PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+                identity_id: Identifier::from([1; 32]),
+                amount_credits: 5,
+                reason: "timeout".into(),
+            },
+            PlatformWalletError::InvalidParameter("bad".into()),
+            PlatformWalletError::IdentityNotFound(Identifier::from([2; 32])),
+            PlatformWalletError::TransactionBuild("fee".into()),
+            PlatformWalletError::ShieldedBuildError("after".into()),
+            PlatformWalletError::WalletNotFound("w".into()),
+            PlatformWalletError::Sdk(dash_sdk::Error::Generic("transport".into())),
+            PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                dash_sdk::Error::Generic("no proof".into()),
+            ))),
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(
+                format!(
+                    "{}no key",
+                    platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+                ),
+            ))),
+        ]
+    }
+
+    #[test]
+    fn should_carry_the_wallet_errors_own_class_and_never_contradict_its_code() {
+        for error in errors() {
+            let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let rendered = format!("{error:?}");
+            let result = PlatformWalletFFIResult::from(error);
+            assert_eq!(result.payment_delivery, expected, "{rendered}");
+            // A code that says "never sent" holds only errors that were never
+            // sent, so a host that has only the code is never told to retry
+            // a payment that may have left.
+            if result.code.payment_delivery() == PlatformWalletFFIPaymentDelivery::NotSent {
+                assert_eq!(
+                    expected,
+                    PlatformWalletFFIPaymentDelivery::NotSent,
+                    "{rendered}"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_keep_the_class_through_the_spend_mapping() {
+        for error in errors() {
+            let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let rendered = format!("{error:?}");
+            let result = map_spend_result(Err(error), "shielded transfer");
+            assert_eq!(result.payment_delivery, expected, "{rendered}");
+            if result.code.payment_delivery() == PlatformWalletFFIPaymentDelivery::NotSent {
+                assert_eq!(
+                    expected,
+                    PlatformWalletFFIPaymentDelivery::NotSent,
+                    "{rendered}"
+                );
+            }
+        }
+        // A pre-dispatch failure folded into the shared code stays "not sent".
+        let folded = map_spend_result(
+            Err(PlatformWalletError::TransactionBuild("fee".into())),
+            "shielded transfer",
+        );
+        assert_eq!(
+            folded.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(
+            folded.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert_eq!(
+            map_spend_result(Ok(()), "shielded transfer").payment_delivery,
+            PlatformWalletFFIPaymentDelivery::None
+        );
+    }
+
+    #[test]
+    fn should_give_a_result_built_from_a_code_that_codes_class() {
+        assert_eq!(
+            PlatformWalletFFIResult::ok().payment_delivery,
+            PlatformWalletFFIPaymentDelivery::None
+        );
+        for (code, expected) in [
+            (
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+                PlatformWalletFFIPaymentDelivery::MaybeSent,
+            ),
+            (
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+                PlatformWalletFFIPaymentDelivery::MaybeSent,
+            ),
+            (
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+            ),
+            (
+                PlatformWalletFFIResultCode::ErrorUnknown,
+                PlatformWalletFFIPaymentDelivery::MaybeSent,
+            ),
+            (
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+            ),
+        ] {
+            assert_eq!(
+                PlatformWalletFFIResult::err(code, "x").payment_delivery,
+                expected
+            );
+            assert_eq!(
+                platform_wallet_ffi_result_code_payment_delivery(code),
+                expected
+            );
+        }
     }
 }

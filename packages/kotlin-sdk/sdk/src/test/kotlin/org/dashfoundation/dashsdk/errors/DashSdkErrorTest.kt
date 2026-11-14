@@ -29,6 +29,51 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldExposeThePaymentDeliveryThePlatformWalletResultCarried() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // `ErrorWalletOperation` (6) folds failures of both classes; the
+        // native result says which one this was.
+        val notSent = DashSdkError.fromNative(DashSDKException(offset + 6, "build failed", 0, 0, 1))
+        assertEquals(PaymentDelivery.NOT_SENT, notSent.delivery)
+        assertNull(notSent.consensusError)
+
+        val maybeSent = DashSdkError.fromNative(DashSDKException(offset + 18, "unconfirmed", 0, 0, 2))
+        assertEquals(PaymentDelivery.MAYBE_SENT, maybeSent.delivery)
+        assertFalse(maybeSent.isRetryable)
+
+        // A consensus rejection still arrives with its code and kind.
+        val rejected = DashSdkError.fromNative(DashSDKException(offset + 21, "nonce", 40603, 4, 2))
+        assertEquals(PlatformConsensusError(40603, ConsensusErrorKind.STATE), rejected.consensusError)
+        assertEquals(PaymentDelivery.MAYBE_SENT, rejected.delivery)
+
+        // A class this build does not know never invites a second payment.
+        val future = DashSdkError.fromNative(DashSDKException(offset + 6, "future", 0, 0, 7))
+        assertEquals(PaymentDelivery.MAYBE_SENT, future.delivery)
+
+        // Errors that carry no class: rs-sdk-ffi's, and the legacy constructor.
+        assertNull(DashSdkError.fromNative(DashSDKException(3, "network")).delivery)
+        assertNull(DashSdkError.fromNative(DashSDKException(offset + 6, "legacy")).delivery)
+    }
+
+    @Test
+    fun shouldNeverOfferARetryForAPaymentThatMayHaveLeft() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // Retryable by kind, and still retryable when nothing was sent.
+        val refused = DashSdkError.fromNative(DashSDKException(offset + 16, "refused", 0, 0, 1))
+        assertTrue(refused is DashSdkError.PlatformWallet.ShieldedBroadcastFailed)
+        assertTrue(refused.isRetryable)
+        // The same kind answers no once the wallet says the payment may have left.
+        for (code in listOf(16, 19, 27, 49, 51, 74)) {
+            val mapped = DashSdkError.fromNative(DashSDKException(offset + code, "maybe", 0, 0, 2))
+            assertFalse("code $code", mapped.isRetryable)
+        }
+        // The contested asset lock is retried by resuming the lock it holds.
+        val contested = DashSdkError.fromNative(DashSDKException(offset + 48, "contested", 0, 0, 2))
+        assertTrue(contested is DashSdkError.PlatformWallet.AssetLockInputContested)
+        assertTrue(contested.isRetryable)
+    }
+
+    @Test
     fun mapsNativeCodesToHierarchy() {
         // Codes mirror DashSDKErrorCode in rs-sdk-ffi/src/error.rs.
         val cases = mapOf(

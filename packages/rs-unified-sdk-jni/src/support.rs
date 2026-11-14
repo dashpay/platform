@@ -115,9 +115,10 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
 
 /// Throw the `DashSDKException` for a non-`Success` `result`, leaving its
 /// message for the caller to free. The exception code is the result code
-/// shifted by [`PWFFI_CODE_OFFSET`]; a result that carries a consensus
-/// rejection (`consensus_code != 0`) hands its code and kind to the exception
-/// as well, so Kotlin can branch on them instead of on the message.
+/// shifted by [`PWFFI_CODE_OFFSET`]; the result's consensus rejection (code
+/// and kind, `0` when it carries none) and its payment-delivery class go to
+/// the exception as well, so Kotlin branches on them instead of on the
+/// message or on lists of codes.
 pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     let message = if result.message.is_null() {
         format!("platform-wallet error (code {})", result.code as i32)
@@ -128,17 +129,19 @@ pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
             .into_owned()
     };
     let code = result.code as i32 + PWFFI_CODE_OFFSET;
-    if result.consensus_code == 0 {
-        throw_sdk_exception(env, code, &message);
-    } else {
-        throw_sdk_consensus_exception(
-            env,
-            code,
-            &message,
-            result.consensus_code,
+    // Consensus codes top out in the 40000s, far inside a `jint`.
+    let consensus_code = jint::try_from(result.consensus_code).unwrap_or(jint::MAX);
+    throw_sdk_exception_with(
+        env,
+        code,
+        &message,
+        "(ILjava/lang/String;III)V",
+        &[
+            consensus_code,
             result.consensus_kind as jint,
-        );
-    }
+            result.payment_delivery as jint,
+        ],
+    );
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback

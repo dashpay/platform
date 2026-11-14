@@ -566,6 +566,32 @@ public struct PlatformConsensusError: Equatable, Sendable {
     }
 }
 
+// MARK: - Payment delivery
+
+/// Whether a failed payment may have left the wallet, as the Rust wallet
+/// classified it.
+///
+/// Decide "retry" or "wait" from this, never from lists of error cases:
+/// `.notSent` may offer a retry, `.maybeSent` waits for sync and never offers
+/// a second payment. Mirror of `PlatformWalletFFIPaymentDelivery`.
+public enum PlatformPaymentDelivery: Equatable, Sendable {
+    /// The payment never left the wallet and can never execute.
+    case notSent
+    /// The payment may have left the wallet, and may execute or already has.
+    case maybeSent
+
+    /// `nil` for the FFI's `None`, which only a success carries. A value this
+    /// mirror does not know yet reads as `.maybeSent`, the class that never
+    /// invites a second payment.
+    init?(ffi: PlatformWalletFFIPaymentDelivery) {
+        switch ffi {
+        case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE:     return nil
+        case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT: self = .notSent
+        default:                                            self = .maybeSent
+        }
+    }
+}
+
 // MARK: - Class wrapper
 
 /// Reference-counted wrapper around a `PlatformWalletFFIResult`
@@ -602,6 +628,13 @@ final class PlatformWalletResult {
     /// from the result's own fields rather than from `message`.
     var consensusError: PlatformConsensusError? {
         PlatformConsensusError(ffi: inner)
+    }
+
+    /// Whether the failed payment may have left the wallet: the class of the
+    /// wallet error behind the failure, as precise as Rust has it. `nil` on
+    /// success.
+    var paymentDelivery: PlatformPaymentDelivery? {
+        PlatformPaymentDelivery(ffi: inner.payment_delivery)
     }
 
     var isSuccess: Bool {
@@ -953,6 +986,91 @@ public enum PlatformWalletError: LocalizedError {
         return consensus
     }
 
+    /// Whether the failed payment may have left the wallet, as Rust
+    /// classifies every failure reported under this error's result code
+    /// (`platform_wallet_ffi_result_code_payment_delivery`). The codes that
+    /// failures of both classes share (`walletOperation`, `unknown`, …) read
+    /// `.maybeSent`, so a retry is never offered where a payment may have
+    /// left. `nil` only for an error built from a success result.
+    public var delivery: PlatformPaymentDelivery? {
+        let code = PlatformWalletFFIResultCode(rawValue: numericCast(resultCode.rawValue))
+        return PlatformPaymentDelivery(
+            ffi: platform_wallet_ffi_result_code_payment_delivery(code)
+        )
+    }
+
+    /// The result code this error is reported under.
+    var resultCode: PlatformWalletResultCode {
+        switch self {
+        case .nullPointer: return .errorNullPointer
+        case .invalidHandle: return .errorInvalidHandle
+        case .invalidParameter: return .errorInvalidParameter
+        case .invalidIdentifier: return .errorInvalidIdentifier
+        case .invalidNetwork: return .errorInvalidNetwork
+        case .walletOperation: return .errorWalletOperation
+        case .identityNotFound: return .errorIdentityNotFound
+        case .identityBalanceUnavailable: return .errorIdentityBalanceUnavailable
+        case .contactNotFound: return .errorContactNotFound
+        case .utf8Conversion: return .errorUtf8Conversion
+        case .serialization: return .errorSerialization
+        case .deserialization: return .errorDeserialization
+        case .memoryAllocation: return .errorMemoryAllocation
+        case .arithmeticOverflow: return .errorArithmeticOverflow
+        case .noSelectableInputs: return .errorNoSelectableInputs
+        case .coreInsufficientFunds: return .errorCoreInsufficientFunds
+        case .assetLockNotTracked: return .errorAssetLockNotTracked
+        case .assetLockAlreadyConsumed: return .errorAssetLockAlreadyConsumed
+        case .assetLockFundingMismatch: return .errorAssetLockFundingMismatch
+        case .assetLockInsufficientFunds: return .errorAssetLockInsufficientFunds
+        case .assetLockTooManyInputs: return .errorAssetLockTooManyInputs
+        case .assetLockRecipientMismatch: return .errorAssetLockRecipientMismatch
+        case .privateContactRequestNeedsPrivateReply:
+            return .errorPrivateContactRequestNeedsPrivateReply
+        case .shieldedBuildRequired: return .errorShieldedBuildRequired
+        case .protocolVersionNotActive: return .errorProtocolVersionNotActive
+        case .privateContactRequestPending: return .errorPrivateContactRequestPending
+        case .privateContactPaymentsNotRestored: return .errorPrivateContactPaymentsNotRestored
+        case .privateContactRecoveryUnsupported: return .errorPrivateContactRecoveryUnsupported
+        case .privateContactStoreNotRead: return .errorPrivateContactStoreNotRead
+        case .sdkPinnedBelowProtocolVersion: return .errorSdkPinnedBelowProtocolVersion
+        case .publicContactRequestUnconfirmed: return .errorPublicContactRequestUnconfirmed
+        case .walletAlreadyExists: return .errorWalletAlreadyExists
+        case .shieldedBroadcastFailed: return .errorShieldedBroadcastFailed
+        case .shieldedBroadcastUnconfirmed: return .errorShieldedBroadcastUnconfirmed
+        case .shieldedSpendUnconfirmed: return .errorShieldedSpendUnconfirmed
+        case .shieldedNoRecordedAnchor: return .errorShieldedNoRecordedAnchor
+        case .shieldedInsufficientBalance: return .errorShieldedInsufficientBalance
+        case .transactionBroadcastUnconfirmed: return .errorTransactionBroadcastUnconfirmed
+        case .masternodeWithdrawalUnconfirmed: return .errorMasternodeWithdrawalUnconfirmed
+        case .masternodeListUnavailable: return .errorMasternodeListUnavailable
+        case .transactionBroadcastRejected: return .errorTransactionBroadcastRejected
+        case .addressNonceMismatch: return .errorAddressNonceMismatch
+        case .shutdownIncomplete: return .errorShutdownIncomplete
+        case .spvProcessRestartRequired: return .errorSpvProcessRestartRequired
+        case .signingKeyUnavailable: return .errorSigningKeyUnavailable
+        case .staleReservationToken: return .errorStaleReservationToken
+        case .reservationTokenConsumed: return .errorReservationTokenConsumed
+        case .reservationWalletMismatch: return .errorReservationWalletMismatch
+        case .notForSale: return .errorDocumentNotForSale
+        case .priceChanged: return .errorDocumentPriceChanged
+        case .insufficientIdentityCredits: return .errorInsufficientIdentityCredits
+        case .contestedNameNotTradable: return .errorContestedNameNotTradable
+        case .assetLockInputConflict: return .errorAssetLockInputConflict
+        case .assetLockInputContested: return .errorAssetLockInputContested
+        case .persisterLoadTransient: return .errorPersisterLoadTransient
+        case .persisterLoadFatal: return .errorPersisterLoadFatal
+        case .persisterStoreTransient: return .errorPersisterStoreTransient
+        case .persisterStoreFatal: return .errorPersisterStoreFatal
+        case .persisterStoreConstraint: return .errorPersisterStoreConstraint
+        case .persisterRestore: return .errorPersisterRestore
+        case .shieldedIdentityDebitPending: return .errorShieldedIdentityDebitPending
+        case .shieldedRecoveryCorrupted: return .errorShieldedRecoveryCorrupted
+        case .shieldedRecoveryKeysRequired: return .errorShieldedRecoveryKeysRequired
+        case .notFound: return .notFound
+        case .consensusRejection, .unknown: return .errorUnknown
+        }
+    }
+
     /// What to show a person. For most cases this is still the diagnostic
     /// detail Rust attached to the originating `PlatformWalletFFIResult` (or
     /// the context string a Swift-side guard chose when constructing the
@@ -1277,8 +1395,8 @@ private enum TradeErrorDetail {
 
 extension PlatformWalletFFIResult {
     /// A result built from the `{ code, message }` pair alone, carrying no
-    /// consensus verdict: the same defaults Rust's own `ok()` / `err()`
-    /// constructors fill in.
+    /// consensus verdict and the payment-delivery class its code shares: the
+    /// same defaults Rust's own `ok()` / `err()` constructors fill in.
     ///
     /// Swift-side call sites that fabricate a result (the manager's
     /// null-pointer guard, the native call doubles in the tests) describe a
@@ -1289,7 +1407,8 @@ extension PlatformWalletFFIResult {
             code: code,
             message: message,
             consensus_code: 0,
-            consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE
+            consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+            payment_delivery: platform_wallet_ffi_result_code_payment_delivery(code)
         )
     }
 

@@ -266,7 +266,8 @@ final class ErrorHandlingTests: XCTestCase {
                 code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
                 message: nil,
                 consensus_code: 40722,
-                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE,
+                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT
             )
         )
         XCTAssertEqual(
@@ -283,6 +284,87 @@ final class ErrorHandlingTests: XCTestCase {
             )
         )
         XCTAssertNil(invented.consensusError)
+    }
+
+    /// The result wrapper reads the payment-delivery class off the C struct,
+    /// and a success carries none.
+    func testShouldReadThePaymentDeliveryFromTheFFIResult() {
+        let folded = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                message: nil,
+                consensus_code: 0,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+            )
+        )
+        XCTAssertEqual(folded.paymentDelivery, .notSent)
+
+        let success = PlatformWalletResult(
+            PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        )
+        XCTAssertNil(success.paymentDelivery)
+    }
+
+    /// The class comes from Rust: a code that only failures before any
+    /// dispatch use reads `.notSent`, the unconfirmed codes and the shared
+    /// catch-all codes read `.maybeSent`.
+    func testShouldTakeEachErrorsPaymentDeliveryFromRust() {
+        let cases: [(PlatformWalletError, PlatformPaymentDelivery)] = [
+            (.shieldedBroadcastFailed("refused"), .notSent),
+            (.shieldedNoRecordedAnchor("mid-block"), .notSent),
+            (.transactionBroadcastRejected("rejected"), .notSent),
+            (.shieldedSpendUnconfirmed("timeout"), .maybeSent),
+            (.transactionBroadcastUnconfirmed("timeout"), .maybeSent),
+            (.masternodeWithdrawalUnconfirmed("timeout"), .maybeSent),
+            (.walletOperation("folded"), .maybeSent),
+            (.unknown("folded"), .maybeSent),
+        ]
+        for (error, expected) in cases {
+            XCTAssertEqual(error.delivery, expected, "\(error)")
+        }
+    }
+
+    /// Every code an error is built from is the code it reports, so its
+    /// class is the one Rust gives that code.
+    func testShouldReportEveryErrorUnderTheCodeItWasBuiltFrom() {
+        let codes: [PlatformWalletResultCode] = [
+            .errorInvalidHandle, .errorInvalidParameter, .errorNullPointer,
+            .errorSerialization, .errorDeserialization, .errorWalletOperation,
+            .errorIdentityNotFound, .errorContactNotFound, .errorInvalidNetwork,
+            .errorInvalidIdentifier, .errorMemoryAllocation, .errorUtf8Conversion,
+            .errorArithmeticOverflow, .errorNoSelectableInputs, .errorWalletAlreadyExists,
+            .errorShieldedBroadcastFailed, .errorShieldedBroadcastUnconfirmed,
+            .errorShieldedSpendUnconfirmed, .errorShieldedNoRecordedAnchor,
+            .errorTransactionBroadcastUnconfirmed, .errorMasternodeWithdrawalUnconfirmed,
+            .errorMasternodeListUnavailable, .errorAddressNonceMismatch,
+            .errorCoreInsufficientFunds, .errorAssetLockNotTracked,
+            .errorAssetLockAlreadyConsumed, .errorAssetLockFundingMismatch,
+            .errorTransactionBroadcastRejected, .errorShutdownIncomplete,
+            .errorAssetLockInsufficientFunds, .errorSigningKeyUnavailable,
+            .errorStaleReservationToken, .errorReservationTokenConsumed,
+            .errorReservationWalletMismatch, .errorDocumentNotForSale,
+            .errorShieldedInsufficientBalance, .errorAssetLockInputConflict,
+            .errorAssetLockInputContested, .errorPersisterLoadTransient,
+            .errorPersisterLoadFatal, .errorPersisterStoreTransient,
+            .errorPersisterStoreFatal, .errorPersisterStoreConstraint,
+            .errorPersisterRestore, .errorShieldedIdentityDebitPending,
+            .errorShieldedRecoveryCorrupted, .errorShieldedRecoveryKeysRequired,
+            .errorIdentityBalanceUnavailable, .errorSpvProcessRestartRequired,
+            .errorAssetLockTooManyInputs, .errorAssetLockRecipientMismatch,
+            .errorPrivateContactRequestNeedsPrivateReply, .errorShieldedBuildRequired,
+            .errorProtocolVersionNotActive, .errorPrivateContactRequestPending,
+            .errorPrivateContactPaymentsNotRestored, .errorPrivateContactRecoveryUnsupported,
+            .errorPrivateContactStoreNotRead, .errorSdkPinnedBelowProtocolVersion,
+            .errorPublicContactRequestUnconfirmed, .notFound, .errorUnknown,
+        ]
+        for code in codes {
+            XCTAssertEqual(
+                PlatformWalletError(code: code, message: "detail").resultCode,
+                code,
+                "\(code)"
+            )
+        }
     }
 
     /// rs-sdk-ffi's kind decodes to the same four families from its own
