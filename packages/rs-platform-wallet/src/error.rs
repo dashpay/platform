@@ -194,8 +194,10 @@ pub enum PlatformWalletError {
     /// For Core transactions, the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent Core inputs are
-    /// intentionally kept out of the selectable set, so an immediate retry
+    /// whose earlier attempt may have succeeded). One case was not sent but
+    /// may still be: a shielded funding abandoned before its broadcast whose
+    /// row may be on disk, where a restart resumes it. The spent Core inputs
+    /// are intentionally kept out of the selectable set, so an immediate retry
     /// fails at input selection instead of double-spending.
     ///
     /// A Platform state transition may instead have been accepted but its

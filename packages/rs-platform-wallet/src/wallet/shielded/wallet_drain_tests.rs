@@ -92,6 +92,10 @@ struct RecoveryPersistence {
     staged: Mutex<BTreeMap<OutPoint, AssetLockEntry>>,
     fail_store: AtomicBool,
     fail_flush: AtomicBool,
+    /// Fails the next store that carries an asset-lock row, and only it.
+    fail_next_lock_store: AtomicBool,
+    /// Fails the next flush only.
+    fail_next_flush: AtomicBool,
     commits_inline: AtomicBool,
     fail_load: AtomicBool,
     records_recipients: AtomicBool,
@@ -114,7 +118,13 @@ impl PlatformWalletPersistence for RecoveryPersistence {
         _wallet_id: [u8; 32],
         cs: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        if self.fail_store.load(Ordering::SeqCst) {
+        if self.fail_store.load(Ordering::SeqCst)
+            || (cs
+                .asset_locks
+                .as_ref()
+                .is_some_and(|locks| !locks.asset_locks.is_empty())
+                && self.fail_next_lock_store.swap(false, Ordering::SeqCst))
+        {
             return Err(PersistenceError::backend("store failed"));
         }
         if let Some(cs) = cs.asset_locks {
@@ -132,7 +142,9 @@ impl PlatformWalletPersistence for RecoveryPersistence {
         Ok(())
     }
     fn flush(&self, _wallet_id: [u8; 32]) -> Result<(), PersistenceError> {
-        if self.fail_flush.load(Ordering::SeqCst) {
+        if self.fail_flush.load(Ordering::SeqCst)
+            || self.fail_next_flush.swap(false, Ordering::SeqCst)
+        {
             return Err(PersistenceError::backend("flush failed"));
         }
         self.commit_staged();
@@ -241,6 +253,8 @@ async fn signed_wallet_fixture(
         staged: Mutex::new(BTreeMap::new()),
         fail_store: AtomicBool::new(false),
         fail_flush: AtomicBool::new(false),
+        fail_next_lock_store: AtomicBool::new(false),
+        fail_next_flush: AtomicBool::new(false),
         // Drains admit inline-committing backends only; the buffered mode
         // exists for `should_refuse_drain_on_a_buffered_persistence_backend`.
         commits_inline: AtomicBool::new(true),
@@ -1172,9 +1186,10 @@ async fn fund_typed_amount(
 /// A typed-amount funding whose recipient cannot be made durable stops before
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
 /// both fail the call with a persistence error, leave the lock untracked and
-/// uncommitted, and hand the inputs back so the next attempt builds again.
-/// The abandoned row of a failed flush is withdrawn from the buffer, so the
-/// next successful flush does not commit it.
+/// uncommitted, and, once the abandoned row's removal is on disk, hand the
+/// inputs back so the next attempt builds again. The abandoned row of a
+/// failed flush is withdrawn from the buffer, so the flush that writes its
+/// removal does not commit it.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
@@ -1185,10 +1200,11 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             signed_wallet_fixture(&lock, keys).await;
         let coordinator = Arc::new(coordinator);
         persistence.commits_inline.store(false, Ordering::SeqCst);
+        // The row's own store or flush fails; its removal's goes through.
         let switch = if fail_flush {
-            &persistence.fail_flush
+            &persistence.fail_next_flush
         } else {
-            &persistence.fail_store
+            &persistence.fail_next_lock_store
         };
 
         switch.store(true, Ordering::SeqCst);
@@ -1209,7 +1225,6 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
 
         // The inputs were handed back: the retry builds a lock again and gets
         // as far as the broadcaster.
-        switch.store(false, Ordering::SeqCst);
         let (error, retried) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
             !matches!(error, PlatformWalletError::Persistence(_)),
@@ -1225,6 +1240,45 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             persistence.committed.lock().unwrap()[&retried[0]].shielded_recipient,
             Some(recipient.to_raw_bytes())
         );
+    }
+}
+
+/// Where the backend keeps failing, so the abandoned row's removal cannot be
+/// confirmed either, the funding is not reported as failed: a store or flush
+/// that failed is no proof the row is on no disk, and a restart that finds
+/// it resumes and sends it. The outcome is unknown, for a rejected store and
+/// for a rejected flush alike, and nothing is sent or tracked.
+#[tokio::test]
+async fn should_report_a_typed_amount_funding_as_unconfirmed_when_its_row_removal_fails_too() {
+    for fail_flush in [false, true] {
+        let (mut lock, keys) = drain_lock_fixture();
+        lock.operation_id = None;
+        let recipient = crate::test_support::orchard_address_fixture(0x5a);
+        let (wallet, persistence, coordinator, _dir, signer) =
+            signed_wallet_fixture(&lock, keys).await;
+        let coordinator = Arc::new(coordinator);
+        persistence.commits_inline.store(false, Ordering::SeqCst);
+        let switch = if fail_flush {
+            &persistence.fail_flush
+        } else {
+            &persistence.fail_store
+        };
+
+        switch.store(true, Ordering::SeqCst);
+        let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        assert!(
+            matches!(&error, PlatformWalletError::TransactionBroadcastUnconfirmed(message)
+                if message.contains("a restart may still resume it")),
+            "fail_flush={fail_flush}: {error}"
+        );
+        assert_eq!(seen.len(), 1, "fail_flush={fail_flush}");
+        assert!(!wallet
+            .asset_locks
+            .list_tracked_locks()
+            .await
+            .iter()
+            .any(|tracked| tracked.out_point == seen[0]));
+        assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
     }
 }
 
