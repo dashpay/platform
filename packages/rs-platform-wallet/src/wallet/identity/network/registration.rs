@@ -80,6 +80,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
 };
+use crate::wallet::asset_lock::sync::tracking::not_an_unbound_top_up;
 use crate::wallet::asset_lock::AssetLockFunding;
 use crate::BlockTime;
 
@@ -393,6 +394,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        check_top_up_amount(&funding)?;
         // Step 1: retrieve the identity + its HD index.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
@@ -414,7 +416,7 @@ impl IdentityWallet {
 
         // Steps 2–3. A resumed unbound top-up lock pays this identity only if
         // its row recorded it; a new lock is bound and records nothing.
-        let (mut new_balance, metadata, tracked_out_point) = self
+        let (mut new_balance, metadata) = self
             .submit_top_up_with_funding(
                 &identity,
                 funding,
@@ -458,21 +460,6 @@ impl IdentityWallet {
                 }
             }
         }
-        if let Some(out_point) = tracked_out_point {
-            // Cleanup failure here can only mean WalletNotFound
-            // (the wallet handle that just registered an identity
-            // vanished). Surface as a warn — the identity DID
-            // register successfully on Platform, so propagating the
-            // error to the caller would be misleading.
-            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
-                tracing::warn!(
-                    outpoint = %out_point,
-                    error = %e,
-                    "consume_asset_lock failed after successful Platform submit"
-                );
-            }
-        }
-
         Ok(new_balance)
     }
 
@@ -506,6 +493,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        check_top_up_amount(&funding)?;
         // TODO(dashpay/platform#5860): report a failed lookup as
         // `PlatformWalletError::IdentityLookupFailed` (FFI 80) once #5860
         // merges, as its external top-up from Platform addresses does. Until
@@ -515,7 +503,7 @@ impl IdentityWallet {
             .map_err(PlatformWalletError::Sdk)?
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        let (new_balance, _metadata, tracked_out_point) = self
+        let (new_balance, _metadata) = self
             .submit_top_up_with_funding(
                 &identity,
                 funding,
@@ -525,18 +513,6 @@ impl IdentityWallet {
                 settings,
             )
             .await?;
-
-        if let Some(out_point) = tracked_out_point {
-            // Platform accepted the top-up: a cleanup failure is logged, not
-            // reported, as for the managed top-up.
-            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
-                tracing::warn!(
-                    outpoint = %out_point,
-                    error = %e,
-                    "consume_asset_lock failed after successful Platform submit"
-                );
-            }
-        }
         Ok(new_balance)
     }
 
@@ -564,22 +540,21 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        let (funding_type, identity_index, _status, recorded) = self
+        let lock = self
             .asset_locks
             .tracked_resume_metadata(&out_point)
             .await
             .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-        if funding_type != AssetLockFundingType::IdentityTopUpNotBound {
-            return Err(PlatformWalletError::AssetLockFundingMismatch {
+        if lock.funding_type != AssetLockFundingType::IdentityTopUpNotBound {
+            return Err(not_an_unbound_top_up(
                 out_point,
-                expected_funding_type: AssetLockFundingType::IdentityTopUpNotBound,
-                expected_identity_index: 0,
-                actual_funding_type: funding_type,
-                actual_identity_index: identity_index,
-            });
+                lock.funding_type,
+                lock.identity_index,
+            ));
         }
-        let identity_id =
-            recorded.ok_or(PlatformWalletError::AssetLockRecipientUnknown(out_point))?;
+        let identity_id = lock
+            .identity_recipient
+            .ok_or(PlatformWalletError::AssetLockRecipientUnknown(out_point))?;
         let managed = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id).is_some_and(|info| {
@@ -612,8 +587,9 @@ impl IdentityWallet {
     /// funding to a proof (with the IS→CL fallback), submit the
     /// `IdentityTopUp` for `identity`, and reconcile the result. The lock pays
     /// `identity`: a new unbound lock records it, and an existing unbound
-    /// lock must have recorded it. Returns the proved new balance, the
-    /// response metadata and the tracked outpoint to consume.
+    /// lock must have recorded it. Once Platform has accepted the top-up the
+    /// tracked lock is consumed (best-effort: a cleanup failure is logged, not
+    /// reported). Returns the proved new balance and the response metadata.
     #[allow(clippy::too_many_arguments)]
     async fn submit_top_up_with_funding<AS>(
         &self,
@@ -623,7 +599,7 @@ impl IdentityWallet {
         identity_index: u32,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, ResponseMetadata, Option<dashcore::OutPoint>), PlatformWalletError>
+    ) -> Result<(u64, ResponseMetadata), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
@@ -698,7 +674,51 @@ impl IdentityWallet {
                 None,
             )
             .await?;
-        Ok((new_balance, metadata, tracked_out_point))
+        if let Some(out_point) = tracked_out_point {
+            // Cleanup failure here can only mean WalletNotFound (the wallet
+            // handle that just topped up the identity vanished). Platform has
+            // accepted the top-up, so reporting it as an error would mislead.
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "consume_asset_lock failed after successful Platform submit"
+                );
+            }
+        }
+        Ok((new_balance, metadata))
+    }
+}
+
+/// Minimum asset-lock funding for a Core-funded identity top-up, in duffs.
+///
+/// Platform rejects an `IdentityTopUp` whose asset-lock output value (in
+/// credits) is below `IdentityTopUpTransition::calculate_min_required_fee`.
+/// Under the active fee version (v1) that minimum is
+/// `identity_topup_base_cost` (500_000 credits = 500 duffs) **plus**
+/// `required_asset_lock_duff_balance_for_processing_start_for_identity_top_up`
+/// (50_000 duffs) — i.e. 50_500 duffs. Below that, a lock built and broadcast
+/// is accepted by Core (spending real UTXOs) but rejected by Platform,
+/// stranding the funds in a lock that can never complete the top-up.
+///
+/// (The bare 50_000 asset-lock floor alone was the fee-v0 minimum; the active
+/// v1 calc — `STATE_TRANSITION_VERSIONS_V3`, protocol v11+ — adds the base
+/// cost, so this constant must include it.)
+pub const MIN_TOP_UP_DUFFS: u64 = 50_500;
+
+/// Refuse a new top-up lock below [`MIN_TOP_UP_DUFFS`] before anything is
+/// looked up, built or broadcast. An existing lock's amount is already fixed.
+fn check_top_up_amount(funding: &AssetLockFunding) -> Result<(), PlatformWalletError> {
+    match funding {
+        AssetLockFunding::FromWalletBalance { amount_duffs, .. }
+            if *amount_duffs < MIN_TOP_UP_DUFFS =>
+        {
+            Err(PlatformWalletError::InvalidParameter(format!(
+                "a top-up of {amount_duffs} duffs is below the minimum top-up asset-lock \
+                 balance of {MIN_TOP_UP_DUFFS} duffs"
+            )))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -722,15 +742,18 @@ mod tests {
     use crate::error::is_instant_lock_timeout;
     use dashcore::{OutPoint, Txid};
 
-    use crate::test_support::{funded_wallet_manager, platform_wallet_with_sdk, WalletSigner};
+    use crate::test_support::{
+        funded_wallet_manager, platform_wallet_in, platform_wallet_with_sdk, WalletSigner,
+    };
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
     use crate::wallet::platform_wallet::PlatformWallet;
     use key_wallet::account::account_type::StandardAccountType;
 
-    /// A funded wallet over a mock SDK that answers "no such identity" for
-    /// `unknown`.
-    async fn wallet_where_platform_does_not_know(
-        unknown: Identifier,
+    /// A funded wallet over a mock SDK whose identity fetch for `id` answers
+    /// `answer` (`None`: Platform does not know it).
+    async fn wallet_where_platform_answers(
+        id: Identifier,
+        answer: Option<Identity>,
     ) -> (PlatformWallet, WalletSigner) {
         let (wallet_manager, wallet_id, _generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
@@ -744,7 +767,7 @@ mod tests {
             .build()
             .expect("mock sdk");
         sdk.mock()
-            .expect_fetch(unknown, None::<Identity>)
+            .expect_fetch(id, answer)
             .await
             .expect("identity expectation");
         (
@@ -796,7 +819,7 @@ mod tests {
     #[tokio::test]
     async fn should_refuse_an_external_top_up_of_an_identity_platform_does_not_know() {
         let unknown = Identifier::from([0x62u8; 32]);
-        let (wallet, signer) = wallet_where_platform_does_not_know(unknown).await;
+        let (wallet, signer) = wallet_where_platform_answers(unknown, None).await;
 
         let result = wallet
             .identity()
@@ -823,28 +846,13 @@ mod tests {
     #[tokio::test]
     async fn should_refuse_an_external_top_up_a_persister_cannot_record() {
         let known = Identifier::from([0x64u8; 32]);
-        let (wallet_manager, wallet_id, _generation, signer) =
-            funded_wallet_manager(StandardAccountType::BIP44Account).await;
-        let network = {
-            let wm = wallet_manager.read().await;
-            wm.get_wallet_and_info(&wallet_id).unwrap().0.network
-        };
-        let mut sdk = dash_sdk::SdkBuilder::new_mock()
-            .with_network(network)
-            .with_version(dpp::version::PlatformVersion::latest())
-            .build()
-            .expect("mock sdk");
         let identity = Identity::V0(IdentityV0 {
             id: known,
             public_keys: BTreeMap::new(),
             balance: 5,
             revision: 0,
         });
-        sdk.mock()
-            .expect_fetch(known, Some(identity))
-            .await
-            .expect("identity expectation");
-        let wallet = platform_wallet_with_sdk(wallet_manager, wallet_id, sdk).await;
+        let (wallet, signer) = wallet_where_platform_answers(known, Some(identity)).await;
 
         let result = wallet
             .identity()
@@ -867,6 +875,36 @@ mod tests {
         assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
     }
 
+    /// A new top-up lock below the minimum is refused on both routes before
+    /// the identity is looked up or anything is built.
+    #[tokio::test]
+    async fn should_refuse_a_top_up_below_the_minimum_on_both_routes() {
+        let id = Identifier::from([0x65u8; 32]);
+        // No fetch expectation: reaching Platform would fail differently.
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let wallet = platform_wallet_in(wallet_manager, wallet_id).await;
+        let funding = || AssetLockFunding::FromWalletBalance {
+            amount_duffs: MIN_TOP_UP_DUFFS - 1,
+            account_index: 0,
+        };
+        let identity = wallet.identity();
+        for result in [
+            identity
+                .top_up_identity_with_funding(&id, funding(), &signer, None)
+                .await,
+            identity
+                .top_up_external_identity_with_funding(&id, funding(), &signer, None)
+                .await,
+        ] {
+            assert!(
+                matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
+                "{result:?}"
+            );
+        }
+        assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
+    }
+
     /// The resume names no identity: it pays the one the lock recorded, or
     /// nobody. A lock that is not an unbound top-up, or records no identity,
     /// is refused; a recorded identity this wallet does not manage takes the
@@ -875,7 +913,7 @@ mod tests {
     #[tokio::test]
     async fn should_resume_an_unbound_top_up_only_to_its_recorded_identity() {
         let recorded = Identifier::from([0x63u8; 32]);
-        let (wallet, signer) = wallet_where_platform_does_not_know(recorded).await;
+        let (wallet, signer) = wallet_where_platform_answers(recorded, None).await;
         let resume = |out_point| {
             wallet
                 .identity()

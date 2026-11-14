@@ -5509,7 +5509,11 @@ mod tests {
             Some(outpoint)
         );
         assert_eq!(
-            manager.tracked_resume_metadata(&outpoint).await.unwrap().0,
+            manager
+                .tracked_resume_metadata(&outpoint)
+                .await
+                .unwrap()
+                .funding_type,
             AssetLockFundingType::AssetLockShieldedAddressTopUp
         );
         let result = manager

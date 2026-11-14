@@ -48,6 +48,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::sync::tracking::TrackedResumeMetadata;
 use crate::wallet::asset_lock::AssetLockOperationContext;
 
 use super::build::{AssetLockBuildAmount, AssetLockBuiltObserver};
@@ -632,7 +633,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point,
                 consume_invitation_voucher,
             } => {
-                let (actual_funding_type, actual_identity_index, status, recorded_identity) = self
+                let TrackedResumeMetadata {
+                    funding_type: actual_funding_type,
+                    identity_index: actual_identity_index,
+                    status,
+                    identity_recipient: recorded_identity,
+                } = self
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;

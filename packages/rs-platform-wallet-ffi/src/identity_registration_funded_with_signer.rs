@@ -382,11 +382,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_top_up_to_recorded_reci
     check_ptr!(out_new_balance);
     *out_identity_id = [0; 32];
     *out_new_balance = 0;
-    let out_point_ffi = *out_point;
-    let out_point = dashcore::OutPoint {
-        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
-        vout: out_point_ffi.vout,
-    };
+    let out_point = dashcore::OutPoint::from(&*out_point);
     let core_signer_addr = core_signer_handle as usize;
 
     // Read what the call needs out of the registry, then release it before
@@ -447,11 +443,7 @@ pub unsafe extern "C" fn platform_wallet_assign_identity_top_up_recipient(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_point);
     check_ptr!(identity_id);
-    let out_point_ffi = *out_point;
-    let out_point = dashcore::OutPoint {
-        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
-        vout: out_point_ffi.vout,
-    };
+    let out_point = dashcore::OutPoint::from(&*out_point);
     let identity_id = Identifier::from(*identity_id);
     // Clone the manager out of the registry, so the registry is not held while
     // the assignment awaits the wallet and calls the host's persister.

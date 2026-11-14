@@ -386,15 +386,7 @@ fn decode_row(
         })
         .transpose()?;
     entry.identity_recipient = identity_recipient
-        .map(|bytes| {
-            <[u8; 32]>::try_from(bytes)
-                .map(Identifier::from)
-                .map_err(|_| {
-                    WalletStorageError::blob_decode(
-                        "asset_locks.identity_recipient must contain 32 bytes",
-                    )
-                })
-        })
+        .map(|bytes| super::id32("asset_locks.identity_recipient", &bytes).map(Identifier::from))
         .transpose()?;
     let account_index =
         crate::sqlite::util::safe_cast::i64_to_u32("asset_locks.account_index", account_index)?;

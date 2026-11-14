@@ -6793,28 +6793,14 @@ fn load_asset_lock_shielded_recipients(
     wallet_id: &WalletId,
     locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
 ) -> Result<(), PersistenceError> {
-    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
-        let out_point = outpoint_to_bytes(&lock.out_point);
-        let mut found = false;
-        let mut raw = [0u8; platform_wallet::changeset::SHIELDED_RECIPIENT_SIZE];
-        let rc = unsafe {
-            callback(
-                context,
-                wallet_id.as_ptr(),
-                out_point.as_ptr(),
-                &mut found,
-                raw.as_mut_ptr(),
-            )
-        };
-        if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                "Loading asset-lock shielded recipient failed",
-            ));
-        }
-        lock.shielded_recipient = found.then_some(raw);
-    }
-    Ok(())
+    load_asset_lock_recipient_sidecar::<{ platform_wallet::changeset::SHIELDED_RECIPIENT_SIZE }>(
+        callback,
+        context,
+        wallet_id,
+        locks,
+        "Loading asset-lock shielded recipient failed",
+        |lock, raw| lock.shielded_recipient = raw,
+    )
 }
 
 /// Rehydrate the identity-recipient sidecar after decoding the frozen legacy
@@ -6826,10 +6812,37 @@ fn load_asset_lock_identity_recipients(
     wallet_id: &WalletId,
     locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
 ) -> Result<(), PersistenceError> {
+    load_asset_lock_recipient_sidecar::<32>(
+        callback,
+        context,
+        wallet_id,
+        locks,
+        "Loading asset-lock identity recipient failed",
+        |lock, raw| lock.identity_recipient = raw.map(Identifier::from),
+    )
+}
+
+/// Ask the host for one `N`-byte recipient sidecar per restored lock and hand
+/// each answer to `set`. The shielded and identity loaders share it; their
+/// callback types have this same shape.
+fn load_asset_lock_recipient_sidecar<const N: usize>(
+    callback: unsafe extern "C" fn(
+        context: *mut c_void,
+        wallet_id: *const u8,
+        out_point: *const u8,
+        out_found: *mut bool,
+        out_recipient: *mut u8,
+    ) -> i32,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+    failure: &str,
+    set: impl Fn(&mut platform_wallet::TrackedAssetLock, Option<[u8; N]>),
+) -> Result<(), PersistenceError> {
     for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
         let out_point = outpoint_to_bytes(&lock.out_point);
         let mut found = false;
-        let mut raw = [0u8; 32];
+        let mut raw = [0u8; N];
         let rc = unsafe {
             callback(
                 context,
@@ -6840,12 +6853,9 @@ fn load_asset_lock_identity_recipients(
             )
         };
         if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                "Loading asset-lock identity recipient failed",
-            ));
+            return Err(persist_callback_error(rc, failure));
         }
-        lock.identity_recipient = found.then(|| Identifier::from(raw));
+        set(lock, found.then_some(raw));
     }
     Ok(())
 }

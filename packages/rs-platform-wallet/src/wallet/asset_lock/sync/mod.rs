@@ -8,4 +8,4 @@ pub(crate) mod locate;
 mod proof;
 pub(crate) mod reconstruction;
 pub(crate) mod recovery;
-mod tracking;
+pub(crate) mod tracking;

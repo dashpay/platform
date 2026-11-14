@@ -103,31 +103,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .contains_key(out_point)
     }
 
-    /// Snapshot the funding role, bound index and status used to authorize an
-    /// existing-lock resume. Taking all three under one read lock avoids a
-    /// role/status time-of-check/time-of-use split in the resolver.
-    ///
-    /// [`AssetLockFundingType`]:
-    /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
+    /// Snapshot the funding role, bound index, status and recorded identity
+    /// used to authorize an existing-lock resume. Taking them under one read
+    /// lock avoids a role/status time-of-check/time-of-use split in the
+    /// resolver.
     pub(crate) async fn tracked_resume_metadata(
         &self,
         out_point: &OutPoint,
-    ) -> Option<(
-        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
-        u32,
-        AssetLockStatus,
-        Option<dpp::prelude::Identifier>,
-    )> {
+    ) -> Option<TrackedResumeMetadata> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| {
-                (
-                    lock.funding_type,
-                    lock.identity_index,
-                    lock.status.clone(),
-                    lock.identity_recipient,
-                )
+            .map(|lock| TrackedResumeMetadata {
+                funding_type: lock.funding_type,
+                identity_index: lock.identity_index,
+                status: lock.status.clone(),
+                identity_recipient: lock.identity_recipient,
             })
     }
 
@@ -799,13 +790,11 @@ fn check_identity_recipient_assignable(
     identity: Identifier,
 ) -> Result<(), PlatformWalletError> {
     if lock.funding_type != AssetLockFundingType::IdentityTopUpNotBound {
-        return Err(PlatformWalletError::AssetLockFundingMismatch {
-            out_point: lock.out_point,
-            expected_funding_type: AssetLockFundingType::IdentityTopUpNotBound,
-            expected_identity_index: 0,
-            actual_funding_type: lock.funding_type,
-            actual_identity_index: lock.identity_index,
-        });
+        return Err(not_an_unbound_top_up(
+            lock.out_point,
+            lock.funding_type,
+            lock.identity_index,
+        ));
     }
     if lock.status.is_consumed() {
         return Err(PlatformWalletError::AssetLockAlreadyConsumed(
@@ -822,4 +811,30 @@ fn check_identity_recipient_assignable(
         }
         _ => Ok(()),
     }
+}
+
+/// The funding-mismatch error for an operation that needs an unbound identity
+/// top-up lock (assigning or resuming to a recorded recipient) and was handed
+/// a lock of another funding type.
+pub(crate) fn not_an_unbound_top_up(
+    out_point: OutPoint,
+    funding_type: AssetLockFundingType,
+    identity_index: u32,
+) -> PlatformWalletError {
+    PlatformWalletError::AssetLockFundingMismatch {
+        out_point,
+        expected_funding_type: AssetLockFundingType::IdentityTopUpNotBound,
+        expected_identity_index: 0,
+        actual_funding_type: funding_type,
+        actual_identity_index: identity_index,
+    }
+}
+
+/// What an existing-lock resume reads off a tracked row (see
+/// [`AssetLockManager::tracked_resume_metadata`]).
+pub(crate) struct TrackedResumeMetadata {
+    pub funding_type: AssetLockFundingType,
+    pub identity_index: u32,
+    pub status: AssetLockStatus,
+    pub identity_recipient: Option<Identifier>,
 }
