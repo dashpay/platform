@@ -1,7 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -39,6 +38,7 @@ use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::query_types::AddressInfos;
 use dpp::address_funds::PlatformAddress;
@@ -64,7 +64,6 @@ use {
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
         PaymentStarted,
     },
-    dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
     dpp::platform_value::BinaryData,
@@ -585,33 +584,77 @@ impl PlatformWallet {
     // owns both sub-wallets, which is why the composition lives here.
     // -----------------------------------------------------------------
 
-    /// Top up an existing identity's credit balance by spending platform
-    /// address balances, then reconcile the spent addresses' local
-    /// balances and nonces from the proof-attested post-spend
-    /// `AddressInfos`.
+    /// Top up an identity's credit balance by spending platform address
+    /// balances, whoever owns the identity, then reconcile the spent
+    /// addresses' local balances and nonces from the proof-attested
+    /// post-spend `AddressInfos`.
     ///
-    /// The identity-side semantics are those of the crate-private
-    /// `IdentityWallet::top_up_from_addresses`. Reconciliation failures are
-    /// logged inside the seam rather than propagated — Platform already
-    /// accepted the top-up, and a later sync reconciles.
+    /// The identity is fetched from Platform and never added to the identity
+    /// manager. When the identity manager holds it (one of this wallet's own
+    /// identities), its cached balance is written back from the proof, so
+    /// the host does not have to decide whether the identity is its own.
+    /// Reconciliation failures are logged inside the seam rather than
+    /// propagated — Platform already accepted the top-up, and a later sync
+    /// reconciles.
     ///
     /// The result stands only when its proof shows every input address at or
     /// past the nonce this top-up was signed with AND the identity balance
-    /// above the balance the top-up started from, a fresh read from Platform
-    /// taken before signing (not the identity manager's cached balance).
-    /// Otherwise the proof does not prove this top-up executed: it is
-    /// reported as `PlatformWalletError::Sdk` holding
+    /// above the balance the top-up started from, the one in the identity
+    /// fetched from Platform before signing (not the identity manager's
+    /// cached balance). Otherwise the proof does not prove this top-up
+    /// executed: it is reported as `PlatformWalletError::Sdk` holding
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and neither the identity balance
     /// nor the addresses are updated from it; the next sync settles them.
     ///
-    /// Holds the wallet generation's lifecycle gate like
-    /// [`Self::top_up_external_identity_from_addresses`]: a wallet removed or
-    /// re-created since this handle was taken is refused with
-    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing signed or
-    /// broadcast. A caller must not hold the gate.
+    /// Before anything is signed or broadcast: empty or overflowing funding
+    /// rows are [`PlatformWalletError::InvalidParameter`], an identity
+    /// Platform does not know [`PlatformWalletError::IdentityNotFound`], and
+    /// a failed lookup [`PlatformWalletError::IdentityLookupFailed`].
+    ///
+    /// Holds the wallet generation's lifecycle gate from the moment the host
+    /// signer returns the last input's signature, through the liveness
+    /// check, broadcast, result wait and bookkeeping, as the gate's contract
+    /// asks of an operation awaiting an external signer: a removal waits for
+    /// a top-up that is broadcasting, never for one whose signing prompt is
+    /// open. A wallet removed or re-created since this handle was taken is
+    /// refused with [`PlatformWalletError::WalletRemovedBeforeSend`]: before
+    /// anything is fetched or signed when that is already so at the start,
+    /// and at the liveness check after signing, with nothing broadcast, when
+    /// the removal happened while the host signed. A caller must not hold
+    /// the gate.
+    ///
+    /// Returns the identity's new credit balance: for a managed identity the
+    /// one the identity manager keeps.
+    pub async fn top_up_identity_from_addresses<S, I>(
+        &self,
+        identity_id: &Identifier,
+        inputs: I,
+        address_signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
+    {
+        self.top_up_identity(identity_id, inputs, address_signer, settings, false)
+            .await
+    }
+
+    /// Top up an identity the identity manager holds, as
+    /// [`Self::top_up_identity_from_addresses`] does.
+    ///
+    /// Differs only in refusing an identity the identity manager does not
+    /// hold with [`PlatformWalletError::IdentityNotFound`] (after the
+    /// funding rows are checked, before Platform is asked), and in
+    /// [`PlatformWalletError::WalletNotFound`] when the wallet manager has no
+    /// info for this wallet.
     ///
     /// Returns the identity's new credit balance.
+    #[deprecated(
+        note = "use `top_up_identity_from_addresses`, which tops up any identity and writes a \
+                managed identity's balance back"
+    )]
     pub async fn top_up_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
@@ -623,39 +666,22 @@ impl PlatformWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
-        self.top_up_identity_with(
-            self.identity
-                .top_up_from_addresses(identity_id, inputs, address_signer, settings),
-            "identity top-up",
-        )
-        .await
+        self.top_up_identity(identity_id, inputs, address_signer, settings, true)
+            .await
     }
 
-    /// Top up an identity this wallet does not manage by spending platform
-    /// address balances, then reconcile the spent addresses exactly as
-    /// [`Self::top_up_from_addresses`] does.
+    /// Top up an identity this wallet does not manage: now
+    /// [`Self::top_up_identity_from_addresses`], which tops up any identity.
     ///
     /// The identity is fetched from Platform and never added to the identity
-    /// manager.
-    ///
-    /// Holds the wallet generation's lifecycle gate from the liveness check
-    /// through the fetch, signing, broadcast and reconciliation, so a
-    /// removal waits for it. A wallet removed or re-created since this
-    /// handle was taken is refused with
-    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
-    /// fetched, signed or broadcast. A caller must not hold the gate.
-    ///
-    /// The result stands only when its proof shows every input address at or
-    /// past the nonce this top-up was signed with AND the identity balance
-    /// above the balance the top-up started from, the one in the identity
-    /// fetched from Platform before signing. Otherwise the proof does not
-    /// prove this top-up executed: it is reported as
-    /// `PlatformWalletError::Sdk` holding
-    /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
-    /// execute, so do not submit it again), and the addresses are not
-    /// updated from it; the next sync settles them.
+    /// manager. Should the identity manager hold it after all, its cached
+    /// balance is written back from the proof.
     ///
     /// Returns the identity's new credit balance.
+    #[deprecated(
+        note = "use `top_up_identity_from_addresses`, which tops up any identity and writes a \
+                managed identity's balance back"
+    )]
     pub async fn top_up_external_identity_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
@@ -667,40 +693,66 @@ impl PlatformWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
-        self.top_up_identity_with(
-            self.identity.top_up_external_from_addresses(
-                identity_id,
-                inputs,
-                address_signer,
-                settings,
-            ),
-            "external identity top-up",
-        )
-        .await
+        self.top_up_identity_from_addresses(identity_id, inputs, address_signer, settings)
+            .await
     }
 
-    /// An address top-up around its submission `top_up` (not yet started):
-    /// the lifecycle gate and liveness check, then the reconciliation of the
-    /// spent addresses at the proof's height (`AddressFunds::as_of_height`,
-    /// so the sync's delta replay never re-applies this transition's ops on
-    /// top of them). A seam so a test can hand in a confirmed result the
-    /// mock SDK cannot prove.
-    pub(crate) async fn top_up_identity_with(
+    /// [`Self::top_up_identity_from_addresses`], refusing an identity the
+    /// identity manager does not hold when `managed_only`.
+    async fn top_up_identity<S, I>(
         &self,
-        top_up: impl Future<Output = Result<(AddressInfos, Credits, u64), PlatformWalletError>>,
-        label: &'static str,
-    ) -> Result<Credits, PlatformWalletError> {
-        let _lifecycle = self.core().generation_payment_guard().await;
+        identity_id: &Identifier,
+        inputs: I,
+        address_signer: &S,
+        settings: Option<PutSettings>,
+        managed_only: bool,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
+    {
+        // A point-in-time check, outside the gate: a handle to a wallet
+        // already removed asks the host for no signature. The decisive check
+        // runs under the gate once the host signed.
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
                 self.wallet_id,
             )));
         }
-        let (address_infos, new_balance, proof_height) = top_up.await?;
-        self.platform
-            .reconcile_address_infos(&address_infos, proof_height, label)
+        let (confirmed, _lifecycle) = self
+            .identity
+            .top_up_identity_from_addresses(
+                identity_id,
+                inputs,
+                address_signer,
+                settings,
+                managed_only,
+            )
+            .await?;
+        Ok(self.record_top_up(identity_id, confirmed).await)
+    }
+
+    /// The bookkeeping of a confirmed address top-up of `identity_id`, run
+    /// by the caller under the lifecycle gate: the managed identity's
+    /// balance written back, and the spent addresses reconciled at the
+    /// proof's height (`AddressFunds::as_of_height`, so the sync's delta
+    /// replay never re-applies this transition's ops on top of them).
+    /// Returns the balance the top-up reports. A seam so a test can hand in
+    /// a confirmed result the mock SDK cannot prove.
+    pub(crate) async fn record_top_up(
+        &self,
+        identity_id: &Identifier,
+        (address_infos, new_balance, metadata): (AddressInfos, Credits, ResponseMetadata),
+    ) -> Credits {
+        let proof_height = metadata.height;
+        let new_balance = self
+            .identity
+            .record_top_up_balance(identity_id, new_balance, metadata)
             .await;
-        Ok(new_balance)
+        self.platform
+            .reconcile_address_infos(&address_infos, proof_height, "identity top-up")
+            .await;
+        new_balance
     }
 
     /// Register a new identity funded by platform-address balances, then

@@ -750,15 +750,23 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     // MARK: - Identity top-up (address-funded)
 
-    /// Top up an existing identity's credit balance from one or more
-    /// Platform addresses, using an external `KeychainSigner` for the
+    /// Top up an identity's credit balance from one or more Platform
+    /// addresses, whoever owns the identity (one of this wallet's or
+    /// someone else's), using an external `KeychainSigner` for the
     /// per-address funding signatures.
+    ///
+    /// Bridges `platform_wallet_top_up_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform, never adds it to the
+    /// wallet's identities, and updates the balance of an identity the
+    /// wallet manages, so the caller does not decide whether the identity
+    /// is its own.
     ///
     /// Top-up state-transitions are signed entirely with the input
     /// addresses' private keys (no IdentityCreate to sign), so unlike
     /// `registerIdentityFromAddresses` only one signer is required —
     /// the same `KeychainSigner` you use for registration's
-    /// `addressSigner` role.
+    /// `addressSigner` role. An identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
     ///
     /// - Parameters:
     ///   - identityId: 32-byte identity id of the existing identity
@@ -768,6 +776,29 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     ///   - addressSigner: signer whose `.handle` produces signatures
     ///     for each input platform address. Borrowed for the
     ///     duration of the call.
+    ///
+    /// - Returns: the identity's new credit balance.
+    public func topUpIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: addressTopUpExports.any
+        )
+    }
+
+    /// Top up an identity this wallet manages from one or more Platform
+    /// addresses.
+    ///
+    /// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
+    /// identity and updates a managed one's balance the same way. This
+    /// method differs only in throwing `PlatformWalletError.identityNotFound`
+    /// for an identity the wallet does not manage. Arguments and signer
+    /// handling match `topUpIdentityFromAddresses`.
     ///
     /// - Returns: the new credit balance reported by Platform.
     public func topUpFromAddresses(
@@ -785,6 +816,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     /// Top up an identity this wallet does **not** manage (someone
     /// else's) from one or more Platform addresses.
+    ///
+    /// **Deprecated:** now the same operation as
+    /// `topUpIdentityFromAddresses`, which tops up any identity; use that
+    /// instead.
     ///
     /// Bridges `platform_wallet_top_up_external_identity_from_addresses_with_signer`:
     /// Rust fetches the identity from Platform and never adds it to the
@@ -807,10 +842,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         )
     }
 
-    /// The two address-funded top-up exports each public wrapper hands its
+    /// The address-funded top-up exports each public wrapper hands its
     /// arguments to. A stored property so tests can swap in fakes and see
     /// which export a wrapper dispatches to.
     struct AddressTopUpExports {
+        var any: AddressTopUpCall = platform_wallet_top_up_identity_from_addresses_with_signer
         var managed: AddressTopUpCall = platform_wallet_top_up_from_addresses_with_signer
         var external: AddressTopUpCall =
             platform_wallet_top_up_external_identity_from_addresses_with_signer
@@ -818,7 +854,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     var addressTopUpExports = AddressTopUpExports()
 
-    /// Signature shared by the two address-funded top-up exports.
+    /// Signature shared by the address-funded top-up exports.
     typealias AddressTopUpCall = @Sendable (
         Handle,
         UnsafePointer<IdentityIdBytes>?,

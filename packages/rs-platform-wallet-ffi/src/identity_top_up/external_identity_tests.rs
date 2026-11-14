@@ -1,6 +1,6 @@
-//! The external-identity top-up export: its argument guards, and an identity
+//! The address top-up exports: their argument guards, and an identity
 //! Platform does not know reported as code 7 through the real wallet handle.
-//! A panic in either address top-up export is reported as code 20.
+//! A panic in any address top-up export is reported as code 20.
 
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -14,9 +14,12 @@ use dpp::ProtocolError;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
-use super::platform_wallet_top_up_external_identity_from_addresses_with_signer as top_up;
-use super::platform_wallet_top_up_from_addresses_with_signer;
-use crate::error::PlatformWalletFFIResultCode;
+use super::{
+    platform_wallet_top_up_external_identity_from_addresses_with_signer,
+    platform_wallet_top_up_from_addresses_with_signer,
+    platform_wallet_top_up_identity_from_addresses_with_signer,
+};
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
 use crate::identity_registration::IdentityFundingInputFFI;
 use crate::runtime::runtime;
@@ -24,6 +27,29 @@ use crate::test_fixtures::mock_manager;
 
 const IDENTITY: [u8; 32] = [9; 32];
 const UNTOUCHED: u64 = 0xDEAD;
+
+type Export = unsafe extern "C" fn(
+    Handle,
+    *const [u8; 32],
+    *const IdentityFundingInputFFI,
+    usize,
+    *mut SignerHandle,
+    *mut u64,
+) -> PlatformWalletFFIResult;
+
+/// The top-up of any identity, then the deprecated managed and external
+/// exports.
+const EXPORTS: [(&str, Export); 3] = [
+    (
+        "any",
+        platform_wallet_top_up_identity_from_addresses_with_signer,
+    ),
+    ("managed", platform_wallet_top_up_from_addresses_with_signer),
+    (
+        "external",
+        platform_wallet_top_up_external_identity_from_addresses_with_signer,
+    ),
+];
 
 fn input(address_type: u8) -> IdentityFundingInputFFI {
     IdentityFundingInputFFI {
@@ -65,41 +91,47 @@ fn should_refuse_null_pointers() {
     let id = IDENTITY;
     let inputs = [input(0)];
     let mut balance = UNTOUCHED;
-    let calls = [
-        unsafe {
-            top_up(
-                0,
-                std::ptr::null(),
-                inputs.as_ptr(),
-                1,
-                dangling_signer(),
-                &mut balance,
-            )
-        },
-        unsafe { top_up(0, &id, std::ptr::null(), 1, dangling_signer(), &mut balance) },
-        unsafe {
-            top_up(
-                0,
-                &id,
-                inputs.as_ptr(),
-                1,
-                std::ptr::null_mut(),
-                &mut balance,
-            )
-        },
-        unsafe {
-            top_up(
-                0,
-                &id,
-                inputs.as_ptr(),
-                1,
-                dangling_signer(),
-                std::ptr::null_mut(),
-            )
-        },
-    ];
-    for result in calls {
-        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    for (name, top_up) in EXPORTS {
+        let calls = [
+            unsafe {
+                top_up(
+                    0,
+                    std::ptr::null(),
+                    inputs.as_ptr(),
+                    1,
+                    dangling_signer(),
+                    &mut balance,
+                )
+            },
+            unsafe { top_up(0, &id, std::ptr::null(), 1, dangling_signer(), &mut balance) },
+            unsafe {
+                top_up(
+                    0,
+                    &id,
+                    inputs.as_ptr(),
+                    1,
+                    std::ptr::null_mut(),
+                    &mut balance,
+                )
+            },
+            unsafe {
+                top_up(
+                    0,
+                    &id,
+                    inputs.as_ptr(),
+                    1,
+                    dangling_signer(),
+                    std::ptr::null_mut(),
+                )
+            },
+        ];
+        for result in calls {
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                "{name}"
+            );
+        }
     }
     assert_eq!(balance, UNTOUCHED);
 }
@@ -108,20 +140,23 @@ fn should_refuse_null_pointers() {
 fn should_refuse_an_unknown_address_type() {
     let id = IDENTITY;
     let mut balance = UNTOUCHED;
-    let unknown_type = unsafe {
-        top_up(
-            0,
-            &id,
-            [input(2)].as_ptr(),
-            1,
-            dangling_signer(),
-            &mut balance,
-        )
-    };
-    assert_eq!(
-        unknown_type.code,
-        PlatformWalletFFIResultCode::ErrorInvalidParameter
-    );
+    for (name, top_up) in EXPORTS {
+        let unknown_type = unsafe {
+            top_up(
+                0,
+                &id,
+                [input(2)].as_ptr(),
+                1,
+                dangling_signer(),
+                &mut balance,
+            )
+        };
+        assert_eq!(
+            unknown_type.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "{name}"
+        );
+    }
     assert_eq!(balance, UNTOUCHED);
 }
 
@@ -155,10 +190,10 @@ fn release(handle: Handle, signer: *mut SignerHandle) {
 }
 
 /// Rows naming one address whose sum overflows reach the library, which
-/// refuses them as an invalid parameter on both exports instead of
+/// refuses them as an invalid parameter on every export instead of
 /// saturating the amount.
 #[test]
-fn should_refuse_an_overflowing_funding_sum_on_both_exports() {
+fn should_refuse_an_overflowing_funding_sum_on_every_export() {
     let (handle, signer) = wallet_handle(Some(platform_identity()));
     let rows = [
         IdentityFundingInputFFI {
@@ -173,43 +208,45 @@ fn should_refuse_an_overflowing_funding_sum_on_both_exports() {
     let id = IDENTITY;
     let mut balance = UNTOUCHED;
 
-    let external = unsafe { top_up(handle, &id, rows.as_ptr(), 2, signer, &mut balance) };
-    let managed = unsafe {
-        platform_wallet_top_up_from_addresses_with_signer(
-            handle,
-            &id,
-            rows.as_ptr(),
-            2,
-            signer,
-            &mut balance,
-        )
-    };
+    let results = EXPORTS.map(|(name, top_up)| {
+        (name, unsafe {
+            top_up(handle, &id, rows.as_ptr(), 2, signer, &mut balance)
+        })
+    });
 
     release(handle, signer);
-    for result in [external, managed] {
+    for (name, result) in results {
         assert_eq!(
             result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "{name}"
         );
     }
     assert_eq!(balance, UNTOUCHED);
 }
 
 /// No funding rows reach the library, which refuses them as an invalid
-/// parameter before looking the identity up.
+/// parameter before looking the identity up, on every export.
 #[test]
 fn should_report_empty_inputs_as_an_invalid_parameter() {
     let (handle, signer) = wallet_handle(Some(platform_identity()));
     let id = IDENTITY;
     let mut balance = UNTOUCHED;
 
-    let result = unsafe { top_up(handle, &id, [input(0)].as_ptr(), 0, signer, &mut balance) };
+    let results = EXPORTS.map(|(name, top_up)| {
+        (name, unsafe {
+            top_up(handle, &id, [input(0)].as_ptr(), 0, signer, &mut balance)
+        })
+    });
 
     release(handle, signer);
-    assert_eq!(
-        result.code,
-        PlatformWalletFFIResultCode::ErrorInvalidParameter
-    );
+    for (name, result) in results {
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "{name}"
+        );
+    }
     assert_eq!(balance, UNTOUCHED);
 }
 
@@ -223,10 +260,17 @@ fn platform_identity() -> Identity {
 }
 
 /// The identity is looked up on Platform, not in the wallet: an identity
-/// Platform does not know is `ErrorIdentityNotFound` (7), the balance out
-/// is not written, and the wallet still manages no identity.
+/// Platform does not know is `ErrorIdentityNotFound` (7) on the top-up of
+/// any identity and on the deprecated external export, the balance out is
+/// not written, and the wallet still manages no identity.
 #[test]
 fn should_report_an_identity_platform_does_not_know_as_not_found() {
+    for (name, top_up) in [EXPORTS[0], EXPORTS[2]] {
+        identity_platform_does_not_know_is_not_found(name, top_up);
+    }
+}
+
+fn identity_platform_does_not_know_is_not_found(name: &str, top_up: Export) {
     let manager = mock_manager();
     let mut sdk = manager.sdk().clone();
     runtime()
@@ -255,7 +299,8 @@ fn should_report_an_identity_platform_does_not_know_as_not_found() {
     drop(unsafe { Box::from_raw(signer as *mut VTableSigner) });
     assert_eq!(
         result.code,
-        PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        PlatformWalletFFIResultCode::ErrorIdentityNotFound,
+        "{name}"
     );
     assert_eq!(balance, UNTOUCHED);
     let identities = runtime().block_on(async {
@@ -268,48 +313,42 @@ fn should_report_an_identity_platform_does_not_know_as_not_found() {
             .identity_manager
             .identity_count()
     });
-    assert_eq!(identities, 0);
+    assert_eq!(identities, 0, "{name}");
 }
 
-/// A panic inside either address top-up export (here its blocking wait,
+/// A panic inside any address top-up export (here its blocking wait,
 /// entered from inside a runtime) comes back as the "may have executed"
 /// code 20, not as an unwind through the C ABI that ends the host, and the
 /// balance out is not written.
 #[test]
-fn should_turn_a_panic_in_either_export_into_the_unconfirmed_code() {
+fn should_turn_a_panic_in_any_export_into_the_unconfirmed_code() {
     let (handle, signer) = wallet_handle(Some(platform_identity()));
     let id = IDENTITY;
     let rows = [input(0)];
     let mut balance = UNTOUCHED;
     let out: *mut u64 = &mut balance;
 
-    let (external, managed) = tokio::runtime::Runtime::new()
+    let results = tokio::runtime::Runtime::new()
         .expect("a runtime")
         .block_on(async {
-            let external = unsafe { top_up(handle, &id, rows.as_ptr(), 1, signer, out) };
-            let managed = unsafe {
-                platform_wallet_top_up_from_addresses_with_signer(
-                    handle,
-                    &id,
-                    rows.as_ptr(),
-                    1,
-                    signer,
-                    out,
-                )
-            };
-            (external, managed)
+            EXPORTS.map(|(name, top_up)| {
+                (name, unsafe {
+                    top_up(handle, &id, rows.as_ptr(), 1, signer, out)
+                })
+            })
         });
 
     release(handle, signer);
-    for mut result in [external, managed] {
+    for (name, mut result) in results {
         assert_eq!(
             result.code,
-            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "{name}"
         );
         let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned();
-        assert!(message.contains("panicked"), "{message}");
+        assert!(message.contains("panicked"), "{name}: {message}");
         unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
     }
     assert_eq!(balance, UNTOUCHED);

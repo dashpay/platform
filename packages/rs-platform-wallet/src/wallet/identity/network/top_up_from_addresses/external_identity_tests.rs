@@ -29,7 +29,7 @@ use dash_sdk::dapi_grpc::platform::v0::{
 };
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
+use dash_sdk::query_types::{AddressInfo, AddressInfos};
 use dash_sdk::{RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::consensus::state::state_error::StateError;
@@ -47,6 +47,7 @@ use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use tokio::sync::{Notify, Semaphore};
 
+use super::GatedAddressSigner;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
@@ -253,7 +254,19 @@ impl Fixture {
         self.top_up_with(vec![(ADDRESS, AMOUNT)]).await
     }
 
+    /// The top-up of any identity, topping up `target`.
     async fn top_up_with(
+        &self,
+        inputs: Vec<(PlatformAddress, u64)>,
+    ) -> Result<u64, PlatformWalletError> {
+        self.wallet
+            .top_up_identity_from_addresses(&self.target, inputs, &self.signer, settings())
+            .await
+    }
+
+    /// The deprecated external route, topping up `target`.
+    #[allow(deprecated)]
+    async fn top_up_external_with(
         &self,
         inputs: Vec<(PlatformAddress, u64)>,
     ) -> Result<u64, PlatformWalletError> {
@@ -262,19 +275,41 @@ impl Fixture {
             .await
     }
 
-    /// The managed route, topping up [`OWN_IDENTITY`].
-    async fn top_up_own_with(
+    /// The deprecated managed route, topping up `identity_id`.
+    #[allow(deprecated)]
+    async fn top_up_managed_with(
         &self,
+        identity_id: [u8; 32],
         inputs: Vec<(PlatformAddress, u64)>,
     ) -> Result<u64, PlatformWalletError> {
         self.wallet
             .top_up_from_addresses(
-                &Identifier::from(OWN_IDENTITY),
+                &Identifier::from(identity_id),
                 inputs,
                 &self.signer,
                 settings(),
             )
             .await
+    }
+
+    /// The deprecated managed route, topping up [`OWN_IDENTITY`].
+    async fn top_up_own_with(
+        &self,
+        inputs: Vec<(PlatformAddress, u64)>,
+    ) -> Result<u64, PlatformWalletError> {
+        self.top_up_managed_with(OWN_IDENTITY, inputs).await
+    }
+
+    /// One top-up of [`AMOUNT`] from [`ADDRESS`] on each route, named: the
+    /// top-up of any identity and the deprecated external route topping up
+    /// `target`, the deprecated managed route [`OWN_IDENTITY`].
+    async fn top_up_on_every_route(&self) -> [(&'static str, Result<u64, PlatformWalletError>); 3] {
+        let rows = || vec![(ADDRESS, AMOUNT)];
+        [
+            ("any", self.top_up_with(rows()).await),
+            ("external", self.top_up_external_with(rows()).await),
+            ("managed", self.top_up_own_with(rows()).await),
+        ]
     }
 
     async fn managed_identity_ids(&self) -> Vec<Identifier> {
@@ -297,36 +332,69 @@ impl Fixture {
 
 /// The top-up of an identity the wallet does not manage is built from the
 /// identity Platform returned, signed once and submitted, instead of being
-/// refused for not being in the identity manager.
+/// refused for not being in the identity manager, by the top-up of any
+/// identity and by the deprecated external route alike.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_submit_a_top_up_for_an_identity_the_wallet_does_not_manage() {
-    let mut fixture = Fixture::new(true).await;
+    for external in [false, true] {
+        let mut fixture = Fixture::new(true).await;
 
-    let error = fixture
-        .top_up()
-        .await
+        let error = match external {
+            false => fixture.top_up().await,
+            true => fixture.top_up_external_with(vec![(ADDRESS, AMOUNT)]).await,
+        }
         .expect_err("the mock cannot prove the result");
 
-    assert!(
-        matches!(
-            error,
-            PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(_))
-        ),
-        "the top-up must be submitted, got {error:?}"
-    );
-    assert_eq!(fixture.submissions().await, (1, 1, 1));
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(_))
+            ),
+            "external route {external}: the top-up must be submitted, got {error:?}"
+        );
+        assert_eq!(fixture.submissions().await, (1, 1, 1));
+    }
 }
 
-/// Topping up someone else's identity never records it as the wallet's own.
+/// Topping up someone else's identity never records it as the wallet's own,
+/// on the top-up of any identity and on the deprecated external route.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_leave_the_identity_manager_unchanged() {
-    let fixture = Fixture::new(true).await;
-    let before = fixture.managed_identity_ids().await;
+    for external in [false, true] {
+        let fixture = Fixture::new(true).await;
+        let before = fixture.managed_identity_ids().await;
 
-    let _ = fixture.top_up().await;
+        let _ = match external {
+            false => fixture.top_up().await,
+            true => fixture.top_up_external_with(vec![(ADDRESS, AMOUNT)]).await,
+        };
 
-    assert_eq!(fixture.managed_identity_ids().await, before);
-    assert_eq!(before, vec![Identifier::from(OWN_IDENTITY)]);
+        assert_eq!(fixture.managed_identity_ids().await, before);
+        assert_eq!(before, vec![Identifier::from(OWN_IDENTITY)]);
+    }
+}
+
+/// The deprecated managed route keeps refusing an identity the identity
+/// manager does not hold, even one Platform knows, with the typed not-found
+/// error and nothing asked, signed or submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_refuse_an_unmanaged_identity_on_the_deprecated_managed_route() {
+    let mut fixture = Fixture::new(true).await;
+    let target = fixture.target;
+
+    let refused = fixture
+        .top_up_managed_with(target.to_buffer(), vec![(ADDRESS, AMOUNT)])
+        .await;
+
+    assert!(
+        matches!(&refused, Err(PlatformWalletError::IdentityNotFound(id)) if *id == target),
+        "got {refused:?}"
+    );
+    assert_eq!(fixture.submissions().await, (0, 0, 0));
+    assert_eq!(
+        fixture.managed_identity_ids().await,
+        vec![Identifier::from(OWN_IDENTITY)]
+    );
 }
 
 /// An identity Platform does not know is refused with the typed not-found
@@ -371,23 +439,23 @@ async fn should_report_a_failed_recipient_lookup_as_not_sent() {
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
-/// An empty funding map is the caller's mistake on both routes, refused as
+/// An empty funding map is the caller's mistake on every route, refused as
 /// `InvalidParameter` before any network I/O, with nothing signed or
 /// submitted: whether Platform knows the identity, does not know it, or
 /// cannot be asked, the lookup never decides the error.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
+async fn should_report_empty_inputs_as_an_invalid_parameter_on_every_route() {
     for on_platform in [Some(false), None, Some(true)] {
         let mut fixture = Fixture::build(on_platform, AMOUNT).await;
 
-        let external = fixture.top_up_with(Vec::new()).await;
+        let any = fixture.top_up_with(Vec::new()).await;
+        let external = fixture.top_up_external_with(Vec::new()).await;
         let managed = fixture.top_up_own_with(Vec::new()).await;
         let managed_unknown = fixture
-            .wallet
-            .top_up_from_addresses(&fixture.target, Vec::new(), &fixture.signer, settings())
+            .top_up_managed_with(fixture.target.to_buffer(), Vec::new())
             .await;
 
-        for result in [external, managed, managed_unknown] {
+        for result in [any, external, managed, managed_unknown] {
             assert!(
                 matches!(&result, Err(PlatformWalletError::InvalidParameter(reason))
                     if reason == "no funding rows were provided"),
@@ -398,11 +466,11 @@ async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
     }
 }
 
-/// The managed route reads the identity's balance from Platform before
-/// signing, the baseline its growth is measured against: a read that fails
-/// (here no answer to the request) is the not-sent lookup failure, and
-/// Platform not knowing the identity is not-found, both with nothing signed
-/// or submitted.
+/// The deprecated managed route reads the identity, and so the balance its
+/// growth is measured against, from Platform before signing, as the top-up
+/// of any identity does: a read that fails (here no answer to the request)
+/// is the not-sent lookup failure, and Platform not knowing the identity is
+/// not-found, both with nothing signed or submitted.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_read_the_managed_identitys_balance_from_platform_before_signing() {
     let own = Identifier::from(OWN_IDENTITY);
@@ -418,7 +486,7 @@ async fn should_read_the_managed_identitys_balance_from_platform_before_signing(
     fixture
         .sdk
         .mock()
-        .expect_fetch::<IdentityBalance, Identifier>(own, None)
+        .expect_fetch::<Identity, Identifier>(own, None)
         .await
         .unwrap();
     let unknown = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
@@ -430,10 +498,11 @@ async fn should_read_the_managed_identitys_balance_from_platform_before_signing(
 }
 
 /// A handle to a wallet removed, or re-created under the same id, since it
-/// was taken tops up nothing: refused before the identity is fetched,
-/// anything is signed or submitted.
+/// was taken tops up nothing, on the top-up of any identity and on both
+/// deprecated routes: refused before the identity is fetched, anything is
+/// signed or submitted.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_both_routes() {
+async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_every_route() {
     let mut fixture = Fixture::new(true).await;
     let wallet_id = fixture.wallet.wallet_id();
     fixture
@@ -442,18 +511,13 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_both_routes()
         .await
         .expect("removed");
 
-    let removed = fixture.top_up().await;
-    assert!(
-        matches!(&removed, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
-            if *id == hex::encode(wallet_id)),
-        "{removed:?}"
-    );
-    let removed_own = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
-    assert!(
-        matches!(&removed_own, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
-            if *id == hex::encode(wallet_id)),
-        "managed route: {removed_own:?}"
-    );
+    for (route, removed) in fixture.top_up_on_every_route().await {
+        assert!(
+            matches!(&removed, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                if *id == hex::encode(wallet_id)),
+            "{route} route: {removed:?}"
+        );
+    }
 
     let recreated = fixture
         .manager
@@ -466,22 +530,15 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_both_routes()
         .await
         .expect("re-created");
     assert_eq!(recreated.wallet_id(), wallet_id);
-    let superseded = fixture.top_up().await;
-    assert!(
-        matches!(
-            superseded,
-            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
-        ),
-        "{superseded:?}"
-    );
-    let superseded_own = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
-    assert!(
-        matches!(
-            superseded_own,
-            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
-        ),
-        "managed route: {superseded_own:?}"
-    );
+    for (route, superseded) in fixture.top_up_on_every_route().await {
+        assert!(
+            matches!(
+                superseded,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{route} route: {superseded:?}"
+        );
+    }
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
@@ -529,20 +586,19 @@ impl Signer<PlatformAddress> for HeldSigner {
     }
 }
 
-/// A removal waits for an external top-up that entered its fenced section,
-/// here held while signing, and completes once the top-up returns.
-#[tokio::test(flavor = "multi_thread")]
-async fn should_hold_a_wallets_removal_until_its_top_up_returns() {
-    let fixture = Fixture::new(true).await;
-    let wallet_id = fixture.wallet.wallet_id();
-    let signer = Arc::new(HeldSigner::default());
+/// Spawns a top-up of `target` from [`ADDRESS`] signed by `signer`, and
+/// returns once the host is asked to sign.
+async fn spawn_held_top_up(
+    fixture: &Fixture,
+    signer: &Arc<HeldSigner>,
+) -> tokio::task::JoinHandle<Result<u64, PlatformWalletError>> {
     let top_up = {
         let wallet = Arc::clone(&fixture.wallet);
-        let signer = Arc::clone(&signer);
+        let signer = Arc::clone(signer);
         let target = fixture.target;
         tokio::spawn(async move {
             wallet
-                .top_up_external_identity_from_addresses(
+                .top_up_identity_from_addresses(
                     &target,
                     BTreeMap::from([(ADDRESS, AMOUNT)]),
                     &*signer,
@@ -552,7 +608,113 @@ async fn should_hold_a_wallets_removal_until_its_top_up_returns() {
         })
     };
     signer.entered.notified().await;
+    top_up
+}
 
+/// A removal does not wait for a top-up whose host is still signing: the
+/// lifecycle gate is not held while the host signs. The signature returned
+/// afterwards meets the removed wallet at the liveness check, so the top-up
+/// is abandoned as removed before broadcast, with nothing submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_not_hold_a_wallets_removal_while_its_top_up_is_signed() {
+    let mut fixture = Fixture::new(true).await;
+    let wallet_id = fixture.wallet.wallet_id();
+    let signer = Arc::new(HeldSigner::default());
+    let top_up = spawn_held_top_up(&fixture, &signer).await;
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        fixture.manager.remove_wallet(&wallet_id),
+    )
+    .await
+    .expect("the removal does not wait for the host's signature")
+    .expect("the removal completes");
+    assert!(!fixture.wallet.core().is_current_generation().await);
+
+    signer.release.add_permits(1);
+    let topped_up = top_up.await.expect("top-up task");
+    assert!(
+        matches!(&topped_up, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+            if *id == hex::encode(wallet_id)),
+        "the wallet was removed while the host signed: {topped_up:?}"
+    );
+    let (broadcasts, waits, _) = fixture.submissions().await;
+    assert_eq!((broadcasts, waits), (0, 0), "nothing is broadcast");
+}
+
+/// The same for a wallet re-created under its id while the host signed: the
+/// late signature meets a generation that is not the handle's, and nothing
+/// is broadcast on the replacement.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_abandon_a_top_up_signed_while_its_wallet_was_replaced() {
+    let mut fixture = Fixture::new(true).await;
+    let wallet_id = fixture.wallet.wallet_id();
+    let signer = Arc::new(HeldSigner::default());
+    let top_up = spawn_held_top_up(&fixture, &signer).await;
+
+    fixture
+        .manager
+        .remove_wallet(&wallet_id)
+        .await
+        .expect("removed");
+    fixture
+        .manager
+        .create_wallet_from_seed_bytes(
+            key_wallet::Network::Testnet,
+            &[42; 64],
+            WalletAccountCreationOptions::None,
+            Some(0),
+        )
+        .await
+        .expect("re-created");
+
+    signer.release.add_permits(1);
+    let topped_up = top_up.await.expect("top-up task");
+    assert!(
+        matches!(
+            topped_up,
+            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+        ),
+        "{topped_up:?}"
+    );
+    let (broadcasts, waits, _) = fixture.submissions().await;
+    assert_eq!((broadcasts, waits), (0, 0), "nothing is broadcast");
+}
+
+/// The gate is taken once the last input's witness returns, not before:
+/// with two inputs a removal completes after the first signature, and
+/// after the last one it waits for the broadcast and bookkeeping that hold
+/// the gate, completing once the top-up lets it go.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_hold_a_wallets_removal_from_the_last_signature_until_the_top_up_ends() {
+    const SECOND: PlatformAddress = PlatformAddress::P2pkh([8; 20]);
+    let fixture = Fixture::new(true).await;
+    let wallet_id = fixture.wallet.wallet_id();
+    let host = AddressSigner::default();
+    let gated = GatedAddressSigner::new(
+        &host,
+        fixture.wallet.identity(),
+        BTreeSet::from([ADDRESS, SECOND]),
+    );
+
+    gated
+        .sign_create_witness(&ADDRESS, b"top-up")
+        .await
+        .expect("the first input signed");
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(200),
+            fixture.wallet.generation().teardown_guard()
+        )
+        .await
+        .is_ok(),
+        "with an input left to sign, no gate is held"
+    );
+
+    gated
+        .sign_create_witness(&SECOND, b"top-up")
+        .await
+        .expect("the last input signed on a current wallet");
     let removal = {
         let manager = Arc::clone(&fixture.manager);
         tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
@@ -560,21 +722,14 @@ async fn should_hold_a_wallets_removal_until_its_top_up_returns() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
         !removal.is_finished(),
-        "the removal waits for the top-up being signed"
+        "the removal waits for a top-up past its last signature"
     );
     assert!(fixture.wallet.core().is_current_generation().await);
 
-    signer.release.add_permits(1);
-    let topped_up = top_up.await.expect("top-up task");
-    assert!(
-        !matches!(
-            topped_up,
-            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
-        ),
-        "the wallet was current when it was checked: {topped_up:?}"
-    );
-    removal
+    drop(gated.into_gate().await);
+    tokio::time::timeout(Duration::from_secs(5), removal)
         .await
+        .expect("the removal completes once the top-up ends")
         .expect("removal task")
         .expect("the removal completes");
     assert!(!fixture.wallet.core().is_current_generation().await);
@@ -603,15 +758,20 @@ impl PlatformWalletPersistence for RecordingPersister {
     }
 }
 
-/// A confirmed external top-up, through the composite's seam with a
-/// proof-attested result in place of the network: the identity's new
-/// balance is returned, the spent wallet address is reconciled and
-/// persisted pinned at the proof's height, and the identity manager is
-/// still unchanged.
-#[tokio::test(flavor = "multi_thread")]
-async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
-    const NEW_BALANCE: u64 = 777_000;
-    const PROOF_HEIGHT: u64 = 4_242;
+const NEW_BALANCE: u64 = 777_000;
+const PROOF_HEIGHT: u64 = 4_242;
+
+/// A wallet whose persister records every store round, one of its own
+/// platform addresses, and (with `managed`) [`OWN_IDENTITY`] in its identity
+/// manager at [`BALANCE`]; the recorded rounds start empty.
+async fn confirmed_top_up_wallet(
+    managed: bool,
+) -> (
+    PlatformWalletManager<RecordingPersister>,
+    Arc<PlatformWallet>,
+    Arc<RecordingPersister>,
+    PlatformAddress,
+) {
     let persister = Arc::new(RecordingPersister::default());
     let manager = PlatformWalletManager::new(
         Arc::new(dash_sdk::Sdk::new_mock()),
@@ -635,16 +795,35 @@ async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
         })
         .await
         .expect("a wallet address");
-    let identities_before = wallet
-        .wallet_manager()
-        .read()
-        .await
-        .get_wallet_info(&wallet.wallet_id())
-        .unwrap()
-        .identity_manager
-        .identity_ids();
+    if managed {
+        wallet
+            .wallet_manager()
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                identity(OWN_IDENTITY),
+                0,
+                wallet.wallet_id(),
+                wallet.persister(),
+            )
+            .unwrap();
+    }
     persister.0.lock().unwrap().clear();
+    (manager, wallet, persister, spent)
+}
 
+/// Runs the composite's seam with a proof-attested result in place of the
+/// network: `spent` at nonce 4 and balance 5, the identity at
+/// [`NEW_BALANCE`], proved at [`PROOF_HEIGHT`]. Returns the balance the
+/// top-up reports.
+async fn confirm_top_up(
+    wallet: &PlatformWallet,
+    identity_id: Identifier,
+    spent: PlatformAddress,
+) -> u64 {
     let confirmed = AddressInfos::from_iter([(
         spent,
         Some(AddressInfo {
@@ -653,51 +832,112 @@ async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
             balance: 5,
         }),
     )]);
-    let new_balance = wallet
-        .top_up_identity_with(
-            async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) },
-            "external identity top-up",
-        )
+    let metadata = ResponseMetadata {
+        height: PROOF_HEIGHT,
+        time_ms: 1,
+        ..Default::default()
+    };
+    wallet
+        .record_top_up(&identity_id, (confirmed, NEW_BALANCE, metadata))
         .await
-        .expect("a confirmed top-up");
+}
 
-    assert_eq!(new_balance, NEW_BALANCE);
+/// The spent address is reconciled and persisted pinned at the proof's
+/// height.
+async fn assert_spent_address_reconciled(
+    wallet: &PlatformWallet,
+    persister: &RecordingPersister,
+    spent: PlatformAddress,
+) {
     assert!(wallet
         .platform()
         .addresses_with_balances()
         .await
         .contains(&(spent, 5)));
-    {
-        let stored = persister.0.lock().unwrap();
-        let entry = stored
-            .iter()
-            .filter_map(|changeset| changeset.platform_addresses.as_ref())
-            .flat_map(|addresses| addresses.addresses.iter())
-            .find(|entry| PlatformAddress::P2pkh(entry.address.to_bytes()) == spent)
-            .expect("the spent address persisted");
-        assert_eq!(
-            (
-                entry.funds.balance,
-                entry.funds.nonce,
-                entry.funds.as_of_height
-            ),
-            (5, 4, PROOF_HEIGHT)
-        );
-        assert!(stored
-            .iter()
-            .all(|changeset| changeset.identities.is_none()));
-    }
+    let stored = persister.0.lock().unwrap();
+    let entry = stored
+        .iter()
+        .filter_map(|changeset| changeset.platform_addresses.as_ref())
+        .flat_map(|addresses| addresses.addresses.iter())
+        .find(|entry| PlatformAddress::P2pkh(entry.address.to_bytes()) == spent)
+        .expect("the spent address persisted");
     assert_eq!(
-        wallet
-            .wallet_manager()
-            .read()
-            .await
-            .get_wallet_info(&wallet.wallet_id())
-            .unwrap()
-            .identity_manager
-            .identity_ids(),
-        identities_before
+        (
+            entry.funds.balance,
+            entry.funds.nonce,
+            entry.funds.as_of_height
+        ),
+        (5, 4, PROOF_HEIGHT)
     );
+}
+
+async fn identity_manager_ids(wallet: &PlatformWallet) -> Vec<Identifier> {
+    wallet
+        .wallet_manager()
+        .read()
+        .await
+        .get_wallet_info(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager
+        .identity_ids()
+}
+
+/// A confirmed top-up of an identity the wallet does not manage, through the
+/// composite's seam with a proof-attested result in place of the network:
+/// the identity's new balance is returned, the spent wallet address is
+/// reconciled and persisted pinned at the proof's height, and the identity
+/// manager is still unchanged, nothing about the identity stored.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
+    let (_manager, wallet, persister, spent) = confirmed_top_up_wallet(false).await;
+    let identities_before = identity_manager_ids(&wallet).await;
+
+    let new_balance = confirm_top_up(&wallet, Identifier::from([9; 32]), spent).await;
+
+    assert_eq!(new_balance, NEW_BALANCE);
+    assert_spent_address_reconciled(&wallet, &persister, spent).await;
+    assert!(persister
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|changeset| changeset.identities.is_none()));
+    assert_eq!(identity_manager_ids(&wallet).await, identities_before);
+}
+
+/// A confirmed top-up of one of the wallet's own identities writes the
+/// proved balance back to the identity manager, and stores it, so the
+/// cached balance is current without waiting for a sync; the spent address
+/// is reconciled as for any identity and the manager holds the same
+/// identities.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_write_a_managed_identitys_balance_back_from_a_confirmed_top_up() {
+    let (_manager, wallet, persister, spent) = confirmed_top_up_wallet(true).await;
+    let own = Identifier::from(OWN_IDENTITY);
+
+    let new_balance = confirm_top_up(&wallet, own, spent).await;
+
+    assert_eq!(new_balance, NEW_BALANCE);
+    let cached = wallet
+        .wallet_manager()
+        .read()
+        .await
+        .get_wallet_info(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager
+        .identity(&own)
+        .expect("still managed")
+        .identity
+        .balance();
+    assert_eq!(cached, NEW_BALANCE);
+    assert!(persister
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|changeset| changeset.identities.is_some()));
+    assert_spent_address_reconciled(&wallet, &persister, spent).await;
+    assert_eq!(identity_manager_ids(&wallet).await, vec![own]);
 }
 
 /// Funding rows naming the same address are one input of their sum: the
@@ -722,17 +962,18 @@ async fn should_sum_repeated_funding_rows_into_one_input() {
 }
 
 /// Rows whose sum for one address overflows are refused as the caller's
-/// mistake on both routes, never saturated, with nothing signed or
+/// mistake on every route, never saturated, with nothing signed or
 /// submitted.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_refuse_an_overflowing_funding_sum_on_both_routes() {
+async fn should_refuse_an_overflowing_funding_sum_on_every_route() {
     let mut fixture = Fixture::new(true).await;
     let rows = vec![(ADDRESS, u64::MAX), (ADDRESS, 1)];
 
-    let external = fixture.top_up_with(rows.clone()).await;
+    let any = fixture.top_up_with(rows.clone()).await;
+    let external = fixture.top_up_external_with(rows.clone()).await;
     let managed = fixture.top_up_own_with(rows).await;
 
-    for result in [external, managed] {
+    for result in [any, external, managed] {
         assert!(
             matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
             "got {result:?}"

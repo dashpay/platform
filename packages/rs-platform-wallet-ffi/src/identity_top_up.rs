@@ -1,12 +1,16 @@
 //! Identity top-up for an *existing* identity — two funding sources:
 //!
-//! - [`platform_wallet_top_up_from_addresses_with_signer`] wraps the
-//!   composite
-//!   [`PlatformWallet::top_up_from_addresses`](platform_wallet::PlatformWallet::top_up_from_addresses),
+//! - [`platform_wallet_top_up_identity_from_addresses_with_signer`] wraps
+//!   the composite
+//!   [`PlatformWallet::top_up_identity_from_addresses`](platform_wallet::PlatformWallet::top_up_identity_from_addresses),
 //!   spending already-funded Platform-payment addresses (driven by an
-//!   external `Signer<PlatformAddress>` handle) and reusing the same
-//!   address-input shape (`IdentityFundingInputFFI`) the registration FFI
-//!   exposes.
+//!   external `Signer<PlatformAddress>` handle) for any identity, the
+//!   wallet's own or someone else's, and reusing the same address-input
+//!   shape (`IdentityFundingInputFFI`) the registration FFI exposes. The
+//!   deprecated [`platform_wallet_top_up_from_addresses_with_signer`] (the
+//!   wallet's own identities only) and
+//!   [`platform_wallet_top_up_external_identity_from_addresses_with_signer`]
+//!   remain for existing hosts.
 //! - [`platform_wallet_top_up_identity_with_funding_signer`] wraps
 //!   `IdentityWallet::top_up_identity_with_funding`, building and
 //!   broadcasting a **new Core asset lock** (same mechanism as identity
@@ -21,11 +25,10 @@
 //! signed by the lock's Core-side key via the `MnemonicResolver`.
 //!
 //! On success the function writes the post-transition credit balance
-//! back through `out_new_balance`. The local `ManagedIdentity`
-//! manager is updated and the spent platform-address balances are
-//! reconciled synchronously inside the composite library call;
-//! callers can re-read the balance via `ManagedIdentity` once this
-//! returns.
+//! back through `out_new_balance`. When the wallet manages the identity its
+//! `ManagedIdentity` is updated, and the spent platform-address balances are
+//! reconciled, synchronously inside the composite library call; callers can
+//! re-read the balance via `ManagedIdentity` once this returns.
 
 use std::slice;
 
@@ -71,29 +74,35 @@ fn catch_address_top_up_panic(
     )
 }
 
-/// Top up an existing identity's credit balance from one or more
-/// Platform addresses, using an external `SignerHandle` for the
-/// per-address funding signatures.
+/// Top up an identity's credit balance from one or more Platform
+/// addresses, whoever owns the identity, using an external `SignerHandle`
+/// for the per-address funding signatures.
 ///
-/// On success `out_new_balance` is populated with the post-transition
-/// credit balance returned by Platform. The Rust-side
-/// `ManagedIdentity` for `identity_id` has its balance updated and
-/// queued for persistence inside the library call, so a subsequent
-/// `ManagedIdentity::balance` read on the same handle reflects the
-/// new value without an extra round trip.
+/// Wraps the composite
+/// [`PlatformWallet::top_up_identity_from_addresses`](platform_wallet::PlatformWallet::top_up_identity_from_addresses):
+/// the identity is fetched from Platform and never added to the wallet's
+/// identity manager; when the wallet manages it, its `ManagedIdentity`
+/// balance is updated and queued for persistence inside the library call,
+/// so a subsequent `ManagedIdentity::balance` read reflects the new value.
+/// The spent platform-address balances are reconciled either way. The host
+/// does not decide whether the identity is its own.
 ///
-/// The identity's balance is read from Platform before anything is signed:
-/// a failed read is `ErrorIdentityLookupFailed` (80) and an identity
-/// Platform does not know `ErrorIdentityNotFound` (7), nothing sent.
+/// On success `out_new_balance` is populated with the identity's
+/// post-transition credit balance.
+///
+/// Before anything is signed or broadcast: an identity Platform does not
+/// know is `ErrorIdentityNotFound` (7), a failed lookup
+/// `ErrorIdentityLookupFailed` (80), and empty or overflowing funding rows
+/// `ErrorInvalidParameter`.
 ///
 /// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
 /// executed or may still execute: its result was not proved, or the call
 /// panicked, possibly after signing or broadcast. A result proof counts only
 /// when it shows every input address at or past the nonce this top-up was
 /// signed with AND the identity balance above the balance the top-up started
-/// from, a fresh read from Platform taken before signing; any other proof is
-/// 20 and nothing is reconciled from it. The host must not submit it again;
-/// the next sync settles the outcome.
+/// from, the one in the identity fetched from Platform before signing; any
+/// other proof is 20 and nothing is reconciled from it. The host must not
+/// submit it again; the next sync settles the outcome.
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -107,7 +116,67 @@ fn catch_address_top_up_panic(
 ///   The caller retains ownership; this function does NOT destroy it.
 /// - `out_new_balance` must be writable for the duration of the call.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_top_up_identity_from_addresses_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    inputs: *const IdentityFundingInputFFI,
+    inputs_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    catch_address_top_up_panic(
+        "platform_wallet_top_up_identity_from_addresses_with_signer",
+        || {
+            address_top_up(
+                wallet_handle,
+                identity_id,
+                inputs,
+                inputs_count,
+                signer_address_handle,
+                out_new_balance,
+                AddressTopUpRoute::AnyIdentity,
+            )
+        },
+    )
+}
+
+/// Top up an identity the wallet manages from one or more Platform
+/// addresses, using an external `SignerHandle` for the per-address funding
+/// signatures.
+///
+/// **Deprecated:** use
+/// [`platform_wallet_top_up_identity_from_addresses_with_signer`], which
+/// tops up any identity and updates a managed one's balance the same way.
+/// This export differs only in refusing an identity the wallet does not
+/// manage with `ErrorIdentityNotFound` (7) before Platform is asked. It
+/// wraps the deprecated
+/// [`PlatformWallet::top_up_from_addresses`](platform_wallet::PlatformWallet::top_up_from_addresses),
+/// itself built on the top-up of any identity.
+///
+/// On success `out_new_balance` is populated with the post-transition
+/// credit balance returned by Platform. The Rust-side
+/// `ManagedIdentity` for `identity_id` has its balance updated and
+/// queued for persistence inside the library call, so a subsequent
+/// `ManagedIdentity::balance` read on the same handle reflects the
+/// new value without an extra round trip.
+///
+/// The identity is read from Platform before anything is signed: a failed
+/// read is `ErrorIdentityLookupFailed` (80) and an identity Platform does
+/// not know `ErrorIdentityNotFound` (7), nothing sent.
+///
+/// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
+/// executed or may still execute: its result was not proved, or the call
+/// panicked, possibly after signing or broadcast. A result proof counts only
+/// when it shows every input address at or past the nonce this top-up was
+/// signed with AND the identity balance above the balance the top-up started
+/// from, a fresh read from Platform taken before signing; any other proof is
+/// 20 and nothing is reconciled from it. The host must not submit it again;
+/// the next sync settles the outcome.
+///
+/// # Safety
+/// Same contract as
+/// [`platform_wallet_top_up_identity_from_addresses_with_signer`].
+#[no_mangle]
 pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
@@ -117,43 +186,143 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     out_new_balance: *mut u64,
 ) -> PlatformWalletFFIResult {
     catch_address_top_up_panic("platform_wallet_top_up_from_addresses_with_signer", || {
-        check_ptr!(identity_id);
-        check_ptr!(inputs);
-        check_ptr!(signer_address_handle);
-        check_ptr!(out_new_balance);
-        let identity_id_bytes: [u8; 32] = *identity_id;
-        let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
-        let rows = match funding_rows(inputs, inputs_count) {
-            Ok(rows) => rows,
-            Err(error) => return error,
-        };
-
-        // Round-trip the signer pointer through `usize` so the spawned
-        // future's capture is `Send + 'static` (the raw pointer is `!Send`,
-        // but `usize` is). The underlying `Inner::Callback { ctx, vtable }`
-        // is `Send + Sync` — see the unsafe impls in `rs-sdk-ffi/src/signer.rs`.
-        let signer_addr = signer_address_handle as usize;
-
-        // Take the wallet out of the registry in a short read, so the registry
-        // is not locked while the host signs.
-        let wallet = unwrap_option_or_return!(
-            PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |w| w.clone())
-        );
-        let result = block_on_worker(async move {
-            let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            // The composite tops up the identity AND reconciles the spent
-            // platform-address balances from the proof, so the wallet's
-            // displayed balance and next input selection reflect the spend
-            // (covering addresses restored from disk that are no longer in
-            // a live derived pool).
-            wallet
-                .top_up_from_addresses(&identity_id, rows, address_signer, None)
-                .await
-        });
-        let new_balance = unwrap_result_or_return!(result);
-        *out_new_balance = new_balance;
-        PlatformWalletFFIResult::ok()
+        address_top_up(
+            wallet_handle,
+            identity_id,
+            inputs,
+            inputs_count,
+            signer_address_handle,
+            out_new_balance,
+            AddressTopUpRoute::ManagedOnly,
+        )
     })
+}
+
+/// Top up an identity this wallet does **not** manage (someone else's)
+/// from one or more Platform addresses, using an external `SignerHandle`
+/// for the per-address funding signatures.
+///
+/// **Deprecated:** now the same call as
+/// [`platform_wallet_top_up_identity_from_addresses_with_signer`], which
+/// tops up any identity; use that instead.
+///
+/// The identity is fetched from Platform rather than read from the wallet,
+/// is never added to the wallet's identity manager, and the spent
+/// platform-address balances are reconciled. Should the wallet manage the
+/// identity after all, its balance is updated as well.
+///
+/// On success `out_new_balance` is populated with the identity's
+/// post-transition credit balance returned by Platform. An identity
+/// Platform does not know returns `ErrorIdentityNotFound` (7) and a failed
+/// lookup `ErrorIdentityLookupFailed` (80), before anything is signed or
+/// broadcast.
+///
+/// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
+/// executed or may still execute: its result was not proved, or the call
+/// panicked, possibly after signing or broadcast. A result proof counts only
+/// when it shows every input address at or past the nonce this top-up was
+/// signed with AND the identity balance above the balance the top-up started
+/// from, a fresh read from Platform taken before signing; any other proof is
+/// 20 and nothing is reconciled from it. The host must not submit it again;
+/// the next sync settles the outcome.
+///
+/// # Safety
+/// Same contract as
+/// [`platform_wallet_top_up_identity_from_addresses_with_signer`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_top_up_external_identity_from_addresses_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    inputs: *const IdentityFundingInputFFI,
+    inputs_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    catch_address_top_up_panic(
+        "platform_wallet_top_up_external_identity_from_addresses_with_signer",
+        || {
+            address_top_up(
+                wallet_handle,
+                identity_id,
+                inputs,
+                inputs_count,
+                signer_address_handle,
+                out_new_balance,
+                AddressTopUpRoute::AnyIdentity,
+            )
+        },
+    )
+}
+
+/// Which library operation an address top-up export hands its arguments to.
+#[derive(Clone, Copy)]
+enum AddressTopUpRoute {
+    /// [`PlatformWallet::top_up_identity_from_addresses`](platform_wallet::PlatformWallet::top_up_identity_from_addresses).
+    AnyIdentity,
+    /// The deprecated
+    /// [`PlatformWallet::top_up_from_addresses`](platform_wallet::PlatformWallet::top_up_from_addresses).
+    ManagedOnly,
+}
+
+/// The body every address top-up export shares: marshal the arguments, hand
+/// them to `route`'s library operation and write its balance out.
+///
+/// # Safety
+/// The safety contract of
+/// [`platform_wallet_top_up_identity_from_addresses_with_signer`].
+unsafe fn address_top_up(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    inputs: *const IdentityFundingInputFFI,
+    inputs_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    out_new_balance: *mut u64,
+    route: AddressTopUpRoute,
+) -> PlatformWalletFFIResult {
+    check_ptr!(identity_id);
+    check_ptr!(inputs);
+    check_ptr!(signer_address_handle);
+    check_ptr!(out_new_balance);
+    let identity_id_bytes: [u8; 32] = *identity_id;
+    let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
+    let rows = match funding_rows(inputs, inputs_count) {
+        Ok(rows) => rows,
+        Err(error) => return error,
+    };
+
+    // Round-trip the signer pointer through `usize` so the spawned
+    // future's capture is `Send + 'static` (the raw pointer is `!Send`,
+    // but `usize` is). The underlying `Inner::Callback { ctx, vtable }`
+    // is `Send + Sync` — see the unsafe impls in `rs-sdk-ffi/src/signer.rs`.
+    let signer_addr = signer_address_handle as usize;
+
+    // Take the wallet out of the registry in a short read, so the registry
+    // is not locked while the host signs.
+    let wallet =
+        unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |w| w.clone()));
+    let result = block_on_worker(async move {
+        let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        // The composite tops up the identity AND reconciles the spent
+        // platform-address balances from the proof, so the wallet's
+        // displayed balance and next input selection reflect the spend
+        // (covering addresses restored from disk that are no longer in
+        // a live derived pool).
+        match route {
+            AddressTopUpRoute::AnyIdentity => {
+                wallet
+                    .top_up_identity_from_addresses(&identity_id, rows, address_signer, None)
+                    .await
+            }
+            AddressTopUpRoute::ManagedOnly => {
+                #[allow(deprecated)]
+                let top_up = wallet.top_up_from_addresses(&identity_id, rows, address_signer, None);
+                top_up.await
+            }
+        }
+    });
+    let new_balance = unwrap_result_or_return!(result);
+    *out_new_balance = new_balance;
+    PlatformWalletFFIResult::ok()
 }
 
 /// Marshal the address-input rows of an address-funded top-up into the
@@ -178,82 +347,6 @@ unsafe fn funding_rows(
             )),
         })
         .collect()
-}
-
-/// Top up an identity this wallet does **not** manage (someone else's)
-/// from one or more Platform addresses, using an external `SignerHandle`
-/// for the per-address funding signatures.
-///
-/// Wraps the composite
-/// [`PlatformWallet::top_up_external_identity_from_addresses`](platform_wallet::PlatformWallet::top_up_external_identity_from_addresses):
-/// the identity is fetched from Platform rather than read from the wallet,
-/// is never added to the wallet's identity manager, and the spent
-/// platform-address balances are reconciled as for
-/// [`platform_wallet_top_up_from_addresses_with_signer`].
-///
-/// On success `out_new_balance` is populated with the identity's
-/// post-transition credit balance returned by Platform. An identity
-/// Platform does not know returns `ErrorIdentityNotFound` before anything
-/// is signed or broadcast.
-///
-/// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
-/// executed or may still execute: its result was not proved, or the call
-/// panicked, possibly after signing or broadcast. A result proof counts only
-/// when it shows every input address at or past the nonce this top-up was
-/// signed with AND the identity balance above the balance the top-up started
-/// from, a fresh read from Platform taken before signing; any other proof is
-/// 20 and nothing is reconciled from it. The host must not submit it again;
-/// the next sync settles the outcome.
-///
-/// # Safety
-/// Same contract as [`platform_wallet_top_up_from_addresses_with_signer`].
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_top_up_external_identity_from_addresses_with_signer(
-    wallet_handle: Handle,
-    identity_id: *const [u8; 32],
-    inputs: *const IdentityFundingInputFFI,
-    inputs_count: usize,
-    signer_address_handle: *mut SignerHandle,
-    out_new_balance: *mut u64,
-) -> PlatformWalletFFIResult {
-    catch_address_top_up_panic(
-        "platform_wallet_top_up_external_identity_from_addresses_with_signer",
-        || {
-            check_ptr!(identity_id);
-            check_ptr!(inputs);
-            check_ptr!(signer_address_handle);
-            check_ptr!(out_new_balance);
-            let identity_id_bytes: [u8; 32] = *identity_id;
-            let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
-            let rows = match funding_rows(inputs, inputs_count) {
-                Ok(rows) => rows,
-                Err(error) => return error,
-            };
-
-            // `usize` round-trip keeps the spawned future `Send + 'static`; see
-            // `platform_wallet_top_up_from_addresses_with_signer`.
-            let signer_addr = signer_address_handle as usize;
-
-            let wallet = unwrap_option_or_return!(
-                PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |w| w.clone())
-            );
-            let result = block_on_worker(async move {
-                let address_signer: &VTableSigner =
-                    unsafe { &*(signer_addr as *const VTableSigner) };
-                wallet
-                    .top_up_external_identity_from_addresses(
-                        &identity_id,
-                        rows,
-                        address_signer,
-                        None,
-                    )
-                    .await
-            });
-            let new_balance = unwrap_result_or_return!(result);
-            *out_new_balance = new_balance;
-            PlatformWalletFFIResult::ok()
-        },
-    )
 }
 
 /// Minimum asset-lock funding for a Core-funded identity top-up, in duffs.
