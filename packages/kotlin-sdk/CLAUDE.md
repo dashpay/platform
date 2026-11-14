@@ -34,7 +34,9 @@ are data encrypted under Keystore-wrapped AES keys).
   `org.dashfoundation.dashsdk.ffi.DashSDKException(code, message)`, which
   also carries the consensus code and kind when a platform-wallet result or
   an rs-sdk-ffi `DashSDKError` reports a consensus rejection
-  (`DashSdkError.consensusError`; branch on that, never on the message); panics
+  (`DashSdkError.consensusError`; branch on that, never on the message), and a
+  platform-wallet result's payment-delivery class (`DashSdkError.delivery`:
+  retry or wait, never decided from lists of error types); panics
   are caught at every export (`support::guard`) — the JNI library must never
   abort the app process (workspace profiles `*-android` keep
   `panic = "unwind"`).
