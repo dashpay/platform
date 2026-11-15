@@ -45,6 +45,10 @@ impl ContactShieldedAddresses {
         identity_id: &Identifier,
         account: u32,
     ) -> Option<AccountViewingKeys> {
+        // The keys are read first and the preparation checked under their
+        // lock, which a bind takes for writing: the keys returned are the ones
+        // bound while the preparation stood, never those of a later bind.
+        let viewing_keys = self.viewing_keys.read().await;
         let standing = self
             .prepared_accounts
             .lock()
@@ -54,11 +58,6 @@ impl ContactShieldedAddresses {
         if standing != Some(account) {
             return None;
         }
-        self.viewing_keys
-            .read()
-            .await
-            .as_ref()?
-            .get(&account)
-            .cloned()
+        viewing_keys.as_ref()?.get(&account).cloned()
     }
 }

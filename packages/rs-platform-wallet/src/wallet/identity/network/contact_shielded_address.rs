@@ -25,6 +25,17 @@ const CONTACT_REQUEST: &str = "contactRequest";
 #[cfg(feature = "shielded")]
 const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 
+/// Log why `owner_id`'s contact request goes without a shielded address. The
+/// request is still sent, so this is the only trace of the reason.
+#[cfg(feature = "shielded")]
+fn without_address(owner_id: &Identifier, reason: &str) {
+    tracing::debug!(
+        identity = %owner_id,
+        reason,
+        "contact request sent without a shielded address"
+    );
+}
+
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The shielded payment address `owner_id` gives `to_user_id` in the contact request
     /// it sends under `account_reference`, or `None` when the request goes without one.
@@ -69,31 +80,35 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     .and_then(|info| info.identity_manager.managed_identity(owner_id))
                     .filter(|identity| identity.wallet_id == Some(self.wallet_id))
                 else {
+                    without_address(owner_id, "the wallet does not hold the identity");
                     return Ok(None);
                 };
                 let Some(account) = managed
                     .identity_index
                     .and_then(|index| shielded_identity_account_index(index).ok())
                 else {
+                    without_address(owner_id, "the identity has no shielded account");
                     return Ok(None);
                 };
-                let others: Vec<(Identifier, u32)> = managed
-                    .dashpay()
-                    .sent_contact_requests()
-                    .values()
-                    .filter(|request| request.recipient_id != *to_user_id)
-                    .map(|request| (request.recipient_id, request.account_reference))
-                    .collect();
-                (account, others)
+                (account, managed.other_sent_account_references(to_user_id))
             };
             let Some(keys) = self
                 .contact_shielded_addresses
                 .proven_account_keys(owner_id, account)
                 .await
             else {
+                without_address(
+                    owner_id,
+                    "the identity's shielded account is not prepared in this session, or \
+                     its viewing keys are not bound",
+                );
                 return Ok(None);
             };
             if !self.contact_requests_carry_shielded_address().await? {
+                without_address(
+                    owner_id,
+                    "the network's contact requests do not carry a shielded address yet",
+                );
                 return Ok(None);
             }
 
