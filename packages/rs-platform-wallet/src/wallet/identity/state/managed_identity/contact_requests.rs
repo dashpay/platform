@@ -103,7 +103,9 @@ impl ManagedIdentity {
     /// Both maps, as for [`Self::prior_sent_account_reference`]: a request
     /// leaves `sent_contact_requests` for
     /// `established_contacts[..].outgoing_request` once its contact
-    /// establishes, and what it issued stays issued.
+    /// establishes, and what it issued stays issued. A request whose
+    /// broadcast is not settled yet counts too: it may already be on
+    /// Platform.
     #[cfg(any(feature = "shielded", test))]
     pub(crate) fn other_sent_account_references(
         &self,
@@ -118,8 +120,14 @@ impl ManagedIdentity {
                     .values()
                     .map(|contact| &contact.outgoing_request),
             )
-            .filter(|request| request.recipient_id != *recipient)
             .map(|request| (request.recipient_id, request.account_reference))
+            .chain(
+                self.dashpay
+                    .unconfirmed_public_requests
+                    .iter()
+                    .map(|(to, request)| (*to, request.account_reference)),
+            )
+            .filter(|(to, _)| to != recipient)
             .collect()
     }
 
@@ -1732,6 +1740,33 @@ mod tests {
             managed.other_sent_account_references(&pending_id),
             vec![(established_id, 0)]
         );
+    }
+
+    /// A request held after its broadcast, with no proof of the outcome yet,
+    /// may already be on Platform: its account reference counts as issued.
+    #[test]
+    fn should_list_the_reference_of_a_request_whose_broadcast_is_not_settled() {
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use key_wallet::bip32::ExtendedPrivKey;
+        use key_wallet::Network;
+        let mut managed = create_test_identity([1u8; 32]);
+        let unsettled_id = Identifier::from([4u8; 32]);
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &[42u8; 32]).expect("a key");
+        managed.hold_unconfirmed_public_request(
+            unsettled_id,
+            StateTransition::Batch(BatchTransition::V0(Default::default())),
+            7,
+            0,
+            ExtendedPubKey::from_priv(&master),
+        );
+
+        assert_eq!(
+            managed.other_sent_account_references(&Identifier::from([9u8; 32])),
+            vec![(unsettled_id, 7)]
+        );
+        assert!(managed
+            .other_sent_account_references(&unsettled_id)
+            .is_empty());
     }
 
     #[test]
