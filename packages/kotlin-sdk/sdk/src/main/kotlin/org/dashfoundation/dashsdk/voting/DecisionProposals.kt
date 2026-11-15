@@ -160,10 +160,12 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
  * broadcasts and waits for Platform to confirm. Nothing is decided or checked here.
  *
  * Cancellation: native code cannot see a coroutine's cancellation, so a write can complete
- * after its caller was cancelled. Each call then still returns what Platform confirmed
- * (see [opReturningCompletedResult]) instead of throwing, so a paid create is never hidden
- * from a caller that would otherwise pay for it again. The coroutine stays cancelled:
- * handle the result before the next suspension point.
+ * after its caller was cancelled. The coroutine that made the call then still receives
+ * what Platform confirmed (see [opReturningCompletedResult]) instead of an exception, so it
+ * can record a paid create rather than pay for it again. That coroutine stays
+ * cancelled, so handle the result before its next suspension point: code that awaits the
+ * coroutine from outside (its `Job` or `Deferred`) still gets a `CancellationException`
+ * and never the result.
  */
 class DecisionProposalTransactions internal constructor(private val gate: TeardownGate?) {
 
