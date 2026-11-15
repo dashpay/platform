@@ -37,6 +37,19 @@ mod external_identity_tests;
 // Top-up from platform addresses
 // ---------------------------------------------------------------------------
 
+/// Which identities an address top-up accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TopUpScope {
+    /// Any identity Platform knows, the wallet's own or someone else's.
+    AnyIdentity,
+    /// Only an identity the identity manager holds, as the deprecated
+    /// [`PlatformWallet::top_up_from_addresses`] does.
+    ///
+    /// [`PlatformWallet::top_up_from_addresses`]:
+    /// crate::wallet::PlatformWallet::top_up_from_addresses
+    ManagedOnly,
+}
+
 impl IdentityWallet {
     /// Top up an identity by spending platform address balances, whoever
     /// owns the identity.
@@ -71,9 +84,9 @@ impl IdentityWallet {
     ///
     /// Before any network I/O, funding rows that are empty or whose sum for
     /// one address overflows are [`PlatformWalletError::InvalidParameter`].
-    /// With `managed_only`, an identity the identity manager does not hold
-    /// is [`PlatformWalletError::IdentityNotFound`] before Platform is asked
-    /// (the contract of the deprecated managed-only route). Platform not
+    /// With [`TopUpScope::ManagedOnly`], an identity the identity manager
+    /// does not hold is [`PlatformWalletError::IdentityNotFound`] before
+    /// Platform is asked (the contract of the deprecated managed-only route). Platform not
     /// knowing the identity is [`PlatformWalletError::IdentityNotFound`] and
     /// a failed lookup [`PlatformWalletError::IdentityLookupFailed`], both
     /// before anything is signed or broadcast.
@@ -87,21 +100,17 @@ impl IdentityWallet {
     ///   [`PlatformAddress`]es. Construction is the caller's concern —
     ///   seed-backed, hardware, FFI trampoline, whatever — the wallet
     ///   struct carries no key material itself.
-    /// * `managed_only` - Refuse an identity the identity manager does not
-    ///   hold, as the deprecated
-    ///   [`PlatformWallet::top_up_from_addresses`] does.
+    /// * `scope` - Which identities the top-up accepts; see [`TopUpScope`].
     ///
     /// [`PlatformWallet::top_up_identity_from_addresses`]:
     /// crate::wallet::PlatformWallet::top_up_identity_from_addresses
-    /// [`PlatformWallet::top_up_from_addresses`]:
-    /// crate::wallet::PlatformWallet::top_up_from_addresses
     pub(crate) async fn top_up_identity_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
         inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-        managed_only: bool,
+        scope: TopUpScope,
     ) -> Result<
         (
             (AddressInfos, Credits, ResponseMetadata),
@@ -114,7 +123,7 @@ impl IdentityWallet {
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
         let inputs = funding_inputs(inputs)?;
-        if managed_only && !self.manages_identity(identity_id).await? {
+        if scope == TopUpScope::ManagedOnly && !self.manages_identity(identity_id).await? {
             return Err(PlatformWalletError::IdentityNotFound(*identity_id));
         }
         let identity = Identity::fetch(&self.sdk, *identity_id)

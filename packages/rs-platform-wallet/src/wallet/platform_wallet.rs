@@ -16,6 +16,7 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuar
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
+use super::identity::network::TopUpScope;
 use super::identity::{IdentityManager, IdentityWallet};
 #[cfg(feature = "shielded")]
 use super::persister::PrivatePaymentRestoreRetry;
@@ -637,8 +638,14 @@ impl PlatformWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
-        self.top_up_identity(identity_id, inputs, address_signer, settings, false)
-            .await
+        self.top_up_identity(
+            identity_id,
+            inputs,
+            address_signer,
+            settings,
+            TopUpScope::AnyIdentity,
+        )
+        .await
     }
 
     /// Top up an identity the identity manager holds, as
@@ -666,8 +673,14 @@ impl PlatformWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
-        self.top_up_identity(identity_id, inputs, address_signer, settings, true)
-            .await
+        self.top_up_identity(
+            identity_id,
+            inputs,
+            address_signer,
+            settings,
+            TopUpScope::ManagedOnly,
+        )
+        .await
     }
 
     /// Top up an identity this wallet does not manage: now
@@ -697,15 +710,15 @@ impl PlatformWallet {
             .await
     }
 
-    /// [`Self::top_up_identity_from_addresses`], refusing an identity the
-    /// identity manager does not hold when `managed_only`.
+    /// [`Self::top_up_identity_from_addresses`], accepting the identities
+    /// `scope` names.
     async fn top_up_identity<S, I>(
         &self,
         identity_id: &Identifier,
         inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-        managed_only: bool,
+        scope: TopUpScope,
     ) -> Result<Credits, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -721,13 +734,7 @@ impl PlatformWallet {
         }
         let (confirmed, lifecycle) = self
             .identity
-            .top_up_identity_from_addresses(
-                identity_id,
-                inputs,
-                address_signer,
-                settings,
-                managed_only,
-            )
+            .top_up_identity_from_addresses(identity_id, inputs, address_signer, settings, scope)
             .await?;
         Ok(self.record_top_up(identity_id, confirmed, &lifecycle).await)
     }
