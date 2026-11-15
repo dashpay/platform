@@ -36,8 +36,8 @@ use key_wallet_manager::WalletManager;
 
 use crate::changeset::{
     persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
-    DashPayBackfillRecord, DurableCursor, DurableCursorState, DurableCursors,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -575,10 +575,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `AssetLockManager` async waiters on lock events.
     ///
     /// The count of `persister`'s flushes per wallet id belongs to the
-    /// backend instance, not to this manager: a manager made over the same
-    /// instance while an earlier one's wallet handles are still in use counts
-    /// with them, so a flush through such a handle that drops the backend's
-    /// buffer is seen here ([`DurableCursorState::over_backend`]).
+    /// backend instance, not to this manager, and lives as long as the
+    /// instance does: every handle made over it counts there, so a flush
+    /// through a handle an earlier manager gave out that drops the backend's
+    /// buffer is seen by this manager and its wallets
+    /// (`WalletPersister::new`).
     ///
     /// The order of durable cursor writes ([`DurableCursors`]) is still kept
     /// per manager, so two managers that both sync wallets over one backend
@@ -613,11 +614,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Host-visible hard sync-fault latch. The
         // adapter raises it the first time it freezes a durable watermark.
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        // With the flush ledgers of this backend instance, shared with any
-        // earlier manager over it whose handles are still in use.
-        let durable_cursors = DurableCursorState::over_backend(
-            &(Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>),
-        );
+        let durable_cursors = DurableCursors::default();
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
@@ -855,10 +852,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // And a flush that succeeds here is not trusted by itself: a flush
         // by such a handle may have taken the replacement first and failed,
         // which the ledger shows, and the wallet is then not published.
-        let persister = WalletPersister::with_flush_ledger(
+        let persister = WalletPersister::new(
             wallet_id,
             Arc::clone(&self.persister) as Arc<dyn PlatformWalletPersistence>,
-            self.durable_cursors.flush_ledgers.of(wallet_id),
         );
         persister.store_durably(changeset).map_err(|not_durable| {
             tracing::error!(
@@ -1525,6 +1521,7 @@ mod tests {
 
     use dash_async::WorkerStatus;
 
+    use crate::changeset::flush_ledger::FlushLedgers;
     use crate::changeset::{
         ClientStartState, FlushLedger, PersistenceError, PersistenceErrorKind,
         PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -1617,10 +1614,9 @@ mod tests {
         );
         let wallet_id: WalletId = [7; 32];
         // As `PlatformWallet::new` makes the handle of a wallet under the id.
-        let earlier = WalletPersister::with_flush_ledger(
+        let earlier = WalletPersister::new(
             wallet_id,
             Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
-            mgr.durable_cursors.flush_ledgers.of(wallet_id),
         );
         assert!(!earlier.buffered_writes_lost());
 
@@ -1643,57 +1639,11 @@ mod tests {
         );
         assert!(matches!(earlier.flush_durably(), Err(NotDurable::Lost)));
         // A handle made after it starts from what is on disk.
-        let later = WalletPersister::with_flush_ledger(
+        let later = WalletPersister::new(
             wallet_id,
             Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
-            mgr.durable_cursors.flush_ledgers.of(wallet_id),
         );
         assert!(!later.buffered_writes_lost());
-    }
-
-    /// The count of a backend's flushes belongs to the backend instance: a
-    /// manager made over one that an earlier manager was made over, while a
-    /// wallet handle of the earlier one is still in use, counts with it. A
-    /// flush through that handle that fails for good, dropping the buffer
-    /// both managers' records share, is then seen by the later manager. A
-    /// manager over another backend instance counts apart.
-    #[tokio::test]
-    async fn should_count_a_backends_flushes_in_one_place_for_every_manager_over_it() {
-        use crate::wallet::persister::WalletPersister;
-
-        let manager_over = |persister: &Arc<FatalFlushPersister>| {
-            PlatformWalletManager::new(
-                Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
-                Arc::clone(persister),
-                Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
-            )
-        };
-        let persister = Arc::new(FatalFlushPersister);
-        let wallet_id: WalletId = [7; 32];
-        let earlier = manager_over(&persister);
-        // As `PlatformWallet::new` makes the handle of a wallet under the id.
-        let stale = WalletPersister::with_flush_ledger(
-            wallet_id,
-            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
-            earlier.durable_cursors.flush_ledgers.of(wallet_id),
-        );
-
-        let later = manager_over(&persister);
-        let counted = later.durable_cursors.flush_ledgers.of(wallet_id);
-        assert_eq!(counted.lost(), 0);
-        assert!(stale.flush().is_err(), "the earlier handle's flush fails");
-        assert_eq!(
-            counted.lost(),
-            1,
-            "the later manager sees the flush that dropped the shared buffer"
-        );
-
-        let apart = manager_over(&Arc::new(FatalFlushPersister));
-        assert_eq!(
-            apart.durable_cursors.flush_ledgers.of(wallet_id).lost(),
-            0,
-            "another backend instance has its own count"
-        );
     }
 
     /// A buffering backend whose every store is taken at once by a flush of
@@ -1775,7 +1725,12 @@ mod tests {
             let wallet_id: WalletId = [7; 32];
             persister
                 .ledger
-                .set(mgr.durable_cursors.flush_ledgers.of(wallet_id))
+                .set(
+                    FlushLedgers::of_backend(
+                        &(Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>),
+                    )
+                    .of(wallet_id),
+                )
                 .expect("set once");
 
             // Coverage the wallet about to be published does not hold was

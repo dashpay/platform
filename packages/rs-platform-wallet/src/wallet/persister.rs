@@ -11,6 +11,7 @@ use std::sync::Arc;
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
+use crate::changeset::flush_ledger::FlushLedgers;
 use crate::changeset::{
     ClientStartState, DpnsNameStateEntry, FlushLedger, PersistenceCapabilities, PersistenceError,
     PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -214,22 +215,13 @@ pub(crate) enum NotDurable {
 }
 
 impl WalletPersister {
-    /// A handle whose flushes no other handle or manager shares: for a
-    /// backend this handle alone flushes `wallet_id`'s records on.
+    /// A handle for `wallet_id`'s records on `inner`. It counts its flushes
+    /// in the ledger of that backend instance and wallet id
+    /// ([`FlushLedgers::of_backend`]), the one every other handle made over
+    /// the same backend instance for the id counts in: whichever manager, or
+    /// no manager, made it, and for as long as the backend lives.
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
-        Self::with_flush_ledger(wallet_id, inner, Arc::default())
-    }
-
-    /// A handle that counts its flushes in `flush_ledger`, the one every
-    /// flush of `wallet_id`'s records on `inner` is counted in
-    /// ([`FlushLedgers`](crate::changeset::flush_ledger::FlushLedgers)). Inside the crate
-    /// only: a ledger made elsewhere would count some of the id's flushes
-    /// apart from the rest.
-    pub(crate) fn with_flush_ledger(
-        wallet_id: WalletId,
-        inner: Arc<dyn PlatformWalletPersistence>,
-        flush_ledger: Arc<FlushLedger>,
-    ) -> Self {
+        let flush_ledger = FlushLedgers::of_backend(&inner).of(wallet_id);
         Self {
             wallet_id,
             inner,
@@ -804,24 +796,25 @@ impl WalletPersister {
     /// flush writes what was put back.
     #[cfg(feature = "shielded")]
     pub(crate) fn flush_durably(&self) -> Result<(), NotDurable> {
-        if self.buffered_writes_lost() {
-            return Err(NotDurable::Lost);
-        }
-        if !self.store_commits_inline() {
-            let failed_before = self.flush_ledger.failed();
-            self.flush().map_err(NotDurable::Flush)?;
-            if self.flush_ledger.in_flight() != 0 {
-                return Err(NotDurable::OtherFlushUnsettled);
-            }
-            if self.buffered_writes_lost() {
-                return Err(NotDurable::Lost);
-            }
-            if self.flush_ledger.failed() != failed_before {
-                return Err(NotDurable::OtherFlushUnsettled);
-            }
+        // A store that is the commit left nothing to flush or to lose: a
+        // flush of such a backend only notifies the host, and its failing
+        // takes nothing back.
+        if self.store_commits_inline() {
+            return Ok(());
         }
         if self.buffered_writes_lost() {
             return Err(NotDurable::Lost);
+        }
+        let failed_before = self.flush_ledger.failed();
+        self.flush().map_err(NotDurable::Flush)?;
+        if self.flush_ledger.in_flight() != 0 {
+            return Err(NotDurable::OtherFlushUnsettled);
+        }
+        if self.buffered_writes_lost() {
+            return Err(NotDurable::Lost);
+        }
+        if self.flush_ledger.failed() != failed_before {
+            return Err(NotDurable::OtherFlushUnsettled);
         }
         Ok(())
     }
@@ -1139,16 +1132,10 @@ mod tests {
         let backend = Arc::new(Failing {
             for_good: AtomicBool::new(false),
         });
-        let ledger = Arc::new(FlushLedger::default());
         let wallet_id: WalletId = [3; 32];
-        let persister = WalletPersister::with_flush_ledger(
-            wallet_id,
-            Arc::clone(&backend) as _,
-            Arc::clone(&ledger),
-        );
+        let persister = WalletPersister::new(wallet_id, Arc::clone(&backend) as _);
         // A handle of a wallet removed, or created since, under the id.
-        let other =
-            WalletPersister::with_flush_ledger(wallet_id, Arc::clone(&backend) as _, ledger);
+        let other = WalletPersister::new(wallet_id, Arc::clone(&backend) as _);
         let owner = Identifier::from([9; 32]);
 
         persister.note_private_marker_stored(owner, Some(true));
@@ -1344,6 +1331,48 @@ mod tests {
         persister.note_read_back_once_durable([]);
         assert!(persister.has_read_back_private_entries(), "noted");
         assert_eq!(backend.durable.load(Ordering::SeqCst), 1, "on disk");
+    }
+
+    /// A backend whose store is the commit answers for what was stored
+    /// whatever its flush notification answers: a flush of it that fails took
+    /// nothing back, so the handle does not count its records as lost, and a
+    /// read-back is still noted.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_answer_for_an_inline_backend_whose_flush_notification_fails() {
+        struct InlineFailing;
+        impl PlatformWalletPersistence for InlineFailing {
+            fn store_commits_inline(&self) -> bool {
+                true
+            }
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Err(PersistenceError::backend("the host refused the flush"))
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let persister = WalletPersister::new([0; 32], Arc::new(InlineFailing) as _);
+        assert!(persister.flush().is_err(), "the notification fails");
+
+        assert!(
+            !persister.buffered_writes_lost(),
+            "nothing was buffered to lose"
+        );
+        assert!(persister.flush_durably().is_ok());
+        persister.note_read_back_once_durable([[1; 32]]);
+        assert!(
+            persister.has_read_back_private_entries(),
+            "the read-back is noted"
+        );
     }
 
     /// A store is not answered for while another flush of the wallet's
