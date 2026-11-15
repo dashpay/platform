@@ -721,6 +721,11 @@ struct FundFromAssetLockPlatformAddressView: View {
     ///   to leave both showing "—" in the storage explorer than to
     ///   silently tag the wrong row.
     private func backfillRecipientOnConsumedLock() {
+        // A resumed lock that carries a payment intent paid the intent's
+        // recipients, not the address picked here: its recipient map is the
+        // source of truth, so stamping the picked address as an own one
+        // would mislabel the row.
+        if resumeFromLock?.paymentIntent != nil { return }
         guard let controller = activeController else { return }
         let walletId = wallet.walletId
         let recipientHash = controller.recipientHash
