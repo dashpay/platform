@@ -7,6 +7,7 @@ import org.dashfoundation.dashsdk.ffi.DecisionProposalsNative
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 /**
  * Decision proposals (protocol version 15): yes/no questions any identity puts to the
@@ -157,6 +158,12 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
  * Each call is one native call (`platform_wallet_decision_proposal_create` / `_edit`): the
  * wallet builds the proposal (or reads the stored one and edits it), picks the signing key,
  * broadcasts and waits for Platform to confirm. Nothing is decided or checked here.
+ *
+ * Cancellation: native code cannot see a coroutine's cancellation, so a write can complete
+ * after its caller was cancelled. Each call then still returns what Platform confirmed
+ * (see [opReturningCompletedResult]) instead of throwing, so a paid create is never hidden
+ * from a caller that would otherwise pay for it again. The coroutine stays cancelled:
+ * handle the result before the next suspension point.
  */
 class DecisionProposalTransactions internal constructor(private val gate: TeardownGate?) {
 
@@ -175,7 +182,7 @@ class DecisionProposalTransactions internal constructor(private val gate: Teardo
         ownerId: ByteArray,
         params: DecisionProposalParams,
         signerHandle: Long,
-    ): CreatedDecisionProposal = gate.op {
+    ): CreatedDecisionProposal = gate.opReturningCompletedResult {
         val proposalId = ByteArray(PROPOSAL_ID_SIZE)
         val documentJson = mapNativeErrors {
             DecisionProposalsNative.create(
@@ -214,7 +221,7 @@ class DecisionProposalTransactions internal constructor(private val gate: Teardo
         proposalId: ByteArray,
         edit: DecisionProposalEdit,
         signerHandle: Long,
-    ): String = gate.op {
+    ): String = gate.opReturningCompletedResult {
         val url = edit.url.toNative()
         mapNativeErrors {
             DecisionProposalsNative.edit(
