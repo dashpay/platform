@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
 use crate::wallet::platform_wallet::WalletId;
@@ -113,12 +113,49 @@ impl FlushLedger {
     }
 }
 
-/// The [`FlushLedger`] of each wallet id, for the wallets of one manager. An
-/// entry outlives its wallet, as the backend's buffer under the id does.
+/// The [`FlushLedger`] of each wallet id, for the records one backend
+/// instance holds. An entry outlives its wallet, as the backend's buffer
+/// under the id does.
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedgers(Mutex<BTreeMap<WalletId, Arc<FlushLedger>>>);
 
+/// The ledgers of each backend instance a manager was made over
+/// ([`FlushLedgers::of_backend`]), both held weakly: an entry goes once its
+/// backend, or every holder of its ledgers, is gone. The weak reference keeps
+/// the backend's allocation from being reused while the entry stands, so an
+/// entry is never taken for another backend's.
+static BACKEND_LEDGERS: Mutex<Vec<BackendLedgers>> = Mutex::new(Vec::new());
+
+type BackendLedgers = (Weak<dyn PlatformWalletPersistence>, Weak<FlushLedgers>);
+
 impl FlushLedgers {
+    /// The ledgers of `backend`'s records: the same ones for every manager
+    /// made over this backend instance while a holder of them is left (a
+    /// manager, or a wallet handle one gave out), and new ones otherwise.
+    ///
+    /// A backend buffers a wallet's records under its id whoever stored
+    /// them, so the count of its flushes belongs with the backend, not with
+    /// one manager: a handle of an earlier manager that flushes the buffer
+    /// and fails is then counted where a later manager over the same backend
+    /// reads.
+    pub(crate) fn of_backend(backend: &Arc<dyn PlatformWalletPersistence>) -> Arc<Self> {
+        let mut known = BACKEND_LEDGERS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        known.retain(|(held, ledgers)| held.strong_count() > 0 && ledgers.strong_count() > 0);
+        let address = Arc::as_ptr(backend).cast::<()>();
+        let shared = known
+            .iter()
+            .find(|(held, _)| held.as_ptr().cast::<()>() == address)
+            .and_then(|(_, ledgers)| ledgers.upgrade());
+        if let Some(ledgers) = shared {
+            return ledgers;
+        }
+        let ledgers = Arc::new(Self::default());
+        known.push((Arc::downgrade(backend), Arc::downgrade(&ledgers)));
+        ledgers
+    }
+
     /// The ledger of `wallet_id`'s records, made on first use.
     pub(crate) fn of(&self, wallet_id: WalletId) -> Arc<FlushLedger> {
         Arc::clone(

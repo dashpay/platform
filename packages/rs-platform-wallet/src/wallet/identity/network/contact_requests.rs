@@ -19,6 +19,8 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
+pub(super) use crate::wallet::identity::state::managed_identity::predates;
+use crate::wallet::identity::state::managed_identity::{freshness, SentContactRequestOutcome};
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
@@ -700,14 +702,17 @@ fn release_public_claim(
     }
 }
 
-/// Track `request` as sent by `managed`, stored through `persister`.
+/// Track `request` as sent by `managed`, stored through `persister`, and
+/// answer what became of it: `managed` passes over a request older than the
+/// one it tracks for the recipient
+/// (`ManagedIdentity::track_sent_contact_request`).
 fn track_sent_contact_request(
     managed: &mut ManagedIdentity,
     request: &ContactRequest,
     persister: &WalletPersister,
-) -> Result<(), PlatformWalletError> {
+) -> Result<SentContactRequestOutcome, PlatformWalletError> {
     managed
-        .add_sent_contact_request(request.clone(), persister)
+        .track_sent_contact_request(request.clone(), persister)
         .map_err(|e| {
             PlatformWalletError::Persistence(format!("sent contact request not persisted: {e}"))
         })
@@ -1300,7 +1305,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// is a second request.
     ///
     /// A request older than the one the wallet tracks for the pair is not
-    /// recorded over it ([`predates`]). The lookup that found it, or the
+    /// recorded over it (the identity passes it over, [`predates`]). The lookup that found it, or the
     /// broadcast that confirmed it, ran with no lock held, and a sweep may
     /// have read in a newer request meanwhile, one another device of the
     /// identity sent. Recording the older one over it would have the next
@@ -1322,11 +1327,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity_mut(sender)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
-            let newer = managed
-                .dashpay()
-                .outgoing_request(recipient)
-                .filter(|tracked| predates(&request, tracked))
-                .cloned();
+            let outcome = track_sent_contact_request(managed, &request, &self.persister)?;
+            let newer = (outcome == SentContactRequestOutcome::Superseded)
+                .then(|| managed.dashpay().outgoing_request(recipient).cloned())
+                .flatten();
             if let Some(newer) = newer {
                 tracing::info!(
                     sender = %sender,
@@ -1338,7 +1342,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 );
                 return Ok(newer);
             }
-            track_sent_contact_request(managed, &request, &self.persister)?;
         }
         self.register_sent_request_account(sender, recipient, account_index, contact_xpub)
             .await;
@@ -1390,15 +1393,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     .is_some_and(|tracked| tracked.account_reference == request.account_reference);
                 return Ok(tracked.then_some(request));
             }
-            let superseded = dashpay
-                .outgoing_request(recipient)
-                .is_some_and(|tracked| predates(&request, tracked));
-            if superseded {
-                managed.settle_unconfirmed_public_request(recipient, attempt);
+            let outcome = track_sent_contact_request(managed, &request, &self.persister)?;
+            managed.settle_unconfirmed_public_request(recipient, attempt);
+            if outcome == SentContactRequestOutcome::Superseded {
                 return Ok(None);
             }
-            track_sent_contact_request(managed, &request, &self.persister)?;
-            managed.settle_unconfirmed_public_request(recipient, attempt);
         }
         self.register_sent_request_account(sender, recipient, account_index, contact_xpub)
             .await;
@@ -2182,14 +2181,6 @@ fn record_and_collapse_sent_requests(
     newest_sent_per_recipient(requests)
 }
 
-/// Whether `candidate` is older than `tracked`, a request between the same
-/// pair: by its account reference's version, which a rotation bumps, then by
-/// its creation time. A replay of an older request appended again later has a
-/// newer time but an older version.
-pub(super) fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
-    freshness(candidate) < freshness(tracked)
-}
-
 /// Whether `tracked`, a request between one pair, is an unconfirmed request
 /// carrying `account_reference` or supersedes it in the order [`predates`]
 /// reads: the same reference, or a later version. The unconfirmed request is
@@ -2199,19 +2190,6 @@ pub(super) fn records_or_supersedes(tracked: &ContactRequest, account_reference:
     tracked.account_reference == account_reference
         || platform_encryption::account_reference_version(account_reference)
             < platform_encryption::account_reference_version(tracked.account_reference)
-}
-
-/// How fresh a request between one pair is, for collapsing a sweep's requests
-/// and for passing over older ones alike: by its account reference's version,
-/// which a rotation bumps, then by its creation time, then by the reference
-/// itself so that equal times order deterministically. A replay of an older
-/// request appended again later has a newer time but an older version.
-fn freshness(request: &ContactRequest) -> (u32, u64, u32) {
-    (
-        platform_encryption::account_reference_version(request.account_reference),
-        request.created_at,
-        request.account_reference,
-    )
 }
 
 /// Ingest one identity's collapsed **received** contact requests into local
@@ -2320,32 +2298,22 @@ pub(super) fn ingest_sent_requests(
     newest_by_recipient: std::collections::BTreeMap<Identifier, ContactRequest>,
     recorded: &mut Vec<ContactRequest>,
 ) -> bool {
-    for (recipient_id, contact_request) in newest_by_recipient {
+    for contact_request in newest_by_recipient.into_values() {
         // An older request than the tracked one is a replay, as on the
-        // received side: superseding with it would re-derive the next rotation
-        // from a retired reference.
-        let (replay, tracked) =
-            managed
-                .dashpay()
-                .outgoing_request(&recipient_id)
-                .map_or((false, false), |tracked| {
-                    (
-                        predates(&contact_request, tracked),
-                        tracked.account_reference == contact_request.account_reference,
-                    )
-                });
-        if replay {
-            continue;
-        }
-        if let Err(e) = managed.add_sent_contact_request(contact_request.clone(), persister) {
-            tracing::error!(
-                owner = %identity_id, error = %e,
-                "sent-request ingest persist failed; leaving sent cursor for retry"
-            );
-            return false;
-        }
-        if !tracked {
-            recorded.push(contact_request);
+        // received side, and the identity passes it over: superseding with it
+        // would re-derive the next rotation from a retired reference.
+        match managed.track_sent_contact_request(contact_request.clone(), persister) {
+            Ok(SentContactRequestOutcome::Recorded) => recorded.push(contact_request),
+            Ok(
+                SentContactRequestOutcome::AlreadyTracked | SentContactRequestOutcome::Superseded,
+            ) => {}
+            Err(e) => {
+                tracing::error!(
+                    owner = %identity_id, error = %e,
+                    "sent-request ingest persist failed; leaving sent cursor for retry"
+                );
+                return false;
+            }
         }
     }
     true
