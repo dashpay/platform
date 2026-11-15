@@ -981,7 +981,6 @@ impl Sdk {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         preflight_keys_map(&keys_map)?;
-        validate_claim_keys_structure(&keys_map, self.version())?;
         ensure_invitation_network(&invitation, self.network)?;
 
         // Reconstruct the funding asset-lock proof by refetching the tx. Consensus
@@ -1016,6 +1015,12 @@ impl Sdk {
         let master_key = &master_key;
 
         claim_unless_refused(preflight, || async move {
+            // Checked here, after the preflight: its lookups are proved, and
+            // each verified answer raises the SDK's protocol version to the
+            // network's, so the keys are judged by the rules Platform will
+            // apply rather than by the version an SDK starts with.
+            validate_claim_keys_structure(&keys_map, self.version())?;
+
             // The voucher key signs the asset lock's outer ST signature (ECDSA
             // over the credit-output pubkey hash), scrubbed on every exit path
             // by the native secret-key owner.
@@ -3694,6 +3699,15 @@ mod tests {
             by_id: impl FnOnce(Identifier) -> Option<Identity>,
             by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
         ) -> (Result<Identity, InvitationError>, Identifier) {
+            claim_with_keys(claim_keys(), by_id, by_hash).await
+        }
+
+        /// [`claim`] with the given keys.
+        async fn claim_with_keys(
+            keys: BTreeMap<KeyID, IdentityPublicKey>,
+            by_id: impl FnOnce(Identifier) -> Option<Identity>,
+            by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
+        ) -> (Result<Identity, InvitationError>, Identifier) {
             let key = voucher();
             let tx = asset_lock_tx_paying_voucher_at(&key, 0);
             let txid = tx.txid().to_string();
@@ -3722,7 +3736,7 @@ mod tests {
                 .expect_fetch(invitation_id, by_id(invitation_id))
                 .await
                 .expect("expect the lookup by id");
-            for hash in claim_key_hashes(&claim_keys()).expect("key hashes") {
+            for hash in claim_key_hashes(&keys).expect("key hashes") {
                 sdk.mock()
                     .expect_fetch(PublicKeyHash(hash), by_hash(hash, invitation_id))
                     .await
@@ -3730,7 +3744,7 @@ mod tests {
             }
 
             let result = sdk
-                .claim_invitation(parsed(key, txid, None), claim_keys(), &UnusedSigner, None)
+                .claim_invitation(parsed(key, txid, None), keys, &UnusedSigner, None)
                 .await;
             (result, invitation_id)
         }
@@ -3768,6 +3782,24 @@ mod tests {
                     Err(InvitationError::KeysAlreadyRegistered { identity_id: Some(id), rejection: None })
                         if id == foreign
                 ),
+                "got {result:?}"
+            );
+        }
+
+        /// Keys Platform's structural validation refuses (two with the same
+        /// data) pass the preflight lookups but stop before anything is signed.
+        #[tokio::test]
+        async fn should_refuse_structurally_invalid_keys_before_signing() {
+            use dpp::identity::identity_public_key::accessors::v0::{
+                IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+            };
+
+            let mut keys = claim_keys();
+            let master_data = keys[&0].data().clone();
+            keys.get_mut(&1).expect("key 1").set_data(master_data);
+            let (result, _) = claim_with_keys(keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(_))),
                 "got {result:?}"
             );
         }
