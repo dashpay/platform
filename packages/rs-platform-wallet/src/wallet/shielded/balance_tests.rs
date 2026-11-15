@@ -515,7 +515,7 @@ async fn local_balance_waits_for_atomic_store_and_lifecycle_updates() {
         ShieldedBalanceSource::ScannedThisSession
     );
 
-    let admission = coordinator.admit().await;
+    let admission = coordinator.admit().await.unwrap();
     let install = admission.begin_install(wallet).await;
     let mut read = Box::pin(coordinator.local_balance_snapshot(wallet));
     assert!(matches!(futures::poll!(&mut read), Poll::Pending));

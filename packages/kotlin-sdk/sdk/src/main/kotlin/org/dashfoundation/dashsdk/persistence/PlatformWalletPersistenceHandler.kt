@@ -2689,21 +2689,40 @@ class PlatformWalletPersistenceHandler(
      * [network] in one transaction. Scoped by the wallet rows' network rather
      * than the loaded fleet, so a same-network wallet that failed restore
      * loses its rows too.
+     *
+     * Shielded rows carry no wallet FK, so they are enumerated from the
+     * shielded tables. Rows of a wallet with no wallet row belong to no
+     * wallet on any network and go too, as a wallet deletion would have
+     * taken them. Rows of a wallet whose network is not yet known fail the
+     * wipe with nothing deleted: they may be [network]'s, and reporting
+     * success with them in place would let a later bind restore them.
      */
     override fun onWipeShieldedState(network: Int): Int = guarded {
-        runBlockingCatching {
+        runBlockingResult {
             database.withTransaction {
                 val dao = database.shieldedDao()
-                for (wallet in database.walletDao().getByNetwork(network)) {
-                    dao.deleteActivityByWallet(wallet.walletId)
-                    dao.deleteOutgoingNotesByWallet(wallet.walletId)
-                    dao.deleteNotesByWallet(wallet.walletId)
-                    dao.deleteSyncStatesByWallet(wallet.walletId)
-                    dao.deleteViewingKeysByWallet(wallet.walletId)
+                val doomed = ArrayList<ByteArray>()
+                for (walletId in dao.getShieldedWalletIds()) {
+                    val wallet = database.walletDao().getByWalletId(walletId)
+                    when {
+                        wallet == null -> doomed += walletId
+                        wallet.networkRaw == null -> {
+                            Log.e(TAG, "shielded wipe refused: a wallet with shielded rows has no network")
+                            return@withTransaction 1
+                        }
+                        wallet.networkRaw == network -> doomed += walletId
+                    }
                 }
+                for (walletId in doomed) {
+                    dao.deleteActivityByWallet(walletId)
+                    dao.deleteOutgoingNotesByWallet(walletId)
+                    dao.deleteNotesByWallet(walletId)
+                    dao.deleteSyncStatesByWallet(walletId)
+                    dao.deleteViewingKeysByWallet(walletId)
+                }
+                0
             }
         }
-        0
     }
 
     // ── Load callbacks ────────────────────────────────────────────────

@@ -910,8 +910,7 @@ impl PlatformWallet {
         // a long shield holds no admission that would stall a Clear.
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let admission = coordinator.admit().await;
-        admission.ensure_host_cleared()?;
+        let admission = coordinator.admit().await?;
         let network = self.sdk.network;
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
@@ -1025,8 +1024,7 @@ impl PlatformWallet {
         // `bind_shielded` is.
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let admission = coordinator.admit().await;
-        admission.ensure_host_cleared()?;
+        let admission = coordinator.admit().await?;
         let start = self.persister.load().map_err(|e| {
             PlatformWalletError::ShieldedBuildError(format!(
                 "persister load failed while rebinding shielded viewing keys: {e}"
@@ -1292,13 +1290,14 @@ impl PlatformWallet {
             )));
         }
         self.ensure_shielded_attached()?;
-        // Admitted for the whole read-check-write-install span, as a bind
-        // is: no Clear lands between the snapshot read and the key's
-        // installation, and none completes with this key's row still to be
-        // written.
+        // Guarded and admitted for the whole read-check-write-install span,
+        // as a bind is: no Clear lands between the snapshot read and the
+        // key's installation, none completes with this key's row still to be
+        // written, and no bind replaces the key slot between this add's
+        // check and its insert.
+        let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let admission = coordinator.admit().await;
-        admission.ensure_host_cleared()?;
+        let _admission = coordinator.admit().await?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -1531,12 +1530,17 @@ impl PlatformWallet {
     /// manager never reads as a zero balance. Folds the network-wide
     /// [`balances_across`](super::shielded::sync::balances_across)
     /// result down to this wallet's per-account slice.
+    ///
+    /// Admitted from the key snapshot through the read, so it never
+    /// interleaves with a Clear, and refused rather than read empty while a
+    /// Clear's host wipe is pending.
     #[cfg(feature = "shielded")]
     pub async fn shielded_balances(
         &self,
     ) -> Result<std::collections::BTreeMap<u32, u64>, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
         let coordinator = self.shielded_coordinator().await?;
+        let _admission = coordinator.admit().await?;
         let guard = self.shielded_keys.read().await;
         let Some(keys) = guard.as_ref() else {
             return Ok(std::collections::BTreeMap::new());
@@ -1628,7 +1632,7 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -1670,7 +1674,7 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         // The decoder is network-agnostic, so guard the recipient's HRP class
         // against the wallet's network before decoding.
@@ -1719,7 +1723,7 @@ impl PlatformWallet {
         // reconcile, and taken before admission (the lock order).
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let (mut proven_balance, metadata) =
@@ -1931,6 +1935,10 @@ impl PlatformWallet {
     /// See
     /// [`DashPayView::restore_pending_private_contact_requests`](crate::DashPayView::restore_pending_private_contact_requests)
     /// for what it does not cover.
+    ///
+    /// Admitted from the store read through the last reservation, so a Clear
+    /// lands entirely before or after it, and refused while a Clear's host
+    /// wipe is pending.
     #[cfg(feature = "shielded")]
     pub async fn restore_pending_private_contact_requests<C>(
         &self,
@@ -1939,7 +1947,11 @@ impl PlatformWallet {
     where
         C: ContactCryptoProvider + Sync,
     {
-        let entries = self.unconfirmed_private_contact_requests().await?;
+        let coordinator = self.shielded_coordinator().await?;
+        let _admission = coordinator.admit().await?;
+        let entries = self
+            .unconfirmed_private_contact_requests(&coordinator)
+            .await?;
         self.identity
             .dashpay()
             .restore_pending_private_contact_requests(&entries, crypto)
@@ -2085,8 +2097,8 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     async fn unconfirmed_private_contact_requests(
         &self,
+        coordinator: &NetworkShieldedCoordinator,
     ) -> Result<Vec<BinaryData>, PlatformWalletError> {
-        let coordinator = self.shielded_coordinator().await?;
         let dashpay_id = dashpay_contract()?.id();
         let store = coordinator.store().read().await;
         let redrives = store
@@ -2136,7 +2148,7 @@ impl PlatformWallet {
         // admission is the outermost lock), but only once the host has
         // signed: a signing prompt never holds a Clear back.
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
         // The generation's lifecycle gate, held across the liveness check,
         // the restore and the spend, before the wallet manager lock as the
         // teardown takes them: a removal cannot complete in between, so a
@@ -2224,7 +2236,7 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let network = self.sdk.network;
         let parsed = to_core_address
@@ -2292,7 +2304,7 @@ impl PlatformWallet {
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
         let (identity_id, identity) = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
@@ -2574,7 +2586,7 @@ impl PlatformWallet {
         // taken before admission (the lock order).
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
 
         // Planning and amount selection are shared with the cached preflight.
         // The helper drops the wallet-manager read lock before the expensive
@@ -2635,7 +2647,7 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError> {
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let admission = coordinator.admit().await;
+        let admission = coordinator.admit().await?;
         coordinator
             .abandon_identity_debit_admitted(
                 &admission,
@@ -2758,7 +2770,7 @@ impl PlatformWallet {
         // Taken before admission (the lock order).
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await;
+        let _admission = coordinator.admit().await?;
 
         let identity = {
             let wm = self.wallet_manager.read().await;
@@ -3172,21 +3184,17 @@ impl PrivatePaymentRestore {
         admission: Option<&ShieldedAdmission<'_>>,
         wait: bool,
     ) -> Result<Option<Vec<(Identifier, Identifier)>>, PlatformWalletError> {
-        let owned;
-        let admission = match admission {
-            Some(admission) => Some(admission),
-            None if wait => {
-                owned = Some(self.coordinator.admit().await);
-                owned.as_ref()
-            }
-            None => {
-                owned = self.coordinator.try_admit();
-                owned.as_ref()
-            }
+        let owned = match admission {
+            Some(_) => Ok(None),
+            None if wait => self.coordinator.admit().await.map(Some),
+            None => self.coordinator.try_admit(),
         };
-        let restored = match admission {
-            Some(admission) => self.restore(admission, wait).await,
-            None => Ok(None),
+        let restored = match (admission, &owned) {
+            (Some(admission), _) | (None, Ok(Some(admission))) => {
+                self.restore(admission, wait).await
+            }
+            (None, Ok(None)) => Ok(None),
+            (None, Err(_)) => owned.map(|_| None),
         };
         match &restored {
             Ok(Some(_)) => {
@@ -3293,9 +3301,6 @@ impl PrivatePaymentRestore {
                 "the shielded admission is not this restoration's coordinator's".to_string(),
             ));
         }
-        // A Clear that reset native state but not the host refuses
-        // restorations as it refuses binds.
-        admission.ensure_host_cleared()?;
         if self.coordinator.network() != self.network {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "the shielded coordinator is for {:?}, this wallet for {:?}",

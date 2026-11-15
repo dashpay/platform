@@ -301,38 +301,36 @@ struct ClearState {
     /// Completed Clears on this coordinator, successful or not: each one
     /// reset Rust state the store had before it.
     epoch: u64,
-    /// The last Clear reset the Rust store but the host wipe failed, so the
-    /// host may still hold the rows the reset dropped. Binds and account
-    /// adds are refused until a Clear completes both halves: restoring
-    /// those rows is exactly what Clear exists to prevent.
+    /// A Clear reset (or was about to reset) the Rust store but the host
+    /// wipe has not succeeded since, so the host may still hold the rows the
+    /// reset dropped. Seeded from the store's durable marker, so it survives
+    /// a restart. No admission is granted while it is set: restoring those
+    /// rows, or writing new state next to them, is exactly what Clear exists
+    /// to prevent.
     host_wipe_pending: bool,
 }
 
+/// The refusal every admission returns while a Clear's host wipe is pending.
+fn host_wipe_pending_error() -> PlatformWalletError {
+    PlatformWalletError::ShieldedStoreError(
+        "the last shielded Clear reset native state but did not wipe host storage; \
+         retry Clear before any shielded operation"
+            .to_string(),
+    )
+}
+
 /// Shared admission to durable shielded state, from
-/// [`NetworkShieldedCoordinator::admit`]. While one is alive, no Clear runs.
+/// [`NetworkShieldedCoordinator::admit`]. While one is alive, no Clear runs,
+/// and none exists while a Clear's host wipe is pending.
 ///
 /// Hold it across the whole span whose writes must not outlive a Clear, and
 /// never take a second one while holding it (see the `admission` field doc).
 pub(crate) struct ShieldedAdmission<'a> {
     coordinator: &'a NetworkShieldedCoordinator,
-    state: tokio::sync::RwLockReadGuard<'a, ClearState>,
+    _state: tokio::sync::RwLockReadGuard<'a, ClearState>,
 }
 
 impl ShieldedAdmission<'_> {
-    /// `Err` when the last Clear reset Rust but did not wipe the host, so a
-    /// host snapshot may still describe cleared state. Binds and account adds
-    /// check it before they read or write host rows.
-    pub(crate) fn ensure_host_cleared(&self) -> Result<(), PlatformWalletError> {
-        if self.state.host_wipe_pending {
-            return Err(PlatformWalletError::ShieldedStoreError(
-                "the last shielded Clear reset native state but did not wipe host storage; \
-                 retry Clear before binding or restoring"
-                    .to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     /// Whether this admission was granted by `coordinator`.
     pub(crate) fn admits(&self, coordinator: &NetworkShieldedCoordinator) -> bool {
         std::ptr::eq(self.coordinator, coordinator)
@@ -478,6 +476,10 @@ impl NetworkShieldedCoordinator {
         db_path: PathBuf,
         store: FileBackedShieldedStore,
     ) -> Self {
+        let clear_state = ClearState {
+            epoch: 0,
+            host_wipe_pending: store.host_wipe_pending(),
+        };
         Self {
             sdk,
             network,
@@ -491,7 +493,7 @@ impl NetworkShieldedCoordinator {
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
-            admission: RwLock::new(ClearState::default()),
+            admission: RwLock::new(clear_state),
         }
     }
 
@@ -506,26 +508,38 @@ impl NetworkShieldedCoordinator {
     /// either completes before Clear starts, or starts after Clear (host wipe
     /// included) has finished and sees only post-Clear state.
     ///
+    /// Refused while a Clear's host wipe is pending (the store's durable
+    /// marker, set before the native reset and cleared only once the host
+    /// wiped): until a Clear completes both halves, no shielded operation
+    /// runs against the reset store or the host's surviving rows.
+    ///
     /// Not reentrant: never call it, or any entry point that takes it, while
     /// holding one.
-    pub(crate) async fn admit(&self) -> ShieldedAdmission<'_> {
-        ShieldedAdmission {
-            coordinator: self,
-            state: self.admission.read().await,
+    pub(crate) async fn admit(&self) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
+        Self::admission_from(self, self.admission.read().await)
+    }
+
+    /// [`admit`](Self::admit) without waiting: `Ok(None)` while a Clear holds
+    /// the admission or is queued for it. Never blocks, so it is safe where
+    /// the caller may already hold an admission.
+    pub(crate) fn try_admit(&self) -> Result<Option<ShieldedAdmission<'_>>, PlatformWalletError> {
+        match self.admission.try_read() {
+            Ok(state) => Self::admission_from(self, state).map(Some),
+            Err(_) => Ok(None),
         }
     }
 
-    /// [`admit`](Self::admit) without waiting: `None` while a Clear holds the
-    /// admission or is queued for it. Never blocks, so it is safe where the
-    /// caller may already hold an admission.
-    pub(crate) fn try_admit(&self) -> Option<ShieldedAdmission<'_>> {
-        self.admission
-            .try_read()
-            .ok()
-            .map(|state| ShieldedAdmission {
-                coordinator: self,
-                state,
-            })
+    fn admission_from<'a>(
+        &'a self,
+        state: tokio::sync::RwLockReadGuard<'a, ClearState>,
+    ) -> Result<ShieldedAdmission<'a>, PlatformWalletError> {
+        if state.host_wipe_pending {
+            return Err(host_wipe_pending_error());
+        }
+        Ok(ShieldedAdmission {
+            coordinator: self,
+            _state: state,
+        })
     }
 
     /// Whether a Clear holds the admission or is queued for it: either way
@@ -659,8 +673,7 @@ impl NetworkShieldedCoordinator {
         account_views: BTreeMap<u32, AccountViewingKeys>,
         persister: WalletPersister,
     ) -> Result<(), PlatformWalletError> {
-        let admission = self.admit().await;
-        admission.ensure_host_cleared()?;
+        let admission = self.admit().await?;
         let result = admission
             .begin_install(wallet_id)
             .await
@@ -722,7 +735,7 @@ impl NetworkShieldedCoordinator {
         activity_id: [u8; 32],
         acknowledge_possible_execution: bool,
     ) -> Result<(), PlatformWalletError> {
-        let admission = self.admit().await;
+        let admission = self.admit().await?;
         self.abandon_identity_debit_admitted(
             &admission,
             wallet_id,
@@ -921,13 +934,13 @@ impl NetworkShieldedCoordinator {
     /// Whether `wallet_id`'s per-subwallet store state has been
     /// successfully hydrated from the host snapshot this session
     /// (see [`mark_hydrated`](Self::mark_hydrated)).
+    /// `false` while a Clear's host wipe is pending.
     pub async fn is_hydrated(&self, wallet_id: WalletId) -> bool {
-        self.admit()
-            .await
-            .begin_install(wallet_id)
-            .await
-            .is_hydrated()
-            .await
+        let Ok(admission) = self.admit().await else {
+            return false;
+        };
+        let hydrated = admission.begin_install(wallet_id).await.is_hydrated().await;
+        hydrated
     }
 
     async fn is_hydrated_locked(&self, wallet_id: WalletId) -> bool {
@@ -940,14 +953,17 @@ impl NetworkShieldedCoordinator {
     /// sets `true` only after a successful load + restore; a
     /// transient persistence failure leaves it `false` so the next
     /// re-bind retries the restore instead of taking the idempotent
-    /// fast path on top of an unhydrated store.
+    /// fast path on top of an unhydrated store. Records nothing while a
+    /// Clear's host wipe is pending.
     pub async fn mark_hydrated(&self, wallet_id: WalletId, hydrated: bool) {
-        self.admit()
-            .await
+        let Ok(admission) = self.admit().await else {
+            return;
+        };
+        admission
             .begin_install(wallet_id)
             .await
             .mark_hydrated(hydrated)
-            .await
+            .await;
     }
 
     async fn mark_hydrated_locked(&self, wallet_id: WalletId, hydrated: bool) {
@@ -982,12 +998,15 @@ impl NetworkShieldedCoordinator {
         wallet_id: WalletId,
         account_views: &BTreeMap<u32, AccountViewingKeys>,
     ) -> bool {
-        self.admit()
-            .await
+        let Ok(admission) = self.admit().await else {
+            return false;
+        };
+        let matches = admission
             .begin_install(wallet_id)
             .await
             .registration_matches(account_views)
-            .await
+            .await;
+        matches
     }
 
     async fn registration_matches_locked(
@@ -1060,7 +1079,7 @@ impl NetworkShieldedCoordinator {
         wallet_id: WalletId,
     ) -> Result<ShieldedLocalBalanceState, PlatformWalletError> {
         loop {
-            let admission = self.admit().await;
+            let admission = self.admit().await?;
             let install = admission.begin_install(wallet_id).await;
             let account_ids: Vec<SubwalletId> = self
                 .accounts
@@ -1150,8 +1169,7 @@ impl NetworkShieldedCoordinator {
         wallet_id: WalletId,
         snapshot: &crate::changeset::ShieldedSyncStartState,
     ) -> Result<(), crate::error::PlatformWalletError> {
-        let admission = self.admit().await;
-        admission.ensure_host_cleared()?;
+        let admission = self.admit().await?;
         let result = admission
             .begin_install(wallet_id)
             .await
@@ -1330,13 +1348,19 @@ impl NetworkShieldedCoordinator {
     ///
     /// # Failures
     ///
+    /// Before anything is reset, the store durably marks the host wipe
+    /// pending; only a host wipe that succeeds clears the mark. While it is
+    /// set no admission is granted ([`admit`](Self::admit)), in this process
+    /// or, if it dies before the wipe, the next one, so the rows the host
+    /// kept are never restored or written next to. A mark that cannot be
+    /// written aborts the Clear with nothing reset.
+    ///
     /// A store reset failure returns its error before the host is called,
-    /// so the host keeps its rows while the tree may still be populated.
-    /// A host wipe failure after a successful reset returns
-    /// [`PlatformWalletError::Persistence`]; the Rust half stays reset, and
-    /// binds are refused ([`ShieldedAdmission::ensure_host_cleared`]) until
-    /// a later Clear wipes the host too, so the rows the host kept are
-    /// never restored. Either way the epoch advances.
+    /// so the host keeps its rows while the tree may still be populated,
+    /// and the mark goes back to what it was. A host wipe failure after a
+    /// successful reset returns [`PlatformWalletError::Persistence`]; the
+    /// Rust half stays reset and the mark stays until a later Clear wipes the
+    /// host too. Either way the epoch advances.
     ///
     /// Crate-internal: the manager's
     /// [`clear_shielded`](crate::PlatformWalletManager::clear_shielded)
@@ -1357,6 +1381,15 @@ impl NetworkShieldedCoordinator {
         // Registry atomicity against `unregister_wallet`, which takes this
         // mutex without an admission (see the `lifecycle` field doc).
         let _lifecycle = self.lifecycle.lock().await;
+
+        let was_pending = clear_state.host_wipe_pending;
+        if let Err(e) = self.store.write().await.set_host_wipe_pending(true) {
+            return Err(PlatformWalletError::ShieldedStoreError(format!(
+                "the pending host wipe could not be recorded; clear aborted with nothing \
+                 reset: {e}"
+            )));
+        }
+        clear_state.host_wipe_pending = true;
 
         // Reset the persistent store FIRST and bail before mutating any
         // coordinator registries or calling the host if it fails: the host
@@ -1427,6 +1460,15 @@ impl NetworkShieldedCoordinator {
         clear_state.epoch = clear_state.epoch.wrapping_add(1);
 
         if let Some(e) = first_err {
+            // The host is not called and keeps its rows, which stay
+            // authoritative: the mark goes back to what it was, or stays set
+            // when that cannot be written, as the store then still reads it.
+            match self.store.write().await.set_host_wipe_pending(was_pending) {
+                Ok(()) => clear_state.host_wipe_pending = was_pending,
+                Err(marker) => {
+                    tracing::warn!(error = %marker, "the host wipe mark was not restored");
+                }
+            }
             return Err(e);
         }
 
@@ -1442,19 +1484,25 @@ impl NetworkShieldedCoordinator {
         }
 
         // The host half, still under the exclusive admission.
-        match host.wipe_shielded_state(self.network) {
-            Ok(()) => {
-                clear_state.host_wipe_pending = false;
-                Ok(())
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "host shielded wipe failed after the native reset");
-                clear_state.host_wipe_pending = true;
-                Err(PlatformWalletError::Persistence(format!(
-                    "native shielded state was reset but the host wipe failed: {e}; retry Clear"
-                )))
-            }
+        if let Err(e) = host.wipe_shielded_state(self.network) {
+            tracing::error!(error = %e, "host shielded wipe failed after the native reset");
+            return Err(PlatformWalletError::Persistence(format!(
+                "native shielded state was reset but the host wipe failed: {e}; retry Clear"
+            )));
         }
+        // Still pending, in memory as on disk, until the mark is cleared.
+        self.store
+            .write()
+            .await
+            .set_host_wipe_pending(false)
+            .map_err(|e| {
+                PlatformWalletError::ShieldedStoreError(format!(
+                    "the host wiped its shielded rows but the pending mark was not cleared: \
+                     {e}; retry Clear"
+                ))
+            })?;
+        clear_state.host_wipe_pending = false;
+        Ok(())
     }
 
     /// Discharge the private payment journal records of the private contact
@@ -1527,10 +1575,16 @@ impl NetworkShieldedCoordinator {
         // store (the manager then skips the completion event). Checked
         // ahead of the cooldown gate, whose skip summary would otherwise
         // report one caught-up wallet each for a pass that never ran.
-        let admission = cancel.run_until_cancelled(self.admit()).await;
-        let (Some(_admission), false) = (admission, cancel.is_cancelled()) else {
-            tracing::debug!("Coordinator sync cancelled before it started");
-            return ShieldedSyncPassSummary::default();
+        let _admission = match cancel.run_until_cancelled(self.admit()).await {
+            Some(Ok(admission)) if !cancel.is_cancelled() => admission,
+            Some(Err(error)) => {
+                tracing::debug!(%error, "Coordinator sync refused");
+                return ShieldedSyncPassSummary::default();
+            }
+            _ => {
+                tracing::debug!("Coordinator sync cancelled before it started");
+                return ShieldedSyncPassSummary::default();
+            }
         };
 
         // Every pass, cooldown or not: the private requests a private sync read
@@ -4314,7 +4368,7 @@ mod tests {
         let coordinator = Arc::new(coordinator_with_one_wallet(&dir).await);
         let wallet_id: WalletId = [0x11; 32];
 
-        let admission = coordinator.admit().await;
+        let admission = coordinator.admit().await.unwrap();
         let install = admission.begin_install(wallet_id).await;
         let remover = {
             let coordinator = Arc::clone(&coordinator);
@@ -4360,7 +4414,7 @@ mod tests {
                 .unwrap();
         }
 
-        let admission = coordinator.admit().await;
+        let admission = coordinator.admit().await.unwrap();
         let install = admission.begin_install(wallet_id).await;
         let host = Arc::new(crate::test_support::WipeCountingPersistence::default());
         let clearer = {

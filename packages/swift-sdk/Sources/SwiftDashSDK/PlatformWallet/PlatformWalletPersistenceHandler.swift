@@ -26,6 +26,12 @@ private enum AssetLockPersistenceError: Error {
     case requiresChangeset
 }
 
+private enum ShieldedWipeError: Error {
+    /// A wallet with shielded rows has no network yet, so its rows may be
+    /// the wiped network's.
+    case walletNetworkUnknown
+}
+
 struct LiveModelFetcher: ModelFetching {
     func fetch<T: PersistentModel>(
         _ descriptor: FetchDescriptor<T>,
@@ -6280,15 +6286,44 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Native Clear's host half (`on_wipe_shielded_state_fn`): delete the
     /// shielded rows of every wallet persisted on `network`, loaded or not,
-    /// in one save. A failed read or save rolls the context back and
-    /// throws, leaving the rows in place.
+    /// in one save. Shielded rows carry no wallet relationship, so they are
+    /// enumerated from the shielded models. Rows of a wallet with no wallet
+    /// row belong to no wallet on any network and go too, as a wallet
+    /// deletion would have taken them. Rows of a wallet whose network is not
+    /// yet known throw with nothing deleted: they may be `network`'s. A
+    /// failed read or save rolls the context back and throws, leaving the
+    /// rows in place.
     func wipeShieldedState(network: Network) throws {
         try onQueue {
             let networkRaw = network.rawValue
             do {
-                let wallets = try backgroundContext.fetch(FetchDescriptor<PersistentWallet>(
-                    predicate: #Predicate { $0.networkRaw == networkRaw }))
-                for walletId in Set(wallets.map(\.walletId)) {
+                var shieldedWalletIds = Set<Data>()
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedNote>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedOutgoingNote>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedSyncState>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedActivity>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedViewingKey>()).map(\.walletId))
+                var doomed: [Data] = []
+                for walletId in shieldedWalletIds {
+                    let wallet = try backgroundContext.fetch(FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletId })).first
+                    guard let wallet else {
+                        doomed.append(walletId)
+                        continue
+                    }
+                    guard let walletNetwork = wallet.networkRaw else {
+                        throw ShieldedWipeError.walletNetworkUnknown
+                    }
+                    if walletNetwork == networkRaw {
+                        doomed.append(walletId)
+                    }
+                }
+                for walletId in doomed {
                     try backgroundContext.delete(
                         model: PersistentShieldedNote.self,
                         where: #Predicate { $0.walletId == walletId })

@@ -525,7 +525,7 @@ async fn should_abort_clear_with_nothing_reset_when_admission_is_held_past_the_b
     wallet.bind_shielded(&SEED, &[0]).await.unwrap();
     let epoch = coordinator.clear_epoch().await;
 
-    let in_flight = coordinator.admit().await;
+    let in_flight = coordinator.admit().await.unwrap();
     let error = coordinator
         .clear(&*host)
         .await
@@ -631,6 +631,114 @@ async fn should_refuse_binds_until_a_failed_host_wipe_is_retried() {
     );
 
     host.fail_wipe.store(false, Ordering::SeqCst);
+    manager.clear_shielded().await.expect("the retry wipes");
+    assert_eq!(host.viewing_key_rows(), 0);
+    wallet
+        .bind_shielded(&SEED, &[0])
+        .await
+        .expect("binds again");
+}
+
+/// Whether `error` is the refusal of an admission while a Clear's host wipe
+/// is pending.
+fn refused_for_pending_wipe(error: &PlatformWalletError) -> bool {
+    matches!(error, PlatformWalletError::ShieldedStoreError(message)
+        if message.contains("did not wipe host storage"))
+}
+
+/// While a failed Clear's host wipe is pending, no shielded operation runs:
+/// a mutation, the balance read and a restoration from the journal are
+/// refused, not served from the reset store.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_mutations_and_balance_reads_while_the_host_wipe_is_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+
+    host.fail_wipe.store(true, Ordering::SeqCst);
+    manager
+        .clear_shielded()
+        .await
+        .expect_err("the host wipe failed");
+
+    let refused = wallet
+        .abandon_shielded_identity_debit(0, [0x33; 32], true)
+        .await
+        .expect_err("a mutation is refused");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+    let refused = wallet
+        .shielded_balances()
+        .await
+        .expect_err("the balance read is refused, not reported empty");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+    let refused = coordinator
+        .local_balance_snapshot(wallet.wallet_id())
+        .await
+        .expect_err("so is the local balance snapshot");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+    let crypto = crate::wallet::identity::network::SeedCryptoProvider::from_seed(
+        [0x17; 64],
+        Network::Testnet,
+    );
+    let refused = wallet
+        .restore_pending_private_contact_requests(&crypto)
+        .await
+        .expect_err("a restoration from the shielded store is refused");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+
+    host.fail_wipe.store(false, Ordering::SeqCst);
+    manager.clear_shielded().await.expect("the retry wipes");
+    let balances = wallet.shielded_balances().await.expect("readable again");
+    assert!(
+        balances.values().all(|&balance| balance == 0),
+        "{balances:?}"
+    );
+    wallet
+        .restore_pending_private_contact_requests(&crypto)
+        .await
+        .expect("restorations run again");
+}
+
+/// A host wipe that failed is still pending after a restart: the store keeps
+/// the mark, so a reopened coordinator refuses binds and mutations, and the
+/// host's surviving rows are never restored, until a later Clear wipes them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_keep_a_failed_host_wipe_pending_across_a_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    {
+        let (manager, wallet, _coordinator) = configured(&host, &dir).await;
+        wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+        host.fail_wipe.store(true, Ordering::SeqCst);
+        manager
+            .clear_shielded()
+            .await
+            .expect_err("the host wipe failed");
+        let _ = manager.shutdown().await;
+    }
+    *host.coordinator.lock().unwrap() = None;
+    host.fail_wipe.store(false, Ordering::SeqCst);
+    assert_eq!(host.viewing_key_rows(), 1, "the host kept its rows");
+
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    let refused = wallet
+        .bind_shielded_from_persisted(&[0])
+        .await
+        .expect_err("a reopened coordinator still refuses the bind");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+    let refused = wallet
+        .bind_shielded(&SEED, &[0])
+        .await
+        .expect_err("a seed bind too");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+    let refused = wallet
+        .abandon_shielded_identity_debit(0, [0x33; 32], true)
+        .await
+        .expect_err("and a mutation");
+    assert!(refused_for_pending_wipe(&refused), "{refused:?}");
+    assert!(coordinator.registered_subwallets().await.is_empty());
+
     manager.clear_shielded().await.expect("the retry wipes");
     assert_eq!(host.viewing_key_rows(), 0);
     wallet

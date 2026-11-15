@@ -56,4 +56,54 @@ final class ShieldedStateWipeTests: XCTestCase {
         XCTAssertEqual(
             try walletIds(PersistentShieldedViewingKey.self, container, \.walletId), [mainnetWallet])
     }
+
+    private func seedRows(_ context: ModelContext, _ walletId: Data) {
+        context.insert(PersistentShieldedSyncState(
+            walletId: walletId, accountIndex: 0, lastSyncedIndex: 42))
+        context.insert(PersistentShieldedViewingKey(
+            walletId: walletId, accountIndex: 0, fvkBytes: Data(repeating: 1, count: 96)))
+    }
+
+    func testShouldFailWithNothingDeletedWhileAWalletWithShieldedRowsHasNoNetwork() throws {
+        let container = try DashModelContainer.createInMemory()
+        let unknownNetworkWallet = Data(repeating: 0x63, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: testnetWallet, network: .testnet))
+        context.insert(PersistentWallet(walletId: unknownNetworkWallet))
+        seedRows(context, testnetWallet)
+        seedRows(context, unknownNetworkWallet)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let wipe = try XCTUnwrap(handler.makePersistenceCallbacksExtension().on_wipe_shielded_state_fn)
+
+        let rc = wipe(Unmanaged.passUnretained(handler).toOpaque(), Network.testnet.ffiValue)
+
+        XCTAssertNotEqual(rc, 0)
+        XCTAssertEqual(
+            Set(try walletIds(PersistentShieldedSyncState.self, container, \.walletId)),
+            [testnetWallet, unknownNetworkWallet])
+        XCTAssertEqual(
+            Set(try walletIds(PersistentShieldedViewingKey.self, container, \.walletId)),
+            [testnetWallet, unknownNetworkWallet])
+    }
+
+    func testShouldDeleteTheRowsOfAWalletWithNoWalletRow() throws {
+        let container = try DashModelContainer.createInMemory()
+        let orphan = Data(repeating: 0x64, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: mainnetWallet, network: .mainnet))
+        seedRows(context, mainnetWallet)
+        seedRows(context, orphan)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let wipe = try XCTUnwrap(handler.makePersistenceCallbacksExtension().on_wipe_shielded_state_fn)
+
+        let rc = wipe(Unmanaged.passUnretained(handler).toOpaque(), Network.testnet.ffiValue)
+
+        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(
+            try walletIds(PersistentShieldedSyncState.self, container, \.walletId), [mainnetWallet])
+        XCTAssertEqual(
+            try walletIds(PersistentShieldedViewingKey.self, container, \.walletId), [mainnetWallet])
+    }
 }

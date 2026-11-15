@@ -270,6 +270,12 @@ impl PlatformWallet {
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
+        // Nothing is broadcast while a Clear's host wipe is pending, which
+        // refuses the activity write a funding ends with. Not held: the
+        // broadcast and ChainLock wait below must not hold a Clear back.
+        if let Ok(coordinator) = self.shielded_coordinator().await {
+            drop(coordinator.admit().await?);
+        }
         let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // A resume pays the recipient its lock was built for. The row recorded
@@ -799,7 +805,13 @@ impl PlatformWallet {
         let Ok(coordinator) = self.shielded_coordinator().await else {
             return;
         };
-        let _admission = coordinator.admit().await;
+        let _admission = match coordinator.admit().await {
+            Ok(admission) => admission,
+            Err(error) => {
+                tracing::warn!(%error, "shield-from-asset-lock activity not recorded");
+                return;
+            }
+        };
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
         let id = crate::wallet::shielded::SubwalletId::new(self.wallet_id(), account);
         crate::wallet::shielded::operations::queue_shielded_activity(

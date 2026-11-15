@@ -445,6 +445,52 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(1, db.shieldedDao().getAllSyncStates().count { it.walletId.contentEquals(mainnetWallet) })
     }
 
+    private suspend fun seedShieldedRows(wallet: ByteArray) {
+        db.shieldedDao().upsertViewingKey(
+            org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity(
+                wallet, 0, ByteArray(96) { 1 },
+            ),
+        )
+        db.shieldedDao().upsertSyncState(
+            org.dashfoundation.dashsdk.persistence.entities.ShieldedSyncStateEntity(
+                wallet, 0, lastSyncedIndex = 42,
+            ),
+        )
+    }
+
+    private suspend fun shieldedRowsOf(wallet: ByteArray): Int =
+        db.shieldedDao().getViewingKeysByWallet(wallet).size +
+            db.shieldedDao().getAllSyncStates().count { it.walletId.contentEquals(wallet) }
+
+    @Test
+    fun shieldedWipeFailsWithNothingDeletedWhileAWalletWithShieldedRowsHasNoNetwork() = runTest {
+        val testnetWallet = ByteArray(32) { 0x63 }
+        val unknownNetworkWallet = ByteArray(32) { 0x64 }
+        db.walletDao().upsert(WalletEntity(testnetWallet, networkRaw = Network.TESTNET.ffiValue))
+        db.walletDao().upsert(WalletEntity(unknownNetworkWallet, networkRaw = null))
+        seedShieldedRows(testnetWallet)
+        seedShieldedRows(unknownNetworkWallet)
+
+        assertNotEquals(0, handler.onWipeShieldedState(Network.TESTNET.ffiValue))
+
+        assertEquals(2, shieldedRowsOf(testnetWallet))
+        assertEquals(2, shieldedRowsOf(unknownNetworkWallet))
+    }
+
+    @Test
+    fun shieldedWipeDropsTheRowsOfAWalletWithNoWalletRow() = runTest {
+        val mainnetWallet = ByteArray(32) { 0x65 }
+        val orphan = ByteArray(32) { 0x66 }
+        db.walletDao().upsert(WalletEntity(mainnetWallet, networkRaw = Network.MAINNET.ffiValue))
+        seedShieldedRows(mainnetWallet)
+        seedShieldedRows(orphan)
+
+        assertEquals(0, handler.onWipeShieldedState(Network.TESTNET.ffiValue))
+
+        assertEquals(0, shieldedRowsOf(orphan))
+        assertEquals(2, shieldedRowsOf(mainnetWallet))
+    }
+
     @Test
     fun shieldedWipeIsNeverInheritedAsASuccess() {
         val noOpBridge = object : NativePersistenceBridge() {}
