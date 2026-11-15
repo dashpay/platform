@@ -143,7 +143,7 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
             code: .errorDocumentPriceChanged,
             message: #"{"documentId":"doc","expected":10}"#
         )
-        guard case .unknown(let detail) = malformed else {
+        guard case .unknown(let detail, _) = malformed else {
             return XCTFail("Expected unknown, got \(malformed)")
         }
         XCTAssertEqual(detail, #"{"documentId":"doc","expected":10}"#)

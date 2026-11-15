@@ -267,7 +267,8 @@ final class ErrorHandlingTests: XCTestCase {
                 message: nil,
                 consensus_code: 40722,
                 consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE,
-                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT
+                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT,
+                held_asset_lock: OutPointFFI()
             )
         )
         XCTAssertEqual(
@@ -286,19 +287,51 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertNil(invented.consensusError)
     }
 
-    /// The result wrapper reads the payment-delivery class off the C struct,
-    /// and a success carries none.
-    func testShouldReadThePaymentDeliveryFromTheFFIResult() {
-        let folded = PlatformWalletResult(
+    /// A raw held asset lock: txid of 7s, vout 2.
+    private static let heldOutPoint: OutPointFFI = {
+        var outPoint = OutPointFFI()
+        withUnsafeMutableBytes(of: &outPoint.txid) { $0.initializeMemory(as: UInt8.self, repeating: 7) }
+        outPoint.vout = 2
+        return outPoint
+    }()
+
+    private static func result(
+        _ code: PlatformWalletFFIResultCode,
+        _ delivery: PlatformWalletFFIPaymentDelivery,
+        held: OutPointFFI = OutPointFFI()
+    ) -> PlatformWalletResult {
+        PlatformWalletResult(
             PlatformWalletFFIResult(
-                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                code: code,
                 message: nil,
                 consensus_code: 0,
                 consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
-                payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+                payment_delivery: delivery,
+                held_asset_lock: held
             )
         )
-        XCTAssertEqual(folded.paymentDelivery, .notSent)
+    }
+
+    private static var expectedHeldLock: PlatformPaymentDelivery {
+        .lockHeld(AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!)
+    }
+
+    /// The result wrapper reads the payment-delivery class off the C struct,
+    /// the held asset lock with it, and a success carries none.
+    func testShouldReadThePaymentDeliveryFromTheFFIResult() {
+        XCTAssertEqual(
+            Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
+                .paymentDelivery,
+            .notSent
+        )
+        XCTAssertEqual(
+            Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD,
+                held: Self.heldOutPoint
+            ).paymentDelivery,
+            Self.expectedHeldLock
+        )
 
         let success = PlatformWalletResult(
             PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
@@ -306,9 +339,45 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertNil(success.paymentDelivery)
     }
 
-    /// The class comes from Rust: a code that only failures before any
-    /// dispatch use reads `.notSent`, the unconfirmed codes and the shared
-    /// catch-all codes read `.maybeSent`.
+    /// The catch-all codes keep the class the result carried instead of the
+    /// one their code shares: a pre-dispatch failure folded into code 6 or
+    /// 99 stays `.notSent`, and a held lock keeps its outpoint.
+    func testShouldKeepTheResultsDeliveryOnTheCatchAllCases() {
+        let notSentOperation = PlatformWalletError(
+            result: Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
+        )
+        guard case .walletOperation(_, delivery: .notSent) = notSentOperation else {
+            return XCTFail("expected walletOperation carrying notSent, got \(notSentOperation)")
+        }
+        XCTAssertEqual(notSentOperation.delivery, .notSent)
+
+        let notSentUnknown = PlatformWalletError(
+            result: Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
+        )
+        XCTAssertEqual(notSentUnknown.delivery, .notSent)
+
+        let timedOut = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD,
+                held: Self.heldOutPoint
+            )
+        )
+        XCTAssertEqual(timedOut.delivery, Self.expectedHeldLock)
+
+        for code in [
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH,
+        ] {
+            let held = PlatformWalletError(
+                result: Self.result(code, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD, held: Self.heldOutPoint)
+            )
+            XCTAssertEqual(held.delivery, Self.expectedHeldLock, "\(held)")
+        }
+    }
+
+    /// The other cases read the class Rust gives their code, and the
+    /// catch-all cases a Swift guard throws itself say `.maybeSent`.
     func testShouldTakeEachErrorsPaymentDeliveryFromRust() {
         let cases: [(PlatformWalletError, PlatformPaymentDelivery)] = [
             (.shieldedBroadcastFailed("refused"), .notSent),

@@ -571,24 +571,46 @@ public struct PlatformConsensusError: Equatable, Sendable {
 /// Whether a failed payment may have left the wallet, as the Rust wallet
 /// classified it.
 ///
-/// Decide "retry" or "wait" from this, never from lists of error cases:
-/// `.notSent` may offer a retry, `.maybeSent` waits for sync and never offers
-/// a second payment. Mirror of `PlatformWalletFFIPaymentDelivery`.
+/// Decide "retry", "wait" or "resume" from this, never from lists of error
+/// cases: `.notSent` may offer a retry, `.maybeSent` waits for sync and never
+/// offers a second payment, `.lockHeld` resumes the named asset lock and never
+/// pays again. Mirror of `PlatformWalletFFIPaymentDelivery`, with the held
+/// lock's outpoint from the result's `held_asset_lock`.
 public enum PlatformPaymentDelivery: Equatable, Sendable {
     /// The payment never left the wallet and can never execute.
     case notSent
     /// The payment may have left the wallet, and may execute or already has.
     case maybeSent
+    /// The payment holds the tracked asset lock at this outpoint: it may be on
+    /// the network and its funds left the spendable balance. Resume it (the
+    /// outpoint is the one the resume calls take); never fund a new one.
+    case lockHeld(AssetLockBuiltOutPoint)
 
     /// `nil` for the FFI's `None`, which only a success carries. A value this
     /// mirror does not know yet reads as `.maybeSent`, the class that never
-    /// invites a second payment.
-    init?(ffi: PlatformWalletFFIPaymentDelivery) {
+    /// invites a second payment. `heldAssetLock` is read only under
+    /// `LockHeld`.
+    init?(ffi: PlatformWalletFFIPaymentDelivery, heldAssetLock: OutPointFFI) {
         switch ffi {
         case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE:     return nil
         case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT: self = .notSent
+        case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD:
+            var raw = withUnsafeBytes(of: heldAssetLock.txid) { Data($0) }
+            withUnsafeBytes(of: heldAssetLock.vout.littleEndian) { raw.append(contentsOf: $0) }
+            self = .lockHeld(AssetLockBuiltOutPoint(reportedBytes: raw))
         default:                                            self = .maybeSent
         }
+    }
+
+    /// The class Rust gives every failure reported under `code`
+    /// (`platform_wallet_ffi_result_code_payment_delivery`); never
+    /// `.lockHeld`, which only a result's own error can name.
+    init?(code: PlatformWalletResultCode) {
+        let ffiCode = PlatformWalletFFIResultCode(rawValue: numericCast(code.rawValue))
+        self.init(
+            ffi: platform_wallet_ffi_result_code_payment_delivery(ffiCode),
+            heldAssetLock: OutPointFFI()
+        )
     }
 }
 
@@ -634,7 +656,7 @@ final class PlatformWalletResult {
     /// wallet error behind the failure, as precise as Rust has it. `nil` on
     /// success.
     var paymentDelivery: PlatformPaymentDelivery? {
-        PlatformPaymentDelivery(ffi: inner.payment_delivery)
+        PlatformPaymentDelivery(ffi: inner.payment_delivery, heldAssetLock: inner.held_asset_lock)
     }
 
     var isSuccess: Bool {
@@ -663,7 +685,12 @@ public enum PlatformWalletError: LocalizedError {
     case invalidParameter(String)
     case invalidIdentifier(String)
     case invalidNetwork(String)
-    case walletOperation(String)
+    /// The catch-all wallet-operation failure (code 6). It folds failures of
+    /// every payment-delivery class, so it carries the one Rust gave this
+    /// failure: `.notSent`, `.maybeSent` or `.lockHeld` (a proof wait that
+    /// timed out names the lock to resume). A Swift-side guard that throws it
+    /// without a result gets `.maybeSent`, the class of the code.
+    case walletOperation(String, delivery: PlatformPaymentDelivery? = .maybeSent)
     case identityNotFound(String)
     /// A managed identity has no balance in the Platform response; the read may be retried.
     case identityBalanceUnavailable(String)
@@ -704,7 +731,10 @@ public enum PlatformWalletError: LocalizedError {
     /// (`PersistentAssetLock.shieldedRecipientRaw43` /
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
-    case assetLockRecipientMismatch(String)
+    ///
+    /// `delivery` is Rust's class: `.lockHeld` with the tracked lock to resume
+    /// with the recorded recipient.
+    case assetLockRecipientMismatch(String, delivery: PlatformPaymentDelivery? = .maybeSent)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -924,7 +954,10 @@ public enum PlatformWalletError: LocalizedError {
     /// proof, may authorize discarding it. No funds move either way: the
     /// confirmed spender is this wallet's own transaction, so the value
     /// behind the contested input lives on in it.
-    case assetLockInputContested(String)
+    ///
+    /// `delivery` is Rust's class: `.lockHeld` with the contested lock's
+    /// outpoint, the lock a retry resumes.
+    case assetLockInputContested(String, delivery: PlatformPaymentDelivery? = .maybeSent)
     /// Reading persisted wallet state failed on a store that classified the
     /// failure as retryable. Nothing was mutated — retry later. One of the
     /// two retryable persister cases, alongside `persisterStoreTransient`.
@@ -974,7 +1007,11 @@ public enum PlatformWalletError: LocalizedError {
     /// address-nonce race) keeps its typed case, which already carries the
     /// values that case exists for.
     case consensusRejection(PlatformConsensusError, String)
-    case unknown(String)
+    /// The catch-all failure (code 99) with no consensus verdict. Like
+    /// `walletOperation`, it carries the payment-delivery class Rust gave
+    /// this failure; `.maybeSent` when Swift throws it itself, `nil` when it
+    /// was built from a success result.
+    case unknown(String, delivery: PlatformPaymentDelivery? = .maybeSent)
 
     /// Platform's verdict when this error is a consensus rejection the wallet
     /// layer left untyped, so a caller can write
@@ -987,16 +1024,23 @@ public enum PlatformWalletError: LocalizedError {
     }
 
     /// Whether the failed payment may have left the wallet, as Rust
-    /// classifies every failure reported under this error's result code
-    /// (`platform_wallet_ffi_result_code_payment_delivery`). The codes that
-    /// failures of both classes share (`walletOperation`, `unknown`, …) read
-    /// `.maybeSent`, so a retry is never offered where a payment may have
-    /// left. `nil` only for an error built from a success result.
+    /// classified it. The cases whose code folds failures of more than one
+    /// class (`walletOperation`, `unknown`) or can hold an asset lock
+    /// (`assetLockInputContested`, `assetLockRecipientMismatch`) carry the
+    /// result's own class, `.lockHeld` with its outpoint included; every
+    /// other case reads the class Rust gives its code
+    /// (`platform_wallet_ffi_result_code_payment_delivery`), which is the
+    /// same for every failure under it. `nil` only for an error built from a
+    /// success result.
     public var delivery: PlatformPaymentDelivery? {
-        let code = PlatformWalletFFIResultCode(rawValue: numericCast(resultCode.rawValue))
-        return PlatformPaymentDelivery(
-            ffi: platform_wallet_ffi_result_code_payment_delivery(code)
-        )
+        switch self {
+        case .walletOperation(_, let delivery), .unknown(_, let delivery),
+             .assetLockInputContested(_, let delivery),
+             .assetLockRecipientMismatch(_, let delivery):
+            return delivery
+        default:
+            return PlatformPaymentDelivery(code: resultCode)
+        }
     }
 
     /// The result code this error is reported under.
@@ -1081,14 +1125,14 @@ public enum PlatformWalletError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .nullPointer(let m), .invalidHandle(let m), .invalidParameter(let m),
-             .invalidIdentifier(let m), .invalidNetwork(let m), .walletOperation(let m),
+             .invalidIdentifier(let m), .invalidNetwork(let m), .walletOperation(let m, _),
              .identityNotFound(let m), .identityBalanceUnavailable(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
+             .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m, _),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
@@ -1111,9 +1155,9 @@ public enum PlatformWalletError: LocalizedError {
              .reservationWalletMismatch(let m),
              .notForSale(let m),
              .assetLockInputConflict(let m),
-             .assetLockInputContested(let m),
+             .assetLockInputContested(let m, _),
              .consensusRejection(_, let m),
-             .notFound(let m), .unknown(let m):
+             .notFound(let m), .unknown(let m, _):
             return m
         // The persister messages are a nested Rust error chain naming the
         // operation, the backend classification and the store's own phrasing
@@ -1169,7 +1213,8 @@ public enum PlatformWalletError: LocalizedError {
         self.init(
             code: result.code,
             message: result.message,
-            consensus: result.consensusError
+            consensus: result.consensusError,
+            delivery: result.paymentDelivery
         )
     }
 
@@ -1181,23 +1226,30 @@ public enum PlatformWalletError: LocalizedError {
     /// consulted on the catch-all code alone: every other code is a
     /// classification the wallet layer chose deliberately and must keep
     /// reaching its own case.
+    ///
+    /// `delivery` is the result's payment-delivery class, kept by the cases
+    /// that carry one; `nil` stands for the class Rust gives `code`.
     init(
         code: PlatformWalletResultCode,
         message: String?,
-        consensus: PlatformConsensusError? = nil
+        consensus: PlatformConsensusError? = nil,
+        delivery: PlatformPaymentDelivery? = nil
     ) {
         let detail = message ?? "<no detail from Rust>"
+        let delivery = delivery ?? PlatformPaymentDelivery(code: code)
         switch code {
         case .success:
             // Constructing an error from a success result is a caller bug
-            self = .unknown(message
-                ?? "PlatformWalletError built from a success result")
+            self = .unknown(
+                message ?? "PlatformWalletError built from a success result",
+                delivery: nil
+            )
         case .errorInvalidHandle:     self = .invalidHandle(detail)
         case .errorInvalidParameter:  self = .invalidParameter(detail)
         case .errorNullPointer:       self = .nullPointer(detail)
         case .errorSerialization:     self = .serialization(detail)
         case .errorDeserialization:   self = .deserialization(detail)
-        case .errorWalletOperation:   self = .walletOperation(detail)
+        case .errorWalletOperation:   self = .walletOperation(detail, delivery: delivery)
         case .errorIdentityNotFound:  self = .identityNotFound(detail)
         case .errorIdentityBalanceUnavailable: self = .identityBalanceUnavailable(detail)
         case .errorContactNotFound:   self = .contactNotFound(detail)
@@ -1213,7 +1265,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
-        case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
+        case .errorAssetLockRecipientMismatch:
+            self = .assetLockRecipientMismatch(detail, delivery: delivery)
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorShieldedBuildRequired:
@@ -1276,7 +1329,7 @@ public enum PlatformWalletError: LocalizedError {
                     actual: d.actual
                 )
             } else {
-                self = .unknown(detail)
+                self = .unknown(detail, delivery: delivery)
             }
         case .errorInsufficientIdentityCredits:
             if let d = TradeErrorDetail.insufficientCredits(detail) {
@@ -1286,13 +1339,13 @@ public enum PlatformWalletError: LocalizedError {
                     available: d.available
                 )
             } else {
-                self = .unknown(detail)
+                self = .unknown(detail, delivery: delivery)
             }
         case .errorContestedNameNotTradable:
             if let d = TradeErrorDetail.contestedName(detail) {
                 self = .contestedNameNotTradable(label: d.label, endsAtMs: d.endsAtMs)
             } else {
-                self = .unknown(detail)
+                self = .unknown(detail, delivery: delivery)
             }
         // Both double-spend codes carry the typed `Display` rendering, not a
         // JSON detail object: it already names the asset-lock outpoint, the
@@ -1305,7 +1358,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockInputConflict:
             self = .assetLockInputConflict(detail)
         case .errorAssetLockInputContested:
-            self = .assetLockInputContested(detail)
+            self = .assetLockInputContested(detail, delivery: delivery)
         // The persister codes carry the wallet's typed `Display` as the
         // message. Which operation failed and whether a retry can help is
         // the CODE's meaning, not the string's — branch on the case, never
@@ -1338,7 +1391,7 @@ public enum PlatformWalletError: LocalizedError {
             if let consensus {
                 self = .consensusRejection(consensus, detail)
             } else {
-                self = .unknown(detail)
+                self = .unknown(detail, delivery: delivery)
             }
         }
     }
@@ -1395,8 +1448,9 @@ private enum TradeErrorDetail {
 
 extension PlatformWalletFFIResult {
     /// A result built from the `{ code, message }` pair alone, carrying no
-    /// consensus verdict and the payment-delivery class its code shares: the
-    /// same defaults Rust's own `ok()` / `err()` constructors fill in.
+    /// consensus verdict, the payment-delivery class its code shares and no
+    /// held asset lock: the same defaults Rust's own `ok()` / `err()`
+    /// constructors fill in.
     ///
     /// Swift-side call sites that fabricate a result (the manager's
     /// null-pointer guard, the native call doubles in the tests) describe a
@@ -1408,7 +1462,8 @@ extension PlatformWalletFFIResult {
             message: message,
             consensus_code: 0,
             consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
-            payment_delivery: platform_wallet_ffi_result_code_payment_delivery(code)
+            payment_delivery: platform_wallet_ffi_result_code_payment_delivery(code),
+            held_asset_lock: OutPointFFI()
         )
     }
 
