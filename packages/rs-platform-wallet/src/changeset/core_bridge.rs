@@ -327,14 +327,25 @@ pub struct DurableCursorState {
     /// its same-id successor's and the manager count every flush of the id
     /// in one place ([`FlushLedger`](crate::changeset::flush_ledger::FlushLedger)).
     ///
-    /// One place per manager, as the cursors above are: a backend serves one
-    /// manager (see `PlatformWalletManager::new`). A second manager over the
-    /// same backend instance would order cursor writes, and count flushes,
-    /// apart from this one.
-    pub(crate) flush_ledgers: FlushLedgers,
+    /// Unlike the cursors above, that place belongs to the backend, not to
+    /// one manager: a manager takes the ledgers of the backend instance it
+    /// is made over ([`Self::over_backend`]), so a manager made over the
+    /// same instance while an earlier one's handles are still in use counts
+    /// with them.
+    pub(crate) flush_ledgers: Arc<FlushLedgers>,
 }
 
 impl DurableCursorState {
+    /// The state of a manager made over `backend`: its own cursors and
+    /// barriers, and the flush ledgers of that backend instance
+    /// ([`FlushLedgers::of_backend`]).
+    pub(crate) fn over_backend(backend: &Arc<dyn PlatformWalletPersistence>) -> DurableCursors {
+        Arc::new(Self {
+            flush_ledgers: FlushLedgers::of_backend(backend),
+            ..Self::default()
+        })
+    }
+
     /// Lock the cursor map for a short, non-blocking critical section.
     pub async fn lock(&self) -> tokio::sync::MutexGuard<'_, BTreeMap<WalletId, DurableCursor>> {
         self.cursors.lock().await
