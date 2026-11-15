@@ -1,6 +1,13 @@
 package org.dashfoundation.dashsdk.credits
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.IdentityTopUpNativeResult
@@ -180,5 +187,78 @@ class RecipientTopUpTest {
             }.exceptionOrNull() is IllegalArgumentException,
         )
         assertTrue(native.calls.isEmpty())
+    }
+
+    /** Blocks every payment until [release], as a native call that cannot see cancellation. */
+    private class BlockingNative : RecipientTopUpNative {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+
+        private fun block() {
+            entered.countDown()
+            release.await()
+        }
+
+        override fun topUpExternalIdentityFromCore(
+            walletHandle: Long,
+            identityId: ByteArray,
+            amountDuffs: Long,
+            accountIndex: Int,
+            coreSignerHandle: Long,
+        ): Long {
+            block()
+            return 9_000L
+        }
+
+        override fun resumeTopUpToRecordedRecipient(
+            walletHandle: Long,
+            outpointTxid: ByteArray,
+            outpointVout: Int,
+            coreSignerHandle: Long,
+        ): IdentityTopUpNativeResult {
+            block()
+            return IdentityTopUpNativeResult(ByteArray(32) { 7 }, 4_000L)
+        }
+
+        override fun assignTopUpRecipient(
+            walletHandle: Long,
+            outpointTxid: ByteArray,
+            outpointVout: Int,
+            identityId: ByteArray,
+        ) = Unit
+    }
+
+    /**
+     * A payment that completes after its caller was cancelled is still
+     * returned: dropping it would hide a top-up that happened, and a retry
+     * with a new lock would pay the identity twice.
+     */
+    @Test
+    fun shouldReturnACompletedPaymentToACancelledCaller() = runBlocking {
+        val payments: List<Pair<Long, suspend (IdentityCredits) -> Long>> = listOf(
+            9_000L to { it.topUpExternalIdentityFromCore(1L, ByteArray(32) { 3 }, 60_000L, 0, 2L) },
+            4_000L to {
+                it.resumeTopUpToRecordedRecipient(
+                    1L,
+                    lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, ByteArray(32) { 7 }),
+                    2L,
+                ).newBalance
+            },
+        )
+        for ((expected, pay) in payments) {
+            val native = BlockingNative()
+            val credits = IdentityCredits(recipientTopUpNative = native)
+            val received = CompletableDeferred<Long>()
+            val caller = launch(Dispatchers.Default) {
+                received.complete(pay(credits))
+            }
+            assertTrue("payment never started", native.entered.await(5, TimeUnit.SECONDS))
+            caller.cancel()
+            native.release.countDown()
+            withTimeout(5_000) { caller.join() }
+
+            assertTrue("completed payment was dropped", received.isCompleted)
+            assertEquals(expected, received.await())
+        }
     }
 }

@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.credits
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -390,6 +391,12 @@ class IdentityCredits internal constructor(
      * built a failure may leave it tracked, recording [identityId]: never
      * retry with a new lock; resume that one with
      * [resumeTopUpToRecordedRecipient], or the identity may be paid twice.
+     *
+     * The native call cannot observe cancellation, so a top-up can complete
+     * after the caller was cancelled; its balance is then still returned
+     * ([opReturningCompletedResult][org.dashfoundation.dashsdk.wallet.opReturningCompletedResult]),
+     * so a completed payment is never hidden. Handle it before suspending
+     * again.
      */
     suspend fun topUpExternalIdentityFromCore(
         walletHandle: Long,
@@ -397,7 +404,7 @@ class IdentityCredits internal constructor(
         amountDuffs: Long,
         accountIndex: Int,
         coreSignerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         require(identityId.size == 32) {
             "identityId must be exactly 32 bytes, got ${identityId.size}"
         }
@@ -428,12 +435,15 @@ class IdentityCredits internal constructor(
      * [AssetLockRecipientUnknown][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockRecipientUnknown]:
      * assign it one with [assignTopUpRecipient] first. Rust decides which
      * locks it resumes; nothing is filtered here.
+     *
+     * Like [topUpExternalIdentityFromCore], a resume that completes after the
+     * caller was cancelled still returns its result.
      */
     suspend fun resumeTopUpToRecordedRecipient(
         walletHandle: Long,
         lock: TrackedAssetLock,
         coreSignerHandle: Long,
-    ): IdentityTopUpResult = gate.op {
+    ): IdentityTopUpResult = gate.opReturningCompletedResult {
         val native = mapNativeErrors {
             recipientTopUpNative.resumeTopUpToRecordedRecipient(
                 walletHandle,
