@@ -1654,10 +1654,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient: &Identifier,
         attempt: u64,
     ) -> bool {
+        let wm = self.wallet_manager.read().await;
+        // Read once the wallet is locked, with the rest of what decides, not
+        // before the wait for the lock: a hold raised during that wait is
+        // seen. One raised after this answer does not recall the broadcast
+        // that follows, as none recalls a first send between its claim and
+        // its broadcast.
         if self.persister.private_payments_unrestored() {
             return false;
         }
-        let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
             .and_then(|info| info.identity_manager.managed_identity(sender))
