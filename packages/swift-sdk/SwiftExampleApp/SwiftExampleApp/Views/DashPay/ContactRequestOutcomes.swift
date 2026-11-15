@@ -325,7 +325,7 @@ func contactRequestHolds(
             }
         }
         return holds
-    } catch PlatformWalletError.identityNotFound(_) {
+    } catch PlatformWalletError.identityNotFound(_, _) {
         return ContactRequestHolds()
     } catch {
         return nil

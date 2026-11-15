@@ -266,7 +266,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             do {
                 _ = try operation()
                 XCTFail("expected rejection during the shutdown drain", file: file, line: line)
-            } catch PlatformWalletError.invalidHandle(let message) {
+            } catch PlatformWalletError.invalidHandle(let message, _) {
                 XCTAssertEqual(
                     message,
                     "PlatformWalletManager not configured",
@@ -288,7 +288,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             _ = try await manager.createWallet(mnemonic: "b", network: .testnet)
             XCTFail("expected rejection during the shutdown drain")
         } catch let error as PlatformWalletError {
-            guard case .invalidHandle(let message) = error else {
+            guard case .invalidHandle(let message, _) = error else {
                 return XCTFail("expected invalidHandle, got \(error)")
             }
             XCTAssertEqual(

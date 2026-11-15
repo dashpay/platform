@@ -65,14 +65,14 @@ extension ManagedPlatformWallet {
             let result = try withExtendedLifetime(signer) {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try withDecisionProposalCString(
-                        params.title, field: "title", invalid: PlatformWalletError.invalidParameter
+                        params.title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
                     ) { titlePtr in
                         try withDecisionProposalCString(
                             params.description, field: "description",
-                            invalid: PlatformWalletError.invalidParameter
+                            invalid: { PlatformWalletError.invalidParameter($0) }
                         ) { descriptionPtr in
                             try withDecisionProposalCString(
-                                params.url, field: "url", invalid: PlatformWalletError.invalidParameter
+                                params.url, field: "url", invalid: { PlatformWalletError.invalidParameter($0) }
                             ) { urlPtr in
                                 let ffiParams = DecisionProposalParamsFFI(
                                     title: titlePtr,
@@ -182,14 +182,14 @@ extension ManagedPlatformWallet {
                 try ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     try proposalBytes.withUnsafeBufferPointer { proposalBp -> PlatformWalletFFIResult in
                         try withDecisionProposalCString(
-                            edit.title, field: "title", invalid: PlatformWalletError.invalidParameter
+                            edit.title, field: "title", invalid: { PlatformWalletError.invalidParameter($0) }
                         ) { titlePtr in
                             try withDecisionProposalCString(
                                 edit.description, field: "description",
-                                invalid: PlatformWalletError.invalidParameter
+                                invalid: { PlatformWalletError.invalidParameter($0) }
                             ) { descriptionPtr in
                                 try withDecisionProposalCString(
-                                    url, field: "url", invalid: PlatformWalletError.invalidParameter
+                                    url, field: "url", invalid: { PlatformWalletError.invalidParameter($0) }
                                 ) { urlPtr in
                                     let ffiEdit = DecisionProposalEditFFI(
                                         title: titlePtr,

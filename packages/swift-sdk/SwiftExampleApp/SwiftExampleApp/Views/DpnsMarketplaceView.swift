@@ -762,7 +762,7 @@ enum DpnsMarketplaceUI {
         case .insufficientIdentityCredits(_, let required, let available, _):
             return "This identity has \(price(available)), but \(price(required)) is required "
                 + "including the fee reserve."
-        case .contestedNameNotTradable(let label, let endsAtMs):
+        case .contestedNameNotTradable(let label, let endsAtMs, _):
             if endsAtMs == 0 {
                 return "\(label).dash is in an active contest and cannot be traded until it resolves."
             }

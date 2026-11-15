@@ -418,7 +418,7 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
             _ = try manager.createWallet(mnemonic: "unused", network: .testnet)
         }
         XCTAssertThrowsError(try syncCreate()) { error in
-            guard case PlatformWalletError.invalidHandle(let message) = error,
+            guard case PlatformWalletError.invalidHandle(let message, _) = error,
                   message.contains("async native operation is in flight") else {
                 return XCTFail("expected the synchronous create to be refused, got \(error)")
             }

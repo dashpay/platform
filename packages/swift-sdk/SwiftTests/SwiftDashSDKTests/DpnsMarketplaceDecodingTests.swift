@@ -132,7 +132,7 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
             code: .errorContestedNameNotTradable,
             message: #"{"label":"a11ce","endsAtMs":1234}"#
         )
-        guard case .contestedNameNotTradable(let label, let endsAtMs) = contest else {
+        guard case .contestedNameNotTradable(let label, let endsAtMs, _) = contest else {
             return XCTFail("Expected contestedNameNotTradable, got \(contest)")
         }
         XCTAssertEqual(label, "a11ce")

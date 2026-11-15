@@ -357,7 +357,7 @@ public class ManagedCoreWallet {
         case .rejected(_, let reason):
             throw PlatformWalletError.transactionBroadcastRejected(reason)
         case .unknown(_, let reason):
-            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason, payment: .maybeSent)
         }
     }
 
