@@ -326,6 +326,11 @@ pub struct DurableCursorState {
     /// cursor entry it outlives its wallet, so a removed wallet's handles,
     /// its same-id successor's and the manager count every flush of the id
     /// in one place ([`FlushLedger`](crate::changeset::flush_ledger::FlushLedger)).
+    ///
+    /// One place per manager, as the cursors above are: a backend serves one
+    /// manager (see `PlatformWalletManager::new`). A second manager over the
+    /// same backend instance would order cursor writes, and count flushes,
+    /// apart from this one.
     pub(crate) flush_ledgers: FlushLedgers,
 }
 

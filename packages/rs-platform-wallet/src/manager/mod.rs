@@ -573,6 +573,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `app_handler` receives all SPV and platform events by reference.
     /// Internally, a `LockNotifyHandler` is also registered to wake
     /// `AssetLockManager` async waiters on lock events.
+    ///
+    /// `persister` serves this manager alone, for as long as the manager or
+    /// a wallet handle it gave out is in use. What the manager knows of the
+    /// backend per wallet id (the order of durable cursor writes, and the
+    /// count of flushes that failed, [`DurableCursors`]) is kept per manager:
+    /// a second manager over the same backend instance, or a wallet handle
+    /// of an earlier manager still storing through it, would write and flush
+    /// the same buffered records without either seeing the other's. A host
+    /// that replaces its manager gives the new one its own backend instance,
+    /// as the FFI does, or stops using the earlier manager's handles first.
     pub fn new(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,
