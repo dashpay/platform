@@ -73,7 +73,9 @@ impl IdentityWallet {
     /// gate comes back with the result, for the caller to hold through its
     /// bookkeeping. A wallet removed, or re-created under its id, while the
     /// host signed is [`PlatformWalletError::WalletRemovedBeforeSend`], with
-    /// nothing broadcast.
+    /// nothing broadcast; one no longer current once the identity and the
+    /// address nonces are read is refused the same way before the host is
+    /// asked to sign.
     ///
     /// Crate-private: it does not write the managed balance back or
     /// reconcile the spent addresses. Callers outside the crate use
@@ -227,6 +229,20 @@ impl IdentityWallet {
             .iter()
             .map(|(address, (nonce, _))| (*address, *nonce))
             .collect();
+        // A point-in-time check after the identity and nonce reads: a wallet
+        // removed during them asks the host for no signature. The decisive
+        // check still runs under the gate once the host signed.
+        let current = self
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.generation));
+        if !current {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
         let confirmed = identity
             .top_up_from_addresses_with_nonce_with_metadata(
                 &self.sdk,

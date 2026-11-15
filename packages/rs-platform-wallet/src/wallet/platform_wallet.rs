@@ -621,8 +621,10 @@ impl PlatformWallet {
     /// open. A wallet removed or re-created since this handle was taken is
     /// refused with [`PlatformWalletError::WalletRemovedBeforeSend`]: before
     /// anything is fetched or signed when that is already so at the start,
-    /// and at the liveness check after signing, with nothing broadcast, when
-    /// the removal happened while the host signed. A caller must not hold
+    /// before the host is asked to sign when the removal happened while the
+    /// identity and the address nonces were read, and at the liveness check
+    /// after signing, with nothing broadcast, when the removal happened while
+    /// the host signed. A caller must not hold
     /// the gate.
     ///
     /// Returns the identity's new credit balance: for a managed identity the

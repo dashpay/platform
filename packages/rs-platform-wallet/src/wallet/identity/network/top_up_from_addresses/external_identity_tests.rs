@@ -47,7 +47,7 @@ use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use tokio::sync::{Notify, Semaphore};
 
-use super::GatedAddressSigner;
+use super::{GatedAddressSigner, TopUpScope};
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
@@ -540,6 +540,40 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_every_route()
         );
     }
     assert_eq!(fixture.submissions().await, (0, 0, 0));
+}
+
+/// A wallet removed after the entry check, while the identity and the
+/// address nonces are read, asks the host for no signature: the top-up is
+/// refused before signing, with nothing submitted. The wallet's top-up past
+/// its entry check is driven directly, on the wallet already removed.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_not_ask_the_host_to_sign_for_a_wallet_removed_during_the_reads() {
+    let mut fixture = Fixture::new(true).await;
+    let wallet_id = fixture.wallet.wallet_id();
+    fixture
+        .manager
+        .remove_wallet(&wallet_id)
+        .await
+        .expect("removed");
+
+    let refused = fixture
+        .wallet
+        .identity()
+        .top_up_identity_from_addresses(
+            &fixture.target,
+            vec![(ADDRESS, AMOUNT)],
+            &fixture.signer,
+            settings(),
+            TopUpScope::AnyIdentity,
+        )
+        .await
+        .map(|_| ());
+    assert!(
+        matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+            if *id == hex::encode(wallet_id)),
+        "{refused:?}"
+    );
+    assert_eq!(fixture.submissions().await, (0, 0, 0), "nothing is signed");
 }
 
 /// Signs like [`AddressSigner`], but only once released: holds a top-up in
