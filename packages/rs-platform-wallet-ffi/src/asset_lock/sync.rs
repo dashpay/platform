@@ -390,9 +390,11 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 typed @ (PlatformWalletError::AssetLockInputConflict { .. }
                 | PlatformWalletError::AssetLockInputContested { .. }
                 | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
-                other => PlatformWalletFFIResult::err(
+                // The fold keeps the error's payment-delivery class.
+                other => PlatformWalletFFIResult::err_from_wallet_error(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!("{}", other),
+                    &other,
                 ),
             }
         }

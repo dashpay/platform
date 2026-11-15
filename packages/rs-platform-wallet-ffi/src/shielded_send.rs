@@ -883,9 +883,12 @@ fn map_asset_lock_funding_result(
             e @ (PlatformWalletError::TransactionBroadcast(_)
             | PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
         ) => e.into(),
-        Err(e) => PlatformWalletFFIResult::err(
+        // The fold keeps the error's own payment-delivery class: a
+        // pre-dispatch failure never sent anything (`NotSent`).
+        Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
+            &e,
         ),
     }
 }
@@ -1090,11 +1093,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
-        Err(e) => PlatformWalletFFIResult::err(
+        Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
-        )
-        .with_payment_delivery(e.payment_delivery()),
+            &e,
+        ),
     }
 }
 
@@ -2155,9 +2158,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
 
     match result {
         Ok(_outcome) => PlatformWalletFFIResult::ok(),
-        Err(e) => PlatformWalletFFIResult::err(
+        Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded seed-pool-notes failed: {e}"),
+            &e,
         ),
     }
 }
@@ -3387,6 +3391,35 @@ mod tests {
         assert_eq!(
             map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// The catch-all fold of the asset-lock funding mapping keeps the wallet
+    /// error's payment-delivery class: a failure that never sent anything
+    /// stays `NotSent` under `ErrorWalletOperation` (whose own class is
+    /// `MaybeSent`).
+    #[test]
+    fn should_keep_the_delivery_class_through_the_asset_lock_funding_fallback() {
+        let not_sent = map_asset_lock_funding_result(
+            Err(PlatformWalletError::ShieldedNoUnspentNotes),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            not_sent.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(
+            not_sent.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
+        );
+
+        let maybe_sent = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockProofWait("lost".into())),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            maybe_sent.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
         );
     }
 

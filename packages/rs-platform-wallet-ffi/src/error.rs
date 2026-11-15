@@ -1061,6 +1061,18 @@ impl PlatformWalletFFIResult {
         self
     }
 
+    /// Fold `error` into `code` with `message`, keeping the error's own
+    /// payment-delivery class. For the arms that report a payment's failure
+    /// under a shared code such as `ErrorWalletOperation`, whose own class
+    /// says only `MaybeSent`.
+    pub(crate) fn err_from_wallet_error(
+        code: PlatformWalletFFIResultCode,
+        message: impl Into<String>,
+        error: &PlatformWalletError,
+    ) -> Self {
+        Self::err(code, message).with_payment_delivery(error.payment_delivery())
+    }
+
     /// A `Success`-coded result that still carries an advisory `message`.
     ///
     /// Used by non-error outcomes that want to convey a human-readable
