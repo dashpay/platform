@@ -34,6 +34,8 @@ use dpp::prelude::Identifier;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet_manager::WalletManager;
 
+#[cfg(feature = "shielded")]
+use crate::changeset::PersistenceCapabilities;
 use crate::changeset::{
     persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
     DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
@@ -54,7 +56,7 @@ use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 #[cfg(feature = "shielded")]
-use crate::wallet::shielded::NetworkShieldedCoordinator;
+use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedCoordinatorSlot};
 use crate::wallet::PlatformWallet;
 
 /// Registry key identifying each background worker the manager joins at
@@ -453,8 +455,7 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// 4 deletes `ShieldedWallet` outright and the coordinator
     /// owns the spend surface too.
     #[cfg(feature = "shielded")]
-    pub(super) shielded_coordinator:
-        Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+    pub(super) shielded_coordinator: ShieldedCoordinatorSlot,
     /// Shared `PlatformEventManager` — held on the manager so
     /// `configure_shielded` can install a per-chunk progress handler
     /// onto the freshly-created `NetworkShieldedCoordinator` that
@@ -677,9 +678,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&event_manager),
         ));
         #[cfg(feature = "shielded")]
-        let shielded_coordinator: Arc<
-            RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
-        > = Arc::new(RwLock::new(None));
+        let shielded_coordinator: ShieldedCoordinatorSlot = Arc::new(RwLock::new(None));
         #[cfg(feature = "shielded")]
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
             Arc::clone(&event_manager),
@@ -1035,7 +1034,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             {
                 continue;
             }
-            if let Err(error) = wallet.restore_private_contact_payments(coordinator).await {
+            if let Err(error) = wallet.restore_private_contact_payments().await {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet.wallet_id()),
                     %error,
@@ -1127,42 +1126,40 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(Arc::clone)
     }
 
-    /// Tear down shielded sync state for a Clear / wipe flow.
+    /// Clear this network's shielded state, native and host, in one call.
     ///
-    /// Single library entry point so the FFI stays a one-call bridge:
-    /// first **quiesce** the sync manager (cancel the loop *and* drain
-    /// any in-flight pass, including its persister-callback fan-out, so
-    /// nothing can re-persist notes after this returns), then **clear**
-    /// the network coordinator's per-subwallet registries AND reset the
-    /// on-disk commitment-tree SQLite store. The per-network
-    /// commitment-tree SQLite file stays on disk but its contents are
-    /// reset to empty so the next bind cold-resyncs from index 0.
+    /// Quiesces the sync manager (cancelling the loop and draining any
+    /// in-flight pass, persister fan-out included), resets the coordinator's
+    /// registries and its commitment-tree store, then wipes the host's
+    /// shielded rows for the network through this manager's persister
+    /// ([`PlatformWalletPersistence::wipe_shielded_state`]), all under the
+    /// coordinator's exclusive admission (see `NetworkShieldedCoordinator::clear`).
+    /// The host deletes nothing itself around this call. The tree file stays
+    /// on disk, emptied, so the next bind resyncs from index 0.
     ///
-    /// # The missing-coordinator case is an ERROR, not a silent no-op
+    /// Refused, with nothing stopped or reset, when the persister does not
+    /// attest [`PersistenceCapabilities::SHIELDED_STATE_WIPE`].
     ///
-    /// Returning `Ok(())` when `shielded_coordinator()` is `None` — treating
-    /// "no coordinator" as "nothing to clear" — masks a real on-device
-    /// failure: the host taps Clear on a manager whose coordinator is **not
-    /// installed on this instance** — e.g. an SDK rebuild handed the host a
-    /// fresh `PlatformWalletManager` whose `configure_shielded` never ran (or
-    /// ran on a different instance than the one currently syncing). The
-    /// quiesce runs (sync loop stops), the call returns `Ok`, and the host
-    /// then wipes its own Room/SwiftData rows — while the **on-disk
-    /// commitment tree is never touched** (file mtime unchanged on device, no
-    /// `reset_commitment_tree` call). The next bind reloads the still-full
-    /// tree + its persisted watermark and re-freezes everything.
-    ///
-    /// The FFI only exposes this call behind a bound, shielded-enabled host
-    /// surface (the "Clear" button), so reaching it with no coordinator is a
-    /// genuine wiring fault, not a benign "shielded was never used" case.
-    /// Returning an error makes the host fail closed (keep its rows) and
-    /// surfaces the real problem instead of a phantom success.
-    ///
-    /// Returns an error if the coordinator is absent, or if the coordinator's
-    /// store reset (which resets the on-disk tree to 0 leaves and verifies it)
-    /// fails; the host must not commit its own persistence wipe in that case.
+    /// A missing coordinator is an error, not a no-op: reaching Clear on a
+    /// manager whose `configure_shielded` never ran is a wiring fault, and a
+    /// silent success would leave the on-disk tree and its watermark in
+    /// place for the next bind to reload.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
+        // Fail closed before anything is stopped or reset: the host half of
+        // the Clear runs through this persister, and one that cannot wipe
+        // its shielded rows would keep the very state the reset drops.
+        let required = PersistenceCapabilities::SHIELDED_STATE_WIPE;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded clear requires persistence capabilities {:?} (missing mask 0x{:x}); \
+                 nothing was reset",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
         // Hold the registry's per-key clearing latch across the WHOLE
         // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
         // (and any registry (re)start) is a no-op, so no fresh pass can
@@ -1188,7 +1185,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ));
         };
         match self.shielded_coordinator().await {
-            Some(coord) => coord.clear().await,
+            Some(coord) => coord.clear(&*self.persister).await,
             None => {
                 tracing::error!(
                     "clear_shielded: no shielded coordinator installed on this manager — the \
@@ -1595,6 +1592,8 @@ mod tests {
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            #[cfg(feature = "shielded")]
+            Arc::clone(&mgr.shielded_coordinator),
         ));
         mgr.wallets.rcu(|wallets| {
             let mut next = std::collections::BTreeMap::clone(wallets);

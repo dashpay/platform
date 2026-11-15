@@ -3384,6 +3384,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+                | PlatformWalletPersistenceCapabilities.shieldedStateWipe
         )
     }
 
@@ -3435,6 +3436,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             loadPrivateContactScanStateWalletsCallback
         extensionCallbacks.on_load_private_contact_scan_state_wallets_free_fn =
             loadPrivateContactScanStateWalletsFreeCallback
+        extensionCallbacks.on_wipe_shielded_state_fn = wipeShieldedStateCallback
         return extensionCallbacks
     }
 
@@ -6274,6 +6276,41 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         let wallets = (try? backgroundContext.fetch(descriptor)) ?? []
         return Set(wallets.map { $0.walletId })
+    }
+
+    /// Native Clear's host half (`on_wipe_shielded_state_fn`): delete the
+    /// shielded rows of every wallet persisted on `network`, loaded or not,
+    /// in one save. A failed read or save rolls the context back and
+    /// throws, leaving the rows in place.
+    func wipeShieldedState(network: Network) throws {
+        try onQueue {
+            let networkRaw = network.rawValue
+            do {
+                let wallets = try backgroundContext.fetch(FetchDescriptor<PersistentWallet>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw }))
+                for walletId in Set(wallets.map(\.walletId)) {
+                    try backgroundContext.delete(
+                        model: PersistentShieldedNote.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedOutgoingNote.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedSyncState.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedActivity.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedViewingKey.self,
+                        where: #Predicate { $0.walletId == walletId })
+                }
+                try backgroundContext.save()
+            } catch {
+                backgroundContext.rollback()
+                throw error
+            }
+        }
     }
 
     /// Build the host-allocated `ShieldedNoteRestoreFFI` array Rust
@@ -12526,6 +12563,20 @@ private func loadPrivateContactScanStateWalletsFreeCallback(
     let buffer = UnsafeMutablePointer(mutating: walletIds)
     buffer.deinitialize(count: Int(walletIdsCount))
     buffer.deallocate()
+}
+
+/// C shim for `on_wipe_shielded_state_fn`: 0 once the network's shielded
+/// rows are gone, non-zero with them in place.
+private func wipeShieldedStateCallback(
+    context: UnsafeMutableRawPointer?,
+    network: FFINetwork
+) -> Int32 {
+    guard let context else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.wipeShieldedState(network: Network(ffiNetwork: network))
+        return 0
+    } catch { return -1 }
 }
 
 private func loadIdentityBalanceBlockTimeCallback(

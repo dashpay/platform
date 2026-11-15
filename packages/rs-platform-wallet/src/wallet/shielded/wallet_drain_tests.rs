@@ -208,7 +208,7 @@ async fn wallet_fixture(
 ) -> (
     PlatformWallet,
     Arc<RecoveryPersistence>,
-    NetworkShieldedCoordinator,
+    Arc<NetworkShieldedCoordinator>,
     TestDirectory,
 ) {
     let (wallet, persistence, coordinator, dir, _) = signed_wallet_fixture(lock, keys).await;
@@ -223,7 +223,7 @@ async fn signed_wallet_fixture(
 ) -> (
     PlatformWallet,
     Arc<RecoveryPersistence>,
-    NetworkShieldedCoordinator,
+    Arc<NetworkShieldedCoordinator>,
     TestDirectory,
     WalletSigner,
 ) {
@@ -267,6 +267,7 @@ async fn signed_wallet_fixture(
         Arc::new(SpvBroadcaster::new(spv)),
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::changeset::DurableCursors::default(),
+        Default::default(),
     );
     manager
         .write()
@@ -281,7 +282,15 @@ async fn signed_wallet_fixture(
     std::fs::create_dir_all(&dir.0).unwrap();
     let path = dir.0.join("shielded.sqlite");
     let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
-    let coordinator = NetworkShieldedCoordinator::new(sdk, Network::Testnet, path, store);
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        sdk,
+        Network::Testnet,
+        path,
+        store,
+    ));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
     (wallet, persistence, coordinator, dir, signer)
 }
 
@@ -321,8 +330,14 @@ async fn restart_wallet(
         Arc::new(SpvBroadcaster::new(spv)),
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::changeset::DurableCursors::default(),
+        Default::default(),
     );
     *wallet.shielded_keys.write().await = old.shielded_keys.read().await.clone();
+    if let Ok(coordinator) = old.shielded_coordinator().await {
+        wallet
+            .attach_shielded_coordinator_for_test(&coordinator)
+            .await;
+    }
     wallet
 }
 
@@ -341,8 +356,7 @@ async fn live_status(wallet: &PlatformWallet, out_point: &OutPoint) -> AssetLock
 async fn should_release_registration_after_returned_prebuild_load_failure() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
-    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover = super::prover::CachedOrchardProver::new();
     let operation = Arc::new(AssetLockOperationContext::new([0x78; 16]));
@@ -350,7 +364,6 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
         persistence.fail_load.store(failed_load, Ordering::SeqCst);
         let result = wallet
             .shielded_fund_from_asset_lock(
-                &coordinator,
                 AssetLockFunding::DrainWalletBalance {
                     account_index: 0,
                     minimum_lock_duffs: None,
@@ -393,14 +406,12 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
 async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
-    let (wallet, _, coordinator, _dir) = wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, _, _, _dir) = wallet_fixture(&lock, keys).await;
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover = super::prover::CachedOrchardProver::new();
     let operation = Arc::new(AssetLockOperationContext::new([0x77; 16]));
     let blocker = wallet.shield_guard.lock().await;
     let mut future = Box::pin(wallet.shielded_fund_from_asset_lock(
-        &coordinator,
         AssetLockFunding::DrainWalletBalance {
             account_index: 0,
             minimum_lock_duffs: None,
@@ -453,15 +464,13 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
         let (mut lock, keys) = drain_lock_fixture();
         lock.operation_id = None;
         let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
-        let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys.clone()).await;
+        let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys.clone()).await;
         *wallet.shielded_keys.write().await = empty_binding.then(BTreeMap::new);
-        let coordinator = Arc::new(coordinator);
         let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let prover = super::prover::CachedOrchardProver::new();
         let operation = Arc::new(AssetLockOperationContext::new([0x97; 16]));
         let error = wallet
             .shielded_fund_from_asset_lock(
-                &coordinator,
                 AssetLockFunding::DrainWalletBalance {
                     account_index: 0,
                     minimum_lock_duffs: None,
@@ -838,16 +847,13 @@ async fn should_report_a_fresh_shield_lock_to_the_caller() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
     let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
-    let (wallet, _persistence, coordinator, _dir, signer) =
-        signed_wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, _persistence, _, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
     let prover = super::prover::CachedOrchardProver::new();
     let seen = Mutex::new(Vec::new());
     let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
 
     wallet
         .shielded_fund_from_asset_lock(
-            &coordinator,
             AssetLockFunding::FromWalletBalance {
                 amount_duffs: 5_000_000,
                 account_index: 0,
@@ -883,9 +889,7 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
     let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
-    let (wallet, _persistence, coordinator, _dir, signer) =
-        signed_wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, _persistence, _, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
     let prover = super::prover::CachedOrchardProver::new();
     let operation = Arc::new(AssetLockOperationContext::new([0x5a; 16]));
     let seen = Mutex::new(Vec::new());
@@ -893,7 +897,6 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
 
     wallet
         .shielded_fund_from_asset_lock(
-            &coordinator,
             AssetLockFunding::DrainWalletBalance {
                 account_index: 0,
                 minimum_lock_duffs: None,
@@ -929,14 +932,12 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
     let recorded = crate::test_support::orchard_address_fixture(0x51);
     let other = crate::test_support::orchard_address_fixture(0x52);
     lock.shielded_recipient = Some(recorded.to_raw_bytes());
-    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover = super::prover::CachedOrchardProver::new();
 
     let error = wallet
         .shielded_fund_from_asset_lock(
-            &coordinator,
             AssetLockFunding::FromExistingAssetLock {
                 out_point: lock.out_point,
                 consume_invitation_voucher: false,
@@ -984,15 +985,13 @@ async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recor
     let recorded = crate::test_support::orchard_address_fixture(0x53);
     let other = crate::test_support::orchard_address_fixture(0x54);
     lock.shielded_recipient = Some(recorded.to_raw_bytes());
-    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover = super::prover::CachedOrchardProver::new();
     let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
 
     let error = wallet
         .shielded_fund_from_asset_lock(
-            &coordinator,
             AssetLockFunding::DrainWalletBalance {
                 account_index: 0,
                 minimum_lock_duffs: None,
@@ -1043,14 +1042,12 @@ async fn should_accept_the_callers_recipient_for_a_legacy_row_without_one() {
     lock.operation_id = None;
     assert_eq!(lock.shielded_recipient, None);
     let recipient = crate::test_support::orchard_address_fixture(0x55);
-    let (wallet, _persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, _persistence, _, _dir) = wallet_fixture(&lock, keys).await;
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover = super::prover::CachedOrchardProver::new();
 
     let error = wallet
         .shielded_fund_from_asset_lock(
-            &coordinator,
             AssetLockFunding::FromExistingAssetLock {
                 out_point: lock.out_point,
                 consume_invitation_voucher: false,
@@ -1084,10 +1081,8 @@ async fn should_record_the_recipient_with_the_lock_before_dispatch() {
         let (mut lock, keys) = drain_lock_fixture();
         lock.operation_id = None;
         let recipient = crate::test_support::orchard_address_fixture(0x56);
-        let (wallet, persistence, coordinator, _dir, signer) =
-            signed_wallet_fixture(&lock, keys).await;
+        let (wallet, persistence, _, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
         persistence.commits_inline.store(drain, Ordering::SeqCst);
-        let coordinator = Arc::new(coordinator);
         let prover = super::prover::CachedOrchardProver::new();
         let operation = Arc::new(AssetLockOperationContext::new([0x57; 16]));
         let seen = Mutex::new(Vec::new());
@@ -1106,7 +1101,6 @@ async fn should_record_the_recipient_with_the_lock_before_dispatch() {
         };
         wallet
             .shielded_fund_from_asset_lock(
-                &coordinator,
                 funding,
                 vec![(recipient, None)],
                 &signer,
@@ -1141,7 +1135,6 @@ async fn should_record_the_recipient_with_the_lock_before_dispatch() {
 /// error and the outpoints the caller was told about.
 async fn fund_typed_amount(
     wallet: &PlatformWallet,
-    coordinator: &Arc<NetworkShieldedCoordinator>,
     signer: &WalletSigner,
     recipient: dpp::address_funds::OrchardAddress,
 ) -> (PlatformWalletError, Vec<OutPoint>) {
@@ -1150,7 +1143,6 @@ async fn fund_typed_amount(
     let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
     let error = wallet
         .shielded_fund_from_asset_lock(
-            coordinator,
             AssetLockFunding::FromWalletBalance {
                 amount_duffs: 5_000_000,
                 account_index: 0,
@@ -1181,9 +1173,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         let (mut lock, keys) = drain_lock_fixture();
         lock.operation_id = None;
         let recipient = crate::test_support::orchard_address_fixture(0x58);
-        let (wallet, persistence, coordinator, _dir, signer) =
-            signed_wallet_fixture(&lock, keys).await;
-        let coordinator = Arc::new(coordinator);
+        let (wallet, persistence, _, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
         persistence.commits_inline.store(false, Ordering::SeqCst);
         let switch = if fail_flush {
             &persistence.fail_flush
@@ -1192,7 +1182,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         };
 
         switch.store(true, Ordering::SeqCst);
-        let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        let (error, seen) = fund_typed_amount(&wallet, &signer, recipient).await;
         assert!(
             matches!(&error, PlatformWalletError::Persistence(message)
                 if message.contains("shielded recipient was not made durable")),
@@ -1210,7 +1200,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         // The inputs were handed back: the retry builds a lock again and gets
         // as far as the broadcaster.
         switch.store(false, Ordering::SeqCst);
-        let (error, retried) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        let (error, retried) = fund_typed_amount(&wallet, &signer, recipient).await;
         assert!(
             !matches!(error, PlatformWalletError::Persistence(_)),
             "fail_flush={fail_flush}: {error}"
@@ -1235,14 +1225,13 @@ async fn should_keep_best_effort_dispatch_on_a_backend_without_recipient_support
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
     let recipient = crate::test_support::orchard_address_fixture(0x59);
-    let (wallet, persistence, coordinator, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
-    let coordinator = Arc::new(coordinator);
+    let (wallet, persistence, _, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
     persistence
         .records_recipients
         .store(false, Ordering::SeqCst);
     persistence.fail_store.store(true, Ordering::SeqCst);
 
-    let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+    let (error, seen) = fund_typed_amount(&wallet, &signer, recipient).await;
 
     assert!(
         !matches!(error, PlatformWalletError::Persistence(_)),

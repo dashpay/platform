@@ -183,7 +183,6 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
         &self,
-        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         funding: AssetLockFunding,
         recipients: Vec<(OrchardAddress, Option<Credits>)>,
         asset_lock_signer: &AS,
@@ -222,7 +221,6 @@ impl PlatformWallet {
         };
         let result = self
             .shielded_fund_from_asset_lock_inner(
-                coordinator,
                 funding,
                 recipients,
                 asset_lock_signer,
@@ -250,7 +248,6 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     async fn shielded_fund_from_asset_lock_inner<AS, P>(
         &self,
-        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         funding: AssetLockFunding,
         recipients: Vec<(OrchardAddress, Option<Credits>)>,
         asset_lock_signer: &AS,
@@ -612,7 +609,7 @@ impl PlatformWallet {
         // by construction). Recorded Confirmed directly — `broadcast_and_
         // _wait` already proved inclusion. Best-effort: a recording miss
         // (no bound keyset, no recoverable output) just omits the row.
-        self.record_shield_from_asset_lock_activity(coordinator, &landed.actions, shield_amount)
+        self.record_shield_from_asset_lock_activity(&landed.actions, shield_amount)
             .await;
 
         // Step 5: finalize the tracked asset lock. The shielded note itself
@@ -743,7 +740,6 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(super) async fn record_shield_from_asset_lock_activity(
         &self,
-        coordinator: &crate::wallet::shielded::NetworkShieldedCoordinator,
         actions: &[dpp::shielded::SerializedAction],
         shield_amount: Credits,
     ) {
@@ -795,6 +791,15 @@ impl PlatformWallet {
             (account, pending)
         };
 
+        // The only shielded write of a funding, admitted on its own: the
+        // asset lock's broadcast and ChainLock wait before it, which can take
+        // indefinitely long, write no shielded state and hold no Clear back.
+        // `shield_guard` is held here, which the lock order allows: it comes
+        // before admission everywhere.
+        let Ok(coordinator) = self.shielded_coordinator().await else {
+            return;
+        };
+        let _admission = coordinator.admit().await;
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
         let id = crate::wallet::shielded::SubwalletId::new(self.wallet_id(), account);
         crate::wallet::shielded::operations::queue_shielded_activity(

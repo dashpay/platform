@@ -1311,7 +1311,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
-        // compiled in; notes, nullifiers, and sync state use ShieldedStore.
+        // compiled in, and so is their wipe; notes, nullifiers, and sync
+        // state use ShieldedStore, which Clear resets itself.
         // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
@@ -1327,12 +1328,46 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         #[cfg(feature = "shielded")]
         {
-            capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+            capabilities
+                .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+                .union(PersistenceCapabilities::SHIELDED_STATE_WIPE)
         }
         #[cfg(not(feature = "shielded"))]
         {
             capabilities
         }
+    }
+
+    /// Flushes this network's buffered writes (and those of wallets with no
+    /// stored row yet) under the delete's connection guard, then deletes the
+    /// network's viewing keys in one transaction. A flush failure fails the
+    /// wipe with the rows in place.
+    #[cfg(feature = "shielded")]
+    fn wipe_shielded_state(&self, network: dashcore::Network) -> Result<(), PersistenceError> {
+        self.ensure_writable("wipe_shielded_state")
+            .map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        // Other networks' buffers stay put: a failing changeset there must
+        // not fail this network's Clear.
+        let label = schema::wallets::network_to_str(network);
+        for wallet_id in self
+            .buffer
+            .dirty_wallets()
+            .map_err(PersistenceError::from)?
+        {
+            let stored =
+                schema::wallets::fetch(&conn, &wallet_id).map_err(PersistenceError::from)?;
+            if !matches!(&stored, Some((stored_network, _)) if stored_network != label) {
+                self.flush_locked(&mut conn, &wallet_id)?;
+            }
+        }
+        let tx = conn
+            .transaction()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
+        schema::shielded_viewing_keys::delete_for_network(&tx, network)
+            .map_err(PersistenceError::from)?;
+        tx.commit()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))
     }
 
     fn persist_tracked_masternodes(

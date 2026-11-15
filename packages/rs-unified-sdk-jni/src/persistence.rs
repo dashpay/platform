@@ -265,6 +265,12 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
         ),
+        shielded_state_wipe: bridge_overrides(
+            env,
+            bridge,
+            "onWipeShieldedState",
+            WIPE_SHIELDED_STATE_DESCRIPTOR,
+        ),
     })
 }
 
@@ -328,6 +334,10 @@ struct BridgeOverrides {
     /// vouches for the contact requests read before it, which an inherited
     /// no-op contact upsert never keeps.
     private_contact_scan_state: bool,
+    /// `onWipeShieldedState`: an inherited body deletes nothing, so wiring
+    /// it would let Clear report a host wipe that never happened.
+    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+    shielded_state_wipe: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -363,6 +373,10 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         on_load_private_contact_scan_state_wallets_free_fn: overrides
             .private_contact_scan_state
             .then_some(tramp_load_private_contact_scan_state_wallets_free),
+        #[cfg(feature = "shielded")]
+        on_wipe_shielded_state_fn: overrides
+            .shielded_state_wipe
+            .then_some(tramp_wipe_shielded_state),
         ..Default::default()
     }
 }
@@ -2493,6 +2507,28 @@ unsafe extern "C" fn tramp_persist_shielded_viewing_keys(
             }
         }
         Ok(0)
+    })
+}
+
+/// Descriptor of `NativePersistenceBridge.onWipeShieldedState`: the
+/// `FFINetwork` discriminant (`Network.ffiValue`).
+const WIPE_SHIELDED_STATE_DESCRIPTOR: &str = "(I)I";
+
+/// Delete the host's shielded rows for `network` (see
+/// `WipeShieldedStateFn`); native Clear calls it once per successful reset.
+#[cfg(feature = "shielded")]
+unsafe extern "C" fn tramp_wipe_shielded_state(
+    context: *mut c_void,
+    network: platform_wallet_ffi::FFINetwork,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        env.call_method(
+            bridge,
+            "onWipeShieldedState",
+            WIPE_SHIELDED_STATE_DESCRIPTOR,
+            &[JValue::Int(network as i32)],
+        )?
+        .i()
     })
 }
 
@@ -5288,6 +5324,8 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ),
     #[cfg(feature = "shielded")]
     ("onPersistShieldedViewingKey", "([B[BI[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onWipeShieldedState", WIPE_SHIELDED_STATE_DESCRIPTOR),
     (
         "onLoadWalletList",
         "()[Lorg/dashfoundation/dashsdk/ffi/WalletRestoreData;",
@@ -5473,6 +5511,7 @@ mod tests {
                 header,
                 backfill,
                 private_contact_scan_state: false,
+                shielded_state_wipe: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5485,9 +5524,28 @@ mod tests {
             header: false,
             backfill: false,
             private_contact_scan_state: false,
+            shielded_state_wipe: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
+    }
+
+    /// The shielded wipe slot is wired only for a bridge that overrides
+    /// `onWipeShieldedState`; without it `FFIPersister` does not attest
+    /// `SHIELDED_STATE_WIPE` and native Clear refuses to reset anything.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn the_shielded_wipe_slot_is_wired_only_for_a_bridge_that_overrides_it() {
+        for wired in [false, true] {
+            let extension = extension_for(BridgeOverrides {
+                sweeps: false,
+                header: false,
+                backfill: false,
+                private_contact_scan_state: false,
+                shielded_state_wipe: wired,
+            });
+            assert_eq!(extension.on_wipe_shielded_state_fn.is_some(), wired);
+        }
     }
 
     /// The scan-state trio is wired only for a bridge that implements both
@@ -5502,6 +5560,7 @@ mod tests {
                 header: false,
                 backfill: false,
                 private_contact_scan_state: wired,
+                shielded_state_wipe: false,
             });
             assert_eq!(
                 extension.on_persist_private_contact_scan_state_fn.is_some(),

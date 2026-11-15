@@ -157,7 +157,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
-            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            CAPABILITY_SHIELDED_STATE_WIPE
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -2683,6 +2684,28 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Native Clear's host half: drop the shielded rows of every wallet on
+     * [network] in one transaction. Scoped by the wallet rows' network rather
+     * than the loaded fleet, so a same-network wallet that failed restore
+     * loses its rows too.
+     */
+    override fun onWipeShieldedState(network: Int): Int = guarded {
+        runBlockingCatching {
+            database.withTransaction {
+                val dao = database.shieldedDao()
+                for (wallet in database.walletDao().getByNetwork(network)) {
+                    dao.deleteActivityByWallet(wallet.walletId)
+                    dao.deleteOutgoingNotesByWallet(wallet.walletId)
+                    dao.deleteNotesByWallet(wallet.walletId)
+                    dao.deleteSyncStatesByWallet(wallet.walletId)
+                    dao.deleteViewingKeysByWallet(wallet.walletId)
+                }
+            }
+        }
+        0
+    }
+
     // ── Load callbacks ────────────────────────────────────────────────
 
     /**
@@ -4210,6 +4233,9 @@ class PlatformWalletPersistenceHandler(
 
         internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+
+        internal const val CAPABILITY_SHIELDED_STATE_WIPE: Long =
+            NativePersistenceBridge.CAPABILITY_SHIELDED_STATE_WIPE
 
         private const val TAG = "DashPersistence"
 

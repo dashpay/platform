@@ -29,6 +29,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -220,8 +221,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        // The private contact request scan state is bit 15 (0x8000).
-        assertEquals(0x8bbfL, handler.persistenceCapabilitiesBits())
+        // The private contact request scan state is bit 15 (0x8000), the
+        // shielded state wipe bit 16 (0x10000).
+        assertEquals(0x18bbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -240,6 +242,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(
             diagnostic.contains(PlatformWalletPersistenceCapabilities.PRIVATE_CONTACT_REQUEST_SCAN_STATE),
         )
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.SHIELDED_STATE_WIPE))
     }
 
     @Test
@@ -413,6 +416,39 @@ class PlatformWalletPersistenceHandlerTest {
         )
         assertNull(db.shieldedDao().getViewingKey(mainnetWallet, 2))
         scoped.close()
+    }
+
+    @Test
+    fun shieldedWipeDropsEveryShieldedRowOfTheNetworkAndKeepsOtherNetworks() = runTest {
+        val testnetWallet = ByteArray(32) { 0x61 }
+        val mainnetWallet = ByteArray(32) { 0x62 }
+        db.walletDao().upsert(WalletEntity(testnetWallet, networkRaw = Network.TESTNET.ffiValue))
+        db.walletDao().upsert(WalletEntity(mainnetWallet, networkRaw = Network.MAINNET.ffiValue))
+        for (wallet in listOf(testnetWallet, mainnetWallet)) {
+            db.shieldedDao().upsertViewingKey(
+                org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity(
+                    wallet, 0, ByteArray(96) { 1 },
+                ),
+            )
+            db.shieldedDao().upsertSyncState(
+                org.dashfoundation.dashsdk.persistence.entities.ShieldedSyncStateEntity(
+                    wallet, 0, lastSyncedIndex = 42,
+                ),
+            )
+        }
+
+        assertEquals(0, handler.onWipeShieldedState(Network.TESTNET.ffiValue))
+
+        assertTrue(db.shieldedDao().getViewingKeysByWallet(testnetWallet).isEmpty())
+        assertTrue(db.shieldedDao().getAllSyncStates().none { it.walletId.contentEquals(testnetWallet) })
+        assertEquals(1, db.shieldedDao().getViewingKeysByWallet(mainnetWallet).size)
+        assertEquals(1, db.shieldedDao().getAllSyncStates().count { it.walletId.contentEquals(mainnetWallet) })
+    }
+
+    @Test
+    fun shieldedWipeIsNeverInheritedAsASuccess() {
+        val noOpBridge = object : NativePersistenceBridge() {}
+        assertNotEquals(0, noOpBridge.onWipeShieldedState(Network.TESTNET.ffiValue))
     }
 
     @Test

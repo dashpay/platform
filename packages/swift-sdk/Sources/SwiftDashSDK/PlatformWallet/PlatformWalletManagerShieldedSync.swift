@@ -441,20 +441,18 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Reset the Rust-side shielded state on this manager:
-    /// stops the background sync loop, drops every wallet
-    /// registration on the network-scoped coordinator, and
-    /// resets the caught-up cooldown stamp.
+    /// Reset this manager's shielded state: stops the background sync loop,
+    /// drops every wallet registration on the network-scoped coordinator,
+    /// empties the shared commitment tree, resets the caught-up cooldown
+    /// stamp, and has the persistence handler delete every shielded
+    /// SwiftData row of the network's wallets before returning, with every
+    /// other shielded operation held out. The host deletes nothing itself.
+    /// The per-network SQLite file stays open; the next [`bindShielded`]
+    /// repopulates the coordinator and the next sync rebuilds from index 0.
     ///
-    /// Use this from the host's "Clear" flow before wiping
-    /// host-side persistence (e.g. SwiftData rows). The single
-    /// per-network SQLite commitment-tree file stays open —
-    /// Clear semantics are "wipe my host persistence and
-    /// re-sync from index 0 on the shared tree", not "blow
-    /// away the chain-wide cache". After Clear, the next
-    /// [`bindShielded`] call repopulates the coordinator's
-    /// registries and the next sync pass re-saves notes via
-    /// the changeset path.
+    /// Throws when the handler cannot wipe (nothing is reset), when the
+    /// native reset fails, or when the SwiftData wipe fails after it; in the
+    /// last case binds are refused until a retried Clear succeeds.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: Clear quiesces the same loop and would wait on the calling
@@ -467,8 +465,8 @@ extension PlatformWalletManager {
         }
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after Clear is dropped
-        // (it would otherwise briefly repopulate the mirror the host is
-        // about to wipe).
+        // (it would otherwise briefly repopulate the mirror Clear just
+        // wiped).
         shieldedSyncGeneration.bump()
         // The dropped completion would normally clear the per-pass
         // progress mirrors; do it here so a pass cleared mid-flight

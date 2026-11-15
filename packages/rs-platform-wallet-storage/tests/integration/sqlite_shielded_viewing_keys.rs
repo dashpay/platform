@@ -8,7 +8,7 @@ use platform_wallet::changeset::{
     ShieldedChangeSet,
 };
 use platform_wallet::wallet::shielded::SubwalletId;
-use platform_wallet_storage::WalletStorageError;
+use platform_wallet_storage::{SqlitePersister, WalletStorageError};
 
 fn changeset(id: SubwalletId, viewing_key: [u8; 96]) -> PlatformWalletChangeSet {
     let mut shielded = ShieldedChangeSet::default();
@@ -121,4 +121,101 @@ fn delete_wallet_cascades_shielded_viewing_keys() {
         )
         .unwrap();
     assert_eq!(remaining, 0);
+}
+
+fn viewing_key_count(path: &std::path::Path, wallet_id: &[u8; 32]) -> i64 {
+    common::ro_conn(path)
+        .query_row(
+            "SELECT COUNT(*) FROM shielded_viewing_keys WHERE wallet_id = ?1",
+            rusqlite::params![wallet_id.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+fn insert_mainnet_wallet(persister: &SqlitePersister, wallet_id: &[u8; 32]) {
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'mainnet', 0)",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .unwrap();
+}
+
+#[test]
+fn shielded_wipe_drops_the_networks_viewing_keys_and_keeps_other_networks() {
+    let (persister, _tmp, path) = fresh_persister();
+    let testnet_wallet = wid(0x71);
+    let mainnet_wallet = wid(0x72);
+    ensure_wallet_meta(&persister, &testnet_wallet);
+    insert_mainnet_wallet(&persister, &mainnet_wallet);
+    for wallet in [testnet_wallet, mainnet_wallet] {
+        persister
+            .store(wallet, changeset(SubwalletId::new(wallet, 0), [0xE1; 96]))
+            .expect("store viewing key");
+    }
+
+    assert!(persister
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::SHIELDED_STATE_WIPE));
+    persister
+        .wipe_shielded_state(dashcore::Network::Testnet)
+        .expect("wipe testnet");
+
+    assert_eq!(viewing_key_count(&path, &testnet_wallet), 0);
+    assert_eq!(viewing_key_count(&path, &mainnet_wallet), 1);
+}
+
+#[test]
+fn shielded_wipe_flushes_buffered_viewing_keys_before_deleting() {
+    let (persister, _tmp, path) =
+        common::fresh_persister_with_mode(platform_wallet_storage::FlushMode::Manual);
+    let wallet = wid(0x73);
+    ensure_wallet_meta(&persister, &wallet);
+    persister
+        .store(wallet, changeset(SubwalletId::new(wallet, 0), [0xE2; 96]))
+        .expect("buffer viewing key");
+
+    persister
+        .wipe_shielded_state(dashcore::Network::Testnet)
+        .expect("wipe testnet");
+    persister.commit_writes().expect("flush after wipe");
+
+    assert_eq!(viewing_key_count(&path, &wallet), 0);
+}
+
+#[test]
+fn shielded_wipe_leaves_other_networks_buffered_writes_unflushed() {
+    let (persister, _tmp, path) =
+        common::fresh_persister_with_mode(platform_wallet_storage::FlushMode::Manual);
+    let testnet_wallet = wid(0x74);
+    let mainnet_wallet = wid(0x75);
+    ensure_wallet_meta(&persister, &testnet_wallet);
+    insert_mainnet_wallet(&persister, &mainnet_wallet);
+    persister
+        .store(
+            mainnet_wallet,
+            changeset(SubwalletId::new(mainnet_wallet, 0), [0xE3; 96]),
+        )
+        .expect("buffer the mainnet viewing key");
+    persister.force_next_flush_to_fail(WalletStorageError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: rusqlite::ErrorCode::DatabaseBusy,
+            extended_code: rusqlite::ffi::SQLITE_BUSY,
+        },
+        Some("database is busy".into()),
+    )));
+
+    persister
+        .wipe_shielded_state(dashcore::Network::Testnet)
+        .expect("a failing mainnet changeset does not fail the testnet wipe");
+
+    let report = persister.commit_writes().expect("commit report");
+    assert_eq!(
+        report.failed.len(),
+        1,
+        "the wipe never flushed the mainnet wallet, so the primed failure is still armed"
+    );
+    assert_eq!(viewing_key_count(&path, &mainnet_wallet), 0);
 }

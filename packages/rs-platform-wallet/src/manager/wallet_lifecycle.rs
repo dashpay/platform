@@ -704,6 +704,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             broadcaster,
             Arc::clone(&self.sync_fault),
             Arc::clone(&self.durable_cursors),
+            #[cfg(feature = "shielded")]
+            Arc::clone(&self.shielded_coordinator),
         );
 
         // Restore the platform-address provider from the slice read above —

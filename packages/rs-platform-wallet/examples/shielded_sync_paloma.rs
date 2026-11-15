@@ -253,7 +253,7 @@ async fn main() {
         .await
         .expect("shielded_coordinator must exist after configure_shielded");
     platform_wallet
-        .bind_shielded(&SEED_A, &[0u32], &coordinator)
+        .bind_shielded(&SEED_A, &[0u32])
         .await
         .expect("bind_shielded");
 
@@ -288,7 +288,7 @@ async fn main() {
     );
 
     let balances = platform_wallet
-        .shielded_balances(&coordinator)
+        .shielded_balances()
         .await
         .expect("shielded_balances");
     let total_balance: u64 = balances.values().sum();

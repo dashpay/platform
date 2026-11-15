@@ -21,6 +21,7 @@ use platform_wallet::PlatformWalletError;
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
+use crate::shielded_send::resolve_shielded_wallet;
 use crate::shielded_types::{
     ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
     ShieldedLocalBalanceStatusFFI, ShieldedSyncWalletResultFFI,
@@ -435,37 +436,12 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    // Look up the wallet + the network-scoped shielded coordinator
-    // on the manager. The coordinator owns the single SQLite handle
-    // *and* the per-network sync-coordination registry; we hand it
-    // to the bind so the wallet reuses the shared store and
-    // self-registers its viewing keys for the coordinator-driven
-    // sync loop.
-    let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(async {
-            let wallet = manager.get_wallet(&wallet_id).await;
-            let coordinator = manager.shielded_coordinator().await;
-            (wallet, coordinator)
-        })
-    });
-    let (wallet_arc, coordinator) = unwrap_option_or_return!(lookup);
-    let wallet_arc = match wallet_arc {
-        Some(w) => w,
-        None => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("wallet not found: {}", hex::encode(wallet_id)),
-            );
-        }
-    };
-    let coordinator = match coordinator {
-        Some(c) => c,
-        None => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "shielded support not configured — call platform_wallet_manager_configure_shielded first",
-            );
-        }
+    // The wallet binds onto its manager's coordinator itself; this lookup
+    // only refuses an unconfigured manager before the host is asked for the
+    // mnemonic.
+    let wallet_arc = match resolve_shielded_wallet(handle, &wallet_id) {
+        Ok(wallet) => wallet,
+        Err(result) => return result,
     };
 
     // Seedless path first: rebind from viewing keys persisted by a
@@ -473,9 +449,7 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // requested account has no persisted row — only then is the
     // mnemonic resolved. Persisted-key load/restore errors propagate without
     // resolving the seed; fallback must not mask a persistence failure.
-    match runtime()
-        .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
-    {
+    match runtime().block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice())) {
         Ok(true) => return PlatformWalletFFIResult::ok(),
         Ok(false) => {}
         Err(e) => {
@@ -494,11 +468,8 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         Err(result) => return result,
     };
 
-    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
-        seed.as_ref(),
-        accounts.as_slice(),
-        &coordinator,
-    )) {
+    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(seed.as_ref(), accounts.as_slice()))
+    {
         return map_shielded_error(e, "bind_shielded");
     }
 
@@ -551,30 +522,30 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 }
 
 // ---------------------------------------------------------------------------
-// Clear shielded state (Rust side)
+// Clear shielded state (native and host)
 // ---------------------------------------------------------------------------
 
-/// Reset the Rust-side shielded state on this manager: stop the
-/// background sync loop, drop every wallet registration on the
-/// network-scoped coordinator, and reset the caught-up cooldown
-/// stamp.
+/// Clear this manager's shielded state, native and host, in one call: stop
+/// the background sync loop, drop every wallet registration on the
+/// network-scoped coordinator, reset the shared commitment tree, the
+/// per-subwallet notes and watermarks and the caught-up cooldown, and then
+/// call the persistence vtable's `on_wipe_shielded_state_fn` for the
+/// manager's network, before returning. No bind, account add, spend or sync
+/// pass of this manager overlaps the reset or the host wipe. The host must
+/// not delete shielded rows of its own around this call.
 ///
-/// The SQLite commitment-tree file stays on disk but its contents
-/// are reset to empty — Clear semantics are "wipe my shielded
-/// state and cold-resync from index 0 on the shared tree". The
-/// host is responsible for wiping its own per-wallet persistence
-/// layer (e.g. SwiftData rows) since Rust can't reach into iOS /
-/// Android persistence; after that, the next
-/// [`platform_wallet_manager_bind_shielded`] call repopulates the
-/// coordinator's registries and the next sync pass re-saves notes
-/// via the changeset path.
+/// The SQLite commitment-tree file stays on disk but its contents are reset
+/// to empty; the next [`platform_wallet_manager_bind_shielded`] call
+/// repopulates the coordinator's registries and the next sync pass re-saves
+/// notes via the changeset path.
 ///
-/// Returns `ErrorWalletOperation` if the Rust-side store reset
-/// fails. The host **must** check this before wiping its own
-/// persistence: a silent failure would leave the shared tree
-/// populated while the host drops its rows, and the next cold
-/// resync would gate-skip every re-downloaded position against the
-/// stale tree size.
+/// Refused with nothing reset when the host did not wire and declare the
+/// wipe slot (`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE`),
+/// or when a shielded operation does not finish within the Clear budget
+/// (`ErrorShutdownIncomplete`-class result; retry). A failed native reset
+/// returns an error before the host is called. A failed host wipe after a
+/// successful reset returns an error and refuses binds until a Clear
+/// succeeds.
 ///
 /// Errors with `ErrorWalletOperation` when no shielded coordinator is
 /// installed on this manager (the sync-loop stop still runs unconditionally
@@ -1363,9 +1334,8 @@ mod fresh_address_tests {
                 .configure_shielded(&path)
                 .await
                 .expect("configure shielded");
-            let coordinator = manager.shielded_coordinator().await.expect("coordinator");
             wallet
-                .bind_shielded(&[42; 64], &[0], &coordinator)
+                .bind_shielded(&[42; 64], &[0])
                 .await
                 .expect("bind shielded");
             wallet.wallet_id()
@@ -1563,5 +1533,152 @@ mod fresh_address_tests {
             assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
             crate::platform_wallet_ffi_result_free(&mut r);
         }
+    }
+}
+
+#[cfg(test)]
+mod clear_tests {
+    use super::*;
+    use crate::persistence::{
+        FFIPersister, PersistenceCallbacks, PersistenceExtensionCallbacks, WipeShieldedStateFn,
+    };
+    use crate::test_fixtures::mock_manager_with;
+    use crate::types::FFINetwork;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use platform_wallet::changeset::PersistenceCapabilities;
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    /// The wipe callback's observations. One static per test process, so the
+    /// tests below serialize on `SERIAL`.
+    static WIPES: AtomicUsize = AtomicUsize::new(0);
+    static WIPED_NETWORK: AtomicI32 = AtomicI32::new(-1);
+    static WIPE_RC: AtomicI32 = AtomicI32::new(0);
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    unsafe extern "C" fn wipe(_: *mut c_void, network: FFINetwork) -> i32 {
+        WIPES.fetch_add(1, Ordering::SeqCst);
+        WIPED_NETWORK.store(network as i32, Ordering::SeqCst);
+        WIPE_RC.load(Ordering::SeqCst)
+    }
+
+    unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+        0
+    }
+
+    /// A configured manager over a persister declaring the wipe capability,
+    /// with the wipe slot wired when `wired`.
+    fn configured(wired: bool) -> (Handle, PathBuf) {
+        let extensions = PersistenceExtensionCallbacks {
+            wipe_shielded_state: wired.then_some(wipe as WipeShieldedStateFn),
+            ..Default::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                on_changeset_begin_fn: Some(begin),
+                on_changeset_end_fn: Some(end),
+                ..Default::default()
+            },
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::SHIELDED_STATE_WIPE),
+            extensions,
+        );
+        let manager = mock_manager_with(persister);
+        let path = std::env::temp_dir().join(format!(
+            "ffi-shielded-clear-{}-{}.sqlite",
+            std::process::id(),
+            next_handle()
+        ));
+        runtime().block_on(async {
+            manager
+                .create_wallet_from_seed_bytes(
+                    dashcore::Network::Testnet,
+                    &[42; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create mock wallet");
+            manager
+                .configure_shielded(&path)
+                .await
+                .expect("configure shielded");
+        });
+        (PLATFORM_WALLET_MANAGER_STORAGE.insert(manager), path)
+    }
+
+    fn clear_epoch(handle: Handle) -> u64 {
+        PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |manager| {
+                runtime().block_on(async {
+                    manager
+                        .shielded_coordinator()
+                        .await
+                        .expect("configured")
+                        .clear_epoch()
+                        .await
+                })
+            })
+            .expect("live handle")
+    }
+
+    fn finish(handle: Handle, path: PathBuf) {
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn should_call_the_wipe_once_with_the_managers_network_before_clear_returns() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        WIPES.store(0, Ordering::SeqCst);
+        WIPE_RC.store(0, Ordering::SeqCst);
+        let (handle, path) = configured(true);
+
+        let result = unsafe { platform_wallet_manager_shielded_clear(handle) };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(WIPES.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            WIPED_NETWORK.load(Ordering::SeqCst),
+            FFINetwork::Testnet as i32
+        );
+        finish(handle, path);
+    }
+
+    #[test]
+    fn should_refuse_clear_and_reset_nothing_without_the_wipe_slot() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        WIPES.store(0, Ordering::SeqCst);
+        let (handle, path) = configured(false);
+        let epoch = clear_epoch(handle);
+
+        let result = unsafe { platform_wallet_manager_shielded_clear(handle) };
+
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(WIPES.load(Ordering::SeqCst), 0);
+        assert_eq!(clear_epoch(handle), epoch, "nothing was reset");
+        finish(handle, path);
+    }
+
+    #[test]
+    fn should_fail_clear_when_the_host_wipe_fails() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        WIPES.store(0, Ordering::SeqCst);
+        WIPE_RC.store(-1, Ordering::SeqCst);
+        let (handle, path) = configured(true);
+
+        let result = unsafe { platform_wallet_manager_shielded_clear(handle) };
+
+        WIPE_RC.store(0, Ordering::SeqCst);
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(WIPES.load(Ordering::SeqCst), 1);
+        let retried = unsafe { platform_wallet_manager_shielded_clear(handle) };
+        assert_eq!(retried.code, PlatformWalletFFIResultCode::Success);
+        finish(handle, path);
     }
 }
