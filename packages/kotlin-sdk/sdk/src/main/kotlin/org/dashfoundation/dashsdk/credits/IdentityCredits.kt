@@ -93,6 +93,9 @@ class IdentityCredits internal constructor(
         ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
     private val addressTopUpNative: AddressTopUpNativeCall =
         AddressTopUpNativeCall(CreditsNative::topUpIdentityFromAddresses),
+    @Suppress("DEPRECATION")
+    private val managedAddressTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpFromAddresses),
 ) {
 
     /**
@@ -258,6 +261,8 @@ class IdentityCredits internal constructor(
      * **Deprecated:** use [topUpIdentityFromAddresses], which tops up any
      * identity and updates a managed one's balance the same way; this one
      * differs only in refusing an identity the wallet does not manage.
+     *
+     * Cancellation: as for [topUpIdentityFromAddresses].
      */
     @Deprecated(
         "Use topUpIdentityFromAddresses, which tops up any identity.",
@@ -268,9 +273,9 @@ class IdentityCredits internal constructor(
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
-            CreditsNative.topUpFromAddresses(
+            managedAddressTopUpNative.call(
                 walletHandle,
                 identityId,
                 FundingInput.encode(inputs),

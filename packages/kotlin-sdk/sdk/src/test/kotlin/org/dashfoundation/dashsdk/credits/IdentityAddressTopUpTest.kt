@@ -55,32 +55,41 @@ class IdentityAddressTopUpTest {
     /**
      * A top-up that completed natively after its caller was cancelled still
      * hands the balance back, so the caller can tell the credits moved and
-     * does not retry the payment.
+     * does not retry the payment. Holds for the deprecated managed-only
+     * route too.
      */
+    @Suppress("DEPRECATION")
     @Test
     fun `a cancelled caller still receives a completed top-up's balance`() = runBlocking {
+        for (route in listOf(TopUpRoute.ANY_IDENTITY, TopUpRoute.MANAGED_DEPRECATED))
         for (gate in listOf(TeardownGate(), null)) {
             val entered = CountDownLatch(1)
             val release = CountDownLatch(1)
             val received = CompletableDeferred<Long>()
-            val credits = IdentityCredits(
-                gate = gate,
-                addressTopUpNative = AddressTopUpNativeCall { _, _, _, _ ->
-                    entered.countDown()
-                    // The blocking JNI call does not observe cancellation; it
-                    // completes only after the caller has been cancelled.
-                    release.await()
-                    777L
-                },
-            )
+            val native = AddressTopUpNativeCall { _, _, _, _ ->
+                entered.countDown()
+                // The blocking JNI call does not observe cancellation; it
+                // completes only after the caller has been cancelled.
+                release.await()
+                777L
+            }
+            val unused = AddressTopUpNativeCall { _, _, _, _ -> error("wrong bridge") }
+            val credits = when (route) {
+                TopUpRoute.ANY_IDENTITY ->
+                    IdentityCredits(gate = gate, addressTopUpNative = native, managedAddressTopUpNative = unused)
+                TopUpRoute.MANAGED_DEPRECATED ->
+                    IdentityCredits(gate = gate, addressTopUpNative = unused, managedAddressTopUpNative = native)
+            }
+            val identityId = ByteArray(32) { 9 }
+            val inputs = listOf(FundingInput(addressType = 0, hash = ByteArray(20) { 7 }, credits = 1_000))
 
             val op = launch(Dispatchers.Default) {
-                val balance = credits.topUpIdentityFromAddresses(
-                    walletHandle = 42,
-                    identityId = ByteArray(32) { 9 },
-                    inputs = listOf(FundingInput(addressType = 0, hash = ByteArray(20) { 7 }, credits = 1_000)),
-                    signerHandle = 5,
-                )
+                val balance = when (route) {
+                    TopUpRoute.ANY_IDENTITY ->
+                        credits.topUpIdentityFromAddresses(42, identityId, inputs, 5)
+                    TopUpRoute.MANAGED_DEPRECATED ->
+                        credits.topUpFromAddresses(42, identityId, inputs, 5)
+                }
                 received.complete(balance)
             }
             assertTrue("native top-up never started", entered.await(5, TimeUnit.SECONDS))
@@ -89,9 +98,11 @@ class IdentityAddressTopUpTest {
             withTimeout(5_000) { op.join() }
 
             assertTrue(op.isCancelled)
-            assertTrue("completed top-up balance was dropped", received.isCompleted)
+            assertTrue("$route: completed top-up balance was dropped", received.isCompleted)
             assertEquals(777L, received.await())
             gate?.let { withTimeout(5_000) { it.closeAndAwait() } }
         }
     }
+
+    private enum class TopUpRoute { ANY_IDENTITY, MANAGED_DEPRECATED }
 }
