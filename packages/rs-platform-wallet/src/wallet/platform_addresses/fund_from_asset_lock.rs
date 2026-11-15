@@ -42,6 +42,8 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funding_from_asset_lock_transition::calculate_address_funding_from_asset_lock_min_required_fee;
+use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+use dpp::state_transition::StateTransitionStructureValidation;
 use dpp::version::PlatformVersion;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::PlatformP2PKHAddress;
@@ -322,6 +324,14 @@ impl PlatformAddressWallet {
         // `remainder_fee_strategy` for why a positional index cannot be
         // computed correctly outside this layer.
         let fee_strategy = remainder_fee_strategy(&addresses)?;
+
+        // With the fee strategy in hand, run DPP's own structure
+        // validation of the address-funding transition on this map
+        // before any lock is resolved. The SDK runs the same check
+        // after the lock is broadcast; a map it rejects there (an
+        // explicit output below the minimum, too many outputs, …) would
+        // strand a lock that a recorded payment intent pins to this map.
+        validate_funding_transition_structure(&addresses, &fee_strategy, self.sdk.version())?;
 
         // Step 1c: a fresh L1 asset lock is single-use and
         // non-refundable. Reject or floor it before build/broadcast if
@@ -634,6 +644,30 @@ fn remainder_fee_strategy(
     Ok(vec![AddressFundsFeeStrategyStep::ReduceOutput(index)])
 }
 
+/// DPP's structure validation of the address-funding transition that
+/// [`TopUpAddress::top_up_with_signers`] will build from `addresses`
+/// (no inputs, `fee_strategy` as derived), run before the asset lock
+/// exists. The asset-lock proof and witnesses are placeholders: the
+/// structure rules do not read them. A rejection is returned as the
+/// same [`dash_sdk::Error`] the SDK's own pre-broadcast check produces.
+fn validate_funding_transition_structure(
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
+    fee_strategy: &AddressFundsFeeStrategy,
+    platform_version: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let transition = AddressFundingFromAssetLockTransitionV0 {
+        outputs: addresses.clone(),
+        fee_strategy: fee_strategy.clone(),
+        ..Default::default()
+    };
+    let result = transition.validate_structure(platform_version);
+    if result.is_valid() {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::Sdk(dash_sdk::Error::from(result)))
+    }
+}
+
 fn enforce_asset_lock_amount_covers_address_funding_floor(
     funding: AssetLockFunding,
     output_count: usize,
@@ -878,6 +912,8 @@ mod tests {
     use crate::test_support::{fund_test_platform_wallet, test_platform_wallet_manager};
     use dash_sdk::query_types::AddressInfo;
     use dashcore::OutPoint;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
     use dpp::version::LATEST_PLATFORM_VERSION;
     use key_wallet::account::account_collection::PlatformPaymentAccountKey;
     use std::sync::{Arc, Mutex};
@@ -1548,6 +1584,116 @@ mod tests {
         let wm = wallet.wallet_manager().read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("wallet registered");
         assert!(!info.tracked_asset_locks.contains_key(&seen[0]));
+    }
+
+    /// Runs `fund_from_asset_lock_external` on a funded wallet with `explicit`
+    /// third-party outputs plus the wallet's own remainder address, and
+    /// returns the error together with every lock the builder reported.
+    async fn fund_external_with_explicit_outputs(
+        explicit: BTreeMap<PlatformAddress, Option<Credits>>,
+    ) -> (PlatformWalletError, Vec<OutPoint>) {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 100_000_000).await;
+        let remainder = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        let mut addresses = explicit;
+        addresses.insert(remainder, None);
+        let output_count = addresses.len();
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: minimum_address_funding_asset_lock_duffs(
+                        output_count,
+                        LATEST_PLATFORM_VERSION,
+                    ),
+                    account_index: 0,
+                },
+                0,
+                addresses,
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the call must fail");
+        (error, seen.into_inner().unwrap())
+    }
+
+    /// An explicit output below DPP's `min_output_amount` would be rejected
+    /// by the SDK's structure check after the lock is broadcast, so it is
+    /// rejected before any lock is built.
+    #[tokio::test]
+    async fn should_refuse_an_external_output_below_the_minimum_before_building_a_lock() {
+        let min_output_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        let mut explicit = BTreeMap::new();
+        explicit.insert(p2pkh(0xBB), Some(min_output_amount - 1));
+
+        let (error, built) = fund_external_with_explicit_outputs(explicit).await;
+
+        assert!(built.is_empty(), "a lock was built: {error:?}");
+        assert!(
+            matches!(
+                error.consensus_error(),
+                Some(ConsensusError::BasicError(
+                    BasicError::OutputBelowMinimumError(_)
+                ))
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    /// More outputs than DPP's `max_address_outputs` would be rejected by the
+    /// SDK's structure check after the lock is broadcast, so the map is
+    /// rejected before any lock is built.
+    #[tokio::test]
+    async fn should_refuse_too_many_external_outputs_before_building_a_lock() {
+        let max_outputs = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .max_address_outputs;
+        let min_output_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        // `max_outputs` explicit outputs plus the remainder: one too many.
+        let explicit: BTreeMap<_, _> = (0..max_outputs)
+            .map(|i| {
+                let mut hash = [0xBB; 20];
+                hash[..2].copy_from_slice(&i.to_be_bytes());
+                (PlatformAddress::P2pkh(hash), Some(min_output_amount))
+            })
+            .collect();
+
+        let (error, built) = fund_external_with_explicit_outputs(explicit).await;
+
+        assert!(built.is_empty(), "a lock was built: {error:?}");
+        assert!(
+            matches!(
+                error.consensus_error(),
+                Some(ConsensusError::BasicError(
+                    BasicError::TransitionOverMaxOutputsError(_)
+                ))
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 
     #[test]
