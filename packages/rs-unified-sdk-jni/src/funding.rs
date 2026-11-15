@@ -1009,10 +1009,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         // the identity may already be live on-chain, so the host must
         // retain the id and hold its derivation slot instead of retrying
         // into a duplicate. Return a tagged variable-length payload
-        // (`[0|1] || identity_id || diagnostic_utf8`) so Kotlin can surface
-        // a typed unconfirmed result without losing the id or native error.
+        // (`[0|1] || identity_id || delivery || diagnostic_utf8`) so Kotlin
+        // can surface a typed unconfirmed result without losing the id, the
+        // native error or the result's payment-delivery class (the
+        // `PlatformWalletFFIPaymentDelivery` discriminant, `None` = 0 on
+        // success).
         let unconfirmed = result.code
             == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
+        let delivery = result.payment_delivery as u8;
         let mut diagnostic = Vec::new();
         if unconfirmed {
             // Preserve the native diagnostic (the underlying DAPI /
@@ -1029,9 +1033,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         } else if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        let mut packed = Vec::with_capacity(33 + diagnostic.len());
+        let mut packed = Vec::with_capacity(34 + diagnostic.len());
         packed.push(u8::from(unconfirmed));
         packed.extend_from_slice(&out_id);
+        packed.push(delivery);
         packed.extend_from_slice(&diagnostic);
         env.byte_array_from_slice(&packed)
             .map(|a| a.into_raw())

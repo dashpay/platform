@@ -22,6 +22,7 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
@@ -3071,34 +3072,48 @@ internal suspend fun isGenuineWatchOnly(
 
 /**
  * Decode the tagged shielded-create payload the JNI returns:
- * `[tag || identity_id[32] || diagnostic_utf8...]`.
+ * `[tag || identity_id[32] || delivery || diagnostic_utf8...]`.
  *
  * - tag 0 → returns the 32-byte identity id (success).
  * - tag != 0 → throws [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed]
- *   carrying the id AND the native diagnostic from bytes 33.. (the
+ *   carrying the id AND the native diagnostic from bytes 34.. (the
  *   underlying DAPI / result-proof confirmation failure); an empty
  *   diagnostic falls back to a generic message. The C ABI writes the id
  *   on the unconfirmed outcome too — the identity may already be live,
  *   so the caller must hold the derivation slot instead of retrying.
+ *   `delivery` is the native result's `PlatformWalletFFIPaymentDelivery`
+ *   discriminant; it reaches [DashSdkError.delivery] through a
+ *   [DashSDKException] cause built from the native values, as on every
+ *   other platform-wallet error.
  *
  * Extracted from [PlatformWalletManager.shieldedIdentityCreateFromPool]
  * so the codec boundary is unit-testable without the native library
- * (Rust encodes, Kotlin decodes — a silent drift would lose the id or
- * diagnostic on an ambiguous broadcast).
+ * (Rust encodes, Kotlin decodes — a silent drift would lose the id,
+ * delivery class or diagnostic on an ambiguous broadcast).
  */
 internal fun decodeShieldedCreatePayload(packed: ByteArray): ByteArray {
-    check(packed.size >= 33) { "expected >=33-byte tagged identity id, got ${packed.size}" }
+    check(packed.size >= 34) { "expected >=34-byte tagged identity id, got ${packed.size}" }
     val identityId = packed.copyOfRange(1, 33)
     if (packed[0].toInt() != 0) {
-        val diagnostic = if (packed.size > 33) {
-            packed.copyOfRange(33, packed.size).decodeToString()
+        val diagnostic = if (packed.size > 34) {
+            packed.copyOfRange(34, packed.size).decodeToString()
         } else {
             "shielded identity create broadcast unconfirmed"
         }
         throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
             identityId = identityId,
             message = diagnostic,
+            cause = DashSDKException(
+                code = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + SHIELDED_BROADCAST_UNCONFIRMED_CODE,
+                message = diagnostic,
+                consensusCode = 0,
+                consensusKind = 0,
+                paymentDelivery = packed[33].toInt() and 0xFF,
+            ),
         )
     }
     return identityId
 }
+
+/** `ErrorShieldedBroadcastUnconfirmed`, the native code the unconfirmed tag stands for. */
+private const val SHIELDED_BROADCAST_UNCONFIRMED_CODE = 17
