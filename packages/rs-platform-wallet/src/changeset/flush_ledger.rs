@@ -13,10 +13,11 @@ use crate::wallet::platform_wallet::WalletId;
 /// and a flush takes that buffer, whoever flushed: one that fails for good
 /// drops what it took, and one that fails transiently puts it back. So what
 /// a flush did to the buffer is known only where every flush of the id is
-/// counted: one ledger per wallet id, shared by the manager and by every
-/// handle of a wallet under that id, a removed wallet's handles and its
-/// same-id successor's alike ([`FlushLedgers`]). Every flush of the wallet's
-/// records goes through [`Self::flush`].
+/// counted: one ledger per backend instance and wallet id, shared by every
+/// manager made over the backend and by every handle of a wallet under that
+/// id, a removed wallet's handles and its same-id successor's alike
+/// ([`FlushLedgers::of_backend`]). Every flush of the wallet's records goes
+/// through [`Self::flush`].
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
@@ -39,25 +40,33 @@ pub(crate) struct FlushLedger {
 /// did with what it took from the buffer is not known, so it is recorded as
 /// failed for good before it stops being counted. A caller that catches the
 /// panic and carries on then finds the loss, as it would any other.
+///
+/// A backend whose store is the commit buffers nothing, so no flush of it
+/// drops anything, whatever the flush answers: it is counted as failed and
+/// never as lost.
 struct InFlight<'a> {
     ledger: &'a FlushLedger,
+    /// Whether the backend buffers what is stored until a flush.
+    buffers: bool,
     recorded: bool,
 }
 
 impl<'a> InFlight<'a> {
-    fn enter(ledger: &'a FlushLedger) -> Self {
+    fn enter(ledger: &'a FlushLedger, buffers: bool) -> Self {
         ledger.in_flight.fetch_add(1, Ordering::SeqCst);
         Self {
             ledger,
+            buffers,
             recorded: false,
         }
     }
 
     /// Record the backend's answer: a failure is counted, and counted as
-    /// lost too when it is for good.
+    /// lost too when it is for good and the backend buffers.
     fn record(&mut self, flushed: &Result<(), PersistenceError>) {
         if let Err(error) = flushed {
-            self.ledger.record_failure(!error.is_transient());
+            self.ledger
+                .record_failure(self.buffers && !error.is_transient());
         }
         self.recorded = true;
     }
@@ -66,7 +75,7 @@ impl<'a> InFlight<'a> {
 impl Drop for InFlight<'_> {
     fn drop(&mut self) {
         if !self.recorded {
-            self.ledger.record_failure(true);
+            self.ledger.record_failure(self.buffers);
         }
         self.ledger.in_flight.fetch_sub(1, Ordering::SeqCst);
     }
@@ -77,12 +86,17 @@ impl FlushLedger {
     /// backend is called until its outcome is recorded, counted as failed
     /// when it fails, and as lost too when it fails for good (anything but a
     /// transient failure, which keeps the buffer) or the backend panics.
+    ///
+    /// Never as lost on a backend whose store is the commit
+    /// ([`PlatformWalletPersistence::store_commits_inline`]): a flush there
+    /// only notifies the host, and what was stored is already on disk
+    /// whatever the notification answers.
     pub(crate) fn flush(
         &self,
         backend: &dyn PlatformWalletPersistence,
         wallet_id: WalletId,
     ) -> Result<(), PersistenceError> {
-        let mut in_flight = InFlight::enter(self);
+        let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
         let flushed = backend.flush(wallet_id);
         in_flight.record(&flushed);
         flushed
@@ -119,40 +133,40 @@ impl FlushLedger {
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedgers(Mutex<BTreeMap<WalletId, Arc<FlushLedger>>>);
 
-/// The ledgers of each backend instance a manager was made over
-/// ([`FlushLedgers::of_backend`]), both held weakly: an entry goes once its
-/// backend, or every holder of its ledgers, is gone. The weak reference keeps
-/// the backend's allocation from being reused while the entry stands, so an
+/// The ledgers of each backend instance that is still alive
+/// ([`FlushLedgers::of_backend`]): kept for as long as anything holds the
+/// backend, and dropped once nothing does. The backend is held weakly, which
+/// keeps its allocation from being reused while its entry stands, so an
 /// entry is never taken for another backend's.
 static BACKEND_LEDGERS: Mutex<Vec<BackendLedgers>> = Mutex::new(Vec::new());
 
-type BackendLedgers = (Weak<dyn PlatformWalletPersistence>, Weak<FlushLedgers>);
+type BackendLedgers = (Weak<dyn PlatformWalletPersistence>, Arc<FlushLedgers>);
 
 impl FlushLedgers {
-    /// The ledgers of `backend`'s records: the same ones for every manager
-    /// made over this backend instance while a holder of them is left (a
-    /// manager, or a wallet handle one gave out), and new ones otherwise.
+    /// The ledgers of `backend`'s records: the same ones for every caller
+    /// that passes this backend instance, for as long as the instance lives.
     ///
     /// A backend buffers a wallet's records under its id whoever stored
-    /// them, so the count of its flushes belongs with the backend, not with
-    /// one manager: a handle of an earlier manager that flushes the buffer
-    /// and fails is then counted where a later manager over the same backend
-    /// reads.
+    /// them, so the count of its flushes belongs with the backend and lives
+    /// as long as it does, not as long as one manager or one handle: whoever
+    /// can still flush the backend holds it, and so finds the same ledgers
+    /// here. Every handle of a wallet takes its ledger from here
+    /// (`WalletPersister::new`), however it was made.
     pub(crate) fn of_backend(backend: &Arc<dyn PlatformWalletPersistence>) -> Arc<Self> {
         let mut known = BACKEND_LEDGERS
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        known.retain(|(held, ledgers)| held.strong_count() > 0 && ledgers.strong_count() > 0);
+        known.retain(|(held, _)| held.strong_count() > 0);
         let address = Arc::as_ptr(backend).cast::<()>();
         let shared = known
             .iter()
             .find(|(held, _)| held.as_ptr().cast::<()>() == address)
-            .and_then(|(_, ledgers)| ledgers.upgrade());
+            .map(|(_, ledgers)| Arc::clone(ledgers));
         if let Some(ledgers) = shared {
             return ledgers;
         }
         let ledgers = Arc::new(Self::default());
-        known.push((Arc::downgrade(backend), Arc::downgrade(&ledgers)));
+        known.push((Arc::downgrade(backend), Arc::clone(&ledgers)));
         ledgers
     }
 
@@ -192,6 +206,77 @@ mod tests {
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
             Ok(ClientStartState::default())
         }
+    }
+
+    /// A buffering backend whose flush fails for good, and one whose store is
+    /// the commit, whose flush only notifies the host and fails the same way.
+    struct Failing {
+        inline: bool,
+    }
+
+    impl PlatformWalletPersistence for Failing {
+        fn store_commits_inline(&self) -> bool {
+            self.inline
+        }
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("the host refused the flush"))
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// A backend whose store is the commit buffers nothing, so a flush of it
+    /// that fails dropped nothing: it is counted as failed, never as lost. A
+    /// buffering backend's flush that fails the same way is counted as both.
+    #[test]
+    fn should_not_count_a_failed_flush_of_an_inline_backend_as_lost() {
+        for inline in [true, false] {
+            let ledger = FlushLedger::default();
+
+            let flushed = ledger.flush(&Failing { inline }, [0; 32]);
+
+            assert!(flushed.is_err_and(|error| !error.is_transient()));
+            assert_eq!(ledger.failed(), 1, "inline: {inline}");
+            assert_eq!(ledger.lost(), u64::from(!inline), "inline: {inline}");
+        }
+    }
+
+    /// The ledgers of a backend instance live as long as the instance does,
+    /// whoever asks for them and whatever was dropped in between: a handle
+    /// that outlived its manager keeps only its own wallet id's ledger, and
+    /// a handle made later over the same backend still counts in that one.
+    /// Another backend instance has its own.
+    #[test]
+    fn should_keep_a_backends_ledgers_for_as_long_as_the_backend_lives() {
+        let backend: Arc<dyn PlatformWalletPersistence> = Arc::new(Failing { inline: false });
+        let wallet_id: WalletId = [5; 32];
+
+        // All an earlier handle keeps: the ledger of its own wallet id.
+        let earlier = FlushLedgers::of_backend(&backend).of(wallet_id);
+        let later = FlushLedgers::of_backend(&backend).of(wallet_id);
+        assert!(Arc::ptr_eq(&earlier, &later), "one ledger for the id");
+
+        assert!(earlier.flush(backend.as_ref(), wallet_id).is_err());
+        assert_eq!(
+            later.lost(),
+            1,
+            "the later handle sees the earlier one's loss"
+        );
+
+        let other: Arc<dyn PlatformWalletPersistence> = Arc::new(Failing { inline: false });
+        assert_eq!(
+            FlushLedgers::of_backend(&other).of(wallet_id).lost(),
+            0,
+            "another backend instance counts apart"
+        );
     }
 
     /// A flush whose backend panics is recorded as failed for good before it

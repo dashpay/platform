@@ -64,7 +64,6 @@ use crate::changeset::changeset::{
     fold_same_txid_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
     HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
 };
-use crate::changeset::flush_ledger::FlushLedgers;
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::changeset::traits::PlatformWalletPersistence;
@@ -322,30 +321,9 @@ pub struct DurableCursorState {
     /// wallet left (see [`RewindBarrier::retire`]). A leaf lock: taken under
     /// the manager lock on both sides, never held across an await.
     pub retired: std::sync::Mutex<BTreeMap<WalletId, RetiredBarrier>>,
-    /// Per wallet id, what is known of the flushes of its records: like a
-    /// cursor entry it outlives its wallet, so a removed wallet's handles,
-    /// its same-id successor's and the manager count every flush of the id
-    /// in one place ([`FlushLedger`](crate::changeset::flush_ledger::FlushLedger)).
-    ///
-    /// Unlike the cursors above, that place belongs to the backend, not to
-    /// one manager: a manager takes the ledgers of the backend instance it
-    /// is made over ([`Self::over_backend`]), so a manager made over the
-    /// same instance while an earlier one's handles are still in use counts
-    /// with them.
-    pub(crate) flush_ledgers: Arc<FlushLedgers>,
 }
 
 impl DurableCursorState {
-    /// The state of a manager made over `backend`: its own cursors and
-    /// barriers, and the flush ledgers of that backend instance
-    /// ([`FlushLedgers::of_backend`]).
-    pub(crate) fn over_backend(backend: &Arc<dyn PlatformWalletPersistence>) -> DurableCursors {
-        Arc::new(Self {
-            flush_ledgers: FlushLedgers::of_backend(backend),
-            ..Self::default()
-        })
-    }
-
     /// Lock the cursor map for a short, non-blocking critical section.
     pub async fn lock(&self) -> tokio::sync::MutexGuard<'_, BTreeMap<WalletId, DurableCursor>> {
         self.cursors.lock().await
