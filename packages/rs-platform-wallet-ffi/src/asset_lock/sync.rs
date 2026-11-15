@@ -390,7 +390,8 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 typed @ (PlatformWalletError::AssetLockInputConflict { .. }
                 | PlatformWalletError::AssetLockInputContested { .. }
                 | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
-                // The fold keeps the error's payment-delivery class.
+                // The fold keeps the error's payment-delivery class, so a
+                // proof wait that timed out still names the lock it holds.
                 other => PlatformWalletFFIResult::err_from_wallet_error(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!("{}", other),

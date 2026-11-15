@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.json.JSONObject
 
 // Display text for the persister failures, whose native message is a nested
@@ -32,11 +33,10 @@ sealed class DashSdkError(
 ) : Exception(message, cause) {
 
     /**
-     * Whether retrying the same operation can plausibly succeed. Never `true`
-     * for a payment whose [delivery] is [PaymentDelivery.MAYBE_SENT], where a
-     * retry could pay twice; the one exception is
-     * [PlatformWallet.AssetLockInputContested], whose retry resumes the held
-     * asset lock rather than paying again.
+     * Whether retrying the same operation can plausibly succeed. For a
+     * [PlatformWallet] error it is read from the native wallet's [delivery]
+     * (see [PlatformWallet.isRetryable]): never `true` where a payment may
+     * have left the wallet.
      */
     open val isRetryable: Boolean get() = false
 
@@ -64,6 +64,15 @@ sealed class DashSdkError(
      */
     val delivery: PaymentDelivery?
         get() = (cause as? DashSDKException)?.paymentDelivery
+
+    /**
+     * The tracked asset lock the failed payment holds when [delivery] is
+     * [PaymentDelivery.LOCK_HELD], `null` otherwise: resume it (for example
+     * with `resumeFundFromAssetLockExternal`) instead of paying again. The
+     * native wallet names it; it is never parsed from the message.
+     */
+    val heldAssetLock: AssetLockBuiltOutPoint?
+        get() = (cause as? DashSDKException)?.heldAssetLock
 
     class InvalidParameter(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
@@ -128,12 +137,30 @@ sealed class DashSdkError(
     ) : DashSdkError(message, cause) {
 
         /**
-         * `false` when the native wallet reported that the payment may have
-         * left the wallet. A type that is retryable by its kind answers with
-         * this, so a retry is never offered where it could pay twice.
+         * Whether this kind of failure can succeed when the same call runs
+         * again, once nothing left the wallet. Consulted only when the native
+         * wallet reported [PaymentDelivery.NOT_SENT].
          */
-        protected val unlessMaybeSent: Boolean
-            get() = delivery != PaymentDelivery.MAYBE_SENT
+        protected open val retryableWhenNotSent: Boolean get() = false
+
+        /**
+         * Read from the native wallet's [delivery], never from the error's
+         * type alone:
+         * - [PaymentDelivery.NOT_SENT]: nothing left the wallet, so the kind
+         *   decides ([retryableWhenNotSent]).
+         * - [PaymentDelivery.MAYBE_SENT]: `false`, a retry could pay twice.
+         * - [PaymentDelivery.LOCK_HELD]: `true`, and the retry is a resume of
+         *   [heldAssetLock] (the contract the contested asset lock always
+         *   had), never a new payment.
+         * - `null` (the native layer reported no class): `false`.
+         */
+        final override val isRetryable: Boolean
+            get() = when (delivery) {
+                PaymentDelivery.NOT_SENT -> retryableWhenNotSent
+                PaymentDelivery.MAYBE_SENT -> false
+                PaymentDelivery.LOCK_HELD -> true
+                null -> false
+            }
 
         /** `ErrorInvalidHandle` (native code 1). A stale/closed wallet handle. */
         class InvalidHandle(message: String, cause: Throwable? = null) :
@@ -235,10 +262,7 @@ sealed class DashSdkError(
          * `PlatformWalletError.assetLockInputContested`.
          */
         class AssetLockInputContested(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            // A retry resumes the held lock; it does not pay again.
-            override val isRetryable: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
@@ -293,7 +317,7 @@ sealed class DashSdkError(
          */
         class ShieldedNoRecordedAnchor(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = unlessMaybeSent
+            override val retryableWhenNotSent: Boolean get() = true
         }
 
         /**
@@ -343,7 +367,7 @@ sealed class DashSdkError(
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = unlessMaybeSent
+            override val retryableWhenNotSent: Boolean get() = true
         }
 
         /**
@@ -570,7 +594,7 @@ sealed class DashSdkError(
          */
         class PersisterLoadTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = unlessMaybeSent
+            override val retryableWhenNotSent: Boolean get() = true
             override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
         }
 
@@ -603,7 +627,7 @@ sealed class DashSdkError(
          */
         class PersisterStoreTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = unlessMaybeSent
+            override val retryableWhenNotSent: Boolean get() = true
             override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
         }
 
@@ -673,7 +697,7 @@ sealed class DashSdkError(
          */
         class ShutdownIncomplete(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = unlessMaybeSent
+            override val retryableWhenNotSent: Boolean get() = true
         }
 
         /**
@@ -789,7 +813,7 @@ sealed class DashSdkError(
          */
         class PrivateContactStoreNotRead(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = unlessMaybeSent
+            override val retryableWhenNotSent: Boolean get() = true
         }
 
         /**

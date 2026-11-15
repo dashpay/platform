@@ -2,8 +2,8 @@ package org.dashfoundation.dashsdk.errors
 
 /**
  * Whether a failed payment may have left the wallet, as the native layer
- * classified it. Decide "retry" or "wait" from this, never from lists of
- * error types or codes: the Rust wallet owns the classification.
+ * classified it. Decide "retry", "wait" or "resume" from this, never from
+ * lists of error types or codes: the Rust wallet owns the classification.
  *
  * Read it from [DashSdkError.delivery]. Values mirror
  * `PlatformWalletFFIPaymentDelivery` in `rs-platform-wallet-ffi/src/error.rs`.
@@ -17,6 +17,13 @@ enum class PaymentDelivery {
      * wait for sync to settle it and do not offer a second payment.
      */
     MAYBE_SENT,
+
+    /**
+     * The payment holds a tracked asset lock, named by
+     * [DashSdkError.heldAssetLock]: it may be on the network and its funds
+     * left the spendable balance. Resume that lock; never fund a new one.
+     */
+    LOCK_HELD,
     ;
 
     internal companion object {
@@ -28,6 +35,7 @@ enum class PaymentDelivery {
         fun fromNative(value: Int): PaymentDelivery? = when (value) {
             0 -> null
             1 -> NOT_SENT
+            3 -> LOCK_HELD
             else -> MAYBE_SENT
         }
     }

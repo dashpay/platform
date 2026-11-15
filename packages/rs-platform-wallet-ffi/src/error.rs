@@ -1,3 +1,4 @@
+use crate::core_wallet_types::OutPointFFI;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
@@ -801,9 +802,10 @@ impl PlatformWalletFFIResultCode {
     /// classes share (`ErrorWalletOperation`, `ErrorUnknown`, …), and `None`
     /// for `Success` alone. A result converted from a
     /// [`PlatformWalletError`] carries that error's own class instead, which
-    /// may be `NotSent` under a code that says `MaybeSent` but is never
-    /// `MaybeSent` under a code that says `NotSent` (pinned by
-    /// `payment_delivery_tests`).
+    /// may be `NotSent` or `LockHeld` under a code that says `MaybeSent` but
+    /// is always `NotSent` under a code that says `NotSent` (pinned by
+    /// `payment_delivery_tests`). A code alone never says `LockHeld`: only
+    /// the error behind a result names the lock it holds.
     ///
     /// No wildcard arm: a new code does not compile until it is given a
     /// class.
@@ -890,11 +892,14 @@ impl PlatformWalletFFIResultCode {
 
 /// Whether a failed payment may have left the wallet, carried on every
 /// [`PlatformWalletFFIResult`] as `payment_delivery`. Mirror of
-/// [`PaymentDelivery`], plus [`Self::None`] for a successful result.
+/// [`PaymentDelivery`], plus [`Self::None`] for a successful result; the
+/// outpoint of [`PaymentDelivery::LockHeld`] rides the result's
+/// `held_asset_lock`.
 ///
-/// Hosts decide "retry" or "wait" from this, never from lists of result
-/// codes: `NotSent` may offer a retry, `MaybeSent` waits for sync and never
-/// offers a second payment.
+/// Hosts decide "retry", "wait" or "resume" from this, never from lists of
+/// result codes: `NotSent` may offer a retry, `MaybeSent` waits for sync and
+/// never offers a second payment, `LockHeld` resumes the held asset lock and
+/// never pays again.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlatformWalletFFIPaymentDelivery {
@@ -904,6 +909,10 @@ pub enum PlatformWalletFFIPaymentDelivery {
     NotSent = 1,
     /// The payment may have left the wallet, and may execute or already has.
     MaybeSent = 2,
+    /// The payment holds the tracked asset lock in `held_asset_lock`: it may
+    /// be on the network and its funds left the spendable balance. Resume
+    /// it; never fund a new one.
+    LockHeld = 3,
 }
 
 impl From<PaymentDelivery> for PlatformWalletFFIPaymentDelivery {
@@ -911,6 +920,7 @@ impl From<PaymentDelivery> for PlatformWalletFFIPaymentDelivery {
         match delivery {
             PaymentDelivery::NotSent => Self::NotSent,
             PaymentDelivery::MaybeSent => Self::MaybeSent,
+            PaymentDelivery::LockHeld(_) => Self::LockHeld,
         }
     }
 }
@@ -974,13 +984,19 @@ impl PlatformWalletFFIConsensusErrorKind {
 /// failure came from anywhere else. They let a host branch on a rejection it
 /// would otherwise have to recognize by its rendered text.
 ///
-/// Both language surfaces are generated from this same source tree (Swift
-/// through the cbindgen header inside the xcframework, Kotlin through an rlib
-/// dependency of `rs-unified-sdk-jni`), so appending a field is a
-/// source-compatible change rather than an ABI break. What has not changed is
-/// that the struct carries no room for a *specific* error's values: those
-/// still ride the `message`, as the codes that document a JSON detail object
-/// below describe.
+/// `payment_delivery` and `held_asset_lock` say whether a failed payment may
+/// have left the wallet and, when it holds a tracked asset lock, which one.
+///
+/// **ABI:** the struct is returned by value from every export, so each field
+/// added to it changes its size and layout: a C ABI break. A host binary built
+/// against an older header misreads every result of a newer library (and the
+/// reverse), so hosts rebuild against the new header together with the
+/// library, never one without the other. Swift gets the header inside the
+/// xcframework and Kotlin links this crate as an rlib of
+/// `rs-unified-sdk-jni`, so both ship in lockstep with the library they were
+/// built from. What the struct still has no room for is a *specific* error's
+/// values: those ride the `message`, as the codes that document a JSON detail
+/// object below describe.
 #[repr(C)]
 #[derive(Debug)]
 pub struct PlatformWalletFFIResult {
@@ -998,8 +1014,26 @@ pub struct PlatformWalletFFIResult {
     /// class of the wallet error behind the failure, or the class its code
     /// shares ([`PlatformWalletFFIResultCode::payment_delivery`]) when no
     /// wallet error is behind it.
+    ///
+    /// Added after `consensus_kind`: a C ABI break (see the struct docs), so
+    /// hosts rebuild against the header that has it, together with the
+    /// library.
     pub payment_delivery: PlatformWalletFFIPaymentDelivery,
+    /// The tracked asset lock the failed payment holds, when
+    /// `payment_delivery` is [`PlatformWalletFFIPaymentDelivery::LockHeld`]:
+    /// resume it (it is the outpoint the resume entry points take, raw txid
+    /// in wire order), never fund a new one. All zero for every other
+    /// `payment_delivery`; read it only under `LockHeld`.
+    ///
+    /// Added with `payment_delivery`, the same C ABI break.
+    pub held_asset_lock: OutPointFFI,
 }
+
+/// The `held_asset_lock` of a result that holds none.
+const NO_HELD_ASSET_LOCK: OutPointFFI = OutPointFFI {
+    txid: [0; 32],
+    vout: 0,
+};
 
 impl Drop for PlatformWalletFFIResult {
     fn drop(&mut self) {
@@ -1020,6 +1054,7 @@ impl PlatformWalletFFIResult {
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
             payment_delivery: PlatformWalletFFIPaymentDelivery::None,
+            held_asset_lock: NO_HELD_ASSET_LOCK,
         }
     }
 
@@ -1032,6 +1067,7 @@ impl PlatformWalletFFIResult {
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
             payment_delivery: code.payment_delivery(),
+            held_asset_lock: NO_HELD_ASSET_LOCK,
         }
     }
 
@@ -1054,17 +1090,22 @@ impl PlatformWalletFFIResult {
 
     /// Stamp the payment-delivery class of the wallet error behind an
     /// already-built result, which is at least as precise as the class its
-    /// code shares. Leaves `code` and `message` alone, like
+    /// code shares, and the asset lock it holds when the class is
+    /// [`PaymentDelivery::LockHeld`]. Leaves `code` and `message` alone, like
     /// [`Self::with_consensus_error`].
     pub(crate) fn with_payment_delivery(mut self, delivery: PaymentDelivery) -> Self {
         self.payment_delivery = delivery.into();
+        self.held_asset_lock = match delivery {
+            PaymentDelivery::LockHeld(out_point) => OutPointFFI::from(&out_point),
+            PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => NO_HELD_ASSET_LOCK,
+        };
         self
     }
 
     /// Fold `error` into `code` with `message`, keeping the error's own
-    /// payment-delivery class. For the arms that report a payment's failure
-    /// under a shared code such as `ErrorWalletOperation`, whose own class
-    /// says only `MaybeSent`.
+    /// payment-delivery class (and held asset lock). For the arms that
+    /// report a payment's failure under a shared code such as
+    /// `ErrorWalletOperation`, whose own class says only `MaybeSent`.
     pub(crate) fn err_from_wallet_error(
         code: PlatformWalletFFIResultCode,
         message: impl Into<String>,
@@ -1091,6 +1132,7 @@ impl PlatformWalletFFIResult {
             consensus_code: 0,
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
             payment_delivery: PlatformWalletFFIPaymentDelivery::None,
+            held_asset_lock: NO_HELD_ASSET_LOCK,
         }
     }
 }
@@ -3539,6 +3581,17 @@ mod payment_delivery_tests {
             PlatformWalletError::AssetLockNotTracked(out_point()),
             PlatformWalletError::AssetLockAlreadyConsumed(out_point()),
             PlatformWalletError::FinalityTimeout(out_point()),
+            PlatformWalletError::AssetLockInputContested {
+                out_point: out_point(),
+                input: out_point(),
+                spent_by: dashcore::Txid::from_byte_array([4; 32]),
+                height: None,
+            },
+            PlatformWalletError::AssetLockRecipientMismatch {
+                out_point: out_point(),
+                recorded: [1; 43],
+                requested: [2; 43],
+            },
             PlatformWalletError::AssetLockTransaction("funded".into()),
             PlatformWalletError::AddressNonceMismatch {
                 address: PlatformAddress::P2pkh([7; 20]),
@@ -3572,13 +3625,28 @@ mod payment_delivery_tests {
         ]
     }
 
+    /// The `held_asset_lock` a result must carry for `error`: its outpoint
+    /// under `LockHeld`, all zero otherwise.
+    fn expected_held_asset_lock(error: &PlatformWalletError) -> ([u8; 32], u32) {
+        match error.held_asset_lock() {
+            Some(out_point) => (out_point.txid.to_byte_array(), out_point.vout),
+            None => ([0; 32], 0),
+        }
+    }
+
     #[test]
     fn should_carry_the_wallet_errors_own_class_and_never_contradict_its_code() {
         for error in errors() {
             let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let held = expected_held_asset_lock(&error);
             let rendered = format!("{error:?}");
             let result = PlatformWalletFFIResult::from(error);
             assert_eq!(result.payment_delivery, expected, "{rendered}");
+            assert_eq!(
+                (result.held_asset_lock.txid, result.held_asset_lock.vout),
+                held,
+                "{rendered}"
+            );
             // A code that says "never sent" holds only errors that were never
             // sent, so a host that has only the code is never told to retry
             // a payment that may have left.
@@ -3597,9 +3665,15 @@ mod payment_delivery_tests {
     fn should_keep_the_class_through_the_spend_mapping() {
         for error in errors() {
             let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let held = expected_held_asset_lock(&error);
             let rendered = format!("{error:?}");
             let result = map_spend_result(Err(error), "shielded transfer");
             assert_eq!(result.payment_delivery, expected, "{rendered}");
+            assert_eq!(
+                (result.held_asset_lock.txid, result.held_asset_lock.vout),
+                held,
+                "{rendered}"
+            );
             if result.code.payment_delivery() == PlatformWalletFFIPaymentDelivery::NotSent {
                 assert_eq!(
                     expected,

@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +9,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashSdkErrorTest {
+
+    private companion object {
+        // `PlatformWalletFFIPaymentDelivery` discriminants.
+        const val NOT_SENT = 1
+        const val MAYBE_SENT = 2
+        const val LOCK_HELD = 3
+
+        /** A raw outpoint (`txid_le[32] || vout_le[4]`): txid of 7s, vout 2. */
+        val heldOutPoint: ByteArray = ByteArray(32) { 7 } + byteArrayOf(2, 0, 0, 0)
+    }
 
     @Test
     fun shouldPreserveAssetLockInputCapWithoutRetryingAPartialDrain() {
@@ -56,21 +67,45 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun shouldNeverOfferARetryForAPaymentThatMayHaveLeft() {
+    fun shouldReadRetryabilityFromTheNativeDeliveryAlone() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
         // Retryable by kind, and still retryable when nothing was sent.
-        val refused = DashSdkError.fromNative(DashSDKException(offset + 16, "refused", 0, 0, 1))
+        val refused = DashSdkError.fromNative(DashSDKException(offset + 16, "refused", 0, 0, NOT_SENT))
         assertTrue(refused is DashSdkError.PlatformWallet.ShieldedBroadcastFailed)
         assertTrue(refused.isRetryable)
-        // The same kind answers no once the wallet says the payment may have left.
+        // The same kinds answer no once the wallet says the payment may have
+        // left, and when the native layer gave no class at all.
         for (code in listOf(16, 19, 27, 49, 51, 74)) {
-            val mapped = DashSdkError.fromNative(DashSDKException(offset + code, "maybe", 0, 0, 2))
-            assertFalse("code $code", mapped.isRetryable)
+            val maybe = DashSdkError.fromNative(DashSDKException(offset + code, "maybe", 0, 0, MAYBE_SENT))
+            assertFalse("code $code", maybe.isRetryable)
+            val unclassified = DashSdkError.fromNative(DashSDKException(offset + code, "legacy"))
+            assertFalse("code $code without a class", unclassified.isRetryable)
         }
-        // The contested asset lock is retried by resuming the lock it holds.
-        val contested = DashSdkError.fromNative(DashSDKException(offset + 48, "contested", 0, 0, 2))
-        assertTrue(contested is DashSdkError.PlatformWallet.AssetLockInputContested)
-        assertTrue(contested.isRetryable)
+        // A kind that is not retryable stays so even when nothing was sent.
+        val build = DashSdkError.fromNative(DashSDKException(offset + 6, "build failed", 0, 0, NOT_SENT))
+        assertFalse(build.isRetryable)
+    }
+
+    @Test
+    fun shouldExposeAHeldAssetLockAsResumableWithItsOutpoint() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        // A held lock under the shared code (a proof wait that timed out), the
+        // contested lock (48) and the recipient mismatch (61): whatever the
+        // type, the native delivery says resume, and names the lock.
+        for (code in listOf(6, 48, 61)) {
+            val held = DashSdkError.fromNative(
+                DashSDKException(offset + code, "held", 0, 0, LOCK_HELD, heldOutPoint),
+            )
+            assertEquals("code $code", PaymentDelivery.LOCK_HELD, held.delivery)
+            assertTrue("code $code resumes the held lock", held.isRetryable)
+            val outPoint = held.heldAssetLock!!
+            assertArrayEquals(ByteArray(32) { 7 }, outPoint.txid)
+            assertEquals(2, outPoint.vout)
+        }
+        // No outpoint unless the delivery holds a lock.
+        val maybe = DashSdkError.fromNative(DashSDKException(offset + 48, "maybe", 0, 0, MAYBE_SENT))
+        assertNull(maybe.heldAssetLock)
+        assertFalse(maybe.isRetryable)
     }
 
     @Test
@@ -183,7 +218,7 @@ class DashSdkErrorTest {
         assertFalse(optionMiss is DashSdkError.NotFound)
         assertEquals("missing", optionMiss.message)
 
-        val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree"))
+        val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree", 0, 0, NOT_SENT))
         assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
         assertTrue("ShieldedNoRecordedAnchor is retryable", noAnchor.isRetryable)
 
@@ -312,7 +347,7 @@ class DashSdkErrorTest {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
 
         val incomplete =
-            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out"))
+            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out", 0, 0, NOT_SENT))
         assertTrue(incomplete is DashSdkError.PlatformWallet.ShutdownIncomplete)
         assertEquals("SPV teardown timed out", incomplete.message)
         assertTrue("a tracked teardown completes on a repeated stop", incomplete.isRetryable)
@@ -407,7 +442,7 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
         val detail = "the private contact request store was not read to its end for 9fRYTJZW"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 74, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 74, detail, 0, 0, NOT_SENT)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactStoreNotRead)
         assertEquals(detail, mapped.message)
@@ -482,7 +517,7 @@ class DashSdkErrorTest {
         for ((code, type, retryable) in cases) {
             val message = "persistence backend error from code $code"
             val mapped = DashSdkError.fromNative(
-                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message),
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message, 0, 0, NOT_SENT),
             )
 
             assertTrue(
@@ -574,6 +609,10 @@ class DashSdkErrorTest {
             DashSDKException(
                 DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 48,
                 message,
+                0,
+                0,
+                LOCK_HELD,
+                heldOutPoint,
             ),
         )
 

@@ -884,6 +884,7 @@ fn map_asset_lock_funding_result(
             | PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
         ) => e.into(),
         // The fold keeps the error's own payment-delivery class: a
+        // `FinalityTimeout` here holds its asset lock (`LockHeld`), a
         // pre-dispatch failure never sent anything (`NotSent`).
         Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
@@ -3397,7 +3398,7 @@ mod tests {
     /// The catch-all fold of the asset-lock funding mapping keeps the wallet
     /// error's payment-delivery class: a failure that never sent anything
     /// stays `NotSent` under `ErrorWalletOperation` (whose own class is
-    /// `MaybeSent`).
+    /// `MaybeSent`), and a timed-out proof wait names the lock it holds.
     #[test]
     fn should_keep_the_delivery_class_through_the_asset_lock_funding_fallback() {
         let not_sent = map_asset_lock_funding_result(
@@ -3412,6 +3413,19 @@ mod tests {
             not_sent.payment_delivery,
             PlatformWalletFFIPaymentDelivery::NotSent
         );
+
+        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([9; 32]), 2);
+        let held = map_asset_lock_funding_result(
+            Err(PlatformWalletError::FinalityTimeout(out_point)),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(held.code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        assert_eq!(
+            held.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::LockHeld
+        );
+        assert_eq!(held.held_asset_lock.txid, [9; 32]);
+        assert_eq!(held.held_asset_lock.vout, 2);
 
         let maybe_sent = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockProofWait("lost".into())),

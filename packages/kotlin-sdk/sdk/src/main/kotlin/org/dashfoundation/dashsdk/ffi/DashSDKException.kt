@@ -3,12 +3,13 @@ package org.dashfoundation.dashsdk.ffi
 import org.dashfoundation.dashsdk.errors.ConsensusErrorKind
 import org.dashfoundation.dashsdk.errors.PaymentDelivery
 import org.dashfoundation.dashsdk.errors.PlatformConsensusError
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 
 /**
  * Exception thrown by the native layer (`rs-unified-sdk-jni`) when an FFI call
  * returns an error. Constructed from Rust via JNI: the `(Int, String)`,
- * `(Int, String, Int, Int)` and `(Int, String, Int, Int, Int)` constructor
- * signatures must stay in sync with
+ * `(Int, String, Int, Int)` and `(Int, String, Int, Int, Int, ByteArray?)`
+ * constructor signatures must stay in sync with
  * `rs-unified-sdk-jni/src/support.rs::throw_sdk_exception`,
  * `throw_sdk_consensus_exception` and `throw_pwffi_result`.
  *
@@ -22,6 +23,8 @@ import org.dashfoundation.dashsdk.errors.PlatformConsensusError
  * native result or `DashSDKError` carried one, `null` otherwise.
  * [paymentDelivery] is whether a failed payment may have left the wallet, as
  * a platform-wallet result classified it; `null` for an rs-sdk-ffi error.
+ * [heldAssetLock] is the tracked asset lock the payment holds when
+ * [paymentDelivery] is [PaymentDelivery.LOCK_HELD], `null` otherwise.
  *
  * Internal: the public API maps this into the
  * [org.dashfoundation.dashsdk.errors.DashSdkError] hierarchy.
@@ -31,6 +34,7 @@ class DashSDKException(
     message: String,
     val consensusError: PlatformConsensusError?,
     val paymentDelivery: PaymentDelivery? = null,
+    val heldAssetLock: AssetLockBuiltOutPoint? = null,
 ) : Exception(message) {
     constructor(code: Int, message: String) : this(code, message, null)
 
@@ -48,8 +52,11 @@ class DashSDKException(
 
     /**
      * JNI entry for a platform-wallet result: its consensus rejection
-     * ([consensusCode] `0` when it carries none) and [paymentDelivery], the
-     * `PlatformWalletFFIPaymentDelivery` discriminant.
+     * ([consensusCode] `0` when it carries none), [paymentDelivery], the
+     * `PlatformWalletFFIPaymentDelivery` discriminant, and [heldAssetLock],
+     * the held lock's 36-byte raw outpoint (`txid_le[32] || vout_le[4]`)
+     * under `LockHeld`, `null` otherwise. Nothing here is decided: the
+     * values are Rust's.
      */
     constructor(
         code: Int,
@@ -57,6 +64,7 @@ class DashSDKException(
         consensusCode: Int,
         consensusKind: Int,
         paymentDelivery: Int,
+        heldAssetLock: ByteArray? = null,
     ) : this(
         code,
         message,
@@ -66,5 +74,6 @@ class DashSDKException(
             PlatformConsensusError(consensusCode, ConsensusErrorKind.fromNative(consensusKind))
         },
         PaymentDelivery.fromNative(paymentDelivery),
+        heldAssetLock?.takeIf { it.size == 36 }?.let(AssetLockBuiltOutPoint::fromRawBytes),
     )
 }
