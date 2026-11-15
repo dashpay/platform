@@ -1021,6 +1021,33 @@ class ManagedPlatformWallet internal constructor(
             (31 * addressType + hash.contentHashCode()) * 31 + credits.hashCode()
     }
 
+    /**
+     * One input of a partial-amount [withdrawCredits]: withdraw exactly
+     * [credits] from this platform address. Port of Swift's
+     * `ManagedPlatformAddressWallet.WithdrawalInput`.
+     *
+     * This is a plain carrier. Rust validates it when [withdrawCredits] runs:
+     * the address type (P2PKH only), the sign of [credits], and the minimum
+     * input amount each have one owner there.
+     *
+     * @property addressType `0` (P2PKH); the only type the wallet can sign.
+     * @property hash the 20-byte address hash.
+     * @property credits credits to withdraw from this address (gross; see [withdrawCredits]).
+     */
+    data class WithdrawalInput(val addressType: Int, val hash: ByteArray, val credits: Long) {
+        override fun equals(other: Any?): Boolean =
+            other is WithdrawalInput &&
+                addressType == other.addressType &&
+                hash.contentEquals(other.hash) &&
+                credits == other.credits
+
+        override fun hashCode(): Int =
+            (31 * addressType + hash.contentHashCode()) * 31 + credits.hashCode()
+
+        // Never print the address hash or amount.
+        override fun toString(): String = "WithdrawalInput(addressType=$addressType)"
+    }
+
     /** Version-locked minimum transfer/withdraw amounts (credits). */
     data class MinAmounts(val minInput: Long, val minOutput: Long)
 
@@ -1038,6 +1065,11 @@ class ManagedPlatformWallet internal constructor(
      * owns selection / balancing / nonces / signing; Kotlin only marshals the
      * recipient list. Returns the resulting per-address updated balances.
      *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the updated balances are still returned (see
+     * [opReturningCompletedResult]), so a completed payment is never hidden.
+     * Handle the result before the next suspension point.
+     *
      * @param signerHandle the platform-address per-input `SignerHandle`
      *   (`PlatformWalletManager.signerHandle`).
      */
@@ -1045,7 +1077,7 @@ class ManagedPlatformWallet internal constructor(
         outputs: List<CreditOutput>,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = gate.op {
+    ): List<UpdatedBalance> = gate.opReturningCompletedResult {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressTransfer(
@@ -1065,6 +1097,11 @@ class ManagedPlatformWallet internal constructor(
      * network-checked Rust-side. Returns the resulting per-address updated
      * balances.
      *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the updated balances are still returned (see
+     * [opReturningCompletedResult]), so a completed payment is never hidden.
+     * Handle the result before the next suspension point.
+     *
      * @param coreFeePerByte a Fibonacci-sequence core fee rate (DPP rejects
      *   non-Fibonacci values).
      * @param signerHandle the platform-address per-input `SignerHandle`.
@@ -1074,12 +1111,78 @@ class ManagedPlatformWallet internal constructor(
         coreFeePerByte: Int,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = gate.op {
+    ): List<UpdatedBalance> = gate.opReturningCompletedResult {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressWithdraw(
                 walletHandle = handle,
                 accountIndex = accountIndex,
+                coreAddress = coreAddress,
+                coreFeePerByte = coreFeePerByte,
+                signerHandle = signerHandle,
+            )
+        }
+        decodeChangeset(blob)
+    }
+
+    /**
+     * Partial-amount withdrawal: withdraw the sum of [WithdrawalInput.credits]
+     * to [coreAddress], drawing the listed amounts from the listed addresses
+     * (EXPLICIT input selection). Port of Swift's
+     * `ManagedPlatformAddressWallet.withdraw(accountIndex:coreAddress:inputs:…)`.
+     *
+     * The input sum is the GROSS withdrawal amount. From protocol version 14
+     * the Core fee (the asset-unlock transaction size × [coreFeePerByte]
+     * duffs) is taken out of it, so [coreAddress] receives the sum minus
+     * that fee. Unlike the full-balance overload, the platform transition
+     * fee does not reduce the withdrawal: it comes out of the fee-source
+     * input's REMAINING balance. Rust re-fetches every input's
+     * on-chain balance before signing, so a stale caller-side balance fails
+     * with an error instead of withdrawing a wrong amount.
+     *
+     * Fee source: as in Swift, no fee strategy is passed, so Rust applies
+     * `DeductFromInput(0)`. Index 0 is resolved against the inputs sorted by
+     * address, NOT the order of [inputs], so the input whose address sorts
+     * first pays the fee and must keep at least the fee after its amount is
+     * taken. With one input, that is the input itself. If
+     * `preflightWithdrawal(accountIndex, coreFeePerByte).canWithdraw` is
+     * true, use its `estimatedFee` as the reserve: size the input as
+     * `balance − estimatedFee` or less. That AUTO estimate may cover more
+     * inputs than this withdrawal, so it can over-reserve. If `canWithdraw`
+     * is false, `estimatedFee` is zero and is not a fee estimate for an
+     * explicit withdrawal.
+     *
+     * [coreAddress] is passed as given. Rust rejects an empty or
+     * NUL-containing value and network-checks it, as in the full-balance
+     * overload. Rust also validates [inputs] (see [WithdrawalInput]),
+     * including an empty list.
+     *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the updated balances are still returned (see
+     * [opReturningCompletedResult]), so a completed payment is never hidden.
+     * Handle the result before the next suspension point.
+     *
+     * @param coreFeePerByte a Fibonacci-sequence core fee rate (DPP rejects
+     *   non-Fibonacci values).
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     * @throws IllegalArgumentException if [accountIndex] is negative, or an
+     *   input cannot be encoded (a hash that is not 20 bytes, or an
+     *   [WithdrawalInput.addressType] outside `0..255`).
+     */
+    suspend fun withdrawCredits(
+        coreAddress: String,
+        inputs: List<WithdrawalInput>,
+        coreFeePerByte: Int,
+        signerHandle: Long,
+        accountIndex: Int = 0,
+    ): List<UpdatedBalance> = gate.opReturningCompletedResult {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        val inputsBlob = encodeWithdrawalInputs(inputs)
+        val blob = mapNativeErrors {
+            WalletManagerNative.walletPlatformAddressWithdrawExplicit(
+                walletHandle = handle,
+                accountIndex = accountIndex,
+                inputsBlob = inputsBlob,
                 coreAddress = coreAddress,
                 coreFeePerByte = coreFeePerByte,
                 signerHandle = signerHandle,
@@ -1408,4 +1511,26 @@ class ManagedPlatformWallet internal constructor(
             }
         }
     }
+}
+
+/**
+ * Encode [inputs] to the withdrawal-inputs blob the JNI reads: `u32 rowCount`
+ * then per row `u8 addressType, u8[20] hash, u64 credits` (big-endian, the
+ * same row shape as the transfer outputs blob). The two checks are what the
+ * fixed-width rows need to stay aligned; all other validation is Rust's.
+ */
+internal fun encodeWithdrawalInputs(inputs: List<ManagedPlatformWallet.WithdrawalInput>): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val dos = java.io.DataOutputStream(out)
+    dos.writeInt(inputs.size)
+    for (input in inputs) {
+        require(input.hash.size == 20) {
+            "WithdrawalInput.hash must be 20 bytes, got ${input.hash.size}"
+        }
+        require(input.addressType in 0..255) { "WithdrawalInput.addressType must fit in a byte" }
+        dos.writeByte(input.addressType)
+        dos.write(input.hash)
+        dos.writeLong(input.credits)
+    }
+    return out.toByteArray()
 }

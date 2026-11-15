@@ -1,4 +1,5 @@
 use crate::drive::contract::structure::CONTRACT_FLAGS;
+use crate::drive::document::paths::DOCUMENT_LIFECYCLE_TREE_KEY;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/document/paths.rs";
@@ -130,6 +131,36 @@ pub(crate) fn document_type() -> StructureNode {
                         .describe("The document as it was at that time."),
                     ]),
             ),
+        StructureNode::fixed(
+            "lifecycle",
+            &[DOCUMENT_LIFECYCLE_TREE_KEY],
+            "Lifecycle",
+            "DOCUMENT_LIFECYCLE_TREE_KEY",
+        )
+        .kind(ElementKind::Tree)
+        .since(15)
+        .lazy()
+        .describe(
+            "An unflagged normal tree of lifecycle records for a type that keeps history. \
+             Created on the first delete and retained after all records are erased.",
+        )
+        .child(
+            StructureNode::identifier("record", "document_id", "The deleted document id")
+                .kind(ElementKind::Item)
+                .flags(
+                    &[FlagsKind::EpochOwned, FlagsKind::None],
+                    "The deletion's storage payer, including its gas sponsor when sponsored; \
+                     no flags when the caller supplies no payer. Erase refunds the record's \
+                     stored flag owner.",
+                )
+                .value("versioned DPP DocumentLifecycleRecord")
+                .source("packages/rs-dpp/src/document/lifecycle/mod.rs")
+                .lazy()
+                .describe(
+                    "One document's lifecycle record, present while Deleted or Erasing. \
+                     The terminal erase removes it together with the remaining history.",
+                ),
+        ),
         StructureNode::fixed("history", &[2], "History", "DOCUMENT_HISTORY_TREE_KEY")
             .kind(ElementKind::Tree)
             .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)

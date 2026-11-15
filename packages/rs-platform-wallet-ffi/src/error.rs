@@ -1045,6 +1045,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
+            PlatformWalletError::DocumentEraseBusy => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             PlatformWalletError::IdentityBalanceUnavailable(_) => {
                 PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
             }

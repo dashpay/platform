@@ -181,10 +181,22 @@ fn should_match_history_pages_at_every_temporal_boundary_before_and_after_migrat
                 assert_eq!(found, direct_read(&drive, &temporal, current));
                 assert!(found.is_some());
 
-                let mut bare_bound_query = path_query;
                 let mut bare_bound = Query::new_with_direction(false);
                 bare_bound.insert_range_to_inclusive(..=encode_u64(4000));
-                bare_bound_query.query.query.set_subquery(bare_bound);
+                bare_bound.limit = Some(1);
+                let mut selection = Query::new();
+                selection.insert_key(temporal.document_id.to_vec());
+                selection.set_subquery(bare_bound);
+                let mut history_path =
+                    crate::drive::document::paths::contract_document_type_path_vec(
+                        &temporal.contract_id,
+                        &temporal.document_type_name,
+                    );
+                history_path.push(vec![2]);
+                let bare_bound_query = PathQuery::new(
+                    history_path,
+                    grovedb::SizedQuery::new(selection, None, None),
+                );
                 let bare_bound_proof = drive
                     .grove_get_proved_path_query(
                         &bare_bound_query,
@@ -242,18 +254,7 @@ fn should_match_history_pages_at_every_temporal_boundary_before_and_after_migrat
                     }
                 }
             }
-            let mut document_query = temporal.construct_path_query(current).unwrap();
-            document_query.query.limit = None;
-            // A merged proof keeps the temporal cap on the history walk itself.
-            // Execution-proof helpers clear document caps because their reads are untimed.
-            document_query
-                .query
-                .query
-                .default_subquery_branch
-                .subquery
-                .as_mut()
-                .unwrap()
-                .limit = Some(1);
+            let document_query = temporal.construct_path_query(current).unwrap();
             let identity_query = Drive::identity_balance_query(&[3; 32]);
             let merged = PathQuery::merge(
                 vec![&document_query, &identity_query],
@@ -344,4 +345,503 @@ fn should_find_a_document_created_at_zero_at_time_zero() {
         serialized(&found, &contract),
         serialized(&document, &contract)
     );
+}
+
+#[test]
+fn should_hide_a_deleted_document_at_and_after_its_delete_time() {
+    let version = PlatformVersion::latest();
+    let (drive, mut contract, mut document) = temporal_fixture(version, false);
+    let mut schema = contract
+        .document_type_for_name("person")
+        .unwrap()
+        .schema()
+        .clone();
+    schema.set_value("canBeDeleted", true.into()).unwrap();
+    schema.set_value("canBeErased", false.into()).unwrap();
+    contract
+        .set_document_schema("person", schema, true, &mut vec![], version)
+        .unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    document.set_revision(Some(1));
+    write_revision(&drive, &contract, &document, 1000, true, version);
+    document.set_revision(Some(2));
+    document.set("age", Value::U64(2));
+    write_revision(&drive, &contract, &document, 2000, false, version);
+    drive
+        .delete_document_for_contract(
+            document.id(),
+            &contract,
+            "person",
+            BlockInfo::default_with_time(2000),
+            true,
+            None,
+            version,
+        )
+        .unwrap();
+    for (time, revision) in [
+        (0, None),
+        (999, None),
+        (1000, Some(1)),
+        (1999, Some(1)),
+        (2000, None),
+        (2001, None),
+        (u64::MAX, None),
+    ] {
+        let query = person_at_block_time(&contract, document.id().to_buffer(), time);
+        let found = prove_and_verify_at(&drive, &contract, &query, version);
+        assert_eq!(
+            found.and_then(|doc| doc.revision()),
+            revision,
+            "delete takes effect at {time}"
+        );
+    }
+    let mut schema = contract
+        .document_type_for_name("person")
+        .unwrap()
+        .schema()
+        .clone();
+    schema.set_value("canBeDeleted", false.into()).unwrap();
+    contract
+        .set_document_schema("person", schema, true, &mut vec![], version)
+        .unwrap();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default_with_time(3000),
+            true,
+            None,
+            None,
+            version,
+        )
+        .unwrap();
+    let query = person_at_block_time(&contract, document.id().to_buffer(), u64::MAX);
+    assert_eq!(
+        prove_and_verify_at(&drive, &contract, &query, version),
+        None,
+        "narrowing deletion permission cannot remove lifecycle evidence from a timed lookup"
+    );
+}
+
+fn overwrite_retained_bytes(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    bytes: Vec<u8>,
+) {
+    use crate::drive::document::paths::document_history_path;
+    let version = PlatformVersion::latest();
+    let path = document_history_path(
+        contract.id_ref().as_bytes(),
+        "person",
+        document.id().as_slice(),
+    );
+    drive
+        .grove
+        .insert(
+            path.as_slice(),
+            &[encode_u64(1000), encode_u64(1)].concat(),
+            grovedb::Element::new_item(bytes),
+            None,
+            None,
+            &version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+}
+
+#[test]
+fn should_reject_a_returned_document_body_that_does_not_match_its_history_key() {
+    let version = PlatformVersion::latest();
+    for mismatch_id in [true, false] {
+        let (drive, contract, mut document) = temporal_fixture(version, false);
+        document.set_revision(Some(1));
+        write_revision(&drive, &contract, &document, 1000, true, version);
+        let query = person_at_block_time(&contract, document.id().to_buffer(), 1000);
+        let original = document.clone();
+        if mismatch_id {
+            document.set_id([9; 32].into());
+        } else {
+            document.set_revision(Some(2));
+        }
+        overwrite_retained_bytes(
+            &drive,
+            &contract,
+            &original,
+            serialized(&document, &contract),
+        );
+        let proof = drive
+            .grove_get_proved_path_query(
+                &query.construct_path_query(version).unwrap(),
+                None,
+                &mut vec![],
+                &version.drive,
+            )
+            .unwrap();
+        for subset in [false, true] {
+            assert!(
+                query
+                    .verify_proof(
+                        subset,
+                        &proof,
+                        contract.document_type_for_name("person").unwrap(),
+                        version
+                    )
+                    .is_err(),
+                "the returned document must match its authenticated path and revision"
+            );
+        }
+    }
+}
+
+#[test]
+fn should_discard_a_deleted_revision_without_decoding_its_body() {
+    let version = PlatformVersion::latest();
+    let (drive, mut contract, mut document) = temporal_fixture(version, false);
+    let mut schema = contract
+        .document_type_for_name("person")
+        .unwrap()
+        .schema()
+        .clone();
+    schema.set_value("canBeDeleted", true.into()).unwrap();
+    contract
+        .set_document_schema("person", schema, true, &mut vec![], version)
+        .unwrap();
+    document.set_revision(Some(1));
+    write_revision(&drive, &contract, &document, 1000, true, version);
+    drive
+        .delete_document_for_contract(
+            document.id(),
+            &contract,
+            "person",
+            BlockInfo::default_with_time(2000),
+            true,
+            None,
+            version,
+        )
+        .unwrap();
+    overwrite_retained_bytes(&drive, &contract, &document, vec![0xff]);
+    let query = person_at_block_time(&contract, document.id().to_buffer(), 2000);
+    let proof = drive
+        .grove_get_proved_path_query(
+            &query.construct_path_query(version).unwrap(),
+            None,
+            &mut vec![],
+            &version.drive,
+        )
+        .unwrap();
+    for subset in [false, true] {
+        assert_eq!(
+            query
+                .verify_proof_keep_serialized(subset, &proof, version)
+                .unwrap()
+                .1,
+            None
+        );
+        assert_eq!(
+            query
+                .verify_proof(
+                    subset,
+                    &proof,
+                    contract.document_type_for_name("person").unwrap(),
+                    version
+                )
+                .unwrap()
+                .1,
+            None
+        );
+    }
+}
+
+#[test]
+fn should_prove_absence_for_every_time_once_erasing_starts_and_after_it_finishes() {
+    let mut version = PlatformVersion::latest().clone();
+    version
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(2);
+    let (drive, mut contract, mut document) = temporal_fixture(&version, false);
+    let mut schema = contract
+        .document_type_for_name("person")
+        .unwrap()
+        .schema()
+        .clone();
+    schema.set_value("canBeDeleted", true.into()).unwrap();
+    schema.set_value("canBeErased", true.into()).unwrap();
+    contract
+        .set_document_schema("person", schema, true, &mut vec![], &version)
+        .unwrap();
+    for revision in 1..=3 {
+        document.set_revision(Some(revision));
+        document.set("age", Value::U64(revision));
+        write_revision(
+            &drive,
+            &contract,
+            &document,
+            revision * 1000,
+            revision == 1,
+            &version,
+        );
+    }
+    drive
+        .delete_document_for_contract(
+            document.id(),
+            &contract,
+            "person",
+            BlockInfo::default_with_time(3000),
+            true,
+            None,
+            &version,
+        )
+        .unwrap();
+    for terminal in [false, true] {
+        let operations = drive
+            .erase_document_for_contract_operations(
+                document.id(),
+                &contract,
+                contract.document_type_for_name("person").unwrap(),
+                &BlockInfo::default_with_time(4000),
+                &mut None,
+                None,
+                &version,
+            )
+            .unwrap();
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &version.drive,
+            )
+            .unwrap();
+        let page = drive
+            .fetch_document_history(
+                &DocumentHistoryDriveQuery {
+                    contract_id: contract.id().to_buffer(),
+                    document_type_name: "person".into(),
+                    document_id: document.id().to_buffer(),
+                    filter: DocumentHistoryFilter::StartAtTime(0),
+                    limit: None,
+                },
+                contract.document_type_for_name("person").unwrap(),
+                None,
+                &version,
+            )
+            .unwrap();
+        assert_eq!(page.entries.len(), if terminal { 0 } else { 1 });
+        for time in [0, 999, 1000, 2000, 2999, 3000, 4000, u64::MAX] {
+            let query = person_at_block_time(&contract, document.id().to_buffer(), time);
+            assert_eq!(
+                prove_and_verify_at(&drive, &contract, &query, &version),
+                None,
+                "erase hides every time {time}, terminal {terminal}"
+            );
+        }
+        let latest = SingleDocumentDriveQuery {
+            block_time_ms: None,
+            ..person_at_block_time(&contract, document.id().to_buffer(), u64::MAX)
+        };
+        assert_eq!(
+            prove_and_verify_at(&drive, &contract, &latest, &version),
+            None
+        );
+    }
+}
+
+#[test]
+fn should_not_decode_a_record_only_result_as_a_document_and_should_ignore_other_ids() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use dpp::document::lifecycle::DocumentLifecycleRecord;
+    use dpp::serialization::PlatformSerializable;
+    let version = PlatformVersion::latest();
+    let (drive, contract, mut document) = temporal_fixture(version, false);
+    let type_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "person");
+    drive
+        .grove
+        .insert(
+            type_path.as_slice(),
+            &[1],
+            grovedb::Element::empty_tree(),
+            None,
+            None,
+            &version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    let mut record_path = type_path;
+    record_path.push(vec![1]);
+    let absent_id = [9; 32];
+    let only_record = person_at_block_time(&contract, absent_id, 0);
+    // The existing empty lifecycle container proves absence for an unrelated id.
+    assert_eq!(
+        prove_and_verify_at(&drive, &contract, &only_record, version),
+        None
+    );
+    drive
+        .grove
+        .insert(
+            record_path.as_slice(),
+            &absent_id,
+            grovedb::Element::new_item(
+                DocumentLifecycleRecord::deleted_at(0, 1, 1)
+                    .serialize_to_bytes()
+                    .unwrap(),
+            ),
+            None,
+            None,
+            &version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    for time in [0, u64::MAX] {
+        let query = person_at_block_time(&contract, absent_id, time);
+        let proof = drive
+            .grove_get_proved_path_query(
+                &query.construct_path_query(version).unwrap(),
+                None,
+                &mut vec![],
+                &version.drive,
+            )
+            .unwrap();
+        for subset in [false, true] {
+            assert_eq!(
+                query
+                    .verify_proof_keep_serialized(subset, &proof, version)
+                    .unwrap()
+                    .1,
+                None
+            );
+            assert_eq!(
+                query
+                    .verify_proof(
+                        subset,
+                        &proof,
+                        contract.document_type_for_name("person").unwrap(),
+                        version
+                    )
+                    .unwrap()
+                    .1,
+                None
+            );
+        }
+    }
+    document.set_revision(Some(1));
+    write_revision(&drive, &contract, &document, 1000, true, version);
+    let found = prove_and_verify_at(
+        &drive,
+        &contract,
+        &person_at_block_time(&contract, document.id().to_buffer(), 1000),
+        version,
+    )
+    .unwrap();
+    assert_eq!(
+        serialized(&found, &contract),
+        serialized(&document, &contract)
+    );
+}
+
+#[test]
+fn should_reject_a_history_only_proof_that_omits_an_existing_deletion_record() {
+    let version = PlatformVersion::latest();
+    let (drive, mut contract, mut document) = temporal_fixture(version, false);
+    let mut schema = contract
+        .document_type_for_name("person")
+        .unwrap()
+        .schema()
+        .clone();
+    schema.set_value("canBeDeleted", true.into()).unwrap();
+    contract
+        .set_document_schema("person", schema, true, &mut vec![], version)
+        .unwrap();
+    document.set_revision(Some(1));
+    write_revision(&drive, &contract, &document, 1000, true, version);
+    drive
+        .delete_document_for_contract(
+            document.id(),
+            &contract,
+            "person",
+            BlockInfo::default_with_time(2000),
+            true,
+            None,
+            version,
+        )
+        .unwrap();
+    let query = person_at_block_time(&contract, document.id().to_buffer(), 2000);
+    let mut history_path = crate::drive::document::paths::contract_document_type_path_vec(
+        &query.contract_id,
+        &query.document_type_name,
+    );
+    history_path.push(vec![2]);
+    let mut selection = Query::new();
+    selection.insert_key(query.document_id.to_vec());
+    let mut revisions = Query::new_with_direction(false);
+    revisions.insert_range_inclusive(encode_u64(0)..=[encode_u64(2000), vec![0xff; 8]].concat());
+    revisions.limit = Some(1);
+    selection.set_subquery(revisions);
+    let old_query = PathQuery::new(
+        history_path,
+        grovedb::SizedQuery::new(selection, None, None),
+    );
+    let old_proof = drive
+        .grove_get_proved_path_query(&old_query, None, &mut vec![], &version.drive)
+        .unwrap();
+    let (_, rows) =
+        GroveDb::verify_query(&old_proof, &old_query, &version.drive.grove_version).unwrap();
+    assert_eq!(
+        rows.len(),
+        1,
+        "the history-only proof authenticates the stale retained revision"
+    );
+    for subset in [false, true] {
+        assert!(
+            query
+                .verify_proof_keep_serialized(subset, &old_proof, version)
+                .is_err(),
+            "the lifecycle-aware query must also authenticate the existing record"
+        );
+    }
+}
+
+#[test]
+fn should_compare_the_unclamped_delete_time_and_allow_deletion_at_zero() {
+    let version = PlatformVersion::latest();
+    for (created_at, deleted_at) in [(0, 0), (1000, u64::MAX)] {
+        let (drive, mut contract, mut document) = temporal_fixture(version, false);
+        let mut schema = contract
+            .document_type_for_name("person")
+            .unwrap()
+            .schema()
+            .clone();
+        schema.set_value("canBeDeleted", true.into()).unwrap();
+        contract
+            .set_document_schema("person", schema, true, &mut vec![], version)
+            .unwrap();
+        document.set_revision(Some(1));
+        write_revision(&drive, &contract, &document, created_at, true, version);
+        drive
+            .delete_document_for_contract(
+                document.id(),
+                &contract,
+                "person",
+                BlockInfo::default_with_time(deleted_at),
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        for time in [0, 1000, i64::MAX as u64, u64::MAX - 1, u64::MAX] {
+            let found = prove_and_verify_at(
+                &drive,
+                &contract,
+                &person_at_block_time(&contract, document.id().to_buffer(), time),
+                version,
+            );
+            assert_eq!(
+                found.is_some(),
+                time >= created_at && time < deleted_at,
+                "created {created_at}, deleted {deleted_at}, requested {time}"
+            );
+        }
+    }
 }

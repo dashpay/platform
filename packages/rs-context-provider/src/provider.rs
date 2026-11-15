@@ -1,5 +1,6 @@
 use crate::error::ContextProviderError;
 use crate::{ContextProviderMode, QuorumKeySource, SpvSourceSlot};
+use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -29,6 +30,14 @@ pub fn platform_activation_height(network: Network) -> CoreBlockHeight {
         Network::Testnet => 1_090_319,
         Network::Devnet | Network::Regtest => 1,
     }
+}
+
+/// Whether `quorum_type` is `network`'s Platform quorum type, the only
+/// quorum type whose key may verify Platform proofs. A proof names its own
+/// quorum type, and a quorum of a lower-threshold type must never vouch for
+/// Platform state.
+pub fn is_platform_quorum_type(network: Network, quorum_type: u32) -> bool {
+    quorum_type == u32::from(u8::from(network.platform_type()))
 }
 
 /// Interface between the Sdk and state of the application.
@@ -126,7 +135,7 @@ pub trait ContextProvider: Send + Sync {
     /// inside the synchronous lookup, fetch a key that is newer than its cache.
     ///
     /// The arguments come from a response that has not been verified yet. The
-    /// key must come from the provider's own trusted source, never from the
+    /// key must come from a source the provider itself trusts, never from the
     /// arguments, and the work done must stay bounded whatever they are.
     ///
     /// # Returns
@@ -137,8 +146,8 @@ pub trait ContextProvider: Send + Sync {
     /// * `Some(future)`, resolving to:
     ///   * `Ok(Some(key))`: the key, which `get_quorum_public_key` now returns
     ///     as well.
-    ///   * `Ok(None)`: the trusted source, asked after this call was made,
-    ///     answered and does not know this quorum.
+    ///   * `Ok(None)`: the provider's source, asked after this call was
+    ///     made, says it does not know this quorum.
     ///   * `Err(_)`: the provider could not find out, for example because its
     ///     trusted source was unreachable.
     fn fetch_quorum_public_key(
@@ -206,11 +215,13 @@ pub trait ContextProvider: Send + Sync {
     ) {
     }
 
-    /// The source this provider answers quorum lookups from right now, for
+    /// The source this provider asks first for quorum keys right now, for
     /// diagnostics: its only source, or, for a provider that switches between
-    /// sources, the one it would ask now. For one that chooses by whether a
-    /// published SPV client is ready, a client that cannot say counts as not
-    /// ready, so this reports the trusted source then.
+    /// sources, the one it would ask first now. A provider that falls back to
+    /// another source for a key the first cannot serve still reports the
+    /// first. For one that chooses by whether a published SPV client is
+    /// ready, a client that cannot say counts as not ready, so this reports
+    /// the trusted source then.
     ///
     /// The default, `None`, makes no claim. A provider wrapping another
     /// forwards this and the two methods below, or the wrapped provider

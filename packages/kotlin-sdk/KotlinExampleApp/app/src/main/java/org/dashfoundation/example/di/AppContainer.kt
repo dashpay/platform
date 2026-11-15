@@ -153,6 +153,8 @@ class AppContainer(private val context: Context) {
             network = sdk.network,
             loadWallets = {
                 val activatedManager = walletManagerStore.activate(sdk.network, sdk)
+                // The manager now serves the SDK its SPV quorum keys.
+                appState.refreshQuorumSource()
                 // Open the shielded store before any wallet is loaded or
                 // created: this app's persister keeps the private contact
                 // request scan state, so Rust holds every wallet published
@@ -199,6 +201,11 @@ class AppContainer(private val context: Context) {
         spvOverlayJob?.cancel()
         spvOverlayJob = applicationScope.launch {
             publisher.progress.collect { p ->
+                // In Auto the SDK's quorum source follows SPV readiness
+                // (← QuorumSourceRefresh in SwiftExampleAppApp.swift). Its
+                // own coroutine: the read can wait on the SPV client, and the
+                // overlay must not.
+                applicationScope.launch { appState.refreshQuorumSource() }
                 syncOverlayState.publish(
                     org.dashfoundation.example.state.SpvProgress(
                         phaseTitle = p.phaseTitle,
@@ -410,8 +417,8 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * Pre-load every locally-stored data contract into the SDK's trusted
-     * context provider — port of `AppState.loadKnownContractsIntoSDK`. This
+     * Pre-load every locally-stored data contract into the SDK's context
+     * provider — port of `AppState.loadKnownContractsIntoSDK`. This
      * lets proof verification resolve those contracts without a network
      * fetch. Best-effort and non-fatal: any failure is logged, never thrown,
      * so it can't stall or fail bootstrap (mirrors iOS, where the load is
@@ -419,14 +426,14 @@ class AppContainer(private val context: Context) {
      *
      * Only contracts with a non-null [DataContractEntity.binarySerialization]
      * are loaded — that field holds the versioned binary serialization the
-     * trusted provider deserializes; the JSON `serializedContract` is the
-     * wrong shape. Ids are base58-encoded to match what the native
+     * native `addKnownContracts` deserializes; the JSON `serializedContract`
+     * is the wrong shape. Ids are base58-encoded to match what
      * `addKnownContracts` splits from its CSV.
      */
     private suspend fun loadKnownContractsIntoSdk() {
         val sdk = appState.sdk.value ?: return
         try {
-            // Scope to the SDK's own network: the trusted-context cache is
+            // Scope to the SDK's own network: the provider's contract cache is
             // keyed only by contract id, so seeding a network-locked SDK with
             // another network's contract could resolve the wrong/stale schema
             // (same network-scoping rule as onLoadWalletList).

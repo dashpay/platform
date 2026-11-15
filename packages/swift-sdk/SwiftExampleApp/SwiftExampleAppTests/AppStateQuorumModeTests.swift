@@ -25,6 +25,20 @@ final class AppStateQuorumModeTests: XCTestCase {
         }
     }
 
+    /// The quorum mode the user picked survives a relaunch: a fresh
+    /// `AppState` reads it back, and builds its SDKs in it.
+    func testShouldRestoreTheSavedQuorumModeOnLaunch() throws {
+        let restore = isolateSettings()
+        defer { restore() }
+        UserDefaults.standard.set(AppState.QuorumMode.spv.rawValue, forKey: "quorumMode")
+
+        let appState = AppState()
+        let built = try appState.makeSdk(for: .regtest)
+
+        XCTAssertEqual(appState.quorumMode, .spv)
+        XCTAssertEqual(built.quorumSource, .spv)
+    }
+
     /// An SDK is built in the mode the user picked, before anything can
     /// verify a proof with it: built in Auto and switched later, it would
     /// fall back to trusted keys in between.

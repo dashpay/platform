@@ -346,6 +346,7 @@ impl DriveOperation<'_> {
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -355,6 +356,7 @@ impl DriveOperation<'_> {
                 .into_low_level_drive_operations_after_ttl_drain(
                     drive,
                     estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
                     block_info,
                     transaction,
                     platform_version,

@@ -55294,6 +55294,10 @@ $root.org = (function() {
                                  * @interface ILifecycle
                                  * @property {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.State|null} [state] Lifecycle state
                                  * @property {number|Long|null} [remainingRevisions] Lifecycle remainingRevisions
+                                 * @property {number|Long|null} [deletedAtMs] Lifecycle deletedAtMs
+                                 * @property {number|Long|null} [erasingStartedAtMs] Lifecycle erasingStartedAtMs
+                                 * @property {number|Long|null} [erasingFromTimeMs] Lifecycle erasingFromTimeMs
+                                 * @property {number|Long|null} [erasingFromRevision] Lifecycle erasingFromRevision
                                  */
 
                                 /**
@@ -55328,6 +55332,38 @@ $root.org = (function() {
                                 Lifecycle.prototype.remainingRevisions = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                                 /**
+                                 * Lifecycle deletedAtMs.
+                                 * @member {number|Long} deletedAtMs
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle
+                                 * @instance
+                                 */
+                                Lifecycle.prototype.deletedAtMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Lifecycle erasingStartedAtMs.
+                                 * @member {number|Long} erasingStartedAtMs
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle
+                                 * @instance
+                                 */
+                                Lifecycle.prototype.erasingStartedAtMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Lifecycle erasingFromTimeMs.
+                                 * @member {number|Long} erasingFromTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle
+                                 * @instance
+                                 */
+                                Lifecycle.prototype.erasingFromTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Lifecycle erasingFromRevision.
+                                 * @member {number|Long} erasingFromRevision
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle
+                                 * @instance
+                                 */
+                                Lifecycle.prototype.erasingFromRevision = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
                                  * Creates a new Lifecycle instance using the specified properties.
                                  * @function create
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle
@@ -55355,6 +55391,14 @@ $root.org = (function() {
                                         writer.uint32(/* id 1, wireType 0 =*/8).int32(message.state);
                                     if (message.remainingRevisions != null && Object.hasOwnProperty.call(message, "remainingRevisions"))
                                         writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.remainingRevisions);
+                                    if (message.deletedAtMs != null && Object.hasOwnProperty.call(message, "deletedAtMs"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.deletedAtMs);
+                                    if (message.erasingStartedAtMs != null && Object.hasOwnProperty.call(message, "erasingStartedAtMs"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.erasingStartedAtMs);
+                                    if (message.erasingFromTimeMs != null && Object.hasOwnProperty.call(message, "erasingFromTimeMs"))
+                                        writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.erasingFromTimeMs);
+                                    if (message.erasingFromRevision != null && Object.hasOwnProperty.call(message, "erasingFromRevision"))
+                                        writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.erasingFromRevision);
                                     return writer;
                                 };
 
@@ -55394,6 +55438,18 @@ $root.org = (function() {
                                             break;
                                         case 2:
                                             message.remainingRevisions = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.deletedAtMs = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.erasingStartedAtMs = reader.uint64();
+                                            break;
+                                        case 5:
+                                            message.erasingFromTimeMs = reader.uint64();
+                                            break;
+                                        case 6:
+                                            message.erasingFromRevision = reader.uint64();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -55436,11 +55492,25 @@ $root.org = (function() {
                                             return "state: enum value expected";
                                         case 0:
                                         case 1:
+                                        case 2:
+                                        case 3:
                                             break;
                                         }
                                     if (message.remainingRevisions != null && message.hasOwnProperty("remainingRevisions"))
                                         if (!$util.isInteger(message.remainingRevisions) && !(message.remainingRevisions && $util.isInteger(message.remainingRevisions.low) && $util.isInteger(message.remainingRevisions.high)))
                                             return "remainingRevisions: integer|Long expected";
+                                    if (message.deletedAtMs != null && message.hasOwnProperty("deletedAtMs"))
+                                        if (!$util.isInteger(message.deletedAtMs) && !(message.deletedAtMs && $util.isInteger(message.deletedAtMs.low) && $util.isInteger(message.deletedAtMs.high)))
+                                            return "deletedAtMs: integer|Long expected";
+                                    if (message.erasingStartedAtMs != null && message.hasOwnProperty("erasingStartedAtMs"))
+                                        if (!$util.isInteger(message.erasingStartedAtMs) && !(message.erasingStartedAtMs && $util.isInteger(message.erasingStartedAtMs.low) && $util.isInteger(message.erasingStartedAtMs.high)))
+                                            return "erasingStartedAtMs: integer|Long expected";
+                                    if (message.erasingFromTimeMs != null && message.hasOwnProperty("erasingFromTimeMs"))
+                                        if (!$util.isInteger(message.erasingFromTimeMs) && !(message.erasingFromTimeMs && $util.isInteger(message.erasingFromTimeMs.low) && $util.isInteger(message.erasingFromTimeMs.high)))
+                                            return "erasingFromTimeMs: integer|Long expected";
+                                    if (message.erasingFromRevision != null && message.hasOwnProperty("erasingFromRevision"))
+                                        if (!$util.isInteger(message.erasingFromRevision) && !(message.erasingFromRevision && $util.isInteger(message.erasingFromRevision.low) && $util.isInteger(message.erasingFromRevision.high)))
+                                            return "erasingFromRevision: integer|Long expected";
                                     return null;
                                 };
 
@@ -55465,6 +55535,14 @@ $root.org = (function() {
                                     case 1:
                                         message.state = 1;
                                         break;
+                                    case "DELETED":
+                                    case 2:
+                                        message.state = 2;
+                                        break;
+                                    case "ERASING":
+                                    case 3:
+                                        message.state = 3;
+                                        break;
                                     }
                                     if (object.remainingRevisions != null)
                                         if ($util.Long)
@@ -55475,6 +55553,42 @@ $root.org = (function() {
                                             message.remainingRevisions = object.remainingRevisions;
                                         else if (typeof object.remainingRevisions === "object")
                                             message.remainingRevisions = new $util.LongBits(object.remainingRevisions.low >>> 0, object.remainingRevisions.high >>> 0).toNumber(true);
+                                    if (object.deletedAtMs != null)
+                                        if ($util.Long)
+                                            (message.deletedAtMs = $util.Long.fromValue(object.deletedAtMs)).unsigned = true;
+                                        else if (typeof object.deletedAtMs === "string")
+                                            message.deletedAtMs = parseInt(object.deletedAtMs, 10);
+                                        else if (typeof object.deletedAtMs === "number")
+                                            message.deletedAtMs = object.deletedAtMs;
+                                        else if (typeof object.deletedAtMs === "object")
+                                            message.deletedAtMs = new $util.LongBits(object.deletedAtMs.low >>> 0, object.deletedAtMs.high >>> 0).toNumber(true);
+                                    if (object.erasingStartedAtMs != null)
+                                        if ($util.Long)
+                                            (message.erasingStartedAtMs = $util.Long.fromValue(object.erasingStartedAtMs)).unsigned = true;
+                                        else if (typeof object.erasingStartedAtMs === "string")
+                                            message.erasingStartedAtMs = parseInt(object.erasingStartedAtMs, 10);
+                                        else if (typeof object.erasingStartedAtMs === "number")
+                                            message.erasingStartedAtMs = object.erasingStartedAtMs;
+                                        else if (typeof object.erasingStartedAtMs === "object")
+                                            message.erasingStartedAtMs = new $util.LongBits(object.erasingStartedAtMs.low >>> 0, object.erasingStartedAtMs.high >>> 0).toNumber(true);
+                                    if (object.erasingFromTimeMs != null)
+                                        if ($util.Long)
+                                            (message.erasingFromTimeMs = $util.Long.fromValue(object.erasingFromTimeMs)).unsigned = true;
+                                        else if (typeof object.erasingFromTimeMs === "string")
+                                            message.erasingFromTimeMs = parseInt(object.erasingFromTimeMs, 10);
+                                        else if (typeof object.erasingFromTimeMs === "number")
+                                            message.erasingFromTimeMs = object.erasingFromTimeMs;
+                                        else if (typeof object.erasingFromTimeMs === "object")
+                                            message.erasingFromTimeMs = new $util.LongBits(object.erasingFromTimeMs.low >>> 0, object.erasingFromTimeMs.high >>> 0).toNumber(true);
+                                    if (object.erasingFromRevision != null)
+                                        if ($util.Long)
+                                            (message.erasingFromRevision = $util.Long.fromValue(object.erasingFromRevision)).unsigned = true;
+                                        else if (typeof object.erasingFromRevision === "string")
+                                            message.erasingFromRevision = parseInt(object.erasingFromRevision, 10);
+                                        else if (typeof object.erasingFromRevision === "number")
+                                            message.erasingFromRevision = object.erasingFromRevision;
+                                        else if (typeof object.erasingFromRevision === "object")
+                                            message.erasingFromRevision = new $util.LongBits(object.erasingFromRevision.low >>> 0, object.erasingFromRevision.high >>> 0).toNumber(true);
                                     return message;
                                 };
 
@@ -55498,6 +55612,26 @@ $root.org = (function() {
                                             object.remainingRevisions = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                         } else
                                             object.remainingRevisions = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.deletedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.deletedAtMs = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.erasingStartedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.erasingStartedAtMs = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.erasingFromTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.erasingFromTimeMs = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.erasingFromRevision = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.erasingFromRevision = options.longs === String ? "0" : 0;
                                     }
                                     if (message.state != null && message.hasOwnProperty("state"))
                                         object.state = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.State[message.state] : message.state;
@@ -55506,6 +55640,26 @@ $root.org = (function() {
                                             object.remainingRevisions = options.longs === String ? String(message.remainingRevisions) : message.remainingRevisions;
                                         else
                                             object.remainingRevisions = options.longs === String ? $util.Long.prototype.toString.call(message.remainingRevisions) : options.longs === Number ? new $util.LongBits(message.remainingRevisions.low >>> 0, message.remainingRevisions.high >>> 0).toNumber(true) : message.remainingRevisions;
+                                    if (message.deletedAtMs != null && message.hasOwnProperty("deletedAtMs"))
+                                        if (typeof message.deletedAtMs === "number")
+                                            object.deletedAtMs = options.longs === String ? String(message.deletedAtMs) : message.deletedAtMs;
+                                        else
+                                            object.deletedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.deletedAtMs) : options.longs === Number ? new $util.LongBits(message.deletedAtMs.low >>> 0, message.deletedAtMs.high >>> 0).toNumber(true) : message.deletedAtMs;
+                                    if (message.erasingStartedAtMs != null && message.hasOwnProperty("erasingStartedAtMs"))
+                                        if (typeof message.erasingStartedAtMs === "number")
+                                            object.erasingStartedAtMs = options.longs === String ? String(message.erasingStartedAtMs) : message.erasingStartedAtMs;
+                                        else
+                                            object.erasingStartedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.erasingStartedAtMs) : options.longs === Number ? new $util.LongBits(message.erasingStartedAtMs.low >>> 0, message.erasingStartedAtMs.high >>> 0).toNumber(true) : message.erasingStartedAtMs;
+                                    if (message.erasingFromTimeMs != null && message.hasOwnProperty("erasingFromTimeMs"))
+                                        if (typeof message.erasingFromTimeMs === "number")
+                                            object.erasingFromTimeMs = options.longs === String ? String(message.erasingFromTimeMs) : message.erasingFromTimeMs;
+                                        else
+                                            object.erasingFromTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.erasingFromTimeMs) : options.longs === Number ? new $util.LongBits(message.erasingFromTimeMs.low >>> 0, message.erasingFromTimeMs.high >>> 0).toNumber(true) : message.erasingFromTimeMs;
+                                    if (message.erasingFromRevision != null && message.hasOwnProperty("erasingFromRevision"))
+                                        if (typeof message.erasingFromRevision === "number")
+                                            object.erasingFromRevision = options.longs === String ? String(message.erasingFromRevision) : message.erasingFromRevision;
+                                        else
+                                            object.erasingFromRevision = options.longs === String ? $util.Long.prototype.toString.call(message.erasingFromRevision) : options.longs === Number ? new $util.LongBits(message.erasingFromRevision.low >>> 0, message.erasingFromRevision.high >>> 0).toNumber(true) : message.erasingFromRevision;
                                     return object;
                                 };
 
@@ -55526,11 +55680,15 @@ $root.org = (function() {
                                  * @enum {number}
                                  * @property {number} ACTIVE=0 ACTIVE value
                                  * @property {number} ABSENT=1 ABSENT value
+                                 * @property {number} DELETED=2 DELETED value
+                                 * @property {number} ERASING=3 ERASING value
                                  */
                                 Lifecycle.State = (function() {
                                     var valuesById = {}, values = Object.create(valuesById);
                                     values[valuesById[0] = "ACTIVE"] = 0;
                                     values[valuesById[1] = "ABSENT"] = 1;
+                                    values[valuesById[2] = "DELETED"] = 2;
+                                    values[valuesById[3] = "ERASING"] = 3;
                                     return values;
                                 })();
 

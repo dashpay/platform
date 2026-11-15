@@ -8,6 +8,7 @@ import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
+import org.dashfoundation.dashsdk.ffi.TransactionsNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
@@ -30,6 +31,17 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class FfiSmokeTest {
+
+    @Test
+    fun documentEraseAndObserveBindsAndRejectsInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val error = assertThrows(DashSDKException::class.java) {
+            TransactionsNative.documentEraseAndObserve(
+                0L, ByteArray(32), ByteArray(32), "note", ByteArray(32), 0L,
+            )
+        }
+        assertEquals(1003, error.code)
+    }
 
     @Test
     fun nativeLibraryLoadsAndReportsVersion() {

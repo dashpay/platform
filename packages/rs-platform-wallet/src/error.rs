@@ -21,6 +21,9 @@ pub use dash_sdk::platform::transition::asset_lock_submission::{
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
+    #[error("An erase for this document is already in flight; read history before retrying")]
+    DocumentEraseBusy,
+
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 

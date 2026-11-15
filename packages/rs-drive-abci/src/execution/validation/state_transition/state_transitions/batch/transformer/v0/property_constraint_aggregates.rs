@@ -181,7 +181,9 @@ pub(super) fn attach_property_constraint_reads(
                 action.set_stored_system_values(values);
             }
         }
-        DocumentTransitionAction::DeleteAction(_)
+        // The bounds gate rejects erases through protocol 14; erases write no document.
+        DocumentTransitionAction::EraseAction(_)
+        | DocumentTransitionAction::DeleteAction(_)
         | DocumentTransitionAction::IndexOnlyDeleteAction(_) => {}
     }
     Ok(())
