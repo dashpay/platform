@@ -1520,6 +1520,33 @@ impl PlatformWalletError {
             PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => None,
         }
     }
+
+    /// Whether a host may run the failed operation again: decided here, next
+    /// to [`Self::payment_delivery`], so hosts read it instead of deriving it.
+    ///
+    /// Never where the payment may have left the wallet
+    /// ([`PaymentDelivery::MaybeSent`]). Always where it holds a tracked asset
+    /// lock ([`PaymentDelivery::LockHeld`]): the retry is a resume of
+    /// [`Self::held_asset_lock`], never a second payment. Where nothing left
+    /// the wallet ([`PaymentDelivery::NotSent`]), only for the failures the
+    /// same call can get past by running again: a commitment tree not yet at
+    /// a recorded anchor, a shielded broadcast refused before it was sent, a
+    /// drain that ran out of budget, a private-contact store read that did
+    /// not finish, and a persister the store calls transiently unavailable.
+    pub fn is_retryable(&self) -> bool {
+        match self.payment_delivery() {
+            PaymentDelivery::MaybeSent => false,
+            PaymentDelivery::LockHeld(_) => true,
+            PaymentDelivery::NotSent => match self {
+                Self::ShieldedNoRecordedAnchor(_)
+                | Self::ShieldedBroadcastFailed(_)
+                | Self::ShutdownIncomplete(_)
+                | Self::PrivateContactStoreNotRead(_) => true,
+                Self::PersisterLoad(source) | Self::PersisterStore(source) => source.is_transient(),
+                _ => false,
+            },
+        }
+    }
 }
 
 /// Whether a failed payment may have left the wallet; see
@@ -2918,5 +2945,57 @@ mod payment_delivery_tests {
             };
             assert_eq!(error.held_asset_lock(), expected, "{error:?}");
         }
+    }
+
+    /// The failures nothing left the wallet for that the same call can get
+    /// past by running again.
+    fn retryable_when_not_sent(error: &PlatformWalletError) -> bool {
+        matches!(
+            error,
+            PlatformWalletError::ShieldedNoRecordedAnchor(_)
+                | PlatformWalletError::ShieldedBroadcastFailed(_)
+                | PlatformWalletError::ShutdownIncomplete(_)
+                | PlatformWalletError::PrivateContactStoreNotRead(_)
+        )
+    }
+
+    /// Every variant's retry follows its class: never `MaybeSent`, always
+    /// `LockHeld` (a resume), and for `NotSent` only the transient kinds.
+    #[test]
+    fn should_allow_a_retry_only_where_nothing_left_or_the_lock_resumes() {
+        for (error, delivery) in table() {
+            let expected = match delivery {
+                PaymentDelivery::MaybeSent => false,
+                PaymentDelivery::LockHeld(_) => true,
+                PaymentDelivery::NotSent => retryable_when_not_sent(&error),
+            };
+            assert_eq!(error.is_retryable(), expected, "{error:?}");
+        }
+    }
+
+    /// A persister failure is retryable exactly when the store called it
+    /// transient.
+    #[test]
+    fn should_retry_a_persister_failure_only_when_the_store_calls_it_transient() {
+        use crate::changeset::PersistenceErrorKind as Kind;
+
+        let backend = |kind| PersistenceError::backend_with_kind(kind, std::io::Error::other("db"));
+        for (kind, expected) in [
+            (Kind::Transient, true),
+            (Kind::Fatal, false),
+            (Kind::Constraint, false),
+        ] {
+            assert_eq!(
+                PlatformWalletError::PersisterLoad(backend(kind)).is_retryable(),
+                expected,
+                "load {kind:?}"
+            );
+            assert_eq!(
+                PlatformWalletError::PersisterStore(backend(kind)).is_retryable(),
+                expected,
+                "store {kind:?}"
+            );
+        }
+        assert!(!PlatformWalletError::PersisterLoad(persistence()).is_retryable());
     }
 }

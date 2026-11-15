@@ -610,14 +610,20 @@ public enum PlatformPaymentDelivery: Equatable, Sendable {
 public struct PlatformPaymentClass: Equatable, Sendable {
     /// Whether the failed payment may have left the wallet.
     public let delivery: PlatformPaymentDelivery
+    /// Whether the wallet allows running the failed operation again: never
+    /// where the payment may have left the wallet; under `.lockHeld` the
+    /// retry is a resume of that lock, never a new payment. Rust decides it
+    /// (the result's `retryable`); Swift only reads it.
+    public let isRetryable: Bool
 
-    public init(delivery: PlatformPaymentDelivery) {
+    public init(delivery: PlatformPaymentDelivery, isRetryable: Bool) {
         self.delivery = delivery
+        self.isRetryable = isRetryable
     }
 
     /// The class a Swift-side guard gives a case it throws without a result:
     /// the payment may have left, so no second one is offered.
-    public static let maybeSent = PlatformPaymentClass(delivery: .maybeSent)
+    public static let maybeSent = PlatformPaymentClass(delivery: .maybeSent, isRetryable: false)
 }
 
 // MARK: - Class wrapper
@@ -668,7 +674,7 @@ final class PlatformWalletResult {
     /// Rust's class of the failure, `nil` on success and for a failure no
     /// wallet error classified.
     var paymentClass: PlatformPaymentClass? {
-        paymentDelivery.map { PlatformPaymentClass(delivery: $0) }
+        paymentDelivery.map { PlatformPaymentClass(delivery: $0, isRetryable: inner.retryable) }
     }
 
     var isSuccess: Bool {
@@ -1078,6 +1084,12 @@ public enum PlatformWalletError: LocalizedError {
         payment?.delivery
     }
 
+    /// Whether the wallet allows running the failed operation again, as Rust
+    /// decided it; see `payment`. `false` for an unclassified error.
+    public var isRetryable: Bool {
+        payment?.isRetryable ?? false
+    }
+
     /// What to show a person. For most cases this is still the diagnostic
     /// detail Rust attached to the originating `PlatformWalletFFIResult` (or
     /// the context string a Swift-side guard chose when constructing the
@@ -1414,8 +1426,8 @@ private enum TradeErrorDetail {
 extension PlatformWalletFFIResult {
     /// A result built from the `{ code, message }` pair alone, carrying no
     /// consensus verdict, no payment-delivery class (`None` on success,
-    /// `Unknown` otherwise) and no held asset lock: the same defaults Rust's
-    /// own `ok()` / `err()` constructors fill in.
+    /// `Unknown` otherwise), no held asset lock and no retry: the same
+    /// defaults Rust's own `ok()` / `err()` constructors fill in.
     ///
     /// Swift-side call sites that fabricate a result (the manager's
     /// null-pointer guard, the native call doubles in the tests) describe a
@@ -1430,7 +1442,8 @@ extension PlatformWalletFFIResult {
             payment_delivery: code == PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
                 ? PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE
                 : PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_UNKNOWN,
-            held_asset_lock: OutPointFFI()
+            held_asset_lock: OutPointFFI(),
+            retryable: false
         )
     }
 

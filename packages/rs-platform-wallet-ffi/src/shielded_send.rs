@@ -604,13 +604,10 @@ pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
-    let delivery = result
-        .as_ref()
-        .err()
-        .map(PlatformWalletError::payment_delivery);
+    let class = result.as_ref().err().map(payment_class);
     let mapped = spend_result_code(result, operation);
-    match delivery {
-        Some(delivery) => mapped.with_payment_delivery(delivery),
+    match class {
+        Some(class) => mapped.with_payment_class(class),
         None => mapped,
     }
 }
@@ -1070,10 +1067,7 @@ fn map_identity_create_result(
     result: Result<dpp::prelude::Identifier, PlatformWalletError>,
     out_identity_id: &mut [u8; 32],
 ) -> PlatformWalletFFIResult {
-    let delivery = result
-        .as_ref()
-        .err()
-        .map(PlatformWalletError::payment_delivery);
+    let class = result.as_ref().err().map(payment_class);
     let mapped = match result {
         Ok(identity_id) => {
             *out_identity_id = identity_id.to_buffer();
@@ -1114,8 +1108,8 @@ fn map_identity_create_result(
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
     };
-    match delivery {
-        Some(delivery) => mapped.with_payment_delivery(delivery),
+    match class {
+        Some(class) => mapped.with_payment_class(class),
         None => mapped,
     }
 }
@@ -3452,9 +3446,11 @@ mod tests {
         ];
         for (error, code, delivery) in cases {
             let rendered = format!("{error:?}");
+            let retryable = error.is_retryable();
             let result = map_identity_create_result(Err(error), &mut out);
             assert_eq!(result.code, code, "{rendered}");
             assert_eq!(result.payment_delivery, delivery, "{rendered}");
+            assert_eq!(result.retryable, retryable, "{rendered}");
         }
         assert_eq!(out, [5; 32], "the unconfirmed outcome writes the id");
         assert_eq!(

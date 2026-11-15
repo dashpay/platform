@@ -116,11 +116,11 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
 /// Throw the `DashSDKException` for a non-`Success` `result`, leaving its
 /// message for the caller to free. The exception code is the result code
 /// shifted by [`PWFFI_CODE_OFFSET`]; the result's consensus rejection (code
-/// and kind, `0` when it carries none), its payment-delivery class and, under
-/// `LockHeld`, the held asset lock's outpoint as 36 raw bytes
-/// (`txid_le[32] || vout_le[4]`, `null` otherwise) go to the exception as
-/// well, so Kotlin branches on them instead of on the message or on lists of
-/// codes.
+/// and kind, `0` when it carries none), its payment-delivery class, whether
+/// the wallet allows a retry and, under `LockHeld`, the held asset lock's
+/// outpoint as 36 raw bytes (`txid_le[32] || vout_le[4]`, `null` otherwise)
+/// go to the exception as well, so Kotlin reads them instead of deciding
+/// from the message or from lists of codes.
 pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     let message = if result.message.is_null() {
         format!("platform-wallet error (code {})", result.code as i32)
@@ -143,13 +143,14 @@ pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
         };
         env.new_object(
             SDK_EXCEPTION_CLASS,
-            "(ILjava/lang/String;III[B)V",
+            "(ILjava/lang/String;IIIZ[B)V",
             &[
                 code.into(),
                 (&jmsg).into(),
                 consensus_code.into(),
                 (result.consensus_kind as jint).into(),
                 (result.payment_delivery as jint).into(),
+                JValue::from(result.retryable),
                 (&held).into(),
             ],
         )

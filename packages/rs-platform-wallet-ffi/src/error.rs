@@ -928,6 +928,16 @@ pub struct PlatformWalletFFIResult {
     ///
     /// Added with `payment_delivery`, the same C ABI break.
     pub held_asset_lock: OutPointFFI,
+    /// Whether the host may run the failed operation again, as the wallet
+    /// error behind the failure decided it
+    /// ([`PlatformWalletError::is_retryable`]): never when the payment may
+    /// have left the wallet, always when it holds `held_asset_lock` (the
+    /// retry is a resume of that lock). `false` on success and when no
+    /// wallet error is behind the failure. Hosts read it; they never derive
+    /// it from the code or from `payment_delivery`.
+    ///
+    /// Added after `held_asset_lock`: the same kind of C ABI break.
+    pub retryable: bool,
 }
 
 /// The `held_asset_lock` of a result that holds none.
@@ -956,6 +966,7 @@ impl PlatformWalletFFIResult {
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
             payment_delivery: PlatformWalletFFIPaymentDelivery::None,
             held_asset_lock: NO_HELD_ASSET_LOCK,
+            retryable: false,
         }
     }
 
@@ -969,6 +980,7 @@ impl PlatformWalletFFIResult {
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
             payment_delivery: PlatformWalletFFIPaymentDelivery::Unknown,
             held_asset_lock: NO_HELD_ASSET_LOCK,
+            retryable: false,
         }
     }
 
@@ -989,12 +1001,17 @@ impl PlatformWalletFFIResult {
         self
     }
 
-    /// Stamp the payment-delivery class of the wallet error behind an
-    /// already-built result, and the asset lock it holds when the class is
-    /// [`PaymentDelivery::LockHeld`]. Leaves `code` and `message` alone, like
+    /// Stamp the payment class of the wallet error behind an already-built
+    /// result (see [`payment_class`]): its delivery, the asset lock it holds
+    /// when that is [`PaymentDelivery::LockHeld`], and whether a retry is
+    /// allowed. Leaves `code` and `message` alone, like
     /// [`Self::with_consensus_error`].
-    pub(crate) fn with_payment_delivery(mut self, delivery: PaymentDelivery) -> Self {
+    pub(crate) fn with_payment_class(
+        mut self,
+        (delivery, retryable): (PaymentDelivery, bool),
+    ) -> Self {
         self.payment_delivery = delivery.into();
+        self.retryable = retryable;
         self.held_asset_lock = match delivery {
             PaymentDelivery::LockHeld(out_point) => OutPointFFI::from(&out_point),
             PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => NO_HELD_ASSET_LOCK,
@@ -1003,7 +1020,7 @@ impl PlatformWalletFFIResult {
     }
 
     /// Fold `error` into `code` with `message`, keeping the error's own
-    /// payment-delivery class (and held asset lock). For the arms that
+    /// payment class (delivery, held asset lock, retry). For the arms that
     /// report a payment's failure under a code of their own choosing, such as
     /// the shared `ErrorWalletOperation`.
     pub(crate) fn err_from_wallet_error(
@@ -1011,7 +1028,7 @@ impl PlatformWalletFFIResult {
         message: impl Into<String>,
         error: &PlatformWalletError,
     ) -> Self {
-        Self::err(code, message).with_payment_delivery(error.payment_delivery())
+        Self::err(code, message).with_payment_class(payment_class(error))
     }
 
     /// A `Success`-coded result that still carries an advisory `message`.
@@ -1033,6 +1050,7 @@ impl PlatformWalletFFIResult {
             consensus_kind: PlatformWalletFFIConsensusErrorKind::None,
             payment_delivery: PlatformWalletFFIPaymentDelivery::None,
             held_asset_lock: NO_HELD_ASSET_LOCK,
+            retryable: false,
         }
     }
 }
@@ -1128,10 +1146,18 @@ fn trade_error_json_detail(
     }
 }
 
+/// What the wallet decided about `error`'s payment: whether it may have left
+/// the wallet ([`PlatformWalletError::payment_delivery`]) and whether a retry
+/// is allowed ([`PlatformWalletError::is_retryable`]). The FFI copies both and
+/// decides neither.
+pub(crate) fn payment_class(error: &PlatformWalletError) -> (PaymentDelivery, bool) {
+    (error.payment_delivery(), error.is_retryable())
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
-        let delivery = error.payment_delivery();
-        Self::from_wallet_error_parts(error).with_payment_delivery(delivery)
+        let class = payment_class(&error);
+        Self::from_wallet_error_parts(error).with_payment_class(class)
     }
 }
 
@@ -3458,6 +3484,13 @@ mod payment_delivery_tests {
     fn errors() -> Vec<PlatformWalletError> {
         vec![
             PlatformWalletError::ShieldedBroadcastFailed("refused".into()),
+            PlatformWalletError::ShutdownIncomplete("drain".into()),
+            PlatformWalletError::PersisterStore(
+                platform_wallet::changeset::PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    std::io::Error::other("busy"),
+                ),
+            ),
             PlatformWalletError::ShieldedSpendUnconfirmed {
                 operation: "transfer",
                 reason: "timeout".into(),
@@ -3538,10 +3571,12 @@ mod payment_delivery_tests {
     fn should_carry_the_wallet_errors_own_class() {
         for error in errors() {
             let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let retryable = error.is_retryable();
             let held = expected_held_asset_lock(&error);
             let rendered = format!("{error:?}");
             let result = PlatformWalletFFIResult::from(error);
             assert_eq!(result.payment_delivery, expected, "{rendered}");
+            assert_eq!(result.retryable, retryable, "{rendered}");
             assert_eq!(
                 (result.held_asset_lock.txid, result.held_asset_lock.vout),
                 held,
@@ -3555,10 +3590,12 @@ mod payment_delivery_tests {
     fn should_keep_the_class_through_the_spend_mapping() {
         for error in errors() {
             let expected: PlatformWalletFFIPaymentDelivery = error.payment_delivery().into();
+            let retryable = error.is_retryable();
             let held = expected_held_asset_lock(&error);
             let rendered = format!("{error:?}");
             let result = map_spend_result(Err(error), "shielded transfer");
             assert_eq!(result.payment_delivery, expected, "{rendered}");
+            assert_eq!(result.retryable, retryable, "{rendered}");
             assert_eq!(
                 (result.held_asset_lock.txid, result.held_asset_lock.vout),
                 held,
@@ -3606,6 +3643,7 @@ mod payment_delivery_tests {
                 PlatformWalletFFIPaymentDelivery::Unknown,
                 "{code:?}"
             );
+            assert!(!result.retryable, "{code:?}");
             assert_eq!(
                 (result.held_asset_lock.txid, result.held_asset_lock.vout),
                 ([0; 32], 0),

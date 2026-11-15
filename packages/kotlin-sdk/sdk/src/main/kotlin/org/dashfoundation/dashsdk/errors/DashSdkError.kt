@@ -34,9 +34,8 @@ sealed class DashSdkError(
 
     /**
      * Whether retrying the same operation can plausibly succeed. For a
-     * [PlatformWallet] error it is read from the native wallet's [delivery]
-     * (see [PlatformWallet.isRetryable]): never `true` where a payment may
-     * have left the wallet.
+     * [PlatformWallet] error it is the native wallet's own answer (see
+     * [PlatformWallet.isRetryable]).
      */
     open val isRetryable: Boolean get() = false
 
@@ -138,30 +137,15 @@ sealed class DashSdkError(
     ) : DashSdkError(message, cause) {
 
         /**
-         * Whether this kind of failure can succeed when the same call runs
-         * again, once nothing left the wallet. Consulted only when the native
-         * wallet reported [PaymentDelivery.NOT_SENT].
-         */
-        protected open val retryableWhenNotSent: Boolean get() = false
-
-        /**
-         * Read from the native wallet's [delivery], never from the error's
-         * type alone:
-         * - [PaymentDelivery.NOT_SENT]: nothing left the wallet, so the kind
-         *   decides ([retryableWhenNotSent]).
-         * - [PaymentDelivery.MAYBE_SENT]: `false`, a retry could pay twice.
-         * - [PaymentDelivery.LOCK_HELD]: `true`, and the retry is a resume of
-         *   [heldAssetLock] (the contract the contested asset lock always
-         *   had), never a new payment.
-         * - `null` (the native layer reported no class): `false`.
+         * The native wallet's retry, read and never decided here: `true`
+         * only where Rust allows running the operation again. It is never
+         * `true` where the payment may have left the wallet; under
+         * [PaymentDelivery.LOCK_HELD] it is `true` and the retry is a resume
+         * of [heldAssetLock], never a new payment. `false` when the native
+         * layer reported no retry.
          */
         final override val isRetryable: Boolean
-            get() = when (delivery) {
-                PaymentDelivery.NOT_SENT -> retryableWhenNotSent
-                PaymentDelivery.MAYBE_SENT -> false
-                PaymentDelivery.LOCK_HELD -> true
-                null -> false
-            }
+            get() = (cause as? DashSDKException)?.retryable ?: false
 
         /** `ErrorInvalidHandle` (native code 1). A stale/closed wallet handle. */
         class InvalidHandle(message: String, cause: Throwable? = null) :
@@ -317,9 +301,7 @@ sealed class DashSdkError(
          * from [TransactionBroadcastUnconfirmed], which must NOT be retried.
          */
         class ShieldedNoRecordedAnchor(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val retryableWhenNotSent: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
@@ -367,9 +349,7 @@ sealed class DashSdkError(
          * of the ambiguous [ShieldedSpendUnconfirmed]).
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val retryableWhenNotSent: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorShieldedBroadcastUnconfirmed` (native code 17) on the
@@ -595,7 +575,6 @@ sealed class DashSdkError(
          */
         class PersisterLoadTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val retryableWhenNotSent: Boolean get() = true
             override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
         }
 
@@ -628,7 +607,6 @@ sealed class DashSdkError(
          */
         class PersisterStoreTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val retryableWhenNotSent: Boolean get() = true
             override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
         }
 
@@ -697,9 +675,7 @@ sealed class DashSdkError(
          * clear. An SPV start refused with this needs an SPV stop first.
          */
         class ShutdownIncomplete(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val retryableWhenNotSent: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
@@ -813,9 +789,7 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.privateContactStoreNotRead`.
          */
         class PrivateContactStoreNotRead(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val retryableWhenNotSent: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorSdkPinnedBelowProtocolVersion` (native code 75). The SDK is

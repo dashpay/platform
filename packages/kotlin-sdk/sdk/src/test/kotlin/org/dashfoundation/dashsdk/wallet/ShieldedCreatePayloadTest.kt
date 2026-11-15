@@ -10,10 +10,10 @@ import org.junit.Test
 
 /**
  * Regression coverage for the shielded-create codec boundary: Rust encodes
- * `[tag || identity_id[32] || delivery || diagnostic_utf8...]` in
+ * `[tag || identity_id[32] || delivery || retryable || diagnostic_utf8...]` in
  * `rs-unified-sdk-jni/src/funding.rs` and Kotlin decodes it in
  * [decodeShieldedCreatePayload]. A silent drift here would lose the
- * identity id, delivery class or diagnostic on an ambiguous broadcast — the exact state a
+ * identity id, delivery class, retry or diagnostic on an ambiguous broadcast — the exact state a
  * retry must never be built from.
  */
 class ShieldedCreatePayloadTest {
@@ -24,18 +24,20 @@ class ShieldedCreatePayloadTest {
         // `PlatformWalletFFIPaymentDelivery` discriminants.
         const val NONE: Byte = 0
         const val MAYBE_SENT: Byte = 2
+        const val NOT_RETRYABLE: Byte = 0
+        const val RETRYABLE: Byte = 1
     }
 
     @Test
     fun successReturnsTheIdentityId() {
-        val packed = byteArrayOf(0) + id + byteArrayOf(NONE)
+        val packed = byteArrayOf(0) + id + byteArrayOf(NONE, NOT_RETRYABLE)
         assertArrayEquals(id, decodeShieldedCreatePayload(packed))
     }
 
     @Test
     fun unconfirmedThrowsTypedErrorWithIdAndDiagnostic() {
         val diagnostic = "proof wait timed out after 3 retries"
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT) + diagnostic.encodeToByteArray()
+        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE) + diagnostic.encodeToByteArray()
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
         val unconfirmed = e as? DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertTrue("expected ShieldedCreateUnconfirmed, got $e", unconfirmed != null)
@@ -49,10 +51,19 @@ class ShieldedCreatePayloadTest {
         )
     }
 
+    /// The retry is the native result's: Kotlin reads the byte, whatever the class.
+    @Test
+    fun unconfirmedReadsTheRetryTheNativeResultCarried() {
+        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, RETRYABLE)
+        val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
+            as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
+        assertTrue(e.isRetryable)
+    }
+
     @Test
     fun unconfirmedWithMultibyteUtf8DiagnosticRoundTrips() {
         val diagnostic = "确认失败 — proof ✗ (𝟛 retries)"
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT) + diagnostic.encodeToByteArray()
+        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE) + diagnostic.encodeToByteArray()
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
             as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertArrayEquals(id, e.identityId)
@@ -61,7 +72,7 @@ class ShieldedCreatePayloadTest {
 
     @Test
     fun unconfirmedWithEmptyDiagnosticFallsBackToGenericMessage() {
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT)
+        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE)
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
             as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertArrayEquals(id, e.identityId)
@@ -72,7 +83,7 @@ class ShieldedCreatePayloadTest {
 
     @Test
     fun shortPayloadIsRejected() {
-        val e = runCatching { decodeShieldedCreatePayload(ByteArray(33)) }.exceptionOrNull()
+        val e = runCatching { decodeShieldedCreatePayload(ByteArray(34)) }.exceptionOrNull()
         assertEquals(IllegalStateException::class, e!!::class)
     }
 }

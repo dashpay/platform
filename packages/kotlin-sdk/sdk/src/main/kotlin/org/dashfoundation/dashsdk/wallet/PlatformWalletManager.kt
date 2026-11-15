@@ -3072,17 +3072,18 @@ internal suspend fun isGenuineWatchOnly(
 
 /**
  * Decode the tagged shielded-create payload the JNI returns:
- * `[tag || identity_id[32] || delivery || diagnostic_utf8...]`.
+ * `[tag || identity_id[32] || delivery || retryable || diagnostic_utf8...]`.
  *
  * - tag 0 → returns the 32-byte identity id (success).
  * - tag != 0 → throws [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed]
- *   carrying the id AND the native diagnostic from bytes 34.. (the
+ *   carrying the id AND the native diagnostic from bytes 35.. (the
  *   underlying DAPI / result-proof confirmation failure); an empty
  *   diagnostic falls back to a generic message. The C ABI writes the id
  *   on the unconfirmed outcome too — the identity may already be live,
  *   so the caller must hold the derivation slot instead of retrying.
  *   `delivery` is the native result's `PlatformWalletFFIPaymentDelivery`
- *   discriminant; it reaches [DashSdkError.delivery] through a
+ *   discriminant and `retryable` its retry (`0|1`); both reach
+ *   [DashSdkError.delivery] and [DashSdkError.isRetryable] through a
  *   [DashSDKException] cause built from the native values, as on every
  *   other platform-wallet error.
  *
@@ -3092,11 +3093,11 @@ internal suspend fun isGenuineWatchOnly(
  * delivery class or diagnostic on an ambiguous broadcast).
  */
 internal fun decodeShieldedCreatePayload(packed: ByteArray): ByteArray {
-    check(packed.size >= 34) { "expected >=34-byte tagged identity id, got ${packed.size}" }
+    check(packed.size >= 35) { "expected >=35-byte tagged identity id, got ${packed.size}" }
     val identityId = packed.copyOfRange(1, 33)
     if (packed[0].toInt() != 0) {
-        val diagnostic = if (packed.size > 34) {
-            packed.copyOfRange(34, packed.size).decodeToString()
+        val diagnostic = if (packed.size > 35) {
+            packed.copyOfRange(35, packed.size).decodeToString()
         } else {
             "shielded identity create broadcast unconfirmed"
         }
@@ -3109,6 +3110,7 @@ internal fun decodeShieldedCreatePayload(packed: ByteArray): ByteArray {
                 consensusCode = 0,
                 consensusKind = 0,
                 paymentDelivery = packed[33].toInt() and 0xFF,
+                retryable = packed[34].toInt() != 0,
             ),
         )
     }

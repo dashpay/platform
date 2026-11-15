@@ -8,7 +8,7 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOut
 /**
  * Exception thrown by the native layer (`rs-unified-sdk-jni`) when an FFI call
  * returns an error. Constructed from Rust via JNI: the `(Int, String)`,
- * `(Int, String, Int, Int)` and `(Int, String, Int, Int, Int, ByteArray?)`
+ * `(Int, String, Int, Int)` and `(Int, String, Int, Int, Int, Boolean, ByteArray?)`
  * constructor signatures must stay in sync with
  * `rs-unified-sdk-jni/src/support.rs::throw_sdk_exception`,
  * `throw_sdk_consensus_exception` and `throw_pwffi_result`.
@@ -25,6 +25,8 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOut
  * a platform-wallet result classified it; `null` for an rs-sdk-ffi error.
  * [heldAssetLock] is the tracked asset lock the payment holds when
  * [paymentDelivery] is [PaymentDelivery.LOCK_HELD], `null` otherwise.
+ * [retryable] is whether the native wallet allows running the failed
+ * operation again; `false` for an rs-sdk-ffi error.
  *
  * Internal: the public API maps this into the
  * [org.dashfoundation.dashsdk.errors.DashSdkError] hierarchy.
@@ -35,6 +37,7 @@ class DashSDKException(
     val consensusError: PlatformConsensusError?,
     val paymentDelivery: PaymentDelivery? = null,
     val heldAssetLock: AssetLockBuiltOutPoint? = null,
+    val retryable: Boolean = false,
 ) : Exception(message) {
     constructor(code: Int, message: String) : this(code, message, null)
 
@@ -53,10 +56,10 @@ class DashSDKException(
     /**
      * JNI entry for a platform-wallet result: its consensus rejection
      * ([consensusCode] `0` when it carries none), [paymentDelivery], the
-     * `PlatformWalletFFIPaymentDelivery` discriminant, and [heldAssetLock],
-     * the held lock's 36-byte raw outpoint (`txid_le[32] || vout_le[4]`)
-     * under `LockHeld`, `null` otherwise. Nothing here is decided: the
-     * values are Rust's.
+     * `PlatformWalletFFIPaymentDelivery` discriminant, [retryable], the
+     * wallet's retry, and [heldAssetLock], the held lock's 36-byte raw
+     * outpoint (`txid_le[32] || vout_le[4]`) under `LockHeld`, `null`
+     * otherwise. Nothing here is decided: the values are Rust's.
      */
     constructor(
         code: Int,
@@ -64,6 +67,7 @@ class DashSDKException(
         consensusCode: Int,
         consensusKind: Int,
         paymentDelivery: Int,
+        retryable: Boolean = false,
         heldAssetLock: ByteArray? = null,
     ) : this(
         code,
@@ -75,5 +79,6 @@ class DashSDKException(
         },
         PaymentDelivery.fromNative(paymentDelivery),
         heldAssetLock?.takeIf { it.size == 36 }?.let(AssetLockBuiltOutPoint::fromRawBytes),
+        retryable,
     )
 }

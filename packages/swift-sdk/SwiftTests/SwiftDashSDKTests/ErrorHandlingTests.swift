@@ -268,7 +268,8 @@ final class ErrorHandlingTests: XCTestCase {
                 consensus_code: 40722,
                 consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE,
                 payment_delivery: PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT,
-                held_asset_lock: OutPointFFI()
+                held_asset_lock: OutPointFFI(),
+                retryable: false
             )
         )
         XCTAssertEqual(
@@ -298,7 +299,8 @@ final class ErrorHandlingTests: XCTestCase {
     private static func result(
         _ code: PlatformWalletFFIResultCode,
         _ delivery: PlatformWalletFFIPaymentDelivery,
-        held: OutPointFFI = OutPointFFI()
+        held: OutPointFFI = OutPointFFI(),
+        retryable: Bool = false
     ) -> PlatformWalletResult {
         PlatformWalletResult(
             PlatformWalletFFIResult(
@@ -307,7 +309,8 @@ final class ErrorHandlingTests: XCTestCase {
                 consensus_code: 0,
                 consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
                 payment_delivery: delivery,
-                held_asset_lock: held
+                held_asset_lock: held,
+                retryable: retryable
             )
         )
     }
@@ -415,22 +418,54 @@ final class ErrorHandlingTests: XCTestCase {
         let price = PlatformWalletError(
             code: .errorDocumentPriceChanged,
             message: #"{"documentId":"doc","expected":10,"actual":12}"#,
-            payment: PlatformPaymentClass(delivery: .maybeSent)
+            payment: .maybeSent
         )
         XCTAssertEqual(price.delivery, .maybeSent)
         let credits = PlatformWalletError(
             code: .errorInsufficientIdentityCredits,
             message: #"{"identityId":"identity","required":101,"available":100}"#,
-            payment: PlatformPaymentClass(delivery: .maybeSent)
+            payment: .maybeSent
         )
         XCTAssertEqual(credits.delivery, .maybeSent)
         let rejected = PlatformWalletError(
             code: .errorUnknown,
             message: "refused",
             consensus: PlatformConsensusError(code: 40722, kind: .state),
-            payment: PlatformPaymentClass(delivery: .maybeSent)
+            payment: .maybeSent
         )
         XCTAssertEqual(rejected.delivery, .maybeSent)
+    }
+
+    /// The retry is the result's own: Swift reads it and decides nothing from
+    /// the case or the class.
+    func testShouldReadTheRetryFromTheResult() {
+        let held = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD,
+                held: Self.heldOutPoint,
+                retryable: true
+            )
+        )
+        XCTAssertTrue(held.isRetryable)
+        let notSent = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT,
+                retryable: true
+            )
+        )
+        XCTAssertTrue(notSent.isRetryable)
+        let refused = PlatformWalletError(
+            result: Self.result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+            )
+        )
+        XCTAssertFalse(refused.isRetryable)
+        // Unclassified: never retried automatically.
+        XCTAssertFalse(PlatformWalletError.shieldedBroadcastFailed("refused").isRetryable)
+        XCTAssertFalse(PlatformWalletError.walletOperation("guard").isRetryable)
     }
 
     /// No class is ever derived from a code: a case that never carries one

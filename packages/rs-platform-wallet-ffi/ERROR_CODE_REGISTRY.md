@@ -79,7 +79,8 @@ branch's diff.
 ## Payment delivery: retry, wait or resume
 
 Every `PlatformWalletFFIResult` carries `payment_delivery`
-(`PlatformWalletFFIPaymentDelivery`) and `held_asset_lock` (`OutPointFFI`):
+(`PlatformWalletFFIPaymentDelivery`), `held_asset_lock` (`OutPointFFI`) and
+`retryable` (`bool`):
 
 | `payment_delivery` | Meaning | Host action |
 |---|---|---|
@@ -101,16 +102,23 @@ arm that folds a payment's error into a shared code
 (`PlatformWalletFFIResult::err`) is `Unknown`: the FFI never derives a class
 from a code.
 
-**Hosts decide "retry", "wait" or "resume" from this field, never from lists
-of codes.** Kotlin exposes it as `DashSdkError.delivery` and
-`DashSdkError.heldAssetLock`, and reads `isRetryable` from it alone for
-platform-wallet errors (`NotSent`: the error's kind decides; `MaybeSent` or no
-class: `false`; `LockHeld`: `true`, the retry being a resume of the held
-lock). Swift exposes `PlatformWalletError.delivery`
+`retryable` is the wallet's own retry decision
+(`PlatformWalletError::is_retryable`, next to `payment_delivery`): never under
+`MaybeSent`, always under `LockHeld` (the retry is a resume of
+`held_asset_lock`), and under `NotSent` only for the failures the same call
+can get past by running again (no recorded anchor yet, a shielded broadcast
+refused before sending, a drain out of budget, an unfinished private-contact
+store read, a transient persister). `false` on success and under `Unknown`.
+
+**Hosts read these fields; they never derive them from lists of codes or from
+each other.** Kotlin exposes them as `DashSdkError.delivery`,
+`DashSdkError.heldAssetLock` and `isRetryable` (the result's `retryable`
+alone, for platform-wallet errors). Swift exposes `PlatformWalletError.delivery`
 (`PlatformPaymentDelivery.lockHeld(AssetLockBuiltOutPoint)` for a held lock):
 every case a `MaybeSent` or `LockHeld` wallet error can reach carries the
-result's own class (`payment: PlatformPaymentClass?`); every other case is
-`nil`, unclassified, which a host never retries automatically.
+result's own class and retry (`payment: PlatformPaymentClass?`, read through
+`delivery` and `isRetryable`); every other case is `nil`, unclassified, which a
+host never retries automatically.
 
 The held-lock errors are `FinalityTimeout` (folded into code 6 or 99),
 `AssetLockInputContested` (48) and `AssetLockRecipientMismatch` (61, resumed
@@ -121,7 +129,7 @@ on the network but name none this payment can resume (`AssetLockAlreadyConsumed`
 is `MaybeSent`: a nonce verdict no proof backs can follow an earlier dispatch
 that landed, so a re-fetch and re-sign may pay twice.
 
-**ABI:** `payment_delivery` and `held_asset_lock` were added to a struct every
+**ABI:** `payment_delivery`, `held_asset_lock` and `retryable` were added to a struct every
 export returns by value, which changes its size: a C ABI break. Hosts rebuild
 against the new header together with the library.
 
