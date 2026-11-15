@@ -219,6 +219,48 @@ class FfiSmokeTest {
     }
 
     /**
+     * Each asset-lock sidecar capability (bits 13, 14 and 17) is attested
+     * only for a bridge that declares it AND overrides both the persist and
+     * the load of its pair (`overrides_sidecar` in rs-unified-sdk-jni): an
+     * inherited no-op persist would acknowledge a value it never kept, an
+     * inherited load would restore every lock without it. The Room handler
+     * attests all three.
+     */
+    @Test
+    fun assetLockSidecarCapabilitiesNeedBothOverridesOfTheirPair() {
+        NativeLoader.ensureLoaded()
+        val operation = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+        val shielded = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+        val identity = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
+        fun effective(bridge: NativePersistenceBridge): Long =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and
+                (operation or shielded or identity)
+
+        assertEquals("every pair", operation or shielded or identity, effective(SidecarBridge.Full()))
+        assertEquals("identity persist only", 0L, effective(SidecarBridge.IdentityPersistOnly()))
+        assertEquals("identity load only", 0L, effective(SidecarBridge.IdentityLoadOnly()))
+        assertEquals("operation pair only", operation, effective(SidecarBridge.OperationPairOnly()))
+        assertEquals(
+            "every pair, not declared",
+            0L,
+            effective(object : SidecarBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = ATOMIC_CHANGESETS
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            assertEquals(
+                "the Room handler",
+                operation or shielded or identity,
+                effective(PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)),
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
@@ -414,6 +456,79 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
             arrayOf(ByteArray(0), ByteArray(0))
     }
 }
+
+/**
+ * Bridges declaring the three asset-lock sidecar capabilities with some of
+ * the overrides each depends on, for
+ * [FfiSmokeTest.assetLockSidecarCapabilitiesNeedBothOverridesOfTheirPair].
+ * Each concrete class declares exactly the overrides its name says.
+ */
+private abstract class SidecarBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        ATOMIC_CHANGESETS or WALLET_RESTORE or TRACKED_ASSET_LOCKS or
+            CAPABILITY_ASSET_LOCK_OPERATION_IDS or
+            CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or
+            CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
+
+    open class Full : SidecarBridge() {
+        override fun onPersistAssetLockOperationId(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            operationId: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+
+        override fun onPersistAssetLockIdentityRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            identityId: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockIdentityRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class IdentityPersistOnly : SidecarBridge() {
+        override fun onPersistAssetLockIdentityRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            identityId: ByteArray,
+        ): Int = 0
+    }
+
+    class IdentityLoadOnly : SidecarBridge() {
+        override fun onLoadAssetLockIdentityRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class OperationPairOnly : SidecarBridge() {
+        override fun onPersistAssetLockOperationId(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            operationId: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
+    }
+}
+
+/** `PersistenceCapabilities::WALLET_RESTORE` (bit 7). */
+private const val WALLET_RESTORE: Long = 1L shl 7
+
+/** `PersistenceCapabilities::TRACKED_ASSET_LOCKS` (bit 9). */
+private const val TRACKED_ASSET_LOCKS: Long = 1L shl 9
 
 /** `PersistenceCapabilities::ATOMIC_CHANGESETS` (bit 0). */
 private const val ATOMIC_CHANGESETS: Long = 1L

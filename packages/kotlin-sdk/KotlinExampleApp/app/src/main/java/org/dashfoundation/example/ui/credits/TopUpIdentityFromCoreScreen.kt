@@ -41,6 +41,7 @@ import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.hexToBytes
+import org.dashfoundation.example.util.toHex
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
 
@@ -61,6 +62,17 @@ import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
  *
  * Amount is entered in **duffs** (Dash * 1e8), matching the create-identity
  * screen's `amountText`.
+ *
+ * A resume goes through
+ * [org.dashfoundation.dashsdk.credits.IdentityCredits.resumeTopUpToRecordedRecipient]
+ * (`platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`):
+ * the lock pays the identity it is for — a bound lock this identity, an
+ * unbound lock the identity its row recorded, possibly someone else's — and
+ * never the identity this screen shows by default. Unbound locks Rust reports
+ * as unassigned (`TrackedAssetLock.identityRecipientUnassigned`) are listed
+ * apart with an "assign identity" action
+ * ([org.dashfoundation.dashsdk.credits.IdentityCredits.assignTopUpRecipient]);
+ * once assigned they resume like any other (dashpay/platform#5924).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,24 +95,33 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
     var recoveryLocks by remember { mutableStateOf(emptyList<TrackedAssetLock>()) }
     var selectedRecoveryLock by remember { mutableStateOf<TrackedAssetLock?>(null) }
     var recoveryLoadError by remember { mutableStateOf<String?>(null) }
+    var unassignedLocks by remember { mutableStateOf(emptyList<TrackedAssetLock>()) }
+    var selectedUnassignedLock by remember { mutableStateOf<TrackedAssetLock?>(null) }
+    var assignIdentityHex by rememberSaveable(identityIdHex) { mutableStateOf(identityIdHex) }
+    var isAssigning by remember { mutableStateOf(false) }
+    var paidIdentityHex by remember { mutableStateOf<String?>(null) }
+    // Bumped after an assignment so the tracked-lock snapshot is re-read.
+    var reloadKey by remember { mutableStateOf(0) }
 
-    LaunchedEffect(manager, wallet, identity?.identityIndex, mode) {
+    LaunchedEffect(manager, wallet, identity?.identityIndex, mode, reloadKey) {
         recoveryLoadError = null
-        recoveryLocks = try {
+        val rows = try {
             val mgr = manager
             val currentWallet = wallet
-            val currentIdentityIndex = identity?.identityIndex
-            if (mgr == null || currentWallet == null || currentIdentityIndex == null) emptyList() else {
-                IdentityAssetLockRecovery.topUps(
-                    mgr.trackedIdentityRecoveryAssetLocks(currentWallet.walletId),
-                    currentIdentityIndex,
-                )
+            if (mgr == null || currentWallet == null) emptyList() else {
+                mgr.trackedIdentityRecoveryAssetLocks(currentWallet.walletId)
             }
         } catch (e: Exception) {
             recoveryLoadError = e.message ?: "Failed to load tracked identity top-up locks"
             emptyList()
         }
+        val currentIdentityIndex = identity?.identityIndex
+        recoveryLocks = if (currentIdentityIndex == null) emptyList() else {
+            IdentityAssetLockRecovery.topUps(rows, currentIdentityIndex)
+        }
+        unassignedLocks = IdentityAssetLockRecovery.unassignedTopUps(rows)
         selectedRecoveryLock = recoveryLocks.firstOrNull()
+        selectedUnassignedLock = unassignedLocks.firstOrNull()
     }
 
     val amount = amountText.toLongOrNull()
@@ -134,6 +155,9 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                 LabeledContent("Identity", identity?.mainDpnsName ?: identityIdHex.take(16) + "…")
                 LabeledContent("Current balance", "${identity?.balance ?: 0} credits")
                 newBalance?.let { LabeledContent("New balance", "$it credits") }
+                paidIdentityHex?.takeIf { it != identityIdHex }?.let {
+                    LabeledContent("Paid identity", it.take(16) + "…")
+                }
             }
 
             FormSection(title = "Funding") {
@@ -170,9 +194,40 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                             onSelected = { selectedRecoveryLock = it },
                         )
                         Text(
-                            "Resumes this exact outpoint. No replacement funding transaction is built.",
+                            "Resumes this exact outpoint to the identity the lock pays. " +
+                                "No replacement funding transaction is built.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (unassignedLocks.isNotEmpty()) {
+                        UnassignedTopUpLocks(
+                            locks = unassignedLocks,
+                            selected = selectedUnassignedLock ?: unassignedLocks.first(),
+                            onSelected = { selectedUnassignedLock = it },
+                            identityHex = assignIdentityHex,
+                            onIdentityHexChange = { assignIdentityHex = it },
+                            isAssigning = isAssigning,
+                            onAssign = assign@{
+                                val mgr = manager ?: return@assign
+                                val w = wallet ?: return@assign
+                                val lock = selectedUnassignedLock ?: unassignedLocks.first()
+                                isAssigning = true
+                                scope.launch {
+                                    try {
+                                        mgr.identityCredits.assignTopUpRecipient(
+                                            walletHandle = w.handle,
+                                            lock = lock,
+                                            identityId = assignIdentityHex.hexToBytes(),
+                                        )
+                                        reloadKey++
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "Assigning the identity failed"
+                                    } finally {
+                                        isAssigning = false
+                                    }
+                                }
+                            },
                         )
                     }
                 } else {
@@ -210,14 +265,15 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                         val balance = if (mode == TopUpCoreMode.EXISTING_LOCK) {
                             val lock = selectedRecoveryLock
                                 ?: error("No resumable identity top-up lock is selected")
-                            IdentityAssetLockRecovery.submitTopUpResume(lock) {
-                                mgr.identityCredits.resumeTopUpWithExistingAssetLock(
+                            val paid = IdentityAssetLockRecovery.submitTopUpResume(lock) {
+                                mgr.identityCredits.resumeTopUpToRecordedRecipient(
                                     walletHandle = w.handle,
-                                    identityId = idBytes,
                                     lock = it,
                                     coreSignerHandle = mgr.mnemonicResolverHandle,
                                 )
                             }
+                            paidIdentityHex = paid.identityId.toHex()
+                            paid.newBalance
                         } else {
                             mgr.identityCredits.topUpFromCore(
                                 walletHandle = w.handle,
@@ -241,6 +297,60 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
+
+/**
+ * Unbound top-up locks that record no identity: Rust refuses to resume them
+ * until the user assigns the identity they pay, which is permanent. The id is
+ * entered as hex and defaults to the screen's identity.
+ */
+@Composable
+private fun UnassignedTopUpLocks(
+    locks: List<TrackedAssetLock>,
+    selected: TrackedAssetLock,
+    onSelected: (TrackedAssetLock) -> Unit,
+    identityHex: String,
+    onIdentityHexChange: (String) -> Unit,
+    isAssigning: Boolean,
+    onAssign: () -> Unit,
+) {
+    Text(
+        "Unassigned top-up locks",
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.testTag("topUpIdentityFromCore.unassigned.header"),
+    )
+    Text(
+        "These locks were rebuilt from the chain and do not record which identity they top up. " +
+            "Assign one (permanently) before resuming it.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    AccessiblePicker(
+        label = "Unassigned asset lock",
+        options = locks,
+        selected = selected,
+        optionLabel = IdentityAssetLockRecovery::label,
+        testTag = "topUpIdentityFromCore.unassigned.outpoint",
+        onSelected = onSelected,
+    )
+    OutlinedTextField(
+        value = identityHex,
+        onValueChange = { onIdentityHexChange(it.trim().lowercase()) },
+        label = { Text("Identity id (hex)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().testTag("topUpIdentityFromCore.unassigned.identity"),
+    )
+    SubmitButton(
+        text = "Assign identity",
+        isLoading = isAssigning,
+        enabled = !isAssigning && isIdentityIdHex(identityHex),
+        modifier = Modifier.fillMaxWidth().testTag("topUpIdentityFromCore.unassigned.assign"),
+        onClick = onAssign,
+    )
+}
+
+/** A 32-byte identity id as 64 hex characters. */
+internal fun isIdentityIdHex(value: String): Boolean =
+    value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
 
 private enum class TopUpCoreMode(val label: String) {
     NEW_LOCK("Build new asset lock"),

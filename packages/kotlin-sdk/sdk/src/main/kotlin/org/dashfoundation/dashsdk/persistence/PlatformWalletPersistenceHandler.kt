@@ -157,7 +157,10 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
-            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            CAPABILITY_ASSET_LOCK_OPERATION_IDS or
+            CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or
+            CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -2417,13 +2420,20 @@ class PlatformWalletPersistenceHandler(
             // (PlatformWalletPersistenceHandler.swift:270). All other
             // transitions stay last-write-wins because non-terminal
             // statuses legitimately move both ways.
+            //
+            // DrainCompleted (6) is the stronger terminal state — a proven
+            // drain consumption — and only another DrainCompleted write may
+            // touch it; a Consumed row may still advance to it. Same rule as
+            // the SQLite store's lifecycle-blob guard and Swift's.
             val incomingStatus = status.toInt() and 0xFF
-            if (existing != null &&
-                existing.statusRaw == ASSET_LOCK_STATUS_CONSUMED &&
-                incomingStatus != ASSET_LOCK_STATUS_CONSUMED
-            ) {
+            if (existing != null && supersedesTerminal(existing.statusRaw, incomingStatus)) {
                 return@stage
             }
+            // The sidecars (operation UUID, recorded recipients) arrive through
+            // their own callbacks after this upsert; a later upsert of the same
+            // row must carry them forward, never clear them (the immutability
+            // triggers would refuse it). Keyed by outpoint, as Swift's is.
+            val carried = existing
             db.assetLockDao().upsert(
                 AssetLockEntity(
                     outPointHex = outPointHex,
@@ -2437,6 +2447,9 @@ class PlatformWalletPersistenceHandler(
                     proofBytes = proofBytes,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
+                    operationId = carried?.operationId,
+                    shieldedRecipientRaw43 = carried?.shieldedRecipientRaw43,
+                    identityRecipientId = carried?.identityRecipientId,
                 ),
             )
             // Spend-visibility reconcile: an asset-lock tx burns its value
@@ -2469,6 +2482,168 @@ class PlatformWalletPersistenceHandler(
             db.assetLockDao().deleteByOutPointHex(encodeOutPointHex(outPoint))
         }
         0
+    }
+
+    // ── Asset-lock sidecars ───────────────────────────────────────────
+    //
+    // Ports of `PlatformWalletPersistenceHandler.swift`'s
+    // `persistAssetLockOperationId` / `persistAssetLockShieldedRecipient` /
+    // `loadAssetLockShieldedRecipient` / `loadAssetLockOperationId`, plus the
+    // identity-recipient pair native added for dashpay/platform#5924 (see the
+    // `PersistAssetLock*Fn` / `LoadAssetLock*Fn` typedefs in
+    // `packages/rs-platform-wallet-ffi/src/persistence.rs`).
+
+    override fun onPersistAssetLockOperationId(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        operationId: ByteArray,
+    ): Int = persistAssetLockSidecar(walletId, outPoint, operationId, AssetLockSidecar.OPERATION_ID)
+
+    override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadAssetLockSidecar(walletId, outPoint, AssetLockSidecar.OPERATION_ID)
+
+    override fun onPersistAssetLockShieldedRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipientRaw43: ByteArray,
+    ): Int = persistAssetLockSidecar(
+        walletId,
+        outPoint,
+        recipientRaw43,
+        AssetLockSidecar.SHIELDED_RECIPIENT,
+    )
+
+    override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadAssetLockSidecar(walletId, outPoint, AssetLockSidecar.SHIELDED_RECIPIENT)
+
+    override fun onPersistAssetLockIdentityRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        identityId: ByteArray,
+    ): Int = persistAssetLockSidecar(
+        walletId,
+        outPoint,
+        identityId,
+        AssetLockSidecar.IDENTITY_RECIPIENT,
+    )
+
+    override fun onLoadAssetLockIdentityRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadAssetLockSidecar(walletId, outPoint, AssetLockSidecar.IDENTITY_RECIPIENT)
+
+    /**
+     * Record [value] as [sidecar] of the asset lock at [outPoint], in the open
+     * round, after that round's upsert of the row (native fires the sidecars
+     * after the legacy upsert in the same changeset). Outside a round it is
+     * refused, as Swift refuses it (`requiresChangeset`): the association must
+     * commit with the row it belongs to.
+     *
+     * The value is immutable once stored, as the SQLite triggers make it: the
+     * same value again is accepted, a different one is refused. It is checked
+     * here against the committed row, so the callback's own return reports
+     * the refusal ([NativePersistenceBridge.PERSIST_RC_CONSTRAINT]), and again
+     * in the staged write against the row as the round left it, which throws
+     * and fails the commit. An operation UUID another row of the wallet holds
+     * is refused the same way. A row that does not exist when the round
+     * commits fails it too: an association with nothing would be lost.
+     */
+    private fun persistAssetLockSidecar(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        value: ByteArray,
+        sidecar: AssetLockSidecar,
+    ): Int = guarded {
+        if (walletId.size != 32 || outPoint.size != 36 || value.size != sidecar.size) {
+            Log.e(TAG, "asset-lock ${sidecar.label}: malformed callback arguments")
+            return@guarded NativePersistenceBridge.PERSIST_RC_CONSTRAINT
+        }
+        val round = openRound(walletId)
+        if (round == null) {
+            Log.e(TAG, "asset-lock ${sidecar.label} delivered outside a changeset round")
+            return@guarded 1
+        }
+        val outPointHex = encodeOutPointHex(outPoint)
+        val stored = value.copyOf()
+        val committed = runBlockingResult {
+            val dao = database.assetLockDao()
+            val row = dao.getByWalletAndOutPointHex(walletId, outPointHex)
+            val conflicting = row != null && sidecar.conflicts(row, stored)
+            val duplicate = sidecar == AssetLockSidecar.OPERATION_ID &&
+                dao.countOtherRowsWithOperationId(walletId, stored, outPointHex) > 0
+            !conflicting && !duplicate
+        }
+        if (!committed) {
+            Log.e(TAG, "asset-lock ${sidecar.label} for $outPointHex conflicts with the stored value")
+            return@guarded NativePersistenceBridge.PERSIST_RC_CONSTRAINT
+        }
+        round.ops.add { db ->
+            val dao = db.assetLockDao()
+            val row = checkNotNull(dao.getByWalletAndOutPointHex(walletId, outPointHex)) {
+                "asset-lock ${sidecar.label}: no row for $outPointHex"
+            }
+            check(!sidecar.conflicts(row, stored)) {
+                "asset lock ${sidecar.label} cannot change ($outPointHex)"
+            }
+            if (sidecar.read(row) == null) {
+                dao.upsert(sidecar.write(row, stored))
+            }
+        }
+        0
+    }
+
+    /**
+     * The [sidecar] stored for the asset lock at [outPoint], or null when the
+     * row records none. A missing row or a stored value of the wrong size
+     * throws, which fails the native load: it must not read as a lock built
+     * without one (Swift `missingRecord` / `malformedRecord`).
+     */
+    private fun loadAssetLockSidecar(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        sidecar: AssetLockSidecar,
+    ): ByteArray? = loadOrThrow {
+        require(outPoint.size == 36) { "outpoint must be 36 bytes, got ${outPoint.size}" }
+        val outPointHex = encodeOutPointHex(outPoint)
+        val row = runBlockingResult {
+            database.assetLockDao().getByWalletAndOutPointHex(walletId, outPointHex)
+        }
+        checkNotNull(row) { "asset-lock ${sidecar.label}: no row for $outPointHex" }
+        sidecar.read(row)?.also { value ->
+            check(value.size == sidecar.size) {
+                "asset-lock ${sidecar.label} for $outPointHex is ${value.size} bytes, not ${sidecar.size}"
+            }
+        }?.copyOf()
+    }
+
+    /** One immutable `asset_locks` sidecar column and its fixed width. */
+    private enum class AssetLockSidecar(
+        val label: String,
+        val size: Int,
+        val read: (AssetLockEntity) -> ByteArray?,
+        val write: (AssetLockEntity, ByteArray) -> AssetLockEntity,
+    ) {
+        OPERATION_ID(
+            "operation ID",
+            NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE,
+            { it.operationId },
+            { row, value -> row.copy(operationId = value) },
+        ),
+        SHIELDED_RECIPIENT(
+            "shielded recipient",
+            NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE,
+            { it.shieldedRecipientRaw43 },
+            { row, value -> row.copy(shieldedRecipientRaw43 = value) },
+        ),
+        IDENTITY_RECIPIENT(
+            "identity recipient",
+            NativePersistenceBridge.ASSET_LOCK_IDENTITY_RECIPIENT_SIZE,
+            { it.identityRecipientId },
+            { row, value -> row.copy(identityRecipientId = value) },
+        ),
+        ;
+
+        /** Whether [row] already records a value other than [value]. */
+        fun conflicts(row: AssetLockEntity, value: ByteArray): Boolean =
+            read(row)?.contentEquals(value) == false
     }
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
@@ -4211,6 +4386,15 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
+        internal const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+
+        internal const val CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+
+        internal const val CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
+
         private const val TAG = "DashPersistence"
 
         /**
@@ -4250,6 +4434,26 @@ class PlatformWalletPersistenceHandler(
 
         /** `AssetLockStatus::Consumed` — the terminal lifecycle state. */
         private const val ASSET_LOCK_STATUS_CONSUMED = 4
+
+        /**
+         * `AssetLockStatus::DrainCompleted` — a proven drain consumption, the
+         * stronger terminal state: both project to SQLite's `consumed`.
+         */
+        private const val ASSET_LOCK_STATUS_DRAIN_COMPLETED = 6
+
+        /**
+         * Whether an upsert carrying [incoming] must leave a row at [stored]
+         * untouched: a DrainCompleted row takes only another DrainCompleted
+         * write, and a Consumed row only a terminal one. Mirrors Swift
+         * `persistAssetLocks` and the SQLite store's upsert guard.
+         */
+        internal fun supersedesTerminal(stored: Int, incoming: Int): Boolean =
+            (stored == ASSET_LOCK_STATUS_DRAIN_COMPLETED && incoming != ASSET_LOCK_STATUS_DRAIN_COMPLETED) ||
+                (
+                    stored == ASSET_LOCK_STATUS_CONSUMED &&
+                        incoming != ASSET_LOCK_STATUS_CONSUMED &&
+                        incoming != ASSET_LOCK_STATUS_DRAIN_COMPLETED
+                    )
 
         private val HEX = "0123456789abcdef".toCharArray()
     }

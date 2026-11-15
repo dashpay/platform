@@ -166,6 +166,25 @@ interface AssetLockDao {
     )
     suspend fun fundingTypeForTxid(txidHex: String): Int?
 
+    /** The row of [walletId] at [outPointHex], for the sidecar persist and load callbacks. */
+    @Query("SELECT * FROM asset_locks WHERE walletId = :walletId AND outPointHex = :outPointHex")
+    suspend fun getByWalletAndOutPointHex(walletId: ByteArray, outPointHex: String): AssetLockEntity?
+
+    /**
+     * Whether another row of [walletId] already records [operationId]: the
+     * `(walletId, operationId)` uniqueness the index enforces, checked first so
+     * the persist callback can refuse it as a constraint violation.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM asset_locks WHERE walletId = :walletId " +
+            "AND operationId = :operationId AND outPointHex != :outPointHex"
+    )
+    suspend fun countOtherRowsWithOperationId(
+        walletId: ByteArray,
+        operationId: ByteArray,
+        outPointHex: String,
+    ): Int
+
     @Upsert
     suspend fun upsert(assetLock: AssetLockEntity)
 
@@ -174,16 +193,17 @@ interface AssetLockDao {
 
     /**
      * Asset-lock removal path (`onPersistAssetLockRemoval`). The
-     * `statusRaw != 4` guard is the same terminal rule SQLite's DELETE
-     * (`status != 'consumed'`) and Swift's `statusRaw == 4` skip apply: a
-     * Consumed row is deliberately retained for historical lookup, and
+     * `statusRaw NOT IN (4, 6)` guard is the same terminal rule SQLite's DELETE
+     * (`status != 'consumed'`, which both terminal statuses project to) and
+     * Swift's `statusRaw == 4 || statusRaw == 6` skip apply: a Consumed or
+     * DrainCompleted row is deliberately retained for historical lookup, and
      * neither removal producer can legitimately name one — a Built row
      * rejected at broadcast never got that far, and a sweep of the funding
      * transaction only tombstones entries still tracked, which a consumed
      * lock no longer is — so a removal reaching a consumed row is by
      * construction a stale write.
      */
-    @Query("DELETE FROM asset_locks WHERE outPointHex = :outPointHex AND statusRaw != 4")
+    @Query("DELETE FROM asset_locks WHERE outPointHex = :outPointHex AND statusRaw NOT IN (4, 6)")
     suspend fun deleteByOutPointHex(outPointHex: String)
 
     /** Wallet teardown mirror of `deleteWalletData`'s asset-lock pass. */

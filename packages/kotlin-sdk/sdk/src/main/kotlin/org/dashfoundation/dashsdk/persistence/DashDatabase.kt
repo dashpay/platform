@@ -190,9 +190,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `onLoadPrivateContactScanState`, so a relaunch resumes the private contact
  * request sync where it stopped. Empty after the migration: the first sync
  * reads the store from its start, as every sync did before.
+ *
+ * Version 17 (asset-lock sidecars, dashpay/platform#5924): adds the nullable
+ * `asset_locks.operationId` (16 bytes), `asset_locks.shieldedRecipientRaw43`
+ * (43 bytes) and `asset_locks.identityRecipientId` (32 bytes) columns that the
+ * SQLite store keeps since its V019–V021 migrations and Swift keeps on
+ * `PersistentAssetLock`, the unique `(walletId, operationId)` index, and the
+ * three `asset_locks_*_immutable` triggers ([createAssetLockSidecarTriggers]).
+ * NULL for every pre-existing row, which reads back as a lock built without a
+ * UUID or a recorded recipient, as it was.
  */
 @Database(
-    version = 16,
+    version = 17,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -753,6 +762,59 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v16 -> v17: the three asset-lock sidecar columns, their unique
+         * operation-id index and immutability triggers, see the version-17
+         * class doc above. NULL for every pre-existing row.
+         */
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `operationId` BLOB")
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `shieldedRecipientRaw43` BLOB")
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `identityRecipientId` BLOB")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_asset_locks_walletId_operationId` " +
+                        "ON `asset_locks` (`walletId`, `operationId`)",
+                )
+                createAssetLockSidecarTriggers(db)
+            }
+        }
+
+        /**
+         * The asset-lock sidecars are immutable once stored: an UPDATE that
+         * changes a non-NULL `operationId`, `shieldedRecipientRaw43` or
+         * `identityRecipientId` aborts. The same triggers the SQLite store
+         * creates in `V019__asset_lock_operation_id`,
+         * `V020__asset_lock_shielded_recipient` and
+         * `V021__asset_lock_identity_recipient`
+         * (packages/rs-platform-wallet-storage/migrations). The handler
+         * refuses a different value before it gets here; these stop any
+         * other writer. Room does not describe triggers in its schema, so
+         * they are created by [MIGRATION_16_17] for an upgraded database and
+         * by [sidecarTriggerCallback] for a new one.
+         */
+        internal fun createAssetLockSidecarTriggers(db: SupportSQLiteDatabase) {
+            for ((column, label) in listOf(
+                "operationId" to "operation ID",
+                "shieldedRecipientRaw43" to "shielded recipient",
+                "identityRecipientId" to "identity recipient",
+            )) {
+                db.execSQL(
+                    "CREATE TRIGGER IF NOT EXISTS `asset_locks_${column}_immutable` " +
+                        "BEFORE UPDATE OF `$column` ON `asset_locks` " +
+                        "WHEN OLD.`$column` IS NOT NULL AND NEW.`$column` IS NOT OLD.`$column` " +
+                        "BEGIN SELECT RAISE(ABORT, 'asset lock $label cannot change'); END",
+                )
+            }
+        }
+
+        /** Installs [createAssetLockSidecarTriggers] on a newly created database. */
+        private val sidecarTriggerCallback = object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                createAssetLockSidecarTriggers(db)
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -783,13 +845,16 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
+                    MIGRATION_16_17,
                 )
+                .addCallback(sidecarTriggerCallback)
                 .build()
 
         /** In-memory variant for tests. */
         fun createInMemory(context: Context): DashDatabase =
             Room.inMemoryDatabaseBuilder(context, DashDatabase::class.java)
                 .allowMainThreadQueries()
+                .addCallback(sidecarTriggerCallback)
                 .build()
     }
 }
