@@ -241,14 +241,12 @@ impl IdentityWallet {
             )
             .await?;
 
-        // Add the identity to the manager and enrich it.
+        // Add the identity to the manager and enrich it — only into this
+        // handle's wallet generation: the fetches above ran without the lock,
+        // and a wallet re-created under its id meanwhile must not receive it.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info_mut(&mut wm)?;
             if info.identity_manager.identity(&identity_id).is_none() {
                 // Stored below, with its verified keys, as one changeset.
                 info.identity_manager.add_identity_unstored(
@@ -296,11 +294,7 @@ impl IdentityWallet {
         match self.fetch_owned_dpns_names(identity_id, None).await {
             Ok((names, fetch)) => {
                 let mut wm = self.wallet_manager.write().await;
-                let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                    crate::error::PlatformWalletError::WalletNotFound(
-                        "Wallet info not found in wallet manager".to_string(),
-                    )
-                })?;
+                let info = self.current_wallet_info_mut(&mut wm)?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                     managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                 }

@@ -430,15 +430,34 @@ impl IdentityWallet {
     /// hold the key at the claimed index and still be one this wallet
     /// already records (a claim it made at another index): that is its own
     /// claim, not someone else's.
+    ///
+    /// "This wallet's claim" sends the host to load that identity through
+    /// this handle, so it is reported only while the handle's wallet is
+    /// still the one the manager holds: one removed, or re-created under its
+    /// id, while the claim ran is reported as not found instead.
     async fn claim_refusal(&self, error: InvitationError) -> PlatformWalletError {
-        match error {
+        let refusal = match error {
             InvitationError::AlreadyClaimed { identity_id }
                 if self.holds_identity(&identity_id).await =>
             {
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id }
             }
             error => error.into(),
+        };
+        match refusal {
+            PlatformWalletError::InvitationClaimedByThisWallet { .. }
+                if !self.is_current_generation().await =>
+            {
+                PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
+            }
+            refusal => refusal,
         }
+    }
+
+    /// This handle's wallet is still the one the manager holds under its id.
+    async fn is_current_generation(&self) -> bool {
+        let wm = self.wallet_manager.read().await;
+        self.current_wallet_and_info(&wm).is_some()
     }
 
     /// This wallet records `identity_id` as one of its own identities. A
@@ -1047,8 +1066,10 @@ mod tests {
 
         /// A handle whose wallet was removed and re-created under its id does
         /// not read the replacement's identities as its own claims: its
-        /// refusal stays "claimed by someone else" and whose claim it was is
-        /// unknown, while the replacement's own handle recognizes it.
+        /// refusal stays "claimed by someone else", whose claim it was is
+        /// unknown, and a claim the SDK found to be this wallet's is reported
+        /// as a missing wallet, while the replacement's own handle recognizes
+        /// it.
         #[tokio::test]
         async fn should_not_read_a_replacement_wallets_identities_through_a_stale_handle() {
             let (manager, old) = wallet_in_manager().await;
@@ -1074,6 +1095,23 @@ mod tests {
             assert!(matches!(
                 replacement
                     .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .await,
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
+            ));
+
+            // The SDK's own "claimed by this wallet" (the identity holds the
+            // master key at the claimed index) does not send the host to load
+            // it through the stale handle; the replacement's handle gets it.
+            assert!(matches!(
+                old.claim_refusal(InvitationError::ClaimedByThisWallet {
+                    identity_id: ours.id()
+                })
+                .await,
+                PlatformWalletError::WalletNotFound(_)
+            ));
+            assert!(matches!(
+                replacement
+                    .claim_refusal(InvitationError::ClaimedByThisWallet { identity_id: ours.id() })
                     .await,
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
             ));
