@@ -1588,6 +1588,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // wallet removed in between has none of its requests pushed
                 // to the network after it is gone.
                 let _lifecycle = self.generation.payment_guard().await;
+                // And the gate the hold on unrestored private payments is
+                // raised under, over the same span: the hold is not raised
+                // between the check that finds it down and the dispatch.
+                let _dispatching = self.persister.held_request_dispatch().await;
                 if self
                     .may_broadcast_held_public_request(sender, recipient, held.attempt)
                     .await
@@ -1655,11 +1659,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         attempt: u64,
     ) -> bool {
         let wm = self.wallet_manager.read().await;
-        // Read once the wallet is locked, with the rest of what decides, not
-        // before the wait for the lock: a hold raised during that wait is
-        // seen. One raised after this answer does not recall the broadcast
-        // that follows, as none recalls a first send between its claim and
-        // its broadcast.
+        // Read once the wallet is locked, with the rest of what decides. The
+        // caller holds the gate the hold is raised under
+        // (`WalletPersister::held_request_dispatch`) from before this read
+        // through its dispatch, so the hold is not raised in between.
         if self.persister.private_payments_unrestored() {
             return false;
         }

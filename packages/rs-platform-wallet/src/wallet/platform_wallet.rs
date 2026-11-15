@@ -3115,11 +3115,11 @@ impl PrivatePaymentRestore {
                 self.persister.private_payments_restored();
             }
             Ok(None) if self.restored_from_this_store() => {}
-            Ok(None) => self.persister.hold_until_private_payments_restored(),
+            Ok(None) => self.persister.hold_until_private_payments_restored().await,
             Err(error) => {
                 self.persister
                     .note_private_payment_restore(Some(error.to_string()));
-                self.persister.hold_until_private_payments_restored();
+                self.persister.hold_until_private_payments_restored().await;
             }
         }
         restored
