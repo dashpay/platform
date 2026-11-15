@@ -52,7 +52,7 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{PaymentDelivery, PlatformWalletError};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
@@ -753,7 +753,8 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// a definitive failure code: a panic can strike after the notes were reserved and even after the
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
-/// in place, and the next nullifier sync reconciles whether the spend landed.
+/// in place, and the next nullifier sync reconciles whether the spend landed. The result's
+/// payment class says the same: `MaybeSent`, not retryable.
 pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
@@ -761,6 +762,7 @@ pub(crate) fn catch_spend_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+        Some((PaymentDelivery::MaybeSent, false)),
         SPEND_PANIC_GUIDANCE,
         body,
     )
@@ -783,7 +785,8 @@ const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been br
 /// a plain id, not a drop-release guard, so the unwind does not free it and an immediate retry
 /// fails at input selection instead of double-spending), and the reservation TTL or a sync
 /// observing the transaction reconciles the outcome; a tracked lock is resumable through
-/// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`.
+/// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`. The result's payment class
+/// says the same: `MaybeSent`, not retryable.
 pub(crate) fn catch_funding_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
@@ -791,6 +794,7 @@ pub(crate) fn catch_funding_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        Some((PaymentDelivery::MaybeSent, false)),
         FUNDING_PANIC_GUIDANCE,
         body,
     )
@@ -2923,6 +2927,14 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
             "a panic must map to the ambiguous, do-not-retry code"
         );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent,
+            "a panic may come after the payment left, so it must not read as unclassified"
+        );
+        assert!(!result.retryable, "a panic must not invite a retry");
+        assert_eq!(result.held_asset_lock.vout, 0);
+        assert_eq!(result.held_asset_lock.txid, [0; 32]);
         let message = message_of(&result);
         assert!(
             message.contains("shielded shield to recipient panicked")
@@ -2952,6 +2964,14 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
             "a funding panic must map to the ambiguous, do-not-retry code"
         );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent,
+            "a panic may come after the payment left, so it must not read as unclassified"
+        );
+        assert!(!result.retryable, "a panic must not invite a retry");
+        assert_eq!(result.held_asset_lock.vout, 0);
+        assert_eq!(result.held_asset_lock.txid, [0; 32]);
         let message = message_of(&result);
         assert!(
             message.contains("shielded CoinJoin-drain fund-from-asset-lock panicked")

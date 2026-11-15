@@ -109,6 +109,7 @@ fn catch_wallet_drain_read_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
         "This read did not submit a transaction; retain any earlier pending operation.",
         body,
     )

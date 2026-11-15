@@ -1777,6 +1777,11 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// outcome is genuinely ambiguous and the code must never promise a definitive failure. See
 /// `shielded_send::catch_spend_panic` and the per-export call sites.
 ///
+/// `payment` is the payment class the panic result carries, chosen the same way: a payment
+/// export passes `Some((PaymentDelivery::MaybeSent, false))`, because its panic may come after
+/// a reservation or a broadcast; a read or another export that sends nothing passes `None` and
+/// keeps the [`PlatformWalletFFIPaymentDelivery::Unknown`] of [`PlatformWalletFFIResult::err`].
+///
 /// NOTE: this guard is only effective where panics unwind. The Android (`*-android`) and
 /// host/test profiles build with `panic = "unwind"`, so it works there; the iOS profiles
 /// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
@@ -1785,18 +1790,25 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 pub(crate) fn catch_panic_to_code(
     operation: &str,
     code: PlatformWalletFFIResultCode,
+    payment: Option<(PaymentDelivery, bool)>,
     guidance: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
         Ok(result) => result,
-        Err(payload) => PlatformWalletFFIResult::err(
-            code,
-            format!(
-                "{operation} panicked: {}. {guidance}",
-                panic_payload_message(payload.as_ref())
-            ),
-        ),
+        Err(payload) => {
+            let result = PlatformWalletFFIResult::err(
+                code,
+                format!(
+                    "{operation} panicked: {}. {guidance}",
+                    panic_payload_message(payload.as_ref())
+                ),
+            );
+            match payment {
+                Some(class) => result.with_payment_class(class),
+                None => result,
+            }
+        }
     }
 }
 
@@ -1814,6 +1826,53 @@ mod tests {
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use std::time::Duration;
+
+    /// A panic in a read or another export that sends nothing keeps the
+    /// unclassified result of `err`: no wallet error decided its class.
+    #[test]
+    fn catch_panic_to_code_without_a_class_reports_unknown() {
+        let result = catch_panic_to_code(
+            "read",
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            None,
+            "Nothing was sent.",
+            || panic!("read panicked"),
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::Unknown
+        );
+        assert!(!result.retryable);
+    }
+
+    /// A panic in a payment export carries the class its caller chose.
+    #[test]
+    fn catch_panic_to_code_with_a_class_stamps_it() {
+        let result = catch_panic_to_code(
+            "payment",
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            Some((PaymentDelivery::MaybeSent, false)),
+            "Do not retry.",
+            || panic!("payment panicked"),
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+        assert!(!result.retryable);
+        assert_eq!(result.held_asset_lock.txid, [0; 32]);
+        assert_eq!(result.held_asset_lock.vout, 0);
+    }
 
     #[test]
     fn ok_has_null_message() {
