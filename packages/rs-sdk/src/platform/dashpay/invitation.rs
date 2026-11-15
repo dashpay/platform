@@ -87,7 +87,7 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, Securi
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 
 use crate::core::FetchedCoreTransaction;
 use crate::platform::transition::asset_lock_submission::{
@@ -98,7 +98,7 @@ use crate::platform::transition::put_identity::PutIdentity;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::types::identity::PublicKeyHash;
 use crate::platform::Fetch;
-use crate::{Error, Sdk};
+use crate::{Error, ProtocolVersionInfo, Sdk};
 
 /// Hard cap on the amount an invitation can lock (0.26 DASH). The voucher is a
 /// bearer credential, so the blast radius of a leaked link is bounded here in
@@ -771,7 +771,51 @@ fn preflight_keys_map(keys_map: &BTreeMap<u32, IdentityPublicKey>) -> Result<(),
             key.id()
         )));
     }
+    // More keys than any protocol version this build knows lets an identity
+    // create carry are refused here, before a lookup is started for each:
+    // the network's version is known only after those lookups, and a version
+    // newer than this build is refused then anyway.
+    let most_keys = PLATFORM_VERSIONS
+        .iter()
+        .map(|version| {
+            version
+                .dpp
+                .state_transitions
+                .identities
+                .max_public_keys_in_creation
+        })
+        .max()
+        .unwrap_or_default() as usize;
+    if keys_map.len() > most_keys {
+        return Err(InvitationError::Invalid(format!(
+            "keys_map holds {} keys; an identity is created with at most {most_keys}",
+            keys_map.len()
+        )));
+    }
     Ok(())
+}
+
+/// The protocol version whose rules judge a claim's keys: the newer of the
+/// version this SDK builds operations with and the one the network signed in a
+/// verified answer, so neither an SDK that starts below its network nor one
+/// pinned below it judges by older rules. Refused when no verified answer
+/// showed the network's version, or when this build lacks its rules: the keys
+/// cannot be checked, and Platform refuses bad ones only after charging part
+/// of the voucher.
+fn claim_keys_platform_version(
+    info: &ProtocolVersionInfo,
+) -> Result<&'static PlatformVersion, InvitationError> {
+    let network = info.verified_version.ok_or_else(|| {
+        invalid("the network's protocol version was not verified, so the identity keys cannot be checked")
+    })?;
+    let version = network.max(info.effective_version);
+    PlatformVersion::get(version).map_err(|_| {
+        invalid(format!(
+            "the network runs protocol version {version}, newer than this SDK knows \
+             (up to {}), so the identity keys cannot be checked",
+            info.maximum_supported_version
+        ))
+    })
 }
 
 /// Refuse a key set that Platform's structural validation of an identity
@@ -1015,11 +1059,12 @@ impl Sdk {
         let master_key = &master_key;
 
         claim_unless_refused(preflight, || async move {
-            // Checked here, after the preflight: its lookups are proved, and
-            // each verified answer raises the SDK's protocol version to the
-            // network's, so the keys are judged by the rules Platform will
-            // apply rather than by the version an SDK starts with.
-            validate_claim_keys_structure(&keys_map, self.version())?;
+            // Checked here, after the preflight: its lookups are proved, so the
+            // network's signed protocol version is known, and the keys are
+            // judged by the rules Platform will apply rather than by the
+            // version an SDK starts with or is pinned to.
+            let rules = claim_keys_platform_version(&self.protocol_version_info())?;
+            validate_claim_keys_structure(&keys_map, rules)?;
 
             // The voucher key signs the asset lock's outer ST signature (ECDSA
             // over the credit-output pubkey hash), scrubbed on every exit path
@@ -2460,6 +2505,33 @@ mod tests {
         assert!(preflight_keys_map(&our_keys()).is_ok());
     }
 
+    /// A keys map larger than any known protocol version lets an identity
+    /// create carry is refused before a lookup is started for each key; one
+    /// at the limit passes.
+    #[test]
+    fn should_refuse_more_keys_than_any_version_allows_before_the_lookups() {
+        let most = PLATFORM_VERSIONS
+            .iter()
+            .map(|v| {
+                v.dpp
+                    .state_transitions
+                    .identities
+                    .max_public_keys_in_creation
+            })
+            .max()
+            .expect("versions") as u32;
+        let mut keys = our_keys();
+        for id in 1..most {
+            keys.insert(id, test_key(id, id as u8 + 1));
+        }
+        assert!(preflight_keys_map(&keys).is_ok());
+        keys.insert(most, test_key(most, most as u8 + 1));
+        assert!(matches!(
+            preflight_keys_map(&keys),
+            Err(InvitationError::Invalid(_))
+        ));
+    }
+
     /// A key set Platform's structural validation refuses (here two keys with
     /// the same data, refused with 10500 after part of the voucher is charged)
     /// never leaves; a valid set passes.
@@ -2479,6 +2551,62 @@ mod tests {
             [(0, test_key(0, 1)), (1, high(1, 1))].into();
         assert!(matches!(
             validate_claim_keys_structure(&duplicate_data, platform_version),
+            Err(InvitationError::Invalid(_))
+        ));
+    }
+
+    /// The claim's keys are judged by the newer of the SDK's version and the
+    /// network's verified one, so an SDK started or pinned at an older version
+    /// still refuses keys the network's rules refuse. A hash key whose data is
+    /// not 20 bytes passes protocol version 13 and is refused by the latest.
+    /// Without a verified version, or with one this build has no rules for,
+    /// the keys cannot be checked and the claim is refused.
+    #[test]
+    fn should_judge_claim_keys_by_the_networks_verified_version() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::platform_value::BinaryData;
+
+        let latest = PlatformVersion::latest().protocol_version;
+        let info = |verified: Option<u32>, effective: u32| ProtocolVersionInfo {
+            verified_version: verified,
+            effective_version: effective,
+            maximum_supported_version: latest,
+            newer_protocol_available: verified.is_some_and(|v| v > latest),
+        };
+        let short_hash_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(vec![7; 19]),
+            disabled_at: None,
+        });
+        let keys: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 1)), (1, short_hash_key)].into();
+
+        let v13 = PlatformVersion::get(13).expect("v13");
+        assert!(validate_claim_keys_structure(&keys, v13).is_ok());
+
+        // Started or pinned at 13, network verified at the latest.
+        let rules = claim_keys_platform_version(&info(Some(latest), 13)).expect("known");
+        assert_eq!(rules.protocol_version, latest);
+        assert!(matches!(
+            validate_claim_keys_structure(&keys, rules),
+            Err(InvitationError::Invalid(_))
+        ));
+
+        // Pinned ahead of the network: its own, newer rules.
+        let rules = claim_keys_platform_version(&info(Some(13), latest)).expect("known");
+        assert_eq!(rules.protocol_version, latest);
+
+        assert!(matches!(
+            claim_keys_platform_version(&info(None, latest)),
+            Err(InvitationError::Invalid(_))
+        ));
+        assert!(matches!(
+            claim_keys_platform_version(&info(Some(latest + 1), 13)),
             Err(InvitationError::Invalid(_))
         ));
     }
@@ -3614,6 +3742,7 @@ mod tests {
         use crate::platform::types::identity::PublicKeyHash;
         use crate::SdkBuilder;
         use dapi_grpc::core::v0::{GetTransactionRequest, GetTransactionResponse};
+        use dapi_grpc::platform::v0::ResponseMetadata;
         use dpp::address_funds::AddressWitness;
         use dpp::dashcore::consensus::Encodable;
         use dpp::dashcore::{Network, OutPoint};
@@ -3624,6 +3753,7 @@ mod tests {
         use dpp::platform_value::BinaryData;
         use dpp::prelude::Identifier;
         use dpp::secp256k1::{PublicKey, SecretKey};
+        use dpp::version::PlatformVersion;
         use dpp::ProtocolError;
         use std::collections::BTreeMap;
 
@@ -3702,8 +3832,30 @@ mod tests {
             claim_with_keys(claim_keys(), by_id, by_hash).await
         }
 
-        /// [`claim`] with the given keys.
+        /// [`claim`] with the given keys, on a network whose verified answers
+        /// are signed at the latest protocol version.
         async fn claim_with_keys(
+            keys: BTreeMap<KeyID, IdentityPublicKey>,
+            by_id: impl FnOnce(Identifier) -> Option<Identity>,
+            by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
+        ) -> (Result<Identity, InvitationError>, Identifier) {
+            claim_on(
+                None,
+                Some(PlatformVersion::latest().protocol_version),
+                keys,
+                by_id,
+                by_hash,
+            )
+            .await
+        }
+
+        /// [`claim_with_keys`] with an SDK pinned to `pinned` (else unpinned),
+        /// on a network whose verified answers are signed at `network` (else
+        /// none was verified). The mock answers without proofs, so the
+        /// network's version is recorded as a verified answer would record it.
+        async fn claim_on(
+            pinned: Option<&'static PlatformVersion>,
+            network: Option<u32>,
             keys: BTreeMap<KeyID, IdentityPublicKey>,
             by_id: impl FnOnce(Identifier) -> Option<Identity>,
             by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
@@ -3716,10 +3868,21 @@ mod tests {
             tx.consensus_encode(&mut raw)
                 .expect("encode the funding tx");
 
-            let mut sdk = SdkBuilder::new_mock()
-                .with_network(Network::Testnet)
-                .build()
-                .expect("mock sdk");
+            let mut builder = SdkBuilder::new_mock().with_network(Network::Testnet);
+            if let Some(version) = pinned {
+                builder = builder.with_version(version);
+            }
+            let mut sdk = builder.build().expect("mock sdk");
+            if let Some(protocol_version) = network {
+                let metadata = ResponseMetadata {
+                    protocol_version,
+                    height: 1,
+                    time_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    ..Default::default()
+                };
+                sdk.accept_verified_metadata("test", &metadata, None)
+                    .expect("fresh metadata");
+            }
             sdk.mock()
                 .expect_request(
                     &GetTransactionRequest { id: txid.clone() },
@@ -3799,7 +3962,62 @@ mod tests {
             keys.get_mut(&1).expect("key 1").set_data(master_data);
             let (result, _) = claim_with_keys(keys, |_| None, |_, _| None).await;
             assert!(
-                matches!(&result, Err(InvitationError::Invalid(_))),
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("Platform would refuse these identity keys")),
+                "got {result:?}"
+            );
+        }
+
+        /// A master key with a budget passes protocol version 13's structural
+        /// validation and is refused by the latest. An SDK pinned to 13 on a
+        /// network that signed its answers at the latest still refuses it
+        /// before signing; on a network at 13 the claim goes on to the signer.
+        #[tokio::test]
+        async fn should_judge_keys_by_the_networks_version_on_a_pinned_sdk() {
+            use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+
+            let mut keys = claim_keys();
+            let IdentityPublicKey::V0(master) = keys[&0].clone() else {
+                panic!("claim_keys() builds V0 keys");
+            };
+            keys.insert(
+                0,
+                IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(
+                    master,
+                    Some(1_000),
+                    None,
+                )),
+            );
+            let v13 = PlatformVersion::get(13).expect("v13");
+            let latest = PlatformVersion::latest().protocol_version;
+
+            let (result, _) =
+                claim_on(Some(v13), Some(latest), keys.clone(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("Platform would refuse these identity keys")),
+                "got {result:?}"
+            );
+
+            let (result, _) = claim_on(Some(v13), Some(13), keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// Without a verified answer the network's protocol version is not
+        /// known, so the keys cannot be checked and nothing is signed.
+        #[tokio::test]
+        async fn should_refuse_when_the_networks_version_was_not_verified() {
+            let (result, _) = claim_on(None, None, claim_keys(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.contains("protocol version was not verified")),
                 "got {result:?}"
             );
         }
