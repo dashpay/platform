@@ -105,7 +105,7 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
             code: .errorDocumentPriceChanged,
             message: #"{"documentId":"doc","expected":10,"actual":12}"#
         )
-        guard case .priceChanged(let documentId, let expected, let actual) = price else {
+        guard case .priceChanged(let documentId, let expected, let actual, _) = price else {
             return XCTFail("Expected priceChanged, got \(price)")
         }
         XCTAssertEqual(documentId, "doc")
@@ -119,7 +119,8 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
         guard case .insufficientIdentityCredits(
             let identityId,
             let required,
-            let available
+            let available,
+            _
         ) = credits else {
             return XCTFail("Expected insufficientIdentityCredits, got \(credits)")
         }

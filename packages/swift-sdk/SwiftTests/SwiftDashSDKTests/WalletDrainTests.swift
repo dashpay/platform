@@ -49,7 +49,7 @@ final class WalletDrainTests: XCTestCase {
 
     func testShouldPreserveTypedInputCapRefusal() {
         let error = PlatformWalletError(code: .errorAssetLockTooManyInputs, message: "101 exceeds 100")
-        guard case .assetLockTooManyInputs(let detail) = error else {
+        guard case .assetLockTooManyInputs(let detail, _) = error else {
             return XCTFail("input-cap refusal lost its typed case")
         }
         XCTAssertEqual(detail, "101 exceeds 100")

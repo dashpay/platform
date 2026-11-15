@@ -64,16 +64,17 @@ branch's diff.
 6. **Blocks 98–99 are terminal sentinels** (`NotFound`, `ErrorUnknown`) and are
    not an allocation frontier. New codes go after the highest allocated value
    below them.
-7. **Give a new code its payment-delivery class** in
-   `PlatformWalletFFIResultCode::payment_delivery` (the match has no wildcard
-   arm, so the crate does not compile until you do), and a new
-   `PlatformWalletError` variant its class in
-   `PlatformWalletError::payment_delivery` (same guard). A code is `NotSent`
-   only when every failure it reports was raised before anything was
-   dispatched or proves nothing was sent; any doubt, or a code that failures
-   of both classes share, is `MaybeSent`. Swift's `PlatformWalletError` needs
-   the new case in `resultCode` as well. A variant that holds a tracked asset
-   lock the payment resumes is `LockHeld(out_point)`.
+7. **Give a new `PlatformWalletError` variant its payment-delivery class** in
+   `PlatformWalletError::payment_delivery` (the match has no wildcard arm, so
+   the crate does not compile until you do). A variant is `NotSent` only when
+   every failure it reports was raised before anything was dispatched or
+   proves nothing was sent; any doubt is `MaybeSent`; a variant that holds a
+   tracked asset lock the payment resumes is `LockHeld(out_point)`. Codes have
+   no class: an export that reports a payment's failure under a code of its
+   own choosing routes it through the wallet error
+   (`PlatformWalletFFIResult::err_from_wallet_error`, or the error's `From`).
+   When the new variant can be `MaybeSent` or `LockHeld`, its Swift case must
+   carry `payment: PlatformPaymentClass?`.
 
 ## Payment delivery: retry, wait or resume
 
@@ -86,6 +87,7 @@ Every `PlatformWalletFFIResult` carries `payment_delivery`
 | `NotSent` (1) | the failed payment never left the wallet | a retry may be offered |
 | `MaybeSent` (2) | the payment may have left the wallet | wait for sync, never offer a second payment |
 | `LockHeld` (3) | the payment holds the tracked asset lock in `held_asset_lock` | resume that lock, never fund a new one |
+| `Unknown` (4) | no wallet error classified the failure (an FFI-boundary refusal, or an export with no wallet error) | unclassified: never retry automatically |
 
 `held_asset_lock` is the outpoint the resume entry points take (raw txid in
 wire order, vout); it is all zero unless `payment_delivery` is `LockHeld`.
@@ -95,10 +97,9 @@ The class is the Rust wallet's (`PlatformWalletError::payment_delivery`;
 `From<PlatformWalletError>` conversion, by `map_spend_result`, and by every
 arm that folds a payment's error into a shared code
 (`PlatformWalletFFIResult::err_from_wallet_error`), so it survives a fold into
-`ErrorWalletOperation`. A result built from a code alone gets the class that
-code's failures share (`platform_wallet_ffi_result_code_payment_delivery`),
-which is never `NotSent` for a code that can report a payment that may have
-left, and never `LockHeld` (only an error names a lock).
+`ErrorWalletOperation`. A result built from a code alone
+(`PlatformWalletFFIResult::err`) is `Unknown`: the FFI never derives a class
+from a code.
 
 **Hosts decide "retry", "wait" or "resume" from this field, never from lists
 of codes.** Kotlin exposes it as `DashSdkError.delivery` and
@@ -107,10 +108,9 @@ platform-wallet errors (`NotSent`: the error's kind decides; `MaybeSent` or no
 class: `false`; `LockHeld`: `true`, the retry being a resume of the held
 lock). Swift exposes `PlatformWalletError.delivery`
 (`PlatformPaymentDelivery.lockHeld(AssetLockBuiltOutPoint)` for a held lock):
-the cases whose code folds several classes or can hold a lock
-(`walletOperation`, `unknown`, `assetLockInputContested`,
-`assetLockRecipientMismatch`) carry the result's own class; the others read
-their code's class, which is the same for every failure under it.
+every case a `MaybeSent` or `LockHeld` wallet error can reach carries the
+result's own class (`payment: PlatformPaymentClass?`); every other case is
+`nil`, unclassified, which a host never retries automatically.
 
 The held-lock errors are `FinalityTimeout` (folded into code 6 or 99),
 `AssetLockInputContested` (48) and `AssetLockRecipientMismatch` (61, resumed

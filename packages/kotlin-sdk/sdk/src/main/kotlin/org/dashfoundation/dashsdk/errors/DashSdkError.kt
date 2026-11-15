@@ -59,7 +59,8 @@ sealed class DashSdkError(
     /**
      * Whether the failed payment may have left the wallet, as the native
      * wallet classified it; `null` when the native layer reported no class
-     * (an rs-sdk-ffi error). Decide "retry" or "wait" from this rather than
+     * (an rs-sdk-ffi error, or a platform-wallet failure no wallet error
+     * classified): unclassified, never proven safe to retry. Decide "retry" or "wait" from this rather than
      * from the error's type.
      */
     val delivery: PaymentDelivery?

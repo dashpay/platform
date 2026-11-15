@@ -16,7 +16,7 @@ final class TopUpUnconfirmedErrorTests: XCTestCase {
                 message: strdup(detail)
             )
             XCTAssertThrowsError(try ffi.check()) { error in
-                guard case PlatformWalletError.transactionBroadcastUnconfirmed(let message) = error else {
+                guard case PlatformWalletError.transactionBroadcastUnconfirmed(let message, _) = error else {
                     return XCTFail("Expected typed unconfirmed result, got \(error)")
                 }
                 XCTAssertEqual(message, detail)

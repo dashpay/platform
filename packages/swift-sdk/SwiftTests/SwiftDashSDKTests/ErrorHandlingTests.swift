@@ -226,7 +226,7 @@ final class ErrorHandlingTests: XCTestCase {
             consensus: PlatformConsensusError(code: 40722, kind: .state)
         )
 
-        guard case .consensusRejection(let consensus, let message) = error else {
+        guard case .consensusRejection(let consensus, let message, _) = error else {
             return XCTFail("expected typed consensusRejection error, got \(error)")
         }
         XCTAssertEqual(consensus.code, 40722)
@@ -346,8 +346,8 @@ final class ErrorHandlingTests: XCTestCase {
         let notSentOperation = PlatformWalletError(
             result: Self.result(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT)
         )
-        guard case .walletOperation(_, delivery: .notSent) = notSentOperation else {
-            return XCTFail("expected walletOperation carrying notSent, got \(notSentOperation)")
+        guard case .walletOperation = notSentOperation else {
+            return XCTFail("expected walletOperation, got \(notSentOperation)")
         }
         XCTAssertEqual(notSentOperation.delivery, .notSent)
 
@@ -376,63 +376,90 @@ final class ErrorHandlingTests: XCTestCase {
         }
     }
 
-    /// The other cases read the class Rust gives their code, and the
-    /// catch-all cases a Swift guard throws itself say `.maybeSent`.
-    func testShouldTakeEachErrorsPaymentDeliveryFromRust() {
-        let cases: [(PlatformWalletError, PlatformPaymentDelivery)] = [
-            (.shieldedBroadcastFailed("refused"), .notSent),
-            (.shieldedNoRecordedAnchor("mid-block"), .notSent),
-            (.transactionBroadcastRejected("rejected"), .notSent),
-            (.shieldedSpendUnconfirmed("timeout"), .maybeSent),
-            (.transactionBroadcastUnconfirmed("timeout"), .maybeSent),
-            (.masternodeWithdrawalUnconfirmed("timeout"), .maybeSent),
-            (.walletOperation("folded"), .maybeSent),
-            (.unknown("folded"), .maybeSent),
-        ]
-        for (error, expected) in cases {
-            XCTAssertEqual(error.delivery, expected, "\(error)")
-        }
-    }
-
-    /// Every code an error is built from is the code it reports, so its
-    /// class is the one Rust gives that code.
-    func testShouldReportEveryErrorUnderTheCodeItWasBuiltFrom() {
-        let codes: [PlatformWalletResultCode] = [
-            .errorInvalidHandle, .errorInvalidParameter, .errorNullPointer,
-            .errorSerialization, .errorDeserialization, .errorWalletOperation,
-            .errorIdentityNotFound, .errorContactNotFound, .errorInvalidNetwork,
-            .errorInvalidIdentifier, .errorMemoryAllocation, .errorUtf8Conversion,
-            .errorArithmeticOverflow, .errorNoSelectableInputs, .errorWalletAlreadyExists,
-            .errorShieldedBroadcastFailed, .errorShieldedBroadcastUnconfirmed,
-            .errorShieldedSpendUnconfirmed, .errorShieldedNoRecordedAnchor,
-            .errorTransactionBroadcastUnconfirmed, .errorMasternodeWithdrawalUnconfirmed,
-            .errorMasternodeListUnavailable, .errorAddressNonceMismatch,
-            .errorCoreInsufficientFunds, .errorAssetLockNotTracked,
-            .errorAssetLockAlreadyConsumed, .errorAssetLockFundingMismatch,
-            .errorTransactionBroadcastRejected, .errorShutdownIncomplete,
-            .errorAssetLockInsufficientFunds, .errorSigningKeyUnavailable,
-            .errorStaleReservationToken, .errorReservationTokenConsumed,
-            .errorReservationWalletMismatch, .errorDocumentNotForSale,
-            .errorShieldedInsufficientBalance, .errorAssetLockInputConflict,
-            .errorAssetLockInputContested, .errorPersisterLoadTransient,
-            .errorPersisterLoadFatal, .errorPersisterStoreTransient,
-            .errorPersisterStoreFatal, .errorPersisterStoreConstraint,
-            .errorPersisterRestore, .errorShieldedIdentityDebitPending,
-            .errorShieldedRecoveryCorrupted, .errorShieldedRecoveryKeysRequired,
-            .errorIdentityBalanceUnavailable, .errorSpvProcessRestartRequired,
-            .errorAssetLockTooManyInputs, .errorAssetLockRecipientMismatch,
-            .errorPrivateContactRequestNeedsPrivateReply, .errorShieldedBuildRequired,
-            .errorProtocolVersionNotActive, .errorPrivateContactRequestPending,
-            .errorPrivateContactPaymentsNotRestored, .errorPrivateContactRecoveryUnsupported,
-            .errorPrivateContactStoreNotRead, .errorSdkPinnedBelowProtocolVersion,
-            .errorPublicContactRequestUnconfirmed, .notFound, .errorUnknown,
+    /// Every case Rust can class as maybe-sent or holding a lock keeps the
+    /// class its result carried, so a host never loses that signal.
+    func testShouldKeepTheResultsDeliveryOnEveryMaybeSentCase() {
+        let codes: [PlatformWalletFFIResultCode] = [
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_ALREADY_CONSUMED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_PENDING,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BROADCAST_UNCONFIRMED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_UNCONFIRMED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_WITHDRAWAL_UNCONFIRMED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_DOCUMENT_NOT_FOR_SALE,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_CORRUPTED,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_KEYS_REQUIRED,
         ]
         for code in codes {
-            XCTAssertEqual(
-                PlatformWalletError(code: code, message: "detail").resultCode,
-                code,
-                "\(code)"
+            let error = PlatformWalletError(
+                result: Self.result(code, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT)
             )
+            XCTAssertEqual(error.delivery, .maybeSent, "\(error)")
+            // A failure no wallet error classified stays unclassified.
+            let unclassified = PlatformWalletError(
+                result: Self.result(code, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_UNKNOWN)
+            )
+            XCTAssertNil(unclassified.delivery, "\(unclassified)")
+        }
+
+        // The value-carrying marketplace cases and the consensus rejection
+        // keep it too.
+        let price = PlatformWalletError(
+            code: .errorDocumentPriceChanged,
+            message: #"{"documentId":"doc","expected":10,"actual":12}"#,
+            payment: PlatformPaymentClass(delivery: .maybeSent)
+        )
+        XCTAssertEqual(price.delivery, .maybeSent)
+        let credits = PlatformWalletError(
+            code: .errorInsufficientIdentityCredits,
+            message: #"{"identityId":"identity","required":101,"available":100}"#,
+            payment: PlatformPaymentClass(delivery: .maybeSent)
+        )
+        XCTAssertEqual(credits.delivery, .maybeSent)
+        let rejected = PlatformWalletError(
+            code: .errorUnknown,
+            message: "refused",
+            consensus: PlatformConsensusError(code: 40722, kind: .state),
+            payment: PlatformPaymentClass(delivery: .maybeSent)
+        )
+        XCTAssertEqual(rejected.delivery, .maybeSent)
+    }
+
+    /// No class is ever derived from a code: a case that never carries one
+    /// is unclassified whatever its code, and the cases a Swift guard throws
+    /// itself without a result say `.maybeSent`.
+    func testShouldNeverDeriveAPaymentDeliveryFromTheCode() {
+        let unclassified: [PlatformWalletError] = [
+            .shieldedBroadcastFailed("refused"),
+            .shieldedNoRecordedAnchor("mid-block"),
+            .transactionBroadcastRejected("rejected"),
+            PlatformWalletError(
+                result: Self.result(
+                    PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BROADCAST_FAILED,
+                    PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+                )
+            ),
+        ]
+        for error in unclassified {
+            XCTAssertNil(error.delivery, "\(error)")
+        }
+        let thrownBySwift: [PlatformWalletError] = [
+            .shieldedSpendUnconfirmed("timeout"),
+            .transactionBroadcastUnconfirmed("timeout"),
+            .masternodeWithdrawalUnconfirmed("timeout"),
+            .walletOperation("folded"),
+            .unknown("folded"),
+        ]
+        for error in thrownBySwift {
+            XCTAssertEqual(error.delivery, .maybeSent, "\(error)")
         }
     }
 
@@ -580,10 +607,10 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(corrupted.rawValue, 56)
         XCTAssertEqual(keysRequired.rawValue, 57)
         let detail = "Cannot read durable identity recovery record"
-        guard case .shieldedRecoveryCorrupted(let corruptedMessage) = PlatformWalletError(
+        guard case .shieldedRecoveryCorrupted(let corruptedMessage, _) = PlatformWalletError(
             code: corrupted, message: detail
         ) else { return XCTFail("lost typed corruption error") }
-        guard case .shieldedRecoveryKeysRequired(let keyMessage) = PlatformWalletError(
+        guard case .shieldedRecoveryKeysRequired(let keyMessage, _) = PlatformWalletError(
             code: keysRequired, message: detail
         ) else { return XCTFail("lost typed keys-required error") }
         XCTAssertEqual(corruptedMessage, detail)
@@ -666,7 +693,7 @@ final class ErrorHandlingTests: XCTestCase {
         let detail = "a private contact request to 9fRYTJZW is in flight or not yet read "
             + "back from the store; sync private contact requests to settle it"
         let error = PlatformWalletError(code: code, message: detail)
-        guard case .privateContactRequestPending(let message) = error else {
+        guard case .privateContactRequestPending(let message, _) = error else {
             return XCTFail("lost typed pending error")
         }
         XCTAssertEqual(message, detail)
@@ -748,7 +775,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code, .errorPublicContactRequestUnconfirmed)
         XCTAssertEqual(code.rawValue, 76)
         let detail = "a public contact request to 9fRYTJZW was broadcast and its outcome is not proved"
-        guard case .publicContactRequestUnconfirmed(let message) =
+        guard case .publicContactRequestUnconfirmed(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed public-unconfirmed error")
         }
@@ -801,7 +828,7 @@ final class ErrorHandlingTests: XCTestCase {
         let rendered = "Identity has an unresolved shielded debit; "
             + "this request was not started. Wait for shielded sync"
         let error = PlatformWalletError(code: code, message: rendered)
-        guard case .shieldedIdentityDebitPending(let message) = error else {
+        guard case .shieldedIdentityDebitPending(let message, _) = error else {
             return XCTFail("expected typed shieldedIdentityDebitPending error")
         }
         XCTAssertEqual(message, rendered)

@@ -1059,7 +1059,22 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
-    match result {
+    map_identity_create_result(result, &mut *out_identity_id)
+}
+
+/// The FFI result of a shielded identity create from the pool, writing the
+/// identity id to `out_identity_id` on success and on the unconfirmed
+/// outcome. Every failure carries its wallet error's own payment-delivery
+/// class, whichever code the arm below reports it under.
+fn map_identity_create_result(
+    result: Result<dpp::prelude::Identifier, PlatformWalletError>,
+    out_identity_id: &mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    let delivery = result
+        .as_ref()
+        .err()
+        .map(PlatformWalletError::payment_delivery);
+    let mapped = match result {
         Ok(identity_id) => {
             *out_identity_id = identity_id.to_buffer();
             PlatformWalletFFIResult::ok()
@@ -1094,11 +1109,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
-        Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
+        Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
-            &e,
         ),
+    };
+    match delivery {
+        Some(delivery) => mapped.with_payment_delivery(delivery),
+        None => mapped,
     }
 }
 
@@ -3392,6 +3410,57 @@ mod tests {
         assert_eq!(
             map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// Every arm of the identity-create mapping carries the wallet error's own
+    /// class, not one guessed from its code: the unconfirmed broadcast and
+    /// the catch-all fold may have left the wallet, the refusals before any
+    /// dispatch never did.
+    #[test]
+    fn should_keep_the_delivery_class_through_the_identity_create_mapping() {
+        let mut out = [0u8; 32];
+        let cases = [
+            (
+                PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                    identity_id: dpp::prelude::Identifier::from([5; 32]),
+                    reason: "timeout".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+                PlatformWalletFFIPaymentDelivery::MaybeSent,
+            ),
+            (
+                PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".into()),
+                PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+            ),
+            (
+                PlatformWalletError::ShieldedBroadcastFailed("refused".into()),
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+            ),
+            (
+                PlatformWalletError::ShieldedBroadcastMaybeDelivered("transport".into()),
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                PlatformWalletFFIPaymentDelivery::MaybeSent,
+            ),
+            (
+                PlatformWalletError::ShieldedNoUnspentNotes,
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                PlatformWalletFFIPaymentDelivery::NotSent,
+            ),
+        ];
+        for (error, code, delivery) in cases {
+            let rendered = format!("{error:?}");
+            let result = map_identity_create_result(Err(error), &mut out);
+            assert_eq!(result.code, code, "{rendered}");
+            assert_eq!(result.payment_delivery, delivery, "{rendered}");
+        }
+        assert_eq!(out, [5; 32], "the unconfirmed outcome writes the id");
+        assert_eq!(
+            map_identity_create_result(Ok(dpp::prelude::Identifier::from([6; 32])), &mut out)
+                .payment_delivery,
+            PlatformWalletFFIPaymentDelivery::None
         );
     }
 

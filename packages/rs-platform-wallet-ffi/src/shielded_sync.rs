@@ -268,12 +268,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
         // it may still fire persistence / completion callbacks. Surface
         // that instead of a silent success so the host keeps its callback
         // context alive and does not treat sync as stopped.
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+        // Reported through the wallet error, so the result carries its class.
+        return platform_wallet::PlatformWalletError::ShutdownIncomplete(
             "shielded sync pass did not drain within the quiesce budget; \
              a pass may still be running"
                 .to_string(),
-        );
+        )
+        .into();
     }
     PlatformWalletFFIResult::ok()
 }

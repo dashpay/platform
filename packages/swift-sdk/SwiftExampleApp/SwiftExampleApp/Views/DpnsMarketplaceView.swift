@@ -756,10 +756,10 @@ enum DpnsMarketplaceUI {
         switch walletError {
         case .notForSale:
             return "This name is no longer listed for sale. Refresh before trying again."
-        case .priceChanged(_, let expected, let actual):
+        case .priceChanged(_, let expected, let actual, _):
             return "The listing changed from \(price(expected)) to \(price(actual)). "
                 + "Nothing was purchased; review the new price and confirm again."
-        case .insufficientIdentityCredits(_, let required, let available):
+        case .insufficientIdentityCredits(_, let required, let available, _):
             return "This identity has \(price(available)), but \(price(required)) is required "
                 + "including the fee reserve."
         case .contestedNameNotTradable(let label, let endsAtMs):

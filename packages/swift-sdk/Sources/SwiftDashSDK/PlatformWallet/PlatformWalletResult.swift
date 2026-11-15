@@ -586,13 +586,14 @@ public enum PlatformPaymentDelivery: Equatable, Sendable {
     /// outpoint is the one the resume calls take); never fund a new one.
     case lockHeld(AssetLockBuiltOutPoint)
 
-    /// `nil` for the FFI's `None`, which only a success carries. A value this
-    /// mirror does not know yet reads as `.maybeSent`, the class that never
-    /// invites a second payment. `heldAssetLock` is read only under
-    /// `LockHeld`.
+    /// `nil` for the FFI's `None`, which only a success carries, and for its
+    /// `Unknown`, a failure no wallet error classified. A value this mirror
+    /// does not know yet reads as `.maybeSent`, the class that never invites a
+    /// second payment. `heldAssetLock` is read only under `LockHeld`.
     init?(ffi: PlatformWalletFFIPaymentDelivery, heldAssetLock: OutPointFFI) {
         switch ffi {
-        case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE:     return nil
+        case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE,
+             PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_UNKNOWN:  return nil
         case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT: self = .notSent
         case PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD:
             var raw = withUnsafeBytes(of: heldAssetLock.txid) { Data($0) }
@@ -601,17 +602,22 @@ public enum PlatformPaymentDelivery: Equatable, Sendable {
         default:                                            self = .maybeSent
         }
     }
+}
 
-    /// The class Rust gives every failure reported under `code`
-    /// (`platform_wallet_ffi_result_code_payment_delivery`); never
-    /// `.lockHeld`, which only a result's own error can name.
-    init?(code: PlatformWalletResultCode) {
-        let ffiCode = PlatformWalletFFIResultCode(rawValue: numericCast(code.rawValue))
-        self.init(
-            ffi: platform_wallet_ffi_result_code_payment_delivery(ffiCode),
-            heldAssetLock: OutPointFFI()
-        )
+/// What Rust decided about a failed payment, carried by the
+/// `PlatformWalletError` cases whose failure may have left the wallet. Read
+/// from the result, never derived from its code.
+public struct PlatformPaymentClass: Equatable, Sendable {
+    /// Whether the failed payment may have left the wallet.
+    public let delivery: PlatformPaymentDelivery
+
+    public init(delivery: PlatformPaymentDelivery) {
+        self.delivery = delivery
     }
+
+    /// The class a Swift-side guard gives a case it throws without a result:
+    /// the payment may have left, so no second one is offered.
+    public static let maybeSent = PlatformPaymentClass(delivery: .maybeSent)
 }
 
 // MARK: - Class wrapper
@@ -659,6 +665,12 @@ final class PlatformWalletResult {
         PlatformPaymentDelivery(ffi: inner.payment_delivery, heldAssetLock: inner.held_asset_lock)
     }
 
+    /// Rust's class of the failure, `nil` on success and for a failure no
+    /// wallet error classified.
+    var paymentClass: PlatformPaymentClass? {
+        paymentDelivery.map { PlatformPaymentClass(delivery: $0) }
+    }
+
     var isSuccess: Bool {
         code == .success
     }
@@ -688,9 +700,10 @@ public enum PlatformWalletError: LocalizedError {
     /// The catch-all wallet-operation failure (code 6). It folds failures of
     /// every payment-delivery class, so it carries the one Rust gave this
     /// failure: `.notSent`, `.maybeSent` or `.lockHeld` (a proof wait that
-    /// timed out names the lock to resume). A Swift-side guard that throws it
-    /// without a result gets `.maybeSent`, the class of the code.
-    case walletOperation(String, delivery: PlatformPaymentDelivery? = .maybeSent)
+    /// timed out names the lock to resume), `nil` when no wallet error
+    /// classified it. A Swift-side guard that throws it without a result
+    /// gets `.maybeSent`.
+    case walletOperation(String, payment: PlatformPaymentClass? = .maybeSent)
     case identityNotFound(String)
     /// A managed identity has no balance in the Platform response; the read may be retried.
     case identityBalanceUnavailable(String)
@@ -706,7 +719,7 @@ public enum PlatformWalletError: LocalizedError {
     /// The one-shot output cannot be reused. This may come from a retained
     /// local tombstone or an unauthenticated Platform report, so it does not
     /// prove that the requested operation completed.
-    case assetLockAlreadyConsumed(String)
+    case assetLockAlreadyConsumed(String, payment: PlatformPaymentClass? = .maybeSent)
     case assetLockFundingMismatch(String)
     /// Asset-lock coin selection could not cover the requested funding over
     /// the permitted source set. Nothing was built or broadcast and no
@@ -723,7 +736,7 @@ public enum PlatformWalletError: LocalizedError {
     /// consolidating the coins lets it fit. Also the outcome of resuming a
     /// tracked lock over the cap: it is not re-sent (an earlier attempt may
     /// have reached the network), it stays tracked, and nothing is released.
-    case assetLockTooManyInputs(String)
+    case assetLockTooManyInputs(String, payment: PlatformPaymentClass? = .maybeSent)
     /// A shielded fund-from-asset-lock resume (generic outpoint resume or a
     /// repeated-UUID wallet drain) named a different Orchard recipient than
     /// the one the tracked lock recorded when it was built. Nothing was
@@ -732,9 +745,9 @@ public enum PlatformWalletError: LocalizedError {
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
     ///
-    /// `delivery` is Rust's class: `.lockHeld` with the tracked lock to resume
+    /// `payment` is Rust's class: `.lockHeld` with the tracked lock to resume
     /// with the recorded recipient.
-    case assetLockRecipientMismatch(String, delivery: PlatformPaymentDelivery? = .maybeSent)
+    case assetLockRecipientMismatch(String, payment: PlatformPaymentClass? = .maybeSent)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -765,7 +778,7 @@ public enum PlatformWalletError: LocalizedError {
     /// endpoint's refusal of the payment does not.
     /// `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)` reads
     /// whether the pair is still held.
-    case privateContactRequestPending(String)
+    case privateContactRequestPending(String, payment: PlatformPaymentClass? = .maybeSent)
     /// The wallet's private payments are not restored from the shielded
     /// store's journal, so its contact requests, public or private, sent or
     /// accepted, are held (code 72). Nothing was signed or sent.
@@ -805,7 +818,7 @@ public enum PlatformWalletError: LocalizedError {
     /// proved unable to write it frees the pair.
     /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
     /// reads whether the pair is still held so.
-    case publicContactRequestUnconfirmed(String)
+    case publicContactRequestUnconfirmed(String, payment: PlatformPaymentClass? = .maybeSent)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -820,13 +833,13 @@ public enum PlatformWalletError: LocalizedError {
     /// `.errorShieldedBroadcastUnconfirmed` result code (which carries
     /// `outIdentityId`) before falling back to this error: see
     /// `ShieldedIdentityCreateUnconfirmedError`.
-    case shieldedBroadcastUnconfirmed(String)
+    case shieldedBroadcastUnconfirmed(String, payment: PlatformPaymentClass? = .maybeSent)
     /// A shielded operation (shield from Platform addresses, unshield /
     /// transfer / withdrawal) may have reached a node and its result is not
     /// proved (a node's refusal or consensus verdict included). It may have
     /// executed; spends keep their notes reserved, a shield stays pending
     /// until the scan sees its note. Do NOT auto-retry.
-    case shieldedSpendUnconfirmed(String)
+    case shieldedSpendUnconfirmed(String, payment: PlatformPaymentClass? = .maybeSent)
     /// A shielded spend could not be built against a Platform-recorded anchor —
     /// the wallet's commitment tree isn't synced to a checkpoint Platform has
     /// recorded (an in-progress / interrupted sync leaves it mid-block). Nothing
@@ -844,12 +857,12 @@ public enum PlatformWalletError: LocalizedError {
     /// before another submission. Core transactions retain their input
     /// protections; Platform state transitions have no Core UTXO reservation.
     /// Do NOT auto-retry. Sibling of `shieldedSpendUnconfirmed`.
-    case transactionBroadcastUnconfirmed(String)
+    case transactionBroadcastUnconfirmed(String, payment: PlatformPaymentClass? = .maybeSent)
     /// A masternode (evonode) credit withdrawal may have reached a node and
     /// its result is not proved (a node's refusal or verdict included). It may
     /// have executed and a retry signs a second withdrawal: do NOT retry;
     /// re-read the claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
-    case masternodeWithdrawalUnconfirmed(String)
+    case masternodeWithdrawalUnconfirmed(String, payment: PlatformPaymentClass? = .maybeSent)
     /// The masternode list hasn't synced yet, so there is nothing to look a
     /// masternode up in (`.errorMasternodeListUnavailable`). Retry after
     /// masternode sync completes.
@@ -863,7 +876,7 @@ public enum PlatformWalletError: LocalizedError {
     /// value. Safe to retry: the retry re-fetches the address nonce so the
     /// mismatch self-heals. A shield does not return it. The submitted and
     /// expected nonce values are in the message.
-    case addressNonceMismatch(String)
+    case addressNonceMismatch(String, payment: PlatformPaymentClass? = .maybeSent)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once
     /// sync is idle. SPV start, stop and storage clear also throw it while an
@@ -902,18 +915,20 @@ public enum PlatformWalletError: LocalizedError {
     /// purchased and has no price to clear. Raised by the wallet's
     /// pre-flight read and by the consensus not-for-sale rejection; the
     /// transition did NOT execute.
-    case notForSale(String)
+    case notForSale(String, payment: PlatformPaymentClass? = .maybeSent)
     /// The listing no longer matches the price the user confirmed. Rebuilt
     /// from the FFI's JSON detail, so the UI can show both numbers and
     /// re-prompt at `actual`. Nothing was purchased — a purchase is only
     /// ever broadcast at the confirmed price, and consensus rejects it if
     /// the listing moved.
-    case priceChanged(documentId: String, expected: UInt64, actual: UInt64)
+    case priceChanged(documentId: String, expected: UInt64, actual: UInt64, payment: PlatformPaymentClass? = .maybeSent)
     /// The identity's credit balance cannot cover the operation. Both
     /// amounts are in credits (1 duff = 1000 credits) and include the fee
     /// reserve the wallet requires on top of a purchase price. Nothing
     /// executed; top the identity up and retry.
-    case insufficientIdentityCredits(identityId: String, required: UInt64, available: UInt64)
+    case insufficientIdentityCredits(
+        identityId: String, required: UInt64, available: UInt64, payment: PlatformPaymentClass? = .maybeSent
+    )
     /// The DPNS name is inside an active contested-name vote and cannot be
     /// listed, transferred, or purchased until the contest resolves.
     /// `endsAtMs == 0` means the vote's end time was unavailable — show it
@@ -955,9 +970,9 @@ public enum PlatformWalletError: LocalizedError {
     /// confirmed spender is this wallet's own transaction, so the value
     /// behind the contested input lives on in it.
     ///
-    /// `delivery` is Rust's class: `.lockHeld` with the contested lock's
+    /// `payment` is Rust's class: `.lockHeld` with the contested lock's
     /// outpoint, the lock a retry resumes.
-    case assetLockInputContested(String, delivery: PlatformPaymentDelivery? = .maybeSent)
+    case assetLockInputContested(String, payment: PlatformPaymentClass? = .maybeSent)
     /// Reading persisted wallet state failed on a store that classified the
     /// failure as retryable. Nothing was mutated — retry later. One of the
     /// two retryable persister cases, alongside `persisterStoreTransient`.
@@ -982,11 +997,11 @@ public enum PlatformWalletError: LocalizedError {
     case persisterRestore(String)
     /// An earlier identity-funded shield is unresolved. This request was not
     /// built or broadcast; wait for shielded sync before starting another.
-    case shieldedIdentityDebitPending(String)
+    case shieldedIdentityDebitPending(String, payment: PlatformPaymentClass? = .maybeSent)
     /// A durable recovery record is malformed or invalid; retain it for diagnosis.
-    case shieldedRecoveryCorrupted(String)
+    case shieldedRecoveryCorrupted(String, payment: PlatformPaymentClass? = .maybeSent)
     /// Recovery needs its account and compatible keys; damaged ciphertext can look the same.
-    case shieldedRecoveryKeysRequired(String)
+    case shieldedRecoveryKeysRequired(String, payment: PlatformPaymentClass? = .maybeSent)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -1006,12 +1021,12 @@ public enum PlatformWalletError: LocalizedError {
     /// promotes to a code of its own (a changed listing price, an
     /// address-nonce race) keeps its typed case, which already carries the
     /// values that case exists for.
-    case consensusRejection(PlatformConsensusError, String)
+    case consensusRejection(PlatformConsensusError, String, payment: PlatformPaymentClass? = .maybeSent)
     /// The catch-all failure (code 99) with no consensus verdict. Like
     /// `walletOperation`, it carries the payment-delivery class Rust gave
-    /// this failure; `.maybeSent` when Swift throws it itself, `nil` when it
-    /// was built from a success result.
-    case unknown(String, delivery: PlatformPaymentDelivery? = .maybeSent)
+    /// this failure; `.maybeSent` when Swift throws it itself, `nil` when no
+    /// wallet error classified it or it was built from a success result.
+    case unknown(String, payment: PlatformPaymentClass? = .maybeSent)
 
     /// Platform's verdict when this error is a consensus rejection the wallet
     /// layer left untyped, so a caller can write
@@ -1019,100 +1034,48 @@ public enum PlatformWalletError: LocalizedError {
     /// for every other case, including the typed promotions of specific
     /// rejections.
     public var consensusError: PlatformConsensusError? {
-        guard case .consensusRejection(let consensus, _) = self else { return nil }
+        guard case .consensusRejection(let consensus, _, _) = self else { return nil }
         return consensus
     }
 
-    /// Whether the failed payment may have left the wallet, as Rust
-    /// classified it. The cases whose code folds failures of more than one
-    /// class (`walletOperation`, `unknown`) or can hold an asset lock
-    /// (`assetLockInputContested`, `assetLockRecipientMismatch`) carry the
-    /// result's own class, `.lockHeld` with its outpoint included; every
-    /// other case reads the class Rust gives its code
-    /// (`platform_wallet_ffi_result_code_payment_delivery`), which is the
-    /// same for every failure under it. `nil` only for an error built from a
-    /// success result.
-    public var delivery: PlatformPaymentDelivery? {
+    /// Rust's class of the failure, read from the result it was built from.
+    /// Carried by every case whose failure Rust can class as maybe-sent or
+    /// holding an asset lock, so a host never loses that signal; `nil` for
+    /// every other case and for a carrying case no wallet error classified.
+    /// `nil` means unclassified: not proven safe to retry, so never retry
+    /// automatically on it.
+    public var payment: PlatformPaymentClass? {
         switch self {
-        case .walletOperation(_, let delivery), .unknown(_, let delivery),
-             .assetLockInputContested(_, let delivery),
-             .assetLockRecipientMismatch(_, let delivery):
-            return delivery
+        case .walletOperation(_, let payment), .unknown(_, let payment),
+             .assetLockInputContested(_, let payment),
+             .assetLockRecipientMismatch(_, let payment),
+             .assetLockAlreadyConsumed(_, let payment),
+             .assetLockTooManyInputs(_, let payment),
+             .privateContactRequestPending(_, let payment),
+             .publicContactRequestUnconfirmed(_, let payment),
+             .shieldedBroadcastUnconfirmed(_, let payment),
+             .shieldedSpendUnconfirmed(_, let payment),
+             .transactionBroadcastUnconfirmed(_, let payment),
+             .masternodeWithdrawalUnconfirmed(_, let payment),
+             .addressNonceMismatch(_, let payment),
+             .notForSale(_, let payment),
+             .shieldedIdentityDebitPending(_, let payment),
+             .shieldedRecoveryCorrupted(_, let payment),
+             .shieldedRecoveryKeysRequired(_, let payment),
+             .priceChanged(_, _, _, let payment),
+             .insufficientIdentityCredits(_, _, _, let payment),
+             .consensusRejection(_, _, let payment):
+            return payment
         default:
-            return PlatformPaymentDelivery(code: resultCode)
+            return nil
         }
     }
 
-    /// The result code this error is reported under.
-    var resultCode: PlatformWalletResultCode {
-        switch self {
-        case .nullPointer: return .errorNullPointer
-        case .invalidHandle: return .errorInvalidHandle
-        case .invalidParameter: return .errorInvalidParameter
-        case .invalidIdentifier: return .errorInvalidIdentifier
-        case .invalidNetwork: return .errorInvalidNetwork
-        case .walletOperation: return .errorWalletOperation
-        case .identityNotFound: return .errorIdentityNotFound
-        case .identityBalanceUnavailable: return .errorIdentityBalanceUnavailable
-        case .contactNotFound: return .errorContactNotFound
-        case .utf8Conversion: return .errorUtf8Conversion
-        case .serialization: return .errorSerialization
-        case .deserialization: return .errorDeserialization
-        case .memoryAllocation: return .errorMemoryAllocation
-        case .arithmeticOverflow: return .errorArithmeticOverflow
-        case .noSelectableInputs: return .errorNoSelectableInputs
-        case .coreInsufficientFunds: return .errorCoreInsufficientFunds
-        case .assetLockNotTracked: return .errorAssetLockNotTracked
-        case .assetLockAlreadyConsumed: return .errorAssetLockAlreadyConsumed
-        case .assetLockFundingMismatch: return .errorAssetLockFundingMismatch
-        case .assetLockInsufficientFunds: return .errorAssetLockInsufficientFunds
-        case .assetLockTooManyInputs: return .errorAssetLockTooManyInputs
-        case .assetLockRecipientMismatch: return .errorAssetLockRecipientMismatch
-        case .privateContactRequestNeedsPrivateReply:
-            return .errorPrivateContactRequestNeedsPrivateReply
-        case .shieldedBuildRequired: return .errorShieldedBuildRequired
-        case .protocolVersionNotActive: return .errorProtocolVersionNotActive
-        case .privateContactRequestPending: return .errorPrivateContactRequestPending
-        case .privateContactPaymentsNotRestored: return .errorPrivateContactPaymentsNotRestored
-        case .privateContactRecoveryUnsupported: return .errorPrivateContactRecoveryUnsupported
-        case .privateContactStoreNotRead: return .errorPrivateContactStoreNotRead
-        case .sdkPinnedBelowProtocolVersion: return .errorSdkPinnedBelowProtocolVersion
-        case .publicContactRequestUnconfirmed: return .errorPublicContactRequestUnconfirmed
-        case .walletAlreadyExists: return .errorWalletAlreadyExists
-        case .shieldedBroadcastFailed: return .errorShieldedBroadcastFailed
-        case .shieldedBroadcastUnconfirmed: return .errorShieldedBroadcastUnconfirmed
-        case .shieldedSpendUnconfirmed: return .errorShieldedSpendUnconfirmed
-        case .shieldedNoRecordedAnchor: return .errorShieldedNoRecordedAnchor
-        case .shieldedInsufficientBalance: return .errorShieldedInsufficientBalance
-        case .transactionBroadcastUnconfirmed: return .errorTransactionBroadcastUnconfirmed
-        case .masternodeWithdrawalUnconfirmed: return .errorMasternodeWithdrawalUnconfirmed
-        case .masternodeListUnavailable: return .errorMasternodeListUnavailable
-        case .transactionBroadcastRejected: return .errorTransactionBroadcastRejected
-        case .addressNonceMismatch: return .errorAddressNonceMismatch
-        case .shutdownIncomplete: return .errorShutdownIncomplete
-        case .spvProcessRestartRequired: return .errorSpvProcessRestartRequired
-        case .signingKeyUnavailable: return .errorSigningKeyUnavailable
-        case .staleReservationToken: return .errorStaleReservationToken
-        case .reservationTokenConsumed: return .errorReservationTokenConsumed
-        case .reservationWalletMismatch: return .errorReservationWalletMismatch
-        case .notForSale: return .errorDocumentNotForSale
-        case .priceChanged: return .errorDocumentPriceChanged
-        case .insufficientIdentityCredits: return .errorInsufficientIdentityCredits
-        case .contestedNameNotTradable: return .errorContestedNameNotTradable
-        case .assetLockInputConflict: return .errorAssetLockInputConflict
-        case .assetLockInputContested: return .errorAssetLockInputContested
-        case .persisterLoadTransient: return .errorPersisterLoadTransient
-        case .persisterLoadFatal: return .errorPersisterLoadFatal
-        case .persisterStoreTransient: return .errorPersisterStoreTransient
-        case .persisterStoreFatal: return .errorPersisterStoreFatal
-        case .persisterStoreConstraint: return .errorPersisterStoreConstraint
-        case .persisterRestore: return .errorPersisterRestore
-        case .shieldedIdentityDebitPending: return .errorShieldedIdentityDebitPending
-        case .shieldedRecoveryCorrupted: return .errorShieldedRecoveryCorrupted
-        case .shieldedRecoveryKeysRequired: return .errorShieldedRecoveryKeysRequired
-        case .notFound: return .notFound
-        case .consensusRejection, .unknown: return .errorUnknown
-        }
+    /// Whether the failed payment may have left the wallet, as Rust
+    /// classified it (`.lockHeld` with its outpoint included); see
+    /// `payment`. `nil` means unclassified: not proven safe to retry.
+    public var delivery: PlatformPaymentDelivery? {
+        payment?.delivery
     }
 
     /// What to show a person. For most cases this is still the diagnostic
@@ -1130,33 +1093,33 @@ public enum PlatformWalletError: LocalizedError {
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .coreInsufficientFunds(let m),
-             .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
+             .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m, _),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m, _),
+             .assetLockTooManyInputs(let m, _), .assetLockRecipientMismatch(let m, _),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
-             .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
+             .privateContactRequestPending(let m, _), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
-             .publicContactRequestUnconfirmed(let m),
+             .publicContactRequestUnconfirmed(let m, _),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
-             .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
+             .shieldedBroadcastUnconfirmed(let m, _), .shieldedSpendUnconfirmed(let m, _),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
-             .shieldedIdentityDebitPending(let m),
-             .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
-             .transactionBroadcastUnconfirmed(let m),
-             .masternodeWithdrawalUnconfirmed(let m),
+             .shieldedIdentityDebitPending(let m, _),
+             .shieldedRecoveryCorrupted(let m, _), .shieldedRecoveryKeysRequired(let m, _),
+             .transactionBroadcastUnconfirmed(let m, _),
+             .masternodeWithdrawalUnconfirmed(let m, _),
              .masternodeListUnavailable(let m),
              .transactionBroadcastRejected(let m),
-             .addressNonceMismatch(let m),
+             .addressNonceMismatch(let m, _),
              .shutdownIncomplete(let m),
              .signingKeyUnavailable(let m),
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
-             .notForSale(let m),
+             .notForSale(let m, _),
              .assetLockInputConflict(let m),
              .assetLockInputContested(let m, _),
-             .consensusRejection(_, let m),
+             .consensusRejection(_, let m, _),
              .notFound(let m), .unknown(let m, _):
             return m
         // The persister messages are a nested Rust error chain naming the
@@ -1179,10 +1142,10 @@ public enum PlatformWalletError: LocalizedError {
         // description from the typed values, because their FFI message is
         // the machine-readable JSON detail — showing that raw would be
         // gibberish in a UI alert.
-        case .priceChanged(_, let expected, let actual):
+        case .priceChanged(_, let expected, let actual, _):
             return "The price changed from \(expected) to \(actual) credits before the purchase "
                 + "could be confirmed. Nothing was purchased."
-        case .insufficientIdentityCredits(let identityId, let required, let available):
+        case .insufficientIdentityCredits(let identityId, let required, let available, _):
             return "Identity \(identityId) has \(available) credits but \(required) are required."
         case .contestedNameNotTradable(let label, let endsAtMs):
             if endsAtMs == 0 {
@@ -1214,7 +1177,7 @@ public enum PlatformWalletError: LocalizedError {
             code: result.code,
             message: result.message,
             consensus: result.consensusError,
-            delivery: result.paymentDelivery
+            payment: result.paymentClass
         )
     }
 
@@ -1227,29 +1190,29 @@ public enum PlatformWalletError: LocalizedError {
     /// classification the wallet layer chose deliberately and must keep
     /// reaching its own case.
     ///
-    /// `delivery` is the result's payment-delivery class, kept by the cases
-    /// that carry one; `nil` stands for the class Rust gives `code`.
+    /// `payment` is Rust's class of the failure, kept by the cases that carry
+    /// one; `nil` when no wallet error classified it. It is never derived
+    /// from `code`.
     init(
         code: PlatformWalletResultCode,
         message: String?,
         consensus: PlatformConsensusError? = nil,
-        delivery: PlatformPaymentDelivery? = nil
+        payment: PlatformPaymentClass? = nil
     ) {
         let detail = message ?? "<no detail from Rust>"
-        let delivery = delivery ?? PlatformPaymentDelivery(code: code)
         switch code {
         case .success:
             // Constructing an error from a success result is a caller bug
             self = .unknown(
                 message ?? "PlatformWalletError built from a success result",
-                delivery: nil
+                payment: nil
             )
         case .errorInvalidHandle:     self = .invalidHandle(detail)
         case .errorInvalidParameter:  self = .invalidParameter(detail)
         case .errorNullPointer:       self = .nullPointer(detail)
         case .errorSerialization:     self = .serialization(detail)
         case .errorDeserialization:   self = .deserialization(detail)
-        case .errorWalletOperation:   self = .walletOperation(detail, delivery: delivery)
+        case .errorWalletOperation:   self = .walletOperation(detail, payment: payment)
         case .errorIdentityNotFound:  self = .identityNotFound(detail)
         case .errorIdentityBalanceUnavailable: self = .identityBalanceUnavailable(detail)
         case .errorContactNotFound:   self = .contactNotFound(detail)
@@ -1261,12 +1224,12 @@ public enum PlatformWalletError: LocalizedError {
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
         case .errorCoreInsufficientFunds: self = .coreInsufficientFunds(detail)
         case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
-        case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
+        case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail, payment: payment)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
-        case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
+        case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail, payment: payment)
         case .errorAssetLockRecipientMismatch:
-            self = .assetLockRecipientMismatch(detail, delivery: delivery)
+            self = .assetLockRecipientMismatch(detail, payment: payment)
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorShieldedBuildRequired:
@@ -1274,7 +1237,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorProtocolVersionNotActive:
             self = .protocolVersionNotActive(detail)
         case .errorPrivateContactRequestPending:
-            self = .privateContactRequestPending(detail)
+            self = .privateContactRequestPending(detail, payment: payment)
         case .errorPrivateContactPaymentsNotRestored:
             self = .privateContactPaymentsNotRestored(detail)
         case .errorPrivateContactRecoveryUnsupported:
@@ -1284,23 +1247,23 @@ public enum PlatformWalletError: LocalizedError {
         case .errorSdkPinnedBelowProtocolVersion:
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
-            self = .publicContactRequestUnconfirmed(detail)
+            self = .publicContactRequestUnconfirmed(detail, payment: payment)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
-        case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
-        case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
+        case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail, payment: payment)
+        case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail, payment: payment)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
-            self = .transactionBroadcastUnconfirmed(detail)
+            self = .transactionBroadcastUnconfirmed(detail, payment: payment)
         case .errorMasternodeWithdrawalUnconfirmed:
-            self = .masternodeWithdrawalUnconfirmed(detail)
+            self = .masternodeWithdrawalUnconfirmed(detail, payment: payment)
         case .errorMasternodeListUnavailable:
             self = .masternodeListUnavailable(detail)
         case .errorTransactionBroadcastRejected:
             self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:
-            self = .addressNonceMismatch(detail)
+            self = .addressNonceMismatch(detail, payment: payment)
         case .errorShutdownIncomplete:
             self = .shutdownIncomplete(detail)
         case .errorSpvProcessRestartRequired:
@@ -1314,7 +1277,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorReservationWalletMismatch:
             self = .reservationWalletMismatch(detail)
         case .errorDocumentNotForSale:
-            self = .notForSale(detail)
+            self = .notForSale(detail, payment: payment)
         // Codes 38/39/40 carry a stable JSON detail object instead of a
         // human message (see `PlatformWalletFFIResultCode` in
         // packages/rs-platform-wallet-ffi/src/error.rs). Decode it into the
@@ -1326,26 +1289,28 @@ public enum PlatformWalletError: LocalizedError {
                 self = .priceChanged(
                     documentId: d.documentId,
                     expected: d.expected,
-                    actual: d.actual
+                    actual: d.actual,
+                    payment: payment
                 )
             } else {
-                self = .unknown(detail, delivery: delivery)
+                self = .unknown(detail, payment: payment)
             }
         case .errorInsufficientIdentityCredits:
             if let d = TradeErrorDetail.insufficientCredits(detail) {
                 self = .insufficientIdentityCredits(
                     identityId: d.identityId,
                     required: d.required,
-                    available: d.available
+                    available: d.available,
+                    payment: payment
                 )
             } else {
-                self = .unknown(detail, delivery: delivery)
+                self = .unknown(detail, payment: payment)
             }
         case .errorContestedNameNotTradable:
             if let d = TradeErrorDetail.contestedName(detail) {
                 self = .contestedNameNotTradable(label: d.label, endsAtMs: d.endsAtMs)
             } else {
-                self = .unknown(detail, delivery: delivery)
+                self = .unknown(detail, payment: payment)
             }
         // Both double-spend codes carry the typed `Display` rendering, not a
         // JSON detail object: it already names the asset-lock outpoint, the
@@ -1358,7 +1323,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockInputConflict:
             self = .assetLockInputConflict(detail)
         case .errorAssetLockInputContested:
-            self = .assetLockInputContested(detail, delivery: delivery)
+            self = .assetLockInputContested(detail, payment: payment)
         // The persister codes carry the wallet's typed `Display` as the
         // message. Which operation failed and whether a retry can help is
         // the CODE's meaning, not the string's — branch on the case, never
@@ -1377,11 +1342,11 @@ public enum PlatformWalletError: LocalizedError {
         case .errorPersisterRestore:
             self = .persisterRestore(detail)
         case .errorShieldedIdentityDebitPending:
-            self = .shieldedIdentityDebitPending(detail)
+            self = .shieldedIdentityDebitPending(detail, payment: payment)
         case .errorShieldedRecoveryCorrupted:
-            self = .shieldedRecoveryCorrupted(detail)
+            self = .shieldedRecoveryCorrupted(detail, payment: payment)
         case .errorShieldedRecoveryKeysRequired:
-            self = .shieldedRecoveryKeysRequired(detail)
+            self = .shieldedRecoveryKeysRequired(detail, payment: payment)
         case .notFound:               self = .notFound(detail)
         // The catch-all, which is where a consensus rejection with no
         // dedicated code lands. When Rust stamped its verdict on the result,
@@ -1389,9 +1354,9 @@ public enum PlatformWalletError: LocalizedError {
         // the code instead of the rendered sentence.
         case .errorUnknown:
             if let consensus {
-                self = .consensusRejection(consensus, detail)
+                self = .consensusRejection(consensus, detail, payment: payment)
             } else {
-                self = .unknown(detail, delivery: delivery)
+                self = .unknown(detail, payment: payment)
             }
         }
     }
@@ -1448,9 +1413,9 @@ private enum TradeErrorDetail {
 
 extension PlatformWalletFFIResult {
     /// A result built from the `{ code, message }` pair alone, carrying no
-    /// consensus verdict, the payment-delivery class its code shares and no
-    /// held asset lock: the same defaults Rust's own `ok()` / `err()`
-    /// constructors fill in.
+    /// consensus verdict, no payment-delivery class (`None` on success,
+    /// `Unknown` otherwise) and no held asset lock: the same defaults Rust's
+    /// own `ok()` / `err()` constructors fill in.
     ///
     /// Swift-side call sites that fabricate a result (the manager's
     /// null-pointer guard, the native call doubles in the tests) describe a
@@ -1462,7 +1427,9 @@ extension PlatformWalletFFIResult {
             message: message,
             consensus_code: 0,
             consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
-            payment_delivery: platform_wallet_ffi_result_code_payment_delivery(code),
+            payment_delivery: code == PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
+                ? PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE
+                : PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_UNKNOWN,
             held_asset_lock: OutPointFFI()
         )
     }

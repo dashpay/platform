@@ -61,6 +61,11 @@ class DashSdkErrorTest {
         val future = DashSdkError.fromNative(DashSDKException(offset + 6, "future", 0, 0, 7))
         assertEquals(PaymentDelivery.MAYBE_SENT, future.delivery)
 
+        // A failure no wallet error classified (`Unknown`, 4) has no class.
+        val unknown = DashSdkError.fromNative(DashSDKException(offset + 1, "null pointer", 0, 0, 4))
+        assertNull(unknown.delivery)
+        assertFalse(unknown.isRetryable)
+
         // Errors that carry no class: rs-sdk-ffi's, and the legacy constructor.
         assertNull(DashSdkError.fromNative(DashSDKException(3, "network")).delivery)
         assertNull(DashSdkError.fromNative(DashSDKException(offset + 6, "legacy")).delivery)

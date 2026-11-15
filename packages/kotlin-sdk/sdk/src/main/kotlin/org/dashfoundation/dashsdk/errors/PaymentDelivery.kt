@@ -28,12 +28,14 @@ enum class PaymentDelivery {
 
     internal companion object {
         /**
-         * `null` for the native `None` (0), which only a success carries. A
-         * value this SDK build does not know reads as [MAYBE_SENT], the class
-         * that never invites a second payment.
+         * `null` for the native `None` (0), which only a success carries, and
+         * `Unknown` (4), a failure no native wallet error classified: neither
+         * says whether a payment left the wallet. A value this SDK build does
+         * not know reads as [MAYBE_SENT], the class that never invites a
+         * second payment.
          */
         fun fromNative(value: Int): PaymentDelivery? = when (value) {
-            0 -> null
+            0, 4 -> null
             1 -> NOT_SENT
             3 -> LOCK_HELD
             else -> MAYBE_SENT
