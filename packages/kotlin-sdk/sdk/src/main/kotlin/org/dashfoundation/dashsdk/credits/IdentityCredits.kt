@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.credits
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -229,13 +230,16 @@ class IdentityCredits internal constructor(
      * to the wallet, and updates the balance of an identity the wallet
      * manages, so the caller does not decide whether it is its own. Returns
      * the identity's post-transition balance.
+     *
+     * Cancellation: a top-up that completed natively still returns its
+     * balance to a cancelled caller (see `TeardownGate.opReturningCompletedResult`).
      */
     suspend fun topUpIdentityFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
             addressTopUpNative.call(
                 walletHandle,
