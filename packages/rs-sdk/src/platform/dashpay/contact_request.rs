@@ -23,7 +23,7 @@ use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::StateTransition;
-use dpp::version::ProtocolVersion;
+use dpp::version::feature_initial_protocol_versions::DASHPAY_CONTACT_REQUEST_SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION;
 use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key,
     encrypt_shielded_address, COMPACT_XPUB_LEN, SHIELDED_ADDRESS_LEN,
@@ -33,10 +33,6 @@ use std::sync::Arc;
 
 /// The `contactRequest` property that carries the sender's shielded payment address.
 const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
-
-/// The protocol version DashPay v3, and with it a contact request's shielded address,
-/// exists from.
-const SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
 
 /// ECDH provider for contact request encryption
 ///
@@ -557,7 +553,7 @@ impl Sdk {
     ) -> Result<Arc<DataContract>, Error> {
         if with_shielded_address {
             self.require_protocol_version(
-                SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION,
+                DASHPAY_CONTACT_REQUEST_SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION,
                 "a contact request's shielded address",
             )
             .await?;
