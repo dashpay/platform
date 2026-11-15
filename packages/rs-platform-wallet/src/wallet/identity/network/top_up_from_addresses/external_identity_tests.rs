@@ -837,8 +837,9 @@ async fn confirm_top_up(
         time_ms: 1,
         ..Default::default()
     };
+    let lifecycle = wallet.generation().payment_guard_owned().await;
     wallet
-        .record_top_up(&identity_id, (confirmed, NEW_BALANCE, metadata))
+        .record_top_up(&identity_id, (confirmed, NEW_BALANCE, metadata), &lifecycle)
         .await
 }
 

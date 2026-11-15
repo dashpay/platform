@@ -259,6 +259,10 @@ class IdentityCredits internal constructor(
      * identity and updates a managed one's balance the same way; this one
      * differs only in refusing an identity the wallet does not manage.
      */
+    @Deprecated(
+        "Use topUpIdentityFromAddresses, which tops up any identity.",
+        ReplaceWith("topUpIdentityFromAddresses(walletHandle, identityId, inputs, signerHandle)"),
+    )
     suspend fun topUpFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,

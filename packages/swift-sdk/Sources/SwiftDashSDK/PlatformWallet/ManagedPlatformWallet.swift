@@ -801,6 +801,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// handling match `topUpIdentityFromAddresses`.
     ///
     /// - Returns: the new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
     public func topUpFromAddresses(
         identityId: Data,
         inputs: [IdentityAddressInput],
@@ -829,6 +830,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// `PlatformWalletError.identityNotFound` before anything is signed.
     ///
     /// - Returns: the identity's new credit balance reported by Platform.
+    @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
     public func topUpExternalIdentityFromAddresses(
         identityId: Data,
         inputs: [IdentityAddressInput],

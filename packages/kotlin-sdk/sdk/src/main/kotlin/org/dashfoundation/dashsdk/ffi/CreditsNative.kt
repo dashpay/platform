@@ -97,6 +97,10 @@ internal object CreditsNative {
      *
      * @param inputsBlob as for [topUpIdentityFromAddresses].
      */
+    @Deprecated(
+        "Use topUpIdentityFromAddresses, which tops up any identity.",
+        ReplaceWith("topUpIdentityFromAddresses(walletHandle, identityId, inputsBlob, signerHandle)"),
+    )
     external fun topUpFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,

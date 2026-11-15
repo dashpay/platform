@@ -11,7 +11,7 @@ use key_wallet::wallet::Wallet;
 #[cfg(feature = "shielded")]
 use key_wallet::PlatformP2PKHAddress;
 use key_wallet_manager::WalletManager;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
@@ -719,7 +719,7 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
-        let (confirmed, _lifecycle) = self
+        let (confirmed, lifecycle) = self
             .identity
             .top_up_identity_from_addresses(
                 identity_id,
@@ -729,7 +729,7 @@ impl PlatformWallet {
                 managed_only,
             )
             .await?;
-        Ok(self.record_top_up(identity_id, confirmed).await)
+        Ok(self.record_top_up(identity_id, confirmed, &lifecycle).await)
     }
 
     /// The bookkeeping of a confirmed address top-up of `identity_id`, run
@@ -739,15 +739,20 @@ impl PlatformWallet {
     /// replay never re-applies this transition's ops on top of them).
     /// Returns the balance the top-up reports. A seam so a test can hand in
     /// a confirmed result the mock SDK cannot prove.
+    ///
+    /// `lifecycle` is the wallet's held lifecycle gate: it must be held
+    /// across the identity-manager write and the address reconciliation, so
+    /// a removal or replacement of the wallet cannot land between them.
     pub(crate) async fn record_top_up(
         &self,
         identity_id: &Identifier,
         (address_infos, new_balance, metadata): (AddressInfos, Credits, ResponseMetadata),
+        lifecycle: &OwnedRwLockReadGuard<()>,
     ) -> Credits {
         let proof_height = metadata.height;
         let new_balance = self
             .identity
-            .record_top_up_balance(identity_id, new_balance, metadata)
+            .record_top_up_balance(identity_id, new_balance, metadata, lifecycle)
             .await;
         self.platform
             .reconcile_address_infos(&address_infos, proof_height, "identity top-up")

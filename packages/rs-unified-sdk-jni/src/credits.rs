@@ -10,8 +10,12 @@
 //! entry point (no stitching, per `packages/kotlin-sdk/CLAUDE.md`):
 //! - [`platform_wallet_transfer_credits_with_signer`] — identity → identity.
 //! - [`platform_wallet_withdraw_credits_with_signer`] — identity → L1 address.
-//! - [`platform_wallet_top_up_from_addresses_with_signer`] — top up an
-//!   existing identity from Platform-address inputs (ID-06).
+//! - [`platform_wallet_top_up_identity_from_addresses_with_signer`] — top up
+//!   any identity, the wallet's own or someone else's, from Platform-address
+//!   inputs (ID-06).
+//! - [`platform_wallet_top_up_from_addresses_with_signer`] — **deprecated**
+//!   managed-only variant of the above: refuses an identity the wallet does
+//!   not manage.
 //! - [`platform_wallet_top_up_identity_with_funding_signer`] — top up an
 //!   existing identity from a **new Core asset lock** (ID-05); this one
 //!   takes a `MnemonicResolverHandle` (the Core asset-lock signer) rather

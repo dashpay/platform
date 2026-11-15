@@ -158,11 +158,15 @@ impl IdentityWallet {
     /// manager keeps for a managed identity (a failed cache write stays
     /// pending for a later retry), `new_balance` otherwise. An identity the
     /// manager does not hold is left out of it.
+    ///
+    /// `_lifecycle` is the wallet's held lifecycle gate: it must be held
+    /// across this manager write and the caller's address reconciliation.
     pub(crate) async fn record_top_up_balance(
         &self,
         identity_id: &Identifier,
         new_balance: Credits,
         metadata: ResponseMetadata,
+        _lifecycle: &OwnedRwLockReadGuard<()>,
     ) -> Credits {
         let mut wm = self.wallet_manager.write().await;
         match wm
