@@ -33,7 +33,8 @@ pub mod shielded_sync_start_state;
 pub mod traits;
 
 pub use asset_lock_payment_intent::{
-    AssetLockPaymentIntent, AssetLockPaymentIntentDecodeError, ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE,
+    AssetLockPaymentIntent, AssetLockPaymentIntentDecodeError, AssetLockPaymentIntentEncodeError,
+    ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE,
 };
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{

@@ -47,19 +47,28 @@ pub enum AssetLockPaymentIntent {
 #[error("asset-lock payment intent is malformed: {0}")]
 pub struct AssetLockPaymentIntentDecodeError(&'static str);
 
+/// Why an intent has no stored form: its recipient count does not fit the
+/// format's `u16` count.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("asset-lock payment intent has {0} recipients, more than its stored form can hold")]
+pub struct AssetLockPaymentIntentEncodeError(usize);
+
 impl AssetLockPaymentIntent {
     /// The stored form: a kind byte, then the kind's body. For Platform
     /// addresses the body is a big-endian `u16` count and, per recipient in
     /// map order, the 21-byte `PlatformAddress::to_bytes` form, a `0`/`1`
     /// amount flag and, after `1`, the big-endian `u64` amount in credits.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    /// A map with more recipients than the count can hold is refused rather
+    /// than stored as a prefix.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, AssetLockPaymentIntentEncodeError> {
         match self {
             Self::PlatformAddresses(recipients) => {
+                let count = u16::try_from(recipients.len())
+                    .map_err(|_| AssetLockPaymentIntentEncodeError(recipients.len()))?;
                 let mut bytes = Vec::with_capacity(3 + recipients.len() * 30);
                 bytes.push(KIND_PLATFORM_ADDRESSES);
-                let count = u16::try_from(recipients.len()).unwrap_or(u16::MAX);
                 bytes.extend_from_slice(&count.to_be_bytes());
-                for (address, amount) in recipients.iter().take(usize::from(count)) {
+                for (address, amount) in recipients {
                     bytes.extend_from_slice(&address.to_bytes());
                     match amount {
                         Some(credits) => {
@@ -69,7 +78,7 @@ impl AssetLockPaymentIntent {
                         None => bytes.push(0),
                     }
                 }
-                bytes
+                Ok(bytes)
             }
         }
     }
@@ -157,7 +166,8 @@ impl AssetLockPaymentIntent {
 #[cfg(feature = "serde")]
 impl serde::Serialize for AssetLockPaymentIntent {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(&self.to_bytes())
+        let bytes = self.to_bytes().map_err(serde::ser::Error::custom)?;
+        serializer.serialize_bytes(&bytes)
     }
 }
 
@@ -183,7 +193,7 @@ mod tests {
 
     #[test]
     fn should_round_trip_a_platform_address_intent_through_its_stored_form() {
-        let bytes = intent().to_bytes();
+        let bytes = intent().to_bytes().unwrap();
         assert_eq!(bytes.len(), 3 + 21 * 3 + 9 + 1 + 9);
         assert_eq!(
             AssetLockPaymentIntent::from_bytes(&bytes).unwrap(),
@@ -193,7 +203,7 @@ mod tests {
 
     #[test]
     fn should_refuse_malformed_stored_intents() {
-        let bytes = intent().to_bytes();
+        let bytes = intent().to_bytes().unwrap();
         let mut unknown_kind = bytes.clone();
         unknown_kind[0] = 9;
         let mut trailing = bytes.clone();
@@ -228,7 +238,7 @@ mod tests {
             (PlatformAddress::P2pkh([0x11; 20]), Some(5_000_000)),
             (PlatformAddress::P2pkh([0x22; 20]), Some(7)),
         ]));
-        assert!(AssetLockPaymentIntent::from_bytes(&none.to_bytes()).is_err());
+        assert!(AssetLockPaymentIntent::from_bytes(&none.to_bytes().unwrap()).is_err());
     }
 
     #[test]
@@ -238,7 +248,7 @@ mod tests {
             (PlatformAddress::P2pkh([0x22; 20]), None),
             (PlatformAddress::P2pkh([0x33; 20]), None),
         ]));
-        assert!(AssetLockPaymentIntent::from_bytes(&two.to_bytes()).is_err());
+        assert!(AssetLockPaymentIntent::from_bytes(&two.to_bytes().unwrap()).is_err());
     }
 
     #[test]
@@ -249,6 +259,22 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
         let intent = AssetLockPaymentIntent::PlatformAddresses(recipients);
         assert!(intent.fits_storage());
-        assert!(intent.to_bytes().len() <= ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE);
+        assert!(intent.to_bytes().unwrap().len() <= ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE);
+    }
+
+    #[test]
+    fn should_refuse_to_encode_more_recipients_than_the_count_can_hold() {
+        let recipients = (0..=u32::from(u16::MAX))
+            .map(|i| {
+                let mut hash = [0; 20];
+                hash[..4].copy_from_slice(&i.to_be_bytes());
+                (PlatformAddress::P2pkh(hash), Some(1))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let intent = AssetLockPaymentIntent::PlatformAddresses(recipients);
+        assert_eq!(
+            intent.to_bytes(),
+            Err(AssetLockPaymentIntentEncodeError(usize::from(u16::MAX) + 1))
+        );
     }
 }

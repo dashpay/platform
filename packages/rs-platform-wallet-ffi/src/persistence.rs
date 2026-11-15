@@ -3163,7 +3163,14 @@ impl PlatformWalletPersistence for FFIPersister {
                         continue;
                     };
                     let out_point = outpoint_to_bytes(&entry.out_point);
-                    let bytes = intent.to_bytes();
+                    let bytes = match intent.to_bytes() {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            tracing::error!("failed to encode asset-lock payment intent: {e}");
+                            outcome.record_fatal();
+                            continue;
+                        }
+                    };
                     let rc = unsafe {
                         cb(
                             self.callbacks.context,
@@ -11778,7 +11785,7 @@ mod tests {
             "legacy ABI has no intent field"
         );
         for stored in [None, Some(intent.clone())] {
-            let bytes = stored.as_ref().map(AssetLockPaymentIntent::to_bytes);
+            let bytes = stored.as_ref().map(|intent| intent.to_bytes().unwrap());
             load_asset_lock_payment_intents(
                 load_intent,
                 (&bytes as *const Option<Vec<u8>>).cast_mut().cast(),
@@ -11851,7 +11858,7 @@ mod tests {
         writer
             .store([42; 32], changeset)
             .expect("intent sidecar persisted with the base row");
-        assert_eq!(seen, Some(intent.to_bytes()));
+        assert_eq!(seen, Some(intent.to_bytes().unwrap()));
         for incomplete in [
             PersistenceExtensionCallbacks {
                 persist_asset_lock_payment_intent: None,

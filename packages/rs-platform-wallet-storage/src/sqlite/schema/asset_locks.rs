@@ -210,7 +210,13 @@ pub fn apply(
             let payment_intent = entry
                 .payment_intent
                 .as_ref()
-                .map(AssetLockPaymentIntent::to_bytes);
+                .map(AssetLockPaymentIntent::to_bytes)
+                .transpose()
+                .map_err(|_| {
+                    WalletStorageError::blob_decode(
+                        "asset lock payment intent has too many recipients to store",
+                    )
+                })?;
             if let (Some(incoming), Some(stored)) = (
                 payment_intent.as_deref(),
                 existing

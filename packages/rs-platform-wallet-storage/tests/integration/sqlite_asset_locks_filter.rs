@@ -517,7 +517,7 @@ fn should_preserve_the_payment_intent_and_reject_a_change() {
     assert!(conn
         .execute(
             "UPDATE asset_locks SET payment_intent = ?1 WHERE payment_intent IS NOT NULL",
-            [payment_intent(0x23).to_bytes()]
+            [payment_intent(0x23).to_bytes().unwrap()]
         )
         .is_err());
 }
