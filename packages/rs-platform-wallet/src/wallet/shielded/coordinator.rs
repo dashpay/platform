@@ -273,13 +273,15 @@ pub struct NetworkShieldedCoordinator {
     /// [`admit`](Self::admit) for the protocol.
     ///
     /// Shared ([`ShieldedAdmission`]): a bind (host snapshot load,
-    /// viewing-key persistence, install), an account add, a spend from its
-    /// note selection to its last store and host write, a sync pass, an
-    /// identity-debit abandonment. Exclusive: Clear, across the Rust reset,
-    /// the host wipe and the epoch bump. So a Clear cannot land inside any of
-    /// those spans, and none can start until Clear, host wipe included, has
-    /// finished: no snapshot loaded before a Clear and no viewing-key write
-    /// begun before it completes after the wipe.
+    /// viewing-key persistence, install, private payment restoration), an
+    /// account add, a spend from its note selection to its last store and
+    /// host write, a sync pass, an identity-debit abandonment, a private
+    /// payment restoration from its journal read to its last write.
+    /// Exclusive: Clear, across the Rust reset, the host wipe and the epoch
+    /// bump. So a Clear cannot land inside any of those spans, and none can
+    /// start until Clear, host wipe included, has finished: no snapshot
+    /// loaded before a Clear and no viewing-key write begun before it
+    /// completes after the wipe.
     ///
     /// The guarded value is the Clear state: how many Clears completed (the
     /// epoch) and whether the last one reset Rust but could not wipe the host.
@@ -324,11 +326,16 @@ impl ShieldedAdmission<'_> {
         if self.state.host_wipe_pending {
             return Err(PlatformWalletError::ShieldedStoreError(
                 "the last shielded Clear reset native state but did not wipe host storage; \
-                 retry Clear before binding"
+                 retry Clear before binding or restoring"
                     .to_string(),
             ));
         }
         Ok(())
+    }
+
+    /// Whether this admission was granted by `coordinator`.
+    pub(crate) fn admits(&self, coordinator: &NetworkShieldedCoordinator) -> bool {
+        std::ptr::eq(self.coordinator, coordinator)
     }
 
     /// Open an install transaction for `wallet_id`, taking the coordinator's
@@ -506,6 +513,19 @@ impl NetworkShieldedCoordinator {
             coordinator: self,
             state: self.admission.read().await,
         }
+    }
+
+    /// [`admit`](Self::admit) without waiting: `None` while a Clear holds the
+    /// admission or is queued for it. Never blocks, so it is safe where the
+    /// caller may already hold an admission.
+    pub(crate) fn try_admit(&self) -> Option<ShieldedAdmission<'_>> {
+        self.admission
+            .try_read()
+            .ok()
+            .map(|state| ShieldedAdmission {
+                coordinator: self,
+                state,
+            })
     }
 
     /// Whether a Clear holds the admission or is queued for it: either way

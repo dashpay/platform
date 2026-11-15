@@ -685,3 +685,184 @@ async fn should_resolve_the_managers_coordinator_and_none_before_it_is_configure
         vec![SubwalletId::new(wallet.wallet_id(), 0)]
     );
 }
+
+/// An unconfigured manager's wallet reports its shielded balance as an
+/// error, not as an empty (zero) balance; once configured, an unbound wallet
+/// reads empty.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_balance_read_before_the_manager_is_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet) = unconfigured(&host).await;
+
+    let error = wallet
+        .shielded_balances()
+        .await
+        .expect_err("no coordinator yet");
+    assert!(
+        matches!(&error, PlatformWalletError::ShieldedStoreError(message) if message.contains("not configured")),
+        "{error:?}"
+    );
+
+    manager
+        .configure_shielded(dir.path().join("tree.sqlite"))
+        .await
+        .unwrap();
+    assert!(wallet.shielded_balances().await.unwrap().is_empty());
+}
+
+/// A private payment restoration parked after its journal read, waiting for
+/// the wallet, holds Clear off: Clear neither resets nor wipes until the
+/// restoration's last write is done.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_clear_until_a_private_payment_restoration_in_flight_finishes() {
+    use std::future::Future;
+    use std::task::{Context, Waker};
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    let mut cx = Context::from_waker(Waker::noop());
+
+    let held_store = coordinator.store().write().await;
+    let mut restore = Box::pin(wallet.restore_private_contact_payments());
+    assert!(
+        restore.as_mut().poll(&mut cx).is_pending(),
+        "waits for the store"
+    );
+    let held_wallet = wallet.wallet_manager().write().await;
+    drop(held_store);
+    assert!(
+        restore.as_mut().poll(&mut cx).is_pending(),
+        "read its journal, waits for the wallet"
+    );
+
+    let clear = spawn_clear(&manager);
+    until_admission_closed(&coordinator).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(host.wipe_count(), 0, "Clear waits for the restoration");
+    assert!(!clear.is_finished());
+    assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+
+    drop(held_wallet);
+    restore.await.expect("the restoration finishes first");
+    clear.await.unwrap().expect("then Clear runs");
+    assert_eq!(host.wipe_count(), 1);
+    assert!(host.wiped_exclusively.load(Ordering::SeqCst));
+}
+
+/// A restoration that starts while the host wipe runs waits for the whole
+/// Clear, as a bind does, and then succeeds against the cleared store.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_restoration_started_during_the_wipe_until_clear_finishes() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+
+    type Restore = tokio::task::JoinHandle<
+        Result<Vec<(dpp::prelude::Identifier, dpp::prelude::Identifier)>, PlatformWalletError>,
+    >;
+    let started: Arc<Mutex<Option<Restore>>> = Arc::default();
+    let held_during_wipe = Arc::new(AtomicBool::new(false));
+    {
+        let wallet = Arc::clone(&wallet);
+        let started = Arc::clone(&started);
+        let held_during_wipe = Arc::clone(&held_during_wipe);
+        let runtime = tokio::runtime::Handle::current();
+        *host.on_wipe.lock().unwrap() = Some(Box::new(move || {
+            let wallet = Arc::clone(&wallet);
+            let restore =
+                runtime.spawn(async move { wallet.restore_private_contact_payments().await });
+            std::thread::sleep(Duration::from_millis(100));
+            held_during_wipe.store(!restore.is_finished(), Ordering::SeqCst);
+            *started.lock().unwrap() = Some(restore);
+        }));
+    }
+
+    manager.clear_shielded().await.expect("Clear succeeds");
+    assert!(held_during_wipe.load(Ordering::SeqCst));
+    let restore = started
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the hook started a restoration");
+    restore
+        .await
+        .unwrap()
+        .expect("the restoration runs after Clear");
+    assert_eq!(coordinator.clear_epoch().await, 1);
+    assert!(!wallet.private_payments_held().await);
+}
+
+/// A Clear that reset native state but failed to wipe the host refuses
+/// restorations, holding the wallet, until a Clear completes both halves.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_restorations_until_a_failed_host_wipe_is_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, _coordinator) = configured(&host, &dir).await;
+
+    host.fail_wipe.store(true, Ordering::SeqCst);
+    manager
+        .clear_shielded()
+        .await
+        .expect_err("the host wipe fails");
+    let error = wallet
+        .restore_private_contact_payments()
+        .await
+        .expect_err("refused while the host may hold cleared rows");
+    assert!(
+        matches!(&error, PlatformWalletError::ShieldedStoreError(message) if message.contains("did not wipe host storage")),
+        "{error:?}"
+    );
+    assert!(
+        wallet.private_payments_held().await,
+        "the wallet stays held"
+    );
+
+    host.fail_wipe.store(false, Ordering::SeqCst);
+    manager
+        .clear_shielded()
+        .await
+        .expect("the retry wipes the host");
+    wallet
+        .restore_private_contact_payments()
+        .await
+        .expect("restored once the host is wiped");
+    assert!(!wallet.private_payments_held().await);
+}
+
+/// A bind parked inside its admission while a Clear queues for the lock runs
+/// its private payment restoration under that same admission: it neither
+/// deadlocks on a second admission behind the queued Clear nor defers the
+/// restoration, and Clear runs once the bind is done.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_restore_a_binds_private_payments_under_its_admission_while_clear_is_queued() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+
+    let release = BoundaryHost::gate(&host.store_gate);
+    let bind = {
+        let wallet = Arc::clone(&wallet);
+        tokio::spawn(async move { wallet.bind_shielded(&SEED, &[0]).await })
+    };
+    host.reached("store viewing keys").await;
+    let clear = spawn_clear(&manager);
+    until_admission_closed(&coordinator).await;
+
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(10), bind)
+        .await
+        .expect("the bind does not deadlock behind the queued Clear")
+        .unwrap()
+        .expect("the bind finishes first");
+    assert_eq!(
+        wallet.deferred_private_payment_restores(),
+        0,
+        "restored inline, not deferred"
+    );
+    assert!(!wallet.private_payments_held().await);
+    clear.await.unwrap().expect("then Clear runs");
+    assert_eq!(host.events(), BIND_THEN_CLEAR);
+}

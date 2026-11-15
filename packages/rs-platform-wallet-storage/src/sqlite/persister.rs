@@ -1338,10 +1338,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         }
     }
 
-    /// Flushes this network's buffered writes (and those of wallets with no
-    /// stored row yet) under the delete's connection guard, then deletes the
-    /// network's viewing keys in one transaction. A flush failure fails the
-    /// wipe with the rows in place.
+    /// Flushes this network's buffered writes under the delete's connection
+    /// guard, then deletes the network's viewing keys in one transaction. A
+    /// wallet with no stored row yet is classified by the network of its
+    /// buffered metadata, and flushed too when it has none. A flush failure
+    /// fails the wipe with the rows in place.
     #[cfg(feature = "shielded")]
     fn wipe_shielded_state(&self, network: dashcore::Network) -> Result<(), PersistenceError> {
         self.ensure_writable("wipe_shielded_state")
@@ -1355,9 +1356,16 @@ impl PlatformWalletPersistence for SqlitePersister {
             .dirty_wallets()
             .map_err(PersistenceError::from)?
         {
-            let stored =
-                schema::wallets::fetch(&conn, &wallet_id).map_err(PersistenceError::from)?;
-            if !matches!(&stored, Some((stored_network, _)) if stored_network != label) {
+            let other_network =
+                match schema::wallets::fetch(&conn, &wallet_id).map_err(PersistenceError::from)? {
+                    Some((stored_network, _)) => stored_network != label,
+                    None => self
+                        .buffer
+                        .buffered_network(&wallet_id)
+                        .map_err(PersistenceError::from)?
+                        .is_some_and(|buffered| buffered != network),
+                };
+            if !other_network {
                 self.flush_locked(&mut conn, &wallet_id)?;
             }
         }

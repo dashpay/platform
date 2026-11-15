@@ -1083,8 +1083,9 @@ impl PlatformWallet {
         self.install_shielded_views_in_one_transaction(admission, account_views, start)
             .await?;
         // After the install transaction: the restore takes the store and
-        // wallet locks on its own.
-        self.restore_private_payments_or_defer(coordinator).await;
+        // wallet locks on its own, under the bind's admission.
+        self.restore_private_payments_or_defer(coordinator, Some(admission))
+            .await;
         Ok(())
     }
 
@@ -1100,13 +1101,19 @@ impl PlatformWallet {
     /// while one waits queues none. The queue frees however its task ends,
     /// a panic or an abort included (`DeferredFinish`). Returns the task of
     /// the deferred restoration when one was queued.
+    ///
+    /// `admission` is the caller's own, for a caller that holds one (a bind):
+    /// the restoration runs under it rather than taking a second. Without
+    /// one, the restoration takes its own, and a Clear holding or queued for
+    /// it counts as a busy store.
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_payments_or_defer(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
+        admission: Option<&ShieldedAdmission<'_>>,
     ) -> Option<tokio::task::JoinHandle<()>> {
         let restore = self.private_payment_restore(coordinator);
-        match restore.restore_and_release(false).await {
+        match restore.restore_and_release(admission, false).await {
             Ok(Some(_)) => None,
             Ok(None) => {
                 if restore.restored_from_this_store() || !restore.queue_deferred() {
@@ -1121,7 +1128,7 @@ impl PlatformWallet {
                 // so the queue frees even for a task dropped unpolled.
                 let restore = DeferredFinish(restore);
                 Some(tokio::spawn(async move {
-                    if let Err(error) = restore.0.restore_and_release(true).await {
+                    if let Err(error) = restore.0.restore_and_release(None, true).await {
                         tracing::warn!(
                             wallet_id = %hex::encode(restore.0.wallet_id),
                             %error,
@@ -1135,7 +1142,7 @@ impl PlatformWallet {
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     %error,
-                    "private contact request payments not restored at bind; the wallet's \
+                    "private contact request payments not restored; the wallet's \
                      contact requests stay held until a restoration succeeds"
                 );
                 None
@@ -1518,9 +1525,10 @@ impl PlatformWallet {
     /// Per-account unspent shielded balance.
     ///
     /// Reads against the coordinator's shared store (one SQLite
-    /// handle per network); returns an empty map if shielded
-    /// support hasn't been configured or this wallet isn't
-    /// bound. Folds the network-wide
+    /// handle per network); returns an empty map if this wallet isn't
+    /// bound, and [`PlatformWalletError::ShieldedStoreError`] if the
+    /// manager has no shielded support configured, so an unconfigured
+    /// manager never reads as a zero balance. Folds the network-wide
     /// [`balances_across`](super::shielded::sync::balances_across)
     /// result down to this wallet's per-account slice.
     #[cfg(feature = "shielded")]
@@ -1528,9 +1536,7 @@ impl PlatformWallet {
         &self,
     ) -> Result<std::collections::BTreeMap<u32, u64>, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
-        let Ok(coordinator) = self.shielded_coordinator().await else {
-            return Ok(std::collections::BTreeMap::new());
-        };
+        let coordinator = self.shielded_coordinator().await?;
         let guard = self.shielded_keys.read().await;
         let Some(keys) = guard.as_ref() else {
             return Ok(std::collections::BTreeMap::new());
@@ -1949,8 +1955,12 @@ impl PlatformWallet {
     /// public and private send from then on. Returns the (sender, recipient)
     /// pairs restored.
     ///
+    /// Waits for the coordinator's admission and holds it to its last write,
+    /// so a shielded Clear lands entirely before or after it.
+    ///
     /// Fails closed, every hold staying and the wallet's raised if it was
-    /// not: for a coordinator of another network, a wallet removed or
+    /// not: for a coordinator of another network, a Clear that reset native
+    /// state but did not wipe the host, a wallet removed or
     /// re-created since this handle was taken, a journal record that does
     /// not read back, a saved spend whose transition does not decode and
     /// that no journal record accounts for, a private contact request
@@ -1983,7 +1993,7 @@ impl PlatformWallet {
     ) -> Result<Vec<(Identifier, Identifier)>, PlatformWalletError> {
         let coordinator = self.shielded_coordinator().await?;
         self.private_payment_restore(&coordinator)
-            .restore_and_release(true)
+            .restore_and_release(None, true)
             .await
             .map(Option::unwrap_or_default)
     }
@@ -2023,7 +2033,7 @@ impl PlatformWallet {
                     let Some(restore) = restore else {
                         return;
                     };
-                    if let Err(error) = restore.restore_and_release(false).await {
+                    if let Err(error) = restore.restore_and_release(None, false).await {
                         tracing::warn!(
                             wallet_id = %hex::encode(wallet_id),
                             %error,
@@ -2058,6 +2068,16 @@ impl PlatformWallet {
                 .dashpay()
                 .any_private_payments_unrestored()
                 .await
+    }
+
+    /// How many deferred restorations of this wallet's private payments were
+    /// queued ([`Self::restore_private_payments_or_defer`]).
+    #[cfg(all(test, feature = "shielded"))]
+    pub(crate) fn deferred_private_payment_restores(&self) -> usize {
+        self.private_payment_restores
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .queued
     }
 
     /// The entries of the private contact requests whose payment from this
@@ -3139,11 +3159,35 @@ impl PrivatePaymentRestore {
     /// once a restoration succeeds, raised when it fails, and when it cannot
     /// run yet unless this generation already restored from this store.
     /// `Ok(None)` when the store is busy and `wait` is false.
+    ///
+    /// Runs under the coordinator's admission, held until the last store and
+    /// persister write, so a Clear lands entirely before or after it. A
+    /// caller that holds one passes it: taking a second would deadlock
+    /// behind a queued Clear. Otherwise one is taken here, and without
+    /// `wait` a Clear holding or queued for it counts as a busy store. Even
+    /// without `wait` the restoration waits for the wallet manager's lock,
+    /// admission held, so a Clear queued meanwhile waits for it too.
     async fn restore_and_release(
         &self,
+        admission: Option<&ShieldedAdmission<'_>>,
         wait: bool,
     ) -> Result<Option<Vec<(Identifier, Identifier)>>, PlatformWalletError> {
-        let restored = self.restore(wait).await;
+        let owned;
+        let admission = match admission {
+            Some(admission) => Some(admission),
+            None if wait => {
+                owned = Some(self.coordinator.admit().await);
+                owned.as_ref()
+            }
+            None => {
+                owned = self.coordinator.try_admit();
+                owned.as_ref()
+            }
+        };
+        let restored = match admission {
+            Some(admission) => self.restore(admission, wait).await,
+            None => Ok(None),
+        };
         match &restored {
             Ok(Some(_)) => {
                 self.restores_lock().restored_from = Arc::downgrade(self.coordinator.store());
@@ -3241,8 +3285,17 @@ impl PrivatePaymentRestore {
     /// holds it raises or releases are this generation's own.
     async fn restore(
         &self,
+        admission: &ShieldedAdmission<'_>,
         wait: bool,
     ) -> Result<Option<Vec<(Identifier, Identifier)>>, PlatformWalletError> {
+        if !admission.admits(&self.coordinator) {
+            return Err(PlatformWalletError::InvalidParameter(
+                "the shielded admission is not this restoration's coordinator's".to_string(),
+            ));
+        }
+        // A Clear that reset native state but not the host refuses
+        // restorations as it refuses binds.
+        admission.ensure_host_cleared()?;
         if self.coordinator.network() != self.network {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "the shielded coordinator is for {:?}, this wallet for {:?}",
@@ -3863,18 +3916,18 @@ mod private_contact_request_payment_tests {
 
         let store = coordinator.store().write().await;
         let task = wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .expect("queued");
         assert!(wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .is_none());
         task.abort();
         assert!(task.await.is_err_and(|error| error.is_cancelled()));
         assert!(
             wallet
-                .restore_private_payments_or_defer(&coordinator)
+                .restore_private_payments_or_defer(&coordinator, None)
                 .await
                 .is_some(),
             "the aborted task freed the queue"
@@ -3903,11 +3956,11 @@ mod private_contact_request_payment_tests {
 
         let store = coordinator.store().write().await;
         assert!(wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .is_some());
         assert!(wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .is_none());
         assert_eq!(queued(), 1, "one deferred restoration per store");
@@ -3923,7 +3976,7 @@ mod private_contact_request_payment_tests {
 
         let store = coordinator.store().write().await;
         assert!(wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .is_none());
         assert!(

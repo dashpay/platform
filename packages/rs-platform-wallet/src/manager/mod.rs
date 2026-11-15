@@ -1066,7 +1066,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 || (journaled_too
                     && coordinator.may_journal_private_payments_of(wallet.wallet_id()))
             {
-                wallet.restore_private_payments_or_defer(coordinator).await;
+                wallet
+                    .restore_private_payments_or_defer(coordinator, None)
+                    .await;
             }
         }
     }
@@ -1089,7 +1091,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub(crate) async fn hold_or_restore_private_payments(&self, wallet: &PlatformWallet) {
         match self.shielded_coordinator().await {
             Some(coordinator) => {
-                wallet.restore_private_payments_or_defer(&coordinator).await;
+                wallet
+                    .restore_private_payments_or_defer(&coordinator, None)
+                    .await;
             }
             None if wallet.persister().persists_private_contact_scan_state() => {
                 wallet.persister().hold_until_private_payments_restored();
@@ -1106,7 +1110,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub(crate) async fn restore_private_payments_configured_since(&self, wallet: &PlatformWallet) {
         if let Some(coordinator) = self.shielded_coordinator().await {
             if wallet.private_payments_held().await {
-                wallet.restore_private_payments_or_defer(&coordinator).await;
+                wallet
+                    .restore_private_payments_or_defer(&coordinator, None)
+                    .await;
             }
         }
     }

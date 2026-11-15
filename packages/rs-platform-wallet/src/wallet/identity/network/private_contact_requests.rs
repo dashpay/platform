@@ -11904,7 +11904,7 @@ mod tests {
         ));
         let scan = coordinator.store().write().await;
         let deferred = wallet
-            .restore_private_payments_or_defer(&coordinator)
+            .restore_private_payments_or_defer(&coordinator, None)
             .await
             .expect("deferred for the busy store");
         deferred.abort();

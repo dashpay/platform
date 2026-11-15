@@ -206,6 +206,27 @@ impl Buffer {
         Ok(())
     }
 
+    /// The network the last buffered wallet metadata of `wallet_id` names,
+    /// if any is buffered.
+    #[cfg(feature = "shielded")]
+    pub fn buffered_network(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Result<Option<key_wallet::Network>, WalletStorageError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
+        Ok(guard.get(wallet_id).and_then(|pending| {
+            pending
+                .segments
+                .iter()
+                .rev()
+                .find_map(|segment| segment.wallet_metadata.as_ref())
+                .map(|meta| meta.network)
+        }))
+    }
+
     /// Every wallet currently holding buffered data, sorted by id for
     /// deterministic flush ordering.
     pub fn dirty_wallets(&self) -> Result<Vec<WalletId>, WalletStorageError> {

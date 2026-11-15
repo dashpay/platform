@@ -219,3 +219,65 @@ fn shielded_wipe_leaves_other_networks_buffered_writes_unflushed() {
     );
     assert_eq!(viewing_key_count(&path, &mainnet_wallet), 0);
 }
+
+fn with_metadata(
+    mut cs: PlatformWalletChangeSet,
+    network: dashcore::Network,
+) -> PlatformWalletChangeSet {
+    cs.wallet_metadata = Some(platform_wallet::changeset::WalletMetadataEntry {
+        network,
+        wallet_group_id: [0u8; 32],
+        birth_height: 0,
+    });
+    cs
+}
+
+#[test]
+fn shielded_wipe_classifies_a_wallet_with_no_row_by_its_buffered_network() {
+    let (persister, _tmp, path) =
+        common::fresh_persister_with_mode(platform_wallet_storage::FlushMode::Manual);
+    let testnet_wallet = wid(0x76);
+    let mainnet_wallet = wid(0x77);
+    persister
+        .store(
+            testnet_wallet,
+            with_metadata(
+                changeset(SubwalletId::new(testnet_wallet, 0), [0xE4; 96]),
+                dashcore::Network::Testnet,
+            ),
+        )
+        .expect("buffer the new testnet wallet");
+    persister
+        .store(
+            mainnet_wallet,
+            with_metadata(
+                changeset(SubwalletId::new(mainnet_wallet, 0), [0xE5; 96]),
+                dashcore::Network::Mainnet,
+            ),
+        )
+        .expect("buffer the new mainnet wallet");
+
+    persister
+        .wipe_shielded_state(dashcore::Network::Testnet)
+        .expect("wipe testnet");
+
+    let wallet_rows = |wallet_id: &[u8; 32]| -> i64 {
+        common::ro_conn(&path)
+            .query_row(
+                "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(wallet_rows(&testnet_wallet), 1, "flushed by the wipe");
+    assert_eq!(viewing_key_count(&path, &testnet_wallet), 0, "then wiped");
+    assert_eq!(
+        wallet_rows(&mainnet_wallet),
+        0,
+        "another network's new wallet stays buffered"
+    );
+
+    persister.commit_writes().expect("flush after wipe");
+    assert_eq!(viewing_key_count(&path, &mainnet_wallet), 1);
+}
