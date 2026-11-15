@@ -304,13 +304,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
     consume_invitation_voucher: jboolean,
 ) -> jlong {
     guard(&mut env, 0i64, |env| {
-        let Some(txid) = read_id32(env, &outpoint_txid, "outpointTxid") else {
+        let Some(outpoint) = read_outpoint(env, &outpoint_txid, outpoint_vout) else {
             return 0;
         };
-        if outpoint_vout < 0 {
-            throw_sdk_exception(env, 1, "outpointVout must be non-negative");
-            return 0;
-        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return 0;
         };
@@ -318,10 +314,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
             throw_sdk_exception(env, 1, "coreSignerHandle must be non-zero");
             return 0;
         }
-        let outpoint = OutPointFFI {
-            txid,
-            vout: outpoint_vout as u32,
-        };
         let mut out_balance = 0u64;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_topup_identity_with_existing_asset_lock_signer(

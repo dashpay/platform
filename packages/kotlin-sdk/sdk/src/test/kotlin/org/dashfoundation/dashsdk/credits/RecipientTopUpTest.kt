@@ -47,7 +47,7 @@ class RecipientTopUpTest {
         val resumeResult: IdentityTopUpNativeResult =
             IdentityTopUpNativeResult(ByteArray(32) { 7 }, 4_000L),
         val failure: DashSDKException? = null,
-    ) : RecipientTopUpNative {
+    ) : UnexpectedTopUpNative() {
         val calls = mutableListOf<List<Any>>()
 
         override fun topUpExternalIdentityFromCore(
@@ -89,7 +89,7 @@ class RecipientTopUpTest {
         val native = FakeNative()
         val identity = ByteArray(32) { 3 }
 
-        val balance = IdentityCredits(recipientTopUpNative = native)
+        val balance = IdentityCredits(native = native)
             .topUpExternalIdentityFromCore(1L, identity, 60_000L, 0, 2L)
 
         assertEquals(9_000L, balance)
@@ -105,7 +105,7 @@ class RecipientTopUpTest {
     fun shouldResumeEveryIdentityTopUpLockByOutpointWithoutNamingAnIdentity() = runTest {
         val paid = ByteArray(32) { 7 }
         val native = FakeNative(resumeResult = IdentityTopUpNativeResult(paid, 4_000L))
-        val credits = IdentityCredits(recipientTopUpNative = native)
+        val credits = IdentityCredits(native = native)
 
         // Bound, unbound with a recipient, and unassigned alike: Rust decides.
         for (lock in listOf(
@@ -134,7 +134,7 @@ class RecipientTopUpTest {
             failure = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 81, "assign a recipient"),
         )
         val failure = runCatching {
-            IdentityCredits(recipientTopUpNative = native).resumeTopUpToRecordedRecipient(
+            IdentityCredits(native = native).resumeTopUpToRecordedRecipient(
                 1L,
                 lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, unassigned = true),
                 2L,
@@ -150,7 +150,7 @@ class RecipientTopUpTest {
         val native = FakeNative()
         val unassigned = lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, unassigned = true)
 
-        IdentityCredits(recipientTopUpNative = native).assignTopUpRecipient(1L, unassigned, identity)
+        IdentityCredits(native = native).assignTopUpRecipient(1L, unassigned, identity)
 
         val call = native.calls.single()
         assertEquals(listOf("assign", 1L), call.take(2))
@@ -162,7 +162,7 @@ class RecipientTopUpTest {
             failure = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 61, "cannot be resumed to"),
         )
         val failure = runCatching {
-            IdentityCredits(recipientTopUpNative = mismatch).assignTopUpRecipient(1L, unassigned, identity)
+            IdentityCredits(native = mismatch).assignTopUpRecipient(1L, unassigned, identity)
         }.exceptionOrNull()
         assertTrue(failure is DashSdkError.PlatformWallet.AssetLockRecipientMismatch)
     }
@@ -170,7 +170,7 @@ class RecipientTopUpTest {
     @Test
     fun shouldRefuseAnIdentityIdThatIsNot32BytesBeforeJni() = runTest {
         val native = FakeNative()
-        val credits = IdentityCredits(recipientTopUpNative = native)
+        val credits = IdentityCredits(native = native)
 
         assertTrue(
             runCatching {
@@ -190,7 +190,7 @@ class RecipientTopUpTest {
     }
 
     /** Blocks every payment until [release], as a native call that cannot see cancellation. */
-    private class BlockingNative : RecipientTopUpNative {
+    private class BlockingNative : UnexpectedTopUpNative() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
 
@@ -247,7 +247,7 @@ class RecipientTopUpTest {
         )
         for ((expected, pay) in payments) {
             val native = BlockingNative()
-            val credits = IdentityCredits(recipientTopUpNative = native)
+            val credits = IdentityCredits(native = native)
             val received = CompletableDeferred<Long>()
             val caller = launch(Dispatchers.Default) {
                 received.complete(pay(credits))

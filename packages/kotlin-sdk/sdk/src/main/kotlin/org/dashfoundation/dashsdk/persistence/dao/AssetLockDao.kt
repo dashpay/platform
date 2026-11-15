@@ -166,9 +166,22 @@ interface AssetLockDao {
     )
     suspend fun fundingTypeForTxid(txidHex: String): Int?
 
-    /** The row of [walletId] at [outPointHex], for the sidecar persist and load callbacks. */
+    /** The row of [walletId] at [outPointHex], for the staged sidecar write. */
     @Query("SELECT * FROM asset_locks WHERE walletId = :walletId AND outPointHex = :outPointHex")
     suspend fun getByWalletAndOutPointHex(walletId: ByteArray, outPointHex: String): AssetLockEntity?
+
+    /**
+     * The sidecar columns of the row of [walletId] at [outPointHex], without
+     * its transaction and proof blobs; null when there is no such row.
+     */
+    @Query(
+        "SELECT operationId, shieldedRecipientRaw43, identityRecipientId FROM asset_locks " +
+            "WHERE walletId = :walletId AND outPointHex = :outPointHex"
+    )
+    suspend fun getSidecarsByWalletAndOutPointHex(
+        walletId: ByteArray,
+        outPointHex: String,
+    ): AssetLockSidecars?
 
     /**
      * Whether another row of [walletId] already records [operationId]: the
@@ -220,3 +233,10 @@ interface AssetLockDao {
     @Query("SELECT COUNT(*) FROM asset_locks WHERE walletId = :walletId")
     fun countByWallet(walletId: ByteArray): Flow<Long>
 }
+
+/** The sidecar columns of one [AssetLockEntity] row. */
+class AssetLockSidecars(
+    val operationId: ByteArray?,
+    val shieldedRecipientRaw43: ByteArray?,
+    val identityRecipientId: ByteArray?,
+)

@@ -201,9 +201,10 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                         )
                     }
                     if (unassignedLocks.isNotEmpty()) {
+                        val selectedLock = selectedUnassignedLock ?: unassignedLocks.first()
                         UnassignedTopUpLocks(
                             locks = unassignedLocks,
-                            selected = selectedUnassignedLock ?: unassignedLocks.first(),
+                            selected = selectedLock,
                             onSelected = { selectedUnassignedLock = it },
                             identityHex = assignIdentityHex,
                             onIdentityHexChange = { assignIdentityHex = it },
@@ -211,13 +212,12 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                             onAssign = assign@{
                                 val mgr = manager ?: return@assign
                                 val w = wallet ?: return@assign
-                                val lock = selectedUnassignedLock ?: unassignedLocks.first()
                                 isAssigning = true
                                 scope.launch {
                                     try {
                                         mgr.identityCredits.assignTopUpRecipient(
                                             walletHandle = w.handle,
-                                            lock = lock,
+                                            lock = selectedLock,
                                             identityId = assignIdentityHex.hexToBytes(),
                                         )
                                         reloadKey++

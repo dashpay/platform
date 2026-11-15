@@ -10,8 +10,13 @@ import org.dashfoundation.dashsdk.ffi.CreditsNative
 import org.dashfoundation.dashsdk.ffi.IdentityTopUpNativeResult
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 
-internal fun interface ResumeTopUpNativeCall {
-    fun call(
+/**
+ * The JNI calls behind [IdentityCredits]' top-ups that resume or pay through
+ * an asset lock, as one seam so unit tests can stand in for the native
+ * library, which Robolectric cannot load. Production uses [Jni].
+ */
+internal interface TopUpNative {
+    fun topUpIdentityWithExistingAssetLock(
         walletHandle: Long,
         outpointTxid: ByteArray,
         outpointVout: Int,
@@ -19,14 +24,7 @@ internal fun interface ResumeTopUpNativeCall {
         coreSignerHandle: Long,
         consumeInvitationVoucher: Boolean,
     ): Long
-}
 
-/**
- * The JNI calls behind the top-ups to any identity, as one seam so unit tests
- * can stand in for the native library, which Robolectric cannot load.
- * Production uses [CreditsNative].
- */
-internal interface RecipientTopUpNative {
     fun topUpExternalIdentityFromCore(
         walletHandle: Long,
         identityId: ByteArray,
@@ -50,7 +48,23 @@ internal interface RecipientTopUpNative {
     )
 
     /** [CreditsNative]'s exports. */
-    object Jni : RecipientTopUpNative {
+    object Jni : TopUpNative {
+        override fun topUpIdentityWithExistingAssetLock(
+            walletHandle: Long,
+            outpointTxid: ByteArray,
+            outpointVout: Int,
+            identityId: ByteArray,
+            coreSignerHandle: Long,
+            consumeInvitationVoucher: Boolean,
+        ): Long = CreditsNative.topUpIdentityWithExistingAssetLock(
+            walletHandle,
+            outpointTxid,
+            outpointVout,
+            identityId,
+            coreSignerHandle,
+            consumeInvitationVoucher,
+        )
+
         override fun topUpExternalIdentityFromCore(
             walletHandle: Long,
             identityId: ByteArray,
@@ -164,9 +178,7 @@ data class FundingInput(
  */
 class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
-    private val resumeTopUpNative: ResumeTopUpNativeCall =
-        ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
-    private val recipientTopUpNative: RecipientTopUpNative = RecipientTopUpNative.Jni,
+    private val native: TopUpNative = TopUpNative.Jni,
 ) {
 
     /**
@@ -192,7 +204,7 @@ class IdentityCredits internal constructor(
             "top-up recovery requires funding type 1 or 2, got ${lock.fundingType.raw}"
         }
         mapNativeErrors {
-            resumeTopUpNative.call(
+            native.topUpIdentityWithExistingAssetLock(
                 walletHandle = walletHandle,
                 outpointTxid = lock.outpointTxid,
                 outpointVout = lock.outpointVout,
@@ -240,7 +252,7 @@ class IdentityCredits internal constructor(
         }
         require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
         mapNativeErrors {
-            resumeTopUpNative.call(
+            native.topUpIdentityWithExistingAssetLock(
                 walletHandle = walletHandle,
                 outpointTxid = outPointTxid,
                 outpointVout = outPointVout,
@@ -409,7 +421,7 @@ class IdentityCredits internal constructor(
             "identityId must be exactly 32 bytes, got ${identityId.size}"
         }
         mapNativeErrors {
-            recipientTopUpNative.topUpExternalIdentityFromCore(
+            native.topUpExternalIdentityFromCore(
                 walletHandle,
                 identityId,
                 amountDuffs,
@@ -444,18 +456,15 @@ class IdentityCredits internal constructor(
         lock: TrackedAssetLock,
         coreSignerHandle: Long,
     ): IdentityTopUpResult = gate.opReturningCompletedResult {
-        val native = mapNativeErrors {
-            recipientTopUpNative.resumeTopUpToRecordedRecipient(
+        val paid = mapNativeErrors {
+            native.resumeTopUpToRecordedRecipient(
                 walletHandle,
                 lock.outpointTxid,
                 lock.outpointVout,
                 coreSignerHandle,
             )
         }
-        check(native.identityId.size == 32) {
-            "native returned a ${native.identityId.size}-byte identity id"
-        }
-        IdentityTopUpResult(native.identityId.copyOf(), native.newBalance)
+        IdentityTopUpResult(paid.identityId, paid.newBalance)
     }
 
     /**
@@ -481,7 +490,7 @@ class IdentityCredits internal constructor(
             "identityId must be exactly 32 bytes, got ${identityId.size}"
         }
         mapNativeErrors {
-            recipientTopUpNative.assignTopUpRecipient(
+            native.assignTopUpRecipient(
                 walletHandle,
                 lock.outpointTxid,
                 lock.outpointVout,

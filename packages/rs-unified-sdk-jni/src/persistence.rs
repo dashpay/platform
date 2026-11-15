@@ -265,9 +265,21 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
         ),
-        asset_lock_operation_ids: overrides_sidecar(env, bridge, &OPERATION_ID_SIDECAR),
-        asset_lock_shielded_recipients: overrides_sidecar(env, bridge, &SHIELDED_RECIPIENT_SIDECAR),
-        asset_lock_identity_recipients: overrides_sidecar(env, bridge, &IDENTITY_RECIPIENT_SIDECAR),
+        asset_lock_operation_ids: overrides_sidecar(
+            env,
+            bridge,
+            &ASSET_LOCK_SIDECARS[OPERATION_ID],
+        ),
+        asset_lock_shielded_recipients: overrides_sidecar(
+            env,
+            bridge,
+            &ASSET_LOCK_SIDECARS[SHIELDED_RECIPIENT],
+        ),
+        asset_lock_identity_recipients: overrides_sidecar(
+            env,
+            bridge,
+            &ASSET_LOCK_SIDECARS[IDENTITY_RECIPIENT],
+        ),
     })
 }
 
@@ -396,22 +408,22 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         // present, and the host declares the bit.
         on_persist_asset_lock_operation_id_fn: overrides
             .asset_lock_operation_ids
-            .then_some(tramp_persist_asset_lock_operation_id),
+            .then_some(tramp_persist_asset_lock_sidecar::<OPERATION_ID>),
         on_load_asset_lock_operation_id_fn: overrides
             .asset_lock_operation_ids
-            .then_some(tramp_load_asset_lock_operation_id),
+            .then_some(tramp_load_asset_lock_sidecar::<OPERATION_ID>),
         on_persist_asset_lock_shielded_recipient_fn: overrides
             .asset_lock_shielded_recipients
-            .then_some(tramp_persist_asset_lock_shielded_recipient),
+            .then_some(tramp_persist_asset_lock_sidecar::<SHIELDED_RECIPIENT>),
         on_load_asset_lock_shielded_recipient_fn: overrides
             .asset_lock_shielded_recipients
-            .then_some(tramp_load_asset_lock_shielded_recipient),
+            .then_some(tramp_load_asset_lock_sidecar::<SHIELDED_RECIPIENT>),
         on_persist_asset_lock_identity_recipient_fn: overrides
             .asset_lock_identity_recipients
-            .then_some(tramp_persist_asset_lock_identity_recipient),
+            .then_some(tramp_persist_asset_lock_sidecar::<IDENTITY_RECIPIENT>),
         on_load_asset_lock_identity_recipient_fn: overrides
             .asset_lock_identity_recipients
-            .then_some(tramp_load_asset_lock_identity_recipient),
+            .then_some(tramp_load_asset_lock_sidecar::<IDENTITY_RECIPIENT>),
         ..Default::default()
     }
 }
@@ -2251,55 +2263,63 @@ const ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR: &str = "([B[B[B)I";
 /// methods: `(walletId, outPoint) -> value`, null when the row records none.
 const ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR: &str = "([B[B)[B";
 
-/// Width of the raw Orchard recipient `LoadAssetLockShieldedRecipientFn`
-/// writes (`out_recipient_raw_43`).
-const SHIELDED_RECIPIENT_LEN: usize = 43;
-
 /// One additive asset-lock sidecar (`PersistAssetLock*Fn` /
 /// `LoadAssetLock*Fn` in `platform_wallet_ffi::persistence`): the bridge
-/// methods that persist and load it and its fixed width.
+/// methods that persist and load it and its fixed width, which is both the
+/// width persist reads and the only width load accepts.
 struct AssetLockSidecar {
     persist_method: &'static str,
     load_method: &'static str,
     len: usize,
 }
 
-/// The 16-byte operation UUID (`ASSET_LOCK_OPERATION_IDS`).
-const OPERATION_ID_SIDECAR: AssetLockSidecar = AssetLockSidecar {
-    persist_method: "onPersistAssetLockOperationId",
-    load_method: "onLoadAssetLockOperationId",
-    len: 16,
-};
+/// Index in [`ASSET_LOCK_SIDECARS`] of the 16-byte operation UUID
+/// (`ASSET_LOCK_OPERATION_IDS`).
+const OPERATION_ID: usize = 0;
+/// Index in [`ASSET_LOCK_SIDECARS`] of the raw 43-byte Orchard recipient
+/// (`ASSET_LOCK_SHIELDED_RECIPIENTS`, `out_recipient_raw_43`).
+const SHIELDED_RECIPIENT: usize = 1;
+/// Index in [`ASSET_LOCK_SIDECARS`] of the 32-byte identity an unbound
+/// top-up pays (`ASSET_LOCK_IDENTITY_RECIPIENTS`).
+const IDENTITY_RECIPIENT: usize = 2;
 
-/// The raw 43-byte Orchard recipient (`ASSET_LOCK_SHIELDED_RECIPIENTS`).
-const SHIELDED_RECIPIENT_SIDECAR: AssetLockSidecar = AssetLockSidecar {
-    persist_method: "onPersistAssetLockShieldedRecipient",
-    load_method: "onLoadAssetLockShieldedRecipient",
-    len: SHIELDED_RECIPIENT_LEN,
-};
+/// Every asset-lock sidecar, indexed by [`OPERATION_ID`],
+/// [`SHIELDED_RECIPIENT`] and [`IDENTITY_RECIPIENT`]; the trampolines take
+/// the index as a const generic.
+const ASSET_LOCK_SIDECARS: [AssetLockSidecar; 3] = [
+    AssetLockSidecar {
+        persist_method: "onPersistAssetLockOperationId",
+        load_method: "onLoadAssetLockOperationId",
+        len: 16,
+    },
+    AssetLockSidecar {
+        persist_method: "onPersistAssetLockShieldedRecipient",
+        load_method: "onLoadAssetLockShieldedRecipient",
+        len: 43,
+    },
+    AssetLockSidecar {
+        persist_method: "onPersistAssetLockIdentityRecipient",
+        load_method: "onLoadAssetLockIdentityRecipient",
+        len: 32,
+    },
+];
 
-/// The 32-byte identity an unbound top-up pays
-/// (`ASSET_LOCK_IDENTITY_RECIPIENTS`).
-const IDENTITY_RECIPIENT_SIDECAR: AssetLockSidecar = AssetLockSidecar {
-    persist_method: "onPersistAssetLockIdentityRecipient",
-    load_method: "onLoadAssetLockIdentityRecipient",
-    len: 32,
-};
-
-/// Hand one sidecar value to the bridge. The bridge's return is the
-/// callback's: non-zero (a different value already stored, no row, no open
-/// round) fails the round.
+/// `PersistAssetLock*Fn` for the sidecar at index `S` of
+/// [`ASSET_LOCK_SIDECARS`]. The bridge's return is the callback's: non-zero
+/// (a different value already stored, no row, no open round) fails the
+/// round.
 ///
 /// # Safety
 /// `wallet_id` points to 32 readable bytes, `out_point` to 36 and `value` to
-/// `sidecar.len`, for the duration of the call.
-unsafe fn persist_asset_lock_sidecar(
+/// the sidecar's `len`, for the duration of the call.
+unsafe extern "C" fn tramp_persist_asset_lock_sidecar<const S: usize>(
     context: *mut c_void,
     wallet_id: *const u8,
     out_point: *const u8,
     value: *const u8,
-    sidecar: &AssetLockSidecar,
 ) -> i32 {
+    // An out-of-range `S` fails to compile rather than panicking across the FFI.
+    let sidecar = const { &ASSET_LOCK_SIDECARS[S] };
     if wallet_id.is_null() || out_point.is_null() || value.is_null() {
         return ERR_JNI;
     }
@@ -2317,23 +2337,26 @@ unsafe fn persist_asset_lock_sidecar(
     })
 }
 
-/// Ask the bridge for one sidecar value and write it out. A JVM `null` is a
-/// row recording none (`*out_found = false`, success). An exception (a
-/// missing or unreadable row) or a value of the wrong width returns
-/// `ERR_JNI`, which fails the whole native load rather than reading as a lock
-/// without the value.
+/// `LoadAssetLock*Fn` for the sidecar at index `S` of
+/// [`ASSET_LOCK_SIDECARS`]: ask the bridge for the value and write it out. A
+/// JVM `null` is a row recording none (`*out_found = false`, success). An
+/// exception (a missing or unreadable row) or a value of the wrong width
+/// returns `ERR_JNI`, which fails the whole native load rather than reading
+/// as a lock without the value.
 ///
 /// # Safety
 /// `wallet_id` points to 32 readable bytes and `out_point` to 36;
-/// `out_found` is writable and `out_value` points to `N` writable bytes.
-unsafe fn load_asset_lock_sidecar<const N: usize>(
+/// `out_found` is writable and `out_value` points to the sidecar's `len`
+/// writable bytes.
+unsafe extern "C" fn tramp_load_asset_lock_sidecar<const S: usize>(
     context: *mut c_void,
     wallet_id: *const u8,
     out_point: *const u8,
     out_found: *mut bool,
     out_value: *mut u8,
-    sidecar: &AssetLockSidecar,
 ) -> i32 {
+    // An out-of-range `S` fails to compile rather than panicking across the FFI.
+    let sidecar = const { &ASSET_LOCK_SIDECARS[S] };
     if wallet_id.is_null() || out_point.is_null() || out_found.is_null() || out_value.is_null() {
         return ERR_JNI;
     }
@@ -2357,10 +2380,10 @@ unsafe fn load_asset_lock_sidecar<const N: usize>(
     let Some(loaded) = loaded else {
         return ERR_JNI;
     };
-    match sidecar_value::<N>(loaded) {
+    match sidecar_value(loaded, sidecar.len) {
         Ok(None) => 0,
         Ok(Some(value)) => {
-            ptr::copy_nonoverlapping(value.as_ptr(), out_value, N);
+            ptr::copy_nonoverlapping(value.as_ptr(), out_value, sidecar.len);
             *out_found = true;
             0
         }
@@ -2368,108 +2391,13 @@ unsafe fn load_asset_lock_sidecar<const N: usize>(
     }
 }
 
-/// The `N`-byte value a sidecar load returned: `None` for a row recording
+/// The `len`-byte value a sidecar load returned: `None` for a row recording
 /// none, an error for a value of any other width.
-fn sidecar_value<const N: usize>(loaded: Option<Vec<u8>>) -> Result<Option<[u8; N]>, ()> {
-    loaded
-        .map(|value| <[u8; N]>::try_from(value.as_slice()).map_err(|_| ()))
-        .transpose()
-}
-
-unsafe extern "C" fn tramp_persist_asset_lock_operation_id(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    operation_id: *const u8,
-) -> i32 {
-    persist_asset_lock_sidecar(
-        context,
-        wallet_id,
-        out_point,
-        operation_id,
-        &OPERATION_ID_SIDECAR,
-    )
-}
-
-unsafe extern "C" fn tramp_load_asset_lock_operation_id(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    out_found: *mut bool,
-    out_operation_id: *mut u8,
-) -> i32 {
-    load_asset_lock_sidecar::<16>(
-        context,
-        wallet_id,
-        out_point,
-        out_found,
-        out_operation_id,
-        &OPERATION_ID_SIDECAR,
-    )
-}
-
-unsafe extern "C" fn tramp_persist_asset_lock_shielded_recipient(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    recipient_raw_43: *const u8,
-) -> i32 {
-    persist_asset_lock_sidecar(
-        context,
-        wallet_id,
-        out_point,
-        recipient_raw_43,
-        &SHIELDED_RECIPIENT_SIDECAR,
-    )
-}
-
-unsafe extern "C" fn tramp_load_asset_lock_shielded_recipient(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    out_found: *mut bool,
-    out_recipient_raw_43: *mut u8,
-) -> i32 {
-    load_asset_lock_sidecar::<SHIELDED_RECIPIENT_LEN>(
-        context,
-        wallet_id,
-        out_point,
-        out_found,
-        out_recipient_raw_43,
-        &SHIELDED_RECIPIENT_SIDECAR,
-    )
-}
-
-unsafe extern "C" fn tramp_persist_asset_lock_identity_recipient(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    identity_id_32: *const u8,
-) -> i32 {
-    persist_asset_lock_sidecar(
-        context,
-        wallet_id,
-        out_point,
-        identity_id_32,
-        &IDENTITY_RECIPIENT_SIDECAR,
-    )
-}
-
-unsafe extern "C" fn tramp_load_asset_lock_identity_recipient(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    out_found: *mut bool,
-    out_identity_id_32: *mut u8,
-) -> i32 {
-    load_asset_lock_sidecar::<32>(
-        context,
-        wallet_id,
-        out_point,
-        out_found,
-        out_identity_id_32,
-        &IDENTITY_RECIPIENT_SIDECAR,
-    )
+fn sidecar_value(loaded: Option<Vec<u8>>, len: usize) -> Result<Option<Vec<u8>>, ()> {
+    match loaded {
+        Some(value) if value.len() != len => Err(()),
+        loaded => Ok(loaded),
+    }
 }
 
 // ── Invitations (DIP-13) ──────────────────────────────────────────────
@@ -5555,27 +5483,27 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     // (`overrides_sidecar`), so a drifted descriptor would silently drop the
     // slots and the capability.
     (
-        OPERATION_ID_SIDECAR.persist_method,
+        ASSET_LOCK_SIDECARS[OPERATION_ID].persist_method,
         ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
     ),
     (
-        OPERATION_ID_SIDECAR.load_method,
+        ASSET_LOCK_SIDECARS[OPERATION_ID].load_method,
         ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
     ),
     (
-        SHIELDED_RECIPIENT_SIDECAR.persist_method,
+        ASSET_LOCK_SIDECARS[SHIELDED_RECIPIENT].persist_method,
         ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
     ),
     (
-        SHIELDED_RECIPIENT_SIDECAR.load_method,
+        ASSET_LOCK_SIDECARS[SHIELDED_RECIPIENT].load_method,
         ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
     ),
     (
-        IDENTITY_RECIPIENT_SIDECAR.persist_method,
+        ASSET_LOCK_SIDECARS[IDENTITY_RECIPIENT].persist_method,
         ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
     ),
     (
-        IDENTITY_RECIPIENT_SIDECAR.load_method,
+        ASSET_LOCK_SIDECARS[IDENTITY_RECIPIENT].load_method,
         ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
     ),
     ("onPersistInvitationUpsert", "([B[BIJIIZI)I"),
@@ -5960,39 +5888,21 @@ mod tests {
             method_descriptor(&names(&["[B", "[B"]), "[B"),
             ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR
         );
-        assert_eq!(OPERATION_ID_SIDECAR.len, 16);
-        assert_eq!(SHIELDED_RECIPIENT_SIDECAR.len, 43);
-        assert_eq!(IDENTITY_RECIPIENT_SIDECAR.len, 32);
-        for (name, descriptor) in [
-            (
-                OPERATION_ID_SIDECAR.persist_method,
-                ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
-            ),
-            (
-                OPERATION_ID_SIDECAR.load_method,
-                ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
-            ),
-            (
-                SHIELDED_RECIPIENT_SIDECAR.persist_method,
-                ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
-            ),
-            (
-                SHIELDED_RECIPIENT_SIDECAR.load_method,
-                ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
-            ),
-            (
-                IDENTITY_RECIPIENT_SIDECAR.persist_method,
-                ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
-            ),
-            (
-                IDENTITY_RECIPIENT_SIDECAR.load_method,
-                ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
-            ),
-        ] {
-            assert!(
-                BRIDGE_METHOD_TABLE.contains(&(name, descriptor)),
-                "{name} {descriptor} is checked by the descriptor smoke test"
-            );
+        // Every sidecar's pair is in the table the descriptor smoke test
+        // resolves against the bridge class.
+        for sidecar in &ASSET_LOCK_SIDECARS {
+            for (name, descriptor) in [
+                (
+                    sidecar.persist_method,
+                    ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
+                ),
+                (sidecar.load_method, ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR),
+            ] {
+                assert!(
+                    BRIDGE_METHOD_TABLE.contains(&(name, descriptor)),
+                    "{name} {descriptor} is checked by the descriptor smoke test"
+                );
+            }
         }
     }
 
@@ -6000,11 +5910,11 @@ mod tests {
     /// refuses a value of any other width, which fails the native load.
     #[test]
     fn should_accept_only_a_null_or_an_exact_width_sidecar_value() {
-        assert_eq!(sidecar_value::<32>(None), Ok(None));
-        assert_eq!(sidecar_value::<32>(Some(vec![7; 32])), Ok(Some([7; 32])));
-        assert_eq!(sidecar_value::<32>(Some(vec![7; 31])), Err(()));
-        assert_eq!(sidecar_value::<32>(Some(vec![7; 33])), Err(()));
-        assert_eq!(sidecar_value::<16>(Some(Vec::new())), Err(()));
+        assert_eq!(sidecar_value(None, 32), Ok(None));
+        assert_eq!(sidecar_value(Some(vec![7; 32]), 32), Ok(Some(vec![7; 32])));
+        assert_eq!(sidecar_value(Some(vec![7; 31]), 32), Err(()));
+        assert_eq!(sidecar_value(Some(vec![7; 33]), 32), Err(()));
+        assert_eq!(sidecar_value(Some(Vec::new()), 16), Err(()));
     }
 
     /// Null pointers from native are refused before the JVM is reached.
@@ -6016,7 +5926,7 @@ mod tests {
         let mut value = [0u8; 32];
         unsafe {
             assert_eq!(
-                tramp_persist_asset_lock_identity_recipient(
+                tramp_persist_asset_lock_sidecar::<IDENTITY_RECIPIENT>(
                     ptr::null_mut(),
                     id.as_ptr(),
                     out_point.as_ptr(),
@@ -6025,7 +5935,7 @@ mod tests {
                 ERR_JNI
             );
             assert_eq!(
-                tramp_load_asset_lock_identity_recipient(
+                tramp_load_asset_lock_sidecar::<IDENTITY_RECIPIENT>(
                     ptr::null_mut(),
                     id.as_ptr(),
                     out_point.as_ptr(),
@@ -6035,7 +5945,7 @@ mod tests {
                 ERR_JNI
             );
             assert_eq!(
-                tramp_load_asset_lock_identity_recipient(
+                tramp_load_asset_lock_sidecar::<IDENTITY_RECIPIENT>(
                     ptr::null_mut(),
                     ptr::null(),
                     out_point.as_ptr(),

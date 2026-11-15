@@ -35,6 +35,7 @@ import org.dashfoundation.dashsdk.ffi.ShieldedViewingKeyData
 import org.dashfoundation.dashsdk.ffi.TrackedAssetLockRestoreData
 import org.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData
 import org.dashfoundation.dashsdk.ffi.WalletRestoreData
+import org.dashfoundation.dashsdk.persistence.dao.AssetLockSidecars
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
@@ -2433,7 +2434,6 @@ class PlatformWalletPersistenceHandler(
             // their own callbacks after this upsert; a later upsert of the same
             // row must carry them forward, never clear them (the immutability
             // triggers would refuse it). Keyed by outpoint, as Swift's is.
-            val carried = existing
             db.assetLockDao().upsert(
                 AssetLockEntity(
                     outPointHex = outPointHex,
@@ -2447,9 +2447,9 @@ class PlatformWalletPersistenceHandler(
                     proofBytes = proofBytes,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
-                    operationId = carried?.operationId,
-                    shieldedRecipientRaw43 = carried?.shieldedRecipientRaw43,
-                    identityRecipientId = carried?.identityRecipientId,
+                    operationId = existing?.operationId,
+                    shieldedRecipientRaw43 = existing?.shieldedRecipientRaw43,
+                    identityRecipientId = existing?.identityRecipientId,
                 ),
             )
             // Spend-visibility reconcile: an asset-lock tx burns its value
@@ -2565,7 +2565,7 @@ class PlatformWalletPersistenceHandler(
         val stored = value.copyOf()
         val committed = runBlockingResult {
             val dao = database.assetLockDao()
-            val row = dao.getByWalletAndOutPointHex(walletId, outPointHex)
+            val row = dao.getSidecarsByWalletAndOutPointHex(walletId, outPointHex)
             val conflicting = row != null && sidecar.conflicts(row, stored)
             val duplicate = sidecar == AssetLockSidecar.OPERATION_ID &&
                 dao.countOtherRowsWithOperationId(walletId, stored, outPointHex) > 0
@@ -2580,10 +2580,11 @@ class PlatformWalletPersistenceHandler(
             val row = checkNotNull(dao.getByWalletAndOutPointHex(walletId, outPointHex)) {
                 "asset-lock ${sidecar.label}: no row for $outPointHex"
             }
-            check(!sidecar.conflicts(row, stored)) {
+            val sidecars = row.sidecars()
+            check(!sidecar.conflicts(sidecars, stored)) {
                 "asset lock ${sidecar.label} cannot change ($outPointHex)"
             }
-            if (sidecar.read(row) == null) {
+            if (sidecar.read(sidecars) == null) {
                 dao.upsert(sidecar.write(row, stored))
             }
         }
@@ -2604,21 +2605,21 @@ class PlatformWalletPersistenceHandler(
         require(outPoint.size == 36) { "outpoint must be 36 bytes, got ${outPoint.size}" }
         val outPointHex = encodeOutPointHex(outPoint)
         val row = runBlockingResult {
-            database.assetLockDao().getByWalletAndOutPointHex(walletId, outPointHex)
+            database.assetLockDao().getSidecarsByWalletAndOutPointHex(walletId, outPointHex)
         }
         checkNotNull(row) { "asset-lock ${sidecar.label}: no row for $outPointHex" }
         sidecar.read(row)?.also { value ->
             check(value.size == sidecar.size) {
                 "asset-lock ${sidecar.label} for $outPointHex is ${value.size} bytes, not ${sidecar.size}"
             }
-        }?.copyOf()
+        }
     }
 
     /** One immutable `asset_locks` sidecar column and its fixed width. */
     private enum class AssetLockSidecar(
         val label: String,
         val size: Int,
-        val read: (AssetLockEntity) -> ByteArray?,
+        val read: (AssetLockSidecars) -> ByteArray?,
         val write: (AssetLockEntity, ByteArray) -> AssetLockEntity,
     ) {
         OPERATION_ID(
@@ -2642,9 +2643,12 @@ class PlatformWalletPersistenceHandler(
         ;
 
         /** Whether [row] already records a value other than [value]. */
-        fun conflicts(row: AssetLockEntity, value: ByteArray): Boolean =
+        fun conflicts(row: AssetLockSidecars, value: ByteArray): Boolean =
             read(row)?.contentEquals(value) == false
     }
+
+    private fun AssetLockEntity.sidecars() =
+        AssetLockSidecars(operationId, shieldedRecipientRaw43, identityRecipientId)
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 

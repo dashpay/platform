@@ -1,6 +1,7 @@
 package org.dashfoundation.example.services.assetlock
 
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
+import org.dashfoundation.example.util.toHex
 
 /** Pure presentation filtering; Rust remains the recovery state machine. */
 object IdentityAssetLockRecovery {
@@ -47,7 +48,7 @@ object IdentityAssetLockRecovery {
 
     /** Display-only; submission passes the snapshot's original bytes/vout. */
     fun label(lock: TrackedAssetLock): String =
-        lock.outpointTxid.reversedArray().joinToString("") { "%02x".format(it) }.take(8) +
+        lock.outpointTxid.reversedArray().toHex().take(8) +
             ":${lock.outpointVout} · ${lock.status.name.lowercase().replace('_', ' ')}" +
-            (lock.identityRecipient?.let { " → " + it.joinToString("") { b -> "%02x".format(b) }.take(8) } ?: "")
+            (lock.identityRecipient?.let { " → " + it.toHex().take(8) } ?: "")
 }
