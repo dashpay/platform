@@ -10,6 +10,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -22,14 +23,20 @@ use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::StateTransition;
+use dpp::version::ProtocolVersion;
 use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key,
     encrypt_shielded_address, COMPACT_XPUB_LEN, SHIELDED_ADDRESS_LEN,
 };
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// The `contactRequest` property that carries the sender's shielded payment address.
 const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
+
+/// The protocol version DashPay v3, and with it a contact request's shielded address,
+/// exists from.
+const SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
 
 /// ECDH provider for contact request encryption
 ///
@@ -452,7 +459,9 @@ impl Sdk {
         };
 
         // Fetch DashPay contract
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let dashpay_contract = self
+            .dashpay_contract_for_contact_request(input.shielded_address.is_some())
+            .await?;
 
         // Get contactRequest document type
         let contact_request_document_type = dashpay_contract
@@ -533,6 +542,27 @@ impl Sdk {
             properties,
             entropy,
         })
+    }
+
+    /// The DashPay contract a contact request is built against.
+    ///
+    /// For a request that carries a shielded address the SDK first learns the network's
+    /// protocol version. An unpinned SDK starts below 15 and takes the context provider's
+    /// DashPay at its own version, which has no property for the address, so the request
+    /// would be refused on a network that accepts it. A request without an address resolves
+    /// the contract as before, with no extra read.
+    async fn dashpay_contract_for_contact_request(
+        &self,
+        with_shielded_address: bool,
+    ) -> Result<Arc<DataContract>, Error> {
+        if with_shielded_address {
+            self.require_protocol_version(
+                SHIELDED_ADDRESS_INITIAL_PROTOCOL_VERSION,
+                "a contact request's shielded address",
+            )
+            .await?;
+        }
+        self.fetch_dashpay_contract().await
     }
 
     /// Send a contact request to the platform
@@ -690,7 +720,6 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::data_contract::DataContract;
     use dpp::secp256k1;
     use dpp::secp256k1::rand::{self, RngCore};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -952,5 +981,68 @@ mod tests {
             shared_alice, shared_bob,
             "Both parties should derive the same shared secret"
         );
+    }
+
+    /// The SDK's protocol version and whether the contract it resolves for a contact
+    /// request gives the request a shielded address property.
+    #[cfg(feature = "mocks")]
+    async fn resolved_schema(sdk: &Sdk, with_shielded_address: bool) -> (u32, bool) {
+        let contract = sdk
+            .dashpay_contract_for_contact_request(with_shielded_address)
+            .await
+            .expect("the DashPay contract");
+        let carries_address = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest")
+            .properties()
+            .contains_key(ENCRYPTED_SHIELDED_ADDRESS);
+        (sdk.protocol_version_number(), carries_address)
+    }
+
+    /// An SDK seeded below protocol version 15 on a network running the latest version:
+    /// asked for a request with a shielded address, it learns the network's version first,
+    /// so the contract it resolves has the property for the address.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_learn_the_network_version_before_resolving_the_schema_of_a_shielded_address() {
+        let directory = tempfile::tempdir().expect("a mock dump directory");
+        let mut sdk: Sdk = crate::SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .with_dump_dir(directory.path())
+            .build()
+            .expect("a mock sdk");
+        crate::sdk::test::expect_epoch_refresh(&mut sdk).await;
+        let current = dashpay(PlatformVersion::latest());
+        sdk.mock()
+            .expect_fetch(current.id(), Some(current.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        assert_eq!(
+            resolved_schema(&sdk, true).await,
+            (PlatformVersion::latest().protocol_version, true)
+        );
+    }
+
+    /// A request without an address resolves the contract as before. No answer to a
+    /// version lookup is staged here, so the call succeeds only if it makes none.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_resolve_the_schema_of_a_request_without_an_address_at_the_seeded_version() {
+        let seeded = PlatformVersion::get(14).expect("protocol version 14");
+        let directory = tempfile::tempdir().expect("a mock dump directory");
+        let mut sdk: Sdk = crate::SdkBuilder::new_mock()
+            .with_initial_version(seeded)
+            .with_dump_dir(directory.path())
+            .build()
+            .expect("a mock sdk");
+        let held = dashpay(seeded);
+        sdk.mock()
+            .expect_fetch(held.id(), Some(held.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        let (_, carries_address) = resolved_schema(&sdk, false).await;
+        assert!(!carries_address, "the contract resolved is the one held");
     }
 }
