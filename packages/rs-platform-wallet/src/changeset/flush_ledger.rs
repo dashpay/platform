@@ -138,6 +138,16 @@ pub(crate) struct FlushLedgers(Mutex<BTreeMap<WalletId, Arc<FlushLedger>>>);
 /// backend, and dropped once nothing does. The backend is held weakly, which
 /// keeps its allocation from being reused while its entry stands, so an
 /// entry is never taken for another backend's.
+///
+/// A backend instance is told apart by the address of its `Arc` allocation.
+/// Every `Arc` has one, a backend type of no size included, as the
+/// allocation holds the reference counts: two live backends never share it.
+///
+/// An entry whose backend is gone is dropped at the next lookup, by any
+/// caller. So what outlives a backend is bounded: the entries of the
+/// backends that went since the last lookup, each a few counters per wallet
+/// id, until the next wallet handle is made anywhere in the process. They do
+/// not add up over repeated manager or backend lifetimes.
 static BACKEND_LEDGERS: Mutex<Vec<BackendLedgers>> = Mutex::new(Vec::new());
 
 type BackendLedgers = (Weak<dyn PlatformWalletPersistence>, Arc<FlushLedgers>);
@@ -276,6 +286,53 @@ mod tests {
             FlushLedgers::of_backend(&other).of(wallet_id).lost(),
             0,
             "another backend instance counts apart"
+        );
+    }
+
+    /// A buffering backend of no size whose flush fails for good. `N` makes
+    /// distinct types of it.
+    struct Unit<const N: usize>;
+
+    impl<const N: usize> PlatformWalletPersistence for Unit<N> {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("the database is corrupt"))
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Backend instances are told apart by their `Arc` allocation, which a
+    /// backend type of no size has too: two live backends of such types, the
+    /// same type or not, have their own ledgers, and a flush of one that
+    /// fails is not counted against the others. The same instance, asked
+    /// again, has the same ledger.
+    #[test]
+    fn should_tell_apart_live_backends_of_zero_sized_types() {
+        assert_eq!(std::mem::size_of::<Unit<0>>(), 0);
+        let first: Arc<dyn PlatformWalletPersistence> = Arc::new(Unit::<0>);
+        let second: Arc<dyn PlatformWalletPersistence> = Arc::new(Unit::<0>);
+        let third: Arc<dyn PlatformWalletPersistence> = Arc::new(Unit::<1>);
+        let wallet_id: WalletId = [6; 32];
+        let ledger_of = |backend| FlushLedgers::of_backend(backend).of(wallet_id);
+        let (of_first, of_second, of_third) =
+            (ledger_of(&first), ledger_of(&second), ledger_of(&third));
+
+        assert!(of_first.flush(first.as_ref(), wallet_id).is_err());
+
+        assert_eq!(of_first.lost(), 1);
+        assert_eq!(of_second.lost(), 0, "another instance of the same type");
+        assert_eq!(of_third.lost(), 0, "an instance of another type");
+        assert!(
+            Arc::ptr_eq(&ledger_of(&first), &of_first),
+            "the same instance has the same ledger"
         );
     }
 
