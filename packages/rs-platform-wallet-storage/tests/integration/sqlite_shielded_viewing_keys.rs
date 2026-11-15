@@ -281,3 +281,48 @@ fn shielded_wipe_classifies_a_wallet_with_no_row_by_its_buffered_network() {
     persister.commit_writes().expect("flush after wipe");
     assert_eq!(viewing_key_count(&path, &mainnet_wallet), 1);
 }
+
+#[test]
+fn shielded_wipe_drops_viewing_keys_of_wallets_with_no_row_or_metadata() {
+    let (persister, _tmp, path) =
+        common::fresh_persister_with_mode(platform_wallet_storage::FlushMode::Manual);
+    let orphan_wallet = wid(0x78);
+    let mainnet_wallet = wid(0x79);
+    let stored_orphan = wid(0x7A);
+    insert_mainnet_wallet(&persister, &mainnet_wallet);
+    {
+        // A row the foreign key would refuse today, as a database written
+        // without enforcement could still hold.
+        let conn = persister.lock_conn_for_test();
+        conn.pragma_update(None, "foreign_keys", "OFF").unwrap();
+        conn.execute(
+            "INSERT INTO shielded_viewing_keys (wallet_id, account_index, viewing_key) \
+             VALUES (?1, 0, ?2)",
+            rusqlite::params![stored_orphan.as_slice(), [0xE8u8; 96].as_slice()],
+        )
+        .unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    }
+    persister
+        .store(
+            mainnet_wallet,
+            changeset(SubwalletId::new(mainnet_wallet, 0), [0xE6; 96]),
+        )
+        .expect("buffer the mainnet viewing key");
+    persister.commit_writes().expect("store the mainnet key");
+    persister
+        .store(
+            orphan_wallet,
+            changeset(SubwalletId::new(orphan_wallet, 0), [0xE7; 96]),
+        )
+        .expect("buffer a viewing key with no wallet row or metadata");
+
+    persister
+        .wipe_shielded_state(dashcore::Network::Testnet)
+        .expect("wipe testnet");
+    persister.commit_writes().expect("flush after wipe");
+
+    assert_eq!(viewing_key_count(&path, &orphan_wallet), 0);
+    assert_eq!(viewing_key_count(&path, &stored_orphan), 0);
+    assert_eq!(viewing_key_count(&path, &mainnet_wallet), 1);
+}

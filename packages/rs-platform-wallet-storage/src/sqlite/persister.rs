@@ -1341,8 +1341,10 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// Flushes this network's buffered writes under the delete's connection
     /// guard, then deletes the network's viewing keys in one transaction. A
     /// wallet with no stored row yet is classified by the network of its
-    /// buffered metadata, and flushed too when it has none. A flush failure
-    /// fails the wipe with the rows in place.
+    /// buffered metadata. One with neither has an unknown network, like a
+    /// viewing-key row whose wallet has no row: its shielded writes are
+    /// dropped on every network's wipe. A flush failure fails the wipe with
+    /// the rows in place.
     #[cfg(feature = "shielded")]
     fn wipe_shielded_state(&self, network: dashcore::Network) -> Result<(), PersistenceError> {
         self.ensure_writable("wipe_shielded_state")
@@ -1356,16 +1358,24 @@ impl PlatformWalletPersistence for SqlitePersister {
             .dirty_wallets()
             .map_err(PersistenceError::from)?
         {
-            let other_network =
+            let this_network =
                 match schema::wallets::fetch(&conn, &wallet_id).map_err(PersistenceError::from)? {
-                    Some((stored_network, _)) => stored_network != label,
-                    None => self
+                    Some((stored_network, _)) => stored_network == label,
+                    None => match self
                         .buffer
                         .buffered_network(&wallet_id)
                         .map_err(PersistenceError::from)?
-                        .is_some_and(|buffered| buffered != network),
+                    {
+                        Some(buffered) => buffered == network,
+                        None => {
+                            self.buffer
+                                .discard_shielded(&wallet_id)
+                                .map_err(PersistenceError::from)?;
+                            false
+                        }
+                    },
                 };
-            if !other_network {
+            if this_network {
                 self.flush_locked(&mut conn, &wallet_id)?;
             }
         }

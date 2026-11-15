@@ -227,6 +227,26 @@ impl Buffer {
         }))
     }
 
+    /// Drop the buffered shielded changesets of `wallet_id`, keeping the
+    /// rest of its buffered writes.
+    #[cfg(feature = "shielded")]
+    pub fn discard_shielded(&self, wallet_id: &WalletId) -> Result<(), WalletStorageError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
+        if let Some(pending) = guard.get_mut(wallet_id) {
+            for segment in &mut pending.segments {
+                segment.shielded = None;
+            }
+            pending.segments.retain(|segment| !segment.is_empty());
+            if pending.segments.is_empty() {
+                guard.remove(wallet_id);
+            }
+        }
+        Ok(())
+    }
+
     /// Every wallet currently holding buffered data, sorted by id for
     /// deterministic flush ordering.
     pub fn dirty_wallets(&self) -> Result<Vec<WalletId>, WalletStorageError> {

@@ -227,6 +227,30 @@ async fn signed_wallet_fixture(
     TestDirectory,
     WalletSigner,
 ) {
+    let (wallet, persistence, signer) = unconfigured_wallet_fixture(lock, keys).await;
+    let dir =
+        TestDirectory(std::env::temp_dir().join(format!("wallet_drain_{}", rand::random::<u64>())));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    let path = dir.0.join("shielded.sqlite");
+    let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        wallet.sdk.clone(),
+        Network::Testnet,
+        path,
+        store,
+    ));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    (wallet, persistence, coordinator, dir, signer)
+}
+
+/// [`signed_wallet_fixture`] before any `configure_shielded`: the wallet has
+/// no shielded coordinator.
+async fn unconfigured_wallet_fixture(
+    lock: &TrackedAssetLock,
+    keys: BTreeMap<u32, AccountViewingKeys>,
+) -> (PlatformWallet, Arc<RecoveryPersistence>, WalletSigner) {
     let (manager, id, generation, signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let (stored_wallet, info) = {
@@ -258,7 +282,7 @@ async fn signed_wallet_fixture(
         Arc::new(PlatformEventManager::new(vec![])),
     ));
     let wallet = PlatformWallet::new(
-        sdk.clone(),
+        sdk,
         id,
         manager.clone(),
         generation,
@@ -277,21 +301,7 @@ async fn signed_wallet_fixture(
         .tracked_asset_locks
         .insert(lock.out_point, lock.clone());
     *wallet.shielded_keys.write().await = Some(keys);
-    let dir =
-        TestDirectory(std::env::temp_dir().join(format!("wallet_drain_{}", rand::random::<u64>())));
-    std::fs::create_dir_all(&dir.0).unwrap();
-    let path = dir.0.join("shielded.sqlite");
-    let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
-    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
-        sdk,
-        Network::Testnet,
-        path,
-        store,
-    ));
-    wallet
-        .attach_shielded_coordinator_for_test(&coordinator)
-        .await;
-    (wallet, persistence, coordinator, dir, signer)
+    (wallet, persistence, signer)
 }
 
 /// A fresh wallet handle whose live tracked locks come from `persistence`'s
@@ -878,6 +888,47 @@ async fn should_report_a_fresh_shield_lock_to_the_caller() {
         .await
         .iter()
         .any(|tracked| tracked.out_point == seen[0]));
+}
+
+/// Funding a manager whose `configure_shielded` never ran fails before any
+/// Core funding: no lock is built, tracked, persisted or broadcast, so no
+/// transparent funds move without a shielded store behind them.
+#[tokio::test]
+async fn should_refuse_funding_before_any_lock_without_a_shielded_coordinator() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, persistence, signer) = unconfigured_wallet_fixture(&lock, keys).await;
+    let prover = super::prover::CachedOrchardProver::new();
+    let seen = Mutex::new(Vec::new());
+    let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 5_000_000,
+                account_index: 0,
+            },
+            vec![(recipient, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            Some(&observer),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&error, PlatformWalletError::ShieldedStoreError(message)
+            if message.contains("not configured")),
+        "{error}"
+    );
+    assert!(seen.into_inner().unwrap().is_empty());
+    assert_eq!(wallet.asset_locks.list_tracked_locks().await.len(), 1);
+    assert!(persistence.staged.lock().unwrap().is_empty());
 }
 
 /// The pooled wallet drain reaches the observer through

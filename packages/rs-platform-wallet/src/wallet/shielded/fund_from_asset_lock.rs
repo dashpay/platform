@@ -270,12 +270,12 @@ impl PlatformWallet {
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
-        // Nothing is broadcast while a Clear's host wipe is pending, which
-        // refuses the activity write a funding ends with. Not held: the
-        // broadcast and ChainLock wait below must not hold a Clear back.
-        if let Ok(coordinator) = self.shielded_coordinator().await {
-            drop(coordinator.admit().await?);
-        }
+        // Nothing is broadcast without a shielded store to receive the
+        // funding, or while a Clear's host wipe is pending, which refuses the
+        // activity write a funding ends with. Not held: the broadcast and
+        // ChainLock wait below must not hold a Clear back.
+        let coordinator = self.shielded_coordinator().await?;
+        drop(coordinator.admit().await?);
         let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // A resume pays the recipient its lock was built for. The row recorded
