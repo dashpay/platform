@@ -75,7 +75,8 @@ impl AssetLockPaymentIntent {
     }
 
     /// Read the stored form back. Strict: an unknown kind, a short or long
-    /// body, an unordered or repeated address, or an empty map is refused,
+    /// body, an unordered or repeated address, an empty map, or a map without
+    /// exactly one remainder (`None`) recipient is refused,
     /// so a row whose intent cannot be read is never treated as having none.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, AssetLockPaymentIntentDecodeError> {
         let (&kind, body) = bytes
@@ -123,6 +124,20 @@ impl AssetLockPaymentIntent {
         }
         if !rest.is_empty() {
             return Err(AssetLockPaymentIntentDecodeError("trailing bytes"));
+        }
+        // The funding was built only from a map with exactly one remainder
+        // (`None`) entry (`validate_recipient_shape` in
+        // `fund_from_asset_lock`), so a stored map with any other count was
+        // not written by it.
+        if recipients
+            .values()
+            .filter(|amount| amount.is_none())
+            .count()
+            != 1
+        {
+            return Err(AssetLockPaymentIntentDecodeError(
+                "not exactly one remainder recipient",
+            ));
         }
         Ok(Self::PlatformAddresses(recipients))
     }
@@ -205,6 +220,25 @@ mod tests {
                 "{malformed:?} must not decode"
             );
         }
+    }
+
+    #[test]
+    fn should_refuse_a_stored_intent_without_a_remainder_recipient() {
+        let none = AssetLockPaymentIntent::PlatformAddresses(BTreeMap::from([
+            (PlatformAddress::P2pkh([0x11; 20]), Some(5_000_000)),
+            (PlatformAddress::P2pkh([0x22; 20]), Some(7)),
+        ]));
+        assert!(AssetLockPaymentIntent::from_bytes(&none.to_bytes()).is_err());
+    }
+
+    #[test]
+    fn should_refuse_a_stored_intent_with_two_remainder_recipients() {
+        let two = AssetLockPaymentIntent::PlatformAddresses(BTreeMap::from([
+            (PlatformAddress::P2pkh([0x11; 20]), Some(5_000_000)),
+            (PlatformAddress::P2pkh([0x22; 20]), None),
+            (PlatformAddress::P2pkh([0x33; 20]), None),
+        ]));
+        assert!(AssetLockPaymentIntent::from_bytes(&two.to_bytes()).is_err());
     }
 
     #[test]
