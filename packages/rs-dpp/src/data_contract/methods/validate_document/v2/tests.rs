@@ -130,7 +130,8 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
         platform_value!({ "kind": "c" }),
         platform_value!({ "tags": ["a", "a"] }),
         platform_value!({ "tags": ["abcd"] }),
-        platform_value!({ "data": [1, 2] }),
+        // Written as bytes: a byte array of other integers is refused from 15 only
+        platform_value!({ "data": [Value::U8(1), Value::U8(2)] }),
         platform_value!({ "data": [1, 300] }),
         platform_value!({ "when": "2026-10-22" }),
         platform_value!({ "when": "2026-13-01" }),
@@ -1076,4 +1077,190 @@ fn should_report_an_enum_violation_at_protocol_version_14_as_before() {
         latest.first().map(ErrorWithCode::code),
         errors.first().map(ErrorWithCode::code)
     );
+}
+
+/// A type with a plain byte array `data`, an identifier `owner`, an object `nested` holding a
+/// byte array, and a list of identifiers `members`.
+fn byte_array_contract() -> DataContract {
+    item_contract(platform_value!({
+        "data": { "type": "array", "byteArray": true, "maxItems": 64, "position": 0 },
+        "owner": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "position": 1,
+        },
+        "nested": {
+            "type": "object",
+            "properties": {
+                "blob": { "type": "array", "byteArray": true, "maxItems": 8, "position": 0 },
+            },
+            "additionalProperties": false,
+            "position": 2,
+        },
+        "members": {
+            "type": "array",
+            "items": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+            },
+            "maxItems": 4,
+            "position": 3,
+        },
+    }))
+}
+
+/// Whether the document serializer writes a document holding `properties` as an `item`.
+fn serializes(contract: &DataContract, properties: &Value) -> bool {
+    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use crate::document::{Document, DocumentV0};
+    let document = Document::V0(DocumentV0 {
+        properties: properties
+            .clone()
+            .into_btree_string_map()
+            .expect("expected a map of properties"),
+        ..Default::default()
+    });
+    let document_type = contract
+        .document_type_for_name("item")
+        .expect("expected the document type");
+    document
+        .serialize(document_type, contract, PlatformVersion::latest())
+        .is_ok()
+}
+
+/// The instance path of a single `byteArray` refusal, or a description of what was reported.
+fn byte_array_refusal(errors: &[ConsensusError]) -> Result<String, String> {
+    match errors {
+        [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+            if error.keyword() == "byteArray" =>
+        {
+            Ok(error.instance_path().to_string())
+        }
+        other => Err(format!("{other:?}")),
+    }
+}
+
+fn bytes_of(member: fn(u8) -> Value, count: usize) -> Value {
+    Value::Array((0..count).map(|byte| member(byte as u8)).collect())
+}
+
+#[test]
+fn should_refuse_a_byte_array_holding_integers_that_are_not_bytes_at_protocol_version_15() {
+    let contract = byte_array_contract();
+    let latest = PlatformVersion::latest();
+    let identifier = Value::Identifier([7; 32]);
+    let cases = [
+        (
+            platform_value!({ "data": [Value::U64(1), Value::U64(2)] }),
+            "/data/0",
+        ),
+        (
+            platform_value!({ "data": [Value::U8(1), Value::I8(2)] }),
+            "/data/1",
+        ),
+        (
+            platform_value!({ "data": [Value::U8(1), Value::U16(255)] }),
+            "/data/1",
+        ),
+        (
+            platform_value!({ "owner": bytes_of(|byte| Value::U64(byte as u64), 32) }),
+            "/owner/0",
+        ),
+        (
+            platform_value!({ "nested": { "blob": [Value::U8(0), Value::I64(5)] } }),
+            "/nested/blob/1",
+        ),
+        (
+            platform_value!({
+                "members": [identifier, bytes_of(|byte| Value::U32(byte as u32), 32)],
+            }),
+            "/members/1/0",
+        ),
+    ];
+    for (properties, path) in cases {
+        let errors = document_errors(&contract, properties.clone(), latest);
+        assert_eq!(
+            byte_array_refusal(&errors),
+            Ok(path.to_string()),
+            "{properties:?}"
+        );
+        // Refused for what the serializer refuses
+        assert!(!serializes(&contract, &properties), "{properties:?}");
+    }
+}
+
+#[test]
+fn should_accept_byte_arrays_written_as_bytes_at_protocol_version_15() {
+    let contract = byte_array_contract();
+    let latest = PlatformVersion::latest();
+    let cases = [
+        platform_value!({ "data": [Value::U8(0), Value::U8(255)] }),
+        platform_value!({ "data": Value::Bytes(vec![0, 1, 255]) }),
+        platform_value!({ "data": Value::Array(vec![]) }),
+        platform_value!({ "data": Value::Bytes32([9; 32]) }),
+        platform_value!({ "owner": Value::Identifier([3; 32]) }),
+        platform_value!({ "owner": Value::Bytes32([3; 32]) }),
+        platform_value!({ "owner": bytes_of(Value::U8, 32) }),
+        platform_value!({ "owner": Value::Bytes(vec![4; 32]) }),
+        platform_value!({ "nested": { "blob": Value::Bytes(vec![1, 2]) } }),
+        platform_value!({ "members": [Value::Identifier([1; 32]), bytes_of(Value::U8, 32)] }),
+    ];
+    for properties in cases {
+        let errors = document_errors(&contract, properties.clone(), latest);
+        assert!(errors.is_empty(), "{properties:?}: {errors:?}");
+        assert!(serializes(&contract, &properties), "{properties:?}");
+    }
+}
+
+/// A member above 255, negative or not an integer is refused by the schema check, at both
+/// protocol versions, before the byte reading is reached.
+#[test]
+fn should_refuse_members_out_of_byte_range_by_the_schema_check_at_both_protocol_versions() {
+    let contract = byte_array_contract();
+    let protocol_version_14 =
+        PlatformVersion::get(14).expect("expected protocol version 14 to exist");
+    let cases = [
+        (Value::U64(300), "maximum"),
+        (Value::I64(-1), "type"),
+        (Value::Float(1.5), "type"),
+        (Value::Float(1.0), "type"),
+        (Value::Text("a".to_string()), "type"),
+    ];
+    for (member, keyword) in cases {
+        let properties = platform_value!({ "data": [Value::U8(1), member] });
+        for platform_version in [PlatformVersion::latest(), protocol_version_14] {
+            let errors = document_errors(&contract, properties.clone(), platform_version);
+            assert!(
+                matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                        if error.keyword() == keyword && error.instance_path() == "/data/1"
+                ),
+                "{properties:?} at {}: {errors:?}",
+                platform_version.protocol_version
+            );
+        }
+        assert!(!serializes(&contract, &properties), "{properties:?}");
+    }
+}
+
+/// Protocol version 14 keeps passing a byte array of integers that are not bytes, as it did.
+#[test]
+fn should_pass_a_byte_array_holding_integers_that_are_not_bytes_at_protocol_version_14() {
+    let contract = byte_array_contract();
+    let protocol_version_14 =
+        PlatformVersion::get(14).expect("expected protocol version 14 to exist");
+    for properties in [
+        platform_value!({ "data": [Value::U64(1), Value::U64(2)] }),
+        platform_value!({ "owner": bytes_of(|byte| Value::U64(byte as u64), 32) }),
+    ] {
+        let errors = document_errors(&contract, properties.clone(), protocol_version_14);
+        assert!(errors.is_empty(), "{properties:?}: {errors:?}");
+    }
 }

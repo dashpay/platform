@@ -17,6 +17,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
+mod byte_arrays;
 #[cfg(test)]
 mod tests;
 
@@ -25,7 +26,10 @@ impl DataContract {
     /// document type's schema checked by its native validator
     /// ([`DocumentSchemaValidator`]) in place of the `jsonschema` crate, which reaches the
     /// same verdicts but for one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0`
-    /// are one value however long the list. A document type whose schema has no validation
+    /// are one value however long the list. Once the schema check passes, a byte array or
+    /// identifier the document serializer cannot read as bytes, a list holding a member that
+    /// is not a `Value::U8`, is refused (`byte_arrays`): the JSON form the schema check reads
+    /// does not tell an integer's type. A document type whose schema has no validation
     /// schema has its documents refused (`InvalidContractStructure`) before any other check:
     /// the `jsonschema` crate checks no document at this generation.
     #[inline(always)]
@@ -68,6 +72,10 @@ impl DataContract {
                 max_bytes: usize::from(max_bytes),
             });
 
+        // Read before the checks consume the value, reported once the schema check passes
+        let unreadable_byte_array =
+            byte_arrays::unreadable_byte_array(document_type.properties(), &value);
+
         Self::validate_document_properties_v1_checks(
             document_type,
             value,
@@ -75,7 +83,10 @@ impl DataContract {
             platform_version,
             |json_value| {
                 Ok(
-                    match validator.validate(json_value, max_value_depth, enum_listing)? {
+                    match validator
+                        .validate(json_value, max_value_depth, enum_listing)?
+                        .or(unreadable_byte_array)
+                    {
                         Some(error) => SimpleConsensusValidationResult::new_with_error(error),
                         None => SimpleConsensusValidationResult::new(),
                     },
