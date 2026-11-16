@@ -26,7 +26,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1.41"
-lru = "0.16.3"
+lru = "0.19.0"
 arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
@@ -81,7 +81,7 @@ gloo-timers = { version = "0.3.0", features = ["futures"] }
 # redirects, abort, and bound a body while streaming it.
 js-sys = "0.3.85"
 wasm-bindgen = "0.2.108"
-wasm-streams = "0.5"
+wasm-streams = "0.7"
 web-sys = { version = "0.3.85", features = [
     "AbortController",
     "AbortSignal",

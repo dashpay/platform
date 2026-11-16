@@ -19,7 +19,7 @@ log = "0.4"
 zeroize = "1"
 
 [target.'cfg(target_os = "android")'.dependencies]
-android_logger = "0.14"
+android_logger = "0.15"
 
 [dev-dependencies]
 dashcore = { workspace = true }
