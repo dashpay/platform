@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.credits
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -263,13 +264,18 @@ class IdentityCredits internal constructor(
      * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
      *   the top-up may have executed or may still execute; do not submit it
      *   again, the next sync settles it.
+     *
+     * The native call cannot observe coroutine cancellation, so a top-up can
+     * finish after the caller was cancelled; its balance is then returned
+     * rather than thrown away ([opReturningCompletedResult]), so a completed
+     * payment is never hidden and retried.
      */
     suspend fun topUpExternalIdentityFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
             externalTopUpNative.call(
                 walletHandle,

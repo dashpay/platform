@@ -1,8 +1,16 @@
 package org.dashfoundation.dashsdk.credits
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.dashfoundation.dashsdk.wallet.TeardownGate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -62,6 +70,39 @@ class ExternalIdentityTopUpTest {
             "expected TransactionBroadcastUnconfirmed, got $failure",
             failure is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
         )
+    }
+
+    @Test
+    fun `should return a top-up that completes after the caller was cancelled`() = runBlocking {
+        for (gate in listOf(TeardownGate(), null)) {
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val received = CompletableDeferred<Long>()
+            val credits = IdentityCredits(
+                gate = gate,
+                externalTopUpNative = AddressTopUpNativeCall { _, _, _, _ ->
+                    entered.countDown()
+                    // The native top-up does not observe cancellation; it pays
+                    // the identity only after the caller has been cancelled.
+                    release.await()
+                    9_000L
+                },
+            )
+
+            val call = launch(Dispatchers.Default) {
+                received.complete(
+                    credits.topUpExternalIdentityFromAddresses(1L, identityId, inputs, 2L),
+                )
+            }
+            assertTrue("native top-up never started", entered.await(5, TimeUnit.SECONDS))
+            call.cancel()
+            release.countDown()
+            withTimeout(5_000) { call.join() }
+
+            assertTrue("completed top-up was dropped", received.isCompleted)
+            assertEquals(9_000L, received.await())
+            gate?.let { withTimeout(5_000) { it.closeAndAwait() } }
+        }
     }
 
     private suspend fun failureFor(platformWalletCode: Int): Throwable? {
