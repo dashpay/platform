@@ -1013,7 +1013,10 @@ impl DataContractWasm {
     /// the version must rise by exactly one, the config and every existing
     /// document type follow their update rules, `schemaDefs` stay compatible,
     /// groups and tokens are kept, and an added token's pre-programmed
-    /// distributions may not start before the block time.
+    /// distributions may not start before the block time. From protocol
+    /// version 15 an update of a contract whose own schema names a key twice
+    /// in one object is refused whatever the new contract holds; no contract
+    /// built from JSON has such a schema.
     ///
     /// Returns the consensus errors a refused update would carry, each with
     /// the `code` a rejected transition reaches JS with, or an empty array
