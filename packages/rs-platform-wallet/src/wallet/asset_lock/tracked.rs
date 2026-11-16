@@ -13,6 +13,7 @@ use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::changeset::{AssetLockEntry, ShieldedRecipientRaw};
+use dpp::prelude::Identifier;
 
 /// Asset lock status on Core chain.
 ///
@@ -152,6 +153,28 @@ pub struct TrackedAssetLock {
     /// funding type and for shielded locks tracked before the recipient was
     /// recorded (those keep accepting the resuming caller's recipient).
     pub shielded_recipient: Option<ShieldedRecipientRaw>,
+    /// The identity an unbound identity top-up (`IdentityTopUpNotBound`) was
+    /// built to pay, recorded with the row before the lock is dispatched, or
+    /// assigned later by the user to a lock that had none; immutable once
+    /// set. A resume pays this identity and refuses any other. `None` for
+    /// every other funding type, and for an unbound lock nothing recorded a
+    /// recipient for (one rebuilt from the chain after a restore): such a
+    /// lock is unassigned (see [`Self::is_unassigned_identity_top_up`]) and
+    /// is resumable only once a recipient is assigned, since its credit
+    /// output names no identity and it may have been meant for someone else.
+    pub identity_recipient: Option<Identifier>,
+}
+
+impl TrackedAssetLock {
+    /// An unbound identity top-up with no recorded recipient, not yet
+    /// consumed: its funds are recoverable (the wallet holds the credit
+    /// output's key), but the identity it was meant to pay is unknown, so no
+    /// resume pays it until the user assigns one.
+    pub fn is_unassigned_identity_top_up(&self) -> bool {
+        self.funding_type == AssetLockFundingType::IdentityTopUpNotBound
+            && self.identity_recipient.is_none()
+            && !self.status.is_consumed()
+    }
 }
 
 impl From<&TrackedAssetLock> for AssetLockEntry {
@@ -167,6 +190,7 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
             status: lock.status.clone(),
             proof: lock.proof.clone(),
             shielded_recipient: lock.shielded_recipient,
+            identity_recipient: lock.identity_recipient,
         }
     }
 }

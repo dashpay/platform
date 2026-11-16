@@ -384,6 +384,7 @@ impl PlatformWalletInfo {
                     if !entry.preserve_recovery_metadata(
                         existing.operation_id,
                         existing.shielded_recipient,
+                        existing.identity_recipient,
                     ) {
                         continue;
                     }
@@ -392,6 +393,7 @@ impl PlatformWalletInfo {
                     {
                         existing.operation_id = entry.operation_id;
                         existing.shielded_recipient = entry.shielded_recipient;
+                        existing.identity_recipient = entry.identity_recipient;
                         continue;
                     }
                 }
@@ -408,6 +410,7 @@ impl PlatformWalletInfo {
                         status: entry.status,
                         proof: entry.proof,
                         shielded_recipient: entry.shielded_recipient,
+                        identity_recipient: entry.identity_recipient,
                     },
                 );
             }
@@ -777,6 +780,7 @@ mod tests {
             AssetLockEntry {
                 operation_id: None,
                 shielded_recipient: None,
+                identity_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -855,6 +859,7 @@ mod tests {
             status,
             proof: None,
             shielded_recipient: None,
+            identity_recipient: None,
         }
     }
 
@@ -929,6 +934,34 @@ mod tests {
         apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.shielded_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+    }
+
+    #[test]
+    fn should_preserve_the_identity_recipient_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let recipient = dpp::prelude::Identifier::from([0x83u8; 32]);
+        let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
+        recorded.identity_recipient = Some(recipient);
+        apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
+
+        // A stale snapshot without the recipient keeps it.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.identity_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        // A snapshot naming another identity is dropped whole.
+        let mut redirected = recovery_asset_lock(AssetLockStatus::ChainLocked, None);
+        redirected.identity_recipient = Some(dpp::prelude::Identifier::from([0x84u8; 32]));
+        apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.identity_recipient, Some(recipient));
         assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
     }
 

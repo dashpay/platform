@@ -45,6 +45,7 @@ mod key_selection;
 mod loading;
 mod register_from_addresses;
 mod registration;
+pub use registration::min_top_up_duffs;
 mod state_transition_summary;
 mod top_up;
 mod top_up_from_addresses;

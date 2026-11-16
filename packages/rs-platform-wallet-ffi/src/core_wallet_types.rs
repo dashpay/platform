@@ -935,6 +935,18 @@ pub struct TrackedAssetLockEntryFFI {
     pub registration_index: u32,
     pub instant_lock_present: bool,
     pub chain_lock_height: u32,
+    /// Whether `identity_recipient` carries the identity an unbound identity
+    /// top-up (lock type 2) pays. A resume pays that identity and refuses any
+    /// other, the host's own identities included.
+    pub has_identity_recipient: bool,
+    /// Valid only when `has_identity_recipient` is true (all zero otherwise).
+    pub identity_recipient: [u8; 32],
+    /// An unbound identity top-up, not consumed, recording no identity
+    /// (rebuilt from the chain, for example after a restore from the seed).
+    /// No resume pays it; a host lists it for the user, who assigns a
+    /// recipient with `platform_wallet_assign_identity_top_up_recipient`,
+    /// rather than resuming it into one of the host's identities.
+    pub identity_recipient_unassigned: bool,
 }
 
 /// Snapshot of the per-account metadata for one account. Strings are

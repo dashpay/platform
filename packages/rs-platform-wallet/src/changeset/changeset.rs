@@ -1584,6 +1584,24 @@ pub const SHIELDED_RECIPIENT_SIZE: usize = 43;
 /// converts it back into an address, and the resume check compares bytes.
 pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
 
+/// The recipient an asset lock is built to pay, recorded on its tracked row
+/// before the lock is dispatched so a resume pays it rather than whatever the
+/// resuming call names.
+///
+/// Only two funding types record one. A shielded funding (Type 18) records its
+/// Orchard address. An unbound identity top-up (`IdentityTopUpNotBound`)
+/// records its identity: its credit output is the next address of the wallet's
+/// unbound top-up account, so nothing on chain names the identity. A bound
+/// top-up names its identity by the account's registration index and records
+/// nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetLockRecipient {
+    /// The raw Orchard address a shielded funding pays.
+    Shielded(ShieldedRecipientRaw),
+    /// The identity an identity top-up pays.
+    Identity(Identifier),
+}
+
 /// A single asset lock entry in the changeset.
 ///
 /// Contains all fields needed to fully reconstruct a
@@ -1629,19 +1647,26 @@ pub struct AssetLockEntry {
         )
     )]
     pub shielded_recipient: Option<ShieldedRecipientRaw>,
+    /// The identity an unbound identity top-up (`IdentityTopUpNotBound`) was
+    /// built to pay, or was later assigned to pay; `None` for other funding
+    /// types and for an unbound lock nothing records a recipient for (one
+    /// rebuilt from the chain). Like `operation_id`, immutable once recorded.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub identity_recipient: Option<Identifier>,
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association and shielded recipient
+    /// Preserve the immutable operation association and recorded recipients
     /// when folding or replaying a possibly stale snapshot. Returns false for
     /// a conflicting UUID or recipient: the caller must discard the whole
     /// snapshot so its lifecycle cannot be attached to a different operation
-    /// or redirect a pending shielded funding.
+    /// or redirect a pending funding.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
         previous_shielded_recipient: Option<ShieldedRecipientRaw>,
+        previous_identity_recipient: Option<Identifier>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1662,6 +1687,16 @@ impl AssetLockEntry {
                 return false;
             }
             self.shielded_recipient = Some(previous_recipient);
+        }
+        if let Some(previous_recipient) = previous_identity_recipient {
+            if self
+                .identity_recipient
+                .is_some_and(|incoming| incoming != previous_recipient)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting identity recipient");
+                return false;
+            }
+            self.identity_recipient = Some(previous_recipient);
         }
         true
     }
@@ -1684,9 +1719,11 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry
-                    .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
-                {
+                if !entry.preserve_recovery_metadata(
+                    existing.operation_id,
+                    existing.shielded_recipient,
+                    existing.identity_recipient,
+                ) {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
@@ -1696,6 +1733,7 @@ impl Merge for AssetLockChangeSet {
                     // association or recipient carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
                     existing.shielded_recipient = entry.shielded_recipient;
+                    existing.identity_recipient = entry.identity_recipient;
                     continue;
                 }
             }
@@ -2855,6 +2893,7 @@ mod tests {
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
             shielded_recipient: None,
+            identity_recipient: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2947,6 +2986,34 @@ mod tests {
             .get_mut(&outpoint)
             .unwrap()
             .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
+
+        // The recorded identity recipient of an unbound top-up behaves the
+        // same: kept through a snapshot without one, a conflicting one vetoed.
+        let identity = Identifier::from([0x73u8; 32]);
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .identity_recipient = Some(identity);
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].identity_recipient,
+            Some(identity)
+        );
+        assert_eq!(
+            recorded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .identity_recipient = Some(Identifier::from([0x74u8; 32]));
         let expected = recorded.clone();
         recorded.merge(redirected);
         assert_eq!(recorded.asset_locks, expected.asset_locks);
@@ -3599,6 +3666,7 @@ mod tests {
                         AssetLockEntry {
                             operation_id: None,
                             shielded_recipient: None,
+                            identity_recipient: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
