@@ -1536,9 +1536,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // where the row was not. A backend writes what it buffered in
                 // the order it was stored, and applies removals after
                 // upserts, so once the removal is on disk the row is not:
-                // unless a flush still in progress took the row without it
-                // and writes it afterwards, which the removal's store does
-                // not answer for (`WalletPersister::withdraw_durably`). The
+                // unless a flush inside the backend while the removal was
+                // stored took the row without it and writes it afterwards,
+                // which the removal's store does not answer for
+                // (`WalletPersister::withdraw_durably`). The
                 // funding index stays consumed, as for the pool gate above.
                 let removed = self.persister.withdraw_durably(PlatformWalletChangeSet {
                     asset_locks: Some(AssetLockChangeSet {
