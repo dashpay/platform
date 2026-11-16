@@ -36,11 +36,12 @@ use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::version::PlatformVersion;
+use futures::future::{AbortHandle, Abortable, BoxFuture, FutureExt, Shared};
 use rs_dapi_client::RequestSettings;
 use std::cmp::Ordering as Order;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// What to do with a request that needs a protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,13 +131,20 @@ impl ProbeHold {
     }
 }
 
+/// Why a probe failed, for the call that started it to take.
+type ProbeFailure = Arc<Mutex<Option<Box<Error>>>>;
+
+/// A probe that every call waiting for it also polls, so that none waits on a call that is
+/// not polled. It ends `Aborted` when the call that started it is dropped.
+type RunningProbe = Shared<Abortable<BoxFuture<'static, ProbeFailure>>>;
+
 /// The [`ProbeHold`] an SDK and its clones share, and the probe one of them is running.
 #[derive(Debug, Default)]
 pub(super) struct SharedProbeHold {
     hold: Mutex<Option<ProbeHold>>,
-    /// Locked while a probe runs, so that calls made meanwhile wait for its answer instead
-    /// of asking too.
-    probing: tokio::sync::Mutex<()>,
+    /// The probe running, so that calls made meanwhile wait for its answer instead of
+    /// asking too.
+    probing: Mutex<Option<RunningProbe>>,
     /// How many probes the network answered, so that a call that waited for one can tell
     /// that it was answered.
     answered: AtomicU64,
@@ -167,6 +175,52 @@ impl SharedProbeHold {
 
     fn answered(&self) -> u64 {
         self.answered.load(Ordering::Acquire)
+    }
+
+    /// The probe running, or the one `start` gives, kept as running.
+    fn join_or_start(&self, start: impl FnOnce() -> (RunningProbe, AbortHandle)) -> Probing<'_> {
+        let mut probing = self.probing.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(running) = probing.as_ref().filter(|probe| probe.peek().is_none()) {
+            return Probing::Joined(running.clone());
+        }
+        let (probe, abort) = start();
+        *probing = Some(probe.clone());
+        Probing::Started(StartedProbe {
+            hold: self,
+            probe,
+            abort,
+        })
+    }
+}
+
+/// The probe a call waits for: one another call started, or its own.
+enum Probing<'a> {
+    Joined(RunningProbe),
+    Started(StartedProbe<'a>),
+}
+
+/// The probe a call started, aborted when the call ends, so that calls still waiting for it
+/// ask under their own settings.
+struct StartedProbe<'a> {
+    hold: &'a SharedProbeHold,
+    probe: RunningProbe,
+    abort: AbortHandle,
+}
+
+impl Drop for StartedProbe<'_> {
+    fn drop(&mut self) {
+        self.abort.abort();
+        let mut probing = self
+            .hold
+            .probing
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if probing
+            .as_ref()
+            .is_some_and(|running| running.ptr_eq(&self.probe))
+        {
+            *probing = None;
+        }
     }
 }
 
@@ -407,8 +461,8 @@ impl Sdk {
     }
 
     /// Probe for `required` ([`Self::probe_network_protocol_version`]) and return why the
-    /// probe failed, if it did, unless another call is probing: then wait for its answer and
-    /// decide from it, as the call that probed does.
+    /// probe failed, if it did, unless another call is probing: then poll that probe too, wait
+    /// for its answer and decide from it, as the call that probed does.
     ///
     /// A call waits for one probe at most, which runs under the settings of the call that
     /// started it. When that probe failed, or its call was dropped, the call asks under its
@@ -419,11 +473,41 @@ impl Sdk {
         settings: Option<RequestSettings>,
     ) -> Option<Box<Error>> {
         let answered = self.probe_hold.answered();
-        let probing = self.probe_hold.probing.try_lock();
-        if probing.is_err() {
-            drop(self.probe_hold.probing.lock().await);
-        }
-        // A probe answered since this call decided to ask, or another answer decided it.
+        let started = match self.probe_hold.join_or_start(|| {
+            let sdk = self.clone();
+            let (probe, abort) = futures::future::abortable(
+                async move {
+                    let failure = sdk
+                        .probe_unless_answered(required, settings, answered)
+                        .await;
+                    Arc::new(Mutex::new(failure))
+                }
+                .boxed(),
+            );
+            (probe.shared(), abort)
+        }) {
+            Probing::Started(started) => started,
+            Probing::Joined(running) => {
+                // Polled here too, as the call that started it may not be polled.
+                let _ = running.await;
+                return self
+                    .probe_unless_answered(required, settings, answered)
+                    .await;
+            }
+        };
+        let failure = started.probe.clone().await.ok()?;
+        let mut failure = failure.lock().unwrap_or_else(PoisonError::into_inner);
+        failure.take()
+    }
+
+    /// Probe for `required` and return why it failed, unless a probe answered since
+    /// `answered` was read, or another answer decided it.
+    async fn probe_unless_answered(
+        &self,
+        required: u32,
+        settings: Option<RequestSettings>,
+        answered: u64,
+    ) -> Option<Box<Error>> {
         if self.probe_hold.answered() != answered
             || decide(required, &self.gate_state()) != Gate::Probe
         {
@@ -435,7 +519,6 @@ impl Sdk {
         if probed.is_ok() {
             self.probe_hold.answered.fetch_add(1, Ordering::AcqRel);
         }
-        drop(probing);
         probed.err().map(Box::new)
     }
 

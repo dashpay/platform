@@ -2303,6 +2303,36 @@ async fn should_let_waiting_calls_ask_when_the_asking_call_is_dropped() {
     assert_eq!(sent(&sdk, &fee_pots()).await, 1);
 }
 
+/// A call that asks the network can sit unpolled in the task that waits for another call,
+/// as in a `select!` or a buffered stream: the waiting call drives that probe itself.
+#[tokio::test]
+async fn should_answer_a_waiting_call_while_the_asking_call_is_not_polled() {
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    expect_fee_pots(&mut sdk).await;
+    let node = sdk.mock_dapi().lock().await;
+    let mut first = Box::pin(ContractFeePots::fetch_with_settings(
+        &sdk,
+        fee_pots(),
+        once(),
+    ));
+    assert!(
+        futures::poll!(&mut first).is_pending(),
+        "the first call asks, and waits for the node"
+    );
+    drop(node);
+    let second = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        ContractFeePots::fetch_with_settings(&sdk, fee_pots(), once()),
+    )
+    .await
+    .expect("the second call does not wait on the unpolled first call");
+    second.expect("sent once the first call's probe shows 14");
+    assert_eq!(probes(&sdk).await, 1, "one probe serves both calls");
+    assert_eq!(sent(&sdk, &fee_pots()).await, 1);
+    drop(first);
+}
+
 /// Probes that overlap can finish in any order. The hold kept is the one of the newest epoch
 /// proved, not the last to arrive: a slower probe of an earlier epoch does not shorten it. Two
 /// holds of one epoch both bound when that epoch has ended, so the earlier bound is kept.
