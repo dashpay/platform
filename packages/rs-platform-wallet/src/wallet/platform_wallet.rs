@@ -466,6 +466,13 @@ pub struct PlatformWallet {
     /// wallet handles observe the one flag.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_detached: Arc<std::sync::atomic::AtomicBool>,
+    /// The coordinator this handle's shielded keys were last installed on,
+    /// set by the install that publishes them. `shielded_add_account` is
+    /// given no coordinator, so this is how it waits for a Clear and tells
+    /// that one has run since the bind. `Arc` so cloned wallet handles
+    /// share it.
+    #[cfg(feature = "shielded")]
+    shielded_binding: Arc<std::sync::Mutex<Option<ShieldedBinding>>>,
     /// This generation's restorations of its private contact request
     /// payments from a shielded store's journal: the store one last succeeded
     /// from, and the store a deferred one is queued for
@@ -473,6 +480,16 @@ pub struct PlatformWallet {
     /// handles share them.
     #[cfg(feature = "shielded")]
     private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
+}
+
+/// A coordinator a wallet handle's shielded keys were installed on, with the
+/// coordinator's clear generation at that install: a later generation means
+/// a Clear has dropped the registration since.
+#[cfg(feature = "shielded")]
+#[derive(Clone)]
+struct ShieldedBinding {
+    coordinator: std::sync::Weak<NetworkShieldedCoordinator>,
+    clear_generation: u64,
 }
 
 impl PlatformWallet {
@@ -859,6 +876,8 @@ impl PlatformWallet {
             prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(feature = "shielded")]
+            shielded_binding: Arc::default(),
             #[cfg(feature = "shielded")]
             private_payment_restores: Arc::default(),
         }
@@ -1320,6 +1339,15 @@ impl PlatformWallet {
             .await?;
         // Publish wallet keys only after registration accepted the new shape.
         *self.shielded_keys.write().await = Some(account_views);
+        // The bind holds the coordinator's operation admission, so no Clear
+        // runs between this read of its generation and the bind's return.
+        *self
+            .shielded_binding
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ShieldedBinding {
+            coordinator: Arc::downgrade(coordinator),
+            clear_generation: coordinator.clear_generation(),
+        });
 
         // Idempotent re-bind fast path: hosts re-run bind liberally
         // (launch fires it twice — a direct call plus the wallet-set
@@ -1394,6 +1422,12 @@ impl PlatformWallet {
     /// Holds the wallet generation's lifecycle gate as
     /// [`bind_shielded`](Self::bind_shielded) does: a caller must not
     /// hold it.
+    ///
+    /// Holds the operation admission of the coordinator the keys were
+    /// installed on as well, so a Clear waits for an add in flight. Once a
+    /// Clear has run since that bind this returns `ShieldedNotBound` and
+    /// stores nothing: the Clear dropped the wallet's registration, so the
+    /// wallet is bound again first. A caller must not hold the admission.
     #[cfg(feature = "shielded")]
     pub async fn shielded_add_account(
         &self,
@@ -1417,8 +1451,19 @@ impl PlatformWallet {
         // The lifecycle gate spans attachment validation through host
         // persistence and the final handle mutation.
         let _lifecycle = self.core().generation_payment_guard().await;
+        // A Clear waits for this add as it does for a bind: one completing
+        // between the host load and the host store below would have the
+        // viewing key written after the host wiped its rows.
+        let coordinator = self
+            .shielded_binding()
+            .and_then(|binding| binding.coordinator.upgrade());
+        let _operation = match coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.operation_guard().await),
+            None => None,
+        };
         let _config = self.shielded_config_lock.lock().await;
         self.ensure_shielded_attached()?;
+        self.ensure_shielded_binding_stands(coordinator.as_ref())?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -1499,6 +1544,44 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub async fn is_shielded_bound(&self) -> bool {
         self.shielded_keys.read().await.is_some()
+    }
+
+    /// The coordinator this handle's shielded keys were last installed on.
+    #[cfg(feature = "shielded")]
+    fn shielded_binding(&self) -> Option<ShieldedBinding> {
+        self.shielded_binding
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// `ShieldedNotBound` unless the keys this handle holds are still the
+    /// ones installed on `admitted`, the coordinator whose operation
+    /// admission the caller holds, with no Clear since.
+    ///
+    /// Read under `shielded_config_lock`, which every install holds, so the
+    /// binding cannot change while the caller acts on the answer. A handle
+    /// bound on another coordinator while the caller waited is refused too:
+    /// the admission it holds is not that coordinator's. A coordinator that
+    /// no longer exists cannot be cleared, so its binding stands.
+    #[cfg(feature = "shielded")]
+    fn ensure_shielded_binding_stands(
+        &self,
+        admitted: Option<&Arc<NetworkShieldedCoordinator>>,
+    ) -> Result<(), PlatformWalletError> {
+        let Some(binding) = self.shielded_binding() else {
+            return Ok(());
+        };
+        match (binding.coordinator.upgrade(), admitted) {
+            (None, _) => Ok(()),
+            (Some(bound), Some(admitted))
+                if Arc::ptr_eq(&bound, admitted)
+                    && bound.clear_generation() == binding.clear_generation =>
+            {
+                Ok(())
+            }
+            _ => Err(PlatformWalletError::ShieldedNotBound),
+        }
     }
 
     /// `Err` once this wallet has been removed from the manager.
@@ -3057,6 +3140,8 @@ impl Clone for PlatformWallet {
             prepared_tip_accounts: self.prepared_tip_accounts.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
+            #[cfg(feature = "shielded")]
+            shielded_binding: self.shielded_binding.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
         }

@@ -1082,6 +1082,109 @@ async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
     );
 }
 
+/// `shielded_add_account` writes a viewing key to the host too, so a Clear
+/// waits for one in flight as it does for a bind. It is given no
+/// coordinator: it takes the admission of the one the keys were installed on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_hold_a_clear_until_an_account_add_in_flight_returns() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("clear_waits_for_account_add"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+
+    let add = {
+        let wallet = wallet.clone();
+        async move { wallet.shielded_add_account(&seed, 1).await }
+    };
+    assert_clear_waits_for_bind(&persister, &coordinator, add)
+        .await
+        .expect("the account is added");
+    assert!(
+        persister
+            .captured_viewing_keys()
+            .contains_key(&SubwalletId::new(wallet.wallet_id(), 1)),
+        "the add stored its viewing key, and did so before the Clear ran"
+    );
+}
+
+/// A Clear drops the wallet's registration, and the host wipes its rows once
+/// the Clear returns. An account added after it would write a viewing key
+/// into the wiped state for a wallet the coordinator no longer knows, so it
+/// is refused until the wallet is bound again.
+#[tokio::test]
+async fn should_refuse_an_account_add_after_a_clear_until_the_wallet_is_bound_again() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("account_add_after_clear"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+    let stored = persister.stored_count();
+
+    coordinator.clear().await.expect("clear succeeds");
+    let refused = wallet.shielded_add_account(&seed, 1).await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{refused:?}"
+    );
+    assert_eq!(
+        persister.stored_count(),
+        stored,
+        "nothing stored after the Clear"
+    );
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("bound again");
+    wallet
+        .shielded_add_account(&seed, 1)
+        .await
+        .expect("an account is added to the wallet bound again");
+    assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
+}
+
+/// An account add that waited for a Clear is refused the same way: by the
+/// time it is admitted the Clear has dropped the registration.
+#[tokio::test]
+async fn should_refuse_an_account_add_admitted_behind_a_clear() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("account_add_behind_clear"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+    let stored = persister.stored_count();
+
+    // Admission is held, so the Clear queues for it and the add queues
+    // behind the Clear. Releasing it admits the Clear first.
+    let admission = coordinator.operation_guard().await;
+    let (cleared, added, ()) = tokio::join!(
+        coordinator.clear(),
+        wallet.shielded_add_account(&seed, 1),
+        async move { drop(admission) },
+    );
+    cleared.expect("clear succeeds");
+    assert!(
+        matches!(added, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{added:?}"
+    );
+    assert_eq!(
+        persister.stored_count(),
+        stored,
+        "nothing stored behind the Clear"
+    );
+}
+
 /// Two binds of one wallet must not interleave: neither may publish its
 /// registration while the other's transaction is open. That is what
 /// keeps the handle's key slot and the coordinator's registration from
