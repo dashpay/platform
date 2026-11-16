@@ -270,8 +270,9 @@ struct Walk<'v, 'i> {
     /// The allowed values of each `enum` longer than [`ENUM_SCAN_LIMIT`] the walk has met, by
     /// the address of the schema's list, as the keys it looks a value up by: built the first
     /// time the walk checks a value against the list, and shared with the walks a `contains`
-    /// spawns, so each value costs one lookup however many values the list holds.
-    enum_members: Rc<RefCell<HashMap<usize, HashSet<MemberKey>>>>,
+    /// spawns, so each value costs one lookup however many values the list holds. Each list's
+    /// keys are held with the deepest nesting any of them has.
+    enum_members: Rc<RefCell<HashMap<usize, (HashSet<MemberKey>, usize)>>>,
     /// How much of an `enum`'s allowed values a violation lists, or `None` for all of them.
     enum_listing: Option<EnumViolationListing>,
     /// Ties the walk to the checked value's lifetime `'i`, so the borrow checker refuses a
@@ -577,14 +578,14 @@ impl<'v, 'i> Walk<'v, 'i> {
         if values.len() <= ENUM_SCAN_LIMIT {
             return values.iter().any(|value| equal_value(instance, value));
         }
-        let Some(key) = MemberKey::of_json(instance) else {
-            return false;
-        };
-        self.enum_members
-            .borrow_mut()
-            .entry(values.as_ptr() as usize)
-            .or_insert_with(|| values.iter().filter_map(MemberKey::of_value).collect())
-            .contains(&key)
+        let mut members = self.enum_members.borrow_mut();
+        let (keys, depth) = members.entry(values.as_ptr() as usize).or_insert_with(|| {
+            let keys: HashSet<MemberKey> = values.iter().filter_map(MemberKey::of_value).collect();
+            let depth = keys.iter().map(MemberKey::depth).max().unwrap_or(0);
+            (keys, depth)
+        });
+        // A value nested deeper than every allowed value equals none, and is not read further
+        MemberKey::of_json(instance, *depth).is_some_and(|key| keys.contains(&key))
     }
 
     fn object(
@@ -1385,9 +1386,10 @@ impl MemberKey {
         })
     }
 
-    /// The key of a value of the document: `None` only for one holding a number that
-    /// equals no number.
-    fn of_json(value: &JsonValue) -> Option<Self> {
+    /// The key of a value of the document, read at most `depth` arrays or objects deep:
+    /// `None` for one nested deeper, or holding a number that equals no number, which equals
+    /// no allowed value nested at most `depth` deep.
+    fn of_json(value: &JsonValue, depth: usize) -> Option<Self> {
         Some(match value {
             JsonValue::Null => MemberKey::Null,
             JsonValue::Bool(value) => MemberKey::Bool(*value),
@@ -1396,15 +1398,35 @@ impl MemberKey {
             JsonValue::Array(values) => MemberKey::Array(
                 values
                     .iter()
-                    .map(MemberKey::of_json)
+                    .map(|value| MemberKey::of_json(value, depth.checked_sub(1)?))
                     .collect::<Option<_>>()?,
             ),
             JsonValue::Object(map) => MemberKey::Object(
                 map.iter()
-                    .map(|(name, value)| Some((name.clone(), MemberKey::of_json(value)?)))
+                    .map(|(name, value)| {
+                        Some((
+                            name.clone(),
+                            MemberKey::of_json(value, depth.checked_sub(1)?)?,
+                        ))
+                    })
                     .collect::<Option<_>>()?,
             ),
         })
+    }
+
+    /// How many arrays or objects deep the key nests: 0 for a key of neither.
+    fn depth(&self) -> usize {
+        match self {
+            MemberKey::Array(keys) => 1 + keys.iter().map(MemberKey::depth).max().unwrap_or(0),
+            MemberKey::Object(entries) => {
+                1 + entries
+                    .iter()
+                    .map(|(_, key)| key.depth())
+                    .max()
+                    .unwrap_or(0)
+            }
+            _ => 0,
+        }
     }
 
     /// The key of an `enum`'s allowed value: `None` for one no value of the document

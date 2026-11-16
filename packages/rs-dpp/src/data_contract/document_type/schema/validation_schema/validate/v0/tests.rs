@@ -977,6 +977,34 @@ fn should_admit_a_value_of_a_long_enum_as_a_comparison_with_each_value_does() {
     ]);
 }
 
+#[test]
+fn should_refuse_a_value_nested_deeper_than_every_allowed_value_of_a_long_enum() {
+    // The deepest allowed value of `long_enum` nests two levels deep
+    check(vec![
+        (
+            json!({ "enum": long_enum() }),
+            json!({ "a": 1, "b": [2.0] }),
+            true,
+        ),
+        (
+            json!({ "enum": long_enum() }),
+            json!({ "a": 1, "b": [[2.0]] }),
+            false,
+        ),
+        (json!({ "enum": long_enum() }), json!([[[]]]), false),
+        (json!({ "enum": long_enum() }), json!([{ "a": {} }]), false),
+    ]);
+    // However deep the value nests, only as deep as the allowed values is read
+    let mut nested = json!(1);
+    for _ in 0..1000 {
+        nested = json!([nested]);
+    }
+    let validator = validator_of(&with_value(&json!({ "enum": long_enum() })));
+    let error = first_violation(&validator, &json!({ "value": nested }))
+        .expect("expected the value to be refused");
+    assert_eq!(error.keyword(), "enum");
+}
+
 /// The listing the latest protocol version reports an `enum` violation with.
 fn latest_listing() -> Option<EnumViolationListing> {
     let limits = &PlatformVersion::latest().system_limits;
