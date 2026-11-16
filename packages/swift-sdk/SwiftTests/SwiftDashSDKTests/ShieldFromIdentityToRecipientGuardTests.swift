@@ -22,11 +22,12 @@ final class ShieldFromIdentityToRecipientGuardTests: XCTestCase {
         _ manager: PlatformWalletManager,
         walletId: Data = Data(repeating: 1, count: 32),
         identityId: Data = Data(repeating: 2, count: 32),
-        recipientRaw43: Data = Data(repeating: 3, count: 43)
+        recipientRaw43: Data = Data(repeating: 3, count: 43),
+        memo: String? = nil
     ) async throws {
         try await manager.shieldedShieldFromIdentityToRecipient(
             walletId: walletId, shieldedAccount: 0, identityId: identityId,
-            recipientRaw43: recipientRaw43, amount: 1, identitySigner: makeSigner())
+            recipientRaw43: recipientRaw43, amount: 1, memo: memo, identitySigner: makeSigner())
     }
 
     private func assertInvalidParameter(
@@ -60,6 +61,13 @@ final class ShieldFromIdentityToRecipientGuardTests: XCTestCase {
         await assertInvalidParameter({ try await self.call(manager, recipientRaw43: Data(repeating: 3, count: 42)) }, "recipient 42")
         await assertInvalidParameter({ try await self.call(manager, recipientRaw43: Data(repeating: 3, count: 44)) }, "recipient 44")
         await assertInvalidParameter({ try await self.call(manager, recipientRaw43: Data()) }, "recipient empty")
+    }
+
+    /// A C string ends at its first NUL, so such a memo would reach Rust cut short.
+    func testMemoWithNULThrowsInvalidParameter() async {
+        let manager = PlatformWalletManager.makeForTesting(handle: 94, calls: Self.noopCalls)
+        await assertInvalidParameter({ try await self.call(manager, memo: "hi\u{0}there") }, "memo with NUL")
+        await assertInvalidParameter({ try await self.call(manager, memo: "\u{0}") }, "memo of a NUL")
     }
 
     func testUnconfiguredManagerThrowsInvalidHandle() async {
