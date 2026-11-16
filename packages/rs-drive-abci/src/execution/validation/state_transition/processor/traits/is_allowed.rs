@@ -815,8 +815,8 @@ mod tests {
         use dpp::tests::fixtures::get_data_contract_fixture;
         use platform_version::TryIntoPlatformVersioned;
 
-/// The versions that refuse a tradeable token: the last whose software cannot decode
-/// the mode, and protocol version 15, which decodes it but creates none of its state.
+        /// The versions that refuse a tradeable token: the last whose software cannot decode
+        /// the mode, and protocol version 15, which decodes it but creates none of its state.
         fn protocol_versions_before_tradeable() -> [&'static PlatformVersion; 2] {
             [
                 PlatformVersion::get(14).expect("expected protocol version 14"),

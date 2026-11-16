@@ -37,7 +37,11 @@ pub(super) fn consensus_params_update_v2(
         _ => false,
     };
     let consensus_version = if emergency_update {
-        1
+        // Forces at least version 1 without lowering a newer one.
+        new_platform_version
+            .consensus
+            .tenderdash_consensus_version
+            .max(1) as i32
     } else {
         // Update versions or the evidence policy when they change
         if original_platform_version
