@@ -8,6 +8,8 @@
 
 use super::tips::PreparedTipAccount;
 use super::AccountViewingKeys;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -31,6 +33,20 @@ impl ContactShieldedAddresses {
             viewing_keys,
             prepared_accounts,
         }
+    }
+
+    /// Whether `account` is prepared for `identity`: the preparation stands, and the
+    /// identity still carries the key the seed proved for it. The preparation is recorded
+    /// by identity id, and an identity removed and added back is another record under
+    /// that id, so the caller asks this under the wallet-manager lock it reads the
+    /// identity with.
+    pub(crate) fn is_prepared_for(&self, identity: &Identity, account: u32) -> bool {
+        self.prepared_accounts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&identity.id())
+            .and_then(|prepared| prepared.standing_account_of(identity))
+            == Some(account)
     }
 
     /// The viewing keys of `account`, the shielded account `identity_id` holds now, when

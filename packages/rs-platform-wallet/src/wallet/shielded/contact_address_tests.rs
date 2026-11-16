@@ -200,6 +200,48 @@ async fn should_send_no_address_once_the_preparation_is_cleared() {
     );
 }
 
+/// A preparation is recorded by identity id. An identity removed and added back at the
+/// same slot is another record under that id: with other keys it was never proved, so it
+/// gives no address; with the key the seed proved, it gives the same one as before.
+#[tokio::test]
+async fn should_send_no_address_for_an_identity_added_back_without_the_proved_key() {
+    let (wallet, seed, id, coordinator) = fixture("contact_address_added_back", 15).await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let address = address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE).await;
+    assert!(address.is_some());
+
+    for (proved_index, expected) in [(IDENTITY_INDEX + 3, None), (IDENTITY_INDEX, address)] {
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let manager = &mut wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager;
+            manager.remove_identity(&id, wallet.persister()).unwrap();
+            manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id,
+                        public_keys: seed_master_key(&seed[..], proved_index),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    IDENTITY_INDEX,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE).await,
+            expected
+        );
+    }
+}
+
 #[tokio::test]
 async fn should_send_no_address_where_contact_requests_cannot_carry_one() {
     // Up to protocol version 14 the network's DashPay contract has no property for it.

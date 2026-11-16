@@ -90,6 +90,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     without_address(owner_id, "the identity has no shielded account");
                     return Ok(None);
                 };
+                if !self
+                    .contact_shielded_addresses
+                    .is_prepared_for(&managed.identity, account)
+                {
+                    without_address(
+                        owner_id,
+                        "the identity's shielded account is not prepared in this session",
+                    );
+                    return Ok(None);
+                }
                 (account, managed.other_sent_account_references(to_user_id))
             };
             let Some(keys) = self
@@ -99,8 +109,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             else {
                 without_address(
                     owner_id,
-                    "the identity's shielded account is not prepared in this session, or \
-                     its viewing keys are not bound",
+                    "the identity's shielded account is no longer prepared, or its viewing \
+                     keys are not bound",
                 );
                 return Ok(None);
             };
