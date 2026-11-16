@@ -401,7 +401,8 @@ async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
 /// The managed route reads the identity's balance from Platform before
 /// signing, the baseline its growth is measured against: a read that fails
 /// (here no answer to the request) is the not-sent lookup failure, and
-/// Platform not knowing the identity is not-found, both with nothing signed
+/// Platform returning no balance for the wallet's own identity is
+/// balance-unavailable (retryable), not not-found, both with nothing signed
 /// or submitted.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_read_the_managed_identitys_balance_from_platform_before_signing() {
@@ -421,10 +422,10 @@ async fn should_read_the_managed_identitys_balance_from_platform_before_signing(
         .expect_fetch::<IdentityBalance, Identifier>(own, None)
         .await
         .unwrap();
-    let unknown = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    let no_balance = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
     assert!(
-        matches!(&unknown, Err(PlatformWalletError::IdentityNotFound(id)) if *id == own),
-        "got {unknown:?}"
+        matches!(&no_balance, Err(PlatformWalletError::IdentityBalanceUnavailable(id)) if *id == own),
+        "got {no_balance:?}"
     );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }

@@ -62,9 +62,10 @@ impl IdentityWallet {
     /// holds it, but the balance the top-up must grow is read from Platform
     /// before anything is signed, so a cached balance above Platform's
     /// cannot make an executed top-up look unconfirmed. A failed read is
-    /// [`PlatformWalletError::IdentityLookupFailed`], and Platform not
-    /// knowing the identity [`PlatformWalletError::IdentityNotFound`], both
-    /// before anything is signed or broadcast.
+    /// [`PlatformWalletError::IdentityLookupFailed`], and Platform returning
+    /// no balance for this wallet's identity (not yet visible, or lagging)
+    /// [`PlatformWalletError::IdentityBalanceUnavailable`], both before
+    /// anything is signed or broadcast.
     ///
     /// # Arguments
     ///
@@ -110,7 +111,9 @@ impl IdentityWallet {
                 identity_id: *identity_id,
                 source,
             })?
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            .ok_or(PlatformWalletError::IdentityBalanceUnavailable(
+                *identity_id,
+            ))?;
 
         let (address_infos, mut new_balance, metadata) = self
             .submit_top_up_from_addresses(

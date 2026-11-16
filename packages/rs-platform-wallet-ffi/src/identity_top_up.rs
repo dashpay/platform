@@ -83,8 +83,8 @@ fn catch_address_top_up_panic(
 /// new value without an extra round trip.
 ///
 /// The identity's balance is read from Platform before anything is signed:
-/// a failed read is `ErrorIdentityLookupFailed` (80) and an identity
-/// Platform does not know `ErrorIdentityNotFound` (7), nothing sent.
+/// a failed read is `ErrorIdentityLookupFailed` (80) and no balance from
+/// Platform `ErrorIdentityBalanceUnavailable` (58), nothing sent.
 ///
 /// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
 /// executed or may still execute: its result was not proved, or the call
