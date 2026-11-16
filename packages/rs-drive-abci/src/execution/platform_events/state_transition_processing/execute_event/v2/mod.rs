@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -8,6 +9,7 @@ use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_sum_overflow_error::DocumentSumOverflowError;
 use dpp::consensus::ConsensusError;
+use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
@@ -23,14 +25,15 @@ where
     /// Generation 1, except that a gas sponsor who pays is named as the owner of the storage
     /// the batch's documents write, so the refunds of that storage go back to them.
     ///
-    /// A document write whose operations would take a document sum past what a sum tree holds
-    /// (GroveDB refuses to apply them) is refused as a paid consensus error,
-    /// [`DocumentSumOverflowError`]: everything the attempt wrote is rolled back, and the event
-    /// is executed again as the nonce bump a refused state validation of the batch leaves
-    /// ([`SumOverflowRefusal`]). The signer pays for the bump, the work validation billed, and
-    /// the processing of the refused write as fee validation estimates it; no storage. Whether a
-    /// write overflows is a function of the state it is applied to, so every node refuses the
-    /// same writes.
+    /// A document write (any document transition) whose operations would take a document sum
+    /// out of the range a sum tree holds (GroveDB refuses to apply them) is refused as a paid
+    /// consensus error, [`DocumentSumOverflowError`]: everything the attempt wrote is rolled
+    /// back, and the event is executed again as the nonce bump a refused state validation of the
+    /// batch leaves ([`SumOverflowRefusal`]). The signer pays for the bump, the work validation
+    /// billed, and the processing of the refused write as fee validation estimates it, all as
+    /// processing (so the user fee increase applies to it and a key budget does not count it);
+    /// no storage. Whether a write overflows is a function of the state it is applied to, so
+    /// every node refuses the same writes.
     ///
     /// The rollback needs a savepoint on the block transaction, which stays on the transaction
     /// when the write applies (RocksDB pops a savepoint only by rolling back to it). The genesis
@@ -109,7 +112,7 @@ where
                     .map_err(Error::Drive)?
                     .processing_fee;
                 self.execute_event_v1_body(
-                    refusal_event.with_additional_fixed_fee_cost(attempted_processing_fee),
+                    refusal_event.with_processing_fee(attempted_processing_fee),
                     vec![DocumentSumOverflowError::new(contract_id).into()],
                     block_info,
                     transaction,
@@ -138,6 +141,12 @@ struct SumOverflowRefusal<'a> {
     contract_id: Identifier,
 }
 
+// A batch holds one transition (`max_transitions_in_documents_batch` is 1), so an event that
+// writes documents bumps the nonce of exactly one contract, and a batch with a refused
+// transition writes no document. Should batches grow, an event that writes documents to
+// several contracts is not prepared for a refusal (its overflow stays an internal error) rather
+// than named after one of them.
+
 impl<'a> SumOverflowRefusal<'a> {
     /// The refusal of `event`, when it is an identity-paid write of documents to a contract.
     fn of(event: &ExecutionEvent<'a>) -> Option<Self> {
@@ -158,12 +167,16 @@ impl<'a> SumOverflowRefusal<'a> {
         {
             return None;
         }
-        let contract_id = operations.iter().find_map(|operation| match operation {
+        let mut contract_ids = operations.iter().filter_map(|operation| match operation {
             DriveOperation::IdentityOperation(
                 IdentityOperationType::UpdateIdentityContractNonce { contract_id, .. },
             ) => Some(Identifier::new(*contract_id)),
             _ => None,
-        })?;
+        });
+        let contract_id = contract_ids.next()?;
+        if contract_ids.any(|other| other != contract_id) {
+            return None;
+        }
         let refused_operations = operations
             .iter()
             .filter(|operation| {
@@ -198,18 +211,17 @@ impl<'a> SumOverflowRefusal<'a> {
 }
 
 impl ExecutionEvent<'_> {
-    /// The event with `fee` added to the processing fee it charges up front.
-    fn with_additional_fixed_fee_cost(mut self, fee: Credits) -> Self {
+    /// The event with `fee` added to the processing it is charged, metered like the work
+    /// validation billed: the user fee increase applies to it, and a key budget leaves it out.
+    fn with_processing_fee(mut self, fee: Credits) -> Self {
         if let ExecutionEvent::Paid {
-            additional_fixed_fee_cost,
+            execution_operations,
             ..
         } = &mut self
         {
-            *additional_fixed_fee_cost = Some(
-                additional_fixed_fee_cost
-                    .unwrap_or_default()
-                    .saturating_add(fee),
-            );
+            execution_operations.push(ValidationOperation::PrecalculatedOperation(
+                FeeResult::new_from_processing_fee(fee),
+            ));
         }
         self
     }

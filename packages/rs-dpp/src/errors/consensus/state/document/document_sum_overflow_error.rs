@@ -9,8 +9,8 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 /// A document write to a data contract would take one of the sums its document types keep (an
-/// index `summable` by a property, a `rangeSummable` index, or `documentsSummable`) past what a
-/// sum holds, a signed 64 bit integer. The write is refused as a paid error from protocol
+/// index `summable` by a property, a `rangeSummable` index, or `documentsSummable`) out of the
+/// range a sum holds, a signed 64 bit integer. The write is refused as a paid error from protocol
 /// version 15: the identity contract nonce is bumped and nothing else of the write is stored.
 #[derive(
     Error,
@@ -25,7 +25,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("a document write to contract {contract_id} would take a document sum past the largest value a sum holds")]
+#[error("a document write to contract {contract_id} would take a document sum out of the signed 64-bit range a sum holds")]
 #[platform_serialize(unversioned)]
 pub struct DocumentSumOverflowError {
     /*

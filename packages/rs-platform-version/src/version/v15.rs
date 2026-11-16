@@ -935,15 +935,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     emergency updates of consensus parameter update 2 force at least version 1 instead of
 ///     exactly 1, so they never undo this. Protocol v14 and earlier keep version 1.
 ///
-/// 45. **A document write past a sum is a paid error**: a document create, replace or
-///     transfer is held to no sum before it is written, and GroveDB refuses a write that
-///     would take a sum tree's aggregate (a `summable`, `rangeSummable` or
-///     `documentsSummable` sum) past `i64::MAX`, as merk computes it at each node. With
+/// 45. **A document write past a sum is a paid error**: a document write (a create,
+///     replace, transfer, delete or any other document transition) is held to no sum before
+///     it is written, and GroveDB refuses a write that would take a sum tree's aggregate (a
+///     `summable`, `rangeSummable` or `documentsSummable` sum) out of the `i64` range, as
+///     merk computes it at each node. With
 ///     signed values no check on a total is exact, so the write is attempted.
 ///     `execute_event` 2 (`DRIVE_ABCI_METHOD_VERSIONS_V11`) rolls back what the attempt
 ///     wrote and refuses it as a paid `DocumentSumOverflowError` (40154, new): the identity
 ///     contract nonce is bumped, and the signer pays the bump, the validation work and the
-///     processing of the refused write as fee validation estimates it, with no storage fee.
+///     processing of the refused write as fee validation estimates it, all as processing
+///     (with the user fee increase, outside a key budget), with no storage fee.
 ///     It is an internal error, which the block carries neither paid nor with its nonce
 ///     bumped, at the genesis height, which takes no savepoint, and at protocol v14 and
 ///     earlier, which keep `execute_event` 1 or 0.

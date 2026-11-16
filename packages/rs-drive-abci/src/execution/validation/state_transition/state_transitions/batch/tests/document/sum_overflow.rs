@@ -1,13 +1,14 @@
 //! A document write whose summed value would take a document sum past what a sum tree holds:
 //! a per-value sum (an index `summable` by the property), a range sum (`rangeSummable`, a
 //! provable sum tree) and a document type's sum (`documentsSummable`), written by a create, a
-//! replace or a transfer.
+//! replace, a transfer or a delete.
 
 use super::*;
 
 mod sum_overflow_tests {
     use super::*;
     use crate::execution::check_tx::CheckTxLevel;
+    use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
@@ -15,7 +16,9 @@ mod sum_overflow_tests {
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::fee::fee_result::FeeResult;
+    use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::platform_value;
     use dpp::prelude::{DataContract, IdentityNonce};
@@ -84,6 +87,8 @@ mod sum_overflow_tests {
         /// Whether transitions are processed as the proposer builds its block, each in a
         /// savepoint of its own, rather than as a validator checks a received one.
         proposing: bool,
+        /// The user fee increase the transitions carry.
+        user_fee_increase: u16,
     }
 
     /// What a transition did: what `check_tx` said, the block's result, and the writer's
@@ -179,11 +184,66 @@ mod sum_overflow_tests {
                 next_nonces: BTreeMap::new(),
                 block_info: BlockInfo::default(),
                 proposing: false,
+                user_fee_increase: 0,
             }
         }
 
         fn latest() -> Self {
             Self::new(PlatformVersion::latest().protocol_version)
+        }
+
+        /// Adds a writer whose signing key has a budget of `budget`, and returns it.
+        fn add_budgeted_writer(&mut self, budget: Credits) -> usize {
+            let (mut identity, signer, key) =
+                setup_identity_without_adding_it(6103, dash_to_credits!(1.0));
+            identity.add_public_key(key.clone().with_limits(Some(budget), None));
+            self.platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    self.platform_version,
+                )
+                .expect("expected to add the identity");
+            self.writers.push((identity, signer, key));
+            self.writers.len() - 1
+        }
+
+        /// What is left of the budget of `writer`'s signing key.
+        fn remaining_budget(&self, writer: usize) -> Option<Credits> {
+            let (identity, _, key) = &self.writers[writer];
+            self.platform
+                .drive
+                .fetch_identity_key_remaining_budget(
+                    identity.id().to_buffer(),
+                    key.id(),
+                    None,
+                    self.platform_version,
+                )
+                .expect("expected to fetch the remaining budget")
+        }
+
+        /// Spends the budget of `writer`'s signing key down to `remaining`.
+        fn spend_budget_down_to(&self, writer: usize, remaining: Credits) {
+            let (identity, _, key) = &self.writers[writer];
+            let spent = self
+                .remaining_budget(writer)
+                .expect("expected a budget")
+                .saturating_sub(remaining);
+            self.platform
+                .drive
+                .deduct_from_identity_key_budget(
+                    identity.id().to_buffer(),
+                    key.id(),
+                    spent,
+                    None,
+                    self.platform_version,
+                )
+                .expect("expected to spend the budget");
+            assert_eq!(self.remaining_budget(writer), Some(remaining));
         }
 
         fn take_nonce(&mut self, writer: usize) -> IdentityNonce {
@@ -324,7 +384,7 @@ mod sum_overflow_tests {
                 entropy.0,
                 key,
                 nonce,
-                0,
+                self.user_fee_increase,
                 None,
                 signer,
                 platform_version,
@@ -360,7 +420,7 @@ mod sum_overflow_tests {
                 document_type_ref,
                 key,
                 nonce,
-                0,
+                self.user_fee_increase,
                 None,
                 signer,
                 platform_version,
@@ -397,7 +457,7 @@ mod sum_overflow_tests {
                 recipient_id,
                 key,
                 nonce,
-                0,
+                self.user_fee_increase,
                 None,
                 signer,
                 platform_version,
@@ -405,6 +465,36 @@ mod sum_overflow_tests {
             )
             .await
             .expect("expected the transfer transition");
+            self.run(writer, nonce, &transition)
+        }
+
+        /// A delete by the owner `writer` of `document`.
+        async fn delete(
+            &mut self,
+            writer: usize,
+            document_type: &str,
+            document: &Document,
+        ) -> Outcome {
+            let platform_version = self.platform_version;
+            let nonce = self.take_nonce(writer);
+            let (_, signer, key) = &self.writers[writer];
+            let document_type_ref = self
+                .contract
+                .document_type_for_name(document_type)
+                .expect("expected the document type");
+            let transition = BatchTransition::new_document_deletion_transition_from_document(
+                document.clone(),
+                document_type_ref,
+                key,
+                nonce,
+                self.user_fee_increase,
+                None,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the delete transition");
             self.run(writer, nonce, &transition)
         }
 
@@ -634,6 +724,90 @@ mod sum_overflow_tests {
     #[tokio::test]
     async fn should_refuse_a_transfer_past_a_range_sum_as_a_paid_error() {
         transfer_past_the_owner_sum(RANGED, 16_630_420).await;
+    }
+
+    /// A delete raises the sums that held a negative value: deleting the -1 of a type summing
+    /// -1, 1 and `i64::MAX` would take its sum to `i64::MAX + 1`. (Which creates of the three
+    /// go through depends on the partial sums the tree's shapes hold while it is written; this
+    /// order writes all three.)
+    #[tokio::test]
+    async fn should_refuse_a_delete_past_a_document_type_sum_as_a_paid_error() {
+        let mut fixture = SumFixture::latest();
+        let (outcome, minus_one) = fixture.create(0, TYPED, -1).await;
+        SumFixture::expect_success(&outcome, "the create of -1");
+        let (outcome, _) = fixture.create(0, TYPED, 1).await;
+        SumFixture::expect_success(&outcome, "the create of 1");
+        let (outcome, _) = fixture.create(0, TYPED, i64::MAX).await;
+        SumFixture::expect_success(&outcome, "the create of i64::MAX");
+
+        let stored_before = fixture.stored(TYPED);
+        let outcome = fixture.delete(0, TYPED, &minus_one).await;
+        expect_paid_overflow(
+            &fixture,
+            "typed: delete of -1",
+            &outcome,
+            TYPED,
+            &stored_before,
+            10_214_480,
+        );
+    }
+
+    /// The refused write's processing is processing like the rest of the fee: a user fee
+    /// increase of 100% doubles the whole charge, which holds no storage.
+    #[tokio::test]
+    async fn should_apply_the_user_fee_increase_to_the_whole_refusal() {
+        let mut fixture = SumFixture::latest();
+        let (outcome, _) = fixture.create(0, PER_VALUE, i64::MAX).await;
+        SumFixture::expect_success(&outcome, "the create of i64::MAX");
+
+        fixture.user_fee_increase = 100;
+        let stored_before = fixture.stored(PER_VALUE);
+        let (outcome, _) = fixture.create(0, PER_VALUE, 1).await;
+        // Twice what the same refusal costs with no increase.
+        expect_paid_overflow(
+            &fixture,
+            "perValue: create of 1 at a 100% fee increase",
+            &outcome,
+            PER_VALUE,
+            &stored_before,
+            2 * 16_362_120,
+        );
+    }
+
+    /// A refusal signed by a key with a budget is paid, and its charge is spent from the budget
+    /// like any fee the identity pays. The refused write's processing is metered processing,
+    /// which fee validation leaves out of what a budget has to cover, so a key the delete fits
+    /// is not refused, unpaid, for the processing of the refusal. The budgeted writer's sum is 0 (it holds -1 and 1) beside another owner's `i64::MAX`:
+    /// deleting the -1 would take the range sum over both owners to `i64::MAX + 1`.
+    #[tokio::test]
+    async fn should_spend_a_refused_delete_past_a_sum_from_the_signing_key_budget() {
+        let mut fixture = SumFixture::latest();
+        let writer = fixture.add_budgeted_writer(dash_to_credits!(1.0));
+        let (outcome, _) = fixture.create(0, RANGED, i64::MAX).await;
+        SumFixture::expect_success(&outcome, "the create of i64::MAX");
+        let (outcome, minus_one) = fixture.create(writer, RANGED, -1).await;
+        SumFixture::expect_success(&outcome, "the create of -1");
+        let (outcome, _) = fixture.create(writer, RANGED, 1).await;
+        SumFixture::expect_success(&outcome, "the create of 1");
+        // Enough for what fee validation requires of the delete from the budget.
+        let budget = 20_000_000;
+        fixture.spend_budget_down_to(writer, budget);
+
+        let stored_before = fixture.stored(RANGED);
+        let outcome = fixture.delete(writer, RANGED, &minus_one).await;
+        expect_paid_overflow(
+            &fixture,
+            "ranged: delete of -1 with a budgeted key",
+            &outcome,
+            RANGED,
+            &stored_before,
+            15_196_040,
+        );
+        assert_eq!(
+            fixture.remaining_budget(writer),
+            Some(budget - outcome.charged()),
+            "the charge is spent from the budget"
+        );
     }
 
     /// The proposer, which takes a savepoint per transition, refuses the write the same way.

@@ -161,7 +161,7 @@ A range total costs more on each write than a per-value total, since every node 
 
 ## Writes past a sum
 
-A sum holds a signed 64-bit integer, and each node of a sum tree keeps the total of its own value and its children's, so a write can take a sum out of range even when the type's values are each in range. A create, replace or transfer that would do so is refused when it is applied, as nothing checks the sums before. From protocol version 15 it is a paid error, `DocumentSumOverflowError` (40154): nothing of the write is stored, the identity contract nonce is bumped, and the signer pays the processing of the refused write as fee validation estimates it, with no storage fee. Bounding the summed property (`minimum` and `maximum`) to what the application needs keeps the sums out of reach.
+A sum holds a signed 64-bit integer, and each node of a sum tree keeps the total of its own value and its children's, so a write can take a sum out of range even when the type's values are each in range. Any document write that would do so is refused when it is applied, as nothing checks the sums before: a create, a replace or a transfer, and also a delete or a purchase, since removing a negative value raises the totals that held it. From protocol version 15 it is a paid error, `DocumentSumOverflowError` (40154): nothing of the write is stored, the identity contract nonce is bumped, and the signer pays the processing of the refused write as fee validation estimates it, with its user fee increase and no storage fee. Bounding the summed property (`minimum` and `maximum`) to what the application needs keeps the sums out of reach.
 
 ## Choosing what to set
 
