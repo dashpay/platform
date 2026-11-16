@@ -20,6 +20,9 @@ pub(crate) struct PreparedTipAccount {
     account: u32,
     coordinator: Weak<NetworkShieldedCoordinator>,
     clear_generation: u64,
+    /// The hash of the MASTER authentication key the seed derives at the
+    /// account's slot, which the identity carried when it was prepared.
+    master_key_hash: [u8; 20],
 }
 
 impl PreparedTipAccount {
@@ -31,6 +34,35 @@ impl PreparedTipAccount {
             .is_some_and(|coordinator| coordinator.clear_generation() == self.clear_generation)
             .then_some(self.account)
     }
+
+    /// [`Self::standing_account`], while `identity` still carries the key
+    /// the seed proved. The preparation is recorded by identity id, and an
+    /// identity removed and added back is another record under the same id:
+    /// it is prepared only if it carries that key too, which is what the
+    /// seed proof would find for it.
+    pub(crate) fn standing_account_of(&self, identity: &dpp::identity::Identity) -> Option<u32> {
+        self.standing_account()
+            .filter(|_| carries_master_key(identity, &self.master_key_hash))
+    }
+}
+
+/// Whether `identity` carries `key_hash` on an ECDSA MASTER authentication
+/// key. The hash alone proves nothing: a hash-only key (`ECDSA_HASH160`) or
+/// a key of another purpose or level can carry it on an identity whose
+/// master key is another wallet's or another index's. A disabled key still
+/// counts: rotating the master key does not change the index the identity
+/// was created at.
+fn carries_master_key(identity: &dpp::identity::Identity, key_hash: &[u8; 20]) -> bool {
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+
+    identity.public_keys().values().any(|key| {
+        key.key_type() == KeyType::ECDSA_SECP256K1
+            && key.purpose() == Purpose::AUTHENTICATION
+            && key.security_level() == SecurityLevel::MASTER
+            && key.public_key_hash().ok() == Some(*key_hash)
+    })
 }
 
 pub const SHIELDED_IDENTITY_ACCOUNT_BASE: u32 = 0x4000_0000;
@@ -50,26 +82,18 @@ pub fn is_shielded_identity_account(account: u32) -> bool {
 
 /// Prove `identity_index` with the seed: the identity must carry the MASTER
 /// authentication key this wallet derives at that index (the key discovery and
-/// registration both use). Fails closed when no key matches, including when
-/// no public keys were restored.
-///
-/// Only an ECDSA MASTER authentication key counts. The hash alone proves
-/// nothing: a hash-only key (`ECDSA_HASH160`) or a key of another purpose or
-/// level can carry it on an identity whose master key is another wallet's or
-/// another index's. A disabled key still counts: rotating the master key
-/// does not change the index the identity was created at.
+/// registration both use), as [`carries_master_key`] defines. Fails closed
+/// when no key matches, including when no public keys were restored. Returns
+/// the hash of the key that proved it.
 fn verify_identity_index(
     seed: &[u8],
     network: key_wallet::Network,
     identity_index: u32,
     identity: &dpp::identity::Identity,
-) -> Result<(), PlatformWalletError> {
+) -> Result<[u8; 20], PlatformWalletError> {
     use crate::wallet::identity::network::{
         derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
 
     let master = key_wallet::bip32::ExtendedPrivKey::new_master(network, seed)
         .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
@@ -79,14 +103,8 @@ fn verify_identity_index(
         identity_index,
         MASTER_KEY_INDEX,
     )?;
-    let verified = identity.public_keys().values().any(|key| {
-        key.key_type() == KeyType::ECDSA_SECP256K1
-            && key.purpose() == Purpose::AUTHENTICATION
-            && key.security_level() == SecurityLevel::MASTER
-            && key.public_key_hash().ok() == Some(expected)
-    });
-    if verified {
-        Ok(())
+    if carries_master_key(identity, &expected) {
+        Ok(expected)
     } else {
         Err(PlatformWalletError::InvalidIdentityData(format!(
             "Identity index {identity_index} is not verified for this wallet; \
@@ -170,7 +188,7 @@ impl PlatformWallet {
         if coordinator.clear_generation() != clear_generation {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
-        let account = self.verified_tip_account(seed, identity_id).await?;
+        let (account, master_key_hash) = self.verified_tip_account(seed, identity_id).await?;
         // Read the bound set and bind the augmented copy as one step: a bind
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
@@ -207,7 +225,7 @@ impl PlatformWallet {
         // recorded is the account of the slot the identity holds as it is
         // recorded.
         let wm = self.wallet_manager.read().await;
-        if self.verified_tip_account_in(&wm, seed, identity_id)? != account {
+        if self.verified_tip_account_in(&wm, seed, identity_id)?.0 != account {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "The identity moved to another slot while its tip account was prepared; \
                  prepare its tip address again"
@@ -223,6 +241,7 @@ impl PlatformWallet {
                     account,
                     coordinator: Arc::downgrade(coordinator),
                     clear_generation,
+                    master_key_hash,
                 },
             );
         drop(wm);
@@ -233,30 +252,33 @@ impl PlatformWallet {
     /// ([`Self::prepare_shielded_identity_address`]), while the preparation
     /// stands: its coordinator is alive and has not been cleared since, the
     /// wallet has not been removed, and the identity still holds the slot
-    /// that selects the account. `None` otherwise. A recorded identity index
-    /// alone is not proof of the account, so this is what tells a caller
-    /// that the seed proved it.
+    /// that selects the account and still carries the key the seed proved
+    /// there. `None` otherwise. A recorded identity index alone is not proof
+    /// of the account, so this is what tells a caller that the seed proved
+    /// it.
     ///
     /// An identity removed and added back at another slot after its
     /// preparation has another account: the preparation of the old one no
-    /// longer stands, and the identity is prepared again.
+    /// longer stands, and the identity is prepared again. Added back at the
+    /// same slot, it is prepared only if it carries the proved key.
     pub async fn prepared_shielded_identity_account(
         &self,
         identity_id: &Identifier,
     ) -> Option<u32> {
         let wm = self.wallet_manager.read().await;
-        let current = wm
+        let managed = wm
             .get_wallet_info(&self.wallet_id())?
             .identity_manager
             .managed_identity(identity_id)
-            .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
-            .and_then(|identity| identity.identity_index)
+            .filter(|identity| identity.wallet_id == Some(self.wallet_id()))?;
+        let current = managed
+            .identity_index
             .and_then(|index| shielded_identity_account_index(index).ok())?;
         self.prepared_tip_accounts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(identity_id)
-            .and_then(PreparedTipAccount::standing_account)
+            .and_then(|prepared| prepared.standing_account_of(&managed.identity))
             .filter(|prepared| *prepared == current)
     }
 
@@ -269,7 +291,7 @@ impl PlatformWallet {
         &self,
         seed: &[u8],
         identity_id: &Identifier,
-    ) -> Result<u32, PlatformWalletError> {
+    ) -> Result<(u32, [u8; 20]), PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         self.verified_tip_account_in(&wm, seed, identity_id)
     }
@@ -281,7 +303,7 @@ impl PlatformWallet {
         wm: &WalletManager<PlatformWalletInfo>,
         seed: &[u8],
         identity_id: &Identifier,
-    ) -> Result<u32, PlatformWalletError> {
+    ) -> Result<(u32, [u8; 20]), PlatformWalletError> {
         let info = wm
             .get_wallet_info(&self.wallet_id())
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
@@ -297,8 +319,9 @@ impl PlatformWallet {
         let index = identity
             .identity_index
             .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
-        verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
-        shielded_identity_account_index(index)
+        let master_key_hash =
+            verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
+        Ok((shielded_identity_account_index(index)?, master_key_hash))
     }
 }
 

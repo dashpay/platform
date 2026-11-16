@@ -1500,11 +1500,10 @@ impl PlatformWallet {
         // notes and their watermark attributed to a key that did not
         // produce them, undetectably (a later seedless bind derives its
         // keys FROM this row, so nothing downstream can see the swap).
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while adding shielded account {account}: {e}"
-            ))
-        })?;
+        let start = self
+            .persister
+            .load()
+            .map_err(PlatformWalletError::from_load_failure)?;
         let id = SubwalletId::new(self.wallet_id, account);
         if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
             if persisted.as_slice() != views.to_fvk_bytes().as_slice() {

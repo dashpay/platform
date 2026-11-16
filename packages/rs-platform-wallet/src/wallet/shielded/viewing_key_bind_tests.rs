@@ -2525,3 +2525,87 @@ async fn should_drop_prepared_accounts_when_the_wallet_is_bound_on_another_coord
         .await
         .is_some());
 }
+
+/// Put the fixture's identity back at slot 2 with `public_keys`, after
+/// removing it: another record of the same identity id in the same slot.
+async fn add_identity_back_at_slot_two(
+    wallet: &PlatformWallet,
+    id: dpp::prelude::Identifier,
+    public_keys: BTreeMap<dpp::identity::KeyID, dpp::identity::IdentityPublicKey>,
+) {
+    use dpp::identity::{Identity, IdentityV0};
+    let mut wm = wallet.wallet_manager.write().await;
+    let manager = &mut wm
+        .get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager;
+    manager.remove_identity(&id, wallet.persister()).unwrap();
+    manager
+        .add_identity(
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys,
+                balance: 0,
+                revision: 0,
+            }),
+            2,
+            wallet.wallet_id(),
+            wallet.persister(),
+        )
+        .unwrap();
+}
+
+/// A preparation is recorded by identity id, and an identity removed and
+/// added back is another record under that id, in the same slot or not. It
+/// is prepared only while it carries the key the seed proved, which is what
+/// the proof would find for it: a record with other keys in the same slot
+/// was never proved.
+#[tokio::test]
+async fn should_not_report_a_prepared_account_for_an_identity_added_back_without_the_proved_key() {
+    use crate::shielded_identity_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_identity_added_back").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let account = shielded_identity_account_index(2).unwrap();
+    assert_eq!(
+        wallet.prepared_shielded_identity_account(&id).await,
+        Some(account)
+    );
+
+    // Same id, same slot, the MASTER key of another slot.
+    add_identity_back_at_slot_two(&wallet, id, seed_master_key(&seed, 5)).await;
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+
+    // Same id, same slot, the key the seed derives there: the proof holds
+    // for this record as it did for the first.
+    add_identity_back_at_slot_two(&wallet, id, seed_master_key(&seed, 2)).await;
+    assert_eq!(
+        wallet.prepared_shielded_identity_account(&id).await,
+        Some(account)
+    );
+}
+
+/// A failed host load in an account add is a persister load failure, as in
+/// the two bind routes, so a host tells a transient failure from a fatal one
+/// without reading the message.
+#[tokio::test]
+async fn should_report_a_failed_load_in_an_account_add_as_a_persister_load_failure() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("account_add_load_failure"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+
+    *persister.fail_next_load.lock().unwrap() = true;
+    let failed = wallet.shielded_add_account(&seed, 1).await;
+    assert!(
+        matches!(failed, Err(crate::PlatformWalletError::PersisterLoad(_))),
+        "{failed:?}"
+    );
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+}
