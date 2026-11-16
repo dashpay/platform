@@ -442,8 +442,8 @@ impl WalletPersister {
                 tracing::warn!(
                     kept = pending.len(),
                     "private requests read back while another flush of this wallet's records \
-                     is in progress, or failed keeping what it took, are not noted yet; a later \
-                     call notes them"
+                     is in progress, returned meanwhile, or failed keeping what it took, are \
+                     not noted yet; a later call notes them"
                 );
                 self.unflushed_read_back_entries().extend(pending);
             }
@@ -763,9 +763,11 @@ impl WalletPersister {
     /// the one here then succeeds over a buffer that does not hold it. Or
     /// another flush, which took an older state of the same records before
     /// the store, may write it after the one here wrote the newer, and
-    /// succeed: nothing says a backend writes what a flush took before what
-    /// a later one takes, and a restart then finds the older state. Either
-    /// began before this flush returned. So after this flush it shows as a
+    /// succeed: a restart then finds the older state. The persistence
+    /// contract requires a backend to write what a flush took before what a
+    /// later one takes (`PlatformWalletPersistence::flush`), and a store
+    /// made durable does not rest on it. Either flush began before this one
+    /// returned. So after this flush it shows as a
     /// flush in progress, or as one more that returned since before the
     /// store than this call's own: a flush is counted as returned, whatever
     /// its outcome, before it stops being counted as in progress. One that
@@ -793,10 +795,12 @@ impl WalletPersister {
     /// the withdrawal is on disk: that nothing writes the record after it.
     ///
     /// A flush inside the backend while the withdrawal is stored may have
-    /// taken the record without it, and nothing says a backend writes what
-    /// that flush took before what a later one takes. Should it write the
-    /// record after the withdrawal, the counts of failed flushes say nothing
-    /// of it: it succeeded. So such a flush answers
+    /// taken the record without it, and the withdrawal does not rest on the
+    /// backend writing what that flush took before what a later one takes,
+    /// though the persistence contract requires it
+    /// (`PlatformWalletPersistence::flush`). Should it write the record
+    /// after the withdrawal, the counts of failed flushes say nothing of it:
+    /// it succeeded. So such a flush answers
     /// [`NotDurable::OtherFlushUnsettled`], and nothing is flushed, whether
     /// it is still in progress once the withdrawal is stored or has returned
     /// since before the store ([`FlushLedger::returned`]). The second case
@@ -894,6 +898,16 @@ impl WalletPersister {
     /// [`NotDurable::OtherFlushUnsettled`], also for a call made from inside
     /// a backend's own flush: the caller asks again later, and that call's
     /// flush writes what was put back.
+    ///
+    /// Another flush that returned during the call is refused the same way,
+    /// though it succeeded ([`FlushLedger::returned`]): it may have taken an
+    /// older state of the records before this call's flush took the newer,
+    /// and written it afterwards. That covers the call's own flush and no
+    /// more. Nothing stores those records again, so a later call finds them
+    /// in no buffer, and answers for whatever was written last: there it
+    /// rests on the backend writing what flushes took in the order they took
+    /// it, which the persistence contract requires
+    /// (`PlatformWalletPersistence::flush`).
     #[cfg(feature = "shielded")]
     pub(crate) fn flush_durably(&self) -> Result<(), NotDurable> {
         // A store that is the commit left nothing to flush or to lose: a
@@ -906,6 +920,7 @@ impl WalletPersister {
             return Err(NotDurable::Lost);
         }
         let failed_before = self.flush_ledger.failed();
+        let returned_before = self.flush_ledger.returned();
         self.flush().map_err(NotDurable::Flush)?;
         if self.flush_ledger.in_flight() != 0 {
             return Err(NotDurable::OtherFlushUnsettled);
@@ -914,6 +929,12 @@ impl WalletPersister {
             return Err(NotDurable::Lost);
         }
         if self.flush_ledger.failed() != failed_before {
+            return Err(NotDurable::OtherFlushUnsettled);
+        }
+        // The flush above is one that returned since the call began. Any
+        // other succeeded, as none failed: it may have written an older
+        // state of the records after that flush wrote the newer.
+        if self.flush_ledger.returned() != returned_before + 1 {
             return Err(NotDurable::OtherFlushUnsettled);
         }
         Ok(())
@@ -1647,6 +1668,121 @@ mod tests {
         );
     }
 
+    /// Keeps the last state stored and writes it at a flush, each store being
+    /// a newer state of one record. The first flush stalls with what it
+    /// took. The second writes, then lets the first write, and returns only
+    /// after the first has.
+    struct WritesTheOlderStateLast {
+        stores: AtomicU64,
+        flushes: AtomicU64,
+        buffer: std::sync::Mutex<Option<u64>>,
+        disk: std::sync::Mutex<Option<u64>>,
+        entered: std::sync::Mutex<mpsc::Sender<()>>,
+        release: std::sync::Mutex<mpsc::Receiver<()>>,
+        let_go: std::sync::Mutex<mpsc::Sender<()>>,
+        first_returned: std::sync::Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl WritesTheOlderStateLast {
+        fn write(&self, taken: Option<u64>) {
+            if let Some(state) = taken {
+                *self.disk.lock().expect("disk") = Some(state);
+            }
+        }
+
+        fn on_disk(&self) -> Option<u64> {
+            *self.disk.lock().expect("disk")
+        }
+
+        /// A persister over this backend whose first flush, made on the
+        /// thread returned, has taken the first state stored and stalled.
+        fn with_the_first_state_in_a_stalled_flush() -> (
+            Arc<Self>,
+            WalletPersister,
+            std::thread::JoinHandle<Result<(), PersistenceError>>,
+        ) {
+            let (entered, has_entered) = mpsc::channel();
+            let (let_go, release) = mpsc::channel();
+            let (returned, first_returned) = mpsc::channel();
+            let backend = Arc::new(Self {
+                stores: AtomicU64::new(0),
+                flushes: AtomicU64::new(0),
+                buffer: std::sync::Mutex::new(None),
+                disk: std::sync::Mutex::new(None),
+                entered: std::sync::Mutex::new(entered),
+                release: std::sync::Mutex::new(release),
+                let_go: std::sync::Mutex::new(let_go),
+                first_returned: std::sync::Mutex::new(first_returned),
+            });
+            let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+            persister
+                .store(PlatformWalletChangeSet::default())
+                .expect("the first state is buffered");
+            let stalled = {
+                let persister = persister.clone();
+                std::thread::spawn(move || {
+                    let flushed = persister.flush();
+                    returned.send(()).expect("the second flush waits");
+                    flushed
+                })
+            };
+            has_entered
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the first flush took the first state");
+            (backend, persister, stalled)
+        }
+    }
+
+    impl PlatformWalletPersistence for WritesTheOlderStateLast {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            let state = self.stores.fetch_add(1, Ordering::SeqCst) + 1;
+            *self.buffer.lock().expect("buffer") = Some(state);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            let taken = self.buffer.lock().expect("buffer").take();
+            match self.flushes.fetch_add(1, Ordering::SeqCst) {
+                0 => {
+                    self.entered
+                        .lock()
+                        .expect("entered")
+                        .send(())
+                        .expect("the test waits");
+                    self.release
+                        .lock()
+                        .expect("release")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("released");
+                    self.write(taken);
+                }
+                1 => {
+                    self.write(taken);
+                    self.let_go
+                        .lock()
+                        .expect("let go")
+                        .send(())
+                        .expect("the first flush waits");
+                    self.first_returned
+                        .lock()
+                        .expect("first returned")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("the first flush returns");
+                }
+                _ => self.write(taken),
+            }
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     /// A store is not answered for when another flush of the wallet's
     /// records returned while it was made durable, though none is in
     /// progress afterwards and none failed. Here a flush that took an older
@@ -1656,106 +1792,8 @@ mod tests {
     /// answered for, and its state is the one on disk.
     #[test]
     fn should_not_answer_for_a_store_when_a_flush_returned_while_it_was_made_durable() {
-        /// Keeps the last state stored and writes it at a flush, each store
-        /// being a newer state of one record. The first flush stalls with
-        /// what it took. The second writes, then lets the first write, and
-        /// returns only after the first has.
-        struct WritesTheOlderStateLast {
-            stores: AtomicU64,
-            flushes: AtomicU64,
-            buffer: std::sync::Mutex<Option<u64>>,
-            disk: std::sync::Mutex<Option<u64>>,
-            entered: std::sync::Mutex<mpsc::Sender<()>>,
-            release: std::sync::Mutex<mpsc::Receiver<()>>,
-            let_go: std::sync::Mutex<mpsc::Sender<()>>,
-            first_returned: std::sync::Mutex<mpsc::Receiver<()>>,
-        }
-        impl WritesTheOlderStateLast {
-            fn write(&self, taken: Option<u64>) {
-                if let Some(state) = taken {
-                    *self.disk.lock().expect("disk") = Some(state);
-                }
-            }
-            fn on_disk(&self) -> Option<u64> {
-                *self.disk.lock().expect("disk")
-            }
-        }
-        impl PlatformWalletPersistence for WritesTheOlderStateLast {
-            fn store(
-                &self,
-                _wallet_id: WalletId,
-                _changeset: PlatformWalletChangeSet,
-            ) -> Result<(), PersistenceError> {
-                let state = self.stores.fetch_add(1, Ordering::SeqCst) + 1;
-                *self.buffer.lock().expect("buffer") = Some(state);
-                Ok(())
-            }
-            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
-                let taken = self.buffer.lock().expect("buffer").take();
-                match self.flushes.fetch_add(1, Ordering::SeqCst) {
-                    0 => {
-                        self.entered
-                            .lock()
-                            .expect("entered")
-                            .send(())
-                            .expect("the test waits");
-                        self.release
-                            .lock()
-                            .expect("release")
-                            .recv_timeout(Duration::from_secs(10))
-                            .expect("released");
-                        self.write(taken);
-                    }
-                    1 => {
-                        self.write(taken);
-                        self.let_go
-                            .lock()
-                            .expect("let go")
-                            .send(())
-                            .expect("the first flush waits");
-                        self.first_returned
-                            .lock()
-                            .expect("first returned")
-                            .recv_timeout(Duration::from_secs(10))
-                            .expect("the first flush returns");
-                    }
-                    _ => self.write(taken),
-                }
-                Ok(())
-            }
-            fn load(&self) -> Result<ClientStartState, PersistenceError> {
-                Ok(ClientStartState::default())
-            }
-        }
-
-        let (entered, has_entered) = mpsc::channel();
-        let (let_go, release) = mpsc::channel();
-        let (returned, first_returned) = mpsc::channel();
-        let backend = Arc::new(WritesTheOlderStateLast {
-            stores: AtomicU64::new(0),
-            flushes: AtomicU64::new(0),
-            buffer: std::sync::Mutex::new(None),
-            disk: std::sync::Mutex::new(None),
-            entered: std::sync::Mutex::new(entered),
-            release: std::sync::Mutex::new(release),
-            let_go: std::sync::Mutex::new(let_go),
-            first_returned: std::sync::Mutex::new(first_returned),
-        });
-        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
-        persister
-            .store(PlatformWalletChangeSet::default())
-            .expect("the older state is buffered");
-        let stalled = {
-            let persister = persister.clone();
-            std::thread::spawn(move || {
-                let flushed = persister.flush();
-                returned.send(()).expect("the second flush waits");
-                flushed
-            })
-        };
-        has_entered
-            .recv_timeout(Duration::from_secs(10))
-            .expect("the first flush took the older state");
+        let (backend, persister, stalled) =
+            WritesTheOlderStateLast::with_the_first_state_in_a_stalled_flush();
 
         let stored = persister.store_durably(PlatformWalletChangeSet::default());
 
@@ -1773,6 +1811,33 @@ mod tests {
         let again = persister.store_durably(PlatformWalletChangeSet::default());
         assert!(again.is_ok(), "{again:?}");
         assert_eq!(backend.on_disk(), Some(3), "the state stored last");
+    }
+
+    /// The wallet's records are not answered for as durable when another
+    /// flush returned during the call, though none is in progress afterwards
+    /// and none failed: the same flush as above, holding the older state,
+    /// writes it after this call's flush wrote the newer.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_not_answer_for_the_wallets_records_when_a_flush_returned_during_the_call() {
+        let (backend, persister, stalled) =
+            WritesTheOlderStateLast::with_the_first_state_in_a_stalled_flush();
+        persister
+            .store(PlatformWalletChangeSet::default())
+            .expect("the newer state is buffered");
+
+        let flushed = persister.flush_durably();
+
+        assert!(stalled.join().expect("the first flush returns").is_ok());
+        assert_eq!(
+            backend.on_disk(),
+            Some(1),
+            "the older state was written last"
+        );
+        assert!(
+            matches!(flushed, Err(NotDurable::OtherFlushUnsettled)),
+            "{flushed:?}"
+        );
     }
 
     /// A withdrawal is not answered for when a flush of the wallet's records

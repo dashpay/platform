@@ -364,6 +364,20 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Write all buffered changesets atomically for the given wallet, then
     /// clear that wallet's buffer.
     ///
+    /// ## Order of concurrent flushes (required)
+    ///
+    /// What a flush took from the buffer MUST reach the disk before anything
+    /// a later flush takes. Two flushes of one wallet that run at once must
+    /// not write in the other order: the older state of a record would land
+    /// over the newer, and a restart would load it. Holding one lock across
+    /// the take and the write, as the SQLite backend does, is enough; a
+    /// backend whose `store` is the commit has nothing to order.
+    ///
+    /// The wallet refuses a store it makes durable when another flush
+    /// returned while it did (`WalletPersister::store_durably`), so those do
+    /// not rest on this. Everything else that is stored and then flushed
+    /// does.
+    ///
     /// # Errors
     ///
     /// Implementations classify failures via
