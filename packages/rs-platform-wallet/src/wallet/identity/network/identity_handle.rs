@@ -586,6 +586,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
     }
 
+    /// [`Self::current_wallet_info_mut`], for a read: under the manager's
+    /// read lock.
+    pub(crate) fn current_wallet_info<'w>(
+        &self,
+        wm: &'w WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
     /// [`Self::current_wallet_info_mut`], with the wallet itself.
     pub(crate) fn current_wallet_and_info_mut<'w>(
         &self,
