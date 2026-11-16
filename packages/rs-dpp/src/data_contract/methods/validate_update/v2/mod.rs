@@ -21,7 +21,10 @@ impl DataContract {
     /// schema as JSON, which keeps the last entry of a repeated key, where the document type
     /// parser may have read the first, so they can not judge an update of it: an update of a
     /// contract whose stored schema repeats a key is refused. The new schema can not repeat
-    /// the key either, so such a contract stays as it was stored.
+    /// the key either, so the schemas of such a contract stay as they were stored.
+    ///
+    /// The rule is about an update that submits schemas. A token configuration update submits
+    /// none and stores the stored schemas and `$defs` as they are, so it does not come here.
     ///
     /// Delegating to generation 1 is safe because that generation is shipped and therefore
     /// frozen. The checks are independent and short-circuiting, so running the extra one first
