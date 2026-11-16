@@ -1385,9 +1385,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // drives `flush()` — the contract's durability boundary — before
         // anything hits the wire. That flush succeeding is no proof by itself:
         // another flush of the wallet's records may have taken the buffered
-        // pool and failed for good, dropping it, so the gate trusts only a
-        // store no other flush can have emptied
-        // (`WalletPersister::store_durably`).
+        // pool and failed for good, dropping it, or have written an older
+        // pool after it, so the gate trusts only a store no other flush can
+        // have emptied or written over (`WalletPersister::store_durably`).
         // Aborting BEFORE broadcast is harmless (no tx on the wire); the other
         // asset-lock accounts keep their keys on-device, so they stay best-effort.
         let pool_durability = if operation.is_some() {

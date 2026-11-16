@@ -1566,7 +1566,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // the manager guard. Failure must not expose an unpersisted address,
         // and a flush that succeeded is no proof by itself: another flush of
         // the wallet's records may have taken the reservation and failed for
-        // good, dropping it (`WalletPersister::store_durably`). The address
+        // good, dropping it, or have written an older state of the contact's
+        // addresses after it (`WalletPersister::store_durably`). The address
         // then stays used in memory and is not handed out.
         self.persister
             .store_durably(changeset)
