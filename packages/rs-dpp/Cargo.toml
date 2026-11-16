@@ -20,11 +20,14 @@ dashcore-crypto = { workspace = true, optional = true }
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
 blst = { version = "0.3.17", default-features = false, optional = true }
 zeroize = { version = "1.9.0", optional = true }
+# Consensus-critical exact pin: Ed25519 signature acceptance rules; bump only behind a protocol version.
 ed25519-dalek = { version = "=2.2.0", features = ["rand_core"], optional = true }
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
-base64 = "0.22.1"
-bech32 = "0.11"
+# Consensus-critical exact pin: base64 text of identifiers and bytes is consensus data; bump only behind a protocol version.
+base64 = "=0.22.1"
+# Consensus-critical exact pin: address encoding and decoding rules; bump only behind a protocol version.
+bech32 = "=0.11.1"
 bs58 = "0.5"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
@@ -66,14 +69,22 @@ regex = { version = "1.10.4" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
-sha2 = { version = "0.10" }
+# Consensus-critical exact pin: hash outputs feed identifiers and state; bump only behind a protocol version.
+sha2 = { version = "=0.10.9" }
 thiserror = { version = "2.0.17" }
-url = { version = "2.5", optional = true }
+# Consensus-critical exact pin: decides `format: "uri"` and `$schema` validity; bump only behind a protocol version.
+url = { version = "=2.5.8", optional = true }
+# Consensus-critical exact pin: Unicode data behind `url` host parsing (UTS-46); a newer Unicode version changes `format: "uri"` validity.
+icu_normalizer = { version = "=2.2.0", default-features = false, optional = true }
+icu_normalizer_data = { version = "=2.2.0", default-features = false, optional = true }
+icu_properties = { version = "=2.2.0", default-features = false, optional = true }
+icu_properties_data = { version = "=2.2.0", default-features = false, optional = true }
 # The native document validator reproduces the JSON Schema validator with the crates it uses
 # regex-syntax is the parser the `regex` crate uses; it must match the version `regex` pulls in
 regex-syntax = { version = "0.8.11", optional = true }
 num-cmp = { version = "0.1", optional = true }
-fraction = { version = "0.15", default-features = false, features = [
+# Consensus-critical exact pin: decides JSON Schema number validation results; bump only behind a protocol version.
+fraction = { version = "=0.15.4", default-features = false, features = [
   "with-bigint",
 ], optional = true }
 time = { version = "0.3", features = ["parsing", "macros"], optional = true }
@@ -84,7 +95,8 @@ platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
-derive_more = { version = "1.0", features = ["from", "display", "try_into"] }
+# Consensus-critical exact pin: derived Display strings appear in consensus errors; bump only behind a protocol version.
+derive_more = { version = "=1.0.0", features = ["from", "display", "try_into"] }
 nohash-hasher = "0.2.0"
 rust_decimal = { version = "1.39.0", optional = true }
 rust_decimal_macros = { version = "1.39.0", optional = true }
@@ -118,7 +130,15 @@ getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] 
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [package.metadata.cargo-machete]
-ignored = ["getrandom_03", "getrandom_04", "blst"]
+ignored = [
+  "getrandom_03",
+  "getrandom_04",
+  "blst",
+  "icu_normalizer",
+  "icu_normalizer_data",
+  "icu_properties",
+  "icu_properties_data",
+]
 
 [features]
 default = ["state-transitions"]
@@ -236,6 +256,10 @@ json-schema-validation = [
 validation-schema = [
   "platform-value-json",
   "dep:url",
+  "dep:icu_normalizer",
+  "dep:icu_normalizer_data",
+  "dep:icu_properties",
+  "dep:icu_properties_data",
   "dep:regex-syntax",
   "dep:num-cmp",
   "dep:fraction",
