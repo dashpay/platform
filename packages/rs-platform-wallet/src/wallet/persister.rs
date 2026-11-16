@@ -1867,6 +1867,62 @@ mod tests {
         );
     }
 
+    /// Buffers what is stored and writes it at a flush. While
+    /// `host_commit_fails` is set, each store is followed by a commit the
+    /// host makes on the backend, which fails for good: the buffer is
+    /// dropped, and the drop counted. No flush the wallet makes fails.
+    struct DrainedByItsHost {
+        buffered: AtomicU64,
+        written: AtomicU64,
+        dropped: AtomicU64,
+        host_commit_fails: AtomicBool,
+    }
+
+    impl DrainedByItsHost {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                buffered: AtomicU64::new(0),
+                written: AtomicU64::new(0),
+                dropped: AtomicU64::new(0),
+                host_commit_fails: AtomicBool::new(true),
+            })
+        }
+
+        /// A commit the host makes on the backend, failing for good.
+        fn host_commit_drops_the_buffer(&self) {
+            self.buffered.store(0, Ordering::SeqCst);
+            self.dropped.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl PlatformWalletPersistence for DrainedByItsHost {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.buffered.fetch_add(1, Ordering::SeqCst);
+            if self.host_commit_fails.load(Ordering::SeqCst) {
+                self.host_commit_drops_the_buffer();
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            let taken = self.buffered.swap(0, Ordering::SeqCst);
+            self.written.fetch_add(taken, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn buffered_writes_dropped(&self, _wallet_id: WalletId) -> Option<u64> {
+            Some(self.dropped.load(Ordering::SeqCst))
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     /// A store is not answered for when the backend dropped what it had
     /// buffered in a drain the ledger does not see, here a commit the host
     /// made on the backend itself: the wallet's flush then succeeds over an
@@ -1876,48 +1932,7 @@ mod tests {
     /// made durable once the host's commits succeed is answered for.
     #[test]
     fn should_not_answer_for_a_store_the_backend_dropped_in_a_drain_of_its_own() {
-        /// Buffers what is stored and writes it at a flush. While
-        /// `host_commit_fails` is set, each store is followed by a commit
-        /// the host makes on the backend, which fails for good: the buffer
-        /// is dropped, and the drop counted.
-        struct DrainedByItsHost {
-            buffered: AtomicU64,
-            written: AtomicU64,
-            dropped: AtomicU64,
-            host_commit_fails: AtomicBool,
-        }
-        impl PlatformWalletPersistence for DrainedByItsHost {
-            fn store(
-                &self,
-                _wallet_id: WalletId,
-                _changeset: PlatformWalletChangeSet,
-            ) -> Result<(), PersistenceError> {
-                self.buffered.fetch_add(1, Ordering::SeqCst);
-                if self.host_commit_fails.load(Ordering::SeqCst) {
-                    self.buffered.store(0, Ordering::SeqCst);
-                    self.dropped.fetch_add(1, Ordering::SeqCst);
-                }
-                Ok(())
-            }
-            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
-                let taken = self.buffered.swap(0, Ordering::SeqCst);
-                self.written.fetch_add(taken, Ordering::SeqCst);
-                Ok(())
-            }
-            fn buffered_writes_dropped(&self, _wallet_id: WalletId) -> Option<u64> {
-                Some(self.dropped.load(Ordering::SeqCst))
-            }
-            fn load(&self) -> Result<ClientStartState, PersistenceError> {
-                Ok(ClientStartState::default())
-            }
-        }
-
-        let backend = Arc::new(DrainedByItsHost {
-            buffered: AtomicU64::new(0),
-            written: AtomicU64::new(0),
-            dropped: AtomicU64::new(0),
-            host_commit_fails: AtomicBool::new(true),
-        });
+        let backend = DrainedByItsHost::new();
         let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
 
         let stored = persister.store_durably(PlatformWalletChangeSet::default());
@@ -1938,6 +1953,40 @@ mod tests {
         let again = persister.store_durably(PlatformWalletChangeSet::default());
         assert!(again.is_ok(), "{again:?}");
         assert_eq!(backend.written.load(Ordering::SeqCst), 1);
+    }
+
+    /// A marker noted as stored is forgotten once the backend reports a drop
+    /// the ledger did not see: not noted at all when the drop came between
+    /// its store and the note, and forgotten at the next read when it came
+    /// later. So the note never keeps a record from being stored again after
+    /// a drain that may have dropped it.
+    #[test]
+    fn should_forget_a_stored_marker_once_the_backend_reports_a_drop() {
+        let backend = DrainedByItsHost::new();
+        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+        let owner = Identifier::from([7; 32]);
+
+        persister
+            .store_private_marker_record(owner, true, PlatformWalletChangeSet::default())
+            .expect("the store itself succeeds");
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            None,
+            "its record was in the buffer the host's commit dropped"
+        );
+
+        backend.host_commit_fails.store(false, Ordering::SeqCst);
+        persister
+            .store_private_marker_record(owner, true, PlatformWalletChangeSet::default())
+            .expect("stored");
+        assert_eq!(persister.private_marker_stored(&owner), Some(true));
+
+        backend.host_commit_drops_the_buffer();
+        assert_eq!(
+            persister.private_marker_stored(&owner),
+            None,
+            "forgotten at the next read, so the next comparison stores it again"
+        );
     }
 
     /// A withdrawal is not answered for when a flush of the wallet's records

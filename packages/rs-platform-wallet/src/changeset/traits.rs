@@ -417,9 +417,9 @@ pub trait PlatformWalletPersistence: Send + Sync {
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// How many times this backend has dropped what it had buffered for
-    /// `wallet_id` without writing it, by whatever drained the buffer. It
-    /// only grows. `None`, the default, when the backend does not count
-    /// them.
+    /// `wallet_id` without writing it, by whatever drained the buffer, or
+    /// wrote it only to delete it again with the wallet's records. It only
+    /// grows. `None`, the default, when the backend does not count them.
     ///
     /// The wallet counts the flushes it makes itself, and so learns of a
     /// drop only when one of those fails. A backend whose buffer can be

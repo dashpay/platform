@@ -919,9 +919,12 @@ impl SqlitePersister {
             // changeset the carve-out above could not persist — dies
             // here rather than being restored to a buffer no flush could
             // ever drain.
-            if drained_slot.take().is_some() {
-                self.buffer.note_dropped(&wallet_id);
-            }
+            drop(drained_slot.take());
+            // Counted as a drop for the wallet whatever was staged: what
+            // the pre-flush above did write went with the cascade too, so
+            // a changeset that was buffered when the delete began is on no
+            // disk either way (`buffered_writes_dropped`).
+            self.buffer.note_dropped(&wallet_id);
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
             match self.buffer.take_for_flush(&wallet_id) {
@@ -1315,10 +1318,11 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     /// Every changeset this persister took from `wallet_id`'s buffer and
     /// dropped without writing it, whichever call drained the buffer:
-    /// `flush`, [`commit_writes`](Self::commit_writes), a wallet's deletion,
-    /// or the discard of every buffer once the connection is unusable. The
-    /// drop is counted while the connection is held, before any later flush
-    /// of the wallet can run.
+    /// `flush`, [`commit_writes`](Self::commit_writes), or the discard of
+    /// every buffer once the connection is unusable. A wallet's deletion
+    /// counts too, whatever it had buffered: what it wrote first went with
+    /// the wallet's rows. The drop is counted while the connection is held,
+    /// before any later flush of the wallet can run.
     fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
         Some(self.buffer.dropped(&wallet_id))
     }
