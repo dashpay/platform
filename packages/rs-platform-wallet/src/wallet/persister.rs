@@ -226,9 +226,25 @@ pub(crate) enum NotDurable {
     OtherFlushUnsettled,
 }
 
-/// What a wallet's [`FlushLedger`] had counted when it was read, before a
-/// store that is then made durable: the flushes that failed for good, those
-/// that failed at all, and those that returned.
+/// [`WalletPersister::losses`], for a handle being made.
+fn losses_of(
+    ledger: &FlushLedger,
+    backend: &dyn PlatformWalletPersistence,
+    wallet_id: WalletId,
+) -> u64 {
+    // A backend whose store is the commit buffers nothing a flush could
+    // drop, as the ledger has it too.
+    let dropped_unseen = if backend.store_commits_inline() {
+        0
+    } else {
+        backend.buffered_writes_dropped(wallet_id).unwrap_or(0)
+    };
+    ledger.lost().saturating_add(dropped_unseen)
+}
+
+/// What was counted for a wallet when it was read, before a store that is
+/// then made durable: the losses ([`WalletPersister::losses`]), and in its
+/// [`FlushLedger`] the flushes that failed at all and those that returned.
 #[derive(Clone, Copy)]
 struct FlushesSoFar {
     lost: u64,
@@ -244,6 +260,8 @@ impl WalletPersister {
     /// no manager, made it, and for as long as the backend lives.
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
         let flush_ledger = FlushLedgers::of_backend(&inner).of(wallet_id);
+        #[cfg(feature = "shielded")]
+        let flush_losses_at_start = losses_of(&flush_ledger, inner.as_ref(), wallet_id);
         Self {
             wallet_id,
             inner,
@@ -257,7 +275,7 @@ impl WalletPersister {
             private_payments_unrestored: Arc::default(),
             stored_private_markers: Arc::default(),
             #[cfg(feature = "shielded")]
-            flush_losses_at_start: flush_ledger.lost(),
+            flush_losses_at_start,
             flush_ledger,
             private_store_size_proved: Arc::default(),
             private_payment_restore_failure: Arc::default(),
@@ -342,7 +360,7 @@ impl WalletPersister {
         marker: bool,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        let losses_before = self.flush_ledger.lost();
+        let losses_before = self.losses();
         let outcome = self.store(changeset);
         let mut stored = self.stored_markers();
         if outcome.is_ok() && stored.losses == losses_before {
@@ -363,7 +381,7 @@ impl WalletPersister {
             .stored_private_markers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let losses = self.flush_ledger.lost();
+        let losses = self.losses();
         if stored.losses != losses {
             stored.markers.clear();
             stored.losses = losses;
@@ -832,11 +850,20 @@ impl WalletPersister {
         self.flush_what_was_stored(before)
     }
 
+    /// How many times what was buffered under this wallet's id was dropped:
+    /// by a flush counted in the ledger that failed for good, or by a drain
+    /// of the backend the ledger does not see, which the backend reports
+    /// ([`PlatformWalletPersistence::buffered_writes_dropped`]). Compared,
+    /// never read as a number: a flush the wallet made is in both counts.
+    fn losses(&self) -> u64 {
+        losses_of(&self.flush_ledger, self.inner.as_ref(), self.wallet_id)
+    }
+
     /// What the wallet id's ledger has counted so far, read before a store
     /// that is then made durable ([`Self::flush_what_was_stored`]).
     fn flushes_so_far(&self) -> FlushesSoFar {
         FlushesSoFar {
-            lost: self.flush_ledger.lost(),
+            lost: self.losses(),
             failed: self.flush_ledger.failed(),
             returned: self.flush_ledger.returned(),
         }
@@ -855,7 +882,7 @@ impl WalletPersister {
         if self.flush_ledger.in_flight() != 0 {
             return Err(NotDurable::OtherFlushUnsettled);
         }
-        if self.flush_ledger.lost() != before.lost {
+        if self.losses() != before.lost {
             return Err(NotDurable::Lost);
         }
         if self.flush_ledger.failed() != before.failed {
@@ -951,7 +978,7 @@ impl WalletPersister {
     /// from disk.
     #[cfg(feature = "shielded")]
     pub(crate) fn buffered_writes_lost(&self) -> bool {
-        self.flush_ledger.lost() != self.flush_losses_at_start
+        self.losses() != self.flush_losses_at_start
     }
 
     /// Note that a page this wallet read proved DashPay's private contact
@@ -1838,6 +1865,79 @@ mod tests {
             matches!(flushed, Err(NotDurable::OtherFlushUnsettled)),
             "{flushed:?}"
         );
+    }
+
+    /// A store is not answered for when the backend dropped what it had
+    /// buffered in a drain the ledger does not see, here a commit the host
+    /// made on the backend itself: the wallet's flush then succeeds over an
+    /// empty buffer, no flush the wallet made failed, and only the backend's
+    /// own count says what happened
+    /// ([`PlatformWalletPersistence::buffered_writes_dropped`]). A store
+    /// made durable once the host's commits succeed is answered for.
+    #[test]
+    fn should_not_answer_for_a_store_the_backend_dropped_in_a_drain_of_its_own() {
+        /// Buffers what is stored and writes it at a flush. While
+        /// `host_commit_fails` is set, each store is followed by a commit
+        /// the host makes on the backend, which fails for good: the buffer
+        /// is dropped, and the drop counted.
+        struct DrainedByItsHost {
+            buffered: AtomicU64,
+            written: AtomicU64,
+            dropped: AtomicU64,
+            host_commit_fails: AtomicBool,
+        }
+        impl PlatformWalletPersistence for DrainedByItsHost {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.buffered.fetch_add(1, Ordering::SeqCst);
+                if self.host_commit_fails.load(Ordering::SeqCst) {
+                    self.buffered.store(0, Ordering::SeqCst);
+                    self.dropped.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                let taken = self.buffered.swap(0, Ordering::SeqCst);
+                self.written.fetch_add(taken, Ordering::SeqCst);
+                Ok(())
+            }
+            fn buffered_writes_dropped(&self, _wallet_id: WalletId) -> Option<u64> {
+                Some(self.dropped.load(Ordering::SeqCst))
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let backend = Arc::new(DrainedByItsHost {
+            buffered: AtomicU64::new(0),
+            written: AtomicU64::new(0),
+            dropped: AtomicU64::new(0),
+            host_commit_fails: AtomicBool::new(true),
+        });
+        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+
+        let stored = persister.store_durably(PlatformWalletChangeSet::default());
+
+        assert!(matches!(stored, Err(NotDurable::Lost)), "{stored:?}");
+        assert_eq!(
+            backend.written.load(Ordering::SeqCst),
+            0,
+            "nothing reached the disk"
+        );
+        #[cfg(feature = "shielded")]
+        assert!(
+            matches!(persister.flush_durably(), Err(NotDurable::Lost)),
+            "what the handle stored before may not be on disk either"
+        );
+
+        backend.host_commit_fails.store(false, Ordering::SeqCst);
+        let again = persister.store_durably(PlatformWalletChangeSet::default());
+        assert!(again.is_ok(), "{again:?}");
+        assert_eq!(backend.written.load(Ordering::SeqCst), 1);
     }
 
     /// A withdrawal is not answered for when a flush of the wallet's records

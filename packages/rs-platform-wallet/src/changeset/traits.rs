@@ -416,6 +416,29 @@ pub trait PlatformWalletPersistence: Send + Sync {
     // a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
+    /// How many times this backend has dropped what it had buffered for
+    /// `wallet_id` without writing it, by whatever drained the buffer. It
+    /// only grows. `None`, the default, when the backend does not count
+    /// them.
+    ///
+    /// The wallet counts the flushes it makes itself, and so learns of a
+    /// drop only when one of those fails. A backend whose buffer can be
+    /// drained any other way (a commit the host calls on the backend, a
+    /// `flush` the host calls directly, a discard) MUST count every
+    /// changeset it drops here, and count it before a later flush of the
+    /// wallet can begin: the wallet then refuses to trust a record that such
+    /// a drain may have taken. Without the count, a record stored and then
+    /// flushed by the wallet is trusted even when the host's own commit took
+    /// it first and failed for good.
+    ///
+    /// Not read for a backend whose `store` is the commit
+    /// ([`Self::store_commits_inline`]): it buffers nothing a flush could
+    /// drop.
+    fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
+        let _ = wallet_id;
+        None
+    }
+
     /// Replace the persisted tracked-masternode set for `network` with
     /// `records` (whole-set write; the set is user-curated and small).
     ///

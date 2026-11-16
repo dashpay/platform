@@ -786,6 +786,7 @@ impl SqlitePersister {
                         error_kind = e.error_kind_str(),
                         "buffer restore failed during delete_wallet error path — changeset lost"
                     );
+                    self.buffer.note_dropped(&wallet_id);
                 }
             }
         };
@@ -918,14 +919,19 @@ impl SqlitePersister {
             // changeset the carve-out above could not persist — dies
             // here rather than being restored to a buffer no flush could
             // ever drain.
-            drop(drained_slot.take());
+            if drained_slot.take().is_some() {
+                self.buffer.note_dropped(&wallet_id);
+            }
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
             match self.buffer.take_for_flush(&wallet_id) {
-                Ok(Some(_late)) => tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    "discarded racing buffered changeset after delete_wallet commit"
-                ),
+                Ok(Some(_late)) => {
+                    self.buffer.note_dropped(&wallet_id);
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "discarded racing buffered changeset after delete_wallet commit"
+                    )
+                }
                 Ok(None) => {}
                 // The delete itself already committed, so this still returns
                 // Ok — but a poisoned buffer mutex here is a signal every
@@ -1130,6 +1136,7 @@ impl SqlitePersister {
                     restored_field_count = field_count,
                     "buffer restore failed after transient flush error — changeset lost"
                 );
+                self.buffer.note_dropped(wallet_id);
                 return Err(PersistenceError::from(restore_err));
             }
             // Narrow to the rusqlite source for `FlushRetryable`.
@@ -1165,6 +1172,9 @@ impl SqlitePersister {
                 dropped_field_count = field_count,
                 "flush failed fatally — buffer wiped"
             );
+            // Counted while the connection is still held, so the next flush
+            // of this wallet, whoever makes it, finds the count changed.
+            self.buffer.note_dropped(wallet_id);
             drop(cs);
             Err(PersistenceError::from(err))
         }
@@ -1301,6 +1311,16 @@ impl Drop for SqlitePersister {
 impl PlatformWalletPersistence for SqlitePersister {
     fn store_commits_inline(&self) -> bool {
         self.config.flush_mode == FlushMode::Immediate
+    }
+
+    /// Every changeset this persister took from `wallet_id`'s buffer and
+    /// dropped without writing it, whichever call drained the buffer:
+    /// `flush`, [`commit_writes`](Self::commit_writes), a wallet's deletion,
+    /// or the discard of every buffer once the connection is unusable. The
+    /// drop is counted while the connection is held, before any later flush
+    /// of the wallet can run.
+    fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
+        Some(self.buffer.dropped(&wallet_id))
     }
 
     fn persistence_capabilities(&self) -> PersistenceCapabilities {

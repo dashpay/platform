@@ -16,8 +16,12 @@ use crate::wallet::platform_wallet::WalletId;
 /// counted: one ledger per backend instance and wallet id, shared by every
 /// manager made over the backend and by every handle of a wallet under that
 /// id, a removed wallet's handles and its same-id successor's alike
-/// ([`FlushLedgers::of_backend`]). Every flush of the wallet's records goes
-/// through [`Self::flush`].
+/// ([`FlushLedgers::of_backend`]). Every flush of the wallet's records the
+/// wallet makes goes through [`Self::flush`]. A drain of the backend made
+/// any other way, such as a commit its host calls on it, is not counted
+/// here: the backend reports what it dropped
+/// ([`PlatformWalletPersistence::buffered_writes_dropped`]), and a wallet's
+/// handle adds that to the losses it compares.
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
