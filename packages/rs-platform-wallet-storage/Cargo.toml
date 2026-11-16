@@ -185,7 +185,7 @@ filetime = "0.2"
 # build succeed when someone does run it.
 zeroize = { version = "=1.9.0", features = ["derive"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
-serial_test = "3"
+serial_test = "4"
 # `default-features = false` so the off-state build
 # (`--no-default-features --features sqlite,cli`, a local/manual check —
 # see the note above; no CI job runs it) actually exercises a
