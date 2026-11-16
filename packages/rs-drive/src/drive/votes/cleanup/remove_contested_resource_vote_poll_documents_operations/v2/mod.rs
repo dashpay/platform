@@ -57,6 +57,9 @@ impl Drive {
                         &platform_version.drive,
                     )?
                     else {
+                        // With no reference there is no document id to delete: the clean-up
+                        // goes on with the other contenders, as version 1 removed only the
+                        // documents its query found
                         continue;
                     };
                     let Element::Reference(UpstreamRootHeightReference(_, reference_path), ..) =

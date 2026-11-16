@@ -113,10 +113,17 @@ where
             )),
             Err(error) if award_was_refused(&error) => {
                 if let Some(transaction) = transaction {
-                    transaction
-                        .rollback_to_savepoint()
-                        .map_err(GroveError::StorageError)
-                        .map_err(|error| Error::Drive(DriveCrateError::GroveDB(Box::new(error))))?;
+                    if let Err(rollback_error) = transaction.rollback_to_savepoint() {
+                        // Only the rollback's error is returned: log the award's error with it
+                        tracing::error!(
+                            ?error,
+                            ?rollback_error,
+                            "could not undo a contest award the state refused"
+                        );
+                        return Err(Error::Drive(DriveCrateError::GroveDB(Box::new(
+                            GroveError::StorageError(rollback_error),
+                        ))));
+                    }
                 }
                 Ok(ContestedDocumentVotePollWinnerInfo::NoWinner)
             }

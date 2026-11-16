@@ -73,6 +73,16 @@ fn end_first_due_vote_polls(
         .keys()
         .next()
         .expect("expected a vote poll end date");
+    end_vote_polls_due_at(platform, time_ms, platform_version)
+}
+
+/// Runs the ended vote poll check of a block at `time_ms`, which ends every vote poll due by
+/// then, and returns its result, committing the block when it succeeds
+fn end_vote_polls_due_at(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    time_ms: TimestampMillis,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
     fast_forward_to_block(platform, time_ms, 900, 42, 0, false);
     let platform_state = platform.state.load();
     let transaction = platform.drive.grove.start_transaction();
@@ -579,6 +589,119 @@ async fn should_end_a_contest_with_no_winner_when_its_unique_index_entry_is_take
         "the document holding the entry must stay as it was"
     );
     assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
+}
+
+/// Opens a DPNS name contest on "quantum", then one on "coolio" that ends later, takes the
+/// unique index entry of the contest at `refused` (0 or 1, in the order they end), and ends
+/// both in one block at the latest protocol version. The award of that contest is refused, and
+/// the other contest's award must be kept whichever of the two the block ends first.
+async fn end_two_contests_in_one_block_with_one_award_refused(refused: usize) {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(platform_version.protocol_version)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let platform_state = platform.state.load();
+    let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        "quantum",
+        platform_version,
+    )
+    .await;
+    fast_forward_to_block(&platform, 500_000, 100, 42, 0, false);
+    let platform_state = platform.state.load();
+    create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        8,
+        "coolio",
+        platform_version,
+    )
+    .await;
+    let names = ["quantum", "coolio"];
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
+    assert_eq!(
+        end_dates.len(),
+        2,
+        "expected the contests to end at two dates"
+    );
+    let last_end_date = *end_dates
+        .keys()
+        .next_back()
+        .expect("expected a vote poll end date");
+
+    let (_, template) =
+        contender_documents(&platform, &dpns_contract, names[refused], platform_version).remove(0);
+    let holder = other_domain_like(&template, 0x51);
+    insert_domain_directly(&platform, &dpns_contract, &holder, platform_version);
+    let contenders = names.map(|name| {
+        contender_documents(&platform, &dpns_contract, name, platform_version)
+            .into_iter()
+            .map(|(contender, _)| contender)
+            .collect::<Vec<_>>()
+    });
+
+    end_vote_polls_due_at(&platform, last_end_date, platform_version)
+        .expect("expected both contests to end with the block");
+
+    for (index, name) in names.into_iter().enumerate() {
+        if index == refused {
+            assert_ended_with_no_winner(
+                &platform,
+                &dpns_name_vote_poll(&dpns_contract, name),
+                platform_version,
+            );
+            for contender in &contenders[index] {
+                assert!(
+                    awarded_domains(&platform, &dpns_contract, *contender, platform_version)
+                        .is_empty(),
+                    "no contender of the refused contest may be awarded"
+                );
+            }
+        } else {
+            let finished = finished_vote_info(&platform, &dpns_contract, name, platform_version)
+                .expect("expected the other contest to be finished");
+            assert_eq!(
+                finished.finished_vote_outcome,
+                FinishedVoteOutcome::TowardsIdentity as i32
+            );
+            let winner = Identifier::from_bytes(
+                &finished
+                    .won_by_identity_id
+                    .expect("expected the other contest to have a winner"),
+            )
+            .expect("expected the winner's id");
+            assert!(contenders[index].contains(&winner));
+            assert_eq!(
+                awarded_domains(&platform, &dpns_contract, winner, platform_version).len(),
+                1,
+                "the other contest's winner must keep its award"
+            );
+        }
+        assert_contest_cleaned_up(&platform, &dpns_contract, name, platform_version);
+    }
+    assert_eq!(
+        awarded_domains(
+            &platform,
+            &dpns_contract,
+            holder.owner_id(),
+            platform_version
+        ),
+        vec![holder],
+        "the document holding the entry must stay as it was"
+    );
+}
+
+#[tokio::test]
+async fn should_keep_an_earlier_award_of_the_block_when_a_later_award_is_refused() {
+    end_two_contests_in_one_block_with_one_award_refused(1).await;
+}
+
+#[tokio::test]
+async fn should_keep_a_later_award_of_the_block_when_an_earlier_award_is_refused() {
+    end_two_contests_in_one_block_with_one_award_refused(0).await;
 }
 
 #[tokio::test]
