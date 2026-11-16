@@ -559,6 +559,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.sync_fault),
                 Arc::clone(&self.durable_cursors),
             );
+            #[cfg(feature = "shielded")]
+            let platform_wallet = {
+                let mut wallet = platform_wallet;
+                wallet.shielded_coordinator = Some(Arc::clone(&self.shielded_coordinator));
+                wallet
+            };
 
             // Initialize the platform-address provider. If the snapshot
             // carried a slice for this wallet, restore it directly;

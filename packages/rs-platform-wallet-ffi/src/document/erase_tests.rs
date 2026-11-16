@@ -187,26 +187,24 @@ async fn should_preserve_signer_unavailable_and_unknown_submission_through_the_e
             )
             .await
             .unwrap();
-        wallet
-            .wallet_manager()
-            .write()
-            .await
-            .get_wallet_info_mut(&wallet.wallet_id())
-            .unwrap()
-            .identity_manager
-            .add_identity(
-                IdentityV0 {
-                    id: owner,
-                    public_keys: [(1, key.clone())].into(),
-                    balance: 100_000_000,
-                    revision: 0,
-                }
-                .into(),
-                0,
-                wallet.wallet_id(),
-                wallet.persister(),
-            )
-            .unwrap();
+        {
+            let mut state = wallet.state_mut().await.unwrap();
+            state
+                .identity_manager
+                .add_identity(
+                    IdentityV0 {
+                        id: owner,
+                        public_keys: [(1, key.clone())].into(),
+                        balance: 100_000_000,
+                        revision: 0,
+                    }
+                    .into(),
+                    0,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
         let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
         let signer = Box::new(VTableSigner::from_native(Arc::new(Signing(available))));
         let name = CString::new("note").unwrap();

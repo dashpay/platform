@@ -35,7 +35,7 @@ pub use private_contact_request::{
     PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MIN_LEN, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     PRIVATE_CONTACT_REQUEST_SHIELDED_ADDRESS_LEN, PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
 };
-pub use profile::ProfileFields;
+pub use profile::{PaymentAddressUpdate, ProfileFields};
 
 use crate::{Error, Sdk};
 use dpp::prelude::Identifier;

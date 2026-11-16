@@ -251,6 +251,11 @@ pub struct NetworkShieldedCoordinator {
     /// other way round.
     lifecycle: tokio::sync::Mutex<()>,
 
+    /// Clear waits for operations that bind/flush viewing keys or spend from
+    /// extracted notes. Separate from `lifecycle`, which bind takes internally.
+    /// Lock order: `operation_admission` → `lifecycle` → `store`.
+    operation_admission: RwLock<()>,
+
     /// Wallets whose per-subwallet store state has been successfully
     /// hydrated from the host's persisted snapshot this session
     /// (`restore_for_wallet` completed without error after the
@@ -420,6 +425,7 @@ impl NetworkShieldedCoordinator {
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
+            operation_admission: RwLock::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
         }
@@ -677,6 +683,12 @@ impl NetworkShieldedCoordinator {
             wallet_id,
             _lifecycle: self.lifecycle.lock().await,
         }
+    }
+
+    /// Acquire before wallet placement/configuration locks; retain through persistence
+    /// and the operation result so Clear cannot delete state while it is still in use.
+    pub(crate) async fn operation_guard(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
+        self.operation_admission.read().await
     }
 
     /// [`register_wallet`](Self::register_wallet)'s body, with the
@@ -1222,6 +1234,7 @@ impl NetworkShieldedCoordinator {
     /// stays populated, and the next cold resync would gate-skip every
     /// re-downloaded position against the stale `tree_size`.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
+        let _operations = self.operation_admission.write().await;
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that
         // already registered would otherwise restore its pre-Clear

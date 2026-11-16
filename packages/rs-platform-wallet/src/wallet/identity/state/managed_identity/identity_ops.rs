@@ -4,7 +4,7 @@ use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
     IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
-    PersistenceError,
+    PersistenceError, PlatformWalletChangeSet,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::BlockTime;
@@ -133,10 +133,15 @@ impl ManagedIdentity {
         profile: Option<crate::wallet::identity::DashPayProfile>,
         persister: &WalletPersister,
     ) {
-        self.dashpay.profile = profile;
-        let cs = self.snapshot_changeset();
-        if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
+        let previous = std::mem::replace(&mut self.dashpay.profile, profile.clone());
+        let mut cs: PlatformWalletChangeSet = self.snapshot_changeset().into();
+        cs.dashpay_profiles = Some(BTreeMap::from([(self.id(), profile)]));
+        match persister.store(cs) {
+            Ok(()) => self.dashpay.profile_checked = true,
+            Err(e) => {
+                self.dashpay.profile = previous;
+                tracing::error!("Failed to persist changeset: {}", e);
+            }
         }
     }
 

@@ -58,6 +58,9 @@ zeroize = "1"
 # output is discarded there.
 log = "0.4"
 
+# Profile metadata validation must also work without shielded spending support.
+orchard = { git = "https://github.com/dashpay/orchard.git", tag = "dashified-0.14.1", default-features = false }
+
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { workspace = true, optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set

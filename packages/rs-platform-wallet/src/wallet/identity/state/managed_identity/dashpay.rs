@@ -249,6 +249,9 @@ pub struct DashPayState {
     /// profile has been fetched or set.
     pub profile: Option<DashPayProfile>,
 
+    /// Session-only authority: a successful fetch or explicit update checked this profile.
+    pub(crate) profile_checked: bool,
+
     /// DashPay payment history keyed by transaction id (hex string).
     /// Each entry records a single Dash payment to or from a contact
     /// identity, with direction, amount, memo, and status.

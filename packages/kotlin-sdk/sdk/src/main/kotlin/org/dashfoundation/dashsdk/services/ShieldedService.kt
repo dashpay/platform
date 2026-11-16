@@ -208,7 +208,9 @@ class ShieldedService(private val database: DashDatabase) {
         _state.value = ShieldedSyncState()
         _shieldedBalance.value = database.shieldedDao()
             .observeUnspentNotesByWallet(walletId)
-            .map { notes -> notes.sumOf { it.value } }
+            // Rust also scans dedicated tip accounts; ordinary wallet balances only
+            // include the accounts selected by this service's caller.
+            .map { notes -> notes.filter { it.accountIndex in sortedAccounts }.sumOf { it.value } }
 
         try {
             manager.configureShielded(dbPath)

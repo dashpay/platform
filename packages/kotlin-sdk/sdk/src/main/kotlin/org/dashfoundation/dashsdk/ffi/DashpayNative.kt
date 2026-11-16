@@ -139,6 +139,12 @@ internal object DashpayNative {
         avatarBytes: ByteArray?,
         doCreate: Boolean,
         signerHandle: Long,
+        coreAddressAction: Int,
+        coreAddress: ByteArray?,
+        platformAddressAction: Int,
+        platformAddress: ByteArray?,
+        shieldedAddressAction: Int,
+        shieldedAddress: ByteArray?,
     ): String?
 
     /**

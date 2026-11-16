@@ -62,6 +62,7 @@ mod sqlite_open_version_gate;
 mod sqlite_permissions;
 mod sqlite_persist_roundtrip;
 mod sqlite_pool_reader;
+mod sqlite_profile_address_encoding;
 mod sqlite_provider_key_accounts;
 mod sqlite_qa_identity_removal;
 mod sqlite_recovery_mode;

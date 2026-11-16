@@ -504,39 +504,41 @@ struct IdentitiesContentView: View {
     /// `payoutPrivateKeyIdentifier`) since those are likewise keyed
     /// by string identifier.
     ///
-    /// After keychain cleanup the SwiftData cascade does the rest:
-    /// `@Relationship(.cascade)` on `publicKeys` / `documents` drops
-    /// those child rows, `@Relationship(.nullify)` on `tokenBalances`
+    /// The Keychain identifiers are collected first, then the row deletes are
+    /// saved, and only after a successful save are the Keychain items
+    /// removed: a failed save rolls back and keeps the identity signable,
+    /// instead of leaving a keyless row behind. The SwiftData cascade does
+    /// the rest: `@Relationship(.cascade)` on `publicKeys` / `documents`
+    /// drops those child rows, `@Relationship(.nullify)` on `tokenBalances`
     /// severs the link, and the `PersistentWallet.identities` inverse
     /// (declared on the wallet side, also `.nullify`) naturally drops
     /// this identity from its owning wallet — no manual detachment
-    /// required.
+    /// required. Payment-address rows are keyed by owner id, so no cascade
+    /// reaches them; they are removed explicitly in the same save.
     private func removeIdentityLocally(_ identity: PersistentIdentity) {
-        let keychain = KeychainManager.shared
+        let keychainIdentifiers = identity.publicKeys.compactMap(\.privateKeyKeychainIdentifier)
+            + [
+                identity.votingPrivateKeyIdentifier,
+                identity.ownerPrivateKeyIdentifier,
+                identity.payoutPrivateKeyIdentifier,
+            ].compactMap { $0 }
 
-        for publicKey in identity.publicKeys {
-            if let identifier = publicKey.privateKeyKeychainIdentifier {
-                _ = keychain.deleteKeyData(identifier: identifier)
-            }
-        }
-
-        if let votingIdentifier = identity.votingPrivateKeyIdentifier {
-            _ = keychain.deleteKeyData(identifier: votingIdentifier)
-        }
-        if let ownerIdentifier = identity.ownerPrivateKeyIdentifier {
-            _ = keychain.deleteKeyData(identifier: ownerIdentifier)
-        }
-        if let payoutIdentifier = identity.payoutPrivateKeyIdentifier {
-            _ = keychain.deleteKeyData(identifier: payoutIdentifier)
-        }
-
-        modelContext.delete(identity)
         do {
+            try PersistentDashpayPaymentAddresses.removeOwned(
+                in: modelContext, networkRaw: identity.networkRaw, ownerIdentityId: identity.identityId)
+            modelContext.delete(identity)
             try modelContext.save()
         } catch {
+            modelContext.rollback()
             platformState.showError(
                 message: "Failed to remove identity from device: \(error.localizedDescription)"
             )
+            return
+        }
+
+        let keychain = KeychainManager.shared
+        for identifier in keychainIdentifiers {
+            _ = keychain.deleteKeyData(identifier: identifier)
         }
     }
 }

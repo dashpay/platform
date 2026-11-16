@@ -39,6 +39,9 @@ interface DashpayDao {
     @Query("DELETE FROM dashpay_profiles WHERE identityId = :identityId")
     suspend fun deleteProfilesByIdentity(identityId: ByteArray)
 
+    @Query("DELETE FROM dashpay_profiles WHERE networkRaw = :networkRaw AND identityId = :identityId")
+    suspend fun deleteProfile(networkRaw: Int, identityId: ByteArray)
+
     @Query("DELETE FROM dashpay_profiles")
     suspend fun deleteAllProfiles()
 

@@ -27,6 +27,9 @@ interface IdentityDao {
     @Query("SELECT * FROM identities WHERE identityId = :identityId")
     suspend fun getByIdentityId(identityId: ByteArray): IdentityEntity?
 
+    @Query("SELECT * FROM identities WHERE identityId = :identityId AND networkRaw = :networkRaw")
+    suspend fun getByIdentityAndNetwork(identityId: ByteArray, networkRaw: Int): IdentityEntity?
+
     /** Mirror of `predicate(network:)`. */
     @Query("SELECT * FROM identities WHERE networkRaw = :networkRaw")
     fun observeByNetwork(networkRaw: Int): Flow<List<IdentityEntity>>

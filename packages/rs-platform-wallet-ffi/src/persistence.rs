@@ -68,7 +68,8 @@ use crate::dpns_name_state_persistence::{
     build_dpns_name_state_entries, free_dpns_name_state_entries, DpnsNameStateFFI,
 };
 use crate::identity_persistence::{
-    free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
+    allocate_contact_profile_rows, free_contact_profile_rows, free_identity_entry_ffi,
+    free_identity_key_entry_ffi, ContactProfileRowFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
 };
 use crate::invitation_persistence::{build_invitation_entries, InvitationEntryFFI};
@@ -709,6 +710,17 @@ pub struct PersistenceCallbacksExtension {
             wallet_ids_count: usize,
         ),
     >,
+    /// Authoritative profile overlays. `contact_id` is the profile identity ID;
+    /// `is_present == false` deletes it, independent of identity placement.
+    /// The host must copy all row data before returning.
+    pub on_persist_dashpay_profiles_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            profiles: *const ContactProfileRowFFI,
+            profiles_count: usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -736,9 +748,17 @@ impl Default for PersistenceCallbacksExtension {
             on_load_private_contact_scan_state_free_fn: None,
             on_load_private_contact_scan_state_wallets_fn: None,
             on_load_private_contact_scan_state_wallets_free_fn: None,
+            on_persist_dashpay_profiles_fn: None,
         }
     }
 }
+
+pub type PersistDashpayProfilesFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    profiles: *const ContactProfileRowFFI,
+    profiles_count: usize,
+) -> i32;
 
 /// The additive (extension-negotiated) callbacks in Rust-side form, read
 /// out of a size-gated [`PersistenceCallbacksExtension`] by the manager
@@ -764,6 +784,7 @@ pub struct PersistenceExtensionCallbacks {
     pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
     pub load_private_contact_scan_state_wallets: Option<LoadPrivateContactScanStateWalletsFn>,
     pub load_private_contact_scan_state_wallets_free: Option<FreePrivateContactScanStateWalletsFn>,
+    pub persist_dashpay_profiles: Option<PersistDashpayProfilesFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -2773,6 +2794,35 @@ impl PlatformWalletPersistence for FFIPersister {
                     );
                     outcome.record(result);
                 }
+            }
+        }
+
+        if let (Some(profiles), Some(cb)) = (
+            changeset.dashpay_profiles.as_ref(),
+            self.tracked_masternodes_callbacks.persist_dashpay_profiles,
+        ) {
+            let removed = changeset
+                .identities
+                .as_ref()
+                .map(|identity_changes| &identity_changes.removed);
+            let rows = profiles
+                .iter()
+                .filter(|(id, _)| !removed.is_some_and(|ids| ids.contains(id)))
+                .map(|(id, profile)| {
+                    (
+                        *id,
+                        platform_wallet::ContactProfileEntry {
+                            profile: profile.clone(),
+                            checked_at_ms: 0,
+                        },
+                    )
+                })
+                .collect();
+            let (rows, count) = allocate_contact_profile_rows(&rows);
+            let rc = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), rows, count) };
+            unsafe { free_contact_profile_rows(rows, count) };
+            if rc != 0 {
+                outcome.record(rc);
             }
         }
 
@@ -7180,6 +7230,9 @@ fn build_wallet_identity_bucket(
         unsafe { restore_dashpay_payments(spec, &mut managed) };
         unsafe { restore_dashpay_ignored(spec, &mut managed) };
         unsafe { restore_contact_profiles(spec, &mut managed) };
+        if let Some(profile) = unsafe { spec.dashpay_profile.as_ref() } {
+            *managed.dashpay_profile_mut() = Some(unsafe { profile_from_restore_row(profile) });
+        }
         bucket.insert(spec.identity_index, managed);
     }
 
@@ -7324,26 +7377,49 @@ unsafe fn restore_contact_profiles(spec: &IdentityRestoreEntryFFI, managed: &mut
     apply_contact_profile_rows(rows, managed);
 }
 
-/// Maximum cached `avatarUrl` length — mirrors the
-/// `MAX_AVATAR_URL_LEN` gate `platform-wallet`'s profile fetch applies
-/// before caching (DIP-15's 2048-char cap).
-const MAX_AVATAR_URL_LEN: usize = 2048;
-
-/// Defensive re-validation of a cached `avatarUrl` at restore. The
-/// fetch path already dropped non-`https://` / over-length URLs before
-/// caching ([`platform_wallet`]'s `is_valid_avatar_url`), but the URL is
-/// attacker-controlled public data and the UI will load it, so we
-/// re-apply the same `https://`-only, length-capped rule on the way back
-/// in. A URL that fails is dropped to `None` (the rest of the profile is
-/// still restored) rather than discarding the whole row.
-fn is_valid_avatar_url(url: &str) -> bool {
-    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
+/// Copy a host-owned profile row. The host frees the buffers after restoration
+/// returns; platform-wallet owns normalization and payment-address policy.
+///
+/// # Safety
+/// The row's string pointers must be null or readable NUL-terminated strings.
+unsafe fn profile_from_restore_row(
+    row: &ContactProfileRestoreEntryFFI,
+) -> platform_wallet::DashPayProfile {
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
+        }
+    };
+    platform_wallet::normalize_persisted_profile(platform_wallet::DashPayProfile {
+        display_name: opt_string(row.display_name),
+        bio: opt_string(row.bio),
+        avatar_url: opt_string(row.avatar_url),
+        avatar_hash: row.avatar_hash_present.then_some(row.avatar_hash),
+        avatar_fingerprint: row
+            .avatar_fingerprint_present
+            .then_some(row.avatar_fingerprint),
+        public_message: opt_string(row.public_message),
+        core_payment_address: row
+            .core_payment_address_present
+            .then_some(row.core_payment_address)
+            .map(|address| address.to_vec()),
+        platform_payment_address: row
+            .platform_payment_address_present
+            .then_some(row.platform_payment_address)
+            .map(|address| address.to_vec()),
+        shielded_address: row
+            .shielded_address_present
+            .then_some(row.shielded_address)
+            .map(|address| address.to_vec()),
+    })
 }
 
 /// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
 /// the managed identity's contact-profile cache. Split out from
-/// [`restore_contact_profiles`] so the c-string decode + avatar-url
-/// re-validation is unit-testable without a full
+/// [`restore_contact_profiles`] so the c-string decode + profile
+/// normalization is unit-testable without a full
 /// [`IdentityRestoreEntryFFI`].
 ///
 /// # Safety
@@ -7353,43 +7429,11 @@ unsafe fn apply_contact_profile_rows(
     rows: &[ContactProfileRestoreEntryFFI],
     managed: &mut ManagedIdentity,
 ) {
-    use platform_wallet::{ContactProfileEntry, DashPayProfile};
-
-    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
-        if ptr.is_null() {
-            None
-        } else {
-            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
-        }
-    };
-
     for row in rows {
-        let avatar_hash = if row.avatar_hash_present {
-            Some(row.avatar_hash)
-        } else {
-            None
-        };
-        let avatar_fingerprint = if row.avatar_fingerprint_present {
-            Some(row.avatar_fingerprint)
-        } else {
-            None
-        };
-        // Re-validate the public, attacker-controlled avatar URL; drop
-        // just the URL field (keep the rest of the profile) if it no
-        // longer passes the `https://` / length rule.
-        let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
-
         managed.dashpay_contact_profiles_mut().insert(
             Identifier::from(row.contact_id),
-            ContactProfileEntry {
-                profile: Some(DashPayProfile {
-                    display_name: opt_string(row.display_name),
-                    bio: opt_string(row.bio),
-                    avatar_url,
-                    avatar_hash,
-                    avatar_fingerprint,
-                    public_message: opt_string(row.public_message),
-                }),
+            platform_wallet::ContactProfileEntry {
+                profile: Some(profile_from_restore_row(row)),
                 checked_at_ms: row.checked_at_ms,
             },
         );
@@ -9289,13 +9333,10 @@ mod tests {
         let wallet = create(&manager);
         assert_eq!(wallet.wallet_id(), wallet_id);
 
-        let held = |id: Identifier| {
+        let held = |id: Identifier, index: u32| {
             runtime().block_on(async {
-                let mut wm = wallet.wallet_manager().write().await;
-                let identities = &mut wm
-                    .get_wallet_info_mut(&wallet.wallet_id())
-                    .expect("the wallet's info")
-                    .identity_manager;
+                let mut state = wallet.state_mut().await.expect("live wallet state");
+                let identities = &mut state.identity_manager;
                 identities
                     .add_identity(
                         Identity::V0(IdentityV0 {
@@ -9304,7 +9345,7 @@ mod tests {
                             balance: 0,
                             revision: 0,
                         }),
-                        0,
+                        index,
                         wallet.wallet_id(),
                         wallet.persister(),
                     )
@@ -9316,8 +9357,11 @@ mod tests {
                     .private_payments_unrestored()
             })
         };
-        assert!(held(marked), "the identity the kept record names is held");
-        assert!(!held(other), "an identity no kept record names is not");
+        assert!(
+            held(marked, 0),
+            "the identity the kept record names is held"
+        );
+        assert!(!held(other, 1), "an identity no kept record names is not");
     }
 
     #[test]
@@ -9444,6 +9488,174 @@ mod tests {
                 vec![(true, false), (true, true), (false, !fail)]
             );
         }
+    }
+
+    #[test]
+    fn should_forward_authoritative_profile_overlays_after_scalar_snapshots() {
+        use dpp::identity::{Identity, IdentityV0};
+        use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+        use platform_wallet::ManagedIdentity;
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Host {
+            profiles: Mutex<Vec<(bool, Option<String>, bool)>>,
+            order: Mutex<Vec<&'static str>>,
+        }
+        unsafe extern "C" fn scalar(
+            context: *mut c_void,
+            _: *const u8,
+            entries: *const IdentityEntryFFI,
+            count: usize,
+            _: *const [u8; 32],
+            _: usize,
+        ) -> i32 {
+            let host = &*(context as *const Host);
+            assert_eq!(count, 1);
+            assert!(!(*entries).dashpay_profile_present);
+            host.order.lock().unwrap().push("scalar");
+            0
+        }
+        unsafe extern "C" fn persist(
+            context: *mut c_void,
+            wallet: *const u8,
+            rows: *const ContactProfileRowFFI,
+            count: usize,
+        ) -> i32 {
+            assert_eq!(slice::from_raw_parts(wallet, 32), &[42; 32]);
+            let host = &*(context as *const Host);
+            host.order.lock().unwrap().push("profile");
+            for row in slice::from_raw_parts(rows, count) {
+                assert_eq!(row.contact_id, [9; 32]);
+                let display = (!row.display_name.is_null()).then(|| {
+                    CStr::from_ptr(row.display_name)
+                        .to_str()
+                        .unwrap()
+                        .to_owned()
+                });
+                host.profiles.lock().unwrap().push((
+                    row.is_present,
+                    display,
+                    row.shielded_address_present,
+                ));
+            }
+            0
+        }
+        let host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&host as *const Host).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                on_persist_identities_fn: Some(scalar),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                persist_dashpay_profiles: Some(persist),
+                ..Default::default()
+            },
+        );
+        let id = Identifier::from([9; 32]);
+        let managed = ManagedIdentity::new_out_of_wallet(Identity::V0(IdentityV0 {
+            id,
+            public_keys: Default::default(),
+            balance: 0,
+            revision: 0,
+        }));
+        for profile in [
+            Some(platform_wallet::DashPayProfile {
+                display_name: Some("Owned copy".into()),
+                shielded_address: Some(vec![3; 43]),
+                ..Default::default()
+            }),
+            None,
+        ] {
+            persister
+                .store(
+                    [42; 32],
+                    PlatformWalletChangeSet {
+                        identities: Some(IdentityChangeSet {
+                            identities: BTreeMap::from([(
+                                id,
+                                IdentityEntry::from_managed(&managed),
+                            )]),
+                            ..Default::default()
+                        }),
+                        dashpay_profiles: Some(BTreeMap::from([(id, profile)])),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            *host.profiles.lock().unwrap(),
+            vec![
+                (true, Some("Owned copy".into()), true),
+                (false, None, false)
+            ]
+        );
+        assert_eq!(
+            *host.order.lock().unwrap(),
+            vec!["scalar", "profile", "scalar", "profile"]
+        );
+    }
+
+    #[test]
+    fn should_not_forward_profile_overlay_for_identity_removed_in_same_changeset() {
+        use platform_wallet::changeset::IdentityChangeSet;
+        use std::sync::Mutex;
+
+        #[derive(Default)]
+        struct Host {
+            ids: Mutex<Vec<[u8; 32]>>,
+        }
+
+        unsafe extern "C" fn persist(
+            context: *mut c_void,
+            _: *const u8,
+            rows: *const ContactProfileRowFFI,
+            count: usize,
+        ) -> i32 {
+            let host = &*(context as *const Host);
+            host.ids.lock().unwrap().extend(
+                slice::from_raw_parts(rows, count)
+                    .iter()
+                    .map(|row| row.contact_id),
+            );
+            0
+        }
+
+        let host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&host as *const Host).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                persist_dashpay_profiles: Some(persist),
+                ..Default::default()
+            },
+        );
+        let removed = Identifier::from([9; 32]);
+        let kept = Identifier::from([10; 32]);
+        let mut identities = IdentityChangeSet::default();
+        identities.removed.insert(removed);
+
+        persister
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(identities),
+                    dashpay_profiles: Some(BTreeMap::from([(removed, None), (kept, None)])),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*host.ids.lock().unwrap(), vec![[10; 32]]);
     }
 
     // --- persists_durably: the fail-closed durability attestation ---
@@ -9575,6 +9787,224 @@ mod tests {
             "both host allocations freed"
         );
     }
+
+    /// A storage-form transparent payment address: a 0x00/0x01 version byte,
+    /// then a 20-byte hash.
+    fn transparent_address(version: u8, fill: u8) -> [u8; 21] {
+        let mut address = [fill; 21];
+        address[0] = version;
+        address
+    }
+
+    /// Orchard key-components vector 0 (`default_d || default_pk_d`), retained
+    /// as public profile metadata with or without shielded spending support.
+    /// https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py
+    fn shielded_fixture() -> ([u8; 43], Option<Vec<u8>>) {
+        let address = [
+            0x8f, 0xf3, 0x38, 0x69, 0x71, 0xcb, 0x64, 0xb8, 0xe7, 0x78, 0x99, 0x08, 0xdd, 0x8e,
+            0xbd, 0x7d, 0xe9, 0x2a, 0x68, 0xe5, 0x86, 0xa3, 0x4d, 0xb8, 0xfe, 0xa9, 0x99, 0xef,
+            0xd2, 0x01, 0x6f, 0xae, 0x76, 0x75, 0x0a, 0xfa, 0xe7, 0xee, 0x94, 0x16, 0x46, 0xbc,
+            0xb9,
+        ];
+        (address, Some(address.to_vec()))
+    }
+
+    /// Restore re-validates each payment address as a profile fetch would,
+    /// dropping a wrong-version transparent address and undecodable Orchard
+    /// bytes from a stale or corrupt host row while keeping the rest.
+    #[test]
+    fn should_drop_invalid_payment_addresses_on_restore() {
+        let name = std::ffi::CString::new("Carol").unwrap();
+        let row = ContactProfileRestoreEntryFFI {
+            contact_id: [0xDD; 32],
+            display_name: name.as_ptr(),
+            bio: std::ptr::null(),
+            avatar_url: std::ptr::null(),
+            avatar_hash: [0; 32],
+            avatar_hash_present: false,
+            avatar_fingerprint: [0; 8],
+            avatar_fingerprint_present: false,
+            core_payment_address: transparent_address(0x05, 0xC1),
+            core_payment_address_present: true,
+            platform_payment_address: transparent_address(0x01, 0xD1),
+            platform_payment_address_present: true,
+            shielded_address: [0xFF; 43],
+            shielded_address_present: true,
+            public_message: std::ptr::null(),
+            checked_at_ms: 0,
+        };
+        let profile = unsafe { profile_from_restore_row(&row) };
+        assert_eq!(profile.display_name.as_deref(), Some("Carol"));
+        assert_eq!(profile.core_payment_address, None);
+        assert_eq!(
+            profile.platform_payment_address,
+            Some(transparent_address(0x01, 0xD1).to_vec())
+        );
+        assert_eq!(profile.shielded_address, None);
+    }
+
+    /// The owned DashPay profile a host supplies on the wallet-restore load
+    /// callback reaches the restored `ManagedIdentity` with every field,
+    /// including the three payment addresses, and is an owned copy: the free
+    /// callback scribbles over the host buffers before anything is asserted. A
+    /// null profile pointer restores no profile.
+    #[test]
+    fn owned_dashpay_profile_hydrates_through_the_load_callback() {
+        use crate::wallet_restore_types::{ContactProfileRestoreEntryFFI, IdentityRestoreEntryFFI};
+        use dpp::identity::accessors::IdentitySettersV0;
+        use platform_wallet::changeset::IdentityEntry;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct Host {
+            strings: Vec<Box<[u8]>>,
+            profile: ContactProfileRestoreEntryFFI,
+            identities: Vec<IdentityRestoreEntryFFI>,
+            wallet: WalletRestoreEntryFFI,
+            frees: AtomicUsize,
+        }
+        fn c_buf(text: &str) -> Box<[u8]> {
+            let mut bytes = text.as_bytes().to_vec();
+            bytes.push(0);
+            bytes.into_boxed_slice()
+        }
+        fn identity(id: u8, index: u32) -> IdentityRestoreEntryFFI {
+            IdentityRestoreEntryFFI {
+                identity_id: [id; 32],
+                balance: 7,
+                revision: 1,
+                identity_index: index,
+                status: 2,
+                dpns_names: std::ptr::null(),
+                dpns_names_count: 0,
+                contested_dpns_names: std::ptr::null(),
+                contested_dpns_names_count: 0,
+                keys: std::ptr::null(),
+                keys_count: 0,
+                contacts: std::ptr::null(),
+                contacts_count: 0,
+                payments: std::ptr::null(),
+                payments_count: 0,
+                ignored_senders: std::ptr::null(),
+                ignored_senders_count: 0,
+                contact_profiles: std::ptr::null(),
+                contact_profiles_count: 0,
+                dashpay_profile: std::ptr::null(),
+            }
+        }
+        unsafe extern "C" fn load_wallet(
+            context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            let host = &mut *(context as *mut Host);
+            host.strings = ["Alice", "bio text", "https://example.com/a.png", "hello"]
+                .into_iter()
+                .map(c_buf)
+                .collect();
+            host.profile = ContactProfileRestoreEntryFFI {
+                contact_id: [0; 32],
+                display_name: host.strings[0].as_ptr().cast(),
+                bio: host.strings[1].as_ptr().cast(),
+                avatar_url: host.strings[2].as_ptr().cast(),
+                avatar_hash: [0xA1; 32],
+                avatar_hash_present: true,
+                avatar_fingerprint: [0xF1; 8],
+                avatar_fingerprint_present: true,
+                core_payment_address: transparent_address(0x00, 0xC1),
+                core_payment_address_present: true,
+                platform_payment_address: transparent_address(0x01, 0xD1),
+                platform_payment_address_present: true,
+                shielded_address: shielded_fixture().0,
+                shielded_address_present: true,
+                public_message: host.strings[3].as_ptr().cast(),
+                checked_at_ms: 0,
+            };
+            let mut with_profile = identity(0x11, 0);
+            with_profile.dashpay_profile = &host.profile;
+            host.identities = vec![with_profile, identity(0x22, 1)];
+            host.wallet = WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                identities: host.identities.as_ptr(),
+                identities_count: host.identities.len(),
+                ..Default::default()
+            };
+            *entries = &host.wallet;
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            context: *mut c_void,
+            _entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+            let host = &mut *(context as *mut Host);
+            // Anything Rust still borrowed would now read as garbage.
+            for buf in &mut host.strings {
+                let len = buf.len();
+                buf[..len - 1].fill(b'X');
+            }
+            host.profile.avatar_hash = [0; 32];
+            host.profile.core_payment_address = [0; 21];
+            host.profile.platform_payment_address = [0; 21];
+            host.profile.shielded_address = [0; 43];
+            host.frees.fetch_add(1, Ordering::SeqCst);
+        }
+
+        let host = Box::leak(Box::new(Host {
+            strings: Vec::new(),
+            profile: unsafe { std::mem::zeroed() },
+            identities: Vec::new(),
+            wallet: WalletRestoreEntryFFI::default(),
+            frees: AtomicUsize::new(0),
+        }));
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: (host as *mut Host).cast(),
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            ..Default::default()
+        });
+        let snapshot = persister.load().expect("host snapshot");
+        assert_eq!(host.frees.load(Ordering::SeqCst), 1, "host buffers freed");
+
+        let bucket = &snapshot.wallets[&[42; 32]]
+            .identity_manager
+            .wallet_identities[&[42; 32]];
+        let profile = bucket[&0]
+            .dashpay()
+            .profile
+            .clone()
+            .expect("owned profile restored");
+        assert_eq!(
+            profile,
+            platform_wallet::DashPayProfile {
+                display_name: Some("Alice".into()),
+                bio: Some("bio text".into()),
+                avatar_url: Some("https://example.com/a.png".into()),
+                avatar_hash: Some([0xA1; 32]),
+                avatar_fingerprint: Some([0xF1; 8]),
+                public_message: Some("hello".into()),
+                core_payment_address: Some(transparent_address(0x00, 0xC1).to_vec()),
+                platform_payment_address: Some(transparent_address(0x01, 0xD1).to_vec()),
+                shielded_address: shielded_fixture().1,
+            }
+        );
+        assert!(
+            bucket[&1].dashpay().profile.is_none(),
+            "a null profile pointer restores no profile"
+        );
+
+        let mut managed = bucket[&0].clone();
+        managed.identity.set_balance(8);
+        let entry = IdentityEntry::from_managed(&managed);
+        assert_eq!(entry.balance, 8);
+        assert_eq!(
+            entry.dashpay_profile.as_ref().unwrap().shielded_address,
+            shielded_fixture().1,
+            "an unrelated scalar snapshot retains restored public address metadata"
+        );
+        assert_eq!(entry.dashpay_profile, Some(profile));
+    }
+
     unsafe extern "C" fn noop_free_wallets(
         _ctx: *mut c_void,
         _entries: *const WalletRestoreEntryFFI,
@@ -12102,6 +12532,16 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_private_contact_scan_state_wallets_free_fn
             ) + std::mem::size_of::<Option<FreePrivateContactScanStateWalletsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dashpay_profiles_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dashpay_profiles_fn
+            ) + std::mem::size_of::<Option<PersistDashpayProfilesFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -13831,6 +14271,13 @@ mod tests {
                 avatar_hash_present: true,
                 avatar_fingerprint: [0x22; 8],
                 avatar_fingerprint_present: true,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: shielded_fixture().0,
+                shielded_address_present: true,
+
                 public_message: public_message.as_ptr(),
                 checked_at_ms: 1_700_000_000_000,
             },
@@ -13843,6 +14290,13 @@ mod tests {
                 avatar_hash_present: false,
                 avatar_fingerprint: [0u8; 8],
                 avatar_fingerprint_present: false,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [0; 43],
+                shielded_address_present: false,
+
                 public_message: std::ptr::null(),
                 checked_at_ms: 1_700_000_000_001,
             },
@@ -13867,6 +14321,7 @@ mod tests {
         );
         assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
         assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
+        assert_eq!(alice_profile.shielded_address, shielded_fixture().1);
         assert!(alice_profile.bio.is_none());
 
         let bob = managed

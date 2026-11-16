@@ -248,7 +248,7 @@ struct CreateIdentityView: View {
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
 
-    /// All wallets' unspent shielded notes. The shielded funding
+    /// All wallets' unspent account-0 shielded notes. The shielded funding
     /// picker spans multiple wallets, so this uses the all-wallets
     /// predicate and `shieldedPoolBalance(for:)` scopes by walletId in
     /// memory — a single-walletId `@Query` couldn't serve every row
@@ -256,8 +256,14 @@ struct CreateIdentityView: View {
     /// `modelContext.fetch`) makes the funding option and denomination
     /// list update live: rows arriving while this sheet is open
     /// re-render the view.
-    @Query(filter: PersistentShieldedNote.unspentPredicate)
+    @Query(filter: CreateIdentityView.shieldedFundingPredicate)
     private var unspentShieldedNotes: [PersistentShieldedNote]
+
+    static var shieldedFundingPredicate: Predicate<PersistentShieldedNote> {
+        #Predicate<PersistentShieldedNote> {
+            $0.accountIndex == 0 && $0.isSpent == false
+        }
+    }
 
     // MARK: - Selection state
 
@@ -1820,8 +1826,8 @@ struct CreateIdentityView: View {
             && shieldedFallbackAddressBytes(for: walletId) != nil
     }
 
-    /// Per-wallet shielded pool balance: sum of `walletId`'s unspent
-    /// `PersistentShieldedNote` values, filtered in memory from the
+    /// Per-wallet shielded funding balance: sum of `walletId`'s unspent
+    /// account-0 `PersistentShieldedNote` values, filtered in memory from the
     /// `unspentShieldedNotes` `@Query` (rather than the single-mirror
     /// `shieldedService.shieldedBalance`). Correct for ANY loaded
     /// wallet, not just the mirror's `firstWallet`.

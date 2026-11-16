@@ -418,6 +418,9 @@ enum WalletKeyHealthChecker {
         for cr in Array(identity.contactRequests) {
             modelContext.delete(cr)
         }
+        // Payment-address rows are keyed by owner id; no cascade reaches them.
+        try PersistentDashpayPaymentAddresses.removeOwned(
+            in: modelContext, networkRaw: identity.networkRaw, ownerIdentityId: identity.identityId)
         try modelContext.save()
 
         // PHASE 2: delete the identity itself. Its problematic
