@@ -117,15 +117,28 @@ enum ContactRequestSubmissionOutcome: Equatable {
         return error
     }
 
+    /// Reads Rust's payment class first: a failure it classes as maybe sent
+    /// or holding an asset lock may have gone through, whatever its case.
+    /// Only the contact-request holds, which Rust also classes as maybe
+    /// sent, are told apart before it, as the views mark that contact
+    /// pending instead.
     static func of(_ error: Error) -> ContactRequestSubmissionOutcome {
         if let walletError = error as? PlatformWalletError {
             switch walletError {
-            case .shieldedSpendUnconfirmed, .transactionBroadcastUnconfirmed:
-                return .mayHaveGoneThrough
             case .privateContactRequestPending:
                 return .privateRequestPending
             case .publicContactRequestUnconfirmed:
                 return .publicRequestUnconfirmed
+            default:
+                break
+            }
+            switch walletError.delivery {
+            case .maybeSent, .lockHeld:
+                return .mayHaveGoneThrough
+            case .notSent, nil:
+                break
+            }
+            switch walletError {
             case .privateContactPaymentsNotRestored:
                 return .privatePaymentsNotRestored
             case .privateContactStoreNotRead:

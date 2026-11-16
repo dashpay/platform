@@ -3,6 +3,8 @@ package org.dashfoundation.example.ui.dashpay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.dashfoundation.example.ui.wallet.shieldedOperationMayHaveGoneThrough
 import org.junit.Assert.assertEquals
@@ -29,7 +31,10 @@ class ContactRequestOutcomesTest {
 
     @Test
     fun shouldKeepAnUnconfirmedPrivateSubmissionPending() {
-        val error = DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("result could not be confirmed")
+        val error = DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed(
+            "result could not be confirmed",
+            classed(PaymentDelivery.MAYBE_SENT),
+        )
         assertEquals(
             ContactRequestSubmissionOutcome.MayHaveGoneThrough,
             ContactRequestSubmissionOutcome.of(error),
@@ -45,19 +50,76 @@ class ContactRequestOutcomesTest {
      */
     @Test
     fun shouldKeepAnUnconfirmedStateTransitionPending() {
-        val wallet = DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("result could not be confirmed")
+        val wallet = DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed(
+            "result could not be confirmed",
+            classed(PaymentDelivery.MAYBE_SENT),
+        )
         val sdk = DashSdkError.StateTransitionResultUnconfirmed("result could not be confirmed")
         assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, ContactRequestSubmissionOutcome.of(wallet))
         assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, ContactRequestSubmissionOutcome.of(sdk))
         assertTrue(shieldedOperationMayHaveGoneThrough(wallet))
         assertTrue(
             shieldedOperationMayHaveGoneThrough(
-                DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
+                DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed(
+                    "not proved",
+                    classed(PaymentDelivery.MAYBE_SENT),
+                ),
             ),
         )
         assertFalse(
             shieldedOperationMayHaveGoneThrough(
-                DashSdkError.PlatformWallet.ShieldedBroadcastFailed("never sent"),
+                DashSdkError.PlatformWallet.ShieldedBroadcastFailed(
+                    "never sent",
+                    classed(PaymentDelivery.NOT_SENT),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * A shielded send and a contact request read the native payment class,
+     * not the error's type: any type the wallet classed as maybe sent or
+     * holding a lock may have gone through, and an unconfirmed type it
+     * classed as not sent does not.
+     */
+    @Test
+    fun shouldReadThePaymentClassNotTheErrorType() {
+        val maybeSent = DashSdkError.PlatformWallet.WalletOperation(
+            "verdict after a dispatch",
+            classed(PaymentDelivery.MAYBE_SENT),
+        )
+        val lockHeld = DashSdkError.PlatformWallet.WalletOperation("lock held", classed(PaymentDelivery.LOCK_HELD))
+        val notSent = DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed(
+            "never sent",
+            classed(PaymentDelivery.NOT_SENT),
+        )
+        assertTrue(shieldedOperationMayHaveGoneThrough(maybeSent))
+        assertTrue(shieldedOperationMayHaveGoneThrough(lockHeld))
+        assertFalse(shieldedOperationMayHaveGoneThrough(notSent))
+        assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, ContactRequestSubmissionOutcome.of(maybeSent))
+        assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, ContactRequestSubmissionOutcome.of(lockHeld))
+        assertEquals(ContactRequestSubmissionOutcome.Failed(notSent.message!!), ContactRequestSubmissionOutcome.of(notSent))
+    }
+
+    /**
+     * Both contact-request holds, which the wallet classes as maybe sent,
+     * keep their own outcome so the screens mark the contact pending.
+     */
+    @Test
+    fun shouldKeepAHoldsOutcomeOverItsMaybeSentClass() {
+        assertEquals(
+            ContactRequestSubmissionOutcome.PrivateRequestPending,
+            ContactRequestSubmissionOutcome.of(
+                DashSdkError.PlatformWallet.PrivateContactRequestPending("held", classed(PaymentDelivery.MAYBE_SENT)),
+            ),
+        )
+        assertEquals(
+            ContactRequestSubmissionOutcome.PublicRequestUnconfirmed,
+            ContactRequestSubmissionOutcome.of(
+                DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed(
+                    "held",
+                    classed(PaymentDelivery.MAYBE_SENT),
+                ),
             ),
         )
     }
@@ -590,7 +652,10 @@ class ContactRequestOutcomesTest {
         // wallet holds the pair, the signed transition kept.
         wallet.publicUnconfirmed = setOf("01")
         val accepted = ContactRequestSubmissionOutcome.of(
-            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("result could not be confirmed"),
+            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed(
+                "result could not be confirmed",
+                classed(PaymentDelivery.MAYBE_SENT),
+            ),
         )
         assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, accepted)
         snapshot = snapshot.withOutcome(accepted, "01")
@@ -672,6 +737,16 @@ class ContactRequestOutcomesTest {
         assertTrue(cancelled)
     }
 }
+
+/** The native exception a wallet failure carries, with the payment class the wallet gave it. */
+private fun classed(delivery: PaymentDelivery): DashSDKException =
+    DashSDKException(
+        code = 0,
+        message = "classed",
+        consensusError = null,
+        paymentDelivery = delivery,
+        retryable = delivery != PaymentDelivery.MAYBE_SENT,
+    )
 
 /** A read of both holds that found [contacts] held for a private request and none awaiting a public request's outcome. */
 private fun privatelyHeld(vararg contacts: String): ContactRequestHolds =

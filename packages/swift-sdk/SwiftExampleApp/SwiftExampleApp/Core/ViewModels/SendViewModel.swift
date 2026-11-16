@@ -847,13 +847,14 @@ class SendViewModel: ObservableObject {
     }
 
     /// Whether a shielded operation's error means it may already be on
-    /// chain, so no retry is offered: a spend whose result is not proved
-    /// (18) or a state transition the SDK could not confirm after it may
-    /// have been accepted (20).
+    /// chain, so no retry is offered: Rust classed the payment as maybe sent
+    /// (a spend whose result is not proved, a state transition the SDK could
+    /// not confirm, any other verdict no proof backs) or as holding an asset
+    /// lock. Read from the error's payment class, never from its case.
     nonisolated static func mayHaveGoneThrough(_ error: PlatformWalletError) -> Bool {
-        switch error {
-        case .shieldedSpendUnconfirmed, .transactionBroadcastUnconfirmed: return true
-        default: return false
+        switch error.delivery {
+        case .maybeSent, .lockHeld: return true
+        case .notSent, nil: return false
         }
     }
 

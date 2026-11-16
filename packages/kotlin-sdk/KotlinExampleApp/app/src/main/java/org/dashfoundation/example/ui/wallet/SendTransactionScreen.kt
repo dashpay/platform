@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.errors.PaymentDelivery
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
@@ -803,11 +804,16 @@ fun SendTransactionScreen(
 
 /**
  * Whether a shielded operation's error means it may already be on chain, so
- * no retry is offered: a spend whose result is not proved (18) or a state
- * transition the SDK could not confirm after it may have been accepted (20).
- * ← Swift `SendViewModel.mayHaveGoneThrough`.
+ * no retry is offered: the native wallet classed the payment as maybe sent
+ * (a spend whose result is not proved, a state transition the SDK could not
+ * confirm, any other verdict no proof backs) or as holding an asset lock.
+ * Read from [DashSdkError.delivery], never from the error's type; only
+ * rs-sdk-ffi's unconfirmed transition, which carries no native class, is
+ * matched by type. ← Swift `SendViewModel.mayHaveGoneThrough`.
  */
 internal fun shieldedOperationMayHaveGoneThrough(error: Throwable): Boolean =
-    error is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed ||
-        error is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed ||
-        error is DashSdkError.StateTransitionResultUnconfirmed
+    when ((error as? DashSdkError)?.delivery) {
+        PaymentDelivery.MAYBE_SENT, PaymentDelivery.LOCK_HELD -> true
+        PaymentDelivery.NOT_SENT -> false
+        null -> error is DashSdkError.StateTransitionResultUnconfirmed
+    }
