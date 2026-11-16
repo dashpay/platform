@@ -1,6 +1,7 @@
 use crate::version::system_limits::SystemLimits;
 
 pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
+    max_document_revisions_erased_per_transition: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
@@ -8,6 +9,8 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_value_depth: None,
     max_typed_array_items: 1024,
     max_index_property_name_bytes: 255,
+    max_contract_schema_patterns: 32,
+    max_schema_pattern_compiled_size: 131_072,
     max_compiled_contract_size: None,
     max_private_document_entry_size: None,
     private_document_store_target_chunk_bytes: None,

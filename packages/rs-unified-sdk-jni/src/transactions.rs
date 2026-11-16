@@ -40,11 +40,17 @@
 
 use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::prelude::Identifier;
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::{
+    DocumentEraseNotSubmittedReasonFFI as Reason, DocumentEraseOutcomeKindFFI as Kind,
+    DocumentLifecycleObservationFFI, DocumentLifecycleObservationTagFFI as State,
+};
 use rs_sdk_ffi::SignerHandle;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -746,6 +752,102 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     })
 }
 
+/// Marshal the wallet's single erase operation; selection and submission policy
+/// stay in Rust. The caller receives typed-outcome JSON, not an echoed id.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentEraseAndObserve(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    submitting_identity_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    document_id: JByteArray,
+    signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(submitter) = read_id32(env, &submitting_identity_id, "submittingIdentityId")
+        else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(document) = read_id32(env, &document_id, "documentId") else {
+            return ptr::null_mut();
+        };
+        let Some(document_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+        let mut out = platform_wallet_ffi::DocumentEraseOutcomeFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_document_erase_and_observe(
+                wallet_handle as Handle,
+                submitter.as_ptr(),
+                contract.as_ptr(),
+                document_type.as_ptr(),
+                document.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                &mut out,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let Ok(json) = erase_outcome_to_json(out) else {
+            throw_sdk_exception(
+                env,
+                99,
+                "Erase result unreadable; read history before retrying.",
+            );
+            return ptr::null_mut();
+        };
+        env.new_string(json)
+            .map(|string| string.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+fn erase_outcome_to_json(
+    out: platform_wallet_ffi::DocumentEraseOutcomeFFI,
+) -> Result<String, &'static str> {
+    fn observation(value: DocumentLifecycleObservationFFI) -> serde_json::Value {
+        let state = match value.state {
+            State::Unavailable => return serde_json::Value::Null,
+            State::Active => "ACTIVE",
+            State::Absent => "ABSENT",
+            State::Deleted => "DELETED",
+            State::Erasing => "ERASING",
+        };
+        serde_json::json!({ "state": state, "remaining_revisions": value.remaining_revisions,
+            "deleted_at_ms": value.deleted_at_ms, "erasing_started_at_ms": value.erasing_started_at_ms,
+            "erasing_from_time_ms": value.erasing_from_time_ms, "erasing_from_revision": value.erasing_from_revision })
+    }
+    let kind = match out.kind {
+        Kind::NotSubmitted => "NOT_SUBMITTED",
+        Kind::Submitted => "SUBMITTED",
+        Kind::Unset => return Err("missing outcome"),
+    };
+    let reason = match out.reason {
+        Reason::None => None,
+        Reason::Active => Some("ACTIVE"),
+        Reason::Absent => Some("ABSENT"),
+        Reason::NotNewestOwner => Some("NOT_NEWEST_OWNER"),
+        Reason::PreflightUnavailable => Some("PREFLIGHT_UNAVAILABLE"),
+    };
+    let owner = if out.reason == Reason::NotNewestOwner {
+        Some(Identifier::from(out.owner).to_string(Encoding::Base58))
+    } else {
+        None
+    };
+    Ok(
+        serde_json::json!({ "kind": kind, "reason": reason, "owner": owner,
+        "before": observation(out.before), "after": observation(out.after) })
+        .to_string(),
+    )
+}
+
 /// Transfer + broadcast `documentId` on `contractId`'s `documentType`,
 /// from `ownerId` to `recipientId`, signed via `signerHandle` with key
 /// `signingKeyId` — the JNI bridge over `platform_wallet_document_transfer`
@@ -951,4 +1053,82 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+#[cfg(test)]
+mod erase_outcome_tests {
+    use super::*;
+
+    #[test]
+    fn should_preserve_not_submitted_reasons_and_all_observation_states() {
+        assert!(erase_outcome_to_json(Default::default()).is_err());
+        for (reason, expected) in [
+            (Reason::Active, "ACTIVE"),
+            (Reason::Absent, "ABSENT"),
+            (Reason::NotNewestOwner, "NOT_NEWEST_OWNER"),
+            (Reason::PreflightUnavailable, "PREFLIGHT_UNAVAILABLE"),
+        ] {
+            for (state, expected_state) in [
+                (State::Unavailable, None),
+                (State::Active, Some("ACTIVE")),
+                (State::Absent, Some("ABSENT")),
+                (State::Deleted, Some("DELETED")),
+                (State::Erasing, Some("ERASING")),
+            ] {
+                let out = platform_wallet_ffi::DocumentEraseOutcomeFFI {
+                    kind: Kind::NotSubmitted,
+                    reason,
+                    owner: [1; 32],
+                    before: DocumentLifecycleObservationFFI {
+                        state,
+                        remaining_revisions: u64::MAX,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let json: serde_json::Value =
+                    serde_json::from_str(&erase_outcome_to_json(out).unwrap()).unwrap();
+                assert_eq!(json["kind"], "NOT_SUBMITTED");
+                assert_eq!(json["reason"], expected);
+                assert!(json["after"].is_null());
+                if reason == Reason::NotNewestOwner {
+                    assert_eq!(
+                        json["owner"],
+                        Identifier::from([1; 32]).to_string(Encoding::Base58)
+                    );
+                } else {
+                    assert!(json["owner"].is_null());
+                }
+                if let Some(expected_state) = expected_state {
+                    assert_eq!(json["before"]["state"], expected_state);
+                    assert_eq!(json["before"]["remaining_revisions"], u64::MAX);
+                } else {
+                    assert!(json["before"].is_null());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_match_the_lifecycle_fixture_decoded_by_kotlin() {
+        let out = platform_wallet_ffi::DocumentEraseOutcomeFFI {
+            kind: Kind::Submitted,
+            before: DocumentLifecycleObservationFFI {
+                state: State::Erasing,
+                remaining_revisions: u64::MAX,
+                deleted_at_ms: 1,
+                erasing_started_at_ms: 2,
+                erasing_from_time_ms: 3,
+                erasing_from_revision: u64::MAX,
+            },
+            ..Default::default()
+        };
+        let actual: serde_json::Value =
+            serde_json::from_str(&erase_outcome_to_json(out).unwrap()).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../kotlin-sdk/sdk/src/test/resources/document_erase_outcome_from_native.json"
+        ))
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
 }

@@ -8,9 +8,8 @@ package org.dashfoundation.dashsdk.ffi
  * [nativeCreate] takes the SDK handle plus the two Kotlin bridge objects
  * (persistence + event), builds the native persistence / event vtables
  * with boxed `GlobalRef` contexts, hands them — **with ownership** (the
- * vtables carry a `release_fn`) — to
- * `platform_wallet_manager_create_with_persistence_capabilities`, and
- * returns a boxed **bundle** pointer as a `jlong`. The native manager
+ * vtables carry a `release_fn`) — to `platform_wallet_manager_create_with_sdk`,
+ * and returns a boxed **bundle** pointer as a `jlong`. The native manager
  * frees each context box exactly once, when its last worker reference
  * drops; [nativeDestroy] shuts the manager down (bounded quiesce + join
  * of every callback-firing task) and a worker that straggles past it
@@ -26,9 +25,12 @@ package org.dashfoundation.dashsdk.ffi
 internal object WalletManagerNative {
 
     /**
-     * Create a manager.
+     * Create a manager. On an adaptive SDK the manager serves the SDK the
+     * quorum keys of its own SPV client for as long as it lives, and a
+     * second manager on that SDK is refused while the first lives.
      *
-     * @param sdkHandle the `SDKHandle` from [SdkNative.createTrusted].
+     * @param sdkHandle the `SDKHandle` from [SdkNative.createTrusted] or
+     *   [SdkNative.createAdaptive].
      * @param persistenceBridge the persistence callback receiver.
      * @param eventBridge the wallet-event / error receiver.
      * @return non-zero bundle handle, or 0 after a thrown exception.
@@ -482,6 +484,30 @@ internal object WalletManagerNative {
     external fun walletPlatformAddressWithdraw(
         walletHandle: Long,
         accountIndex: Int,
+        coreAddress: String,
+        coreFeePerByte: Int,
+        signerHandle: Long,
+    ): ByteArray
+
+    /**
+     * Withdraw exactly the listed amounts from the listed platform addresses
+     * (EXPLICIT input selection) to a Core L1 address, wallet-signed. Same
+     * composite call, network check and changeset blob as
+     * [walletPlatformAddressWithdraw]. The amount and fee semantics are
+     * documented on the public
+     * [org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.withdrawCredits]
+     * overload that takes inputs.
+     *
+     * @param inputsBlob `u32 rowCount` then per row `u8 addressType,
+     *   u8[20] hash, u64 credits` (big-endian).
+     * @param coreAddress base58 Core address.
+     * @param coreFeePerByte must be a Fibonacci-sequence value.
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     */
+    external fun walletPlatformAddressWithdrawExplicit(
+        walletHandle: Long,
+        accountIndex: Int,
+        inputsBlob: ByteArray,
         coreAddress: String,
         coreFeePerByte: Int,
         signerHandle: Long,

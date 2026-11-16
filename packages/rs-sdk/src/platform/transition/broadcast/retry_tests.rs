@@ -521,7 +521,7 @@ fn signed_address_transfer() -> StateTransition {
         signature: signer::sign(&bytes, &private_key).unwrap().to_vec().into(),
     };
     input
-        .verify_bytes_against_witness(&witness, &bytes)
+        .verify_bytes_against_witness(&witness, &bytes, PlatformVersion::latest())
         .unwrap();
     transfer.input_witnesses.push(witness);
     let transition = transfer.into();

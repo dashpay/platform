@@ -5,6 +5,20 @@ use crate::verify::RootHash;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
+use crate::drive::document::paths::{
+    contract_document_type_path_vec, document_history_path, DOCUMENT_LIFECYCLE_TREE_KEY,
+};
+use crate::util::common::decode::decode_u64;
+use dpp::document::lifecycle::DocumentLifecycleRecord;
+use dpp::serialization::PlatformDeserializableUntrusted;
+use grovedb::query_result_type::PathKeyOptionalElementTrio;
+use grovedb::Element;
+
+pub(crate) struct RetainedDocument {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) revision: u64,
+}
+
 impl SingleDocumentDriveQuery {
     /// Generation 0, except that two kinds of lookup it refused are verified: a document that
     /// may be contested, and a document outside a contest at a block time in a type that keeps
@@ -25,6 +39,11 @@ impl SingleDocumentDriveQuery {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vec<u8>>), Error> {
+        if self.is_lifecycle_temporal_query(platform_version)? {
+            return self
+                .verify_lifecycle_temporal_proof(is_subset, proof, platform_version)
+                .map(|(root, document)| (root, document.map(|document| document.bytes)));
+        }
         let verified_by_generation_0 = match self.contested_status {
             SingleDocumentDriveQueryContestedStatus::NotContested => {
                 !(self.document_type_keeps_history && self.block_time_ms.is_some())
@@ -59,6 +78,99 @@ impl SingleDocumentDriveQuery {
             .transpose()?;
 
         Ok((root_hash, serialized))
+    }
+
+    /// Authenticates both branches before interpreting the deletion cutoff. The raw
+    /// API is type-agnostic: discarded revisions need no document-body decoding.
+    pub(crate) fn verify_lifecycle_temporal_proof(
+        &self,
+        is_subset: bool,
+        proof: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Option<RetainedDocument>), Error> {
+        let query = self.construct_path_query(platform_version)?;
+        let (root, rows) = if is_subset {
+            GroveDb::verify_subset_query(proof, &query, &platform_version.drive.grove_version)?
+        } else {
+            GroveDb::verify_query(proof, &query, &platform_version.drive.grove_version)?
+        };
+        Ok((root, self.decode_lifecycle_temporal_rows(rows)?))
+    }
+
+    fn decode_lifecycle_temporal_rows(
+        &self,
+        rows: Vec<PathKeyOptionalElementTrio>,
+    ) -> Result<Option<RetainedDocument>, Error> {
+        let corrupt = |message: &str| Error::Proof(ProofError::CorruptedProof(message.to_string()));
+        let history_path = document_history_path(
+            &self.contract_id,
+            &self.document_type_name,
+            &self.document_id,
+        );
+        let mut lifecycle_path =
+            contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
+        lifecycle_path.push(vec![DOCUMENT_LIFECYCLE_TREE_KEY]);
+        let mut record = None;
+        let mut document = None;
+        let mut history_time = None;
+        let mut seen_lifecycle = false;
+        let time = self
+            .block_time_ms
+            .ok_or_else(|| corrupt("a temporal query needs a block time"))?;
+        for (path, key, element) in rows {
+            if path == lifecycle_path {
+                if key != self.document_id || seen_lifecycle {
+                    return Err(corrupt("unexpected or duplicate lifecycle key"));
+                }
+                seen_lifecycle = true;
+                if let Some(element) = element {
+                    let Element::Item(bytes, _) = element else {
+                        return Err(corrupt("a lifecycle record must be an item"));
+                    };
+                    let decoded =
+                        DocumentLifecycleRecord::deserialize_from_bytes_untrusted(&bytes)?;
+                    if !decoded.is_coherent() {
+                        return Err(corrupt("a lifecycle record is incoherent"));
+                    }
+                    record = Some(decoded);
+                }
+            } else if path == history_path {
+                if document.is_some() || key.len() != 16 {
+                    return Err(corrupt("unexpected or duplicate retained revision key"));
+                }
+                let revision =
+                    decode_u64(&key[8..]).map_err(|_| corrupt("invalid retained revision"))?;
+                let stored_at =
+                    decode_u64(&key[..8]).map_err(|_| corrupt("invalid retained time"))?;
+                if revision == 0 || stored_at > time.min(i64::MAX as u64) {
+                    return Err(corrupt("retained revision is outside the temporal query"));
+                }
+                let Some(Element::Item(bytes, _)) = element else {
+                    return Err(corrupt("a retained revision must be an item"));
+                };
+                history_time = Some(stored_at);
+                document = Some(RetainedDocument { bytes, revision });
+            } else {
+                return Err(corrupt("unexpected path in a temporal document proof"));
+            }
+        }
+        if let Some(record) = record {
+            if document
+                .as_ref()
+                .is_some_and(|document| document.revision > record.latest_revision())
+                || history_time.is_some_and(|stored_at| stored_at > record.deleted_at_ms())
+            {
+                return Err(corrupt(
+                    "retained revision is newer than its deletion record",
+                ));
+            }
+            // Compare the requested time before clamping it for the ordered key space.
+            // Erasure immediately makes every historical lookup absent.
+            if record.is_erasing() || time >= record.deleted_at_ms() {
+                return Ok(None);
+            }
+        }
+        Ok(document)
     }
 }
 
