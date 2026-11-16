@@ -1191,6 +1191,43 @@ async fn should_refuse_an_account_add_admitted_behind_a_clear() {
     );
 }
 
+/// A wallet has one coordinator. Bound on a second one, it is unregistered
+/// from the first, which would otherwise go on scanning and persisting for
+/// it through the persister it holds: after a Clear of the second, that
+/// puts back rows the host wiped.
+#[tokio::test]
+async fn should_unregister_the_wallet_from_the_coordinator_it_was_bound_on_before() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let first = coordinator_at(&temp_dir("bind_first_coordinator"));
+    let second = coordinator_at(&temp_dir("bind_second_coordinator"));
+    let seed = [0x42u8; 64];
+    let account = SubwalletId::new(wallet.wallet_id(), 0);
+
+    wallet
+        .bind_shielded(&seed, &[0], &first)
+        .await
+        .expect("bound on the first coordinator");
+    assert!(first.registered_subwallets().await.contains(&account));
+
+    wallet
+        .bind_shielded(&seed, &[0], &second)
+        .await
+        .expect("bound on the second coordinator");
+    assert!(
+        first.registered_subwallets().await.is_empty(),
+        "the first coordinator no longer scans for the wallet"
+    );
+    assert!(second.registered_subwallets().await.contains(&account));
+
+    // A rebind on the same coordinator keeps its registration.
+    wallet
+        .bind_shielded(&seed, &[0], &second)
+        .await
+        .expect("bound again on the second coordinator");
+    assert!(second.registered_subwallets().await.contains(&account));
+}
+
 /// Two binds of one wallet must not interleave: neither may publish its
 /// registration while the other's transaction is open. That is what
 /// keeps the handle's key slot and the coordinator's registration from

@@ -1219,6 +1219,9 @@ impl PlatformWallet {
     /// while addresses and spends use another), nor between the
     /// restore's registration check and its store write.
     ///
+    /// A wallet bound on another coordinator before is unregistered from
+    /// it once its keys are installed here.
+    ///
     /// Once installed, the reservations of the private contact requests the
     /// store holds unconfirmed payments for are restored into this wallet's
     /// identities ([`Self::restore_private_contact_payments`]), with no host
@@ -1231,13 +1234,36 @@ impl PlatformWallet {
         start: crate::changeset::ClientStartState,
         snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
-        self.install_shielded_views_in_one_transaction(
-            account_views,
-            coordinator,
-            start,
-            snapshot_generation,
-        )
-        .await?;
+        // Read under `shielded_config_lock`, which the caller holds and
+        // every install takes, so no other bind moves the binding meanwhile.
+        let previous = self
+            .shielded_binding()
+            .and_then(|binding| binding.coordinator.upgrade())
+            .filter(|bound| !Arc::ptr_eq(bound, coordinator));
+        let installed = self
+            .install_shielded_views_in_one_transaction(
+                account_views,
+                coordinator,
+                start,
+                snapshot_generation,
+            )
+            .await;
+        // The wallet has one coordinator. Once its keys are installed on
+        // `coordinator`, the one it was bound on before still holds its
+        // registration and persister, and would go on scanning and
+        // persisting for it: after a Clear of `coordinator` that puts back
+        // rows the host wiped. Done after the transaction, so the two
+        // coordinators' lifecycle mutexes are never held together, and
+        // whether or not the restore that follows the install succeeded.
+        if let Some(previous) = previous {
+            let moved = self.shielded_binding().is_some_and(|binding| {
+                std::sync::Weak::ptr_eq(&binding.coordinator, &Arc::downgrade(coordinator))
+            });
+            if moved {
+                previous.unregister_wallet(self.wallet_id).await;
+            }
+        }
+        installed?;
         // After the install transaction: the restore takes the store and
         // wallet locks on its own.
         self.restore_private_payments_or_defer(coordinator).await;
