@@ -186,11 +186,9 @@ impl IdentityWallet {
         // discovery scan visibly target the same slot.
         let (key_hash_array, network) = {
             let wm = self.wallet_manager.read().await;
-            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet not found in wallet manager".to_string(),
-                )
-            })?;
+            let (wallet, _) = self
+                .current_wallet_and_info(&wm)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let network = wallet.network;
             // For the resident-wallet path the derive borrows `wallet`'s
             // key material; for the master path the `wallet` borrow is
@@ -215,7 +213,12 @@ impl IdentityWallet {
                 .await
             {
                 Ok((Some(identity), metadata)) => (identity, BlockTime::from(metadata)),
-                Ok((None, _)) => return Ok(None),
+                Ok((None, _)) => {
+                    // "No identity here" is about this handle's wallet only
+                    // while it is still the one the manager holds.
+                    self.ensure_current_generation().await?;
+                    return Ok(None);
+                }
                 Err(e) => {
                     return Err(PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to fetch identity at index {}: {}",
@@ -305,10 +308,22 @@ impl IdentityWallet {
                     identity_id,
                     e
                 );
+                // The success branch publishes through the generation check;
+                // this one must not report a stale handle's identity as loaded.
+                self.ensure_current_generation().await?;
             }
         }
 
         Ok(Some(identity))
+    }
+
+    /// `Ok` while this handle's wallet is still the one the manager holds
+    /// under its id, else [`PlatformWalletError::WalletNotFound`].
+    async fn ensure_current_generation(&self) -> Result<(), PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        self.current_wallet_and_info(&wm)
+            .map(|_| ())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
     }
 
     /// Refresh an identity that is already in the local manager by
@@ -550,6 +565,7 @@ mod tests {
     use super::super::signing_key::tests::CapturingStore;
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
     use crate::changeset::IdentityKeyDerivationIndices;
+    use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::PlatformWalletManager;
     use dash_sdk::platform::types::identity::PublicKeyHash;
@@ -836,5 +852,55 @@ mod tests {
                 "key {key_id} carries its breadcrumb"
             );
         }
+    }
+
+    /// A handle taken before its wallet was removed and re-created under the
+    /// same id says nothing about the replacement: a load through it is
+    /// refused as not found, not answered with "no identity at this index".
+    #[tokio::test]
+    async fn should_refuse_a_load_through_a_handle_whose_wallet_was_recreated() {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        const SEED: [u8; 64] = [7; 64];
+        let network = Network::Testnet;
+        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let probe =
+            derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), None::<Identity>)
+            .await
+            .unwrap();
+        let manager = PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::new(CapturingStore::default()),
+            Arc::new(Events),
+        );
+        let create = || {
+            manager.create_wallet_from_seed_bytes(
+                network,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+        };
+        let stale = create().await.unwrap().identity().clone();
+        let wallet_id = stale.wallet_id;
+        manager.remove_wallet(&wallet_id).await.unwrap();
+        let replacement = create().await.unwrap();
+        assert_eq!(
+            replacement.wallet_id(),
+            wallet_id,
+            "re-created under the same id"
+        );
+
+        let result = stale.load_identity_by_index_from_master(0, &master).await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
+            "a stale handle's load is refused: {result:?}"
+        );
     }
 }
