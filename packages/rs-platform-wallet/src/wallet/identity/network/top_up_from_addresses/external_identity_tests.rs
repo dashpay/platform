@@ -29,9 +29,11 @@ use dash_sdk::dapi_grpc::platform::v0::{
 };
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::query_types::{AddressInfo, AddressInfos};
+use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
 use dash_sdk::{RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityV0};
@@ -136,12 +138,13 @@ struct Fixture {
 
 impl Fixture {
     async fn new(on_platform: bool) -> Self {
-        Self::build(Some(on_platform)).await
+        Self::build(Some(on_platform), AMOUNT).await
     }
 
     /// `on_platform` `None`: Platform cannot be reached to look the
     /// identity up, there is no expectation for the request.
-    async fn build(on_platform: Option<bool>) -> Self {
+    /// `address_balance` is what Platform holds on [`ADDRESS`].
+    async fn build(on_platform: Option<bool>, address_balance: u64) -> Self {
         let mut sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
             .with_time_tolerance(None)
@@ -201,7 +204,7 @@ impl Fixture {
                     Some(AddressInfo {
                         address: ADDRESS,
                         nonce: 0,
-                        balance: AMOUNT,
+                        balance: address_balance,
                     }),
                 )])),
             )
@@ -353,7 +356,7 @@ async fn should_refuse_an_identity_platform_does_not_know_without_submitting() {
 /// have gone through", with nothing signed or submitted.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_report_a_failed_recipient_lookup_as_not_sent() {
-    let mut fixture = Fixture::build(None).await;
+    let mut fixture = Fixture::build(None, AMOUNT).await;
 
     let error = fixture
         .top_up()
@@ -368,22 +371,61 @@ async fn should_report_a_failed_recipient_lookup_as_not_sent() {
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
-/// An empty funding map is the caller's mistake on both routes: the SDK's
-/// own empty-input refusal comes back as `InvalidParameter`, with nothing
-/// signed or submitted.
+/// An empty funding map is the caller's mistake on both routes, refused as
+/// `InvalidParameter` before any network I/O, with nothing signed or
+/// submitted: whether Platform knows the identity, does not know it, or
+/// cannot be asked, the lookup never decides the error.
 #[tokio::test(flavor = "multi_thread")]
 async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
+    for on_platform in [Some(false), None, Some(true)] {
+        let mut fixture = Fixture::build(on_platform, AMOUNT).await;
+
+        let external = fixture.top_up_with(Vec::new()).await;
+        let managed = fixture.top_up_own_with(Vec::new()).await;
+        let managed_unknown = fixture
+            .wallet
+            .top_up_from_addresses(&fixture.target, Vec::new(), &fixture.signer, settings())
+            .await;
+
+        for result in [external, managed, managed_unknown] {
+            assert!(
+                matches!(&result, Err(PlatformWalletError::InvalidParameter(reason))
+                    if reason == "no funding rows were provided"),
+                "{on_platform:?}: got {result:?}"
+            );
+        }
+        assert_eq!(fixture.submissions().await, (0, 0, 0));
+    }
+}
+
+/// The managed route reads the identity's balance from Platform before
+/// signing, the baseline its growth is measured against: a read that fails
+/// (here no answer to the request) is the not-sent lookup failure, and
+/// Platform not knowing the identity is not-found, both with nothing signed
+/// or submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_read_the_managed_identitys_balance_from_platform_before_signing() {
+    let own = Identifier::from(OWN_IDENTITY);
     let mut fixture = Fixture::new(true).await;
 
-    let external = fixture.top_up_with(Vec::new()).await;
-    let managed = fixture.top_up_own_with(Vec::new()).await;
+    let unreachable = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(&unreachable, Err(PlatformWalletError::IdentityLookupFailed { identity_id, .. })
+            if *identity_id == own),
+        "got {unreachable:?}"
+    );
 
-    for result in [external, managed] {
-        assert!(
-            matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
-            "got {result:?}"
-        );
-    }
+    fixture
+        .sdk
+        .mock()
+        .expect_fetch::<IdentityBalance, Identifier>(own, None)
+        .await
+        .unwrap();
+    let unknown = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(&unknown, Err(PlatformWalletError::IdentityNotFound(id)) if *id == own),
+        "got {unknown:?}"
+    );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
@@ -391,7 +433,7 @@ async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
 /// was taken tops up nothing: refused before the identity is fetched,
 /// anything is signed or submitted.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_refuse_a_top_up_from_a_wallet_no_longer_current() {
+async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_both_routes() {
     let mut fixture = Fixture::new(true).await;
     let wallet_id = fixture.wallet.wallet_id();
     fixture
@@ -405,6 +447,12 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current() {
         matches!(&removed, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
             if *id == hex::encode(wallet_id)),
         "{removed:?}"
+    );
+    let removed_own = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(&removed_own, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+            if *id == hex::encode(wallet_id)),
+        "managed route: {removed_own:?}"
     );
 
     let recreated = fixture
@@ -425,6 +473,14 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current() {
             Err(PlatformWalletError::WalletRemovedBeforeSend(_))
         ),
         "{superseded:?}"
+    );
+    let superseded_own = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(
+            superseded_own,
+            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+        ),
+        "managed route: {superseded_own:?}"
     );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
@@ -598,7 +654,10 @@ async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
         }),
     )]);
     let new_balance = wallet
-        .top_up_external_identity_with(async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) })
+        .top_up_identity_with(
+            async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) },
+            "external identity top-up",
+        )
         .await
         .expect("a confirmed top-up");
 
@@ -679,5 +738,24 @@ async fn should_refuse_an_overflowing_funding_sum_on_both_routes() {
             "got {result:?}"
         );
     }
+    assert_eq!(fixture.submissions().await, (0, 0, 0));
+}
+
+/// An SDK error the top-up does not promote keeps its typed variant, here
+/// the SDK's own refusal of an address short of the amount, with nothing
+/// signed or submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_keep_an_unpromoted_sdk_error_typed() {
+    let mut fixture = Fixture::build(Some(true), AMOUNT - 1).await;
+
+    let error = fixture.top_up().await.expect_err("the address is short");
+
+    assert!(
+        matches!(&error, PlatformWalletError::Sdk(e) if matches!(
+            e.consensus_error(),
+            Some(ConsensusError::StateError(StateError::AddressNotEnoughFundsError(_)))
+        )),
+        "got {error:?}"
+    );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }

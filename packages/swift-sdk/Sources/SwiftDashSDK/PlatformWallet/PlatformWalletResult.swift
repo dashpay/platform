@@ -325,11 +325,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Platform could not be asked for an identity the operation names (the
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
-    case errorIdentityLookupFailed = 77
+    case errorIdentityLookupFailed = 80
     /// A shielded spend run against a plan (`shieldedPlanSpend`) selected
     /// different notes or a different fee than the plan, as the wallet's
     /// notes changed since. Nothing was reserved, built or broadcast.
-    case errorShieldedPlanChanged = 80
+    case errorShieldedPlanChanged = 77
     /// The wallet's notes cover a shielded spend, or its plan, only with more
     /// notes than one shielded transition spends. Nothing was reserved, built
     /// or broadcast: a smaller amount fits, or the notes can be merged first.
@@ -768,13 +768,13 @@ public enum PlatformWalletError: LocalizedError {
     /// reads whether the pair is still held so.
     case publicContactRequestUnconfirmed(String)
     /// Platform could not be asked for an identity the operation names (code
-    /// 77): the lookup itself failed, before anything was signed, reserved or
+    /// 80): the lookup itself failed, before anything was signed, reserved or
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String)
     /// A shielded spend run against a `ShieldedSpendPlan` selected different
     /// notes or a different fee than the plan, as the wallet's notes changed
-    /// since (code 80). Nothing was reserved, built or broadcast: plan again
+    /// since (code 77). Nothing was reserved, built or broadcast: plan again
     /// and confirm the new fee before spending.
     case shieldedPlanChanged(String)
     /// The wallet's notes cover a shielded spend, or its plan, only with more

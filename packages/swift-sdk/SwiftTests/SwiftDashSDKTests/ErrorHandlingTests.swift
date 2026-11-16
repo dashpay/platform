@@ -612,7 +612,7 @@ final class ErrorHandlingTests: XCTestCase {
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED
         )
         XCTAssertEqual(code, .errorIdentityLookupFailed)
-        XCTAssertEqual(code.rawValue, 77)
+        XCTAssertEqual(code.rawValue, 80)
         let detail = "could not look up identity 9fRYTJZW on Platform; nothing was sent"
         guard case .identityLookupFailed(let message) =
             PlatformWalletError(code: code, message: detail) else {
@@ -628,7 +628,7 @@ final class ErrorHandlingTests: XCTestCase {
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_PLAN_CHANGED
         )
         XCTAssertEqual(code, .errorShieldedPlanChanged)
-        XCTAssertEqual(code.rawValue, 80)
+        XCTAssertEqual(code.rawValue, 77)
         let detail = "the shielded spend no longer selects the planned notes"
         guard case .shieldedPlanChanged(let message) =
             PlatformWalletError(code: code, message: detail) else {

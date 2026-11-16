@@ -775,14 +775,14 @@ pub enum PlatformWalletFFIResultCode {
     /// signed, reserved or broadcast, so the operation may be retried as it
     /// is; a host need not treat it as possibly delivered. Returned by the
     /// external identity top-up from Platform addresses.
-    ErrorIdentityLookupFailed = 77,
+    ErrorIdentityLookupFailed = 80,
     /// Maps `PlatformWalletError::ShieldedPlanChanged`: a shielded spend run
     /// against a plan (`platform_wallet_manager_shielded_plan_spend`, then a
     /// `_with_plan` spend export) selected different notes or a different fee
     /// than the plan, as the wallet's notes changed since (a sync added or
     /// spent one, or another spend reserved one). Nothing was reserved, built
     /// or broadcast. Plan again and have the new fee confirmed.
-    ErrorShieldedPlanChanged = 80,
+    ErrorShieldedPlanChanged = 77,
 
     /// Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's
     /// notes cover a shielded spend (or its plan) only with more notes than
@@ -3225,7 +3225,7 @@ mod private_contact_request_error_tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
         );
-        assert_eq!(result.code as u32, 77);
+        assert_eq!(result.code as u32, 80);
     }
 
     /// A public contact request a loaded wallet refuses until its private

@@ -796,7 +796,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorIdentityLookupFailed` (native code 77). Platform could not be
+         * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
          * asked for an identity the operation names (the lookup failed, which
          * is not Platform's answer that it does not exist, code 7). Nothing
          * was signed, reserved or broadcast, so the operation may be retried
@@ -804,10 +804,12 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.identityLookupFailed`.
          */
         class IdentityLookupFailed(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         /**
-         * `ErrorShieldedPlanChanged` (native code 80). A shielded spend run
+         * `ErrorShieldedPlanChanged` (native code 77). A shielded spend run
          * against a plan (`platform_wallet_manager_shielded_plan_spend`, then
          * a `_with_plan` spend) selected different notes or a different fee
          * than the plan, as the wallet's notes changed since. Nothing was
@@ -1047,10 +1049,10 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
-            77 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            77 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
             78 -> PlatformWallet.ShieldedSpendTooManyNotes(message, cause) // ErrorShieldedSpendTooManyNotes
             79 -> PlatformWallet.ShieldedWithdrawalAmountOutOfRange(message, cause) // ErrorShieldedWithdrawalAmountOutOfRange
-            80 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
+            80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

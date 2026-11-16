@@ -407,10 +407,11 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportAFailedIdentityLookupByItsOwnCode() {
         val detail = "could not look up identity on Platform; nothing was sent"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 77, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 80, detail)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.IdentityLookupFailed)
         assertEquals(detail, mapped.message)
+        assertTrue("nothing was sent, so it may be retried as it is", mapped.isRetryable)
     }
 
     /**
@@ -421,7 +422,7 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportAChangedShieldedPlanByItsOwnCode() {
         val detail = "the shielded spend no longer selects the planned notes"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 80, detail)
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 77, detail)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedPlanChanged)
         assertFalse(mapped is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
