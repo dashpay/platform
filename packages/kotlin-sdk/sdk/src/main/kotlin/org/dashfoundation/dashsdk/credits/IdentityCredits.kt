@@ -251,10 +251,18 @@ class IdentityCredits internal constructor(
      *
      * Rust fetches the identity from Platform and never adds it to the
      * wallet; the spent addresses' balances are reconciled as for
-     * [topUpFromAddresses]. An identity that does not exist on Platform
-     * fails with [org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]
-     * before anything is signed or broadcast. Rust also owns the input
-     * rules (empty or overflowing inputs are refused there).
+     * [topUpFromAddresses]. Rust also owns the input rules (empty or
+     * overflowing inputs are refused there).
+     *
+     * Outcomes the caller must tell apart:
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]: Platform
+     *   does not know the identity; nothing was signed or sent.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed]:
+     *   the identity could not be read from Platform; nothing was signed or
+     *   sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
+     *   the top-up may have executed or may still execute; do not submit it
+     *   again, the next sync settles it.
      */
     suspend fun topUpExternalIdentityFromAddresses(
         walletHandle: Long,

@@ -38,20 +38,44 @@ class ExternalIdentityTopUpTest {
 
     @Test
     fun `should map an unknown identity to NotFound`() = runTest {
+        val failure = failureFor(7) // ErrorIdentityNotFound
+
+        assertTrue("expected NotFound, got $failure", failure is DashSdkError.NotFound)
+    }
+
+    @Test
+    fun `should map a failed identity lookup to a retryable IdentityLookupFailed`() = runTest {
+        val failure = failureFor(80) // ErrorIdentityLookupFailed
+
+        assertTrue(
+            "expected IdentityLookupFailed, got $failure",
+            failure is DashSdkError.PlatformWallet.IdentityLookupFailed,
+        )
+        assertTrue((failure as DashSdkError).isRetryable)
+    }
+
+    @Test
+    fun `should map an unproved result to TransactionBroadcastUnconfirmed`() = runTest {
+        val failure = failureFor(20) // ErrorTransactionBroadcastUnconfirmed
+
+        assertTrue(
+            "expected TransactionBroadcastUnconfirmed, got $failure",
+            failure is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
+        )
+    }
+
+    private suspend fun failureFor(platformWalletCode: Int): Throwable? {
         val credits = IdentityCredits(
             externalTopUpNative = AddressTopUpNativeCall { _, _, _, _ ->
                 throw DashSDKException(
-                    DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 7, // ErrorIdentityNotFound
-                    "identity not found",
+                    DashSdkError.PLATFORM_WALLET_CODE_OFFSET + platformWalletCode,
+                    "native failure $platformWalletCode",
                 )
             },
         )
-
-        val failure = runCatching {
+        return runCatching {
             credits.topUpExternalIdentityFromAddresses(1L, identityId, inputs, 2L)
         }.exceptionOrNull()
-
-        assertTrue("expected NotFound, got $failure", failure is DashSdkError.NotFound)
     }
 
     @Test
