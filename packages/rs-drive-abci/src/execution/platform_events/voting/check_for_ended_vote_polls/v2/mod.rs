@@ -47,8 +47,10 @@ where
     ///   cannot win. The winner is picked from the contenders that decode with the highest
     ///   tally among them, the earliest of them on a tie, and the lock tally is compared with
     ///   its tally. With none that decodes, the contest has no winner.
-    /// - When the state refuses the winner's document (see [`award_was_refused`]), what the
-    ///   award wrote is undone and the contest has no winner.
+    /// - When another document already holds a value of one of the winner's document's unique
+    ///   indexes, the contest has no winner and nothing is written. When the state refuses the
+    ///   winner's document as the award writes it (see [`award_was_refused`]), what the award
+    ///   wrote is undone and the contest has no winner.
     ///
     /// A contest with no winner is recorded and cleaned up like one with no contenders: its
     /// contenders' documents are removed and its prefunded balance goes to the epoch's
@@ -93,6 +95,23 @@ where
             return Ok(ContestedDocumentVotePollWinnerInfo::Locked);
         }
         let contender_id = top_contender.identity_id;
+        // A value of one of the document's unique indexes already held by another document
+        // refuses the award before it writes, by the check a document creation runs. The
+        // document is checked as stored: its owner is the identity it is awarded to.
+        if !self
+            .drive
+            .validate_moderated_document_uniqueness(
+                vote_poll.contract.as_ref(),
+                document_type,
+                &top_contender.document,
+                None,
+                transaction,
+                platform_version,
+            )?
+            .is_valid()
+        {
+            return Ok(ContestedDocumentVotePollWinnerInfo::NoWinner);
+        }
         // The award writes in one or more batches: a refusal in a later one would keep what
         // the earlier ones wrote, so the award is undone to a savepoint. A savepoint left after
         // an award that went through is inert: the block's transaction is committed or dropped
@@ -133,19 +152,21 @@ where
 }
 
 /// Whether the state refused the document awarded to a contest's winner, for what the state
-/// already holds or what the document adds to it: a unique index entry or the document's id
-/// already taken, or a sum the document would take past its range. Each follows from the
-/// state every node holds, so every node refuses the same award. Any other error, a storage
-/// failure among them, is returned as before.
+/// already holds or what the document adds to it: the document's id already taken, or a sum
+/// tree aggregate the document would take past its integer's range. Merk raises the second as
+/// its `Overflow` error when it computes the aggregates of the tree it commits; its other
+/// `Overflow` errors come from cost estimation, which an applied write does not run. Each
+/// follows from the state every node holds, so every node refuses the same award. Any other
+/// error, a storage failure among them, is returned as before.
 fn award_was_refused(error: &Error) -> bool {
     match error {
-        Error::Drive(DriveCrateError::Drive(
-            DriveError::CorruptedContractIndexes(_) | DriveError::CorruptedDocumentAlreadyExists(_),
-        )) => true,
-        Error::Drive(DriveCrateError::GroveDB(error)) => matches!(
-            error.as_ref(),
-            GroveError::Overflow(_) | GroveError::MerkError(MerkError::Overflow(_))
-        ),
+        Error::Drive(DriveCrateError::Drive(DriveError::CorruptedDocumentAlreadyExists(_))) => true,
+        Error::Drive(DriveCrateError::GroveDB(error)) => {
+            matches!(
+                error.as_ref(),
+                GroveError::MerkError(MerkError::Overflow(_))
+            )
+        }
         _ => false,
     }
 }

@@ -940,9 +940,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     contender whose stored document does not decode with the contest's document type
 ///     cannot win: the winner is the earliest of the contenders that decode with the highest
 ///     tally among them, and the lock tally is compared with its tally. With none that decodes
-///     the contest has no winner. When the state refuses the winner's document (a unique index
-///     entry or the document's id already taken, or a sum it would take past its range), what
-///     the award wrote is undone and the contest has no winner. A contest with no winner is
+///     the contest has no winner. When another document holds a value of one of the winner's
+///     document's unique indexes, the check document creation runs refuses the award before it
+///     writes; when the award finds the document's id taken or would take a sum past its range,
+///     what it wrote is undone. Either way the contest has no winner. A contest with no winner is
 ///     recorded and cleaned up like one with no contenders: its contenders' documents are
 ///     removed and its prefunded balance goes to the epoch's processing fees. The clean-up
 ///     finds a contender's document by the id its reference names
