@@ -48,6 +48,7 @@ mod identity_handle;
 mod key_limits;
 mod key_selection;
 mod loading;
+mod multiple_choice_proposal;
 mod register_from_addresses;
 mod registration;
 mod state_transition_summary;

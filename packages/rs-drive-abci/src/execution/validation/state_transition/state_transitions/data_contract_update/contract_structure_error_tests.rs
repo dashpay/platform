@@ -371,6 +371,19 @@ async fn should_refuse_an_update_adding_a_tradeable_token_unpaid_at_protocol_ver
     assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
 }
 
+/// Protocol version 15 decodes the trade mode and refuses the update as protocol version 13
+/// does: nothing can trade a token before protocol version 16.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_tradeable_token_unpaid_at_protocol_version_15() {
+    let outcome = update_fixture_contract(
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        15,
+    )
+    .await;
+
+    assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
+}
+
 /// The same update with a token that is not tradeable passes the gate: check_tx admits it.
 #[tokio::test]
 async fn should_admit_an_update_adding_a_token_that_is_not_tradeable_at_protocol_version_13() {

@@ -638,7 +638,32 @@ mod evidence_policy_tests {
                 assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
                 let version = response.version.unwrap();
                 assert_eq!(version.app_version, latest.protocol_version as u64);
-                assert_eq!(version.consensus_version, 1);
+                assert_eq!(version.consensus_version, 2);
+            }
+        }
+    }
+
+    #[test]
+    fn should_activate_tenderdash_consensus_version_2_with_protocol_version_15() {
+        let v14 = PlatformVersion::get(14).unwrap();
+        let v15 = PlatformVersion::get(15).unwrap();
+        assert_eq!(v14.consensus.tenderdash_consensus_version, 1);
+        assert_eq!(v15.consensus.tenderdash_consensus_version, 2);
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Regtest,
+            Network::Devnet,
+        ] {
+            for is_epoch_change in [false, true] {
+                let version =
+                    consensus_params_update(network, v14, v15, &epoch_info(is_epoch_change, 20))
+                        .unwrap()
+                        .expect("activation update")
+                        .version
+                        .expect("version params on activation");
+                assert_eq!(version.app_version, 15);
+                assert_eq!(version.consensus_version, 2);
             }
         }
     }
@@ -766,7 +791,11 @@ mod evidence_policy_tests {
                     .max_bytes,
                 0
             );
-            assert_eq!(params.version.unwrap().consensus_version, 1);
+            assert_eq!(
+                params.version.unwrap().consensus_version,
+                2,
+                "an emergency update must not lower the consensus version"
+            );
             let params = consensus_params_update(
                 network,
                 PlatformVersion::latest(),
@@ -776,6 +805,7 @@ mod evidence_policy_tests {
             .unwrap()
             .unwrap();
             assert!(params.evidence.is_none());
+            assert_eq!(params.version.unwrap().consensus_version, 2);
         }
     }
 

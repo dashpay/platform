@@ -9256,4 +9256,128 @@ mod tests {
             }
         }
     }
+
+    // ==========================================
+    // P2PKH WITNESS TWINS
+    // ==========================================
+
+    /// A P2PKH witness is checked by recovering the public key, which takes any S and either
+    /// header form. A third party can replace a witness's signature with its high-S twin, or with
+    /// the twin whose header names an uncompressed key, and change the transition's hash.
+    /// Protocol version 14 accepts each twin, for replay; from protocol version 15 a block
+    /// refuses each unpaid, with the error of a witness that does not verify. The witness the
+    /// key made is accepted at both.
+    mod witness_twins {
+        use super::*;
+        use dpp::tests::utils::{high_s_twin, uncompressed_header_twin};
+
+        #[tokio::test]
+        async fn should_refuse_a_p2pkh_witness_twin_from_protocol_version_15() {
+            for platform_version in [
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                PlatformVersion::latest(),
+            ] {
+                let protocol_version = platform_version.protocol_version;
+                let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default())
+                    .with_initial_protocol_version(protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut signer = TestAddressSigner::new();
+                let input_address = signer.add_p2pkh([1u8; 32]);
+                setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+                let mut inputs = BTreeMap::new();
+                inputs.insert(input_address, (1, dash_to_credits!(0.1)));
+                let mut outputs = BTreeMap::new();
+                outputs.insert(create_platform_address(2), dash_to_credits!(0.1));
+                let signed = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
+                    inputs,
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                    &signer,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("should create signed transition");
+
+                let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                    signed_v0,
+                )) = &signed
+                else {
+                    panic!("expected an address funds transfer");
+                };
+                let AddressWitness::P2pkh { signature } = &signed_v0.input_witnesses[0] else {
+                    panic!("expected a P2PKH witness");
+                };
+                let signature = signature.to_vec();
+                let with_witness_signature = |signature: Vec<u8>| {
+                    let mut malleated = signed.clone();
+                    let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                        v0,
+                    )) = &mut malleated
+                    else {
+                        panic!("expected an address funds transfer");
+                    };
+                    v0.input_witnesses[0] = AddressWitness::P2pkh {
+                        signature: BinaryData::new(signature),
+                    };
+                    malleated
+                };
+
+                // Each transition runs in its own uncommitted block transaction, so all spend
+                // the same nonce.
+                let process = |transition: &StateTransition| {
+                    let platform_state = platform.state.load();
+                    let transaction = platform.drive.grove.start_transaction();
+                    platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &[transition.serialize_to_bytes().expect("serializes")],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition")
+                        .into_execution_results()
+                };
+
+                assert_matches!(
+                    process(&signed).as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                    "protocol version {protocol_version} accepts the witness the key made"
+                );
+                for (twin_label, twin) in [
+                    ("high-S twin", high_s_twin(&signature)),
+                    (
+                        "uncompressed header twin",
+                        uncompressed_header_twin(&signature),
+                    ),
+                ] {
+                    let malleated_results = process(&with_witness_signature(twin));
+                    if protocol_version == 14 {
+                        assert_matches!(
+                            malleated_results.as_slice(),
+                            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                            "protocol version 14 accepts the {twin_label}"
+                        );
+                    } else {
+                        assert_matches!(
+                            malleated_results.as_slice(),
+                            [StateTransitionExecutionResult::UnpaidConsensusError(
+                                ConsensusError::SignatureError(
+                                    SignatureError::InvalidStateTransitionSignatureError(_)
+                                )
+                            )],
+                            "protocol version {protocol_version} refuses the {twin_label}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
