@@ -103,14 +103,16 @@ impl DocumentSchemaValidator {
     /// validator's depth check gives a too-deep value. That check, which runs before the
     /// walk, is what bounds a document's own value depth; this bound guards the walk's
     /// recursion for a caller that reaches it another way. The generation that built the
-    /// validator checks it.
+    /// validator checks it. An `enum` violation lists the first `max_enum_listed_values` of
+    /// the allowed values and counts the others (`None` lists them all).
     pub fn validate(
         &self,
         instance: &JsonValue,
         max_value_depth: Option<usize>,
+        max_enum_listed_values: Option<usize>,
     ) -> Result<Option<ConsensusError>, ProtocolError> {
         match self.generation {
-            0 => self.validate_v0(instance, max_value_depth),
+            0 => self.validate_v0(instance, max_value_depth, max_enum_listed_values),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentSchemaValidator::validate".to_string(),
                 known_versions: vec![0],

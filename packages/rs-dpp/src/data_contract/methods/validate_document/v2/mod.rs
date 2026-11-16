@@ -59,6 +59,10 @@ impl DataContract {
             .system_limits
             .max_document_value_depth
             .map(|depth| depth as usize);
+        let max_enum_listed_values = platform_version
+            .system_limits
+            .max_enum_violation_listed_values
+            .map(usize::from);
 
         Self::validate_document_properties_v1_checks(
             document_type,
@@ -66,10 +70,12 @@ impl DataContract {
             system,
             platform_version,
             |json_value| {
-                Ok(match validator.validate(json_value, max_value_depth)? {
-                    Some(error) => SimpleConsensusValidationResult::new_with_error(error),
-                    None => SimpleConsensusValidationResult::new(),
-                })
+                Ok(
+                    match validator.validate(json_value, max_value_depth, max_enum_listed_values)? {
+                        Some(error) => SimpleConsensusValidationResult::new_with_error(error),
+                        None => SimpleConsensusValidationResult::new(),
+                    },
+                )
             },
         )
     }

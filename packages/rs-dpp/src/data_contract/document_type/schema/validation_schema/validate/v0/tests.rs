@@ -20,7 +20,7 @@ fn first_violation(
     document: &JsonValue,
 ) -> Option<JsonSchemaError> {
     match validator
-        .validate(document, None)
+        .validate(document, None, None)
         .expect("expected the check to run")
     {
         None => None,
@@ -722,7 +722,7 @@ fn should_refuse_a_value_nested_past_the_value_depth_limit() {
     let document = json!({ "p": deep });
 
     let error = validator
-        .validate(&document, Some(3))
+        .validate(&document, Some(3), None)
         .expect("expected the check to run")
         .expect("expected a refusal past the limit");
     let ConsensusError::BasicError(BasicError::ValueError(value_error)) = &error else {
@@ -736,7 +736,7 @@ fn should_refuse_a_value_nested_past_the_value_depth_limit() {
     // Under no limit the same value is not refused for its depth; the walk reports its own
     // verdict instead (the innermost value is not an array).
     let unlimited = validator
-        .validate(&document, None)
+        .validate(&document, None, None)
         .expect("expected the check to run");
     assert!(
         !matches!(
@@ -765,7 +765,7 @@ fn should_not_refuse_a_value_whose_container_nesting_equals_the_limit() {
     let document = json!({ "p": [[["s"]]] });
     assert!(
         validator
-            .validate(&document, Some(3))
+            .validate(&document, Some(3), None)
             .expect("expected the check to run")
             .is_none(),
         "a value at the container limit with a scalar leaf must not be refused for depth"
@@ -773,7 +773,7 @@ fn should_not_refuse_a_value_whose_container_nesting_equals_the_limit() {
     // A fourth container exceeds the limit and is refused.
     let too_deep = json!({ "p": [[[["s"]]]] });
     let error = validator
-        .validate(&too_deep, Some(3))
+        .validate(&too_deep, Some(3), None)
         .expect("expected the check to run")
         .expect("expected a refusal past the limit");
     assert!(
@@ -887,5 +887,211 @@ fn should_compile_a_pattern_with_its_ecma_escapes_rewritten() {
             accepted,
             "{document}"
         );
+    }
+}
+
+/// An `enum` of more than [`ENUM_SCAN_LIMIT`] allowed values, of every kind a value can
+/// equal, which the walk looks values up in rather than compares them with in turn.
+fn long_enum() -> JsonValue {
+    let mut members = vec![
+        json!(null),
+        json!(true),
+        json!("a"),
+        json!(""),
+        json!(3),
+        json!(-4),
+        json!(1.5),
+        json!(-0.0),
+        json!(1e300),
+        json!(u64::MAX),
+        json!(i64::MIN),
+        json!([1, "a"]),
+        json!([]),
+        json!({ "a": 1, "b": [2.0] }),
+        json!({}),
+    ];
+    members.extend((100..120).map(|member| json!(member)));
+    JsonValue::Array(members)
+}
+
+#[test]
+fn should_admit_a_value_of_a_long_enum_as_a_comparison_with_each_value_does() {
+    let members = long_enum();
+    assert!(members.as_array().expect("a list").len() > ENUM_SCAN_LIMIT);
+    let validator = validator_of(&with_value(&json!({ "enum": members })));
+    let allowed = Value::from(members);
+    let allowed = allowed.as_array().expect("a list");
+    for value in [
+        json!(null),
+        json!(true),
+        json!(false),
+        json!("a"),
+        json!("b"),
+        json!("3"),
+        json!(3),
+        json!(3.0),
+        json!(-4),
+        json!(-4.0),
+        json!(4),
+        json!(1.5),
+        json!(1.25),
+        json!(0),
+        json!(0.0),
+        json!(-0.0),
+        json!(1e300),
+        json!(1e299),
+        json!(u64::MAX),
+        json!(u64::MAX as f64),
+        json!(i64::MIN),
+        json!(i64::MIN as f64),
+        json!(9223372036854775807_i64),
+        json!([1, "a"]),
+        json!([1.0, "a"]),
+        json!(["a", 1]),
+        json!([1]),
+        json!([]),
+        json!({ "a": 1, "b": [2] }),
+        json!({ "a": 1 }),
+        json!({}),
+        json!(105),
+        json!(105.0),
+        json!(105.5),
+        json!(120),
+    ] {
+        let compared = allowed.iter().any(|member| equal_value(&value, member));
+        let admitted = first_violation(&validator, &json!({ "value": value })).is_none();
+        assert_eq!(admitted, compared, "{value}");
+    }
+    // and as the existing validator decides, where it reads numbers alike
+    check(vec![
+        (json!({ "enum": long_enum() }), json!(3.0), true),
+        (json!({ "enum": long_enum() }), json!(-0.0), true),
+        (json!({ "enum": long_enum() }), json!([1.0, "a"]), true),
+        (
+            json!({ "enum": long_enum() }),
+            json!({ "a": 1, "b": [2] }),
+            true,
+        ),
+        (json!({ "enum": long_enum() }), json!("b"), false),
+        (json!({ "enum": long_enum() }), json!(120), false),
+    ]);
+}
+
+/// The violation `validator` reports for `document` with `max_enum_listed_values`.
+fn enum_violation(
+    validator: &DocumentSchemaValidator,
+    document: &JsonValue,
+    max_enum_listed_values: Option<usize>,
+) -> JsonSchemaError {
+    match validator
+        .validate(document, None, max_enum_listed_values)
+        .expect("expected the check to run")
+    {
+        Some(ConsensusError::BasicError(BasicError::JsonSchemaError(error))) => error,
+        other => panic!("expected a JSON Schema error, got {other:?}"),
+    }
+}
+
+#[test]
+fn should_list_the_allowed_values_that_fit_and_count_the_rest() {
+    let members: Vec<JsonValue> = (0..1000).map(|member| json!(member)).collect();
+    let validator = validator_of(&with_value(&json!({ "enum": members })));
+    let document = json!({ "value": -1 });
+    let all = enum_violation(&validator, &document, None);
+    let bounded = enum_violation(&validator, &document, Some(16));
+    // The same violation, at the same place
+    assert_eq!(bounded.keyword(), "enum");
+    assert_eq!(bounded.keyword(), all.keyword());
+    assert_eq!(bounded.instance_path(), all.instance_path());
+    assert_eq!(bounded.schema_path(), all.schema_path());
+    let listed = |error: &JsonSchemaError| {
+        error
+            .params()
+            .get_optional_array_slice("enum")
+            .expect("a list")
+            .map(<[Value]>::to_vec)
+    };
+    assert_eq!(listed(&all).map(|list| list.len()), Some(1000));
+    // The first 16 allowed values, then a count of the others
+    let bounded_list = listed(&bounded).expect("expected a list");
+    assert_eq!(bounded_list, listed(&all).expect("a list")[..16]);
+    assert_eq!(
+        bounded.error_summary(),
+        "-1 is not one of [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] or 984 more"
+    );
+}
+
+#[test]
+fn should_report_a_short_enum_violation_as_without_a_bound() {
+    let validator = validator_of(&with_value(&json!({ "enum": ["a", "b", 3] })));
+    let document = json!({ "value": "c" });
+    let bounded = enum_violation(&validator, &document, Some(16));
+    assert_eq!(bounded, enum_violation(&validator, &document, None));
+    assert_eq!(
+        bounded.error_summary(),
+        "\"c\" is not one of [\"a\",\"b\",3]"
+    );
+}
+
+#[test]
+fn should_report_the_same_first_violation_whatever_the_enum_length() {
+    // Each document breaks the schema first where the walk reaches it first; a long enum
+    // is looked up rather than scanned, and that changes neither the verdict nor which
+    // violation comes first
+    let long: Vec<JsonValue> = (0..100).map(|member| json!(format!("v{member}"))).collect();
+    let root = json!({
+        "type": "object",
+        "properties": {
+            "kind": { "type": "string", "enum": long },
+            "tags": {
+                "type": "array",
+                "items": { "type": "string", "enum": long },
+                "maxItems": 2,
+                "uniqueItems": true,
+            },
+            "count": { "type": "integer", "maximum": 5 },
+        },
+        "required": ["kind"],
+        "additionalProperties": false,
+    });
+    let validator = validator_of(&root);
+    for (document, keyword, instance_path) in [
+        (json!({ "kind": "x" }), "enum", "/kind"),
+        (json!({ "kind": 1 }), "type", "/kind"),
+        (
+            json!({ "kind": "v1", "tags": ["v1", "x"] }),
+            "enum",
+            "/tags/1",
+        ),
+        // An element outside the enum comes before too many elements
+        (
+            json!({ "kind": "v1", "tags": ["x", "v1", "v2"] }),
+            "enum",
+            "/tags/0",
+        ),
+        (
+            json!({ "kind": "v1", "tags": ["v1", "v2", "v3"] }),
+            "maxItems",
+            "/tags",
+        ),
+        (
+            json!({ "kind": "v1", "tags": ["v1", "v1"] }),
+            "uniqueItems",
+            "/tags",
+        ),
+        (json!({ "count": 6 }), "maximum", "/count"),
+        (
+            json!({ "kind": "v1", "other": 1 }),
+            "additionalProperties",
+            "",
+        ),
+    ] {
+        let violation = first_violation(&validator, &document).expect("expected a violation");
+        assert_eq!(
+            (violation.keyword(), violation.instance_path()),
+            (keyword, instance_path),
+            "{document}"
+        );
+        assert!(!existing_validator_accepts(&root, &document), "{document}");
     }
 }

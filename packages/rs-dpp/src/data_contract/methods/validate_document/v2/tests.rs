@@ -1,5 +1,6 @@
 //! Generation 2 of document validation, at protocol version 15 against generation 1 at 14.
 
+use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::codes::ErrorWithCode;
 use crate::consensus::ConsensusError;
@@ -949,5 +950,91 @@ fn should_refuse_every_document_of_a_type_holding_a_pattern_that_does_not_parse(
             ))] if message.contains("compiles no `pattern`")
         ),
         "{errors:?}"
+    );
+}
+
+/// The document type `item` with a typed array `list` whose elements take one of `members`
+/// integers, and a document whose `list` holds `elements` integers none of them takes.
+fn enum_list_contract_and_document(members: u64, elements: u64) -> (DataContract, Value) {
+    let allowed: Vec<Value> = (0..members).map(Value::U64).collect();
+    let contract = item_contract(platform_value!({
+        "list": {
+            "type": "array",
+            "items": { "type": "integer", "enum": allowed },
+            "maxItems": elements,
+            "position": 0,
+        },
+    }));
+    let list: Vec<Value> = (0..elements)
+        .map(|element| Value::U64(members + element))
+        .collect();
+    (contract, platform_value!({ "list": list }))
+}
+
+/// The JSON Schema error `error` is.
+fn json_schema_error(error: &ConsensusError) -> &JsonSchemaError {
+    match error {
+        ConsensusError::BasicError(BasicError::JsonSchemaError(error)) => error,
+        other => panic!("expected a JSON Schema error, got {other:?}"),
+    }
+}
+
+#[test]
+fn should_report_one_small_enum_violation_for_a_document_breaking_a_long_enum_many_times() {
+    use crate::serialization::{
+        PlatformDeserializableUntrusted, PlatformSerializableWithPlatformVersion,
+    };
+    let latest = PlatformVersion::latest();
+    let (contract, document) = enum_list_contract_and_document(300, 300);
+    let errors = document_errors(&contract, document, latest);
+    // The first violation only, the one consensus reports
+    assert_eq!(errors.len(), 1);
+    let error = json_schema_error(&errors[0]);
+    assert_eq!(error.keyword(), "enum");
+    assert_eq!(error.instance_path(), "/list/0");
+    let listed = error
+        .params()
+        .get_optional_array_slice("enum")
+        .expect("expected params")
+        .expect("expected a list")
+        .len();
+    assert_eq!(
+        Some(listed),
+        latest
+            .system_limits
+            .max_enum_violation_listed_values
+            .map(usize::from)
+    );
+    // A client can read the error back
+    let bytes = errors[0]
+        .serialize_to_bytes_with_platform_version(latest)
+        .expect("expected the error to serialize");
+    assert_eq!(
+        ConsensusError::deserialize_from_bytes_untrusted(&bytes).expect("expected it to read back"),
+        errors[0]
+    );
+}
+
+#[test]
+fn should_report_an_enum_violation_at_protocol_version_14_as_before() {
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let (contract, document) = enum_list_contract_and_document(300, 2);
+    let errors = document_errors(&contract, document.clone(), protocol_version_14);
+    let first = json_schema_error(errors.first().expect("expected an error"));
+    assert_eq!(first.keyword(), "enum");
+    // Every allowed value listed, as the JSON Schema validator lists them
+    assert_eq!(
+        first
+            .params()
+            .get_optional_array_slice("enum")
+            .expect("expected params")
+            .map(<[Value]>::len),
+        Some(300)
+    );
+    // with the code protocol version 15 reports
+    let latest = document_errors(&contract, document, PlatformVersion::latest());
+    assert_eq!(
+        latest.first().map(ErrorWithCode::code),
+        errors.first().map(ErrorWithCode::code)
     );
 }

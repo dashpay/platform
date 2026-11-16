@@ -47,7 +47,7 @@ use regex::Regex;
 use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::net::IpAddr;
@@ -64,6 +64,11 @@ mod tests;
 /// Schema validator's numeric equality; it compares a longer array's elements by their
 /// JSON value instead.
 const UNIQUE_ITEMS_PAIRWISE_LIMIT: usize = 15;
+
+/// The `enum` length up to which the walk compares a value with each allowed value in turn;
+/// it looks a value up among a longer enum's values by [`MemberKey`] instead, which reaches
+/// the same verdict.
+const ENUM_SCAN_LIMIT: usize = 16;
 
 /// A date's digits, as the JSON Schema validator requires them besides the date parse,
 /// which ignores missing zero padding.
@@ -202,8 +207,10 @@ impl DocumentSchemaValidator {
         &self,
         instance: &JsonValue,
         max_value_depth: Option<usize>,
+        max_enum_listed_values: Option<usize>,
     ) -> Result<Option<ConsensusError>, ProtocolError> {
         let mut walk = Walk::new(self, false, max_value_depth);
+        walk.max_enum_listed_values = max_enum_listed_values;
         walk.node(&self.schema.root, instance, 0, 0)?;
         if let Some(depth) = *walk.too_deep.borrow() {
             // Guarded only when a limit is set, so one is
@@ -260,6 +267,13 @@ struct Walk<'v, 'i> {
     /// The value-nesting depth at which the walk first went past `max_value_depth`, shared
     /// with the walks a `contains` spawns so one going too deep refuses the whole value.
     too_deep: Rc<RefCell<Option<usize>>>,
+    /// The allowed values of each `enum` longer than [`ENUM_SCAN_LIMIT`] the walk has met, by
+    /// the address of the schema's list, as the keys it looks a value up by: built the first
+    /// time the walk checks a value against the list, and shared with the walks a `contains`
+    /// spawns, so each value costs one lookup however many values the list holds.
+    enum_members: Rc<RefCell<HashMap<usize, HashSet<MemberKey>>>>,
+    /// The most allowed values an `enum` violation lists, or `None` for all of them.
+    max_enum_listed_values: Option<usize>,
     /// Ties the walk to the checked value's lifetime `'i`, so the borrow checker refuses a
     /// value that does not outlive the walk: every address in `held` stays valid while it is
     /// held, and a temporary can never be checked against the cache.
@@ -291,6 +305,8 @@ impl<'v, 'i> Walk<'v, 'i> {
             held: Rc::new(RefCell::new(HashSet::new())),
             max_value_depth,
             too_deep: Rc::new(RefCell::new(None)),
+            enum_members: Rc::new(RefCell::new(HashMap::new())),
+            max_enum_listed_values: None,
             instance: PhantomData,
         }
     }
@@ -310,6 +326,8 @@ impl<'v, 'i> Walk<'v, 'i> {
             held: Rc::clone(&self.held),
             max_value_depth: self.max_value_depth,
             too_deep: Rc::clone(&self.too_deep),
+            enum_members: Rc::clone(&self.enum_members),
+            max_enum_listed_values: None,
             instance: PhantomData,
         }
     }
@@ -477,10 +495,16 @@ impl<'v, 'i> Walk<'v, 'i> {
             return Ok(());
         }
         if let Some(values) = &node.enum_values {
-            if !values.iter().any(|value| equal_value(instance, value)) {
+            if !self.enum_admits(values, instance) {
+                let max_listed = self.max_enum_listed_values;
                 self.fail("enum", "", || {
-                    let options = json_of_values(values);
-                    let message = format!("{instance} is not one of {options}");
+                    let (options, unlisted) = listed_values(values, max_listed);
+                    let message = match unlisted {
+                        0 => format!("{instance} is not one of {options}"),
+                        unlisted => {
+                            format!("{instance} is not one of {options} or {unlisted} more")
+                        }
+                    };
                     (json!({ "enum": options }), message)
                 });
             }
@@ -544,6 +568,23 @@ impl<'v, 'i> Walk<'v, 'i> {
             self.byte_array(instance);
         }
         Ok(())
+    }
+
+    /// Whether `instance` equals one of `values`, an `enum`'s allowed values, as
+    /// [`equal_value`] compares them: by a scan of a short list, and by a lookup of the
+    /// value's [`MemberKey`] among a longer list's, whose keys are built once per walk.
+    fn enum_admits(&self, values: &'v [Value], instance: &JsonValue) -> bool {
+        if values.len() <= ENUM_SCAN_LIMIT {
+            return values.iter().any(|value| equal_value(instance, value));
+        }
+        let Some(key) = MemberKey::of_json(instance) else {
+            return false;
+        };
+        self.enum_members
+            .borrow_mut()
+            .entry(values.as_ptr() as usize)
+            .or_insert_with(|| values.iter().filter_map(MemberKey::of_value).collect())
+            .contains(&key)
     }
 
     fn object(
@@ -1285,4 +1326,92 @@ fn json_of_value(value: &Value) -> JsonValue {
 
 fn json_of_values(values: &[Value]) -> JsonValue {
     JsonValue::Array(values.iter().map(json_of_value).collect())
+}
+
+/// `values`, an `enum`'s allowed values, as JSON for a violation to list: the first
+/// `max_listed` of them, or all of them when there is no bound, and how many are left out.
+fn listed_values(values: &[Value], max_listed: Option<usize>) -> (JsonValue, usize) {
+    let listed = max_listed.map_or(values.len(), |max_listed| values.len().min(max_listed));
+    (json_of_values(&values[..listed]), values.len() - listed)
+}
+
+/// A value as [`equal_value`] compares it with an `enum`'s allowed value: two values are
+/// equal exactly when their keys are. A number is keyed by its value whatever its reading
+/// (an integral float as the integer it is), an array element by element, and an object
+/// entry by entry in the order it holds them, as [`equal_value`] pairs them.
+#[derive(PartialEq, Eq, Hash)]
+enum MemberKey {
+    Null,
+    Bool(bool),
+    /// A number with an integral value within `i128`, whatever its reading.
+    Integer(i128),
+    /// Any other number, by its f64 bits.
+    Float(u64),
+    Text(String),
+    Array(Vec<MemberKey>),
+    Object(Vec<(String, MemberKey)>),
+}
+
+impl MemberKey {
+    /// The key of a number: `None` for NaN, which equals no number.
+    fn of_num(number: Num) -> Option<Self> {
+        Some(match number {
+            Num::U(number) => MemberKey::Integer(i128::from(number)),
+            Num::I(number) => MemberKey::Integer(i128::from(number)),
+            Num::F(number) if number.is_nan() => return None,
+            // Exact: an integral f64 below 2^127 in magnitude is an `i128`
+            Num::F(number) if number.fract() == 0. && number.abs() < i128::MAX as f64 => {
+                MemberKey::Integer(number as i128)
+            }
+            // -0.0 is integral, so a float keyed by its bits is never zero
+            Num::F(number) => MemberKey::Float(number.to_bits()),
+        })
+    }
+
+    /// The key of a value of the document: `None` only for one holding a number that
+    /// equals no number.
+    fn of_json(value: &JsonValue) -> Option<Self> {
+        Some(match value {
+            JsonValue::Null => MemberKey::Null,
+            JsonValue::Bool(value) => MemberKey::Bool(*value),
+            JsonValue::Number(number) => return MemberKey::of_num(Num::of_json(number)),
+            JsonValue::String(value) => MemberKey::Text(value.clone()),
+            JsonValue::Array(values) => MemberKey::Array(
+                values
+                    .iter()
+                    .map(MemberKey::of_json)
+                    .collect::<Option<_>>()?,
+            ),
+            JsonValue::Object(map) => MemberKey::Object(
+                map.iter()
+                    .map(|(name, value)| Some((name.clone(), MemberKey::of_json(value)?)))
+                    .collect::<Option<_>>()?,
+            ),
+        })
+    }
+
+    /// The key of an `enum`'s allowed value: `None` for one no value of the document
+    /// equals, such as bytes or a map with a key that is not text.
+    fn of_value(value: &Value) -> Option<Self> {
+        Some(match value {
+            Value::Null => MemberKey::Null,
+            Value::Bool(value) => MemberKey::Bool(*value),
+            Value::Text(value) => MemberKey::Text(value.clone()),
+            Value::Array(values) => MemberKey::Array(
+                values
+                    .iter()
+                    .map(MemberKey::of_value)
+                    .collect::<Option<_>>()?,
+            ),
+            Value::Map(entries) => MemberKey::Object(
+                entries
+                    .iter()
+                    .map(|(name, value)| {
+                        Some((name.as_text()?.to_string(), MemberKey::of_value(value)?))
+                    })
+                    .collect::<Option<_>>()?,
+            ),
+            value => return MemberKey::of_num(Num::of_value(value)?),
+        })
+    }
 }

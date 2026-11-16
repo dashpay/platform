@@ -7,6 +7,7 @@ use crate::version::system_limits::SystemLimits;
 /// the bare asset-unlock transaction fee and too low a minimum for a Core `TxOut`.
 pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_document_revisions_erased_per_transition: None,
+    max_enum_violation_listed_values: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
