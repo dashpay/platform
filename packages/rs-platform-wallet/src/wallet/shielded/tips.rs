@@ -175,6 +175,12 @@ impl PlatformWallet {
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
+        // The keys this handle holds outlive a Clear, which drops the
+        // registration without touching them. Preparing from them would bind
+        // the wallet again on its own, and restore whatever rows the host has
+        // not wiped yet. The wallet must have been bound on this coordinator
+        // with no Clear since.
+        self.ensure_shielded_bound_on(coordinator)?;
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);

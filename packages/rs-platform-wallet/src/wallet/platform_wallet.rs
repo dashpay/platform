@@ -1341,13 +1341,25 @@ impl PlatformWallet {
         *self.shielded_keys.write().await = Some(account_views);
         // The bind holds the coordinator's operation admission, so no Clear
         // runs between this read of its generation and the bind's return.
-        *self
+        let previous = self
             .shielded_binding
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ShieldedBinding {
-            coordinator: Arc::downgrade(coordinator),
-            clear_generation: coordinator.clear_generation(),
-        });
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(ShieldedBinding {
+                coordinator: Arc::downgrade(coordinator),
+                clear_generation: coordinator.clear_generation(),
+            });
+        // An account prepared on another coordinator stands or falls with
+        // that coordinator, which a Clear of this one never reaches: bound
+        // here now, the wallet prepares its identity accounts again.
+        if previous.is_some_and(|previous| {
+            !std::sync::Weak::ptr_eq(&previous.coordinator, &Arc::downgrade(coordinator))
+        }) {
+            self.prepared_tip_accounts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+        }
 
         // Idempotent re-bind fast path: hosts re-run bind liberally
         // (launch fires it twice — a direct call plus the wallet-set
@@ -1581,6 +1593,30 @@ impl PlatformWallet {
                 Ok(())
             }
             _ => Err(PlatformWalletError::ShieldedNotBound),
+        }
+    }
+
+    /// `ShieldedNotBound` unless this handle's keys were installed on
+    /// `coordinator` with no Clear of it since. Called under
+    /// `shielded_config_lock` by a caller holding `coordinator`'s operation
+    /// admission, so neither a bind nor a Clear changes the answer while the
+    /// caller acts on it.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn ensure_shielded_bound_on(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> Result<(), PlatformWalletError> {
+        let stands = self.shielded_binding().is_some_and(|binding| {
+            binding
+                .coordinator
+                .upgrade()
+                .is_some_and(|bound| Arc::ptr_eq(&bound, coordinator))
+                && coordinator.clear_generation() == binding.clear_generation
+        });
+        if stands {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::ShieldedNotBound)
         }
     }
 

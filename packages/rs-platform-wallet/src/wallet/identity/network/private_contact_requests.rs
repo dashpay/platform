@@ -12769,8 +12769,12 @@ mod tests {
         let db_path = dir.path().join("tree.sqlite");
         let coordinator_at = |db_path: std::path::PathBuf| {
             let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open the store");
+            let sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk");
             Arc::new(NetworkShieldedCoordinator::new(
-                Arc::new(dash_sdk::Sdk::new_mock()),
+                Arc::new(sdk),
                 Network::Testnet,
                 db_path,
                 store,

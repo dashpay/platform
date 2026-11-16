@@ -171,8 +171,14 @@ fn coordinator_for(dir: &std::path::Path, network: Network) -> Arc<NetworkShield
     std::fs::create_dir_all(dir).expect("create temp dir");
     let db_path = dir.join("tree.sqlite");
     let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+    // The coordinator scans through its SDK, so the SDK is on the network
+    // the coordinator is labelled with, as the manager builds it.
+    let sdk = dash_sdk::SdkBuilder::new_mock()
+        .with_network(network)
+        .build()
+        .expect("mock sdk");
     Arc::new(NetworkShieldedCoordinator::new(
-        Arc::new(dash_sdk::Sdk::new_mock()),
+        Arc::new(sdk),
         network,
         db_path,
         store,
@@ -2162,6 +2168,53 @@ async fn should_refuse_a_bind_on_a_coordinator_of_another_network() {
     assert_eq!(*persister.load_calls.lock().unwrap(), 0);
 }
 
+/// The coordinator scans through its own SDK, and `new` takes that SDK and
+/// the network label separately. A coordinator labelled with the wallet's
+/// network over an SDK of another one would scan the wrong chain, so the
+/// label alone does not admit a bind.
+#[tokio::test]
+async fn should_refuse_a_bind_on_a_coordinator_whose_sdk_is_of_another_network() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let dir = temp_dir("bind_other_sdk_network");
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let db_path = dir.join("tree.sqlite");
+    let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+    let mainnet_sdk = dash_sdk::SdkBuilder::new_mock()
+        .with_network(Network::Mainnet)
+        .build()
+        .expect("mock sdk");
+    let mislabelled = Arc::new(NetworkShieldedCoordinator::new(
+        Arc::new(mainnet_sdk),
+        wallet.network(),
+        db_path,
+        store,
+    ));
+
+    let seeded = wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &mislabelled)
+        .await;
+    assert!(
+        matches!(seeded, Err(crate::PlatformWalletError::InvalidParameter(_))),
+        "{seeded:?}"
+    );
+    let seedless = wallet
+        .bind_shielded_from_persisted(&[0], &mislabelled)
+        .await;
+    assert!(
+        matches!(
+            seedless,
+            Err(crate::PlatformWalletError::InvalidParameter(_))
+        ),
+        "{seedless:?}"
+    );
+
+    assert!(wallet.shielded_account_indices().await.is_empty());
+    assert!(mislabelled.registered_subwallets().await.is_empty());
+    assert!(persister.stored.lock().unwrap().is_empty());
+    assert_eq!(*persister.load_calls.lock().unwrap(), 0);
+}
+
 /// The seed proof accepts only the identity's ECDSA MASTER authentication
 /// key. The derived key's hash on a hash-only key, or the derived key itself
 /// below MASTER, says nothing about the index the identity was created at.
@@ -2408,4 +2461,67 @@ async fn should_drop_prepared_accounts_when_the_wallet_is_removed() {
     let teardown = wallet.generation().teardown_guard().await;
     finish_removal(&wallet, &coordinator, teardown).await;
     assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+}
+
+/// A Clear drops the wallet's registration but not the keys its handle
+/// holds. A preparation made from those keys would bind the wallet again on
+/// its own, and restore whatever rows the host has not wiped yet, so it is
+/// refused until the wallet is bound again.
+#[tokio::test]
+async fn should_refuse_a_tip_preparation_after_a_clear_until_the_wallet_is_bound_again() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_after_clear").await;
+    coordinator.clear().await.unwrap();
+
+    let refused = wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{refused:?}"
+    );
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+    assert!(
+        coordinator.registered_subwallets().await.is_empty(),
+        "the refused preparation registered nothing"
+    );
+
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .expect("prepared once the wallet is bound again");
+}
+
+/// A preparation stands or falls with the coordinator it was made on. Bound
+/// on another coordinator, the wallet is no longer covered by a Clear of the
+/// first one, so its prepared accounts are dropped and prepared again.
+#[tokio::test]
+async fn should_drop_prepared_accounts_when_the_wallet_is_bound_on_another_coordinator() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_first_coordinator").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert!(wallet
+        .prepared_shielded_identity_account(&id)
+        .await
+        .is_some());
+
+    let other = coordinator_at(&temp_dir("tips_second_coordinator"));
+    wallet.bind_shielded(&seed, &[0], &other).await.unwrap();
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+
+    // A rebind on the same coordinator keeps what was prepared on it.
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &other)
+        .await
+        .unwrap();
+    wallet.bind_shielded(&seed, &[0], &other).await.unwrap();
+    assert!(wallet
+        .prepared_shielded_identity_account(&id)
+        .await
+        .is_some());
 }

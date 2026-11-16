@@ -451,14 +451,18 @@ impl NetworkShieldedCoordinator {
     /// viewing keys for the wallet's network: registered on this coordinator
     /// they would be scanned for on another network's chain, so the bind
     /// would succeed and the wallet would never see a note.
+    ///
+    /// Both the network this coordinator is labelled with and the network of
+    /// the SDK it scans through must be the wallet's. `new` takes the two
+    /// separately, so a label alone does not say which chain is scanned.
     pub(crate) fn ensure_network(
         &self,
         wallet_network: dashcore::Network,
     ) -> Result<(), PlatformWalletError> {
-        if self.network != wallet_network {
+        if self.network != wallet_network || self.sdk.network != wallet_network {
             return Err(PlatformWalletError::InvalidParameter(format!(
-                "the shielded coordinator is for {:?}, this wallet for {:?}",
-                self.network, wallet_network
+                "the shielded coordinator is for {:?} (its SDK for {:?}), this wallet for {:?}",
+                self.network, self.sdk.network, wallet_network
             )));
         }
         Ok(())
