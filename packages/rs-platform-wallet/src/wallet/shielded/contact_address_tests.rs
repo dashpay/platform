@@ -161,13 +161,11 @@ async fn should_give_a_contact_the_address_of_the_prepared_identity_account() {
 #[tokio::test]
 async fn should_send_no_address_until_the_identity_account_is_prepared() {
     let (wallet, seed, id, coordinator) = fixture("contact_address_unprepared", 15).await;
-    // The account's keys are bound, but nothing in this session proved with the seed
-    // that the identity holds the slot the account belongs to.
+    // The account's keys are bound, as the bind adds the account of an identity the
+    // wallet holds, but nothing in this session proved with the seed that the identity
+    // holds the slot the account belongs to.
     let account = shielded_identity_account_index(IDENTITY_INDEX).unwrap();
-    wallet
-        .bind_shielded(&seed[..], &[0, account], &coordinator)
-        .await
-        .unwrap();
+    assert!(wallet.shielded_account_indices().await.contains(&account));
     assert_eq!(
         address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE).await,
         None
