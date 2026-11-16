@@ -13,6 +13,8 @@ mod should_use_creator_id;
 mod system_properties;
 mod try_from_schema;
 
+#[cfg(feature = "validation")]
+pub(in crate::data_contract) use try_from_schema::first_repeated_doctype_key;
 #[cfg(all(test, feature = "validation"))]
 pub(in crate::data_contract) use try_from_schema::DOCUMENT_SCHEMA_ROOT_KEYS;
 pub use try_from_schema::{

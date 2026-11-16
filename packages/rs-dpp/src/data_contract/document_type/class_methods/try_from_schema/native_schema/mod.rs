@@ -113,21 +113,54 @@ pub(super) fn refuse_a_repeated_doctype_key(
     name: &str,
     read: &mut u64,
 ) -> Result<(), ProtocolError> {
-    refuse_a_repeated_key_within(schema, name, &mut String::new(), read)?;
-    for (definition, value) in schema_defs.into_iter().flatten() {
-        refuse_a_repeated_key_within(value, name, &mut format!("$defs.{definition}"), read)?;
+    match first_repeated_doctype_key(schema, schema_defs, read) {
+        None => Ok(()),
+        Some((key, path)) => {
+            let place = if path.is_empty() {
+                "at its root".to_string()
+            } else {
+                format!("at `{path}`")
+            };
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" declares `{key}` more than once {place}: \
+                     the document type parser may read its first entry where the \
+                     schema checks read its last"
+                )),
+            ))
+        }
     }
-    Ok(())
 }
 
-/// [`refuse_a_repeated_doctype_key`] over `value`, found at `path` within the schema (empty
-/// at its root), and everything it holds.
-fn refuse_a_repeated_key_within(
+/// The first key an object of the document `schema`, or of the contract's `schema_defs`,
+/// names more than once, with the path of that object (empty at the schema's root,
+/// `$defs.<name>...` in a definition), walking as [`refuse_a_repeated_doctype_key`] does and
+/// counting in `read` each value it reads. `None` when no object repeats a key.
+pub(in crate::data_contract) fn first_repeated_doctype_key(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    read: &mut u64,
+) -> Option<(String, String)> {
+    if let Some(repeat) = first_repeated_key_within(schema, &mut String::new(), read) {
+        return Some(repeat);
+    }
+    for (definition, value) in schema_defs.into_iter().flatten() {
+        if let Some(repeat) =
+            first_repeated_key_within(value, &mut format!("$defs.{definition}"), read)
+        {
+            return Some(repeat);
+        }
+    }
+    None
+}
+
+/// [`first_repeated_doctype_key`] over `value`, found at `path` within the schema (empty at
+/// its root), and everything it holds.
+fn first_repeated_key_within(
     value: &Value,
-    name: &str,
     path: &mut String,
     read: &mut u64,
-) -> Result<(), ProtocolError> {
+) -> Option<(String, String)> {
     *read = read.saturating_add(1);
     match value {
         Value::Map(map) => {
@@ -140,39 +173,34 @@ fn refuse_a_repeated_key_within(
                     continue;
                 };
                 if !declared.insert(key) {
-                    let place = if path.is_empty() {
-                        "at its root".to_string()
-                    } else {
-                        format!("at `{path}`")
-                    };
-                    return Err(consensus_or_protocol_data_contract_error(
-                        DataContractError::InvalidContractStructure(format!(
-                            "document type \"{name}\" declares `{key}` more than once {place}: \
-                             the document type parser may read its first entry where the \
-                             schema checks read its last"
-                        )),
-                    ));
+                    return Some((key.to_string(), path.clone()));
                 }
                 let len = path.len();
                 if !path.is_empty() {
                     path.push('.');
                 }
                 path.push_str(key);
-                refuse_a_repeated_key_within(entry, name, path, read)?;
+                let repeat = first_repeated_key_within(entry, path, read);
                 path.truncate(len);
+                if repeat.is_some() {
+                    return repeat;
+                }
             }
-            Ok(())
+            None
         }
         Value::Array(items) => {
             for (index, item) in items.iter().enumerate() {
                 let len = path.len();
                 path.push_str(&format!("[{index}]"));
-                refuse_a_repeated_key_within(item, name, path, read)?;
+                let repeat = first_repeated_key_within(item, path, read);
                 path.truncate(len);
+                if repeat.is_some() {
+                    return repeat;
+                }
             }
-            Ok(())
+            None
         }
-        _ => Ok(()),
+        _ => None,
     }
 }
 

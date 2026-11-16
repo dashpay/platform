@@ -179,8 +179,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    refuses a document type schema, or the contract's `$defs`, naming a key
 ///    twice in any object it holds, at its root or below it, as sent, whose
 ///    first entry the parser may read where every check reads the last
-///    (`InvalidContractStructure`; a stored contract with one, which no JSON
-///    could have written, must drop it to be updated),
+///    (`InvalidContractStructure`), and refuses an update of a contract stored
+///    with one, which no JSON could have written (`DocumentTypeUpdateError`,
+///    `validate_update` 2 of `CONTRACT_VERSIONS_V7`),
 ///    refuses a contested index whose contest its index values do not decide
 ///    (`InvalidContractStructure`, note 19) or that is keyed by a property path or a
 ///    system property (`InvalidContractStructure`, note 21),

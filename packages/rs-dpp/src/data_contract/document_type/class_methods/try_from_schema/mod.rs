@@ -63,6 +63,8 @@ mod v2;
 mod v3;
 mod v4;
 
+#[cfg(feature = "validation")]
+pub(in crate::data_contract) use native_schema::first_repeated_doctype_key;
 #[cfg(all(test, feature = "validation"))]
 pub(in crate::data_contract) use native_schema::DOCUMENT_SCHEMA_ROOT_KEYS;
 pub(in crate::data_contract) use v3::{
