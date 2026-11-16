@@ -272,7 +272,7 @@ struct Walk<'v, 'i> {
     /// time the walk checks a value against the list, and shared with the walks a `contains`
     /// spawns, so each value costs one lookup however many values the list holds. Each list's
     /// keys are held with the deepest nesting any of them has.
-    enum_members: Rc<RefCell<HashMap<usize, (HashSet<MemberKey>, usize)>>>,
+    enum_members: Rc<RefCell<HashMap<usize, EnumMembers>>>,
     /// How much of an `enum`'s allowed values a violation lists, or `None` for all of them.
     enum_listing: Option<EnumViolationListing>,
     /// Ties the walk to the checked value's lifetime `'i`, so the borrow checker refuses a
@@ -1352,6 +1352,9 @@ fn listed_values(values: &[Value], listing: Option<EnumViolationListing>) -> (Js
     let unlisted = values.len() - listed.len();
     (JsonValue::Array(listed), unlisted)
 }
+
+/// The keys of an `enum`'s allowed values, with the deepest nesting any of them has.
+type EnumMembers = (HashSet<MemberKey>, usize);
 
 /// A value as [`equal_value`] compares it with an `enum`'s allowed value: two values are
 /// equal exactly when their keys are. A number is keyed by its value whatever its reading
