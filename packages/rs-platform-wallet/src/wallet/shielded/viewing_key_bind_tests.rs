@@ -528,6 +528,7 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
         )
         .expect("persist pending reservation");
@@ -1080,6 +1081,7 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
         )
         .unwrap();
@@ -1099,4 +1101,64 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
             .len(),
         1
     );
+}
+
+/// `shielded_fresh_address` / `is_own_shielded_address` report "not
+/// bound" before a bind and answer over the bound account's keys after:
+/// a fresh address is 43 bytes, differs from the default, and is own;
+/// another seed's address is not.
+#[tokio::test]
+async fn fresh_address_and_own_check_follow_the_bound_account() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+
+    assert_eq!(
+        wallet
+            .shielded_fresh_address(0)
+            .await
+            .expect("no CSPRNG failure"),
+        None,
+        "unbound wallet has no fresh address"
+    );
+    assert_eq!(wallet.is_own_shielded_address(0, &[0u8; 43]).await, None);
+
+    let coordinator = coordinator_at(&temp_dir("fresh_address"));
+    wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+
+    let default = wallet.shielded_default_address(0).await.expect("bound");
+    let fresh = wallet
+        .shielded_fresh_address(0)
+        .await
+        .expect("no CSPRNG failure")
+        .expect("bound account has a fresh address");
+    assert_ne!(fresh, default, "fresh address is not the default");
+    assert_eq!(
+        wallet
+            .shielded_fresh_address(1)
+            .await
+            .expect("no CSPRNG failure"),
+        None,
+        "unbound account has no fresh address"
+    );
+
+    assert_eq!(wallet.is_own_shielded_address(0, &fresh).await, Some(true));
+    assert_eq!(
+        wallet.is_own_shielded_address(0, &default).await,
+        Some(true)
+    );
+    let foreign = OrchardKeySet::from_seed(&[0x24u8; 64], Network::Testnet, 0)
+        .expect("derivation succeeds")
+        .default_address
+        .to_raw_address_bytes();
+    assert_eq!(
+        wallet.is_own_shielded_address(0, &foreign).await,
+        Some(false)
+    );
+    assert_eq!(
+        wallet.is_own_shielded_address(0, &fresh[..42]).await,
+        Some(false)
+    );
+    assert_eq!(wallet.is_own_shielded_address(1, &fresh).await, None);
 }

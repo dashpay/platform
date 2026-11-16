@@ -112,17 +112,61 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
+    use dpp::dashcore::consensus::serialize;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-    use dpp::dashcore::{Transaction, TxIn, Txid};
+    use dpp::dashcore::{BlockHash, ScriptBuf, Transaction, TxIn, Txid};
+    use dpp::dashcore_rpc::json::GetRawTransactionResult;
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use dpp::tests::fixtures::instant_asset_lock_proof_transaction_fixture_with_inputs;
 
     fn dummy_txid(seed: u8) -> Txid {
         Txid::from_raw_hash(dpp::dashcore::hashes::sha256d::Hash::from_byte_array(
             [seed; 32],
         ))
+    }
+
+    /// A chain proof for output 0 of `transaction`, chain locked at height 42, and a Core that
+    /// reports `transaction` mined at height 40.
+    fn chain_proof_of_mined_transaction(
+        transaction: &Transaction,
+    ) -> (AssetLockProof, MockCoreRPCLike) {
+        let mut out_point_bytes = [0u8; 36];
+        out_point_bytes[..32].copy_from_slice(transaction.txid().as_raw_hash().as_byte_array());
+        out_point_bytes[32..36].copy_from_slice(&0u32.to_le_bytes());
+        let asset_lock_proof = AssetLockProof::Chain(ChainAssetLockProof::new(42, out_point_bytes));
+
+        let transaction = transaction.clone();
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc
+            .expect_get_optional_transaction_extended_info()
+            .returning(move |_txid| {
+                Ok(Some(GetRawTransactionResult {
+                    in_active_chain: true,
+                    hex: serialize(&transaction),
+                    txid: transaction.txid(),
+                    size: 0,
+                    version: transaction.version as u32,
+                    tx_type: 8,
+                    locktime: transaction.lock_time,
+                    vin: vec![],
+                    vout: vec![],
+                    extra_payload_size: None,
+                    extra_payload: None,
+                    blockhash: Some(BlockHash::all_zeros()),
+                    confirmations: Some(3),
+                    time: Some(0),
+                    blocktime: Some(0),
+                    height: Some(40),
+                    instantlock: false,
+                    instantlock_internal: false,
+                    chainlock: true,
+                }))
+            });
+
+        (asset_lock_proof, core_rpc)
     }
 
     #[test]
@@ -213,5 +257,88 @@ mod tests {
             "expected IdentityAssetLockTransactionIsNotFoundError, got: {:?}",
             result.errors
         );
+    }
+
+    /// A chain proof carries only an outpoint and a height, so the input cap that keeps an
+    /// instant proof's state transition small does not hold its transaction from protocol 15:
+    /// a mined asset lock of more than 100 inputs, which no instant proof can redeem, is
+    /// redeemable with a chain proof.
+    #[test]
+    fn should_return_the_credit_output_of_a_chain_proof_over_the_input_cap() {
+        let transaction = instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, 101);
+        let (asset_lock_proof, core_rpc) = chain_proof_of_mined_transaction(&transaction);
+
+        let result = fetch_asset_lock_transaction_output_sync_v0(
+            &core_rpc,
+            &asset_lock_proof,
+            PlatformVersion::latest(),
+        )
+        .expect("should not return Err");
+
+        assert!(result.is_valid(), "got {:?}", result.errors);
+        let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+            &transaction.special_transaction_payload
+        else {
+            panic!("the fixture is an asset lock");
+        };
+        assert_eq!(result.data.as_ref(), payload.credit_outputs.first());
+    }
+
+    /// Dropping the cap leaves the rest of the transaction's structure checked: a chain proof
+    /// over the cap whose credit output is not P2PKH is still refused for that.
+    #[test]
+    fn should_refuse_a_chain_proof_over_the_input_cap_whose_credit_output_is_not_p2pkh() {
+        let mut transaction =
+            instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, 101);
+        let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+            &mut transaction.special_transaction_payload
+        else {
+            panic!("the fixture is an asset lock");
+        };
+        payload.credit_outputs[0].script_pubkey = ScriptBuf::new_op_return(&[]);
+        let (asset_lock_proof, core_rpc) = chain_proof_of_mined_transaction(&transaction);
+
+        let result = fetch_asset_lock_transaction_output_sync_v0(
+            &core_rpc,
+            &asset_lock_proof,
+            PlatformVersion::latest(),
+        )
+        .expect("should not return Err");
+
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidIdentityAssetLockTransactionOutputError(_)
+                )]
+            ),
+            "got {:?}",
+            result.errors
+        );
+    }
+
+    /// Protocol 14 and earlier keep refusing such a chain proof, so the blocks committed under
+    /// them replay with the same verdicts.
+    #[test]
+    fn should_refuse_a_chain_proof_over_the_input_cap_at_protocol_14() {
+        let transaction = instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, 101);
+        let (asset_lock_proof, core_rpc) = chain_proof_of_mined_transaction(&transaction);
+
+        let result = fetch_asset_lock_transaction_output_sync_v0(
+            &core_rpc,
+            &asset_lock_proof,
+            PlatformVersion::get(14).expect("protocol 14 exists"),
+        )
+        .expect("should not return Err");
+
+        match result.errors.as_slice() {
+            [ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionTooManyInputsError(error),
+            )] => {
+                assert_eq!(error.actual_inputs(), 101);
+                assert_eq!(error.max_inputs(), 100);
+            }
+            errors => panic!("expected only the too many inputs error, got {errors:?}"),
+        }
     }
 }

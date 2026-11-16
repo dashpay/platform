@@ -13,6 +13,7 @@ pub enum BatchTypeWasm {
     UpdatePrice,
     IgnoreWhileBumpingRevision,
     IndexOnlyDelete,
+    Erase,
 }
 
 impl TryFrom<&JsValue> for BatchTypeWasm {
@@ -33,6 +34,8 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
                     "updateprice" => Ok(BatchTypeWasm::UpdatePrice),
                     "ignorewhilebumpingrevision" => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     "indexonlydelete" => Ok(BatchTypeWasm::IndexOnlyDelete),
+                    // Naming the appended kind does not admit it; released protocol bounds reject it.
+                    "erase" => Ok(BatchTypeWasm::Erase),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
                         enum_val
@@ -60,6 +63,8 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
                     5 => Ok(BatchTypeWasm::UpdatePrice),
                     6 => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     7 => Ok(BatchTypeWasm::IndexOnlyDelete),
+                    // The appended value preserves old discriminants; released protocol bounds reject it.
+                    8 => Ok(BatchTypeWasm::Erase),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
                         enum_val
@@ -89,6 +94,8 @@ impl From<BatchTypeWasm> for String {
             BatchTypeWasm::UpdatePrice => String::from("updatePrice"),
             BatchTypeWasm::IgnoreWhileBumpingRevision => String::from("ignoreWhileBumpingRevision"),
             BatchTypeWasm::IndexOnlyDelete => String::from("indexOnlyDelete"),
+            // This labels the appended kind; released protocol bounds still reject it.
+            BatchTypeWasm::Erase => String::from("erase"),
         }
     }
 }
@@ -106,6 +113,8 @@ impl From<BatchTypeWasm> for DocumentTransitionActionType {
                 DocumentTransitionActionType::IgnoreWhileBumpingRevision
             }
             BatchTypeWasm::IndexOnlyDelete => DocumentTransitionActionType::IndexOnlyDelete,
+            // Conversion preserves the kind; released protocol bounds still reject it.
+            BatchTypeWasm::Erase => DocumentTransitionActionType::Erase,
         }
     }
 }
@@ -123,6 +132,8 @@ impl From<DocumentTransitionActionType> for BatchTypeWasm {
                 BatchTypeWasm::IgnoreWhileBumpingRevision
             }
             DocumentTransitionActionType::IndexOnlyDelete => BatchTypeWasm::IndexOnlyDelete,
+            // Conversion preserves the kind; released protocol bounds still reject it.
+            DocumentTransitionActionType::Erase => BatchTypeWasm::Erase,
         }
     }
 }

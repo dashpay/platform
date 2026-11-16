@@ -4466,6 +4466,7 @@ mod contact_watch_only_projection_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         }
     }
 
@@ -5674,6 +5675,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5726,6 +5728,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5791,6 +5794,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -5871,6 +5875,7 @@ mod tests {
         let ctx = TestWalletContext::new_random();
         let mut info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -6100,6 +6105,7 @@ mod tests {
         let retired = durable.retired().remove(&wallet_id).expect("retired");
         let mut successor = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -7941,6 +7947,7 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -9045,6 +9052,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -9141,6 +9149,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");

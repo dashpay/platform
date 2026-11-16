@@ -184,7 +184,6 @@ fn insert_row(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -434,7 +433,6 @@ fn sibling_entries_never_pollute_the_ranking_and_deletes_are_symmetric() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the like entry");
     // Equal counts tie; compare as sorted sets of (count, name).
@@ -469,7 +467,6 @@ fn sibling_entries_never_pollute_the_ranking_and_deletes_are_symmetric() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to delete bob's like entry");
     }
@@ -641,7 +638,6 @@ fn sibling_only_writes_skip_the_ranked_re_key() {
             StorageFlags::optional_default_as_cow(),
             None,
             pv,
-            None,
         )
         .expect("expected to update the day");
     let grouping_after = read_grove_element(&drive, &doctype_path, b"postAuthor")
@@ -683,7 +679,6 @@ fn sibling_only_writes_skip_the_ranked_re_key() {
             StorageFlags::optional_default_as_cow(),
             None,
             pv,
-            None,
         )
         .expect("expected to move the like between authors");
     assert_eq!(
@@ -702,7 +697,6 @@ fn sibling_only_writes_skip_the_ranked_re_key() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the slike document");
     assert_eq!(
@@ -867,7 +861,6 @@ fn preallocated_groups_stay_rankable_at_zero_with_the_sibling() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert the post");
 
@@ -913,7 +906,6 @@ fn preallocated_groups_stay_rankable_at_zero_with_the_sibling() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a plike entry");
             like
@@ -939,7 +931,6 @@ fn preallocated_groups_stay_rankable_at_zero_with_the_sibling() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to delete the plike entry");
     }

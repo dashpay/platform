@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.state.AppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -132,6 +133,51 @@ fun SettingsScreen(navController: NavHostController) {
                         singleLine = true,
                     )
                 }
+            }
+
+            // Quorum source (← OptionsView.swift's "Quorum Source" picker and
+            // "Proof Quorum Source" indicator).
+            FormSection(title = "Quorum Source") {
+                val quorumMode by appState.quorumMode.collectAsStateWithLifecycle()
+                val quorumSource by appState.quorumSource.collectAsStateWithLifecycle()
+                AccessiblePicker(
+                    label = "Quorum Source",
+                    options = AppState.QuorumMode.entries,
+                    selected = quorumMode,
+                    optionLabel = { it.label },
+                    testTag = "settings.quorumMode",
+                    // The SDK a rebuild is creating takes the mode it read
+                    // before publishing; a pick meanwhile would miss it.
+                    enabled = !isLoading,
+                ) { selected ->
+                    appState.setQuorumMode(selected)
+                }
+                Text(
+                    "Which quorum public-key source to use for Platform proof verification, " +
+                        "applied live. Auto: SPV once its masternode list is synced, trusted " +
+                        "before that and for any key SPV cannot serve; losing the SPV peers " +
+                        "falls back to trusted. SPV: force SPV now (proofs fail closed whenever " +
+                        "SPV is not synced; no trusted fallback). Trusted: force the trusted " +
+                        "HTTP quorum service.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LabeledContent(
+                    label = "Proof Quorum Source",
+                    value = when (quorumSource) {
+                        Sdk.QuorumSource.SPV -> "SPV"
+                        Sdk.QuorumSource.TRUSTED -> "Trusted (HTTP)"
+                        Sdk.QuorumSource.CUSTOM -> "Custom"
+                    },
+                    modifier = Modifier.testTag("settings.quorumSource"),
+                )
+                Text(
+                    "The source the SDK asks first. In Auto it switches to SPV once the " +
+                        "masternode list has synced (start SPV from the Sync tab); keys SPV " +
+                        "cannot serve still come from the trusted service.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             // SPV peer override (← OptionsView.swift's "Use Custom SPV

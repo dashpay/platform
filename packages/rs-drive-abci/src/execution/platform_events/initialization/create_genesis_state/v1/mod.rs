@@ -141,7 +141,6 @@ impl<C> Platform<C> {
             &block_info,
             transaction,
             platform_version,
-            None, // No previous_fee_versions needed for genesis state creation
         )?;
 
         Ok(())
@@ -320,8 +319,13 @@ mod tests {
                 if let Some(stored) = stored {
                     assert_eq!(stored.contract.id(), decision_proposals_id);
                     assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
-                    assert!(stored.contract.document_type_for_name("proposal").is_ok());
-                    assert_eq!(stored.contract.document_types().len(), 1);
+                    for document_type in ["proposal", "multipleChoiceProposal", "choice"] {
+                        assert!(stored
+                            .contract
+                            .document_type_for_name(document_type)
+                            .is_ok());
+                    }
+                    assert_eq!(stored.contract.document_types().len(), 3);
                 }
             }
         }

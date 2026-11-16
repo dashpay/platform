@@ -56,11 +56,15 @@ pub(super) enum StoredContestedFieldMatch {
     PositiveIntegerMatch(u128),
 }
 
-/// [`ContestedIndexResolution`].
+/// [`ContestedIndexResolution`], variant for variant and under the same names, which all
+/// start alike.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub(super) enum StoredContestedResolution {
     MasternodeVote,
     MasternodeVoteNoLocking,
+    /// Appended: the bincode discriminant is the variant position.
+    MasternodeVoteOnDocuments,
 }
 
 /// [`IndexCountability`].
@@ -195,6 +199,9 @@ impl From<&Index> for StoredIndex {
                         ContestedIndexResolution::MasternodeVoteNoLocking => {
                             StoredContestedResolution::MasternodeVoteNoLocking
                         }
+                        ContestedIndexResolution::MasternodeVoteOnDocuments => {
+                            StoredContestedResolution::MasternodeVoteOnDocuments
+                        }
                     },
                 }),
             countable: match countable {
@@ -303,6 +310,9 @@ impl From<StoredIndex> for Index {
                 }
                 StoredContestedResolution::MasternodeVoteNoLocking => {
                     ContestedIndexResolution::MasternodeVoteNoLocking
+                }
+                StoredContestedResolution::MasternodeVoteOnDocuments => {
+                    ContestedIndexResolution::MasternodeVoteOnDocuments
                 }
             },
         });

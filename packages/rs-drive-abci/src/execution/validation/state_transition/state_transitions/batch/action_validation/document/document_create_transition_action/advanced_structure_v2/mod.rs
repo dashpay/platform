@@ -12,7 +12,7 @@ use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use crate::error::Error;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::DocumentCreateTransitionActionStructureValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::{ContestPollComparison, DocumentCreateTransitionActionStructureValidationV1};
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStructureValidationV2 {
     fn validate_structure_v2(
@@ -30,6 +30,10 @@ impl DocumentCreateTransitionActionStructureValidationV2 for DocumentCreateTrans
     /// the system limits, and it must end one to four weeks after the block. All three are on
     /// the transition, judged against the block as v1's property rules are, so check_tx refuses
     /// what a block would.
+    ///
+    /// Version 1's checks compare the poll a contested create names with the poll its document
+    /// type expects by what names the index, where version 1 compares them whole
+    /// ([`ContestPollComparison::ByIndex`]).
     fn validate_structure_v2(
         &self,
         owner_id: Identifier,
@@ -37,7 +41,13 @@ impl DocumentCreateTransitionActionStructureValidationV2 for DocumentCreateTrans
         network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = self.validate_structure_v1(owner_id, block_info, network, platform_version)?;
+        let result = self.validate_structure_v1_comparing_contest_polls(
+            owner_id,
+            block_info,
+            network,
+            ContestPollComparison::ByIndex,
+            platform_version,
+        )?;
         if !result.is_valid() {
             return Ok(result);
         }

@@ -13,7 +13,9 @@ use dpp::fee::Credits;
 
 use dash_sdk::query_types::AddressInfos;
 
-use crate::error::PlatformWalletError;
+use crate::error::{
+    preserve_signer_key_unavailable_or, promote_address_nonce_error, PlatformWalletError,
+};
 use crate::BlockTime;
 
 use super::*;
@@ -76,11 +78,13 @@ impl IdentityWallet {
             .top_up_from_addresses_with_metadata(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
-                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to top up identity from addresses: {}",
-                        e
-                    ))
+                preserve_signer_key_unavailable_or(e, |e| {
+                    promote_address_nonce_error(&e).unwrap_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Failed to top up identity from addresses: {}",
+                            e
+                        ))
+                    })
                 })
             })?;
 

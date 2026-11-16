@@ -312,7 +312,6 @@ mod tests {
                     &BlockInfo::default_with_epoch(current_epoch),
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .expect("seed total system credits");
             let mut proposers =
@@ -406,7 +405,6 @@ mod tests {
                         &BlockInfo::default_with_epoch(current_epoch),
                         Some(&transaction),
                         platform_version,
-                        None,
                     )
                     .expect("missing proposer must not fail the epoch distribution batch");
                 let mut returned = 0;
@@ -569,7 +567,6 @@ mod tests {
                         &BlockInfo::default_with_epoch(current_epoch),
                         Some(&transaction),
                         platform_version,
-                        None,
                     )
                     .expect("pay shares without an owner balance");
                 assert_eq!(
@@ -724,7 +721,6 @@ mod tests {
                     &BlockInfo::default_with_epoch(current_epoch),
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .unwrap();
             assert_eq!(
@@ -820,7 +816,6 @@ mod tests {
                             &BlockInfo::default_with_epoch(Epoch::new(2).unwrap()),
                             Some(&transaction),
                             legacy,
-                            None,
                         )
                         .unwrap();
                     assert_eq!(
@@ -975,7 +970,6 @@ mod tests {
                     &BlockInfo::default_with_epoch(next_epoch_tree),
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .expect("should apply batch");
 
@@ -1080,7 +1074,6 @@ mod tests {
                     true,
                     Some(transaction),
                     platform_version,
-                    None,
                 )
                 .expect("expected to insert the reward share");
         }
@@ -1225,7 +1218,6 @@ mod tests {
                     &BlockInfo::default_with_epoch(next_epoch_tree),
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .expect("should apply batch");
 
@@ -1395,7 +1387,6 @@ mod tests {
                     &BlockInfo::default_with_epoch(next_epoch_tree),
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .expect("should apply batch");
 

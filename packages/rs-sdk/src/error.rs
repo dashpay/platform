@@ -59,6 +59,10 @@ pub enum Error {
     /// accept snapshot outcomes explicitly.
     #[error("proof authenticates the transition's affected state only, not its execution: {0}")]
     ExecutionNotProved(String),
+    /// A state transition may have been submitted but its outcome is unresolved.
+    /// The cause is diagnostic, not permission to create a replacement operation.
+    #[error("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {0}")]
+    StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
@@ -207,6 +211,36 @@ fn describe_proven_protocol_version(
 }
 
 impl Error {
+    /// Whether an unresolved submission must be reconciled before replacement.
+    pub fn is_state_transition_result_unconfirmed(&self) -> bool {
+        match self {
+            Self::StateTransitionResultUnconfirmed(_) => true,
+            Self::NoAvailableAddressesToRetry(inner) => {
+                inner.is_state_transition_result_unconfirmed()
+            }
+            _ => false,
+        }
+    }
+
+    /// Preserve the diagnostic cause without nesting uncertainty wrappers.
+    pub(crate) fn into_unconfirmed(self) -> Self {
+        if self.is_state_transition_result_unconfirmed() {
+            self
+        } else {
+            Self::StateTransitionResultUnconfirmed(Box::new(self))
+        }
+    }
+
+    /// Inspect the typed duplicate cause, including unresolved/retry envelopes.
+    pub(crate) fn is_already_exists(&self) -> bool {
+        match self {
+            Self::AlreadyExists(_) => true,
+            Self::StateTransitionResultUnconfirmed(inner)
+            | Self::NoAvailableAddressesToRetry(inner) => inner.is_already_exists(),
+            _ => false,
+        }
+    }
+
     /// Whether this is an [`Error::ProtocolVersionNotActive`] refusal that may lift soon: the
     /// SDK could not learn the network's version for a reason that can pass, such as nodes
     /// or a quorum source not answering, so the network may serve the request already.
@@ -230,7 +264,6 @@ impl Error {
     fn cannot_verify_answers(&self) -> bool {
         match self {
             Self::NoAvailableAddressesToRetry(last_error) => last_error.cannot_verify_answers(),
-            Self::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => true,
             Self::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. })
             | Self::ContextProviderError(error) => {
                 matches!(error, ContextProviderError::Config(_))
@@ -262,6 +295,9 @@ impl Error {
             Self::StateTransitionBroadcastError(broadcast_err) => broadcast_err.cause.as_ref(),
             Self::Protocol(ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
             Self::NoAvailableAddressesToRetry(inner) => inner.consensus_error(),
+            // An unconfirmed submission's later diagnostic verdict does not
+            // establish that an earlier node never accepted the operation.
+            Self::StateTransitionResultUnconfirmed(_) => None,
             _ => None,
         }
     }
@@ -299,10 +335,14 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context; so is a data contract the client's context cannot
-/// give as the request needs it, which every node's answer fails on alike. A verified
-/// result no node can return as the requested type is the request's to change
-/// ([`Error::InvalidRequest`]); every other verifier failure stays `Proof`.
+/// attribution and quorum context. A missing context provider, or one configured so that
+/// it cannot serve a lookup the verifier makes (a quorum key, or a data contract or token
+/// configuration a proof is read with), is this SDK's own setup, which no node can change:
+/// it is a configuration error that is not retried and bans no node. A data contract the
+/// client's context cannot give as the request needs it fails every node's answer alike,
+/// and is not retried either. A verified result no node can return as the requested type
+/// is the request's to change ([`Error::InvalidRequest`]); every other verifier failure
+/// stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -315,6 +355,20 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                error: error @ ContextProviderError::Config(_),
+                ..
+            }
+            | drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::Config(_),
+            ) => Self::ContextProviderError(error),
+            drive_proof_verifier::Error::ContextProviderNotSet => {
+                Self::ContextProviderError(ContextProviderError::Config(
+                    "context provider is not set, so no proof can be verified; set one with \
+                     SdkBuilder::with_context_provider() or Sdk::set_context_provider()"
+                        .to_string(),
+                ))
+            }
             drive_proof_verifier::Error::ContextProviderError(
                 error @ ContextProviderError::DataContractFailure(_),
             ) => Self::ContextProviderError(error),
@@ -638,6 +692,16 @@ pub enum StaleNodeError {
         /// Protocol version in the response metadata
         signed: u32,
     },
+    /// Server proved a private document type's store of `total_count` entries for a page from
+    /// `position`, which an earlier page showed the store already holds: its snapshot is older
+    /// than the one the read started from. A later read, or another server, can serve it.
+    #[error("received a private document store of {total_count} entries for a page from position {position}, which it already holds; try another server")]
+    PrivateDocumentStoreBehind {
+        /// The page's first position
+        position: u64,
+        /// How many entries the server's snapshot of the store holds
+        total_count: u64,
+    },
 }
 
 #[cfg(test)]
@@ -717,6 +781,25 @@ mod tests {
         );
     }
 
+    /// A context provider configured so that it cannot serve a lookup the verifier makes,
+    /// such as the data contract a document history proof is read with, fails alike for
+    /// every node's answer: the request is not retried and no node is banned for it.
+    #[test]
+    fn should_not_retry_a_lookup_the_context_provider_is_configured_not_to_serve() {
+        let error = Error::from(drive_proof_verifier::Error::ContextProviderError(
+            ContextProviderError::Config("dump dir not set".to_string()),
+        ));
+        assert!(
+            matches!(
+                &error,
+                Error::ContextProviderError(ContextProviderError::Config(reason))
+                    if reason == "dump dir not set"
+            ),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
+    }
+
     /// A result that verified but cannot be returned as the requested type is the same from
     /// every honest node: the request fails without being retried, and the node is not banned.
     #[test]
@@ -790,7 +873,7 @@ mod tests {
             );
         }
         let permanent = [
-            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            Error::from(drive_proof_verifier::Error::ContextProviderNotSet),
             quorum_key(ContextProviderError::Config(
                 "Non-trusted mode is not supported".to_string(),
             )),
@@ -986,6 +1069,31 @@ mod tests {
         fn test_deeply_nested_cbor_rejected_without_stack_exhaustion() {
             let payload = vec![0xA1u8; 60_000];
             assert!(super::extract_drive_error_message(&payload).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod unconfirmed_top_up_tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+    use std::error::Error as StdError;
+
+    #[test]
+    fn should_preserve_unconfirmed_source_without_authorizing_a_retry() {
+        for source in [
+            Error::TimeoutReached(Duration::from_secs(1), "wait timed out".into()),
+            Error::InvalidProvedResponse("unexpected identity in proof".into()),
+            Error::Protocol(ProtocolError::ConsensusError(Box::new(
+                AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+            ))),
+        ] {
+            let expected = source.to_string();
+            let error = Error::StateTransitionResultUnconfirmed(Box::new(source));
+            assert_eq!(StdError::source(&error).unwrap().to_string(), expected);
+            assert!(!error.can_retry());
+            assert!(error.consensus_error().is_none());
         }
     }
 }
