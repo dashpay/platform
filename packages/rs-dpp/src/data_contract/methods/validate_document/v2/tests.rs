@@ -1016,6 +1016,45 @@ fn should_report_one_small_enum_violation_for_a_document_breaking_a_long_enum_ma
 }
 
 #[test]
+fn should_report_an_enum_violation_a_client_can_read_whatever_the_allowed_values_hold() {
+    use crate::serialization::{
+        PlatformDeserializableUntrusted, PlatformSerializableWithPlatformVersion,
+    };
+    let latest = PlatformVersion::latest();
+    let long = "x".repeat(1500);
+    // Strings whose JSON fills the listing's bytes, the most a listing holds
+    let filling: Vec<Value> = (0..16)
+        .map(|member| Value::Text(format!("{member:014}")))
+        .collect();
+    let object = |last: u64| platform_value!({ "a": long.clone(), "b": [1, 2, last] });
+    for allowed in [
+        filling,
+        vec![Value::Text(long.clone()), Value::Text("b".to_string())],
+        vec![Value::Text("a".to_string()), Value::Text(long.clone())],
+        vec![object(3), object(4)],
+    ] {
+        let contract = item_contract(platform_value!({
+            "label": { "type": "string", "enum": allowed, "position": 0 },
+        }));
+        let errors = document_errors(
+            &contract,
+            platform_value!({ "label": "not an allowed value" }),
+            latest,
+        );
+        assert_eq!(errors.len(), 1);
+        assert_eq!(json_schema_error(&errors[0]).keyword(), "enum");
+        let bytes = errors[0]
+            .serialize_to_bytes_with_platform_version(latest)
+            .expect("expected the error to serialize");
+        assert_eq!(
+            ConsensusError::deserialize_from_bytes_untrusted(&bytes)
+                .expect("expected it to read back"),
+            errors[0]
+        );
+    }
+}
+
+#[test]
 fn should_report_an_enum_violation_at_protocol_version_14_as_before() {
     let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
     let (contract, document) = enum_list_contract_and_document(300, 2);

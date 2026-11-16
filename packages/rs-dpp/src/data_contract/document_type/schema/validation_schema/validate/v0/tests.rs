@@ -977,14 +977,26 @@ fn should_admit_a_value_of_a_long_enum_as_a_comparison_with_each_value_does() {
     ]);
 }
 
-/// The violation `validator` reports for `document` with `max_enum_listed_values`.
+/// The listing the latest protocol version reports an `enum` violation with.
+fn latest_listing() -> Option<EnumViolationListing> {
+    let limits = &PlatformVersion::latest().system_limits;
+    limits
+        .max_enum_violation_listed_values
+        .zip(limits.max_enum_violation_listed_bytes)
+        .map(|(max_values, max_bytes)| EnumViolationListing {
+            max_values: usize::from(max_values),
+            max_bytes: usize::from(max_bytes),
+        })
+}
+
+/// The violation `validator` reports for `document` with `enum_listing`.
 fn enum_violation(
     validator: &DocumentSchemaValidator,
     document: &JsonValue,
-    max_enum_listed_values: Option<usize>,
+    enum_listing: Option<EnumViolationListing>,
 ) -> JsonSchemaError {
     match validator
-        .validate(document, None, max_enum_listed_values)
+        .validate(document, None, enum_listing)
         .expect("expected the check to run")
     {
         Some(ConsensusError::BasicError(BasicError::JsonSchemaError(error))) => error,
@@ -998,7 +1010,7 @@ fn should_list_the_allowed_values_that_fit_and_count_the_rest() {
     let validator = validator_of(&with_value(&json!({ "enum": members })));
     let document = json!({ "value": -1 });
     let all = enum_violation(&validator, &document, None);
-    let bounded = enum_violation(&validator, &document, Some(16));
+    let bounded = enum_violation(&validator, &document, latest_listing());
     // The same violation, at the same place
     assert_eq!(bounded.keyword(), "enum");
     assert_eq!(bounded.keyword(), all.keyword());
@@ -1025,12 +1037,67 @@ fn should_list_the_allowed_values_that_fit_and_count_the_rest() {
 fn should_report_a_short_enum_violation_as_without_a_bound() {
     let validator = validator_of(&with_value(&json!({ "enum": ["a", "b", 3] })));
     let document = json!({ "value": "c" });
-    let bounded = enum_violation(&validator, &document, Some(16));
+    let bounded = enum_violation(&validator, &document, latest_listing());
     assert_eq!(bounded, enum_violation(&validator, &document, None));
     assert_eq!(
         bounded.error_summary(),
         "\"c\" is not one of [\"a\",\"b\",3]"
     );
+}
+
+#[test]
+fn should_stop_listing_before_an_allowed_value_that_does_not_fit() {
+    let long = "x".repeat(300);
+    for (members, document, summary) in [
+        // A value whose JSON takes more than the bytes left
+        (
+            json!(["a", long, "b"]),
+            json!("c"),
+            "\"c\" is not one of [\"a\"] or 2 more",
+        ),
+        (
+            json!([long, "b"]),
+            json!("c"),
+            "\"c\" is not one of [] or 2 more",
+        ),
+        // An array or an object, whatever its size
+        (
+            json!([1, [2], 3]),
+            json!(4),
+            "4 is not one of [1] or 2 more",
+        ),
+        (
+            json!([{ "a": 1 }, 3]),
+            json!(4),
+            "4 is not one of [] or 2 more",
+        ),
+    ] {
+        let validator = validator_of(&with_value(&json!({ "enum": members })));
+        let error = enum_violation(&validator, &json!({ "value": document }), latest_listing());
+        assert_eq!(error.keyword(), "enum");
+        assert_eq!(error.error_summary(), summary, "{members}");
+    }
+}
+
+#[test]
+fn should_list_the_allowed_values_whose_json_fits_the_bytes_together() {
+    let listing = latest_listing().expect("expected the latest version to bound the listing");
+    // Strings whose JSON takes 32 bytes each, quotes included
+    let members: Vec<JsonValue> = (0..20)
+        .map(|member| json!(format!("{member:030}")))
+        .collect();
+    let validator = validator_of(&with_value(&json!({ "enum": members })));
+    let error = enum_violation(&validator, &json!({ "value": "c" }), Some(listing));
+    let listed = error
+        .params()
+        .get_optional_array_slice("enum")
+        .expect("expected params")
+        .expect("expected a list")
+        .len();
+    assert_eq!(listed, (listing.max_bytes / 32).min(listing.max_values));
+    assert!(error
+        .error_summary()
+        .ends_with(&format!(" or {} more", 20 - listed)));
 }
 
 #[test]

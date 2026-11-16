@@ -5,7 +5,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::schema::validation_schema::{
-    native_validator_of, DocumentSchemaValidator,
+    native_validator_of, DocumentSchemaValidator, EnumViolationListing,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
@@ -59,10 +59,14 @@ impl DataContract {
             .system_limits
             .max_document_value_depth
             .map(|depth| depth as usize);
-        let max_enum_listed_values = platform_version
-            .system_limits
+        let limits = &platform_version.system_limits;
+        let enum_listing = limits
             .max_enum_violation_listed_values
-            .map(usize::from);
+            .zip(limits.max_enum_violation_listed_bytes)
+            .map(|(max_values, max_bytes)| EnumViolationListing {
+                max_values: usize::from(max_values),
+                max_bytes: usize::from(max_bytes),
+            });
 
         Self::validate_document_properties_v1_checks(
             document_type,
@@ -71,7 +75,7 @@ impl DataContract {
             platform_version,
             |json_value| {
                 Ok(
-                    match validator.validate(json_value, max_value_depth, max_enum_listed_values)? {
+                    match validator.validate(json_value, max_value_depth, enum_listing)? {
                         Some(error) => SimpleConsensusValidationResult::new_with_error(error),
                         None => SimpleConsensusValidationResult::new(),
                     },

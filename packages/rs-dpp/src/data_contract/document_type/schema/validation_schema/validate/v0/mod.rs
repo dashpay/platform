@@ -32,7 +32,7 @@ use super::super::{
     NumberConstraints, ObjectConstraints, SchemaNode, StringConstraints, ValidationSchema,
     ValidatorFormat,
 };
-use super::{DocumentSchemaValidator, PatternCell};
+use super::{DocumentSchemaValidator, EnumViolationListing, PatternCell};
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::BasicError;
@@ -207,10 +207,10 @@ impl DocumentSchemaValidator {
         &self,
         instance: &JsonValue,
         max_value_depth: Option<usize>,
-        max_enum_listed_values: Option<usize>,
+        enum_listing: Option<EnumViolationListing>,
     ) -> Result<Option<ConsensusError>, ProtocolError> {
         let mut walk = Walk::new(self, false, max_value_depth);
-        walk.max_enum_listed_values = max_enum_listed_values;
+        walk.enum_listing = enum_listing;
         walk.node(&self.schema.root, instance, 0, 0)?;
         if let Some(depth) = *walk.too_deep.borrow() {
             // Guarded only when a limit is set, so one is
@@ -272,8 +272,8 @@ struct Walk<'v, 'i> {
     /// time the walk checks a value against the list, and shared with the walks a `contains`
     /// spawns, so each value costs one lookup however many values the list holds.
     enum_members: Rc<RefCell<HashMap<usize, HashSet<MemberKey>>>>,
-    /// The most allowed values an `enum` violation lists, or `None` for all of them.
-    max_enum_listed_values: Option<usize>,
+    /// How much of an `enum`'s allowed values a violation lists, or `None` for all of them.
+    enum_listing: Option<EnumViolationListing>,
     /// Ties the walk to the checked value's lifetime `'i`, so the borrow checker refuses a
     /// value that does not outlive the walk: every address in `held` stays valid while it is
     /// held, and a temporary can never be checked against the cache.
@@ -306,7 +306,7 @@ impl<'v, 'i> Walk<'v, 'i> {
             max_value_depth,
             too_deep: Rc::new(RefCell::new(None)),
             enum_members: Rc::new(RefCell::new(HashMap::new())),
-            max_enum_listed_values: None,
+            enum_listing: None,
             instance: PhantomData,
         }
     }
@@ -327,7 +327,7 @@ impl<'v, 'i> Walk<'v, 'i> {
             max_value_depth: self.max_value_depth,
             too_deep: Rc::clone(&self.too_deep),
             enum_members: Rc::clone(&self.enum_members),
-            max_enum_listed_values: None,
+            enum_listing: None,
             instance: PhantomData,
         }
     }
@@ -496,9 +496,9 @@ impl<'v, 'i> Walk<'v, 'i> {
         }
         if let Some(values) = &node.enum_values {
             if !self.enum_admits(values, instance) {
-                let max_listed = self.max_enum_listed_values;
+                let listing = self.enum_listing;
                 self.fail("enum", "", || {
-                    let (options, unlisted) = listed_values(values, max_listed);
+                    let (options, unlisted) = listed_values(values, listing);
                     let message = match unlisted {
                         0 => format!("{instance} is not one of {options}"),
                         unlisted => {
@@ -1328,11 +1328,28 @@ fn json_of_values(values: &[Value]) -> JsonValue {
     JsonValue::Array(values.iter().map(json_of_value).collect())
 }
 
-/// `values`, an `enum`'s allowed values, as JSON for a violation to list: the first
-/// `max_listed` of them, or all of them when there is no bound, and how many are left out.
-fn listed_values(values: &[Value], max_listed: Option<usize>) -> (JsonValue, usize) {
-    let listed = max_listed.map_or(values.len(), |max_listed| values.len().min(max_listed));
-    (json_of_values(&values[..listed]), values.len() - listed)
+/// `values`, an `enum`'s allowed values, as JSON for a violation to list: those `listing`
+/// admits, the longest run from the first that holds no array or object and fits its count
+/// and its bytes, or all of them when there is no listing, and how many are left out.
+fn listed_values(values: &[Value], listing: Option<EnumViolationListing>) -> (JsonValue, usize) {
+    let Some(listing) = listing else {
+        return (json_of_values(values), 0);
+    };
+    let mut listed = Vec::new();
+    let mut bytes = 0;
+    for value in values.iter().take(listing.max_values) {
+        let json = json_of_value(value);
+        if json.is_array() || json.is_object() {
+            break;
+        }
+        bytes += json.to_string().len();
+        if bytes > listing.max_bytes {
+            break;
+        }
+        listed.push(json);
+    }
+    let unlisted = values.len() - listed.len();
+    (JsonValue::Array(listed), unlisted)
 }
 
 /// A value as [`equal_value`] compares it with an `enum`'s allowed value: two values are
