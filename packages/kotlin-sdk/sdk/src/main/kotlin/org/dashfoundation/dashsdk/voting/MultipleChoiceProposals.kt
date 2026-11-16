@@ -167,10 +167,12 @@ class MultipleChoiceProposals internal constructor(private val sdk: Sdk) {
  * decided or checked here.
  *
  * Cancellation: native code cannot see a coroutine's cancellation, so a write can complete
- * after its caller was cancelled. Each call then still returns what Platform confirmed
- * (see [opReturningCompletedResult]) instead of throwing, so a paid create or choice is
- * never hidden from a caller that would otherwise pay for it again. The coroutine stays
- * cancelled: handle the result before the next suspension point.
+ * after its caller was cancelled. The coroutine that made the call then still receives
+ * what Platform confirmed (see [opReturningCompletedResult]) instead of an exception, so it
+ * can record a paid create or choice rather than pay for it again. That coroutine stays
+ * cancelled, so handle the result before its next suspension point. Code outside the
+ * coroutine never gets the result: awaiting its `Deferred` throws a
+ * `CancellationException`, and joining its `Job` only returns.
  */
 class MultipleChoiceProposalTransactions internal constructor(private val gate: TeardownGate?) {
 
