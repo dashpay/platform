@@ -470,13 +470,15 @@ mod sum_overflow_tests {
     }
 
     /// Asserts a write that would overflow a sum ended as a paid consensus error that bumped
-    /// the writer's nonce and charged a fee, leaving the documents as they were.
+    /// the writer's nonce and charged `expected_charge`, the fee the result reports, leaving
+    /// the documents as they were.
     fn expect_paid_overflow(
         fixture: &SumFixture,
         what: &str,
         outcome: &Outcome,
         document_type: &str,
         stored_before: &BTreeMap<Identifier, (Identifier, i64)>,
+        expected_charge: Credits,
     ) {
         report(what, outcome);
         assert!(outcome.check_tx_valid, "{what}: check_tx admits the write");
@@ -504,7 +506,16 @@ mod sum_overflow_tests {
             Some(outcome.transition_nonce),
             "{what}: the nonce is bumped to the transition's"
         );
-        assert!(outcome.charged() > 0, "{what}: the writer pays");
+        assert_eq!(
+            outcome.charged(),
+            actual_fees.total_base_fee(),
+            "{what}: the writer pays the fee the result reports"
+        );
+        assert_eq!(
+            outcome.charged(),
+            expected_charge,
+            "{what}: the nonce bump, the validation and the refused write's processing"
+        );
         assert_eq!(
             &fixture.stored(document_type),
             stored_before,
@@ -513,8 +524,12 @@ mod sum_overflow_tests {
     }
 
     /// A create, then a replace, of a document whose amount takes the writer's or the type's
-    /// sum past `i64::MAX`.
-    async fn create_and_replace_past_the_sum(document_type: &str) {
+    /// sum past `i64::MAX`, charged `create_charge` and `replace_charge`.
+    async fn create_and_replace_past_the_sum(
+        document_type: &str,
+        create_charge: Credits,
+        replace_charge: Credits,
+    ) {
         let mut fixture = SumFixture::latest();
         let (outcome, _) = fixture.create(0, document_type, i64::MAX).await;
         SumFixture::expect_success(&outcome, "the create of i64::MAX");
@@ -527,6 +542,7 @@ mod sum_overflow_tests {
             &outcome,
             document_type,
             &stored_before,
+            create_charge,
         );
 
         let (outcome, zero) = fixture.create(0, document_type, 0).await;
@@ -539,6 +555,7 @@ mod sum_overflow_tests {
             &outcome,
             document_type,
             &stored_before,
+            replace_charge,
         );
 
         // The writer's next write within the sum still goes through.
@@ -547,8 +564,8 @@ mod sum_overflow_tests {
     }
 
     /// A transfer of a document of 1 to an owner whose sum is `i64::MAX`, the sender's sum
-    /// being 0 (it also owns a document of -1).
-    async fn transfer_past_the_owner_sum(document_type: &str) {
+    /// being 0 (it also owns a document of -1), charged `charge`.
+    async fn transfer_past_the_owner_sum(document_type: &str, charge: Credits) {
         let mut fixture = SumFixture::latest();
         let (outcome, _) = fixture.create(0, document_type, i64::MAX).await;
         SumFixture::expect_success(&outcome, "the create of i64::MAX");
@@ -565,32 +582,58 @@ mod sum_overflow_tests {
             &outcome,
             document_type,
             &stored_before,
+            charge,
         );
     }
 
     #[tokio::test]
     async fn should_refuse_a_create_or_replace_past_a_per_value_sum_as_a_paid_error() {
-        create_and_replace_past_the_sum(PER_VALUE).await;
+        create_and_replace_past_the_sum(PER_VALUE, 16_362_120, 16_349_700).await;
     }
 
     #[tokio::test]
     async fn should_refuse_a_create_or_replace_past_a_range_sum_as_a_paid_error() {
-        create_and_replace_past_the_sum(RANGED).await;
+        create_and_replace_past_the_sum(RANGED, 16_593_960, 16_581_540).await;
+    }
+
+    /// Each owner's sum fits, but the range sum over both owners would not: the write is
+    /// refused for the range sum alone. The same writes on a type summed per owner only go
+    /// through.
+    #[tokio::test]
+    async fn should_refuse_a_create_past_a_range_sum_that_no_owner_sum_exceeds() {
+        let mut fixture = SumFixture::latest();
+        for document_type in [PER_VALUE, RANGED] {
+            let (outcome, _) = fixture.create(0, document_type, i64::MAX).await;
+            SumFixture::expect_success(&outcome, "the create of i64::MAX by writer 0");
+        }
+        let (outcome, _) = fixture.create(1, PER_VALUE, 1).await;
+        SumFixture::expect_success(&outcome, "the create of 1 by writer 1 summed per owner");
+
+        let stored_before = fixture.stored(RANGED);
+        let (outcome, _) = fixture.create(1, RANGED, 1).await;
+        expect_paid_overflow(
+            &fixture,
+            "ranged: create of 1 by writer 1",
+            &outcome,
+            RANGED,
+            &stored_before,
+            16_647_800,
+        );
     }
 
     #[tokio::test]
     async fn should_refuse_a_create_or_replace_past_a_document_type_sum_as_a_paid_error() {
-        create_and_replace_past_the_sum(TYPED).await;
+        create_and_replace_past_the_sum(TYPED, 10_393_080, 10_380_520).await;
     }
 
     #[tokio::test]
     async fn should_refuse_a_transfer_past_a_per_value_sum_as_a_paid_error() {
-        transfer_past_the_owner_sum(PER_VALUE).await;
+        transfer_past_the_owner_sum(PER_VALUE, 16_404_900).await;
     }
 
     #[tokio::test]
     async fn should_refuse_a_transfer_past_a_range_sum_as_a_paid_error() {
-        transfer_past_the_owner_sum(RANGED).await;
+        transfer_past_the_owner_sum(RANGED, 16_630_420).await;
     }
 
     /// The proposer, which takes a savepoint per transition, refuses the write the same way.
@@ -609,6 +652,7 @@ mod sum_overflow_tests {
             &outcome,
             PER_VALUE,
             &stored_before,
+            16_362_120,
         );
         let (outcome, _) = fixture.create(0, PER_VALUE, -1).await;
         SumFixture::expect_success(&outcome, "the create of -1");
