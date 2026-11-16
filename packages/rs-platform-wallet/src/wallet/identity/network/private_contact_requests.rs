@@ -2061,7 +2061,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .take(max_pages)
             .ready_chunks(PRIVATE_SCAN_BATCH_PAGES));
-        while let Some(batch) = batches.next().await {
+        // Fetches in flight go unpolled while a batch is processed: none may yield for coop
+        // budget holding a tokio lock the processing then awaits (tokio#8772).
+        while let Some(batch) = tokio::task::unconstrained(batches.next()).await {
             // The pages before a failed fetch are processed, then the error
             // ends the pass.
             let mut fetched = Vec::with_capacity(batch.len());
@@ -13248,7 +13250,8 @@ mod tests {
     /// A sender unignored while a pass runs, after the pass passed over its
     /// private request: the pass reaches the store's end without taking the
     /// store as read, so a public send to the sender reads it again first,
-    /// finds the request, and is refused, publishing nothing.
+    /// finds the request, and is refused, publishing nothing. Neither read
+    /// deadlocks on SDK calls made while further pages are in flight.
     #[tokio::test]
     async fn should_not_take_the_store_as_read_by_a_pass_a_sender_was_unignored_under() {
         let alice = identity(ALICE_PHRASE, ALICE);
@@ -13287,24 +13290,31 @@ mod tests {
                 })
             })
         });
-        view.sync_private_contact_requests(&unignoring, 64)
-            .await
-            .expect("the pass");
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            view.sync_private_contact_requests(&unignoring, 64),
+        )
+        .await
+        .expect("the pass does not deadlock")
+        .expect("the pass");
         assert!(
             !store_read(&bob_wallet, BOB).await,
             "not read for a sender unignored under the pass"
         );
 
-        let public = view
-            .send_contact_request_with_external_signer(
+        let public = tokio::time::timeout(
+            Duration::from_secs(10),
+            view.send_contact_request_with_external_signer(
                 &bob.id(),
                 &alice.id(),
                 None,
                 AutoAcceptProofSource::None,
                 &bob_signer,
                 &bob_crypto,
-            )
-            .await;
+            ),
+        )
+        .await
+        .expect("the send's read does not deadlock");
         assert!(
             matches!(
                 public,
