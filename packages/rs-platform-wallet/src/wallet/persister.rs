@@ -602,10 +602,30 @@ impl WalletPersister {
     /// manager lock: the repeat broadcast takes one under the gate.
     #[cfg(feature = "shielded")]
     pub(crate) async fn hold_until_private_payments_restored(&self) {
+        self.hold_until_private_payments_restored_while(|| Some(()))
+            .await;
+    }
+
+    /// [`Self::hold_until_private_payments_restored`], for a caller whose
+    /// reason to hold may be overtaken while the raise waits its turn: once
+    /// the raise may go ahead, `still_unrestored` answers with the caller's
+    /// lock on what could overtake it, kept until the hold is raised, or
+    /// with `None` when it was overtaken and nothing is raised. Whoever
+    /// releases the hold ([`Self::private_payments_restored`]) for that
+    /// reason does so under the same lock, so a raise and a release never
+    /// cross: the raise either sees the release or comes wholly before it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn hold_until_private_payments_restored_while<G>(
+        &self,
+        still_unrestored: impl FnOnce() -> Option<G>,
+    ) {
         if self.private_payments_unrestored() {
             return;
         }
         let _no_repeat_broadcast = self.held_request_dispatch.write().await;
+        let Some(_not_overtaken) = still_unrestored() else {
+            return;
+        };
         self.private_payments_unrestored
             .store(true, Ordering::Release);
     }
