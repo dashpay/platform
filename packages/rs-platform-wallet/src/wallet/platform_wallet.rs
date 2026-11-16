@@ -482,6 +482,28 @@ pub struct PlatformWallet {
     private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
 }
 
+/// Refuse an account number of the range reserved for identity accounts in
+/// a caller's list of ordinary accounts.
+///
+/// Account `0x40000000 + i` is the account of the identity at slot `i`. Bound
+/// as an ordinary account it would be that same account, with the same
+/// address, viewing key and stored rows, so funds meant for one would be the
+/// other's. The wallet binds an identity account itself: for an identity it
+/// holds, for a persisted viewing key, and in a preparation.
+#[cfg(feature = "shielded")]
+fn ensure_ordinary_shielded_accounts(accounts: &[u32]) -> Result<(), PlatformWalletError> {
+    match accounts
+        .iter()
+        .find(|account| super::shielded::is_shielded_identity_account(**account))
+    {
+        Some(account) => Err(PlatformWalletError::InvalidParameter(format!(
+            "shielded account {account} is in the range reserved for identity accounts; an \
+             identity's account is bound from the identity, not by its number"
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// A coordinator a wallet handle's shielded keys were installed on, with the
 /// coordinator's clear generation at that install: a later generation means
 /// a Clear has dropped the registration since.
@@ -919,7 +941,11 @@ impl PlatformWallet {
     /// accounts than the host bindings accept in one request.
     ///
     /// Fails, before anything is derived, stored or registered, for a
-    /// `coordinator` of another network than this wallet's.
+    /// `coordinator` of another network than this wallet's, and for an
+    /// account number of the range reserved for identity accounts
+    /// (`is_shielded_identity_account`): such an account is bound from its
+    /// identity or its persisted viewing key, never by its number, so an
+    /// ordinary account cannot be the account of an identity.
     ///
     /// Holds the wallet generation's lifecycle gate from the attachment
     /// check until the keys are stored and installed, so a removal of the
@@ -942,6 +968,7 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        ensure_ordinary_shielded_accounts(accounts)?;
         coordinator.ensure_network(self.sdk.network)?;
         // Sampled before the first wait, so the install can tell that the
         // snapshot predates a Clear this bind waited for.
@@ -1096,8 +1123,9 @@ impl PlatformWallet {
     /// are added to them, so the bound set can be larger than the
     /// request. One of those without a persisted viewing key (an identity
     /// found since the last seed-backed bind) also returns `Ok(false)`.
-    /// A `coordinator` of another network than this wallet's is refused
-    /// the same way, and the wallet generation's lifecycle gate and the
+    /// A `coordinator` of another network than this wallet's and an
+    /// account number of the identity range are refused the same way, and
+    /// the wallet generation's lifecycle gate and the
     /// coordinator's operation admission are held the same way: a caller
     /// must not hold either.
     #[cfg(feature = "shielded")]
@@ -1107,6 +1135,7 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        ensure_ordinary_shielded_accounts(accounts)?;
         coordinator.ensure_network(self.sdk.network)?;
         // Sampled before the first wait, so the install can tell that the
         // snapshot predates a Clear this bind waited for.
@@ -1440,6 +1469,9 @@ impl PlatformWallet {
     /// Clear has run since that bind this returns `ShieldedNotBound` and
     /// stores nothing: the Clear dropped the wallet's registration, so the
     /// wallet is bound again first. A caller must not hold the admission.
+    ///
+    /// An account number of the range reserved for identity accounts is
+    /// refused, as in a bind.
     #[cfg(feature = "shielded")]
     pub async fn shielded_add_account(
         &self,
@@ -1447,6 +1479,7 @@ impl PlatformWallet {
         account: u32,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{OrchardKeySet, SubwalletId};
+        ensure_ordinary_shielded_accounts(&[account])?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {

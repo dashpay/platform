@@ -1619,8 +1619,9 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
     }
     let coordinator = coordinator_at(&temp_dir("tips_placeholder_index"));
     let identity_zero_tips = shielded_identity_account_index(0).unwrap();
+    // The bind adds slot 0's account itself, for the identity recorded there.
     wallet
-        .bind_shielded(&seed[..], &[0, identity_zero_tips], &coordinator)
+        .bind_shielded(&seed[..], &[0], &coordinator)
         .await
         .unwrap();
     let identity_zero_address = wallet
@@ -2213,6 +2214,62 @@ async fn should_refuse_a_bind_on_a_coordinator_whose_sdk_is_of_another_network()
     assert!(mislabelled.registered_subwallets().await.is_empty());
     assert!(persister.stored.lock().unwrap().is_empty());
     assert_eq!(*persister.load_calls.lock().unwrap(), 0);
+}
+
+/// Account `0x40000000 + i` is the account of the identity at slot `i`. A
+/// caller's list holds ordinary accounts, so a number of that range in it is
+/// refused by both bind routes and by an account add, before anything is
+/// read, derived, stored or registered: bound by its number, the account
+/// would be an identity's account under another name.
+#[tokio::test]
+async fn should_refuse_an_identity_account_number_among_ordinary_accounts() {
+    use crate::{shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE};
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("bind_reserved_account"));
+    let seed = [0x42u8; 64];
+    let reserved = shielded_identity_account_index(0).unwrap();
+    assert_eq!(reserved, SHIELDED_IDENTITY_ACCOUNT_BASE);
+
+    let seeded = wallet
+        .bind_shielded(&seed, &[0, reserved], &coordinator)
+        .await;
+    assert!(
+        matches!(seeded, Err(crate::PlatformWalletError::InvalidParameter(_))),
+        "{seeded:?}"
+    );
+    let seedless = wallet
+        .bind_shielded_from_persisted(&[0, reserved + 7], &coordinator)
+        .await;
+    assert!(
+        matches!(
+            seedless,
+            Err(crate::PlatformWalletError::InvalidParameter(_))
+        ),
+        "{seedless:?}"
+    );
+    assert!(wallet.shielded_account_indices().await.is_empty());
+    assert!(coordinator.registered_subwallets().await.is_empty());
+    assert!(persister.stored.lock().unwrap().is_empty());
+    assert_eq!(*persister.load_calls.lock().unwrap(), 0);
+
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("an ordinary account binds");
+    let stored = persister.stored_count();
+    let added = wallet.shielded_add_account(&seed, reserved + 1).await;
+    assert!(
+        matches!(added, Err(crate::PlatformWalletError::InvalidParameter(_))),
+        "{added:?}"
+    );
+    assert_eq!(persister.stored_count(), stored);
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+    // The last number below the range is an ordinary account.
+    wallet
+        .shielded_add_account(&seed, SHIELDED_IDENTITY_ACCOUNT_BASE - 1)
+        .await
+        .expect("the last ordinary account is added");
 }
 
 /// The seed proof accepts only the identity's ECDSA MASTER authentication
