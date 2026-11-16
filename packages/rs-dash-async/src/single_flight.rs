@@ -94,7 +94,7 @@ where
     /// });
     /// assert_eq!(answer, Ok(42));
     /// ```
-    #[must_use = "dropping a started flight aborts it"]
+    #[must_use = "await the flight: dropping it aborts the work when this call started it"]
     pub fn join_or_start(&self, start: impl FnOnce() -> Fut) -> Flight<'_, Fut> {
         let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(future) = running.as_ref().filter(|future| future.peek().is_none()) {
@@ -114,7 +114,7 @@ where
 }
 
 /// What [`SingleFlight::join_or_start`] gives a caller.
-#[must_use = "dropping a started flight aborts it"]
+#[must_use = "await the flight: dropping it aborts the work when this call started it"]
 pub enum Flight<'a, Fut: Future> {
     /// The future another caller started.
     Joined(Joined<Fut>),
