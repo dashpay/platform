@@ -1,8 +1,11 @@
 use crate::block::block_info::BlockInfo;
+use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::class_methods::first_repeated_doctype_key;
+use crate::data_contract::document_type::class_methods::{
+    first_repeated_key_of_definitions, first_repeated_key_of_schema,
+};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
@@ -40,31 +43,41 @@ impl DataContract {
     }
 
     /// Refuses the update when an object of a stored document type's schema, or of the
-    /// stored `$defs` its parse reads, names a key more than once, as registration from
-    /// protocol version 15 refuses a schema that does
-    /// ([`first_repeated_doctype_key`], the same walk). The walk is linear in the size of the
-    /// stored contract, which the update already fetched and pays for.
+    /// stored `$defs` a type's parse reads, names a key more than once, as registration from
+    /// protocol version 15 refuses a schema that does (the same walk). A type's schema is
+    /// reported on the type, `$defs` on the contract.
+    ///
+    /// The walk reads each stored schema and the stored `$defs` once, so it is linear in the
+    /// size of the stored contract, which the update already fetched and pays for: the count
+    /// of values read, which registration bills on a refusal, is not billed here.
     fn validate_update_stored_schemas_repeat_no_key(&self) -> SimpleConsensusValidationResult {
-        let schema_defs = self.schema_defs();
+        let mut read = 0;
         for (name, document_type) in self.document_types() {
-            let mut read = 0;
-            let Some((key, path)) =
-                first_repeated_doctype_key(document_type.schema(), schema_defs, &mut read)
-            else {
-                continue;
-            };
-            let place = if path.is_empty() {
-                "at its root".to_string()
-            } else {
-                format!("at `{path}`")
-            };
+            if let Some(repeated) = first_repeated_key_of_schema(document_type.schema(), &mut read)
+            {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.id(),
+                        name,
+                        format!(
+                            "its stored schema declares `{}` more than once {}, and a \
+                             contract whose schema repeats a key can not be updated",
+                            repeated.key(),
+                            repeated.place()
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+        if let Some(repeated) = first_repeated_key_of_definitions(self.schema_defs(), &mut read) {
             return SimpleConsensusValidationResult::new_with_error(
-                DocumentTypeUpdateError::new(
+                DataContractUpdateActionNotAllowedError::new(
                     self.id(),
-                    name,
                     format!(
-                        "its stored schema declares `{key}` more than once {place}, and a \
-                         contract whose schema repeats a key can not be updated"
+                        "update a contract whose stored `$defs` declare `{}` more than once {}",
+                        repeated.key(),
+                        repeated.place()
                     ),
                 )
                 .into(),
@@ -275,6 +288,38 @@ mod tests {
             Some(word(vec![integer_a()])),
             platform_version,
         );
+        let result = stored
+            .validate_update(&updated, &BlockInfo::default(), platform_version)
+            .expect("expected the update to be judged");
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(e))]
+                if e.action().contains("`$defs` declare `properties` more than once at `$defs.word`")
+        );
+    }
+
+    /// The stored `$defs` are read once, whatever the number of document types, and a
+    /// type's own schema is reported before them.
+    #[test]
+    fn should_report_a_stored_schema_repeating_a_key_before_the_stored_definitions() {
+        let platform_version = PlatformVersion::latest();
+        let word = BTreeMap::from([(
+            "word".to_string(),
+            Value::Map(vec![
+                (text("type"), text("string")),
+                (text("type"), text("string")),
+            ]),
+        )]);
+        let (stored, updated) = stored_and_updated(
+            schema(vec![string_a(), string_a()]),
+            Some(word),
+            schema(vec![string_a()]),
+            Some(BTreeMap::from([(
+                "word".to_string(),
+                platform_value!({ "type": "string" }),
+            )])),
+            platform_version,
+        );
         assert_update_refused(&stored, &updated, "properties");
     }
 
@@ -295,27 +340,28 @@ mod tests {
         assert!(result.is_valid(), "{:?}", result.errors);
     }
 
-    /// Protocol version 14 selects generation 1, which this generation leaves as it was: the
-    /// update check of protocol version 14 judges any update as generation 1 does.
+    /// The rule starts with protocol version 15: before it, an update of a contract whose
+    /// stored schema names a key twice is judged by the rules of generation 1 alone.
     #[test]
-    fn should_judge_an_update_at_protocol_version_14_as_generation_1_does() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
-        for (stored_schema, new_schema) in [
-            (schema(vec![string_a()]), schema(vec![string_a()])),
+    fn should_refuse_an_update_of_a_stored_schema_repeating_a_key_from_protocol_version_15() {
+        for (platform_version, refused) in [
             (
-                schema(vec![string_a(), integer_a()]),
-                schema(vec![integer_a()]),
+                PlatformVersion::get(14).expect("protocol version 14"),
+                false,
             ),
+            (PlatformVersion::latest(), true),
         ] {
-            let (stored, updated) =
-                stored_and_updated(stored_schema, None, new_schema, None, platform_version);
-            let dispatched = stored
+            let (stored, updated) = stored_and_updated(
+                schema(vec![string_a(), string_a()]),
+                None,
+                schema(vec![string_a()]),
+                None,
+                platform_version,
+            );
+            let result = stored
                 .validate_update(&updated, &BlockInfo::default(), platform_version)
                 .expect("expected the update to be judged");
-            let generation_1 = stored
-                .validate_update_v1(&updated, &BlockInfo::default(), platform_version)
-                .expect("expected the update to be judged");
-            assert_eq!(dispatched.errors, generation_1.errors);
+            assert_eq!(!result.is_valid(), refused, "{:?}", result.errors);
         }
     }
 }

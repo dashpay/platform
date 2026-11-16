@@ -181,6 +181,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    first entry the parser may read where every check reads the last
 ///    (`InvalidContractStructure`), and refuses an update of a contract stored
 ///    with one, which no JSON could have written (`DocumentTypeUpdateError`,
+///    or `DataContractUpdateActionNotAllowedError` when its `$defs` hold it,
 ///    `validate_update` 2 of `CONTRACT_VERSIONS_V7`),
 ///    refuses a contested index whose contest its index values do not decide
 ///    (`InvalidContractStructure`, note 19) or that is keyed by a property path or a

@@ -113,54 +113,74 @@ pub(super) fn refuse_a_repeated_doctype_key(
     name: &str,
     read: &mut u64,
 ) -> Result<(), ProtocolError> {
-    match first_repeated_doctype_key(schema, schema_defs, read) {
+    let repeated = first_repeated_key_of_schema(schema, read)
+        .or_else(|| first_repeated_key_of_definitions(schema_defs, read));
+    match repeated {
         None => Ok(()),
-        Some((key, path)) => {
-            let place = if path.is_empty() {
-                "at its root".to_string()
-            } else {
-                format!("at `{path}`")
-            };
-            Err(consensus_or_protocol_data_contract_error(
-                DataContractError::InvalidContractStructure(format!(
-                    "document type \"{name}\" declares `{key}` more than once {place}: \
-                     the document type parser may read its first entry where the \
-                     schema checks read its last"
-                )),
-            ))
+        Some(repeated) => Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares `{}` more than once {}: \
+                 the document type parser may read its first entry where the \
+                 schema checks read its last",
+                repeated.key(),
+                repeated.place()
+            )),
+        )),
+    }
+}
+
+/// A key an object of a document schema, or of a contract's `$defs`, names more than once.
+pub(in crate::data_contract) struct RepeatedKey {
+    key: String,
+    /// The path of the object naming it: empty at a document schema's root,
+    /// `$defs.<name>...` in a definition.
+    path: String,
+}
+
+impl RepeatedKey {
+    /// The key named more than once.
+    pub(in crate::data_contract) fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// Where the object naming it is, as a refusal words it.
+    pub(in crate::data_contract) fn place(&self) -> String {
+        if self.path.is_empty() {
+            "at its root".to_string()
+        } else {
+            format!("at `{}`", self.path)
         }
     }
 }
 
-/// The first key an object of the document `schema`, or of the contract's `schema_defs`,
-/// names more than once, with the path of that object (empty at the schema's root,
-/// `$defs.<name>...` in a definition), walking as [`refuse_a_repeated_doctype_key`] does and
-/// counting in `read` each value it reads. `None` when no object repeats a key.
-pub(in crate::data_contract) fn first_repeated_doctype_key(
+/// The first key an object of the document `schema` names more than once, at its root or
+/// anywhere below it, walking as [`refuse_a_repeated_doctype_key`] does and counting in
+/// `read` each value it reads. `None` when no object repeats a key.
+pub(in crate::data_contract) fn first_repeated_key_of_schema(
     schema: &Value,
+    read: &mut u64,
+) -> Option<RepeatedKey> {
+    first_repeated_key_within(schema, &mut String::new(), read)
+}
+
+/// [`first_repeated_key_of_schema`] over each definition of a contract's `schema_defs`, in
+/// the order of their names.
+pub(in crate::data_contract) fn first_repeated_key_of_definitions(
     schema_defs: Option<&BTreeMap<String, Value>>,
     read: &mut u64,
-) -> Option<(String, String)> {
-    if let Some(repeat) = first_repeated_key_within(schema, &mut String::new(), read) {
-        return Some(repeat);
-    }
-    for (definition, value) in schema_defs.into_iter().flatten() {
-        if let Some(repeat) =
-            first_repeated_key_within(value, &mut format!("$defs.{definition}"), read)
-        {
-            return Some(repeat);
-        }
-    }
-    None
+) -> Option<RepeatedKey> {
+    schema_defs.into_iter().flatten().find_map(|(name, value)| {
+        first_repeated_key_within(value, &mut format!("$defs.{name}"), read)
+    })
 }
 
-/// [`first_repeated_doctype_key`] over `value`, found at `path` within the schema (empty at
-/// its root), and everything it holds.
+/// The first repeated key of `value`, found at `path` within the schema (empty at its
+/// root), and of everything it holds.
 fn first_repeated_key_within(
     value: &Value,
     path: &mut String,
     read: &mut u64,
-) -> Option<(String, String)> {
+) -> Option<RepeatedKey> {
     *read = read.saturating_add(1);
     match value {
         Value::Map(map) => {
@@ -173,7 +193,10 @@ fn first_repeated_key_within(
                     continue;
                 };
                 if !declared.insert(key) {
-                    return Some((key.to_string(), path.clone()));
+                    return Some(RepeatedKey {
+                        key: key.to_string(),
+                        path: path.clone(),
+                    });
                 }
                 let len = path.len();
                 if !path.is_empty() {
