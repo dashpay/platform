@@ -98,7 +98,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// Whether active or sticky resume state excludes rejected-build cleanup.
-    fn resume_cleanup_excluded(&self, out_point: &OutPoint) -> bool {
+    pub(crate) fn resume_cleanup_excluded(&self, out_point: &OutPoint) -> bool {
         self.resume_dispatch_claims
             .lock()
             .unwrap_or_else(|e| e.into_inner())

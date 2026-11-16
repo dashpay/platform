@@ -1721,14 +1721,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    the same inputs. A removed generation sends nothing. The gate is
         //    taken holding no manager lock, as teardown takes it.
         let lifecycle = in_broadcast_pin.generation().payment_guard().await;
-        let (is_current, handed_off) = {
-            let wm = self.wallet_manager.read().await;
+        let (is_current, may_still_send) = {
+            // The write guard makes the claim check atomic against a resume
+            // claiming dispatch under its read guard, as in
+            // `untrack_asset_lock`.
+            let wm = self.wallet_manager.write().await;
             match wm.get_wallet_info(&self.wallet_id) {
                 Some(info) if in_broadcast_pin.is_on(&info.generation) => (true, false),
-                // A wallet re-created under this id that restored the row from
-                // the store owns it now: it can resume it, so its row stays.
-                Some(info) => (false, info.tracked_asset_locks.contains_key(&out_point)),
-                None => (false, false),
+                // Another party may still send this lock: a wallet re-created
+                // under this id that restored the row from the store (it can
+                // resume it), or a resume that snapshotted the row before the
+                // removal and claimed its dispatch (it sends without
+                // re-checking the generation).
+                Some(info) => (
+                    false,
+                    info.tracked_asset_locks.contains_key(&out_point)
+                        || self.resume_cleanup_excluded(&out_point),
+                ),
+                None => (false, self.resume_cleanup_excluded(&out_point)),
             }
         };
         if !is_current {
@@ -1745,10 +1755,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // and reservation went with it, and the wallet now under this id
             // is another generation whose state this build does not own.
             let durable_row = operation.is_some() || recipient_must_be_durable;
-            if handed_off {
-                // The replacement may resume the row, so its inputs stay
-                // fenced as for any lock that may still be sent.
+            if may_still_send {
+                // The row and its inputs stay, as for a rejected broadcast
+                // whose cleanup a resume excludes, and the outcome is unknown
+                // rather than a removal: a caller that rebuilt from other
+                // inputs could pay the recipient twice.
                 in_broadcast_pin.settle_pending_spend();
+                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                    format!(
+                        "asset lock {out_point} was not sent by this call: wallet {} was \
+                     removed before the send, but the lock may still be sent by a resume \
+                     or by the wallet now under that id, so its row and inputs stay",
+                        hex::encode(self.wallet_id)
+                    ),
+                ));
             } else if durable_row {
                 let removal = self.store_lock_removal_durably(AssetLockChangeSet {
                     removed: [out_point].into(),
@@ -2752,22 +2772,30 @@ mod tests {
 
     /// A wallet removed or re-created under its id after the lock was built
     /// sends nothing: the stale build's transaction never reaches the
-    /// broadcaster, and the build reports the removal. Nothing was sent, so
-    /// the row's removal is stored and the inputs' fence comes down, unless
-    /// the wallet now under the id tracks the row itself: it may resume it,
-    /// so the row stays and its inputs stay fenced.
+    /// broadcaster. Nothing was sent, so the row's removal is stored, the
+    /// inputs' fence comes down and the build reports the removal, unless
+    /// someone may still send the lock: the wallet now under the id tracks the
+    /// row itself (it may resume it), or a resume claimed the row's dispatch
+    /// before the removal. Then the row stays, its inputs stay fenced and the
+    /// outcome is reported as unknown, so the caller does not rebuild.
     #[tokio::test]
     async fn should_not_broadcast_a_lock_built_on_a_wallet_since_replaced() {
-        for replacement_tracks_row in [false, true] {
+        for (replacement_tracks_row, resume_claimed) in
+            [(false, false), (true, false), (false, true)]
+        {
             let broadcaster = Arc::new(CountingOkBroadcaster::default());
             let (manager, signer, persistence) =
                 coinjoin_funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
             let built_on = Mutex::new(None);
+            let claim = Mutex::new(None);
             // Stands in for a removal and re-creation landing while the build
             // awaits: the wallet id now names a different generation, and the
             // removed generation's tracked row went with it unless the
             // replacement restored it from the store.
             let observer = |out_point: OutPoint| {
+                if resume_claimed {
+                    *claim.lock().unwrap() = Some(manager.claim_resume_dispatch(out_point));
+                }
                 let mut wm = manager
                     .wallet_manager
                     .try_write()
@@ -2797,14 +2825,26 @@ mod tests {
                 )
                 .await;
 
-            assert!(
-                matches!(result, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
-                "{result:?}"
-            );
+            let may_still_send = replacement_tracks_row || resume_claimed;
+            if may_still_send {
+                assert!(
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+                    ),
+                    "{result:?}"
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+                    "{result:?}"
+                );
+            }
             assert_eq!(broadcaster.calls(), 0);
+            drop(claim);
             let (out_point, built_on) = built_on.into_inner().unwrap().expect("observed");
             let tx = stored_lock_transaction(&persistence, &out_point);
-            if replacement_tracks_row {
+            if may_still_send {
                 assert!(persistence.removed_outpoints().is_empty());
                 assert!(built_on.in_broadcast_conflict(&tx).is_some());
             } else {
