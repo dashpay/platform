@@ -81,7 +81,7 @@ gloo-timers = { version = "0.3.0", features = ["futures"] }
 # redirects, abort, and bound a body while streaming it.
 js-sys = "0.3.85"
 wasm-bindgen = "0.2.108"
-wasm-streams = "0.7"
+wasm-streams = "0.5"
 web-sys = { version = "0.3.85", features = [
     "AbortController",
     "AbortSignal",
