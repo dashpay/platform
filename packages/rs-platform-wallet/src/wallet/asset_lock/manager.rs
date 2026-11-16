@@ -12,6 +12,7 @@ use tokio::sync::{Notify, RwLock};
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -36,6 +37,13 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     pub(super) wallet_id: WalletId,
+    /// The wallet generation this manager was created for. A wallet removed
+    /// and re-created under `wallet_id` gets a new generation and a new
+    /// manager, so a handle that outlived its registration would otherwise
+    /// build from the replacement's wallet info and spend its funds: a build
+    /// on any other generation is refused before anything is reserved (see
+    /// `build_asset_lock_transaction_fenced`).
+    pub(super) generation: Arc<WalletGeneration>,
     /// Notified on InstantLock / ChainLock events by `LockNotifyHandler`.
     /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
     pub(super) lock_notify: Arc<Notify>,
@@ -158,11 +166,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         lock_notify: Arc<Notify>,
         broadcaster: Arc<B>,
         persister: WalletPersister,
+        generation: Arc<WalletGeneration>,
     ) -> Self {
         Self {
             sdk,
             wallet_manager,
             wallet_id,
+            generation,
             lock_notify,
             broadcaster,
             persister,
@@ -199,6 +209,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             sdk: Arc::clone(&self.sdk),
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
+            generation: Arc::clone(&self.generation),
             lock_notify: Arc::clone(&self.lock_notify),
             broadcaster: Arc::clone(&self.broadcaster),
             persister: self.persister.clone(),

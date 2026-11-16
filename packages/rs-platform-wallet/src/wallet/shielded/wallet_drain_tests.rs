@@ -1174,11 +1174,14 @@ async fn fund_typed_amount(
 /// A typed-amount funding whose recipient cannot be made durable stops before
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
 /// both fail the call with a persistence error and leave the lock untracked
-/// and uncommitted. After a failed flush the abandoned row's removal is
-/// stored, so the inputs are handed back and the next attempt builds again;
-/// the next successful flush does not commit the abandoned row. A backend
-/// that refuses every store also refuses that removal, so the row may
-/// survive and the inputs stay reserved.
+/// and uncommitted. The abandoned row's removal must be durable before the
+/// inputs are released, and on this buffered backend neither case can make it
+/// so: a refused store refuses the removal too, and a failed flush leaves the
+/// removal only buffered, while another flush may already have committed the
+/// row, so a crash would bring the lock back resumable after the inputs
+/// funded a retry. The inputs therefore stay reserved in both cases. After
+/// the failed flush the removal is still stored behind the row, so the next
+/// successful flush does not commit the abandoned row.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
@@ -1199,7 +1202,8 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
             matches!(&error, PlatformWalletError::Persistence(message)
-                if message.contains("shielded recipient was not made durable")),
+                if message.contains("shielded recipient was not made durable")
+                    && message.contains("inputs stay reserved")),
             "fail_flush={fail_flush}: {error}"
         );
         assert_eq!(seen.len(), 1, "fail_flush={fail_flush}");
@@ -1211,31 +1215,16 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             .any(|tracked| tracked.out_point == seen[0]));
         assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
         if !fail_flush {
-            assert!(
-                matches!(&error, PlatformWalletError::Persistence(message)
-                    if message.contains("inputs stay reserved")),
-                "{error}"
-            );
             continue;
         }
 
-        // The inputs were handed back: the retry builds a lock again and gets
-        // as far as the broadcaster.
         switch.store(false, Ordering::SeqCst);
-        let (error, retried) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
-        assert!(
-            !matches!(error, PlatformWalletError::Persistence(_)),
-            "fail_flush={fail_flush}: {error}"
-        );
-        assert_eq!(retried.len(), 1, "fail_flush={fail_flush}");
-        assert_ne!(retried[0], seen[0]);
+        persistence
+            .flush(wallet.wallet_id())
+            .expect("the backend flushes again");
         assert!(
             !persistence.committed.lock().unwrap().contains_key(&seen[0]),
-            "fail_flush={fail_flush}: the abandoned row was committed by a later flush"
-        );
-        assert_eq!(
-            persistence.committed.lock().unwrap()[&retried[0]].shielded_recipient,
-            Some(recipient.to_raw_bytes())
+            "the abandoned row was committed by a later flush"
         );
     }
 }

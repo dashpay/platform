@@ -7401,7 +7401,7 @@ mod tests {
         // A wallet whose identity-registration funding account has a
         // real address pool, plus an asset-lock tx whose credit output
         // pays into it (built by the production builder).
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -7419,6 +7419,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (tx, _path) = asset_lock_manager
             .build_asset_lock_transaction(
@@ -7525,7 +7526,7 @@ mod tests {
         use crate::wallet::asset_lock::manager::AssetLockManager;
         use crate::wallet::persister::WalletPersister;
 
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -7543,6 +7544,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (tx, _path) = asset_lock_manager
             .build_asset_lock_transaction(
@@ -7676,7 +7678,7 @@ mod tests {
         use crate::wallet::asset_lock::tracked::AssetLockStatus;
         use crate::wallet::persister::WalletPersister;
 
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -7694,6 +7696,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (tx, _path) = asset_lock_manager
             .build_asset_lock_transaction(
@@ -7802,7 +7805,7 @@ mod tests {
         use crate::wallet::asset_lock::tracked::AssetLockStatus;
         use crate::wallet::persister::WalletPersister;
 
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -7820,6 +7823,7 @@ mod tests {
                 wallet_id,
                 Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (tx, _path) = asset_lock_manager
             .build_asset_lock_transaction(

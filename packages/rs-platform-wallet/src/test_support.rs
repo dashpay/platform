@@ -55,6 +55,24 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
+/// The live generation of `wallet_id` in `wallet_manager`, for a test that
+/// builds an `AssetLockManager` over a wallet it registered itself: the
+/// manager refuses to build on any other generation.
+#[cfg(test)]
+pub(crate) fn wallet_generation(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+) -> Arc<WalletGeneration> {
+    let wm = wallet_manager
+        .try_read()
+        .expect("fixture wallet manager is not locked");
+    Arc::clone(
+        &wm.get_wallet_info(wallet_id)
+            .expect("fixture wallet is registered")
+            .generation,
+    )
+}
+
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
 /// followed by a user retry.

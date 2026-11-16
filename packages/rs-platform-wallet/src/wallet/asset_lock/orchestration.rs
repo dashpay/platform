@@ -1034,7 +1034,7 @@ mod tests {
         use key_wallet::account::account_type::StandardAccountType;
         use tokio::sync::Notify;
 
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -1049,6 +1049,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(

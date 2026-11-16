@@ -1247,7 +1247,7 @@ mod tests {
     async fn consumption_report_context_for(
         funding_type: AssetLockFundingType,
     ) -> ConsumptionReportContext {
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         let sdk = Arc::new(
@@ -1263,6 +1263,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, Arc::<RecordingPersistence>::clone(&persistence)),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
