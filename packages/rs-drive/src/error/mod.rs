@@ -76,6 +76,25 @@ pub enum Error {
     IOErrorWithInfoString(Box<io::Error>, String),
 }
 
+impl Error {
+    /// Whether GroveDB refused to apply operations because an aggregate a sum (or count) tree
+    /// keeps would leave its integer's range: a merk node's value plus its children's
+    /// aggregates past `i64::MAX` (or below `i64::MIN`). Merk raises this as its `Overflow`
+    /// error when it computes the aggregates of the tree it commits. Merk's other `Overflow`
+    /// errors come from cost estimation and from merging the limits of an aggregate sum query,
+    /// neither of which applies a write.
+    pub fn is_sum_tree_overflow(&self) -> bool {
+        matches!(
+            self,
+            Self::GroveDB(error)
+                if matches!(
+                    error.as_ref(),
+                    grovedb::Error::MerkError(grovedb_merk::error::Error::Overflow(_))
+                )
+        )
+    }
+}
+
 impl From<ProtocolDataContractError> for Error {
     fn from(value: ProtocolDataContractError) -> Self {
         Self::Protocol(Box::new(ProtocolError::DataContractError(value)))

@@ -175,7 +175,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.withdrawals
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
-        execute_event: 2, // changed in v15: a paying gas sponsor owns the storage its batch writes
+        execute_event: 2, // changed in v15: a paying gas sponsor owns the storage its batch writes, and a document write past a sum is refused as a paid error
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.state_transition_processing
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
