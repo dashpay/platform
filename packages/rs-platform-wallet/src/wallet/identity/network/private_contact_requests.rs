@@ -2061,9 +2061,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .take(max_pages)
             .ready_chunks(PRIVATE_SCAN_BATCH_PAGES));
-        // Fetches in flight go unpolled while a batch is processed: none may yield for coop
-        // budget holding a tokio lock the processing then awaits (tokio#8772).
-        while let Some(batch) = tokio::task::unconstrained(batches.next()).await {
+        while let Some(batch) = batches.next().await {
             // The pages before a failed fetch are processed, then the error
             // ends the pass.
             let mut fetched = Vec::with_capacity(batch.len());

@@ -122,6 +122,8 @@ use rs_dapi_client::{
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 
 /// The protocol version a later protocol upgrade's requests need.
 const V14: u32 = PROTOCOL_VERSION_14;
@@ -2321,8 +2323,8 @@ async fn should_answer_a_waiting_call_while_the_asking_call_is_not_polled() {
         "the first call asks, and waits for the node"
     );
     drop(node);
-    let second = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
+    let second = timeout(
+        Duration::from_secs(5),
         ContractFeePots::fetch_with_settings(&sdk, fee_pots(), once()),
     )
     .await

@@ -36,7 +36,7 @@ use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::version::PlatformVersion;
-use futures::future::{AbortHandle, Abortable, BoxFuture, FutureExt, Shared};
+use futures::future::{abortable, AbortHandle, Abortable, BoxFuture, FutureExt, Shared};
 use rs_dapi_client::RequestSettings;
 use std::cmp::Ordering as Order;
 use std::collections::BTreeMap;
@@ -475,7 +475,7 @@ impl Sdk {
         let answered = self.probe_hold.answered();
         let started = match self.probe_hold.join_or_start(|| {
             let sdk = self.clone();
-            let (probe, abort) = futures::future::abortable(
+            let (probe, abort) = abortable(
                 async move {
                     let failure = sdk
                         .probe_unless_answered(required, settings, answered)
