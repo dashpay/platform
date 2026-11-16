@@ -1567,6 +1567,19 @@ pub enum PaymentDelivery {
     LockHeld(dashcore::OutPoint),
 }
 
+/// The class of a payment call — a note spend, or an asset-lock funding —
+/// that panicked instead of returning: whether it may have left the wallet
+/// and whether a retry is allowed, as [`PlatformWalletError::payment_delivery`]
+/// and [`PlatformWalletError::is_retryable`] answer for a returned error.
+///
+/// A panic can strike after the dispatch, and nothing records how far the
+/// call got, so it is [`PaymentDelivery::MaybeSent`] and never retryable: a
+/// retry could pay twice, and the next sync settles the outcome. A boundary
+/// that catches the panic reports this class; it does not choose its own.
+pub fn panicked_payment_class() -> (PaymentDelivery, bool) {
+    (PaymentDelivery::MaybeSent, false)
+}
+
 /// The class of an SDK failure that ended a payment: `NotSent` only for the
 /// refusals that precede any dispatch (the signer had no key, the SDK refused
 /// a protocol version the network does not serve), `MaybeSent` for the rest.
@@ -2998,5 +3011,21 @@ mod payment_delivery_tests {
             );
         }
         assert!(!PlatformWalletError::PersisterLoad(persistence()).is_retryable());
+    }
+
+    /// A payment call that panicked is classed as one whose dispatch may
+    /// have happened: maybe sent and never retryable, the class a returned
+    /// unconfirmed broadcast gets.
+    #[test]
+    fn should_class_a_panicked_payment_as_maybe_sent_and_not_retryable() {
+        let unconfirmed = PlatformWalletError::TransactionBroadcastUnconfirmed("panic".into());
+        assert_eq!(
+            panicked_payment_class(),
+            (PaymentDelivery::MaybeSent, false)
+        );
+        assert_eq!(
+            panicked_payment_class(),
+            (unconfirmed.payment_delivery(), unconfirmed.is_retryable())
+        );
     }
 }

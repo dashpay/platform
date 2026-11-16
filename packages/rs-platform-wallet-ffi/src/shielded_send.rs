@@ -52,7 +52,7 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::{PaymentDelivery, PlatformWalletError};
+use platform_wallet::{panicked_payment_class, PlatformWalletError};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
@@ -754,7 +754,7 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
 /// in place, and the next nullifier sync reconciles whether the spend landed. The result's
-/// payment class says the same: `MaybeSent`, not retryable.
+/// payment class is the wallet's [`panicked_payment_class`]; this guard only marshals it.
 pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
@@ -762,7 +762,7 @@ pub(crate) fn catch_spend_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
-        Some((PaymentDelivery::MaybeSent, false)),
+        Some(panicked_payment_class()),
         SPEND_PANIC_GUIDANCE,
         body,
     )
@@ -786,7 +786,7 @@ const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been br
 /// fails at input selection instead of double-spending), and the reservation TTL or a sync
 /// observing the transaction reconciles the outcome; a tracked lock is resumable through
 /// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`. The result's payment class
-/// says the same: `MaybeSent`, not retryable.
+/// is the wallet's [`panicked_payment_class`]; this guard only marshals it.
 pub(crate) fn catch_funding_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
@@ -794,7 +794,7 @@ pub(crate) fn catch_funding_panic(
     catch_panic_to_code(
         operation,
         PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
-        Some((PaymentDelivery::MaybeSent, false)),
+        Some(panicked_payment_class()),
         FUNDING_PANIC_GUIDANCE,
         body,
     )
