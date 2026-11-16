@@ -1076,6 +1076,8 @@ fn should_report_a_short_enum_violation_as_without_a_bound() {
 #[test]
 fn should_stop_listing_before_an_allowed_value_that_does_not_fit() {
     let long = "x".repeat(300);
+    // Every enum here is short enough to be scanned: the listing is bounded whatever the
+    // enum's length, so a short enum with a large or compound value lists fewer values too
     for (members, document, summary) in [
         // A value whose JSON takes more than the bytes left
         (

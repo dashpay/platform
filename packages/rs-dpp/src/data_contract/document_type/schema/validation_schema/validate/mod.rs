@@ -116,8 +116,9 @@ impl DocumentSchemaValidator {
     /// validator's depth check gives a too-deep value. That check, which runs before the
     /// walk, is what bounds a document's own value depth; this bound guards the walk's
     /// recursion for a caller that reaches it another way. The generation that built the
-    /// validator checks it. An `enum` violation lists the first `max_enum_listed_values` of
-    /// the allowed values and counts the others (`None` lists them all).
+    /// validator checks it. With `Some(enum_listing)`, an `enum` violation lists the longest
+    /// leading run of the allowed values that stays within its `max_values` and `max_bytes`,
+    /// stopping before an array or an object, and counts the others; `None` lists them all.
     pub fn validate(
         &self,
         instance: &JsonValue,
