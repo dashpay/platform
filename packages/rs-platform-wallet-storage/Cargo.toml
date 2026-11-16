@@ -17,7 +17,7 @@ required-features = ["cli"]
 
 [dependencies]
 # Truly cross-cutting deps (always on regardless of features).
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 hex = "0.4"
 

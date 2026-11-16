@@ -1763,7 +1763,7 @@ dependencies = [
  "drive",
  "hex",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
 ]
@@ -2549,7 +2549,7 @@ dependencies = [
  "strategy-tests",
  "tempfile",
  "tenderdash-abci",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "time",
  "tokio",
  "tokio-stream",
@@ -5445,7 +5445,7 @@ dependencies = [
  "hmac",
  "secp256k1 0.33.1",
  "sha2 0.10.9",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5545,7 +5545,7 @@ dependencies = [
  "simple-signer",
  "static_assertions",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
@@ -5622,7 +5622,7 @@ dependencies = [
  "static_assertions",
  "subtle",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "time",
  "tokio",
  "tokio-util",
@@ -8998,7 +8998,7 @@ dependencies = [
  "serde-wasm-bindgen 0.5.0",
  "serde_json",
  "sha2 0.10.9",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "wasm-bindgen",
 ]
 

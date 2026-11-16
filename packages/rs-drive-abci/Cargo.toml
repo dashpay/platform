@@ -23,7 +23,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
   "server",
   "grovedb_operations_logging",
 ] }
-thiserror = "1.0.64"
+thiserror = "2.0"
 rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
