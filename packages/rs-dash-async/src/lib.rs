@@ -11,7 +11,7 @@
 mod block_on;
 #[cfg(not(target_arch = "wasm32"))]
 mod registry;
-mod single_flight;
+pub mod single_flight;
 
 pub use block_on::{block_on, AsyncError};
 #[cfg(not(target_arch = "wasm32"))]
@@ -19,4 +19,4 @@ pub use registry::{
     ClearingGuard, RegistryKey, ShutdownReport, ThreadRegistry, WorkerConfig, WorkerStatus,
     DEFAULT_JOIN_BUDGET, DEFAULT_REAP_BACKSTOP,
 };
-pub use single_flight::{Aborted, Flight, Joined, SingleFlight, Started};
+pub use single_flight::SingleFlight;

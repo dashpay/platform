@@ -31,7 +31,7 @@ use crate::platform::types::epoch::{
 };
 use crate::platform::{Fetch, FetchMany, ProtocolRequirement, Query, QuerySettings};
 use dapi_grpc::platform::v0::ResponseMetadata;
-use dash_async::{Flight, SingleFlight};
+use dash_async::single_flight::{Flight, SingleFlight};
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
