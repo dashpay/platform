@@ -591,119 +591,6 @@ async fn should_end_a_contest_with_no_winner_when_its_unique_index_entry_is_take
     assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
 }
 
-/// Opens a DPNS name contest on "quantum", then one on "coolio" that ends later, takes the
-/// unique index entry of the contest at `refused` (0 or 1, in the order they end), and ends
-/// both in one block at the latest protocol version. The award of that contest is refused, and
-/// the other contest's award must be kept whichever of the two the block ends first.
-async fn end_two_contests_in_one_block_with_one_award_refused(refused: usize) {
-    let platform_version = PlatformVersion::latest();
-    let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(platform_version.protocol_version)
-        .build_with_mock_rpc()
-        .set_genesis_state();
-    let platform_state = platform.state.load();
-    let (_, _, dpns_contract) = create_dpns_identity_name_contest(
-        &mut platform,
-        &platform_state,
-        7,
-        "quantum",
-        platform_version,
-    )
-    .await;
-    fast_forward_to_block(&platform, 500_000, 100, 42, 0, false);
-    let platform_state = platform.state.load();
-    create_dpns_identity_name_contest(
-        &mut platform,
-        &platform_state,
-        8,
-        "coolio",
-        platform_version,
-    )
-    .await;
-    let names = ["quantum", "coolio"];
-    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
-    assert_eq!(
-        end_dates.len(),
-        2,
-        "expected the contests to end at two dates"
-    );
-    let last_end_date = *end_dates
-        .keys()
-        .next_back()
-        .expect("expected a vote poll end date");
-
-    let (_, template) =
-        contender_documents(&platform, &dpns_contract, names[refused], platform_version).remove(0);
-    let holder = other_domain_like(&template, 0x51);
-    insert_domain_directly(&platform, &dpns_contract, &holder, platform_version);
-    let contenders = names.map(|name| {
-        contender_documents(&platform, &dpns_contract, name, platform_version)
-            .into_iter()
-            .map(|(contender, _)| contender)
-            .collect::<Vec<_>>()
-    });
-
-    end_vote_polls_due_at(&platform, last_end_date, platform_version)
-        .expect("expected both contests to end with the block");
-
-    for (index, name) in names.into_iter().enumerate() {
-        if index == refused {
-            assert_ended_with_no_winner(
-                &platform,
-                &dpns_name_vote_poll(&dpns_contract, name),
-                platform_version,
-            );
-            for contender in &contenders[index] {
-                assert!(
-                    awarded_domains(&platform, &dpns_contract, *contender, platform_version)
-                        .is_empty(),
-                    "no contender of the refused contest may be awarded"
-                );
-            }
-        } else {
-            let finished = finished_vote_info(&platform, &dpns_contract, name, platform_version)
-                .expect("expected the other contest to be finished");
-            assert_eq!(
-                finished.finished_vote_outcome,
-                FinishedVoteOutcome::TowardsIdentity as i32
-            );
-            let winner = Identifier::from_bytes(
-                &finished
-                    .won_by_identity_id
-                    .expect("expected the other contest to have a winner"),
-            )
-            .expect("expected the winner's id");
-            assert!(contenders[index].contains(&winner));
-            assert_eq!(
-                awarded_domains(&platform, &dpns_contract, winner, platform_version).len(),
-                1,
-                "the other contest's winner must keep its award"
-            );
-        }
-        assert_contest_cleaned_up(&platform, &dpns_contract, name, platform_version);
-    }
-    assert_eq!(
-        awarded_domains(
-            &platform,
-            &dpns_contract,
-            holder.owner_id(),
-            platform_version
-        ),
-        vec![holder],
-        "the document holding the entry must stay as it was"
-    );
-}
-
-#[tokio::test]
-async fn should_keep_an_earlier_award_of_the_block_when_a_later_award_is_refused() {
-    end_two_contests_in_one_block_with_one_award_refused(1).await;
-}
-
-#[tokio::test]
-async fn should_keep_a_later_award_of_the_block_when_an_earlier_award_is_refused() {
-    end_two_contests_in_one_block_with_one_award_refused(0).await;
-}
-
 #[tokio::test]
 async fn should_fail_on_a_taken_unique_index_entry_at_protocol_version_14() {
     let platform_version = protocol_version_14();
@@ -725,22 +612,16 @@ async fn should_fail_on_a_taken_unique_index_entry_at_protocol_version_14() {
     );
 }
 
-/// Opens a contest on `quantum` with `rank` 1 in [`SUMMED_RANK_CONTRACT`], after writing a
-/// domain `big` whose `rank` is `i64::MAX`, then ends it at `platform_version`
-async fn end_contest_over_a_full_sum(
+/// A platform at `platform_version` with [`SUMMED_RANK_CONTRACT`] and a domain `big` whose
+/// `rank` is `i64::MAX`, so a winner with a `rank` above 0 takes the sum past its range
+fn platform_over_a_full_sum(
     platform_version: &PlatformVersion,
-) -> (
-    TempPlatform<MockCoreRPCLike>,
-    DataContract,
-    Identifier,
-    Result<(), Error>,
-) {
+) -> (TempPlatform<MockCoreRPCLike>, DataContract, StdRng) {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let mut rng = StdRng::seed_from_u64(0x5011_0000);
-    let (identity, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let contract = setup_contract(
         &platform.drive,
@@ -754,11 +635,40 @@ async fn end_contest_over_a_full_sum(
     let domain = contract
         .document_type_for_name("domain")
         .expect("expected a domain document type");
+    let mut big = domain
+        .random_document_with_rng(&mut rng, platform_version)
+        .expect("expected a random domain document");
+    big.set("parentDomainName", "dash".into());
+    big.set("normalizedParentDomainName", "dash".into());
+    big.set("subdomainRules.allowSubdomains", false.into());
+    big.set("preorderSalt", rng.gen::<[u8; 32]>().into());
+    big.set("label", "big".into());
+    big.set("normalizedLabel", "big".into());
+    big.set("rank", Value::I64(i64::MAX));
+    let big = other_domain_like(&big, 0x61);
+    insert_domain_directly(&platform, &contract, &big, platform_version);
+    (platform, contract, rng)
+}
 
-    let entropy = Bytes32::random_with_rng(&mut rng);
+/// A new identity joins a contest on `label` with `rank` in [`SUMMED_RANK_CONTRACT`] in a block
+/// at `time_ms`, opening it; returns the identity's id
+async fn join_summed_rank_contest(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    rng: &mut StdRng,
+    label: &str,
+    rank: i64,
+    time_ms: TimestampMillis,
+    platform_version: &PlatformVersion,
+) -> Identifier {
+    let (identity, signer, key) = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+    let domain = contract
+        .document_type_for_name("domain")
+        .expect("expected a domain document type");
+    let entropy = Bytes32::random_with_rng(rng);
     let mut document = domain
         .random_document_with_identifier_and_entropy(
-            &mut rng,
+            rng,
             identity.id(),
             entropy,
             DocumentFieldFillType::FillIfNotRequired,
@@ -771,17 +681,9 @@ async fn end_contest_over_a_full_sum(
     document.set("records.identity", document.owner_id().into());
     document.set("subdomainRules.allowSubdomains", false.into());
     document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
-
-    let mut big = document.clone();
-    big.set("label", "big".into());
-    big.set("normalizedLabel", "big".into());
-    big.set("rank", Value::I64(i64::MAX));
-    let big = other_domain_like(&big, 0x61);
-    insert_domain_directly(&platform, &contract, &big, platform_version);
-
-    document.set("label", "quantum".into());
-    document.set("normalizedLabel", "quantum".into());
-    document.set("rank", Value::I64(1));
+    document.set("label", label.into());
+    document.set("normalizedLabel", label.into());
+    document.set("rank", Value::I64(rank));
     document
         .set_id_for_creation(domain, &entropy.0, 2, platform_version)
         .expect("expected to set the document id");
@@ -829,7 +731,7 @@ async fn end_contest_over_a_full_sum(
         .process_raw_state_transitions(
             &[serialized_transition],
             &platform_state,
-            &BlockInfo::default_with_time(5000),
+            &BlockInfo::default_with_time(time_ms),
             &transaction,
             platform_version,
             false,
@@ -847,9 +749,50 @@ async fn end_contest_over_a_full_sum(
         StateTransitionExecutionResult::SuccessfulExecution { .. },
         "the contender must join the contest"
     );
+    identity.id()
+}
 
+/// The contest on `label` with `rank` in [`SUMMED_RANK_CONTRACT`]
+fn summed_rank_vote_poll(
+    contract: &DataContract,
+    label: &str,
+    rank: i64,
+) -> ContestedDocumentResourceVotePoll {
+    ContestedDocumentResourceVotePoll {
+        contract_id: contract.id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        index_values: vec![
+            Value::Text("dash".to_string()),
+            Value::Text(label.to_string()),
+            Value::I64(rank),
+        ],
+    }
+}
+
+/// Opens a contest on `quantum` with `rank` 1 over a full sum (see
+/// [`platform_over_a_full_sum`]), then ends it at `platform_version`
+async fn end_contest_over_a_full_sum(
+    platform_version: &PlatformVersion,
+) -> (
+    TempPlatform<MockCoreRPCLike>,
+    DataContract,
+    Identifier,
+    Result<(), Error>,
+) {
+    let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
+    let contender = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
     let result = end_first_due_vote_polls(&platform, platform_version);
-    (platform, contract, identity.id(), result)
+    (platform, contract, contender, result)
 }
 
 #[tokio::test]
@@ -866,16 +809,7 @@ async fn should_end_a_contest_with_no_winner_when_the_award_takes_a_sum_past_its
     assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
     assert_ended_with_no_winner(
         &platform,
-        &ContestedDocumentResourceVotePoll {
-            contract_id: contract.id(),
-            document_type_name: "domain".to_string(),
-            index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![
-                Value::Text("dash".to_string()),
-                Value::Text("quantum".to_string()),
-                Value::I64(1),
-            ],
-        },
+        &summed_rank_vote_poll(&contract, "quantum", 1),
         platform_version,
     );
 }
@@ -884,6 +818,98 @@ async fn should_end_a_contest_with_no_winner_when_the_award_takes_a_sum_past_its
 async fn should_fail_on_an_award_taking_a_sum_past_its_range_at_protocol_version_14() {
     let (_, _, _, result) = end_contest_over_a_full_sum(protocol_version_14()).await;
     assert_matches!(result, Err(Error::Drive(DriveCrateError::GroveDB(_))));
+}
+
+/// Opens a contest whose award takes the sum past its range (`quantum`, `rank` 1) and one
+/// awarded as usual (`zebra`, `rank` 0), the one at `refused` (0 or 1) ending first, and ends
+/// both in one block at the latest protocol version. The refused award goes through the award
+/// itself, not the uniqueness check before it, and the other contest's award must be kept
+/// whichever of the two the block ends first.
+async fn end_two_contests_in_one_block_with_one_award_refused(refused: usize) {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
+    let refused_contest = ("quantum", 1);
+    let awarded_contest = ("zebra", 0);
+    let contests = if refused == 0 {
+        [refused_contest, awarded_contest]
+    } else {
+        [awarded_contest, refused_contest]
+    };
+    let mut contenders = vec![];
+    for ((label, rank), time_ms) in contests.into_iter().zip([5000, 500_000]) {
+        contenders.push(
+            join_summed_rank_contest(
+                &mut platform,
+                &contract,
+                &mut rng,
+                label,
+                rank,
+                time_ms,
+                platform_version,
+            )
+            .await,
+        );
+    }
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
+    assert_eq!(
+        end_dates.len(),
+        2,
+        "expected the contests to end at two dates"
+    );
+    let last_end_date = *end_dates
+        .keys()
+        .next_back()
+        .expect("expected a vote poll end date");
+
+    end_vote_polls_due_at(&platform, last_end_date, platform_version)
+        .expect("expected both contests to end with the block");
+
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+    for (index, ((label, rank), contender)) in contests.into_iter().zip(contenders).enumerate() {
+        let vote_poll = summed_rank_vote_poll(&contract, label, rank);
+        if index == refused {
+            assert_ended_with_no_winner(&platform, &vote_poll, platform_version);
+            assert!(
+                awarded_domains(&platform, &contract, contender, platform_version).is_empty(),
+                "nothing of the refused award may stay in the state"
+            );
+        } else {
+            assert_eq!(
+                stored_poll_status(&platform, &vote_poll, platform_version),
+                (
+                    ContestedDocumentVotePollStatus::Awarded(contender),
+                    Some(900)
+                )
+            );
+            assert_eq!(
+                awarded_domains(&platform, &contract, contender, platform_version).len(),
+                1,
+                "the other contest's winner must keep its award"
+            );
+        }
+        let balance_id = vote_poll
+            .specialized_balance_id()
+            .expect("expected the prefunded balance id");
+        let balance = platform
+            .drive
+            .fetch_prefunded_specialized_balance(balance_id.to_buffer(), None, platform_version)
+            .expect("expected to read the prefunded balance");
+        assert_eq!(
+            balance.unwrap_or_default(),
+            0,
+            "the contest's prefunded balance must be emptied"
+        );
+    }
+}
+
+#[tokio::test]
+async fn should_keep_an_earlier_award_of_the_block_when_a_later_award_is_refused() {
+    end_two_contests_in_one_block_with_one_award_refused(1).await;
+}
+
+#[tokio::test]
+async fn should_keep_a_later_award_of_the_block_when_an_earlier_award_is_refused() {
+    end_two_contests_in_one_block_with_one_award_refused(0).await;
 }
 
 /// Ends the same contest, with votes for both contenders and the lock, at the latest protocol
