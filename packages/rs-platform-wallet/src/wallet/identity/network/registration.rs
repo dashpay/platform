@@ -72,7 +72,7 @@ use dpp::prelude::Identifier;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::StateTransitionEstimatedFeeValidation;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
@@ -399,7 +399,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        let funding = apply_top_up_minimum(funding, self.sdk.version())?;
+        let funding = apply_top_up_minimum(funding)?;
         // Step 1: retrieve the identity + its HD index.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
@@ -471,7 +471,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        let funding = apply_top_up_minimum(funding, self.sdk.version())?;
+        let funding = apply_top_up_minimum(funding)?;
         let identity = self.fetch_identity_to_pay(identity_id).await?;
 
         let (new_balance, metadata) = self
@@ -485,10 +485,13 @@ impl IdentityWallet {
             )
             .await?;
         // The caller may name an identity this wallet holds after all; its
-        // local balance then follows Platform's, as on the managed route.
-        Ok(self
-            .record_top_up_balance(identity_id, new_balance, metadata)
-            .await)
+        // local balance then follows Platform's, as on the managed route. The
+        // proved balance is what this route reports, not the local one: on
+        // metadata no newer than the cached balance's, the local record keeps
+        // the cached value, which can predate this top-up.
+        self.record_top_up_balance(identity_id, new_balance, metadata)
+            .await;
+        Ok(new_balance)
     }
 
     /// Assign the identity an unassigned unbound top-up lock pays
@@ -504,7 +507,10 @@ impl IdentityWallet {
     /// another identity
     /// ([`PlatformWalletError::AssetLockIdentityRecipientMismatch`]). If the
     /// store fails, the error is returned and the assignment holds for this
-    /// session; assigning the same identity again retries the store.
+    /// session; assigning the same identity again retries the store. A wallet
+    /// removed or re-created under its id while the identity was looked up is
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
+    /// assigned.
     ///
     /// [`TrackedAssetLock::is_unassigned_identity_top_up`]: crate::wallet::asset_lock::tracked::TrackedAssetLock::is_unassigned_identity_top_up
     pub async fn assign_identity_top_up_recipient(
@@ -514,7 +520,7 @@ impl IdentityWallet {
     ) -> Result<(), PlatformWalletError> {
         self.fetch_identity_to_pay(identity_id).await?;
         self.asset_locks
-            .assign_identity_top_up_recipient(out_point, *identity_id)
+            .assign_identity_top_up_recipient(out_point, *identity_id, &self.generation)
             .await
     }
 
@@ -776,7 +782,7 @@ impl IdentityWallet {
 }
 
 /// The minimum asset-lock funding, in duffs, Platform accepts for an
-/// identity top-up under `platform_version`.
+/// identity top-up under every protocol version this build supports.
 ///
 /// Platform rejects an `IdentityTopUp` whose asset-lock output value (in
 /// credits) is below `IdentityTopUpTransition::calculate_min_required_fee`,
@@ -785,7 +791,22 @@ impl IdentityWallet {
 /// a lock built and broadcast is accepted by Core (spending real UTXOs) but
 /// rejected by Platform, stranding the funds in a lock that can never
 /// complete the top-up.
-pub fn min_top_up_duffs(platform_version: &PlatformVersion) -> Result<u64, PlatformWalletError> {
+///
+/// The largest minimum across the versions, not the SDK's current one: the
+/// SDK's version can move during the top-up (a proved fetch ratchets it up,
+/// and a pinned SDK can lag the network), so an amount held to the version
+/// read first could clear a lower floor and then be submitted under a higher
+/// one, after its Core funds are locked.
+pub fn min_top_up_duffs() -> Result<u64, PlatformWalletError> {
+    PLATFORM_VERSIONS
+        .iter()
+        .try_fold(0, |max, platform_version| {
+            Ok(max.max(min_top_up_duffs_at(platform_version)?))
+        })
+}
+
+/// Platform's top-up minimum, in duffs, under `platform_version` alone.
+fn min_top_up_duffs_at(platform_version: &PlatformVersion) -> Result<u64, PlatformWalletError> {
     let credits = IdentityTopUpTransition::V0(IdentityTopUpTransitionV0::default())
         .calculate_min_required_fee(platform_version)
         .map_err(dash_sdk::Error::Protocol)?;
@@ -798,9 +819,8 @@ pub fn min_top_up_duffs(platform_version: &PlatformVersion) -> Result<u64, Platf
 /// broadcasting it. An existing lock's amount is already fixed.
 fn apply_top_up_minimum(
     funding: AssetLockFunding,
-    platform_version: &PlatformVersion,
 ) -> Result<AssetLockFunding, PlatformWalletError> {
-    let min_duffs = min_top_up_duffs(platform_version)?;
+    let min_duffs = min_top_up_duffs()?;
     let floor = |minimum: Option<u64>| Some(minimum.unwrap_or(0).max(min_duffs));
     match funding {
         AssetLockFunding::FromWalletBalance { amount_duffs, .. } if amount_duffs < min_duffs => {
@@ -991,7 +1011,7 @@ mod tests {
         let (wallet_manager, wallet_id, _generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let wallet = platform_wallet_in(wallet_manager, wallet_id).await;
-        let below = min_top_up_duffs(wallet.sdk().version()).unwrap() - 1;
+        let below = min_top_up_duffs().unwrap() - 1;
         let funding = || AssetLockFunding::FromWalletBalance {
             amount_duffs: below,
             account_index: 0,
@@ -1020,13 +1040,12 @@ mod tests {
     fn should_hold_every_new_top_up_funding_to_the_minimum() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
 
-        let version = PlatformVersion::latest();
-        let min = min_top_up_duffs(version).unwrap();
+        let min = min_top_up_duffs().unwrap();
         let drain = |minimum_lock_duffs| AssetLockFunding::DrainAccountBalance {
             account: AssetLockFundingAccount::Bip44 { account_index: 0 },
             minimum_lock_duffs,
         };
-        let floor_of = |funding| match apply_top_up_minimum(funding, version) {
+        let floor_of = |funding| match apply_top_up_minimum(funding) {
             Ok(AssetLockFunding::DrainAccountBalance {
                 minimum_lock_duffs, ..
             }) => minimum_lock_duffs,
@@ -1041,20 +1060,35 @@ mod tests {
                     amount_duffs: min,
                     account_index: 0,
                 },
-                version
             ),
             Ok(AssetLockFunding::FromWalletBalance { amount_duffs, .. })
                 if amount_duffs == min
         ));
     }
 
-    /// The minimum is Platform's own top-up fee floor for the protocol
-    /// version: the bare asset-lock floor under fee v0, plus the top-up base
-    /// cost under v1.
+    /// The minimum is Platform's own top-up fee floor, the largest across the
+    /// protocol versions this build supports, so it holds whichever of them
+    /// the top-up is submitted under: the bare asset-lock floor under fee v0,
+    /// plus the top-up base cost under v1.
     #[test]
-    fn should_take_the_top_up_minimum_from_the_protocol_version() {
-        assert_eq!(min_top_up_duffs(PlatformVersion::first()).unwrap(), 50_000);
-        assert_eq!(min_top_up_duffs(PlatformVersion::latest()).unwrap(), 50_500);
+    fn should_take_the_top_up_minimum_from_every_protocol_version() {
+        assert_eq!(
+            min_top_up_duffs_at(PlatformVersion::first()).unwrap(),
+            50_000
+        );
+        assert_eq!(
+            min_top_up_duffs_at(PlatformVersion::latest()).unwrap(),
+            50_500
+        );
+        let min = min_top_up_duffs().unwrap();
+        assert_eq!(min, 50_500);
+        for platform_version in PLATFORM_VERSIONS {
+            assert!(
+                min >= min_top_up_duffs_at(platform_version).unwrap(),
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+        }
     }
 
     /// A top-up's proved balance lands on the identity when this wallet holds

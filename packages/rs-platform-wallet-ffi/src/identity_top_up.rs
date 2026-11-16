@@ -171,10 +171,10 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 /// credit balance Platform returns; the local `ManagedIdentity` balance is
 /// updated + queued for persistence inside the library call.
 ///
-/// `amount_duffs` must be at least Platform's top-up minimum for the SDK's
-/// protocol version
+/// `amount_duffs` must be at least Platform's top-up minimum, the largest
+/// across the protocol versions this build supports
 /// ([`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs),
-/// 50_500 duffs under fee v1); the wallet rejects a smaller amount with
+/// 50_500 duffs today); the wallet rejects a smaller amount with
 /// `ErrorInvalidParameter` before any lock is built.
 ///
 /// # Safety
@@ -263,7 +263,9 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// `out_new_balance` receives the identity's proved post-transition balance.
 ///
 /// Errors before anything is built: `ErrorInvalidParameter` for an amount
-/// below [`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs), `ErrorIdentityNotFound` (7) for an identity
+/// below [`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs)
+/// (the largest top-up minimum across the supported protocol versions, 50_500
+/// duffs today), `ErrorIdentityNotFound` (7) for an identity
 /// Platform does not know, and a persistence error when the host's persister
 /// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
 /// reported as the SDK error for now; it becomes `ErrorIdentityLookupFailed`
@@ -280,6 +282,36 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    amount_duffs: u64,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`: a panic (most concretely
+    // `block_on_worker`'s `.expect` on a panicking top-up task) must not reach
+    // this `extern "C"` frame. It can strike after the lock was broadcast, so
+    // the ambiguous broadcast-unconfirmed contract applies.
+    catch_top_up_panic("external identity top-up", || {
+        top_up_external_identity_with_funding_signer_inner(
+            wallet_handle,
+            identity_id,
+            amount_duffs,
+            account_index,
+            core_signer_handle,
+            out_new_balance,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_top_up_external_identity_with_funding_signer`],
+/// as an ordinary Rust function so a panic unwinds into
+/// [`catch_top_up_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn top_up_external_identity_with_funding_signer_inner(
     wallet_handle: Handle,
     identity_id: *const [u8; 32],
     amount_duffs: u64,
@@ -330,6 +362,35 @@ pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_s
     PlatformWalletFFIResult::ok()
 }
 
+/// Post-panic guidance for the exports that may have paid an identity
+/// top-up. Paired with `ErrorTransactionBroadcastUnconfirmed` in
+/// [`catch_top_up_panic`].
+const TOP_UP_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast and \
+     the top-up may or may not have been submitted — do NOT build a new lock to retry; resume \
+     the tracked lock with platform_wallet_resume_identity_top_up_to_recorded_recipient_signer, \
+     or the identity may be paid twice.";
+
+/// [`catch_panic_to_code`] for the exports that fund or resume an identity
+/// top-up from a Core asset lock.
+///
+/// The panic is mapped to
+/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], not
+/// to a definitive failure: it can strike after the lock reached the wire or
+/// after Platform accepted the top-up, so the outcome is ambiguous, and that
+/// code's contract (do not retry, the lock stays tracked and resumable) is
+/// the conservative one.
+pub(crate) fn catch_top_up_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        TOP_UP_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 #[cfg(test)]
 mod top_up_with_funding_guard_tests {
     use super::*;
@@ -343,6 +404,32 @@ mod top_up_with_funding_guard_tests {
     /// is sufficient (and never unsound here).
     fn dangling_core_signer() -> *mut MnemonicResolverHandle {
         std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr()
+    }
+
+    /// A panic inside a top-up export must not unwind into the `extern "C"`
+    /// frame. It becomes `ErrorTransactionBroadcastUnconfirmed`, the
+    /// ambiguous do-not-retry contract, because it can strike after the lock
+    /// was broadcast.
+    #[test]
+    fn should_map_a_top_up_panic_to_the_broadcast_unconfirmed_contract() {
+        let mut result = catch_top_up_panic("external identity top-up", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            message.contains("external identity top-up panicked")
+                && message.contains("tokio worker panicked")
+                && message.contains("do NOT build a new lock"),
+            "{message}"
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]

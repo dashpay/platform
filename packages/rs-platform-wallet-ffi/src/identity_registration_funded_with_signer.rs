@@ -25,6 +25,7 @@ use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
+use crate::identity_top_up::catch_top_up_panic;
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverCoreSigner;
@@ -392,6 +393,34 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_top_up_to_recorded_reci
     out_identity_id: *mut [u8; 32],
     out_new_balance: *mut u64,
 ) -> PlatformWalletFFIResult {
+    // A panic must not reach this `extern "C"` frame. The resume may have
+    // broadcast the lock or submitted the top-up before it, so the ambiguous
+    // broadcast-unconfirmed contract applies.
+    catch_top_up_panic("identity top-up resume", || {
+        resume_identity_top_up_to_recorded_recipient_signer_inner(
+            wallet_handle,
+            out_point,
+            core_signer_handle,
+            out_identity_id,
+            out_new_balance,
+        )
+    })
+}
+
+/// Body of
+/// [`platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`], as
+/// an ordinary Rust function so a panic unwinds into [`catch_top_up_panic`]
+/// instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_identity_id: *mut [u8; 32],
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
     check_ptr!(out_point);
     check_ptr!(core_signer_handle);
     check_ptr!(out_identity_id);
@@ -453,13 +482,48 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_top_up_to_recorded_reci
 /// failed store the assignment still holds for this session and another
 /// identity is refused (61); calling again with the same identity retries
 /// the store. A lock
-/// that is not an unbound identity top-up is refused.
+/// that is not an unbound identity top-up is refused. A wallet removed or
+/// re-created under its id during the lookup is `NotFound`, with nothing
+/// assigned.
 ///
 /// # Safety
 /// - `out_point` must be a valid, non-null `*const OutPointFFI`.
 /// - `identity_id` must point to 32 readable bytes.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_assign_identity_top_up_recipient(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    identity_id: *const [u8; 32],
+) -> PlatformWalletFFIResult {
+    // A panic must not reach this `extern "C"` frame. An assignment pays
+    // nothing, so a plain wallet-operation error is enough.
+    catch_assignment_panic("identity top-up recipient assignment", || {
+        assign_identity_top_up_recipient_inner(wallet_handle, out_point, identity_id)
+    })
+}
+
+/// [`catch_panic_to_code`] for [`platform_wallet_assign_identity_top_up_recipient`]:
+/// an assignment sends nothing, so a panic is an `ErrorWalletOperation`.
+fn catch_assignment_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Nothing was paid. The assignment may or may not have been stored; assigning the same \
+         identity again is safe.",
+        body,
+    )
+}
+
+/// Body of [`platform_wallet_assign_identity_top_up_recipient`], as an
+/// ordinary Rust function so a panic unwinds into [`catch_assignment_panic`]
+/// instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn assign_identity_top_up_recipient_inner(
     wallet_handle: Handle,
     out_point: *const OutPointFFI,
     identity_id: *const [u8; 32],
@@ -566,6 +630,29 @@ mod topup_existing_lock_guard_tests {
             PlatformWalletFFIResultCode::NotFound
         );
         assert_eq!((identity, balance), ([0; 32], 0));
+    }
+
+    /// A panic inside the assignment export must not unwind into the
+    /// `extern "C"` frame; an assignment pays nothing, so it is a plain
+    /// wallet-operation error.
+    #[test]
+    fn should_map_an_assignment_panic_to_a_wallet_operation_error() {
+        let mut result = catch_assignment_panic("identity top-up recipient assignment", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            message.contains("assignment panicked") && message.contains("Nothing was paid"),
+            "{message}"
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]

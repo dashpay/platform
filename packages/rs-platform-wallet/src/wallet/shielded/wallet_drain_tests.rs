@@ -1173,10 +1173,12 @@ async fn fund_typed_amount(
 
 /// A typed-amount funding whose recipient cannot be made durable stops before
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
-/// both fail the call with a persistence error, leave the lock untracked and
-/// uncommitted, and hand the inputs back so the next attempt builds again.
-/// The abandoned row of a failed flush is withdrawn from the buffer, so the
-/// next successful flush does not commit it.
+/// both fail the call with a persistence error and leave the lock untracked
+/// and uncommitted. After a failed flush the abandoned row's removal is
+/// stored, so the inputs are handed back and the next attempt builds again;
+/// the next successful flush does not commit the abandoned row. A backend
+/// that refuses every store also refuses that removal, so the row may
+/// survive and the inputs stay reserved.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
@@ -1208,6 +1210,14 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
             .iter()
             .any(|tracked| tracked.out_point == seen[0]));
         assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
+        if !fail_flush {
+            assert!(
+                matches!(&error, PlatformWalletError::Persistence(message)
+                    if message.contains("inputs stay reserved")),
+                "{error}"
+            );
+            continue;
+        }
 
         // The inputs were handed back: the retry builds a lock again and gets
         // as far as the broadcaster.

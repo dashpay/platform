@@ -3,11 +3,13 @@
 use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::changeset::{AssetLockEntry, PlatformWalletChangeSet};
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::WalletGeneration;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -163,20 +165,33 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// returned and the assignment holds for this session; assigning the
     /// same identity again stores it again, so a retry makes it durable.
     /// Only an unbound top-up lock that is not consumed can be assigned.
+    ///
+    /// `generation` is the caller's handle's wallet generation. A wallet
+    /// removed, or re-created under its id, since the handle was taken is
+    /// refused with [`PlatformWalletError::WalletRemovedBeforeSend`] and
+    /// nothing is assigned or stored.
     pub(crate) async fn assign_identity_top_up_recipient(
         &self,
         out_point: &OutPoint,
         identity: Identifier,
+        generation: &Arc<WalletGeneration>,
     ) -> Result<(), PlatformWalletError> {
         self.require_identity_recipient_persistence()?;
+        // The caller may have awaited a Platform lookup since it took its
+        // handle, and a replacement generation can track a lock at the same
+        // outpoint (one it restored from the store): assigning there would make
+        // a later resume pay this caller's identity from the replacement's
+        // lock. The generation's lifecycle gate is held from the check through
+        // the store, taken before the manager lock as teardown takes them, so
+        // a removal cannot land between them.
+        let _lifecycle = generation.payment_guard().await;
         let entry = {
             let mut wm = self.wallet_manager.write().await;
             let lock = wm
                 .get_wallet_info_mut(&self.wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, generation))
                 .ok_or_else(|| {
-                    PlatformWalletError::WalletNotFound(
-                        "Wallet info not found in wallet manager".to_string(),
-                    )
+                    PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
                 })?
                 .tracked_asset_locks
                 .get_mut(out_point)
@@ -205,10 +220,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// the inserted entry.
     ///
     /// If an entry already exists at `out_point`, it is overwritten.
-    pub(crate) async fn track_asset_lock(&self, lock: TrackedAssetLock) -> AssetLockChangeSet {
+    ///
+    /// Only on `generation`, the one the lock was built on: the build awaits
+    /// between its build and this insert, and a wallet re-created under the
+    /// same id in that window must not be handed a lock it never built — it
+    /// could resume it while the build reports the removal. On any other
+    /// generation nothing is inserted and the changeset is empty.
+    pub(crate) async fn track_asset_lock(
+        &self,
+        lock: TrackedAssetLock,
+        generation: &Arc<WalletGeneration>,
+    ) -> AssetLockChangeSet {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = AssetLockChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+        if let Some(info) = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, generation))
+        {
             let out_point = lock.out_point;
             cs.asset_locks.insert(out_point, (&lock).into());
             info.tracked_asset_locks.insert(out_point, lock);
