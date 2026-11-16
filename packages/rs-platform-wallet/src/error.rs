@@ -833,13 +833,14 @@ pub enum PlatformWalletError {
 
     /// Platform rejected an address-funds transition because a spent address's
     /// provided nonce did not equal its expected next value (DPP consensus code
-    /// 40603, `AddressInvalidNonceError`) — an optimistic `fetched + 1` nonce
-    /// racing a lagging replica read. Carries Platform's `expected_nonce`
-    /// verbatim so the caller can rebuild and retry without re-fetching.
+    /// 40603, `AddressInvalidNonceError`). An endpoint verdict may follow an
+    /// earlier dispatch, so the wallet classifies this as
+    /// [`PaymentDelivery::MaybeSent`]; reconcile the original operation before
+    /// submitting another transition.
     #[error(
         "Address nonce mismatch for {address}: submitted nonce {provided_nonce}, \
-         Platform expected {expected_nonce}; retry the operation with the \
-         expected nonce"
+         Platform expected {expected_nonce}; reconcile the original operation \
+         before submitting another transition"
     )]
     AddressNonceMismatch {
         address: PlatformAddress,

@@ -210,9 +210,9 @@ pub enum PlatformWalletFFIResultCode {
     /// addresses, or an identity registration or top-up from them)
     /// because the submitted address nonce raced Platform's expected next
     /// value (a lagging DAPI replica stale read; consensus code 40603). Its
-    /// OWN code so hosts can recognize this specific, self-healing
-    /// failure and retry: the retry re-fetches the address nonce, resolving
-    /// the mismatch without host intervention. A shield from Platform
+    /// OWN code so hosts can recognize this specific failure; it is not a
+    /// retry signal: reconcile the original operation before submitting
+    /// another transition (see its payment delivery below). A shield from Platform
     /// addresses does not report it: an endpoint's nonce verdict on a shield
     /// that was dispatched reads as [`Self::ErrorShieldedSpendUnconfirmed`],
     /// as no proof backs it. The submitted and Platform-

@@ -3180,7 +3180,7 @@ mod tests {
 
     /// A shield (Type 15) definitively rejected on an address-nonce race must
     /// map to the dedicated `ErrorAddressNonceMismatch` — NOT regress to the
-    /// generic `ErrorWalletOperation` — so hosts keep the safe-to-retry signal.
+    /// generic `ErrorWalletOperation` — so hosts keep its dedicated code.
     /// The submitted/expected nonce values must survive in the message.
     #[test]
     fn map_spend_result_maps_address_nonce_mismatch_to_dedicated_code() {

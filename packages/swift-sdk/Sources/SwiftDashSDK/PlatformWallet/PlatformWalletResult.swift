@@ -883,8 +883,10 @@ public enum PlatformWalletError: LocalizedError {
     /// Address-nonce race (transfer or withdrawal from Platform addresses, or
     /// identity registration / top-up from them): Platform rejected the
     /// transition because the submitted address nonce raced its expected
-    /// value. Safe to retry: the retry re-fetches the address nonce so the
-    /// mismatch self-heals. A shield does not return it. The submitted and
+    /// value. Not a retry signal: the verdict may follow an earlier dispatch
+    /// that landed, so Rust classes it `.maybeSent` and not retryable;
+    /// reconcile the original operation before submitting another
+    /// transition. A shield does not return it. The submitted and
     /// expected nonce values are in the message.
     case addressNonceMismatch(String, payment: PlatformPaymentClass? = nil)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
