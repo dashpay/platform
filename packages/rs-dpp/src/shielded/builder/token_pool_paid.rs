@@ -2,20 +2,21 @@ use grovedb_commitment_tree::{
     Anchor, Builder, BundleType, DashMemo, Flags, FullViewingKey, NoteValue, PaymentAddress, Scope,
     SpendAuthorizingKey,
 };
+use rand::rngs::OsRng;
 
 use crate::address_funds::OrchardAddress;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
 use crate::fee::Credits;
 use crate::shielded::{
-    compute_token_purchase_from_shielded_pool_fee,
+    compute_platform_sighash, compute_token_purchase_from_shielded_pool_fee,
     compute_token_shielded_transfer_with_shielded_fee_fee,
     compute_token_unshield_with_shielded_fee_fee, token_pool_fee_bundle_extra_sighash_data,
+    token_pool_paid_fee_binding_extra_sighash_data,
     token_purchase_from_shielded_pool_extra_sighash_data,
     token_shielded_transfer_with_shielded_fee_extra_sighash_data,
-    token_unshield_with_shielded_fee_extra_sighash_data, SerializedAction,
-    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
-    TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+    token_unshield_with_shielded_fee_extra_sighash_data, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+    TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
 };
 use crate::state_transition::token_purchase_from_shielded_pool_transition::methods::TokenPurchaseFromShieldedPoolTransitionMethodsV0;
 use crate::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
@@ -29,8 +30,7 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 use super::{
-    build_spend_bundle, prove_and_sign_bundle, serialize_authorized_bundle, OrchardProver,
-    SerializedBundle, SpendableNote,
+    serialize_authorized_bundle, spend_builder, OrchardProver, SerializedBundle, SpendableNote,
 };
 
 /// The credit pool side of an identity-less token pool transition: the wallet's credit pool
@@ -73,20 +73,44 @@ fn total_value(spends: &[SpendableNote]) -> Result<u64, ProtocolError> {
         })
 }
 
-/// Builds the credit pool fee bundle: spends `payer.spends`, carves `credits_leaving` (the fee,
-/// plus the price for a purchase) and returns the remainder as change, bound to the token
-/// bundle through `token_actions`.
+/// Proves and signs the token bundle `token_builder` builds and a credit pool fee bundle that
+/// spends `payer.spends`, so that each binds the other: the token bundle's sighash data is its
+/// kind's layout `token_extra_sighash_data` with the fee binding of `platform_version` applied
+/// (the fee bundle's commitment), and the fee bundle's is the fee layout over the token bundle's
+/// signed actions. Returns both bundles and the credits that leave the credit pool.
+///
+/// The fee bundle therefore exists, unproven, before the token bundle is signed, and is proven
+/// and signed after it. Its commitment covers its effecting data only, which proving and signing
+/// leave as they are; the signed fee bundle is checked against it all the same.
+///
+/// `compute_credits_leaving` computes what leaves the credit pool — the fee, plus the price for a
+/// purchase — from the token bundle's action count and the fee bundle's. The fee bundle has
+/// `max(payer.spends.len(), 2)` actions, the count the fee is computed for; the remainder of
+/// the payer's notes returns to `payer.change_address`.
 #[allow(clippy::too_many_arguments)]
-fn build_fee_bundle<P: OrchardProver>(
+fn prove_and_sign_with_fee_bundle<P: OrchardProver>(
     state_transition_type: u8,
     token_id: &Identifier,
-    token_actions: &[SerializedAction],
+    token_builder: Builder<DashMemo>,
+    token_signing_keys: &[SpendAuthorizingKey],
+    token_extra_sighash_data: Vec<u8>,
     payer: ShieldedFeePayer<'_>,
-    credits_leaving: Credits,
-    expected_actions: usize,
+    compute_credits_leaving: impl FnOnce(usize, usize) -> Result<Credits, ProtocolError>,
     prover: &P,
     platform_version: &PlatformVersion,
-) -> Result<SerializedBundle, ProtocolError> {
+) -> Result<(SerializedBundle, SerializedBundle, Credits), ProtocolError> {
+    let mut rng = OsRng;
+    let build_failed =
+        |e| ProtocolError::ShieldedBuildError(format!("failed to build bundle: {:?}", e));
+    let empty = || ProtocolError::ShieldedBuildError("bundle was empty after build".to_string());
+
+    let (token_unproven, _) = token_builder
+        .build::<i64>(&mut rng)
+        .map_err(build_failed)?
+        .ok_or_else(empty)?;
+
+    let fee_actions = payer.spends.len().max(2);
+    let credits_leaving = compute_credits_leaving(token_unproven.actions().len(), fee_actions)?;
     let total_spent = total_value(&payer.spends)?;
     if credits_leaving > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
@@ -94,44 +118,94 @@ fn build_fee_bundle<P: OrchardProver>(
             credits_leaving, total_spent
         )));
     }
-    let change_amount = total_spent - credits_leaving;
-    let extra_sighash_data = token_pool_fee_bundle_extra_sighash_data(
-        state_transition_type,
-        &token_id.to_buffer(),
-        token_actions,
-        platform_version,
-    )?;
-    let bundle = build_spend_bundle(
+    let fee_value_balance = i64::try_from(credits_leaving).map_err(|_| {
+        ProtocolError::ShieldedBuildError(format!(
+            "credits leaving the pool {} exceed the maximum value balance",
+            credits_leaving
+        ))
+    })?;
+    let fee_builder = spend_builder(
         payer.spends,
         payer.change_address,
-        change_amount,
+        total_spent - credits_leaving,
         [0u8; 36],
         payer.fvk,
-        payer.ask,
         payer.anchor,
-        prover,
-        &extra_sighash_data,
     )?;
-    let sb = serialize_authorized_bundle(&bundle);
-    if sb.value_balance != credits_leaving as i64 {
+    let (fee_unproven, _) = fee_builder
+        .build::<i64>(&mut rng)
+        .map_err(build_failed)?
+        .ok_or_else(empty)?;
+    if *fee_unproven.value_balance() != fee_value_balance {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "fee bundle value balance {} does not equal the credits leaving the pool {}",
-            sb.value_balance, credits_leaving
+            fee_unproven.value_balance(),
+            credits_leaving
         )));
     }
-    if sb.actions.len() != expected_actions {
+    if fee_unproven.actions().len() != fee_actions {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "fee bundle has {} actions, the fee was computed for {}",
-            sb.actions.len(),
-            expected_actions
+            fee_unproven.actions().len(),
+            fee_actions
         )));
     }
-    Ok(sb)
+    let fee_bundle_commitment: [u8; 32] = fee_unproven.commitment().into();
+
+    let token_extra_sighash_data = token_pool_paid_fee_binding_extra_sighash_data(
+        token_extra_sighash_data,
+        &fee_bundle_commitment,
+        platform_version,
+    )?;
+    let token_commitment: [u8; 32] = token_unproven.commitment().into();
+    let token_bundle = token_unproven
+        .create_proof(prover.proving_key(), &mut rng)
+        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e)))?
+        .apply_signatures(
+            rng,
+            compute_platform_sighash(&token_commitment, &token_extra_sighash_data),
+            token_signing_keys,
+        )
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
+        })?;
+    let token_sb = serialize_authorized_bundle(&token_bundle);
+
+    let fee_extra_sighash_data = token_pool_fee_bundle_extra_sighash_data(
+        state_transition_type,
+        &token_id.to_buffer(),
+        &token_sb.actions,
+        platform_version,
+    )?;
+    let fee_bundle = fee_unproven
+        .create_proof(prover.proving_key(), &mut rng)
+        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e)))?
+        .apply_signatures(
+            rng,
+            compute_platform_sighash(&fee_bundle_commitment, &fee_extra_sighash_data),
+            std::slice::from_ref(payer.ask),
+        )
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
+        })?;
+    if <[u8; 32]>::from(fee_bundle.commitment()) != fee_bundle_commitment {
+        return Err(ProtocolError::ShieldedBuildError(
+            "the fee bundle changed after the token bundle bound its commitment".to_string(),
+        ));
+    }
+    Ok((
+        token_sb,
+        serialize_authorized_bundle(&fee_bundle),
+        credits_leaving,
+    ))
 }
 
 /// Builds a `TokenShieldedTransferWithShieldedFee`: pays `transfer_amount` of the token to
 /// `recipient` inside the token's shielded pool (value balance zero) and the fee out of the
 /// credit shielded pool. No identity is involved. Returns the transition and the fee paid.
+///
+/// Build for the network's current protocol version: from protocol version 15 the token bundle
+/// binds the fee bundle's commitment, which earlier versions do not expect, and the reverse.
 #[allow(clippy::too_many_arguments)]
 pub fn build_token_shielded_transfer_with_shielded_fee_transition<P: OrchardProver>(
     token_id: Identifier,
@@ -191,35 +265,29 @@ pub fn build_token_shielded_transfer_with_shielded_fee_transition<P: OrchardProv
         &token_id.to_buffer(),
         platform_version,
     )?;
-    let token_bundle = prove_and_sign_bundle(
+    let (token_sb, fee_sb, fee) = prove_and_sign_with_fee_bundle(
+        TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+        &token_id,
         builder,
-        prover,
         std::slice::from_ref(spender.ask),
-        &token_extra,
+        token_extra,
+        fee_payer,
+        |token_actions, fee_actions| {
+            compute_token_shielded_transfer_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )
+        },
+        prover,
+        platform_version,
     )?;
-    let token_sb = serialize_authorized_bundle(&token_bundle);
     if token_sb.value_balance != 0 {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "token shielded transfer bundle value balance must be zero, got {}",
             token_sb.value_balance
         )));
     }
-    let fee_actions = fee_payer.spends.len().max(2);
-    let fee = compute_token_shielded_transfer_with_shielded_fee_fee(
-        token_sb.actions.len(),
-        fee_actions,
-        platform_version,
-    )?;
-    let fee_sb = build_fee_bundle(
-        TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
-        &token_id,
-        &token_sb.actions,
-        fee_payer,
-        fee,
-        fee_actions,
-        prover,
-        platform_version,
-    )?;
     let transition = TokenShieldedTransferWithShieldedFeeTransition::try_from_bundles(
         data_contract_id,
         token_contract_position,
@@ -241,6 +309,9 @@ pub fn build_token_shielded_transfer_with_shielded_fee_transition<P: OrchardProv
 /// Builds a `TokenUnshieldWithShieldedFee`: `amount` of the token leaves the token's shielded
 /// pool into `recipient_id`'s balance, the fee is paid out of the credit shielded pool. Returns
 /// the transition and the fee paid.
+///
+/// Build for the network's current protocol version: from protocol version 15 the token bundle
+/// binds the fee bundle's commitment, which earlier versions do not expect, and the reverse.
 #[allow(clippy::too_many_arguments)]
 pub fn build_token_unshield_with_shielded_fee_transition<P: OrchardProver>(
     token_id: Identifier,
@@ -273,40 +344,37 @@ pub fn build_token_unshield_with_shielded_fee_transition<P: OrchardProver>(
         amount,
         platform_version,
     )?;
-    let token_bundle = build_spend_bundle(
+    let builder = spend_builder(
         spender.spends,
         spender.change_address,
         change_amount,
         memo,
         spender.fvk,
-        spender.ask,
         spender.anchor,
-        prover,
-        &token_extra,
     )?;
-    let token_sb = serialize_authorized_bundle(&token_bundle);
+    let (token_sb, fee_sb, fee) = prove_and_sign_with_fee_bundle(
+        TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+        &token_id,
+        builder,
+        std::slice::from_ref(spender.ask),
+        token_extra,
+        fee_payer,
+        |token_actions, fee_actions| {
+            compute_token_unshield_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )
+        },
+        prover,
+        platform_version,
+    )?;
     if token_sb.value_balance != amount as i64 {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "token unshield bundle value balance {} does not equal the amount {}",
             token_sb.value_balance, amount
         )));
     }
-    let fee_actions = fee_payer.spends.len().max(2);
-    let fee = compute_token_unshield_with_shielded_fee_fee(
-        token_sb.actions.len(),
-        fee_actions,
-        platform_version,
-    )?;
-    let fee_sb = build_fee_bundle(
-        TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
-        &token_id,
-        &token_sb.actions,
-        fee_payer,
-        fee,
-        fee_actions,
-        prover,
-        platform_version,
-    )?;
     let transition = TokenUnshieldWithShieldedFeeTransition::try_from_bundles(
         data_contract_id,
         token_contract_position,
@@ -331,6 +399,9 @@ pub fn build_token_unshield_with_shielded_fee_transition<P: OrchardProver>(
 /// `total_agreed_price` credits (which must match the token's direct purchase price) paid out
 /// of the credit shielded pool together with the fee, and minted into a note for `recipient`
 /// in the token's shielded pool. Returns the transition and the fee paid.
+///
+/// Build for the network's current protocol version: from protocol version 15 the token bundle
+/// binds the fee bundle's commitment, which earlier versions do not expect, and the reverse.
 #[allow(clippy::too_many_arguments)]
 pub fn build_token_purchase_from_shielded_pool_transition<P: OrchardProver>(
     token_id: Identifier,
@@ -357,8 +428,10 @@ pub fn build_token_purchase_from_shielded_pool_transition<P: OrchardProver>(
             i64::MAX as u64
         )));
     }
-    // An outputs-only bundle carries no spend-auth signatures; its binding signature still
-    // commits to the token id, count and price, so the bundle is proven over that sighash.
+    // Orchard pads an outputs-only bundle with dummy spends, which it signs with throwaway keys,
+    // and signs its value balance with the binding signature; both sign this sighash, which binds
+    // the token id, the count, the price and, where the protocol version binds it, the fee
+    // bundle's commitment.
     let token_extra = token_purchase_from_shielded_pool_extra_sighash_data(
         &token_id.to_buffer(),
         token_count,
@@ -380,33 +453,40 @@ pub fn build_token_purchase_from_shielded_pool_transition<P: OrchardProver>(
             memo,
         )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
-    let token_sb =
-        serialize_authorized_bundle(&prove_and_sign_bundle(builder, prover, &[], &token_extra)?);
+    let (token_sb, fee_sb, credits_leaving) = prove_and_sign_with_fee_bundle(
+        TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+        &token_id,
+        builder,
+        &[],
+        token_extra,
+        fee_payer,
+        |token_actions, fee_actions| {
+            compute_token_purchase_from_shielded_pool_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )?
+            .checked_add(total_agreed_price)
+            .ok_or_else(|| {
+                ProtocolError::ShieldedBuildError("price + fee overflows u64".to_string())
+            })
+        },
+        prover,
+        platform_version,
+    )?;
     if token_sb.value_balance != -(token_count as i64) {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "token purchase bundle value balance {} does not equal minus the token count {}",
             token_sb.value_balance, token_count
         )));
     }
-    let fee_actions = fee_payer.spends.len().max(2);
-    let fee = compute_token_purchase_from_shielded_pool_fee(
-        token_sb.actions.len(),
-        fee_actions,
-        platform_version,
-    )?;
-    let credits_leaving = total_agreed_price.checked_add(fee).ok_or_else(|| {
-        ProtocolError::ShieldedBuildError("price + fee overflows u64".to_string())
-    })?;
-    let fee_sb = build_fee_bundle(
-        TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
-        &token_id,
-        &token_sb.actions,
-        fee_payer,
-        credits_leaving,
-        fee_actions,
-        prover,
-        platform_version,
-    )?;
+    let fee = credits_leaving
+        .checked_sub(total_agreed_price)
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError(
+                "credits leaving the pool are less than the price".to_string(),
+            )
+        })?;
     let transition = TokenPurchaseFromShieldedPoolTransition::try_from_bundles(
         data_contract_id,
         token_contract_position,

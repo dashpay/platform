@@ -91,8 +91,29 @@ pub fn reconstruct_and_verify_bundle(
     binding_signature: &[u8; 64],
     extra_sighash_data: &[u8],
 ) -> Result<(), InvalidShieldedProofError> {
-    let vk = get_verifying_key();
+    let bundle = reconstruct_bundle(
+        actions,
+        flags,
+        value_balance,
+        anchor,
+        proof,
+        binding_signature,
+    )?;
+    verify_bundle(&bundle, extra_sighash_data)
+}
 
+/// The reconstruction half of [`reconstruct_and_verify_bundle`]: the orchard
+/// `Bundle<Authorized, i64, DashMemo>` of a shielded state transition's serialized fields,
+/// refusing any field Orchard does not accept, without verifying the proof or any signature.
+/// [`verify_bundle`] verifies what it returns.
+pub fn reconstruct_bundle(
+    actions: &[SerializedAction],
+    flags: u8,
+    value_balance: i64,
+    anchor: &[u8; 32],
+    proof: &[u8],
+    binding_signature: &[u8; 64],
+) -> Result<Bundle<Authorized, i64, DashMemo>, InvalidShieldedProofError> {
     // Reconstruct each Action
     let mut orchard_actions = Vec::with_capacity(actions.len());
     for a in actions {
@@ -193,7 +214,7 @@ pub fn reconstruct_and_verify_bundle(
     // whose byte-length is not canonical for the action count — anti-malleability.
     // Spend-auth signatures were attached per-action in `Action::from_parts` above,
     // so action↔signature pairing is preserved with no separate list to reorder.
-    let bundle = Bundle::try_from_parts(
+    Bundle::try_from_parts(
         actions_nonempty,
         orchard_flags,
         value_balance,
@@ -203,7 +224,17 @@ pub fn reconstruct_and_verify_bundle(
     )
     .map_err(|e| {
         InvalidShieldedProofError::new(format!("failed to reconstruct authorized bundle: {e}"))
-    })?;
+    })
+}
+
+/// The verification half of [`reconstruct_and_verify_bundle`]: the Halo 2 proof and every
+/// RedPallas signature of a bundle [`reconstruct_bundle`] returned, over the platform sighash of
+/// its commitment and `extra_sighash_data`.
+pub fn verify_bundle(
+    bundle: &Bundle<Authorized, i64, DashMemo>,
+    extra_sighash_data: &[u8],
+) -> Result<(), InvalidShieldedProofError> {
+    let vk = get_verifying_key();
 
     // Compute the platform sighash: SHA-256(domain || bundle_commitment || extra_data).
     // The bundle commitment is the Orchard BundleCommitment (BLAKE2b-256 per ZIP-244),
@@ -219,7 +250,7 @@ pub fn reconstruct_and_verify_bundle(
     // - Each spend auth signature is valid for (rk, sighash)
     // - The binding signature is valid for (binding_validating_key, sighash)
     let mut batch = BatchValidator::new();
-    batch.add_bundle(&bundle, sighash);
+    batch.add_bundle(bundle, sighash);
 
     let rng = rand::rngs::OsRng;
     if !batch.validate(vk, rng) {

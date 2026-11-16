@@ -89,6 +89,11 @@ use super::{
 ///   `documentsAverageable`): a create outside a contest, or a replace raising the property,
 ///   that would take the total past the most the type's sums hold is refused
 ///   (`DocumentSumOverflowError`, 40154).
+/// - `validate_shielded_proof` 2: v1, except that the token bundle of
+///   `TokenShieldedTransferWithShieldedFee`, `TokenUnshieldWithShieldedFee` and
+///   `TokenPurchaseFromShieldedPool` is verified over its kind's preimage followed by the fee
+///   bundle's Orchard commitment (`dpp.methods.token_pool_paid_fee_binding`), the fee bundle being
+///   rebuilt first.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -166,5 +171,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 },
             ..DRIVE_ABCI_VALIDATION_VERSIONS_V10.state_transitions
         },
+        validate_shielded_proof: 2, // the token bundle of a token pool transition paid from the credit pool binds its fee bundle
         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
     };
