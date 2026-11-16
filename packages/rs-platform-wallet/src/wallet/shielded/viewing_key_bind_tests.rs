@@ -1191,41 +1191,48 @@ async fn should_refuse_an_account_add_admitted_behind_a_clear() {
     );
 }
 
-/// A wallet has one coordinator. Bound on a second one, it is unregistered
-/// from the first, which would otherwise go on scanning and persisting for
-/// it through the persister it holds: after a Clear of the second, that
-/// puts back rows the host wiped.
+/// A wallet has one coordinator, which holds its registration, its
+/// persister and its durable records of unresolved spends. Both bind routes
+/// refuse a second coordinator while the first exists, before anything is
+/// read, stored or registered, and leave the first as it was.
 #[tokio::test]
-async fn should_unregister_the_wallet_from_the_coordinator_it_was_bound_on_before() {
+async fn should_refuse_a_bind_on_a_second_coordinator_while_the_first_exists() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
     let first = coordinator_at(&temp_dir("bind_first_coordinator"));
     let second = coordinator_at(&temp_dir("bind_second_coordinator"));
     let seed = [0x42u8; 64];
     let account = SubwalletId::new(wallet.wallet_id(), 0);
-
     wallet
         .bind_shielded(&seed, &[0], &first)
         .await
         .expect("bound on the first coordinator");
-    assert!(first.registered_subwallets().await.contains(&account));
+    let stored = persister.stored_count();
+    let loads = persister.load_calls();
 
-    wallet
-        .bind_shielded(&seed, &[0], &second)
-        .await
-        .expect("bound on the second coordinator");
+    let seeded = wallet.bind_shielded(&seed, &[0], &second).await;
     assert!(
-        first.registered_subwallets().await.is_empty(),
-        "the first coordinator no longer scans for the wallet"
+        matches!(seeded, Err(crate::PlatformWalletError::InvalidParameter(_))),
+        "{seeded:?}"
     );
-    assert!(second.registered_subwallets().await.contains(&account));
+    let seedless = wallet.bind_shielded_from_persisted(&[0], &second).await;
+    assert!(
+        matches!(
+            seedless,
+            Err(crate::PlatformWalletError::InvalidParameter(_))
+        ),
+        "{seedless:?}"
+    );
+    assert!(second.registered_subwallets().await.is_empty());
+    assert!(first.registered_subwallets().await.contains(&account));
+    assert_eq!(persister.stored_count(), stored);
+    assert_eq!(persister.load_calls(), loads);
 
-    // A rebind on the same coordinator keeps its registration.
+    // A rebind on the coordinator the wallet is bound on is not a switch.
     wallet
-        .bind_shielded(&seed, &[0], &second)
+        .bind_shielded(&seed, &[0], &first)
         .await
-        .expect("bound again on the second coordinator");
-    assert!(second.registered_subwallets().await.contains(&account));
+        .expect("bound again on the first coordinator");
 }
 
 /// Two binds of one wallet must not interleave: neither may publish its
@@ -2587,37 +2594,6 @@ async fn should_refuse_a_tip_preparation_after_a_clear_until_the_wallet_is_bound
         .prepare_shielded_identity_address(&seed, &id, &coordinator)
         .await
         .expect("prepared once the wallet is bound again");
-}
-
-/// A preparation stands or falls with the coordinator it was made on. Bound
-/// on another coordinator, the wallet is no longer covered by a Clear of the
-/// first one, so its prepared accounts are dropped and prepared again.
-#[tokio::test]
-async fn should_drop_prepared_accounts_when_the_wallet_is_bound_on_another_coordinator() {
-    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_first_coordinator").await;
-    wallet
-        .prepare_shielded_identity_address(&seed, &id, &coordinator)
-        .await
-        .unwrap();
-    assert!(wallet
-        .prepared_shielded_identity_account(&id)
-        .await
-        .is_some());
-
-    let other = coordinator_at(&temp_dir("tips_second_coordinator"));
-    wallet.bind_shielded(&seed, &[0], &other).await.unwrap();
-    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
-
-    // A rebind on the same coordinator keeps what was prepared on it.
-    wallet
-        .prepare_shielded_identity_address(&seed, &id, &other)
-        .await
-        .unwrap();
-    wallet.bind_shielded(&seed, &[0], &other).await.unwrap();
-    assert!(wallet
-        .prepared_shielded_identity_account(&id)
-        .await
-        .is_some());
 }
 
 /// Put the fixture's identity back at slot 2 with `public_keys`, after

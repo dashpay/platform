@@ -941,7 +941,9 @@ impl PlatformWallet {
     /// accounts than the host bindings accept in one request.
     ///
     /// Fails, before anything is derived, stored or registered, for a
-    /// `coordinator` of another network than this wallet's, and for an
+    /// `coordinator` of another network than this wallet's, for a
+    /// `coordinator` other than the one the wallet is already bound on while
+    /// that one exists, and for an
     /// account number of the range reserved for identity accounts
     /// (`is_shielded_identity_account`): such an account is bound from its
     /// identity or its persisted viewing key, never by its number, so an
@@ -981,6 +983,7 @@ impl PlatformWallet {
         // keys after the host wiped its rows.
         let _operation = coordinator.operation_guard().await;
         let _config = self.shielded_config_lock.lock().await;
+        self.ensure_no_other_shielded_coordinator(coordinator)?;
         self.bind_shielded_locked_unfenced(seed, accounts, coordinator, snapshot_generation)
             .await
     }
@@ -1146,6 +1149,7 @@ impl PlatformWallet {
         // A Clear waits for this bind, as for a seed bind.
         let _operation = coordinator.operation_guard().await;
         let _config = self.shielded_config_lock.lock().await;
+        self.ensure_no_other_shielded_coordinator(coordinator)?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -1219,9 +1223,6 @@ impl PlatformWallet {
     /// while addresses and spends use another), nor between the
     /// restore's registration check and its store write.
     ///
-    /// A wallet bound on another coordinator before is unregistered from
-    /// it once its keys are installed here.
-    ///
     /// Once installed, the reservations of the private contact requests the
     /// store holds unconfirmed payments for are restored into this wallet's
     /// identities ([`Self::restore_private_contact_payments`]), with no host
@@ -1234,36 +1235,13 @@ impl PlatformWallet {
         start: crate::changeset::ClientStartState,
         snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
-        // Read under `shielded_config_lock`, which the caller holds and
-        // every install takes, so no other bind moves the binding meanwhile.
-        let previous = self
-            .shielded_binding()
-            .and_then(|binding| binding.coordinator.upgrade())
-            .filter(|bound| !Arc::ptr_eq(bound, coordinator));
-        let installed = self
-            .install_shielded_views_in_one_transaction(
-                account_views,
-                coordinator,
-                start,
-                snapshot_generation,
-            )
-            .await;
-        // The wallet has one coordinator. Once its keys are installed on
-        // `coordinator`, the one it was bound on before still holds its
-        // registration and persister, and would go on scanning and
-        // persisting for it: after a Clear of `coordinator` that puts back
-        // rows the host wiped. Done after the transaction, so the two
-        // coordinators' lifecycle mutexes are never held together, and
-        // whether or not the restore that follows the install succeeded.
-        if let Some(previous) = previous {
-            let moved = self.shielded_binding().is_some_and(|binding| {
-                std::sync::Weak::ptr_eq(&binding.coordinator, &Arc::downgrade(coordinator))
-            });
-            if moved {
-                previous.unregister_wallet(self.wallet_id).await;
-            }
-        }
-        installed?;
+        self.install_shielded_views_in_one_transaction(
+            account_views,
+            coordinator,
+            start,
+            snapshot_generation,
+        )
+        .await?;
         // After the install transaction: the restore takes the store and
         // wallet locks on its own.
         self.restore_private_payments_or_defer(coordinator).await;
@@ -1396,25 +1374,13 @@ impl PlatformWallet {
         *self.shielded_keys.write().await = Some(account_views);
         // The bind holds the coordinator's operation admission, so no Clear
         // runs between this read of its generation and the bind's return.
-        let previous = self
+        *self
             .shielded_binding
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .replace(ShieldedBinding {
-                coordinator: Arc::downgrade(coordinator),
-                clear_generation: coordinator.clear_generation(),
-            });
-        // An account prepared on another coordinator stands or falls with
-        // that coordinator, which a Clear of this one never reaches: bound
-        // here now, the wallet prepares its identity accounts again.
-        if previous.is_some_and(|previous| {
-            !std::sync::Weak::ptr_eq(&previous.coordinator, &Arc::downgrade(coordinator))
-        }) {
-            self.prepared_tip_accounts
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clear();
-        }
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ShieldedBinding {
+            coordinator: Arc::downgrade(coordinator),
+            clear_generation: coordinator.clear_generation(),
+        });
 
         // Idempotent re-bind fast path: hosts re-run bind liberally
         // (launch fires it twice — a direct call plus the wallet-set
@@ -1652,6 +1618,33 @@ impl PlatformWallet {
             }
             _ => Err(PlatformWalletError::ShieldedNotBound),
         }
+    }
+
+    /// Refuse `coordinator` while this handle's keys are installed on another
+    /// one that still exists. A wallet has one coordinator: the one it is
+    /// bound on holds its registration, its persister and its durable
+    /// records of spends whose outcome is unknown, and those cannot be left
+    /// behind (the first coordinator would go on scanning and persisting for
+    /// the wallet) nor dropped (the notes of an unresolved spend would be
+    /// spendable again). Called under `shielded_config_lock`, which every
+    /// install holds.
+    #[cfg(feature = "shielded")]
+    fn ensure_no_other_shielded_coordinator(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) -> Result<(), PlatformWalletError> {
+        let bound_elsewhere = self
+            .shielded_binding()
+            .and_then(|binding| binding.coordinator.upgrade())
+            .is_some_and(|bound| !Arc::ptr_eq(&bound, coordinator));
+        if bound_elsewhere {
+            return Err(PlatformWalletError::InvalidParameter(
+                "this wallet is bound on another shielded coordinator, which still exists; \
+                 a wallet has one coordinator"
+                    .to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// `ShieldedNotBound` unless this handle's keys were installed on
