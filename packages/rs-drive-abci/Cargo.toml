@@ -83,6 +83,8 @@ async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 dashcore-crypto = { workspace = true, features = ["bls"], optional = true }
 grovedb-commitment-tree = { workspace = true }
+# The error a sum taken past its range returns, which ending a contest tells from others.
+grovedb-merk = { workspace = true }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.

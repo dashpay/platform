@@ -116,6 +116,9 @@ mod multiple_choice_proposal_tests;
 mod end_date_cleanup_tests;
 
 #[cfg(test)]
+mod contest_resolution_tests;
+
+#[cfg(test)]
 mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;

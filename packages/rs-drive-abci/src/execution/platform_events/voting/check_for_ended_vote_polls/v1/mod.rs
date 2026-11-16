@@ -6,12 +6,14 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::ContestedIndexResolution;
+use dpp::data_contract::document_type::{ContestedIndexResolution, DocumentTypeRef};
 use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::voting::contender_structs::FinalizedContender;
+use dpp::voting::contender_structs::{
+    FinalizedContender, FinalizedContenderWithSerializedDocument,
+};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::yes_no_vote_poll::{
@@ -19,6 +21,7 @@ use dpp::voting::vote_polls::yes_no_vote_poll::{
 };
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::error::drive::DriveError;
@@ -40,9 +43,96 @@ where
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v1(
         &self,
+        last_committed_platform_state: &PlatformState,
+        block_platform_state: &PlatformState,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.end_due_vote_polls_v1(
+            last_committed_platform_state,
+            block_platform_state,
+            block_info,
+            Self::award_contest_winner_v1,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Picks the winner of an ended contest and awards it the document: the earliest of the
+    /// contenders with the highest tally, every one of them decoded first, unless the lock tally
+    /// is higher. Any error is returned.
+    ///
+    /// Moved here unchanged from the body of generation 1, which protocol version 14 selects,
+    /// so that generation 2 shares the rest of the body: a pure refactor, reading, writing and
+    /// failing as before, in the same order.
+    pub(super) fn award_contest_winner_v1(
+        &self,
+        block_info: &BlockInfo,
+        contest: EndedContest,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContestedDocumentVotePollWinnerInfo, Error> {
+        let EndedContest {
+            sorted_contenders,
+            locked_vote_tally,
+            locking_allowed,
+            document_type,
+            vote_poll,
+        } = contest;
+        let highest_vote_tally = sorted_contenders
+            .first()
+            .map(|max_voted_contender| max_voted_contender.final_vote_tally)
+            .unwrap_or_default();
+        // These are all the people who got top votes, every one of them
+        // considered (up to `maximum_contenders_to_consider`); version 0
+        // compared at most 100
+        let top_contenders: Vec<FinalizedContender> = sorted_contenders
+            .into_iter()
+            .filter(|c| c.final_vote_tally == highest_vote_tally)
+            .map(|contender| {
+                FinalizedContender::try_from_contender_with_serialized_document(
+                    contender,
+                    document_type,
+                    platform_version,
+                )
+                .map_err(Error::Protocol)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let maybe_top_contender = earliest_contender(top_contenders);
+        // We award the document to the top contender
+        let winner_info = if let Some(top_contender) = maybe_top_contender {
+            // let's check to make sure the lock votes didn't win it
+            // if the lock is tied with the top contender the top contender gets it
+            if locking_allowed && locked_vote_tally > top_contender.final_vote_tally {
+                // the record will show it's locked
+                ContestedDocumentVotePollWinnerInfo::Locked
+            } else {
+                let contender_id = top_contender.identity_id;
+                // We award the document to the winner of the vote poll
+                self.award_document_to_winner(
+                    block_info,
+                    top_contender,
+                    vote_poll,
+                    transaction,
+                    platform_version,
+                )?;
+                ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_id)
+            }
+        } else {
+            ContestedDocumentVotePollWinnerInfo::NoWinner
+        };
+        Ok(winner_info)
+    }
+
+    /// The body of generation 1, with the step picking and awarding a contest's winner given:
+    /// [`Self::award_contest_winner_v1`] in generation 1, and its successor in generation 2.
+    pub(super) fn end_due_vote_polls_v1(
+        &self,
         _last_committed_platform_state: &PlatformState,
         block_platform_state: &PlatformState,
         block_info: &BlockInfo,
+        award_contest_winner: AwardContestWinner<C>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -184,68 +274,20 @@ where
 
                             identifiers_voting_for_contenders.append(&mut other_contenders);
 
-                            let highest_vote_tally = sorted_contenders
-                                .first()
-                                .map(|max_voted_contender| max_voted_contender.final_vote_tally)
-                                .unwrap_or_default();
-                            // These are all the people who got top votes, every one of them
-                            // considered (up to `maximum_contenders_to_consider`); version 0
-                            // compared at most 100
-                            let top_contenders: Vec<FinalizedContender> = sorted_contenders
-                                .into_iter()
-                                .filter(|c| c.final_vote_tally == highest_vote_tally)
-                                .map(|contender| {
-                                    FinalizedContender::try_from_contender_with_serialized_document(
-                                        contender,
-                                        document_type,
-                                        platform_version,
-                                    )
-                                        .map_err(Error::Protocol)
-                                })
-                                .collect::<Result<Vec<_>, Error>>()?;
-                            // A tie among the top contenders goes to the earliest document:
-                            // creation time, then block height, then core height, then id.
-                            // Version 0 awarded the latest.
-                            let maybe_top_contender = top_contenders.into_iter().min_by(|a, b| {
-                                a.document
-                                    .created_at()
-                                    .cmp(&b.document.created_at())
-                                    .then_with(|| {
-                                        a.document
-                                            .created_at_block_height()
-                                            .cmp(&b.document.created_at_block_height())
-                                    })
-                                    .then_with(|| {
-                                        a.document
-                                            .created_at_core_block_height()
-                                            .cmp(&b.document.created_at_core_block_height())
-                                    })
-                                    .then_with(|| a.document.id().cmp(&b.document.id()))
-                            });
-                            // We award the document to the top contender
-                            let winner_info = if let Some(top_contender) = maybe_top_contender {
-                                // let's check to make sure the lock votes didn't win it
-                                // if the lock is tied with the top contender the top contender gets it
-                                if locking_allowed
-                                    && result.locked_vote_tally > top_contender.final_vote_tally
-                                {
-                                    // the record will show it's locked
-                                    ContestedDocumentVotePollWinnerInfo::Locked
-                                } else {
-                                    let contender_id = top_contender.identity_id;
-                                    // We award the document to the winner of the vote poll
-                                    self.award_document_to_winner(
-                                        block_info,
-                                        top_contender,
-                                        &resolved_contested_document_resource_vote_poll,
-                                        transaction,
-                                        platform_version,
-                                    )?;
-                                    ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_id)
-                                }
-                            } else {
-                                ContestedDocumentVotePollWinnerInfo::NoWinner
-                            };
+                            // We pick the winner and award the document to it
+                            let winner_info = award_contest_winner(
+                                self,
+                                block_info,
+                                EndedContest {
+                                    sorted_contenders,
+                                    locked_vote_tally: result.locked_vote_tally,
+                                    locking_allowed,
+                                    document_type,
+                                    vote_poll: &resolved_contested_document_resource_vote_poll,
+                                },
+                                transaction,
+                                platform_version,
+                            )?;
                             // We want to keep a record of how everyone voted
                             self.keep_record_of_finished_contested_resource_vote_poll(
                                 block_platform_state,
@@ -362,4 +404,51 @@ where
         )?;
         Ok(Some(voters))
     }
+}
+
+/// What the end of a contest's vote poll picks its winner from
+pub(super) struct EndedContest<'a> {
+    /// The contenders, sorted by tally from the highest
+    pub(super) sorted_contenders: Vec<FinalizedContenderWithSerializedDocument>,
+    /// The lock tally
+    pub(super) locked_vote_tally: u32,
+    /// Whether the lock tally can beat the contenders: not on an index resolved without locking
+    pub(super) locking_allowed: bool,
+    /// The contested document type, which the contenders' documents decode with
+    pub(super) document_type: DocumentTypeRef<'a>,
+    /// The contest's vote poll
+    pub(super) vote_poll: &'a ContestedDocumentResourceVotePollWithContractInfo,
+}
+
+/// The step of ending a contest that picks its winner, awards it the document and returns the
+/// outcome to record
+pub(super) type AwardContestWinner<C> = fn(
+    &Platform<C>,
+    &BlockInfo,
+    EndedContest,
+    TransactionArg,
+    &PlatformVersion,
+) -> Result<ContestedDocumentVotePollWinnerInfo, Error>;
+
+/// The earliest of tied contenders: by creation time, then block height, then core height,
+/// then id. Version 0 awarded the latest.
+pub(super) fn earliest_contender(
+    contenders: Vec<FinalizedContender>,
+) -> Option<FinalizedContender> {
+    contenders.into_iter().min_by(|a, b| {
+        a.document
+            .created_at()
+            .cmp(&b.document.created_at())
+            .then_with(|| {
+                a.document
+                    .created_at_block_height()
+                    .cmp(&b.document.created_at_block_height())
+            })
+            .then_with(|| {
+                a.document
+                    .created_at_core_block_height()
+                    .cmp(&b.document.created_at_core_block_height())
+            })
+            .then_with(|| a.document.id().cmp(&b.document.id()))
+    })
 }
