@@ -4995,11 +4995,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             );
         }
 
-        // 5. Retrieve the auto-established contact.
+        // 5. Retrieve the auto-established contact, on this handle's wallet
+        //    generation: the steps above ran without the lock, and a wallet
+        //    re-created under this id since answers for its own contacts,
+        //    not for this accept.
         let wm = self.wallet_manager.read().await;
-        let info = wm
-            .get_wallet_info(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let info = self.current_wallet_info(&wm)?;
         let managed = info
             .identity_manager
             .managed_identity(&our_identity_id)

@@ -7386,6 +7386,83 @@ mod tests {
         );
     }
 
+    /// An accept whose wallet is removed and created again under its id
+    /// while the accept derives its receiving key, after it adopted the
+    /// request on its own generation, answers that its wallet is gone. It
+    /// does not answer with the contact the replacement holds for the pair.
+    #[tokio::test]
+    async fn should_not_answer_an_accept_with_a_replacement_wallets_contact() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let incoming = public_request(&alice, &bob, 3);
+        let reciprocated = |wallet: Arc<PlatformWallet>| {
+            let (incoming, reply) = (incoming.clone(), public_request(&bob, &alice, 4));
+            async move {
+                let iw = wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity_mut(&Identifier::from(BOB))
+                    .expect("Bob");
+                managed
+                    .add_incoming_contact_request(incoming, &iw.persister)
+                    .expect("incoming request");
+                managed
+                    .add_sent_contact_request(reply, &iw.persister)
+                    .expect("sent request");
+            }
+        };
+        let (manager, first) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        let wallet_id = first.wallet_id();
+        reciprocated(Arc::clone(&first)).await;
+
+        let reached = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        // The second derivation, the one for the receiving account, which
+        // follows the adoption on the accept's own generation: the first
+        // checks the provider's seed before the store is read.
+        let mut pausing = HookedCrypto::new(BOB_PHRASE);
+        pausing.before_receiving_xpub =
+            Some(pause_on_call(2, Arc::clone(&reached), Arc::clone(&release)));
+
+        let view = first.identity().dashpay();
+        let accept =
+            view.accept_contact_request_with_external_signer(&incoming, &bob_signer, &pausing);
+        let replace = async {
+            reached.notified().await;
+            manager.remove_wallet(&wallet_id).await.expect("removed");
+            let again = create_holding(&manager, BOB_PHRASE, &bob).await;
+            assert_eq!(again.wallet_id(), wallet_id);
+            // The replacement holds the same contact.
+            reciprocated(Arc::clone(&again)).await;
+            release.notify_one();
+            again
+        };
+        let (accepted, again) = tokio::time::timeout(Duration::from_secs(30), async {
+            tokio::join!(accept, replace)
+        })
+        .await
+        .expect("the accept reaches its receiving key");
+
+        managed(&again, BOB, |managed| {
+            assert!(
+                managed
+                    .dashpay()
+                    .established_contacts()
+                    .contains_key(&alice.id()),
+                "the replacement holds the contact"
+            );
+        })
+        .await;
+        assert!(
+            matches!(accepted, Err(PlatformWalletError::WalletNotFound(_))),
+            "{accepted:?}"
+        );
+    }
+
     /// A handle taken before its wallet was removed and created again under
     /// its id completes no external account registration on the replacement:
     /// it stamps no outbound-account marker, stores no label, and its
