@@ -6,4 +6,6 @@ pub mod validate_document;
 #[cfg(feature = "validation")]
 pub mod validate_groups;
 #[cfg(feature = "validation")]
+pub mod validate_schema_patterns;
+#[cfg(feature = "validation")]
 pub mod validate_update;

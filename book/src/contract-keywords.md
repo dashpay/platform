@@ -337,5 +337,7 @@ The first three limits come from the meta-schema, the rest from protocol version
 | `max_time_range_ttl_seconds` | 604800 | a `timeRange` index's `ttl` |
 | `max_contested_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property on a type with a contested index |
 | `max_expiring_signed_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property that admits negative values, on a type with a `ttl` |
+| `max_contract_schema_patterns` | 32 (in blocks from protocol version 15; the mempool holds a contract to it at every version) | the patterns one contract holds: every `pattern`, and every `regexPattern` of a contested index, in its document schemas and `$defs`, one in `$defs` counted once for each document type |
+| `max_schema_pattern_compiled_size` | 131072 bytes (in blocks from protocol version 15; the mempool holds a contract to it at every version) | what any one of those patterns compiles to |
 | `max_private_document_entry_size` | 4096 bytes (protocol version 15) | a private type's `private.entrySize` |
 | `max_private_document_entries_per_transition` | 16 (protocol version 15) | the entries one `PrivateDocumentCreateFromShieldedPool` appends |

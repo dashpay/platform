@@ -56,7 +56,7 @@ Status legend:
 | OptionsView.swift | ui/settings/SettingsScreen.kt · `SettingsHome` (+ AboutSheet.kt) | ported — Network/SPV/Data/Platform/About sections incl. About bottom sheet |
 | PendingPlatformFundFromAssetLocksList.swift | ui/funding/AddressFundProgressScreen.kt (`PendingAssetLocksList`) | ported (embedded in IdentitiesHome, matching iOS) |
 | PendingRegistrationsList.swift | ui/identity/RegistrationProgressScreen.kt (`PendingRegistrationRow`) | ported (embedded in IdentitiesHome) |
-| PlatformQueriesView.swift | ui/contracts/QueryDetailScreen.kt (`QueriesListScreen`) · `QueriesList` | ported — the Decision Proposals link (`votingQueries.decisionProposalsLink`) opens `DecisionProposalsList`, and the seven decision proposal reads have registry rows kept out of Run All Queries; the registry now spans the iOS query catalog (adapted: one flat Material list instead of 12 category groups) plus the dedicated GroveDB Path Elements / Address Queries / Run All Queries entries |
+| PlatformQueriesView.swift | ui/contracts/QueryDetailScreen.kt (`QueriesListScreen`) · `QueriesList` | ported — the Decision Proposals link (`votingQueries.decisionProposalsLink`) opens `DecisionProposalsList` and the Multiple Choice Proposals link (`votingQueries.multipleChoiceProposalsLink`) opens `MultipleChoiceProposalsList`; the seven decision proposal reads and the eight multiple choice proposal reads have registry rows kept out of Run All Queries; the registry now spans the iOS query catalog (adapted: one flat Material list instead of 12 category groups) plus the dedicated GroveDB Path Elements / Address Queries / Run All Queries entries |
 | PlatformStateTransitionsView.swift | ui/transitions/StateTransitionsScreen.kt · `StateTransitions` | ported (iOS file is a trivial wrapper around StateTransitionsView) |
 | QueryDetailView.swift | ui/contracts/QueryDetailScreen.kt · `QueryDetail` | ported for the bridged registry |
 | QuickBasicTokenView.swift | ui/tokens/QuickBasicTokenScreen.kt · `QuickBasicToken` | ported — contract-registration submit wired via `ManagedPlatformWallet.dataContracts.create` (`platform_wallet_create_data_contract_with_signer`) |
@@ -135,6 +135,24 @@ rebuilt `libdash_sdk_jni.so` and a network at protocol version 15.
 | DecisionProposalsView.swift | ui/identity/DecisionProposalsScreen.kt · `DecisionProposalsList` | ported: Open / Mine / Newest listings, paged, over `Sdk.decisionProposals.listByEndDate` / `listByOwner` / `listByCreatedAt`; reached from the Platform Queries list (`votingQueries.decisionProposalsLink`) as on iOS |
 | DecisionProposalDetailView.swift | ui/identity/DecisionProposalDetailScreen.kt · `DecisionProposalDetail` | ported: proposal, rule, poll state (open tallies or finished result) and poll id; masternode vote and answer lookup over `castVote` / `masternodeVote` with the contest screen's credential form (voting key masked, FLAG_SECURE held while the dialog is open) |
 | DecisionProposalFormViews.swift | ui/identity/DecisionProposalsScreen.kt · `CreateDecisionProposal` (create); ui/identity/DecisionProposalDetailScreen.kt (edit dialog) | ported: create through `PlatformWalletManager.decisionProposals.create` (`platform_wallet_decision_proposal_create`, returning the proposal id and the confirmed document); edit through `.edit` (`platform_wallet_decision_proposal_edit`; the wallet picks the signing key and a concurrent edit is refused with consensus code 40106). The create runs in a back-stack-entry ViewModel with Back held while it runs, and the edit dialog cannot be dismissed while it runs. The end date is entered as days from now rather than with a date picker |
+
+Multiple choice proposals (protocol version 15): questions answered by the
+choices entered for them. The Kotlin SDK bridges every
+`dash_sdk_multiple_choice_proposal_*` function and the platform wallet's
+`platform_wallet_multiple_choice_proposal_create` / `_edit` / `_enter_choice`
+one JNI export each (`rs-unified-sdk-jni/src/multiple_choice_proposals.rs`);
+`Sdk.multipleChoiceProposals` reads, reads the processing fee and the contest
+fund, and votes, and `PlatformWalletManager.multipleChoiceProposals` creates,
+edits and enters a choice, one native call each. Compile-verified, with JVM
+tests of the JSON decoding and of the app's form and submission logic; the
+device run waits on a rebuilt `libdash_sdk_jni.so` and a network at protocol
+version 15.
+
+| Swift file | Android file / route | Status |
+| --- | --- | --- |
+| MultipleChoiceProposalsView.swift | ui/identity/MultipleChoiceProposalsScreen.kt · `MultipleChoiceProposalsList` | ported: Mine / Newest listings, paged, over `Sdk.multipleChoiceProposals.listByOwner` / `listByCreatedAt`; reached from the Platform Queries list (`votingQueries.multipleChoiceProposalsLink`) as on iOS |
+| MultipleChoiceProposalDetailView.swift | ui/identity/MultipleChoiceProposalDetailScreen.kt · `MultipleChoiceProposalDetail` | ported: proposal, its choices with their tallies while the vote runs, the outcome and the kept choice once it ended (`vote` / `keptChoice`); masternode vote and answer lookup over `castVote` / `masternodeVote` with the contest screen's credential form (voting key masked, FLAG_SECURE held while the dialog is open, no dismissal while a call runs), the answers being the vote's choices by document id, none of the choices and abstain |
+| MultipleChoiceProposalFormViews.swift | ui/identity/MultipleChoiceProposalsScreen.kt · `CreateMultipleChoiceProposal` (create); ui/identity/MultipleChoiceProposalDetailScreen.kt (enter a choice and edit dialogs) | ported: create through `PlatformWalletManager.multipleChoiceProposals.create` (`platform_wallet_multiple_choice_proposal_create`), showing the processing fee read through `Sdk.multipleChoiceProposals.processingFee`; enter a choice through `.enterChoice` (`platform_wallet_multiple_choice_proposal_enter_choice`), showing the contest fund read through `choiceFundToJoin`; edit through `.edit` (`platform_wallet_multiple_choice_proposal_edit`), sending only the changed fields, with keep / set / remove for the url and the description document. The create and the choice entry each run in a back-stack-entry ViewModel with Back held while they run, and the dialogs cannot be dismissed while they run. Adapted: the choice entry and the edit are dialogs of the detail screen rather than pushed views. Who may enter a choice and how long the edit stays open are left to Platform, which refuses what it does not accept |
 
 ## Views/Components/
 

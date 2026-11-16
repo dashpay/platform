@@ -772,6 +772,12 @@ impl ContextProvider for VerifiedHttpContextProvider {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    /// The token marketplace starts with protocol version 16, which has no tables yet: the test
+    /// version that selects it stands in for it.
+    fn token_marketplace_version() -> &'static dpp::version::PlatformVersion {
+        &dpp::version::mocks::v5_test::TEST_PLATFORM_V5
+    }
+
     use super::*;
     use crate::proof_fetches::{DKG_INTERVAL_BLOCKS, MAX_RECENT_STATES};
     use dash_core_proof::bootstrap;
@@ -3088,41 +3094,41 @@ mod tests {
         })
     }
 
-    /// The token market contract does not exist before protocol version 15: no contract is
+    /// The token market contract does not exist before protocol version 16: no contract is
     /// served under its id then, not even one preloaded into the known contracts, whichever
     /// contract features the build has. From 15 the preloaded one is.
     #[test]
-    fn should_refuse_a_preloaded_token_market_id_before_protocol_15_in_any_build() {
+    fn should_refuse_a_preloaded_token_market_id_before_protocol_16_in_any_build() {
         let provider = with_sources(&["https://127.0.0.1"]).expect("a provider");
         let id = data_contracts::SystemDataContract::TokenMarket.id();
         provider.add_known_contract(empty_contract(id));
 
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(14).expect("protocol version 14"))
+            .get_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
             .expect("a pre-activation lookup does not error")
             .is_none());
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
-            .expect("the lookup succeeds at protocol version 15")
+            .get_data_contract(&id, token_marketplace_version())
+            .expect("the lookup succeeds at protocol version 16")
             .is_some());
     }
 
     /// A build loading the token market contract, with none preloaded, serves none before
-    /// protocol version 15, without an error, and the system contract from 15.
+    /// protocol version 16, without an error, and the system contract from 16.
     #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
     #[test]
-    fn should_load_the_token_market_contract_only_from_protocol_15() {
+    fn should_load_the_token_market_contract_only_from_protocol_16() {
         let provider = with_sources(&["https://127.0.0.1"]).expect("a provider");
         let id = data_contracts::SystemDataContract::TokenMarket.id();
 
         assert!(provider
-            .get_data_contract(&id, PlatformVersion::get(14).expect("protocol version 14"))
+            .get_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
             .expect("a pre-activation lookup does not error")
             .is_none());
         let contract = provider
-            .get_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
-            .expect("the lookup succeeds at protocol version 15")
-            .expect("the token market contract is served at protocol version 15");
+            .get_data_contract(&id, token_marketplace_version())
+            .expect("the lookup succeeds at protocol version 16")
+            .expect("the token market contract is served at protocol version 16");
         assert_eq!(contract.id(), id);
     }
 }

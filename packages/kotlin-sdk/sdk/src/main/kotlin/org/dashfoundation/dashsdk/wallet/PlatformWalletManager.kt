@@ -868,6 +868,16 @@ class PlatformWalletManager(
     val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposalTransactions =
         org.dashfoundation.dashsdk.voting.DecisionProposalTransactions(teardownGate)
 
+    /**
+     * Multiple choice proposal create and edit, and entering a choice (protocol version
+     * 15): the multiple choice proposal slice of `ManagedPlatformWallet`
+     * (`ManagedPlatformWalletMultipleChoiceProposals.swift`). Stateless; callers thread the
+     * wallet handle and [signerHandle] into each call. Reads and the masternode vote are on
+     * `Sdk.multipleChoiceProposals`.
+     */
+    val multipleChoiceProposals: org.dashfoundation.dashsdk.voting.MultipleChoiceProposalTransactions =
+        org.dashfoundation.dashsdk.voting.MultipleChoiceProposalTransactions(teardownGate)
+
     // ── Native manager bundle ─────────────────────────────────────────
 
     private val nativeInitialization = initializePlatformWalletNativeManager(
