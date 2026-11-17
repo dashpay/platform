@@ -8,6 +8,7 @@ use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use dpp::identity::key_disable_rule::check_keys_can_be_disabled;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
@@ -165,6 +166,13 @@ impl IdentityWallet {
                 PlatformWalletError::InvalidIdentityData(
                     "No signable master key found on identity".to_string(),
                 )
+            })?;
+
+        // DIP-11 refusal before the nonce is reserved: a refused update is never
+        // broadcast, so it must not advance the SDK's nonce cache.
+        check_keys_can_be_disabled(&identity, &add_public_keys, &disable_public_keys, None)
+            .map_err(|refusal| {
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(refusal.into()))
             })?;
 
         let identity_nonce = self
@@ -454,6 +462,10 @@ impl IdentityWallet {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+
+        // DIP-11 refusal before the nonce is reserved, as above.
+        check_keys_can_be_disabled(identity, &add_public_keys, &disable_public_keys, None)
+            .map_err(|refusal| dash_sdk::Error::Protocol(refusal.into()))?;
 
         // Get identity nonce from Platform.
         let identity_nonce = self
@@ -966,6 +978,7 @@ mod tests {
     use crate::test_support::{test_platform_wallet_manager_with_sdk, NoopTestPersister};
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWallet;
     use dash_sdk::query_types::IdentityNonceFetcher;
     use dashcore::Network;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -1109,5 +1122,58 @@ mod tests {
             ),
             "{result:?}"
         );
+    }
+
+    /// A refused update is never broadcast, so it must not reserve a nonce:
+    /// the next fetch still answers Platform's nonce, not one above it.
+    async fn next_nonce_without_bump(wallet: &PlatformWallet) -> u64 {
+        wallet
+            .identity()
+            .sdk
+            .get_identity_nonce(Identifier::from([1; 32]), false, None)
+            .await
+            .expect("nonce")
+    }
+
+    #[tokio::test]
+    async fn should_not_reserve_a_nonce_for_a_refused_update() {
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(identity(), 0, wallet_id, &persister)
+                .expect("add identity");
+        }
+
+        let result = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &Identifier::from([1; 32]),
+                vec![],
+                vec![1],
+                &HoldsEveryKey,
+                None,
+            )
+            .await;
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(next_nonce_without_bump(&wallet).await, 0);
+    }
+
+    #[tokio::test]
+    async fn should_not_reserve_a_nonce_for_a_refused_update_with_a_supplied_identity() {
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        let result = wallet
+            .identity()
+            .update_identity_with_signer(&identity(), &0, vec![], vec![1], &HoldsEveryKey, None)
+            .await;
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(next_nonce_without_bump(&wallet).await, 0);
     }
 }
