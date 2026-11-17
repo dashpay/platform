@@ -102,8 +102,8 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// operator key normalization reads the record too, as described below); in the asset unlocks
 /// it emits for withdrawals, described below; in the voter key of a masternode that returns to a
 /// voting address, described below; in the end of a contest, `voting.check_for_ended_vote_polls`
-/// being 2 rather than 1 (a contest whose winner's document does not decode, or the state
-/// would refuse, is left open with no one awarded); in the consensus
+/// being 2 rather than 1 (a contest whose winner's document does not decode, or cannot be
+/// written, is left open with no one awarded); in the consensus
 /// evidence policy; and in the chain lock verification. The chain lock changes only work as a
 /// whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
@@ -167,7 +167,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_based_updates
     },
     voting: DriveAbciVotingMethodVersions {
-        check_for_ended_vote_polls: 2, // changed in v15: a contest whose winner's document does not decode, or the state would refuse, is left open with no one awarded
+        check_for_ended_vote_polls: 2, // changed in v15: a contest whose winner's document does not decode, or cannot be written, is left open with no one awarded
         tally_votes_for_yes_no_vote_poll: Some(0),
         keep_record_of_finished_yes_no_vote_poll: Some(0),
         clean_up_after_yes_no_vote_polls_end: Some(0),

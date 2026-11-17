@@ -1514,12 +1514,6 @@ fn validate_contested_summed_value_bounds(
     name: &str,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
-    let Some(limit) = platform_version
-        .system_limits
-        .max_contested_summed_value_magnitude
-    else {
-        return Ok(());
-    };
     let Some(contested_index) = document_type
         .indices
         .values()
@@ -1527,26 +1521,9 @@ fn validate_contested_summed_value_bounds(
     else {
         return Ok(());
     };
-    let Some((summed_property, property_schema)) =
-        summed_property_schema(document_type, schema_defs)?
-    else {
-        return Ok(());
-    };
-    let bounds = property_schema
-        .map(|property_schema| {
-            Ok::<_, DataContractError>((
-                property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
-                property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
-            ))
-        })
-        .transpose()
-        .map_err(consensus_or_protocol_data_contract_error)?;
-    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-    let within_limit = matches!(
-        bounds,
-        Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
-    );
-    if !within_limit {
+    if let Some((summed_property, limit)) =
+        document_type.summed_property_past_contested_limit(schema_defs, platform_version)?
+    {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{}\" sums \"{}\" and has the contested index \"{}\": \
@@ -1557,6 +1534,51 @@ fn validate_contested_summed_value_bounds(
         ));
     }
     Ok(())
+}
+
+#[cfg(feature = "validation")]
+impl DocumentTypeV2 {
+    /// The property this type sums and `SystemLimits::max_contested_summed_value_magnitude`,
+    /// when the property's schema does not keep its values within that limit: it does not
+    /// declare a `maximum` of at most the limit and a `minimum` of at least its negation.
+    /// `None` when the type sums nothing, when its summed values are within the limit, and
+    /// before the limit exists (protocol version 13 and earlier).
+    ///
+    /// Registration refuses such a type with a contested index
+    /// (`validate_contested_summed_value_bounds`, from protocol version 14). A type registered
+    /// earlier may be one, so the end of a contest asks this of the stored type too, before
+    /// it writes the winner's document into the type's sums.
+    pub fn summed_property_past_contested_limit<'a>(
+        &'a self,
+        schema_defs: Option<&'a BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(&'a str, i64)>, ProtocolError> {
+        let Some(limit) = platform_version
+            .system_limits
+            .max_contested_summed_value_magnitude
+        else {
+            return Ok(None);
+        };
+        let Some((summed_property, property_schema)) = summed_property_schema(self, schema_defs)?
+        else {
+            return Ok(None);
+        };
+        let bounds = property_schema
+            .map(|property_schema| {
+                Ok::<_, DataContractError>((
+                    property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
+                    property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
+                ))
+            })
+            .transpose()
+            .map_err(consensus_or_protocol_data_contract_error)?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let within_limit = matches!(
+            bounds,
+            Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
+        );
+        Ok((!within_limit).then_some((summed_property, limit)))
+    }
 }
 
 /// A document type with a `ttl` and a summed property whose values may be negative keeps them

@@ -1,23 +1,26 @@
 use super::v1::{earliest_contender, EndedContest};
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::batch::validate_summed_value_within_type_total;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
-use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::document::paths::document_history_path;
 use drive::drive::votes::paths::VOTE_POLLS_LEFT_OPEN_END_DATE;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::util::grove_operations::DirectQueryType;
 use std::collections::BTreeMap;
 
 impl<C> Platform<C>
@@ -67,7 +70,7 @@ where
     /// - A contender with the highest tally holds a document that does not decode with the
     ///   contest's document type. Which of them is the earliest is then not known, and no other
     ///   contender is awarded in its place.
-    /// - The state would refuse the winner's document as a document created outside a contest
+    /// - The winner's document cannot be written as a document created outside a contest is
     ///   (see [`Self::state_admits_awarded_document`]).
     ///
     /// The lock tally is compared first, as it needs no document: a contest the lock wins is
@@ -115,7 +118,6 @@ where
             return Ok(Some(ContestedDocumentVotePollWinnerInfo::NoWinner));
         };
         if !self.state_admits_awarded_document(
-            block_info,
             &top_contender.document,
             document_type,
             vote_poll,
@@ -137,20 +139,24 @@ where
         )))
     }
 
-    /// Whether the state admits the document a contest awards, by what a document created
-    /// outside a contest is held to in the state. A contender's create was checked against
-    /// the contest alone, and other documents were written since:
+    /// Whether the winner's document can be written, by what a document created outside a
+    /// contest is held to. A contender's create was checked against the contest alone, and
+    /// other documents were written since:
     ///
+    /// - the type keeps its summed values within the limit registration holds a type with a
+    ///   contested index to (`DocumentTypeV2::summed_property_past_contested_limit`), so
+    ///   adding the winner's value keeps the type's sums in range. A type registered before
+    ///   protocol version 14 may sum values of any size and sign, and then nothing read before
+    ///   the write tells whether a sum stays in range. A schema the limit cannot be read from
+    ///   counts as past it: that depends on the contract alone, never on a node's storage;
     /// - no other document holds a value of one of its unique indexes. The document is
     ///   checked as stored: its owner is the identity it is awarded to;
-    /// - no document of its type holds its id. A contested document type keeps no history, so
-    ///   an id is taken only by a document in the type's primary storage, which is read
-    ///   without decoding what it holds;
-    /// - it does not take the total its type keeps of its summed property past what the
-    ///   type's sums hold.
+    /// - no document of its type holds its id: neither a document in the type's primary
+    ///   storage, read without decoding what it holds, nor the revisions a deleted document
+    ///   retains. From protocol version 15 registration refuses a contested index on a type
+    ///   that keeps history; a type registered earlier may have both.
     fn state_admits_awarded_document(
         &self,
-        block_info: &BlockInfo,
         document: &Document,
         document_type: DocumentTypeRef,
         vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
@@ -158,6 +164,15 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         let contract = vote_poll.contract.as_ref();
+        if let DocumentTypeRef::V2(document_type) = document_type {
+            if !matches!(
+                document_type
+                    .summed_property_past_contested_limit(contract.schema_defs(), platform_version),
+                Ok(None)
+            ) {
+                return Ok(false);
+            }
+        }
         if !self
             .drive
             .validate_moderated_document_uniqueness(
@@ -192,22 +207,25 @@ where
         if !serialized_documents.is_empty() {
             return Ok(false);
         }
-        // The check bills its read to a transition's execution context: ending a contest
-        // bills no one, so the context is dropped.
-        let mut execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
-        Ok(validate_summed_value_within_type_total(
-            contract,
-            document_type,
-            document.properties(),
-            None,
-            &self.drive,
-            block_info,
+        if !document_type.documents_keep_history() {
+            return Ok(true);
+        }
+        // The revisions of a document are kept in a tree named by its id, the last segment
+        // of its history path
+        let mut history_trees_path = document_history_path(
+            contract.id_ref().as_bytes(),
+            document_type.name(),
+            document.id().as_slice(),
+        );
+        history_trees_path.pop();
+        Ok(!self.drive.grove_has_raw(
+            history_trees_path.as_slice().into(),
+            document.id().as_slice(),
+            DirectQueryType::StatefulDirectQuery,
             transaction,
-            &mut execution_context,
-            platform_version,
-        )?
-        .is_valid())
+            &mut vec![],
+            &platform_version.drive,
+        )?)
     }
 
     /// Takes a contest left open off the end date it was due at and lists it under

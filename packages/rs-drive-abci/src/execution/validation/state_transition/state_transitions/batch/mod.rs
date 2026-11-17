@@ -22,10 +22,9 @@ pub(in crate::execution::validation::state_transition) use transformer::v0::prop
     read_property_constraint_aggregates_for_restore,
 };
 
-// A moderator's restore puts a document's summed value back in its type's sums, and the end
-// of a contest puts its winner's there: both are held to the total the type keeps as a create
-// is.
-pub(crate) use action_validation::document::document_type_sum_validation::validate_summed_value_within_type_total;
+// A moderator's restore puts a document's summed value back in its type's sums, and is held
+// to the total the type keeps as a create is.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_type_sum_validation::validate_summed_value_within_type_total;
 
 #[cfg(test)]
 mod tests;

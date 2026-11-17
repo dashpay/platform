@@ -1,6 +1,6 @@
 //! The end of a contest whose winner cannot be awarded its document: a contender with the
 //! highest tally holds a document that does not decode, or the state would refuse the winner's
-//! document. From protocol version 15 (`check_for_ended_vote_polls` 2) such a contest is left
+//! document, or its type sums values past the limit a contested type is held to. From protocol version 15 (`check_for_ended_vote_polls` 2) such a contest is left
 //! open: no one is awarded, nothing of it is recorded or removed, and it is listed under the
 //! end date no block reaches. Protocol version 14 (`check_for_ended_vote_polls` 1) returns the
 //! error. Contract and document checks keep these states from being reached through
@@ -48,6 +48,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::drive::document::paths::document_history_path;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::votes::paths::{
     vote_contested_resource_contract_documents_storage_path, VOTE_POLLS_LEFT_OPEN_END_DATE,
@@ -64,8 +65,10 @@ use rand::prelude::StdRng;
 use simple_signer::signer::SimpleSigner;
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 
-/// A contest on `normalizedLabel` and `rank`, where `domain` sums `rank`
+/// A contest on `normalizedLabel` and `rank`, where `domain` sums `rank` and declares no bounds
+/// on it: a type protocol version 13 and earlier registered
 const SUMMED_RANK_CONTRACT: &str =
     "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-summed-integer.json";
 
@@ -1014,11 +1017,41 @@ async fn should_fail_on_a_taken_awarded_document_id_at_protocol_version_14() {
     );
 }
 
-/// A platform at `platform_version` with [`SUMMED_RANK_CONTRACT`] and a domain `big` whose
-/// `rank` is `i64::MAX`, so a winner with a `rank` above 0 takes the sum past its range
-fn platform_over_a_full_sum(
+/// What a test changes in the `domain` type of [`SUMMED_RANK_CONTRACT`]
+#[derive(Clone, Copy, Default)]
+struct SummedRankContract {
+    /// `rank` declares the bounds registration holds the summed values of a contested type
+    /// to from protocol version 14 (within 2^27 of 0)
+    bounded_rank: bool,
+    /// The type keeps the history of its documents, which registration refuses on a
+    /// contested type from protocol version 15
+    keeps_history: bool,
+}
+
+/// A platform at `platform_version` with [`SUMMED_RANK_CONTRACT`] changed as `changes` say,
+/// written to the state without the checks of a registration
+fn platform_with_summed_rank_contract(
+    changes: SummedRankContract,
     platform_version: &PlatformVersion,
 ) -> (TempPlatform<MockCoreRPCLike>, DataContract, StdRng) {
+    let mut schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(SUMMED_RANK_CONTRACT).expect("expected to read the contract"),
+    )
+    .expect("expected the contract to be JSON");
+    let domain = &mut schema["documentSchemas"]["domain"];
+    if changes.bounded_rank {
+        domain["properties"]["rank"]["minimum"] = (-(1i64 << 27)).into();
+        domain["properties"]["rank"]["maximum"] = (1i64 << 27).into();
+    }
+    if changes.keeps_history {
+        domain["documentsKeepHistory"] = true.into();
+    }
+    let contract_file = tempfile::Builder::new()
+        .suffix(".json")
+        .tempfile()
+        .expect("expected a file for the contract");
+    fs::write(contract_file.path(), schema.to_string()).expect("expected to write the contract");
+
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
@@ -1027,29 +1060,44 @@ fn platform_over_a_full_sum(
     let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let contract = setup_contract(
         &platform.drive,
-        SUMMED_RANK_CONTRACT,
+        contract_file
+            .path()
+            .to_str()
+            .expect("expected the contract's path"),
         None,
         Some(contract_owner.0.id().to_buffer()),
         None::<fn(&mut DataContract)>,
         None,
         Some(platform_version),
     );
-    let domain = contract
-        .document_type_for_name("domain")
-        .expect("expected a domain document type");
-    let mut big = domain
-        .random_document_with_rng(&mut rng, platform_version)
-        .expect("expected a random domain document");
-    big.set("parentDomainName", "dash".into());
-    big.set("normalizedParentDomainName", "dash".into());
-    big.set("subdomainRules.allowSubdomains", false.into());
-    big.set("preorderSalt", rng.gen::<[u8; 32]>().into());
-    big.set("label", "big".into());
-    big.set("normalizedLabel", "big".into());
-    big.set("rank", Value::I64(i64::MAX));
-    let big = other_domain_like(&big, 0x61);
-    insert_domain_directly(&platform, &contract, &big, platform_version);
     (platform, contract, rng)
+}
+
+/// Writes a domain with `label` and `rank` to the state outside any contest, owned by an
+/// identity of its own, without the checks of a transition; returns it
+fn insert_summed_rank_domain(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    rng: &mut StdRng,
+    label: &str,
+    rank: i64,
+    platform_version: &PlatformVersion,
+) -> Document {
+    let mut domain = contract
+        .document_type_for_name("domain")
+        .expect("expected a domain document type")
+        .random_document_with_rng(rng, platform_version)
+        .expect("expected a random domain document");
+    domain.set("parentDomainName", "dash".into());
+    domain.set("normalizedParentDomainName", "dash".into());
+    domain.set("subdomainRules.allowSubdomains", false.into());
+    domain.set("preorderSalt", rng.gen::<[u8; 32]>().into());
+    domain.set("label", label.into());
+    domain.set("normalizedLabel", label.into());
+    domain.set("rank", Value::I64(rank));
+    let domain = other_domain_like(&domain, rng.gen());
+    insert_domain_directly(platform, contract, &domain, platform_version);
+    domain
 }
 
 /// A new identity joins a contest on `label` with `rank` in [`SUMMED_RANK_CONTRACT`] in a block
@@ -1172,17 +1220,11 @@ fn summed_rank_vote_poll(
     }
 }
 
-/// Opens a contest on `quantum` with `rank` 1 over a full sum (see
-/// [`platform_over_a_full_sum`]); returns its contender's id and its document's
-async fn contest_over_a_full_sum(
-    platform_version: &PlatformVersion,
-) -> (
-    TempPlatform<MockCoreRPCLike>,
-    DataContract,
-    Identifier,
-    Identifier,
-) {
-    let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
+#[tokio::test]
+async fn should_leave_a_contest_open_on_a_type_summing_values_past_the_contested_limit() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) =
+        platform_with_summed_rank_contract(SummedRankContract::default(), platform_version);
     let (contender, document_id) = join_summed_rank_contest(
         &mut platform,
         &contract,
@@ -1193,14 +1235,6 @@ async fn contest_over_a_full_sum(
         platform_version,
     )
     .await;
-    (platform, contract, contender, document_id)
-}
-
-#[tokio::test]
-async fn should_leave_a_contest_open_when_the_award_takes_its_types_total_past_its_range() {
-    let platform_version = PlatformVersion::latest();
-    let (platform, contract, contender, document_id) =
-        contest_over_a_full_sum(platform_version).await;
     let vote_poll = summed_rank_vote_poll(&contract, "quantum", 1);
     let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
 
@@ -1219,26 +1253,163 @@ async fn should_leave_a_contest_open_when_the_award_takes_its_types_total_past_i
 }
 
 #[tokio::test]
+async fn should_award_a_contest_on_a_type_summing_values_within_the_contested_limit() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            bounded_rank: true,
+            ..Default::default()
+        },
+        platform_version,
+    );
+    let (contender, document_id) = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the contest to end with the block");
+
+    assert_eq!(
+        contest_state(
+            &platform,
+            &summed_rank_vote_poll(&contract, "quantum", 1),
+            &[document_id],
+            platform_version
+        ),
+        ContestState {
+            status: (
+                ContestedDocumentVotePollStatus::Awarded(contender),
+                Some(900)
+            ),
+            prefunded_balance: 0,
+            contender_documents: vec![None],
+        }
+    );
+    assert_eq!(
+        awarded_domains(&platform, &contract, contender, platform_version).len(),
+        1
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+}
+
+#[tokio::test]
 async fn should_fail_on_an_award_taking_a_sum_past_its_range_at_protocol_version_14() {
     let platform_version = protocol_version_14();
-    let (platform, ..) = contest_over_a_full_sum(platform_version).await;
+    let (mut platform, contract, mut rng) =
+        platform_with_summed_rank_contract(SummedRankContract::default(), platform_version);
+    insert_summed_rank_domain(
+        &platform,
+        &contract,
+        &mut rng,
+        "big",
+        i64::MAX,
+        platform_version,
+    );
+    join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
+
     assert_matches!(
         end_first_due_vote_polls(&platform, platform_version),
         Err(Error::Drive(DriveCrateError::GroveDB(_)))
     );
 }
 
-/// Opens a contest whose award would take the type's total past its range (`quantum`, `rank`
-/// 1) and one awarded as usual (`zebra`, `rank` 0), the one at `left_open` (0 or 1) opening
-/// first, at `times`, and ends both in one block at the latest protocol version. The first is
-/// left open and the other is awarded and cleaned up, whichever of the two the block ends
-/// first and whether or not they share an end date.
+#[tokio::test]
+async fn should_leave_a_contest_open_when_a_deleted_document_retains_the_awarded_id() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            bounded_rank: true,
+            keeps_history: true,
+        },
+        platform_version,
+    );
+    let (contender, document_id) = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
+    // The tree of the revisions a document of this id retains, with no document under the id
+    let grove_version = &platform_version.drive.grove_version;
+    let mut history_trees_path = document_history_path(
+        contract.id_ref().as_bytes(),
+        "domain",
+        document_id.as_slice(),
+    );
+    let history_tree_key = history_trees_path
+        .pop()
+        .expect("expected the document's history tree key");
+    let history_trees_key = history_trees_path
+        .pop()
+        .expect("expected the history trees key");
+    for (path, key) in [
+        (&history_trees_path[..], &history_trees_key),
+        (
+            &[&history_trees_path[..], &[history_trees_key.clone()]].concat()[..],
+            &history_tree_key,
+        ),
+    ] {
+        platform
+            .drive
+            .grove
+            .insert_if_not_exists(path, key, Element::empty_tree(), None, grove_version)
+            .unwrap()
+            .expect("expected to write the history tree");
+    }
+    let vote_poll = summed_rank_vote_poll(&contract, "quantum", 1);
+    let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the block to go through");
+
+    assert_holds_what_it_held(
+        &platform,
+        &vote_poll,
+        &[document_id],
+        &before,
+        platform_version,
+    );
+    assert_only_left_open_listed(&platform, &[&vote_poll], platform_version);
+    assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
+}
+
+/// Opens a contest whose winner's unique index entry another document holds (`quantum`,
+/// `rank` 1) and one awarded as usual (`zebra`, `rank` 0), the one at `left_open` (0 or 1)
+/// opening first, at `times`, and ends both in one block at the latest protocol version. The
+/// first is left open and the other is awarded and cleaned up, whichever of the two the block
+/// ends first and whether or not they share an end date.
 async fn end_two_contests_in_one_block_with_one_left_open(
     left_open: usize,
     times: [TimestampMillis; 2],
 ) {
     let platform_version = PlatformVersion::latest();
-    let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            bounded_rank: true,
+            ..Default::default()
+        },
+        platform_version,
+    );
     let left_open_contest = ("quantum", 1);
     let awarded_contest = ("zebra", 0);
     let contests = if left_open == 0 {
@@ -1261,6 +1432,15 @@ async fn end_two_contests_in_one_block_with_one_left_open(
             .await,
         );
     }
+    let (label, rank) = left_open_contest;
+    insert_summed_rank_domain(
+        &platform,
+        &contract,
+        &mut rng,
+        label,
+        rank,
+        platform_version,
+    );
     let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert_eq!(
         end_dates.len(),
@@ -1271,7 +1451,6 @@ async fn end_two_contests_in_one_block_with_one_left_open(
         .keys()
         .next_back()
         .expect("expected a vote poll end date");
-    let (label, rank) = left_open_contest;
     let left_open_vote_poll = summed_rank_vote_poll(&contract, label, rank);
     let (_, left_open_document_id) = contenders[left_open];
     let before = contest_state(
@@ -1337,7 +1516,13 @@ async fn should_award_a_contest_and_leave_open_another_sharing_its_end_date() {
 #[tokio::test]
 async fn should_list_contests_left_open_under_one_end_date_and_not_end_them_again() {
     let platform_version = PlatformVersion::latest();
-    let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            bounded_rank: true,
+            ..Default::default()
+        },
+        platform_version,
+    );
     let mut contests = vec![];
     for ((label, rank), time_ms) in [("quantum", 1), ("zebra", 2)]
         .into_iter()
@@ -1353,6 +1538,15 @@ async fn should_list_contests_left_open_under_one_end_date_and_not_end_them_agai
             platform_version,
         )
         .await;
+        // Another document holds the winner's unique index entry
+        insert_summed_rank_domain(
+            &platform,
+            &contract,
+            &mut rng,
+            label,
+            rank,
+            platform_version,
+        );
         contests.push((summed_rank_vote_poll(&contract, label, rank), document_id));
     }
     let before: Vec<ContestState> = contests
