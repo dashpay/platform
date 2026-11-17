@@ -237,13 +237,13 @@ async fn should_keep_failing_a_byte_array_of_integers_that_are_not_bytes_interna
     let raw = fixture
         .creation(platform_value!({ "data": u64_members(&[1, 2, 3]) }))
         .await;
-    match fixture.check_tx(&raw) {
-        Ok(errors) => assert!(
+    // check_tx may fail internally; it must not refuse the list by document validation
+    if let Ok(errors) = fixture.check_tx(&raw) {
+        assert!(
             byte_array_refusal(&errors).is_none()
                 && errors.iter().all(|error| error.code() != JSON_SCHEMA_ERROR),
             "protocol version 14 must not refuse it by document validation: {errors:?}"
-        ),
-        Err(_) => {}
+        );
     }
     assert!(
         matches!(
