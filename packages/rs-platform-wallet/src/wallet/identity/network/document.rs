@@ -818,7 +818,13 @@ impl IdentityWallet {
             .await?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .resolve_authentication_signing_key(
+                owner_identity_id,
+                signing_key_id,
+                &data_contract,
+                document_type_name,
+                signer,
+            )
             .await?;
 
         // Erase is keyed by (document_id, owner_id) like delete; the
