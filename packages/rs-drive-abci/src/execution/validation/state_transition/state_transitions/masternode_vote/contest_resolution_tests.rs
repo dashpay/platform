@@ -612,6 +612,76 @@ async fn should_fail_on_a_taken_unique_index_entry_at_protocol_version_14() {
     );
 }
 
+/// Writes, for each contender of the contest on "quantum", a domain outside the contest with
+/// the id of the contender's document, another owner and another label, so no unique index
+/// value of a contender's document is held but the id the award writes it at is taken.
+/// Returns the domains written.
+fn take_contender_document_ids(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    dpns_contract: &DataContract,
+    platform_version: &PlatformVersion,
+) -> Vec<Document> {
+    contender_documents(platform, dpns_contract, "quantum", platform_version)
+        .into_iter()
+        .zip([(0x51, "zebra"), (0x61, "yaks")])
+        .map(|((_, contender_document), (seed, label))| {
+            let mut holder = other_domain_like(&contender_document, seed);
+            holder.set_id(contender_document.id());
+            holder.set("label", label.into());
+            holder.set("normalizedLabel", label.into());
+            insert_domain_directly(platform, dpns_contract, &holder, platform_version);
+            holder
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn should_end_a_contest_with_no_winner_when_the_awarded_document_id_is_taken() {
+    let platform_version = PlatformVersion::latest();
+    let (platform, contender_1, contender_2, dpns_contract) =
+        quantum_contest(platform_version).await;
+    let holders = take_contender_document_ids(&platform, &dpns_contract, platform_version);
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the contest to end with the block");
+
+    assert_ended_with_no_winner(
+        &platform,
+        &dpns_name_vote_poll(&dpns_contract, "quantum"),
+        platform_version,
+    );
+    for contender in [contender_1, contender_2] {
+        assert!(awarded_domains(&platform, &dpns_contract, contender, platform_version).is_empty());
+    }
+    for holder in holders {
+        assert_eq!(
+            awarded_domains(
+                &platform,
+                &dpns_contract,
+                holder.owner_id(),
+                platform_version
+            ),
+            vec![holder],
+            "the document holding the id must stay as it was"
+        );
+    }
+    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
+}
+
+#[tokio::test]
+async fn should_fail_on_a_taken_awarded_document_id_at_protocol_version_14() {
+    let platform_version = protocol_version_14();
+    let (platform, _, _, dpns_contract) = quantum_contest(platform_version).await;
+    take_contender_document_ids(&platform, &dpns_contract, platform_version);
+
+    assert_matches!(
+        end_first_due_vote_polls(&platform, platform_version),
+        Err(Error::Drive(DriveCrateError::Drive(
+            DriveError::CorruptedDocumentAlreadyExists(_)
+        )))
+    );
+}
+
 /// A platform at `platform_version` with [`SUMMED_RANK_CONTRACT`] and a domain `big` whose
 /// `rank` is `i64::MAX`, so a winner with a `rank` above 0 takes the sum past its range
 fn platform_over_a_full_sum(
