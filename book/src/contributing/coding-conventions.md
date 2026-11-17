@@ -357,6 +357,18 @@ Rules that fall out of the table:
   the transition is invalid. The block loop converts it into an internal-error
   result instead of halting, and `process_proposal` rejects any block that
   contains one.
+- Execution never turns its own failure into a refusal. A write that
+  validation admitted and Drive cannot apply is an internal error, and stays
+  one. Do not catch it, roll the block transaction back to a savepoint and
+  execute the transition again as a paid consensus error: that path needs its
+  own fee rules and its own copy of what a refused transition writes, and it
+  misses what validation covers for free (`check_tx`, a sponsored write). Put
+  the check in state validation, with a registration rule where that is what
+  makes the condition readable before the write, as the bounds on summed
+  properties do for `DocumentSumOverflowError`. The block transaction is
+  rewound to a savepoint in two places only: a genesis re-proposal, and a
+  proposer dropping a transition from the block it builds.
+  `packages/rs-drive-abci/tests/savepoint_uses.rs` pins that list.
 - Validation lives once. `wasm-dpp2`, the SDKs, and the FFI layer never
   duplicate a length, range, or count check that `rs-dpp` enforces, even when
   the duplicate would give a friendlier early error. Two definitions of
@@ -618,6 +630,9 @@ now does.
 3. Return it through `ConsensusValidationResult`; never `Err`.
 4. Test the rejection through `process_raw_state_transitions`, and test that
    the previous protocol version still accepts the input.
+5. If the condition only shows when the write is applied, find what validation
+   can read to refuse it first. Never roll the write back and run the
+   transition again as a refusal.
 
 **Adding GroveDB structure**
 
