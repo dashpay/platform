@@ -88,6 +88,7 @@ async fn sh_042_should_fund_foreign_shielded_recipient_from_asset_lock() {
             0,
             None,
             None,
+            None,
         )
         .await
         .expect("fund foreign recipient from asset lock");

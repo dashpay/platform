@@ -2491,7 +2491,8 @@ pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
 ) -> Result<StateTransition, PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
-    let (spends, anchor) = extract_spends_and_anchor(sdk, store, selected_notes).await?;
+    let (spends, anchor, _) =
+        extract_spends_and_recorded_anchor(sdk, store, selected_notes).await?;
     let (state_transition, fee_used) = build_unshield_transition(
         spends,
         *to_address,
@@ -8283,8 +8284,18 @@ pub mod test_utils {
         amount: u64,
         outputs: usize,
     ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
-        super::reserve_unspent_notes(sdk, store, id, amount, outputs, ShieldedFeeKind::Unshield)
-            .await
+        let (notes, total, fee, mut reservation) = super::reserve_unspent_notes(
+            sdk,
+            store,
+            id,
+            amount,
+            outputs,
+            ShieldedFeeKind::Unshield,
+        )
+        .await?;
+        // The caller owns the reservation; dropping the guard must not release it.
+        reservation.hand_over();
+        Ok((notes, total, fee))
     }
 
     /// All unspent notes for `id`, so a test can capture a note to build

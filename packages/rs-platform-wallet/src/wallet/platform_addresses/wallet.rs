@@ -985,6 +985,7 @@ mod found_026_tests {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
             generation: Arc::new(crate::wallet::core::WalletGeneration::new()),
             identity_manager: crate::wallet::identity::IdentityManager::new(),

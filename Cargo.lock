@@ -1867,6 +1867,7 @@ dependencies = [
  "heck 0.5.0",
  "quote",
  "syn 2.0.117",
+ "tokio",
 ]
 
 [[package]]
@@ -3017,6 +3018,16 @@ dependencies = [
  "frost-core",
  "hex",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -5469,22 +5480,29 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "bimap",
+ "bip39",
  "bs58",
  "dash-async",
  "dash-context-provider",
+ "dash-platform-macros",
  "dash-sdk",
  "dash-spv",
  "dashcore",
+ "dotenvy",
  "dpp",
  "drive-proof-verifier",
+ "fs2",
  "futures",
  "grovedb-commitment-tree",
  "hex",
  "image",
+ "indexmap 2.14.0",
  "key-wallet",
  "key-wallet-manager",
  "log",
+ "parking_lot",
  "platform-encryption",
+ "platform-wallet-storage",
  "rand 0.8.6",
  "rayon",
  "rs-sdk-trusted-context-provider",
@@ -5497,6 +5515,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-shared-rt",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -5518,6 +5537,7 @@ dependencies = [
  "dpp",
  "grovedb-bincode",
  "hex",
+ "indexmap 2.14.0",
  "key-wallet",
  "lazy_static",
  "once_cell",
@@ -8029,6 +8049,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-shared-rt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a6bb03ec682a0bb16ce93d19301abc5b98a0d7936477175a156a213dcc47d85"
+dependencies = [
+ "once_cell",
+ "tokio",
+ "tokio-shared-rt-macro",
+]
+
+[[package]]
+name = "tokio-shared-rt-macro"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fe49a94e3a984b0d0ab97343dc3dcd52baae1ee13f005bfad39faea47d051dc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "tokio-socks"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8087,6 +8129,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

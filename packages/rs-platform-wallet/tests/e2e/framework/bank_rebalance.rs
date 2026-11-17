@@ -821,6 +821,7 @@ pub async fn asset_lock_core_to_platform(
             bank.address_signer(),
             &core_signer,
             None,
+            None,
         )
         .await
         .map_err(|e| {

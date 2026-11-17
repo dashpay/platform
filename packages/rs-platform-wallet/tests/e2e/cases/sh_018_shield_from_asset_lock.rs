@@ -104,6 +104,7 @@ async fn sh_018_shield_from_asset_lock() {
             0,
             None,
             None,
+            None,
         )
         .await
         .expect("shielded_fund_from_asset_lock (Core-L1 asset-lock seam — RED here documents the gate, not a shield-path defect)");

@@ -122,7 +122,11 @@ impl ShieldedHandle {
     /// Preserve recoverable failures for best-effort teardown only.
     /// Tree inconsistency always panics, including during teardown.
     async fn try_sync(&self) -> FrameworkResult<()> {
-        let summary = match self.coordinator.try_sync(true).await {
+        let summary = match self
+            .coordinator
+            .try_sync(true, &tokio_util::sync::CancellationToken::new())
+            .await
+        {
             Ok(summary) => summary,
             Err(error @ PlatformWalletError::ShieldedTreeInconsistent { .. }) => panic!(
                 "{error}; keep {} as evidence; never rebuild the tree",

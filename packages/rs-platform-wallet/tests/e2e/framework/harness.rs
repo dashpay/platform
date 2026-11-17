@@ -494,7 +494,10 @@ impl E2eContext {
                 sdk.set_context_provider(CompositeContextProvider::new(
                     Arc::clone(&spv_runtime),
                     Arc::clone(&context_provider),
-                ));
+                ))
+                .map_err(|e| {
+                    FrameworkError::Spv(format!("cannot swap in the SPV context provider: {e}"))
+                })?;
                 tracing::info!(
                     target: "platform_wallet::e2e::harness",
                     "context_provider=spv: swapped SDK proof-verification \

@@ -54,7 +54,7 @@ impl Default for WaitEventHub {
 }
 
 impl EventHandler for WaitEventHub {
-    fn on_sync_event(&self, _event: &dash_spv::sync::SyncEvent) {
+    fn on_sync_event(&self, _event: &dash_spv::SyncEvent) {
         self.notify.notify_waiters();
     }
 

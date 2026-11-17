@@ -137,6 +137,7 @@ async fn al_002_wallet_drain_core_to_shielded() {
             DUMMY_OUTPUTS,
             None,
             None,
+            None,
         )
         .await
         .expect("shielded_fund_from_asset_lock (DrainWalletBalance)");

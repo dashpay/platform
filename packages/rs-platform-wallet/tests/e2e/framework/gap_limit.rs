@@ -235,7 +235,7 @@ mod tests {
         )
         .expect("mnemonic parses");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xprv");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed[..]).expect("master xprv");
         let path = DerivationPath::from(vec![
             ChildNumber::from_hardened_idx(44).unwrap(),
             ChildNumber::from_hardened_idx(1).unwrap(),

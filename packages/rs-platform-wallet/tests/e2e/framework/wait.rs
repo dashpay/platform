@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::AddressInfo;
 use dash_sdk::Sdk;
-use dash_spv::sync::ProgressPercentage;
+use dash_spv::ProgressPercentage;
 use dpp::address_funds::PlatformAddress;
 use dpp::data_contract::DataContract;
 use dpp::fee::Credits;

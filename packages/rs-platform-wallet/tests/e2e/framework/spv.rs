@@ -19,9 +19,9 @@ use std::time::{Duration, Instant};
 use dash_sdk::dapi_client::AddressList;
 use dash_spv::client::config::MempoolStrategy;
 use dash_spv::network::NetworkEvent;
-use dash_spv::sync::{ManagerIdentifier, ProgressPercentage, SyncEvent, SyncState};
 use dash_spv::types::ValidationMode;
 use dash_spv::{ClientConfig, DevnetConfig};
+use dash_spv::{ManagerIdentifier, ProgressPercentage, SyncEvent, SyncState};
 use dashcore::sml::llmq_type::LlmqDevnetParams;
 use dashcore::Network;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
@@ -377,7 +377,7 @@ impl EventHandler for MnListErrorObserver {
     }
 
     fn on_network_event(&self, _event: &NetworkEvent) {}
-    fn on_progress(&self, _progress: &dash_spv::sync::SyncProgress) {}
+    fn on_progress(&self, _progress: &dash_spv::SyncProgress) {}
     fn on_wallet_event(&self, _event: &WalletEvent) {}
     fn on_error(&self, _error: &str) {}
 }
@@ -387,7 +387,7 @@ impl PlatformEventHandler for MnListErrorObserver {}
 /// One-line info-level pipeline-snapshot log used by
 /// [`wait_for_mn_list_synced`].
 fn log_pipeline_snapshot(
-    progress: Option<&dash_spv::sync::SyncProgress>,
+    progress: Option<&dash_spv::SyncProgress>,
     elapsed: Duration,
     timeout: Duration,
 ) {
@@ -469,17 +469,19 @@ fn build_client_config(
         // Dash Core devnet peers drop any inbound connection whose user agent
         // lacks `devnet.devnet-<name>`; rebuild it in the FFI's exact
         // `/<base>(devnet.devnet-<name>)/` shape.
-        let base = client_config
-            .user_agent
-            .clone()
-            .unwrap_or_else(|| format!("platform-wallet-e2e:{}", env!("CARGO_PKG_VERSION")));
-        client_config.user_agent = Some(format!("/{base}(devnet.devnet-{})/", config.devnet_name));
+        let base = format!("platform-wallet-e2e:{}", env!("CARGO_PKG_VERSION"));
+        client_config.user_agent = format!("/{base}(devnet.devnet-{})/", config.devnet_name);
 
         let mut devnet = DevnetConfig::new(config.devnet_name.clone());
         if config.devnet_llmq_size > 0 {
+            let to_u16 = |value: u32| {
+                u16::try_from(value).map_err(|_| {
+                    FrameworkError::Spv(format!("devnet LLMQ parameter {value} exceeds u16"))
+                })
+            };
             devnet.llmq_params = Some(LlmqDevnetParams {
-                size: config.devnet_llmq_size,
-                threshold: config.devnet_llmq_threshold,
+                size: to_u16(config.devnet_llmq_size)?,
+                threshold: to_u16(config.devnet_llmq_threshold)?,
             });
         }
         client_config.devnet = Some(devnet);
