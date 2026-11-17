@@ -11,8 +11,9 @@ use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
-use crate::identity_keys_from_mnemonic::{parse_mnemonic_any_language, zeroize_and_free_row};
+use crate::identity_keys_from_mnemonic::zeroize_and_free_row;
 use crate::{check_ptr, unwrap_result_or_return};
+use platform_wallet::parse_mnemonic_any_language;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
@@ -61,7 +62,7 @@ unsafe fn derive_at_slot_inner(
     out_row: *mut IdentityKeyPreviewFFI,
 ) -> PlatformWalletFFIResult {
     let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
+    let seed: Zeroizing<[u8; 64]> = mnemonic.to_seed(passphrase_str);
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));

@@ -31,6 +31,12 @@ on:
         description: Whether doc comments with code examples have changed
         type: boolean
         default: false
+      runner-image-changed:
+        # Same as in tests-rs-workspace.yml: true keeps select-runner on a
+        # GitHub-hosted runner, where it may wait for a candidate image.
+        description: Whether the pull request changes the AMD64 runner requirements
+        type: boolean
+        default: true
 
 jobs:
   select-runner:
@@ -39,7 +45,9 @@ jobs:
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
       || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
-    runs-on: ubuntu-24.04
+    # Light pool unless this job may wait for a candidate image; see
+    # tests-rs-workspace.yml.
+    runs-on: ${{ !inputs.runner-image-changed && vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 135
     permissions:
       contents: read

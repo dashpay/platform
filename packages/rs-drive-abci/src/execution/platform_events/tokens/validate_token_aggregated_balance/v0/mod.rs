@@ -21,10 +21,11 @@ impl<C> Platform<C> {
 
             if !token_balance.ok()? {
                 // The balance side of the conservation equation includes the token shielded
-                // pools. Every protocol version selects this generation, and that is inert at
-                // the ones that predate those pools: below the token pool protocol version
-                // `calculate_total_tokens_balance` reports a pool total of zero, so
-                // `total_balances` is the identity balance total it always was. The line is on
+                // pools and the token order escrow. Every protocol version selects this
+                // generation, and that is inert at the ones that predate them: below the token
+                // pool protocol version `calculate_total_tokens_balance` reports a pool total of
+                // zero, and below 15 an escrow total of zero, so `total_balances` is the
+                // identity balance total it always was. The line is on
                 // the diagnostic of an already-failed invariant in any case; the accept or
                 // reject decision is `TotalTokensBalance::ok`.
                 return Err(Error::Execution(

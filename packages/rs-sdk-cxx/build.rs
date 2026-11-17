@@ -15,10 +15,14 @@ fn main() {
     println!("cargo:rerun-if-changed=include/dash/sdk/callbacks.h");
 
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR");
+    // `OUT_DIR` is `target/<profile>/build/<package>-<hash>/out` up to Cargo 1.99 and
+    // `target/<profile>/build/<package>/<hash>/out` from Cargo 1.100, so the profile
+    // directory is the parent of `build`, whatever lies between `build` and `out`.
     let include = Path::new(&out_dir)
         .ancestors()
-        .nth(3)
-        .expect("target/<profile>")
+        .find(|dir| dir.file_name().is_some_and(|name| name == "build"))
+        .and_then(Path::parent)
+        .expect("OUT_DIR lies under target/<profile>/build")
         .join("include");
     let generated = Path::new(&out_dir).join("cxxbridge/include");
     for (from, to) in [

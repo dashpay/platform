@@ -1,4 +1,5 @@
 use crate::drive::contract::structure::CONTRACT_FLAGS;
+use crate::drive::document::paths::DOCUMENT_LIFECYCLE_TREE_KEY;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/document/paths.rs";
@@ -10,6 +11,8 @@ const LEVEL_FLAGS: &str = "The owner is the owner of the document that created t
      system data, or created by a document of a type declaring a `ttl`, carry no flags.";
 const DOCUMENT: &str = "contracts.contract.documents.document_type.primary_key.document";
 const REVISION: &str = "contracts.contract.documents.document_type.primary_key.document.revision";
+const RETAINED_REVISION: &str =
+    "contracts.contract.documents.document_type.history.document.revision";
 const INDEX_PROPERTY: &str = "contracts.contract.documents.document_type.index_property";
 
 const PRIMARY_KEY_TREES: [ElementKind; 9] = [
@@ -88,13 +91,17 @@ pub(crate) fn document_type() -> StructureNode {
                             ElementKind::ItemWithSumItem,
                             ElementKind::Tree,
                             ElementKind::SumTree,
+                            ElementKind::Reference,
+                            ElementKind::ReferenceWithSumItem,
                         ],
                         "An item; with a sum when the document type is \
                              summable; a tree of revisions when it keeps \
-                             history.",
+                             history before protocol version 15, and a reference \
+                             to its retained current revision from version 15.",
                     )
                     .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                     .value("serialized document")
+                    .reference(RETAINED_REVISION)
                     .describe("One document.")
                     .children(vec![
                         StructureNode::fixed("latest", &[0], "Latest", "")
@@ -103,6 +110,11 @@ pub(crate) fn document_type() -> StructureNode {
                                 "With a sum when the document type is summable.",
                             )
                             .reference(REVISION)
+                            .flags(
+                                &[FlagsKind::EpochOwned, FlagsKind::None],
+                                "The document owner when the contract can be deleted; otherwise no flags.",
+                            )
+                            .until(14)
                             .describe("A sibling reference to the newest revision."),
                         StructureNode::dynamic(
                             "revision",
@@ -115,8 +127,58 @@ pub(crate) fn document_type() -> StructureNode {
                         .kind(ElementKind::Item)
                         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                         .value("serialized document")
+                        .until(14)
                         .describe("The document as it was at that time."),
                     ]),
+            ),
+        StructureNode::fixed(
+            "lifecycle",
+            &[DOCUMENT_LIFECYCLE_TREE_KEY],
+            "Lifecycle",
+            "DOCUMENT_LIFECYCLE_TREE_KEY",
+        )
+        .kind(ElementKind::Tree)
+        .since(15)
+        .lazy()
+        .describe(
+            "An unflagged normal tree of lifecycle records for a type that keeps history. \
+             Created on the first delete and retained after all records are erased.",
+        )
+        .child(
+            StructureNode::identifier("record", "document_id", "The deleted document id")
+                .kind(ElementKind::Item)
+                .flags(
+                    &[FlagsKind::EpochOwned, FlagsKind::None],
+                    "The deletion's storage payer, including its gas sponsor when sponsored; \
+                     no flags when the caller supplies no payer. Erase refunds the record's \
+                     stored flag owner.",
+                )
+                .value("versioned DPP DocumentLifecycleRecord")
+                .source("packages/rs-dpp/src/document/lifecycle/mod.rs")
+                .lazy()
+                .describe(
+                    "One document's lifecycle record, present while Deleted or Erasing. \
+                     The terminal erase removes it together with the remaining history.",
+                ),
+        ),
+        StructureNode::fixed("history", &[2], "History", "DOCUMENT_HISTORY_TREE_KEY")
+            .kind(ElementKind::Tree)
+            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+            .since(15)
+            .lazy()
+            .describe("Retained revisions of a type that keeps history, separate from its current primary entries.")
+            .child(
+                StructureNode::identifier("document", "document_id", "The document id")
+                    .kind(ElementKind::ProvableCountTree)
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
+                    .describe("One document's retained history, with an authenticated revision count.")
+                    .child(
+                        StructureNode::dynamic("revision", "block_time_and_revision", KeyMatcher::Len(16), KeyEncoding::Composite, "The block time followed by the revision, both unsigned u64 big endian")
+                            .kind(ElementKind::Item)
+                            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
+                            .value("serialized document")
+                            .describe("An immutable retained revision."),
+                    ),
             ),
         StructureNode::dynamic(
             "index_property",

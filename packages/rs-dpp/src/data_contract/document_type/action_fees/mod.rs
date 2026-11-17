@@ -444,6 +444,8 @@ impl DocumentActionFees {
             DocumentTransitionActionType::UpdatePrice => self.document_price_update_action_fee(),
             DocumentTransitionActionType::Purchase => self.document_purchase_action_fee(),
             DocumentTransitionActionType::IgnoreWhileBumpingRevision => None,
+            // Erase has no action-fee declaration and is unreachable before its bounds activate.
+            DocumentTransitionActionType::Erase => None,
         }
     }
 

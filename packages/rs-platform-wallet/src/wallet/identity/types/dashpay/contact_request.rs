@@ -70,6 +70,15 @@ impl ContactRequest {
         }
     }
 
+    /// Whether the request came as a private contact request (protocol
+    /// version 15) rather than a `contactRequest` document. A document always
+    /// carries its Platform-assigned `$createdAtCoreBlockHeight`, which
+    /// DashPay requires and no Core chain puts at 0; a private request's entry
+    /// carries none, so the wallet records it at 0.
+    pub fn came_privately(&self) -> bool {
+        self.core_height_created_at == 0
+    }
+
     /// Check if this is an outgoing request for the given identity
     pub fn is_outgoing(&self, identity_id: &Identifier) -> bool {
         self.sender_id == *identity_id

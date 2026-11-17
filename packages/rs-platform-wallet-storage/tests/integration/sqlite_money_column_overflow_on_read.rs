@@ -86,7 +86,6 @@ fn platform_address_balance_negative_on_disk_errors_on_load() {
 /// reporting a sign-extended u64 amount for live funds.
 #[test]
 fn core_utxo_value_negative_on_disk_errors_on_read() {
-    use dashcore::hashes::Hash;
     use platform_wallet_storage::sqlite::schema::{blob, core_state};
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0xE2);

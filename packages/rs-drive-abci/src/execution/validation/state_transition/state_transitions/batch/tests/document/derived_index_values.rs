@@ -100,7 +100,6 @@ fn should_record_the_derived_values_the_reference_validation_read() {
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to insert the post");
 

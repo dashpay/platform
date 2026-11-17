@@ -1,3 +1,4 @@
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::block::block_info::BlockInfo;
@@ -34,12 +35,14 @@ fn historical_platform() -> TempPlatform<MockCoreRPCLike> {
     let platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(8)
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let old = PlatformVersion::get(13).expect("PV13");
     let tx = platform.drive.grove.start_transaction();
     platform
         .perform_events_on_first_block_of_protocol_change(
             &platform.state.load(),
+            &mut PlatformState::clone(&platform.state.load()),
             &block(3),
             &tx,
             8,
@@ -134,6 +137,7 @@ fn should_upgrade_historically_owned_token_history_without_version_item_cost_mis
     let tx = platform.drive.grove.start_transaction();
     let result = platform.perform_events_on_first_block_of_protocol_change(
         &platform.state.load(),
+        &mut PlatformState::clone(&platform.state.load()),
         &block(7),
         &tx,
         13,
@@ -342,7 +346,6 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
             true,
             None,
             pv,
-            None,
         )
         .expect("persist legacy claim and indexes");
 }
@@ -400,6 +403,7 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform.state.load(),
+                    &mut PlatformState::clone(&platform.state.load()),
                     &block(epoch),
                     &tx,
                     13,
@@ -489,6 +493,7 @@ fn should_keep_unflagged_and_absent_token_history_unflagged() {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         if absent {
             platform
@@ -511,6 +516,7 @@ fn should_keep_unflagged_and_absent_token_history_unflagged() {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &block(7),
                 &tx,
                 13,
@@ -547,6 +553,7 @@ fn should_drop_retry_commit_and_reopen_historical_token_history_upgrade() {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &block(7),
                 &tx,
                 13,
@@ -610,11 +617,13 @@ fn should_skip_historical_versions_and_preserve_current_token_history_noop() {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(previous)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let tx = platform.drive.grove.start_transaction();
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &block(7),
                 &tx,
                 previous,
@@ -643,6 +652,7 @@ fn should_skip_historical_versions_and_preserve_current_token_history_noop() {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &block(8),
                 &tx,
                 pv.protocol_version,
@@ -687,6 +697,7 @@ fn should_read_token_history_flag_presence_from_the_candidate_transaction() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &platform.state.load(),
+            &mut PlatformState::clone(&platform.state.load()),
             &block(7),
             &tx,
             13,
@@ -706,6 +717,7 @@ fn should_preserve_already_current_flagged_token_history_payload() {
     let platform = TestPlatformBuilder::new()
         .with_latest_protocol_version()
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let Element::Item(bytes, _) = contract_element(&platform, None) else {
         panic!("contract Item")
@@ -748,6 +760,7 @@ fn should_preserve_already_current_flagged_token_history_payload() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &platform.state.load(),
+            &mut PlatformState::clone(&platform.state.load()),
             &block(7),
             &tx,
             13,
@@ -772,6 +785,7 @@ fn should_leave_historical_pv13_dispatch_token_history_unchanged() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &platform.state.load(),
+            &mut PlatformState::clone(&platform.state.load()),
             &block(7),
             &tx,
             13,

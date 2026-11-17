@@ -10,7 +10,6 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
 use dpp::balances::credits::TokenAmount;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -26,7 +25,6 @@ impl Drive {
     /// * `apply` - A boolean indicating whether the operation should be applied or not.
     /// * `transaction` - The transaction information related to the operation.
     /// * `platform_version` - The platform version.
-    /// * `previous_fee_versions` - Cached fee versions, if any.
     ///
     /// # Returns
     ///
@@ -41,7 +39,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -58,7 +55,6 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_identity_token_balance".to_string(),

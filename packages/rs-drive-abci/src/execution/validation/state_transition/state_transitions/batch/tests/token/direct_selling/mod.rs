@@ -31,10 +31,10 @@ mod token_selling_tests {
             // reads the total supply even though the token sets no max supply. 12_820 credits
             // less in fees: the documents expirations tree joins `Misc` beside the token
             // supplies tree the purchase rewrites, reshaping the `Misc` Merk
-            // PROTOCOL_VERSION_15: 48_640 credits less in fees: the decision proposals
-            // contract adds one sibling to the genesis contracts tree, which reshapes the tree
-            // so the token contract's node is billed fewer bytes to reach
-            699_868_098_480,
+            // PROTOCOL_VERSION_15: 48_640 credits more in fees: the decision proposals and token
+            // market contracts join the genesis contracts tree, which reshapes it so the token
+            // contract's node is billed more bytes to reach
+            699_868_001_200,
         )
         .await;
     }

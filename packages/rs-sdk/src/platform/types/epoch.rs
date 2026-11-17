@@ -13,6 +13,7 @@ use crate::{
     platform::{Fetch, FetchMany, LimitQuery, Query},
     Error, Sdk,
 };
+use rs_dapi_client::RequestSettings;
 use std::collections::BTreeMap;
 
 /// Epoch type used in the SDK.
@@ -33,7 +34,7 @@ impl FetchCurrent for ExtendedEpochInfo {
     /// See [`fetch_current_with_metadata_and_proof`](ExtendedEpochInfo::fetch_current_with_metadata_and_proof)
     /// for how the current epoch is selected and authenticated.
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {
-        let (epoch, _, _) = resolve_current_epoch(sdk).await?;
+        let (epoch, _, _) = resolve_current_epoch(sdk, None).await?;
         Ok(epoch)
     }
 
@@ -43,7 +44,7 @@ impl FetchCurrent for ExtendedEpochInfo {
     /// See [`fetch_current_with_metadata_and_proof`](ExtendedEpochInfo::fetch_current_with_metadata_and_proof)
     /// for how the current epoch is selected and authenticated.
     async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error> {
-        let (epoch, metadata, _) = resolve_current_epoch(sdk).await?;
+        let (epoch, metadata, _) = resolve_current_epoch(sdk, None).await?;
         Ok((epoch, metadata))
     }
 
@@ -89,19 +90,21 @@ impl FetchCurrent for ExtendedEpochInfo {
     async fn fetch_current_with_metadata_and_proof(
         sdk: &Sdk,
     ) -> Result<(Self, ResponseMetadata, Proof), Error> {
-        resolve_current_epoch(sdk).await
+        resolve_current_epoch(sdk, None).await
     }
 }
 
-/// Fetch the newest started epoch, proving that it is in fact the newest.
+/// Fetch the newest started epoch, proving that it is in fact the newest, with
+/// both queries under `settings` (the SDK's own when `None`).
 ///
 /// See [`ExtendedEpochInfo::fetch_current_with_metadata_and_proof`] for the
 /// two-step protocol and its trust boundary.
-async fn resolve_current_epoch(
+pub(crate) async fn resolve_current_epoch(
     sdk: &Sdk,
+    settings: Option<RequestSettings>,
 ) -> Result<(ExtendedEpochInfo, ResponseMetadata, Proof), Error> {
     let (_, probe_metadata) =
-        ExtendedEpochInfo::fetch_with_metadata(sdk, current_epoch_probe_query(), None).await?;
+        ExtendedEpochInfo::fetch_with_metadata(sdk, current_epoch_probe_query(), settings).await?;
 
     let hint = epoch_hint_from_metadata(&probe_metadata);
     let mut candidate = hint;
@@ -110,7 +113,7 @@ async fn resolve_current_epoch(
         let (epochs, metadata, proof) = ExtendedEpochInfo::fetch_many_with_metadata_and_proof(
             sdk,
             current_epoch_confirmation_query(candidate),
-            None,
+            settings,
         )
         .await?;
 
@@ -164,7 +167,7 @@ pub(crate) fn current_epoch_probe_query() -> LimitQuery<EpochQuery> {
 /// Second step of [`ExtendedEpochInfo::fetch_current`]: fetch `candidate` and the
 /// epoch above it, so the proof shows whether `candidate` is the newest started
 /// epoch.
-fn current_epoch_confirmation_query(candidate: EpochIndex) -> LimitQuery<EpochQuery> {
+pub(crate) fn current_epoch_confirmation_query(candidate: EpochIndex) -> LimitQuery<EpochQuery> {
     LimitQuery {
         query: EpochQuery::ascending_from(candidate),
         limit: Some(2),
@@ -174,7 +177,7 @@ fn current_epoch_confirmation_query(candidate: EpochIndex) -> LimitQuery<EpochQu
 
 /// Extract the current-epoch hint from response metadata, clamped to the range
 /// Drive's epoch key encoding can express.
-fn epoch_hint_from_metadata(metadata: &ResponseMetadata) -> EpochIndex {
+pub(crate) fn epoch_hint_from_metadata(metadata: &ResponseMetadata) -> EpochIndex {
     metadata.epoch.min(MAX_EPOCH as u32) as EpochIndex
 }
 

@@ -1212,6 +1212,73 @@ extension ManagedPlatformWallet {
         address: String,
         storage: WalletStorage = WalletStorage()
     ) throws -> CoreAddressPrivateKey {
+        try revealAddressPrivateKey(
+            address: address, storage: storage, using: platform_wallet_address_private_key)
+    }
+
+    /// The derivation path of `address` within the BIP-44 account 0 scan of
+    /// Rust's `PlatformWallet::find_bip44_address_path`, such as
+    /// `m/44'/5'/0'/0/7`, or nil when the scan does not reach it. The scan
+    /// uses public keys only, so the mnemonic is never read.
+    ///
+    /// - Throws: `PlatformWalletError.notFound` if the wallet has no BIP-44
+    ///   account 0, so the scan could not run. `PlatformWalletError` if the
+    ///   address is not valid on this wallet's network or the handle is
+    ///   invalid.
+    public func findBIP44AddressPath(address: String) throws -> String? {
+        try KeyDerivation.requireNoNUL(address, "Address")
+        var out: UnsafeMutablePointer<CChar>? = nil
+        try address.withCString { addressPtr in
+            try platform_wallet_find_bip44_address_path(handle, addressPtr, &out).check()
+        }
+        guard let path = out else { return nil }
+        defer { platform_wallet_free_string(path) }
+        return String(cString: path)
+    }
+
+    /// The extended public key of BIP-44 account 0, as an `xpub…` or `tpub…`
+    /// string, from Rust's `PlatformWallet::bip44_account_xpub`.
+    ///
+    /// - Throws: `PlatformWalletError.notFound` if the wallet has no BIP-44
+    ///   account 0. `PlatformWalletError` if the handle is invalid.
+    public func bip44AccountXpub() throws -> String {
+        try KeyDerivation.ownedString("platform_wallet_bip44_account_xpub") { out in
+            try platform_wallet_bip44_account_xpub(handle, &out).check()
+        }
+    }
+
+    /// Reveal the private key of `address` at the path
+    /// `findBIP44AddressPath(address:)` finds, returned as hex + WIF.
+    ///
+    /// Routes through `platform_wallet_bip44_address_private_key`, with the
+    /// same key source as `coreAddressPrivateKey(address:storage:)`.
+    ///
+    /// - Throws: `PlatformWalletError.notFound` if the wallet has no BIP-44
+    ///   account 0. `PlatformWalletError` if the scan does not reach the
+    ///   address, the handle is invalid, or derivation fails.
+    public func bip44AddressPrivateKey(
+        address: String,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> CoreAddressPrivateKey {
+        try revealAddressPrivateKey(
+            address: address, storage: storage, using: platform_wallet_bip44_address_private_key)
+    }
+
+    /// Runs `reveal`, one of the resolver-based address key functions, and
+    /// returns the key it writes.
+    private func revealAddressPrivateKey(
+        address: String,
+        storage: WalletStorage,
+        using reveal: (
+            Handle,
+            UnsafeMutablePointer<MnemonicResolverHandle>?,
+            UnsafePointer<CChar>?,
+            UnsafeMutablePointer<AddressPrivateKeyFFI>?
+        ) -> PlatformWalletFFIResult
+    ) throws -> CoreAddressPrivateKey {
+        // The C string would end at an embedded NUL, so Rust would answer
+        // for the prefix.
+        try KeyDerivation.requireNoNUL(address, "Address")
         // Same resolver lifetime rationale as
         // `previewIdentityRegistrationKeys`: `withExtendedLifetime`
         // pins the resolver across the whole synchronous FFI call so
@@ -1221,12 +1288,7 @@ extension ManagedPlatformWallet {
         return try withExtendedLifetime(resolver) {
             var out = AddressPrivateKeyFFI()
             let result = address.withCString { addressPtr in
-                platform_wallet_address_private_key(
-                    handle,
-                    resolver.handle,
-                    addressPtr,
-                    &out
-                )
+                reveal(handle, resolver.handle, addressPtr, &out)
             }
             // Free the Rust-owned (zeroizing) strings whether we
             // succeeded or bailed — the free function no-ops on the
@@ -3717,27 +3779,6 @@ extension ManagedPlatformWallet {
             trackedAssetLocksCount: Int(ffi.tracked_asset_locks_count)
         )
     }
-
-    /// Shared array-marshalling body for the two id-list explorer
-    /// readers above. Both wrap the same `IdentifierArray` FFI shape +
-    /// free helper, so the per-method variance is just the FFI call
-    /// itself.
-    private func readIdentifierArray(
-        _ fetch: (inout IdentifierArray) -> PlatformWalletFFIResult
-    ) throws -> [Identifier] {
-        var array = IdentifierArray()
-        try fetch(&array).check()
-        defer { platform_wallet_identifier_array_free(&array) }
-        guard array.items != nil, array.count > 0 else {
-            return []
-        }
-        var ids: [Identifier] = []
-        ids.reserveCapacity(Int(array.count))
-        for i in 0..<Int(array.count) {
-            ids.append(identifierFromFFIArray(array, at: i))
-        }
-        return ids
-    }
 }
 
 /// Run `body` with three optional C-string pointers, each `nil` when
@@ -4942,6 +4983,76 @@ extension ManagedPlatformWallet {
                                             outBp.baseAddress!
                                         )
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(documentIdBytes)
+        }.value
+    }
+
+    /// Erase + broadcast a chunk of the retained revisions of the already
+    /// deleted `documentId` on `contractId`'s `documentType`, signed with
+    /// the explicit AUTHENTICATION + ECDSA key `signingKeyId` of
+    /// `ownerIdentityId`. Returns the document's 32-byte id once Platform
+    /// has proved it absent from ordinary reads. That absence predates the
+    /// erase, so the return observes the affected state and is not
+    /// evidence that this erase removed a revision; read
+    /// `SDK.documentGetLifecycle` for the state and the exact number of
+    /// revisions still retained.
+    ///
+    /// Sibling to `deleteDocument`. Routes through
+    /// `IdentityWallet::erase_document_with_signer` (via
+    /// `platform_wallet_document_erase`). Only a keep-history document
+    /// type whose schema sets `canBeErased` can be erased, and only after
+    /// the document has been deleted: the first erase must be signed by
+    /// the document's owner, every later one may be signed by any
+    /// identity, so `ownerIdentityId` is the signing identity rather than
+    /// necessarily the owner. One erase removes a bounded chunk of
+    /// revisions; erase again while the lifecycle reports any. Erase
+    /// returns no document body, so there is no canonical JSON.
+    public func eraseDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = withExtendedLifetime((self, signer)) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_erase(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!
+                                    )
                                 }
                             }
                         }

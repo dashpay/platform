@@ -33,14 +33,18 @@ fn directory() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../rs-drive-proof-verifier/tests/vectors/identity-discovery")
 }
-fn hash() -> [u8; 20] {
+pub(super) fn hash() -> [u8; 20] {
     std::fs::read(directory().join("key-hash.bin"))
         .unwrap()
         .try_into()
         .unwrap()
 }
 /// A recorded answer to request version `lookup` (0 or 1), signed at `version`.
-fn response(version: u32, lookup: u8, page: usize) -> GetIdentityByNonUniquePublicKeyHashResponse {
+pub(super) fn response(
+    version: u32,
+    lookup: u8,
+    page: usize,
+) -> GetIdentityByNonUniquePublicKeyHashResponse {
     vector(&format!("pv{version}-v{lookup}-{page}.bin"))
 }
 fn vector(name: &str) -> GetIdentityByNonUniquePublicKeyHashResponse {
@@ -97,7 +101,7 @@ fn sdk_from(seed: u32, pinned: bool, stale: bool, network: Network) -> Sdk {
     };
     builder.build().unwrap()
 }
-fn request(lookup: u8, after: Option<[u8; 32]>) -> IdentityRequest {
+pub(super) fn request(lookup: u8, after: Option<[u8; 32]>) -> IdentityRequest {
     let (public_key_hash, start_after) = (hash().to_vec(), after.map(|a| a.to_vec()));
     let request: GetIdentityByNonUniquePublicKeyHashRequest = match lookup {
         0 => GetIdentityByNonUniquePublicKeyHashRequestV0 {

@@ -9,7 +9,6 @@ use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorums
 use dapi_grpc::platform::v0::get_current_quorums_info_response::{
     GetCurrentQuorumsInfoResponseV0, ValidatorSetV0, ValidatorV0,
 };
-use dpp::dashcore::hashes::Hash;
 
 impl<C> Platform<C> {
     pub(super) fn query_current_quorums_info_v0(

@@ -36,9 +36,20 @@ class TransportMock extends EventEmitter {
     provider.initializeChainWith = sinon.spy();
     provider.readHistorical = sinon.spy();
     provider.startContinuousSync = sinon.spy();
+    // A chain whose header sync tests simulate as finished at this.height
+    const transport = this;
     provider.spvChain = {
       getLongestChain() {
         return [];
+      },
+      getTipHeight() {
+        return transport.height;
+      },
+      getTipHash() {
+        return undefined;
+      },
+      getHeaderAt() {
+        return undefined;
       },
       orphanChunks: [],
       startBlockHeight: 1,

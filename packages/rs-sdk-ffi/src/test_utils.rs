@@ -4,6 +4,7 @@ pub mod test_utils {
     use crate::sdk::SDKWrapper;
     use crate::signer::{SignCompletionCallback, SignerVTable, VTableSigner};
     use crate::types::{DashSDKPutSettings, SDKHandle};
+    use dash_context_provider::{ContractSource, SpvContextProvider};
     use dash_sdk::dpp::data_contract::DataContractFactory;
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -11,13 +12,33 @@ pub mod test_utils {
     use dash_sdk::dpp::platform_value::BinaryData;
     use dash_sdk::dpp::prelude::{DataContract, Identifier};
     use dash_sdk::platform::transition::put_settings::PutSettings;
+    use rs_sdk_trusted_context_provider::LocalContextResolver;
     use std::ffi::CString;
     use std::os::raw::c_void;
+    use std::sync::Arc;
 
     // Helper function to create a mock SDK handle
     pub fn create_mock_sdk_handle() -> *mut SDKHandle {
         let wrapper = Box::new(SDKWrapper::new_mock());
         Box::into_raw(wrapper) as *mut SDKHandle
+    }
+
+    /// A current SPV provider that resolves local contracts without a trusted-provider cache.
+    pub fn create_mock_sdk_handle_with_current_contracts(
+        contracts: Vec<DataContract>,
+    ) -> *mut SDKHandle {
+        let local_contracts = LocalContextResolver::new();
+        local_contracts.add_known_contracts(contracts);
+        let wrapper = SDKWrapper::new_mock();
+        assert!(wrapper.trusted_provider.is_none());
+        wrapper
+            .sdk
+            .set_context_provider(SpvContextProvider::new(
+                Arc::new(local_contracts) as Arc<dyn ContractSource>,
+                wrapper.sdk.network,
+            ))
+            .expect("a provider for the mock SDK's network");
+        Box::into_raw(Box::new(wrapper)) as *mut SDKHandle
     }
 
     // Helper function to destroy a mock SDK handle

@@ -16,7 +16,6 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Transaction;
 use dashcore_rpc::dashcore::consensus::encode::deserialize as deserialize_tx;
-use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::policy::MAX_STANDARD_TX_WEIGHT;
 use std::any::type_name_of_val;
 use std::sync::Arc;

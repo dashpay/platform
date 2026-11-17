@@ -11,12 +11,14 @@ pub mod encrypted_for;
 pub mod error;
 pub mod logging;
 pub mod moderation_charters;
+pub mod private_contact_requests;
 mod protocol_version_store;
 pub mod queries;
 pub mod sdk;
 pub mod serialization;
 pub mod settings;
 pub mod state_transitions;
+pub mod verified_context;
 pub mod wallet;
 
 // Re-export commonly used items

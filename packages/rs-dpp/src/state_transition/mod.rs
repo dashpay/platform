@@ -19,7 +19,10 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
-use platform_version::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::feature_initial_protocol_versions::{
+    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION,
+};
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -165,6 +168,10 @@ use crate::state_transition::identity_update_transition::{
 use crate::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::private_document_create_from_shielded_pool_transition::{
+    PrivateDocumentCreateFromShieldedPoolTransition,
+    PrivateDocumentCreateFromShieldedPoolTransitionSignable,
+};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::shield_from_asset_lock_transition::{
     ShieldFromAssetLockTransition, ShieldFromAssetLockTransitionSignable,
@@ -231,6 +238,7 @@ macro_rules! call_method {
             StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method($args),
             StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method($args),
             StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method($args),
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => st.$method($args),
             StateTransition::ShieldFromAssetLock(st) => st.$method($args),
             StateTransition::ShieldedWithdrawal(st) => st.$method($args),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method($args),
@@ -264,6 +272,7 @@ macro_rules! call_method {
             StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method(),
             StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method(),
             StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method(),
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => st.$method(),
             StateTransition::ShieldFromAssetLock(st) => st.$method(),
             StateTransition::ShieldedWithdrawal(st) => st.$method(),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method(),
@@ -300,6 +309,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
             StateTransition::TokenUnshieldWithShieldedFee(_) => None,
             StateTransition::TokenPurchaseFromShieldedPool(_) => None,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -333,6 +343,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
             StateTransition::TokenUnshieldWithShieldedFee(_) => None,
             StateTransition::TokenPurchaseFromShieldedPool(_) => None,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -369,6 +380,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
             StateTransition::TokenUnshieldWithShieldedFee(_) => {}
             StateTransition::TokenPurchaseFromShieldedPool(_) => {}
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -402,6 +414,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
             StateTransition::TokenUnshieldWithShieldedFee(_) => {}
             StateTransition::TokenPurchaseFromShieldedPool(_) => {}
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -466,6 +479,9 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "token purchase from shielded pool transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "private document create from shielded pool transition can not be called for identity signing".to_string(),
             )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
@@ -533,6 +549,9 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "token purchase from shielded pool transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "private document create from shielded pool transition can not be called for identity signing".to_string(),
             )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
@@ -646,6 +665,7 @@ pub enum StateTransition {
     TokenShieldedTransferWithShieldedFee(TokenShieldedTransferWithShieldedFeeTransition),
     TokenUnshieldWithShieldedFee(TokenUnshieldWithShieldedFeeTransition),
     TokenPurchaseFromShieldedPool(TokenPurchaseFromShieldedPoolTransition),
+    PrivateDocumentCreateFromShieldedPool(PrivateDocumentCreateFromShieldedPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -993,6 +1013,14 @@ mod json_convertible_tests {
             "tokenPurchaseFromShieldedPool",
         );
     }
+    #[test]
+    fn umbrella_private_document_create_from_shielded_pool() {
+        let inner = crate::state_transition::private_document_create_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::PrivateDocumentCreateFromShieldedPool(inner),
+            "privateDocumentCreateFromShieldedPool",
+        );
+    }
 
     #[test]
     fn umbrella_shield_from_identity() {
@@ -1288,6 +1316,9 @@ impl StateTransition {
             | StateTransition::TokenShieldedTransferWithShieldedFee(_)
             | StateTransition::TokenUnshieldWithShieldedFee(_)
             | StateTransition::TokenPurchaseFromShieldedPool(_) => 14..=LATEST_VERSION,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+                PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+            }
         }
     }
 
@@ -1306,6 +1337,7 @@ impl StateTransition {
                 | StateTransition::TokenShieldedTransferWithShieldedFee(_)
                 | StateTransition::TokenUnshieldWithShieldedFee(_)
                 | StateTransition::TokenPurchaseFromShieldedPool(_)
+                | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
         )
     }
 
@@ -1354,6 +1386,9 @@ impl StateTransition {
                         BatchedTransitionRef::Document(DocumentTransition::Create(_)) => "Create",
                         BatchedTransitionRef::Document(DocumentTransition::Replace(_)) => "Replace",
                         BatchedTransitionRef::Document(DocumentTransition::Delete(_)) => "Delete",
+                        // Protocols through 14 publish no erase bounds, so their accepted batches
+                        // never reach this arm.
+                        BatchedTransitionRef::Document(DocumentTransition::Erase(_)) => "Erase",
                         BatchedTransitionRef::Document(DocumentTransition::Transfer(_)) => {
                             "Transfer"
                         }
@@ -1439,6 +1474,9 @@ impl StateTransition {
             }
             Self::TokenUnshieldWithShieldedFee(_) => "TokenUnshieldWithShieldedFee".to_string(),
             Self::TokenPurchaseFromShieldedPool(_) => "TokenPurchaseFromShieldedPool".to_string(),
+            Self::PrivateDocumentCreateFromShieldedPool(_) => {
+                "PrivateDocumentCreateFromShieldedPool".to_string()
+            }
             Self::ShieldFromAssetLock(_) => "ShieldFromAssetLock".to_string(),
             Self::ShieldedWithdrawal(_) => "ShieldedWithdrawal".to_string(),
             Self::IdentityCreateFromShieldedPool(_) => "IdentityCreateFromShieldedPool".to_string(),
@@ -1474,6 +1512,7 @@ impl StateTransition {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
             StateTransition::TokenUnshieldWithShieldedFee(_) => None,
             StateTransition::TokenPurchaseFromShieldedPool(_) => None,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(st) => Some(st.signature()),
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1495,6 +1534,7 @@ impl StateTransition {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
             StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
             StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => 0,
             StateTransition::ShieldFromAssetLock(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
@@ -1532,6 +1572,7 @@ impl StateTransition {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
             StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
             StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
             StateTransition::ShieldFromIdentity(st) => st.user_fee_increase(),
@@ -1607,6 +1648,7 @@ impl StateTransition {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
             StateTransition::TokenUnshieldWithShieldedFee(_) => None,
             StateTransition::TokenPurchaseFromShieldedPool(_) => None,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1642,6 +1684,7 @@ impl StateTransition {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
             StateTransition::TokenUnshieldWithShieldedFee(_) => None,
             StateTransition::TokenPurchaseFromShieldedPool(_) => None,
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1725,6 +1768,7 @@ impl StateTransition {
             | StateTransition::TokenShieldedTransferWithShieldedFee(_)
             | StateTransition::TokenUnshieldWithShieldedFee(_)
             | StateTransition::TokenPurchaseFromShieldedPool(_)
+            | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_) => false,
             StateTransition::ShieldFromIdentity(st) => {
                 st.set_signature(signature);
@@ -1792,6 +1836,7 @@ impl StateTransition {
             StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
             StateTransition::TokenUnshieldWithShieldedFee(_) => {}
             StateTransition::TokenPurchaseFromShieldedPool(_) => {}
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
             StateTransition::ShieldFromIdentity(st) => st.set_user_fee_increase(user_fee_increase),
@@ -1989,6 +2034,11 @@ impl StateTransition {
             StateTransition::TokenPurchaseFromShieldedPool(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "token purchase from shielded pool transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "private document create from shielded pool transition can not be called for identity signing".to_string(),
                 ))
             }
             StateTransition::ShieldFromAssetLock(_) => {
@@ -2504,6 +2554,9 @@ impl StateTransitionStructureValidation for StateTransition {
                 transition.validate_structure(platform_version)
             }
             StateTransition::TokenPurchaseFromShieldedPool(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(transition) => {
                 transition.validate_structure(platform_version)
             }
             StateTransition::ShieldFromAssetLock(transition) => {
@@ -3594,6 +3647,86 @@ mod tests {
         )
         .expect("expected protocol version 14 to decode a version 2 base");
         assert_eq!(recovered, version_2);
+    }
+
+    fn sample_format_1_batch_st_with_erase() -> StateTransition {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+        use crate::state_transition::batch_transition::batched_transition::{
+            BatchedTransition, DocumentEraseTransition,
+        };
+        use crate::state_transition::batch_transition::BatchTransitionV1;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::from([1u8; 32]),
+            identity_contract_nonce: 3,
+            document_type_name: "note".to_string(),
+            data_contract_id: Identifier::from([2u8; 32]),
+        });
+        let erase =
+            DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![BatchedTransition::Document(erase)],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    /// The erase kind rides in the shipped batch formats, so a format 1 batch
+    /// carrying one keeps format 1's range and decodes under protocol 14 on
+    /// software that knows the kind. Agreement with software that cannot
+    /// decode it comes one step later: the basic-structure check refuses the
+    /// kind wherever the active version publishes no bounds for it.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn test_format_1_batch_with_erase_decodes_at_protocol_14_and_is_refused_by_structure() {
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::serialization::PlatformSerializable;
+
+        let state_transition = sample_format_1_batch_st_with_erase();
+        assert_eq!(
+            state_transition.active_version_range(),
+            9..=LATEST_VERSION,
+            "format 1 arrived with tokens at protocol version 9; the erase kind does not move it"
+        );
+        let bytes = PlatformSerializable::serialize_to_bytes(&state_transition)
+            .expect("serialize succeeds");
+
+        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let decoded =
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, released)
+                .expect("a format 1 batch with an erase decodes under protocol version 14");
+        assert_eq!(decoded.name(), "DocumentsBatch([Erase])");
+        let StateTransition::Batch(batch) = decoded else {
+            panic!("expected a batch, got {decoded:?}");
+        };
+
+        let is_unsupported_version = |error: &ConsensusError| {
+            matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )
+        };
+        let result = batch
+            .validate_base_structure(released)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(is_unsupported_version),
+            "protocol version 14 must refuse the erase kind, got {:?}",
+            result.errors
+        );
+        let result = batch
+            .validate_base_structure(PlatformVersion::latest())
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(is_unsupported_version),
+            "the latest protocol version must admit the erase kind, got {:?}",
+            result.errors
+        );
     }
 
     fn sample_batch_st_empty() -> StateTransition {

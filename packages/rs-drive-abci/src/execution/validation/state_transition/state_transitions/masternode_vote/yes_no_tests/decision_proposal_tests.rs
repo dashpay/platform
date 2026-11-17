@@ -4,6 +4,10 @@
 //! result is recorded when it closes; nothing acts on it.
 
 use super::*;
+use drive::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryFilter,
+};
+
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -773,19 +777,22 @@ async fn should_let_the_proposer_edit_its_text_for_a_day_and_keep_every_version(
     let history = platform
         .drive
         .fetch_document_history(
-            contract.id().to_buffer(),
+            &DocumentHistoryDriveQuery {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: PROPOSAL_DOCUMENT_TYPE_NAME.to_string(),
+                document_id: document_id.to_buffer(),
+                filter: DocumentHistoryFilter::StartAtTime(0),
+                limit: None,
+            },
             document_type,
-            document_id.to_buffer(),
-            None,
-            0,
-            None,
             None,
             platform_version,
         )
         .expect("expected the history");
     let titles: Vec<&Value> = history
-        .values()
-        .filter_map(|version| version.get("title"))
+        .entries
+        .iter()
+        .filter_map(|version| version.document.get("title"))
         .collect();
     assert_eq!(
         titles,

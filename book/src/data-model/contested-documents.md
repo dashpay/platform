@@ -58,6 +58,17 @@ but a poll is hashed from its values, and that hash keys the contest's prefunded
 date: two contenders writing the same identifier two ways would otherwise split one contest into
 two polls. Before 14 the values are taken as given.
 
+From protocol version 15 every index value is written one way, the way its property's type keys
+it: an integer in any integer form as the type's own integer, a date as a `u64`, an integer or a
+float of a float property as a float, bytes in any form as bytes, and `"\0"` as the empty string
+it shares a key with. That is the value a query of the contest returns. A masternode vote names
+its poll by the values it sends, unchanged, and is refused unless a prefunded balance is held
+under that poll, so a voter sends the values as the contest query returns them.
+
+A contest under way keeps the poll it was opened under. A contender that joins a contest opened
+at an earlier protocol version has its index values written as that version wrote them, so it
+funds the same prefunded balance and the contest keeps its end date.
+
 ## Resolution 0: masternode vote
 
 The DPNS rule. The choices are a contender, abstain, or **lock**, which gives the value to nobody.
@@ -78,6 +89,30 @@ poll duration, which opens the vote window, and removes the join window's end da
 contest ends then. `getVotePollsByEndDate` shows whichever end applies.
 
 The moderation charters contract uses this resolution to elect moderation teams.
+
+## Resolution 2: masternode vote among documents
+
+`ContestedIndexResolution::MasternodeVoteOnDocuments`, admitted where
+`parse_contested_documents_resolution` is set (protocol version 15). The choices are a contender,
+abstain, or lock, and the contest runs and ends exactly as under resolution 0. What differs is
+what a contender is. Under resolutions 0 and 1 a contender is an identity: the contest keeps its
+document under the identity's id, so an identity enters one document, and a vote, a tally and the
+result name the identity. Under resolution 2 a contender is a document: the contest keeps it
+under its document id, so an identity may enter several, each paying the fund and counting
+towards `max_contenders_per_contest`, and a second document from the same identity is not
+refused (no `DocumentContestIdentityAlreadyContestantError`).
+
+Everything that names a contender then carries a document id where it carries an identity id
+under the other resolutions: the identifier of a `TowardsIdentity` vote choice, a contender's
+identifier in `getContestedResourceVoteState`, the contender asked for in
+`getContestedResourceVotersForIdentity`, and the winner in the stored result. A vote towards an
+identifier that names no contender is refused (`VoteChoiceNotAllowedForVotePollError`, 40307),
+so a vote towards the id of an identity that entered documents is refused: the voter names the
+document. The winning document is stored under the owner the document itself names.
+
+The decision proposals contract uses this resolution for the `choice` documents entered for a
+`multipleChoiceProposal`: the contest is keyed by the proposal's id, each choice is a contender,
+and a lock means none of the choices (see `docs/protocol/decision-proposals.md`).
 
 ## Moderation elections
 

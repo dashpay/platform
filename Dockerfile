@@ -409,6 +409,7 @@ COPY --parents \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
     packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -536,6 +537,7 @@ COPY --parents \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
     packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -724,6 +726,7 @@ COPY --parents \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
     packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -872,6 +875,7 @@ COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract pac
 COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
 COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
 COPY --from=build-dashmate-helper /platform/packages/decision-proposals-contract packages/decision-proposals-contract
+COPY --from=build-dashmate-helper /platform/packages/token-market-contract packages/token-market-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -978,6 +982,7 @@ COPY --parents \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
     packages/decision-proposals-contract \
+    packages/token-market-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \

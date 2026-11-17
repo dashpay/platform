@@ -45,6 +45,10 @@
 //! as incompatible instead of failing the update as an unsupported keyword.
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
 //!
+//! The top-level `canBeErased` flag is frozen when present. Schemas without
+//! that flag keep the original rule set, including released schemas and
+//! comparisons of contract definitions.
+//!
 //! Both schemas are compared with their property type shorthands
 //! (`"type": "identifier"`, `"type": "bytes"` with a `size`) rewritten into
 //! the long form they stand for, as the parse reads them
@@ -54,11 +58,11 @@
 //! shorthands exist from protocol version 14, the only version selecting it.
 
 use crate::data_contract::document_type::property_names::{
-    ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
-    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
-    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
-    TOKEN_COST, TRANSIENT, TTL,
+    ACTION_FEES, CAN_BE_ERASED, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY,
+    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES,
+    MODERATOR_ABILITIES, PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE,
+    RETRACTED_WHEN, TOKEN_COST, TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::document_type::DocumentType;
@@ -79,7 +83,7 @@ use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::ops::Deref;
 
-static OPTIONS: Lazy<Options> = Lazy::new(|| {
+static LEGACY_OPTIONS: Lazy<Options> = Lazy::new(|| {
     let mut required_rule = KEYWORD_COMPATIBILITY_RULES
         .get("required")
         .expect("required rule must be present")
@@ -134,6 +138,14 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
                 .chain(frozen_doctype_rules),
         ),
     }
+});
+
+static OPTIONS: Lazy<Options> = Lazy::new(|| {
+    let mut options = LEGACY_OPTIONS.clone();
+    if let Some(rule) = KEYWORD_COMPATIBILITY_RULES.get("refersTo") {
+        options.override_rules.insert(CAN_BE_ERASED, rule.clone());
+    }
+    options
 });
 
 /// The keywords the document meta-schema admits that have no rule in the
@@ -267,7 +279,18 @@ pub(super) fn validate_schema_compatibility_v1(
     let original_schema = prepared_for_diff(&original_schema);
     let new_schema = prepared_for_diff(&new_schema);
 
-    match validate_schemas_compatibility(&original_schema, &new_schema, OPTIONS.deref()) {
+    // Released grammars refuse the top-level erasure flag. Keep their rules,
+    // including comparisons of contract definitions, unchanged; only schemas
+    // declaring the lifecycle flag need its frozen rule.
+    let options = if [&original_schema, &new_schema]
+        .iter()
+        .any(|schema| schema.get(CAN_BE_ERASED).is_some_and(JsonValue::is_boolean))
+    {
+        OPTIONS.deref()
+    } else {
+        LEGACY_OPTIONS.deref()
+    };
+    match validate_schemas_compatibility(&original_schema, &new_schema, options) {
         Ok(result) => {
             let errors = result
                 .into_changes()
@@ -784,6 +807,7 @@ mod tests {
         ];
         // Scalars, whose change is reported at the keyword itself
         let scalars = [
+            ("/canBeErased", json!(true), json!(false)),
             ("/ttl", json!(86400), json!(3600)),
             ("/indexOnly", json!(true), json!(false)),
             ("/keepsTransferHistory", json!(true), json!(false)),
@@ -821,7 +845,7 @@ mod tests {
         schema
     }
 
-    /// Meta-schema v3 admits these keywords, which the shared rule set has no
+    /// The document schema grammar admits these keywords, which the shared rule set has no
     /// rule for: each is frozen, so adding, removing or changing one, even to
     /// a value the parse reads the same, is an incompatible change and not an
     /// unsupported keyword. Where the parse reads a value, `validate_update`
@@ -860,6 +884,27 @@ mod tests {
                 "{pointer}"
             );
         }
+    }
+
+    #[test]
+    fn should_preserve_released_updates_to_definitions_named_can_be_erased() {
+        let version = PlatformVersion::get(14).expect("protocol 14");
+        let original = json!({
+            "$defs": {
+                "canBeErased": { "type": "object", "properties": {} },
+            },
+        });
+        let updated = json!({
+            "$defs": {
+                "canBeErased": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string" } },
+                },
+            },
+        });
+        assert!(validate_schema_compatibility(&original, &updated, version)
+            .expect("a definition can gain an optional property")
+            .is_valid());
     }
 
     /// Every keyword the document meta-schema admits, at the top of a document

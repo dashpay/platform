@@ -949,7 +949,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply the enqueue operations");
         platform
