@@ -173,6 +173,18 @@ data class IdentityPubkey(
     }
 }
 
+/** Seam over [TransactionsNative.updateIdentity] so wrapper tests can capture the call. */
+internal fun interface UpdateIdentityNativeCall {
+    fun call(
+        walletHandle: Long,
+        identityId: ByteArray,
+        addPubkeysBlob: ByteArray,
+        disablePublicKeyIds: IntArray,
+        signerHandle: Long,
+        externalKeyIds: IntArray,
+    )
+}
+
 /**
  * Identity add/disable-keys bridge — port of the identity-update slice of
  * `ManagedPlatformWallet.swift` (`updateIdentity(addPublicKeys:...)`, driven
@@ -183,6 +195,8 @@ data class IdentityPubkey(
  */
 class IdentityUpdates internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
+    private val updateNative: UpdateIdentityNativeCall =
+        UpdateIdentityNativeCall(TransactionsNative::updateIdentity),
 ) {
 
     /**
@@ -210,6 +224,14 @@ class IdentityUpdates internal constructor(
      * Add [addPublicKeys] and/or disable [disablePublicKeyIds] on
      * [identityId] in a single `IdentityUpdateTransition`, signed via
      * [signerHandle]. At least one of add / disable must be non-empty.
+     *
+     * [externalKeyIds] names the added keys that do not come from the
+     * wallet's derivation (a key generated or received outside it, whose
+     * private key the wallet cannot derive): they are stored without
+     * derivation coordinates. Every other added key is stored as derived at
+     * the identity's index and the key's id. An id that names no added key
+     * is refused before anything is signed. Port of the `externalKeyIds:`
+     * argument of Swift `ManagedPlatformWallet.updateIdentity`.
      */
     suspend fun update(
         walletHandle: Long,
@@ -217,6 +239,7 @@ class IdentityUpdates internal constructor(
         addPublicKeys: List<IdentityPubkey> = emptyList(),
         disablePublicKeyIds: List<Int> = emptyList(),
         signerHandle: Long,
+        externalKeyIds: List<Int> = emptyList(),
     ) = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
@@ -228,12 +251,13 @@ class IdentityUpdates internal constructor(
             "every disabled key id must be non-negative, got $disablePublicKeyIds"
         }
         mapNativeErrors {
-            TransactionsNative.updateIdentity(
+            updateNative.call(
                 walletHandle,
                 identityId,
                 IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
+                externalKeyIds.toIntArray(),
             )
         }
     }
