@@ -379,7 +379,7 @@ mod tests {
                                 "amount": {
                                     "type": "integer",
                                     "minimum": 1,
-                                    "maximum": 4294967295u64,
+                                    "maximum": 100000000u64,
                                     "position": 1,
                                 },
                             },
@@ -444,7 +444,7 @@ mod tests {
                         "indices": [index],
                         "properties": {
                             "tag": {"type": "string", "maxLength": 20, "position": 0},
-                            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1}
+                            "amount": {"type": "integer", "minimum": 0, "maximum": 100000000i64, "position": 1}
                         },
                         "required": ["amount"], "additionalProperties": false
                     });
@@ -609,7 +609,7 @@ mod tests {
                             "unique": true, "summable": "amount"}],
                         "properties": {
                             "tag": {"type": "string", "maxLength": 20, "position": 0},
-                            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1}
+                            "amount": {"type": "integer", "minimum": 0, "maximum": 100000000i64, "position": 1}
                         },
                         "required": ["tag", "amount"], "additionalProperties": false
                     }}), None, None,

@@ -30,6 +30,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   removes its current pointer and indices and writes a lifecycle record. Its primary
 ///   removal and removal estimate selectors are 1, describing the composite pointer.
 /// * `query.fetch_document_lifecycle` is `Some(0)`: reads the current document or its record.
+/// * `query.fetch_document_type_sum` is `Some(0)`: reads the total a document type keeps of
+///   its summed property, which document create and replace state validation hold in range.
 ///   `delete.erase_document_for_contract_operations`, `add_estimation_costs_for_erase_document`
 ///   and `add_estimation_costs_for_lifecycle_record` are `Some(0)`: bounded erasure removes
 ///   retained revisions and prices the chunk and its lifecycle metadata.
@@ -52,6 +54,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         document_history_storage_layout: 1,
         query: DriveDocumentQueryMethodVersions {
             fetch_document_lifecycle: Some(0), // changed: reads the current document or lifecycle record
+            fetch_document_type_sum: Some(0), // changed: reads the total a type keeps of its summed property
             single_document_path_query: 1, // changed: a temporal lookup selects the latest retained revision
             fetch_document_history_query: 1,
             fetch_document_history: 1,

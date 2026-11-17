@@ -3509,7 +3509,7 @@ fn build_time_range_contract_with_index_keys(
             // 59: the Avg axis's 16-byte sort key tightens the ranked
             // group-key cap below the Count axis's 61.
             "hashtag": {"type": "string", "maxLength": 59, "position": 0},
-            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1},
+            "amount": {"type": "integer", "minimum": 0, "maximum": 100000000u64, "position": 1},
         },
         "required": ["hashtag", "amount", "$createdAt"],
         "indices": Value::Array(vec![Value::Map(index_map)]),

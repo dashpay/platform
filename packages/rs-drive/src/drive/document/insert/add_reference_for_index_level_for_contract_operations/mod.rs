@@ -224,7 +224,7 @@ mod tests {
                                 "indices": [index],
                                 "properties": {
                                     "tag": {"type": "string", "maxLength": 20, "position": 0},
-                                    "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1}
+                                    "amount": {"type": "integer", "minimum": 0, "maximum": 100000000i64, "position": 1}
                                 },
                                 "required": ["tag", "amount"], "additionalProperties": false
                             }}), None, None,
