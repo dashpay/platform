@@ -286,11 +286,12 @@ extension PlatformWalletManager {
     /// `ownerKeyIndexHint`: as on `masternodeWithdrawalKeys` — verified, not
     /// trusted.
     ///
-    /// Outcomes: a definitive rejection throws an ordinary error and may be
-    /// retried. An AMBIGUOUS outcome — broadcast accepted (or its ACK lost)
-    /// and the result wait failed — throws
+    /// Outcomes: only a failure before anything was sent throws an ordinary
+    /// error and may be retried. Once the withdrawal may have reached a node,
+    /// any outcome short of the proved balance (a failed result wait, a
+    /// node's refusal or a consensus verdict) throws
     /// `PlatformWalletError.masternodeWithdrawalUnconfirmed`: the claim may
-    /// have executed and the identity nonce was consumed, so callers must
+    /// have executed and a retry signs a second withdrawal, so callers must
     /// NOT retry until they have re-read the claimable balance.
     ///
     /// Pure bridge — the whole orchestration (masternode lookup, identity

@@ -13,6 +13,8 @@ mod should_use_creator_id;
 mod system_properties;
 mod try_from_schema;
 
+#[cfg(all(test, feature = "validation"))]
+pub(in crate::data_contract) use try_from_schema::DOCUMENT_SCHEMA_ROOT_KEYS;
 pub use try_from_schema::{
     referenced_peer_kind_error, referenced_peer_kind_mismatch, referenced_reads_error,
     where_condition_literal_error,

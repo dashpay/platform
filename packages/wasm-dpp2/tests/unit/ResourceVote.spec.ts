@@ -107,4 +107,48 @@ describe('ResourceVote', () => {
       vote.free();
     });
   });
+
+  it('should refuse a yes/no poll', () => {
+    const yesNoPoll = wasm.VotePoll.fromJSON({
+      $type: 'yesNoVotePoll',
+      purpose: { $type: 'decisionProposal', documentId: 'E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS' },
+      supermajorityNumerator: 2,
+      supermajorityDenominator: 3,
+      minimumVotingPower: { $type: 'absolute', votingPower: 400 },
+    });
+    const choice = wasm.ResourceVoteChoice.Abstain();
+
+    expect(() => new wasm.ResourceVote(yesNoPoll, choice)).to.throw();
+
+    const vote = new wasm.ResourceVote(createPoll(), choice);
+    expect(() => {
+      vote.poll = yesNoPoll;
+    }).to.throw();
+
+    vote.free();
+    yesNoPoll.free();
+  });
+
+  it('should refuse a yes/no poll from JSON or an object', () => {
+    const yesNoPoll = wasm.VotePoll.fromJSON({
+      $type: 'yesNoVotePoll',
+      purpose: { $type: 'decisionProposal', documentId: 'E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS' },
+      supermajorityNumerator: 2,
+      supermajorityDenominator: 3,
+      minimumVotingPower: { $type: 'absolute', votingPower: 400 },
+    });
+    const vote = new wasm.ResourceVote(createPoll(), wasm.ResourceVoteChoice.Abstain());
+
+    wasm.ResourceVote.fromJSON(vote.toJSON()).free();
+    wasm.ResourceVote.fromObject(vote.toObject()).free();
+    expect(() => wasm.ResourceVote.fromJSON({ ...vote.toJSON(), votePoll: yesNoPoll.toJSON() }))
+      .to.throw();
+    expect(() => wasm.ResourceVote.fromObject({
+      ...vote.toObject(),
+      votePoll: yesNoPoll.toObject(),
+    })).to.throw();
+
+    vote.free();
+    yesNoPoll.free();
+  });
 });

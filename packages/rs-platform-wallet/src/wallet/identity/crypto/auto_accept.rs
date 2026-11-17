@@ -27,7 +27,7 @@
 use dashcore::crypto::ecdsa::{
     EcdsaError, EcdsaPublicKey, EcdsaSecretKey as SecretKey, EcdsaSignature,
 };
-use dashcore::hashes::{sha256, Hash, HashEngine};
+use dashcore::hashes::{sha256, HashEngine};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::dip9::{

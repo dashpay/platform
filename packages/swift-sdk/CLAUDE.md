@@ -2,8 +2,8 @@
 
 This document exists to keep the Swift SDK and its FFI layer from accreting
 business logic that belongs in Rust. Read this before writing or reviewing
-code in `Sources/SwiftDashSDK/`, `packages/rs-platform-wallet-ffi/`,
-`packages/rs-sdk-ffi/`, or `packages/key-wallet-ffi/`.
+code in `Sources/SwiftDashSDK/`, `packages/rs-platform-wallet-ffi/`, or
+`packages/rs-sdk-ffi/`.
 
 ## The rule
 
@@ -88,10 +88,10 @@ derivation + Platform lookups + policy enforcement on the Rust side, and
 hands back a flat array for Swift to render / persist.
 
 Anti-precedent: any code that calls `WalletStorage().retrieveMnemonic(for:)`
-in a Swift view or handler, then `Mnemonic.toSeed`, then
-`KeyDerivation.getIdentityAuthenticationPath`, then a `key_wallet_derive_*`
-FFI, then writes the result somewhere. That pipeline is
-Rust-library-owned. Push it down.
+in a Swift view or handler, then
+`KeyDerivation.getIdentityAuthenticationPath`, then
+`platform_wallet_derive_ext_priv_key_from_mnemonic`, then writes the
+result somewhere. That pipeline is Rust-library-owned. Push it down.
 
 ## How to review
 

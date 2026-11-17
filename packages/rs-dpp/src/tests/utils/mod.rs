@@ -1,6 +1,5 @@
 use anyhow::Result;
 use dashcore::block::Version;
-use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
 use platform_value::Value;
 #[cfg(test)]

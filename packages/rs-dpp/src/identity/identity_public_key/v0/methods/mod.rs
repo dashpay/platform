@@ -9,7 +9,6 @@ use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
 use dashcore::crypto::ecdsa::EcdsaSecretKey;
-use dashcore::hashes::Hash;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {

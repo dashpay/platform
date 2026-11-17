@@ -42,9 +42,37 @@ fn query() -> DocumentQuery {
     DocumentQuery::new(contract, "niceDocument").expect("the fixture has this document type")
 }
 
-/// `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 5`.
+/// A `review` whose index ranks restaurants by their average grade, so a ranked query over it
+/// is served.
+fn reviews() -> DocumentQuery {
+    let schemas = platform_value!({"review": {
+        "type": "object",
+        "properties": {
+            "restaurantId": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0},
+            "grade": {"type": "integer", "minimum": 0, "maximum": 100, "position": 1}
+        },
+        "required": ["restaurantId", "grade"],
+        "indices": [
+            {"name": "byRestaurant",
+             "properties": [{"restaurantId": "asc"}],
+             "averageable": "grade",
+             "rangeAverageable": true,
+             "rankedAverageable": true}
+        ],
+        "additionalProperties": false
+    }});
+    let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::new([9u8; 32]), 0, schemas, None, None)
+        .expect("the review contract is well-formed")
+        .data_contract_owned();
+    DocumentQuery::new(contract, "review").expect("the contract has this document type")
+}
+
+/// `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 5`, over a contract that
+/// ranks restaurants by it.
 fn ranked() -> DocumentQuery {
-    query()
+    reviews()
         .with_select(SelectProjection::avg("grade"))
         .with_group_by("restaurantId")
         .order_by_selected_aggregate(RankingDirection::Descending)
@@ -97,7 +125,7 @@ async fn assert_refused_before_sending<T: Debug>(
 ) {
     let sent = times_sent(sdk, request).await;
     match result {
-        Err(Error::Config(_)) if sent == 0 => {}
+        Err(Error::InvalidRequest(_)) if sent == 0 => {}
         other => panic!("{case}: must be refused before it is sent; got {other:?} after sending it {sent} times"),
     }
 }
@@ -150,6 +178,19 @@ async fn should_refuse_documents_of_an_aggregate_select_without_sending_it() {
     let request = serve(&sdk, &query).await;
     let result = Document::fetch_many(&sdk, query).await;
     assert_refused_before_sending(&sdk, &request, result, "documents of a count").await;
+}
+
+/// A documents select returns the documents themselves, so every node refuses
+/// one that is grouped or filtered by an aggregate.
+#[tokio::test]
+async fn should_refuse_documents_grouped_by_a_property_without_sending_them() {
+    let sdk = sdk();
+    let query = query().with_group_by("hashtag");
+    let request = serve(&sdk, &query).await;
+    let fetched = Document::fetch(&sdk, query.clone()).await;
+    assert_refused_before_sending(&sdk, &request, fetched, "a grouped document").await;
+    let fetched_many = Document::fetch_many(&sdk, query).await;
+    assert_refused_before_sending(&sdk, &request, fetched_many, "grouped documents").await;
 }
 
 /// Without a `having` clause the query is an ordinary grouped aggregate,
@@ -297,6 +338,26 @@ impl FetchMany<u8, CheckedAt> for CheckedAt {
     type Request = GetDocumentsRequest;
 }
 
+/// An unproved view of documents, as a downstream crate may define one. Only its gating is
+/// tested: it reads no answer.
+impl drive_proof_verifier::unproved::FromUnproved<GetDocumentsRequest> for CheckedAt {
+    type Request = GetDocumentsRequest;
+    type Response = GetDocumentsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _: I,
+        _: O,
+        _: Network,
+        _: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error> {
+        unreachable!("refused before it is sent")
+    }
+}
+
+impl crate::platform::FetchUnproved for CheckedAt {
+    type Request = GetDocumentsRequest;
+}
+
 /// A query whose building raises the SDK's protocol version, as a verified
 /// answer to another request can while this one is being built.
 #[derive(Clone, Debug)]
@@ -338,7 +399,7 @@ async fn should_check_a_request_at_the_version_it_was_encoded_with() {
     let expected = format!("checked at protocol version {encoded_with}");
     for (case, result) in [("fetch", fetched), ("fetch_many", fetched_many)] {
         match result {
-            Err(Error::Config(message)) => assert_eq!(message, expected, "{case}"),
+            Err(Error::InvalidRequest(message)) => assert_eq!(message, expected, "{case}"),
             other => panic!("{case}: must be refused, got {other:?}"),
         }
     }
@@ -356,19 +417,19 @@ async fn should_still_send_queries_their_view_is_verified_from() {
     let documents = query();
     let documents_request = serve(&sdk, &documents).await;
     let documents_result = Document::fetch_many(&sdk, documents).await;
-    for (case, request, config_error) in [
+    for (case, request, refused_locally) in [
         (
             "ranked",
             &ranked_request,
-            matches!(ranked_result, Err(Error::Config(_))),
+            matches!(ranked_result, Err(Error::InvalidRequest(_))),
         ),
         (
             "documents",
             &documents_request,
-            matches!(documents_result, Err(Error::Config(_))),
+            matches!(documents_result, Err(Error::InvalidRequest(_))),
         ),
     ] {
-        assert!(!config_error, "{case}: refused locally");
+        assert!(!refused_locally, "{case}: refused locally");
         assert!(times_sent(&sdk, request).await > 0, "{case}: never sent");
     }
 }

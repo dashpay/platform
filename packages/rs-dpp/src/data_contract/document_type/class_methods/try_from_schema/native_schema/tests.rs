@@ -212,6 +212,7 @@ fn compare(case: &Case, tally: &mut Tally) -> Vec<String> {
             (None, Some(native)) => differences.push(format!(
                 "{origin}: the native checks refuse what the meta-schema accepts: {native}\n{root:#}"
             )),
+            (Some(_), None) if root.get("canBeErased").is_some_and(JsonValue::is_boolean) => {},
             (Some(path), None) => differences.push(format!(
                 "{origin}: the native checks accept what the meta-schema refuses at {path}\n{root:#}"
             )),
@@ -228,6 +229,11 @@ fn compare(case: &Case, tally: &mut Tally) -> Vec<String> {
                 differences.push(format!("{origin}: the checks parse different types"));
             }
         }
+        (Err(_), Ok(_))
+            if case
+                .schema
+                .get("canBeErased")
+                .is_some_and(JsonValue::is_boolean) => {}
         (Err(meta), Ok(_)) => differences.push(format!(
             "{origin}: the native check admits what the meta-schema check refuses: {meta}\n{:#}",
             case.schema
@@ -256,7 +262,11 @@ fn compare(case: &Case, tally: &mut Tally) -> Vec<String> {
                     && case
                         .validating_root(platform_version)
                         .is_some_and(|root| meta_schema_refusal(&root).is_none()))
-                    || json_schema_error(&native).is_some_and(is_index_property_name_cap);
+                    || json_schema_error(&native).is_some_and(is_index_property_name_cap)
+                    || case
+                        .schema
+                        .get("canBeErased")
+                        .is_some_and(JsonValue::is_boolean);
                 if !moved {
                     differences.push(format!(
                         "{origin}: the native check refuses with code {:?} ({native}) where the \
@@ -690,7 +700,7 @@ fn corpus_cases() -> Vec<Case> {
 
 /// Keys a generated schema gains: every keyword the meta-schema names somewhere, and some
 /// it names nowhere.
-const GENERATED_KEYS: [&str; 46] = [
+const GENERATED_KEYS: [&str; 47] = [
     "type",
     "properties",
     "additionalProperties",
@@ -724,6 +734,7 @@ const GENERATED_KEYS: [&str; 46] = [
     "description",
     "documentsMutable",
     "canBeDeleted",
+    "canBeErased",
     "documentsSummable",
     "rangeAverageable",
     "moderatorAbilities",
@@ -1707,4 +1718,110 @@ fn should_hold_zero_and_negative_zero_as_one_enum_member_at_every_length() {
         });
         assert!(native_refusal(&root).is_none(), "{length} distinct members");
     }
+}
+
+/// A rule of protocol version 15: a document schema may declare `private`, which the
+/// meta-schema refused as an unknown key, holding exactly `entrySize`, an integer from 1. The
+/// parse holds the rest of the type to what a private type may declare.
+#[test]
+fn should_admit_private_which_the_meta_schema_refuses() {
+    let root = profile_root_with(|root| {
+        root["private"] = json!({ "entrySize": 704 });
+    });
+    assert!(
+        meta_schema_refusal(&root).is_some(),
+        "the meta-schema refuses the key"
+    );
+    assert!(
+        native_refusal(&root).is_none(),
+        "the native checks admit it"
+    );
+
+    for (declaration, keyword, instance_path) in [
+        (json!(704), "type", "/private"),
+        (json!({}), "required", "/private"),
+        (
+            json!({ "entrySize": 704, "constraints": [] }),
+            "additionalProperties",
+            "/private",
+        ),
+        (json!({ "entrySize": 0 }), "minimum", "/private/entrySize"),
+        (
+            json!({ "entrySize": 4_294_967_296u64 }),
+            "maximum",
+            "/private/entrySize",
+        ),
+        (json!({ "entrySize": 704.5 }), "type", "/private/entrySize"),
+    ] {
+        let root = profile_root_with(|root| {
+            root["private"] = declaration.clone();
+        });
+        let refusal =
+            native_refusal(&root).unwrap_or_else(|| panic!("{declaration} must be refused"));
+        assert_eq!(refusal.keyword(), keyword, "{declaration}: {refusal}");
+        assert_eq!(
+            refusal.instance_path(),
+            instance_path,
+            "{declaration}: {refusal}"
+        );
+    }
+}
+
+#[test]
+fn should_compile_non_lifecycle_fixtures_identically_with_parsers_three_and_four() {
+    use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
+    use crate::serialization::PlatformSerializable;
+    let latest = PlatformVersion::latest();
+    let mut previous = latest.clone();
+    previous
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .class_method_versions
+        .try_from_schema = 3;
+    let mut count = 0;
+    for case in written_cases().into_iter().chain(corpus_cases()) {
+        if case.schema.get("canBeErased").is_some() {
+            continue;
+        }
+        let defs = case.schema_defs().unwrap();
+        let parse = |version| {
+            DocumentType::try_from_schema(
+                case.contract_id,
+                1,
+                case.config.version(),
+                &case.name,
+                Value::from(case.schema.clone()),
+                defs.as_ref(),
+                &case.tokens,
+                &case.config,
+                false,
+                &mut vec![],
+                version,
+            )
+        };
+        match (parse(&previous), parse(latest)) {
+            (Ok(old), Ok(current)) => {
+                assert_eq!(old, current, "{}", case.origin);
+                let compile = |ty: &DocumentType| {
+                    DocumentTypeInSerializationFormat::try_from_document_type(
+                        ty.as_ref(),
+                        defs.as_ref(),
+                        latest,
+                    )
+                    .unwrap()
+                    .serialize_to_bytes()
+                    .unwrap()
+                };
+                assert_eq!(compile(&old), compile(&current), "{}", case.origin);
+                count += 1;
+            }
+            (Err(_), Err(_)) => {}
+            (old, current) => panic!("{}: parser mismatch: {old:?} vs {current:?}", case.origin),
+        }
+    }
+    assert!(
+        count > 100,
+        "expected the fixture and deployed-contract corpus, got {count}"
+    );
 }

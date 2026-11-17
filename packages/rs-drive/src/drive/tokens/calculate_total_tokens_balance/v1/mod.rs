@@ -53,6 +53,9 @@ impl Drive {
             total_tokens_in_platform,
             total_identity_token_balances,
             total_token_shielded_pool_balances,
+            // v1 predates the token order escrow (protocol version 15): zero leaves the
+            // conservation check of protocol version 14, which selects v1, as it was.
+            total_token_order_escrow_balances: 0,
         })
     }
 }

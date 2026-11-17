@@ -8,6 +8,9 @@ impl DocumentTransitionActionTypeGetter for DocumentTransitionAction {
         match self {
             DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,
             DocumentTransitionAction::DeleteAction(_) => DocumentTransitionActionType::Delete,
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
+            DocumentTransitionAction::EraseAction(_) => DocumentTransitionActionType::Erase,
             DocumentTransitionAction::ReplaceAction(_) => DocumentTransitionActionType::Replace,
             DocumentTransitionAction::TransferAction(_) => DocumentTransitionActionType::Transfer,
             DocumentTransitionAction::PurchaseAction(_) => DocumentTransitionActionType::Purchase,

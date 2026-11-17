@@ -111,7 +111,6 @@ mod tests {
 ))]
 mod json_convertible_tests {
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Txid};
     use platform_value::platform_value;
     use serde_json::json;

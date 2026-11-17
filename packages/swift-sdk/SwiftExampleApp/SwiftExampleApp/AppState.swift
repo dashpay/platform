@@ -9,12 +9,17 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    @Published var currentNetwork: Network {
+    /// The quorum-key source the current SDK asks first for proof verification.
+    /// Tracks the source the adaptive provider asks first after the saved
+    /// mode is applied. Drives the app's indicator;
+    /// intentionally mirrors `SDK.quorumSource` (this one is the observable the
+    /// UI binds to).
+    @Published private(set) var quorumSource: SDK.QuorumSource = .trusted
+
+    /// Changes only with the SDK, through `publish(_:for:)`.
+    @Published private(set) var currentNetwork: Network {
         didSet {
             UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
-            Task {
-                await switchNetwork(to: currentNetwork)
-            }
         }
     }
 
@@ -28,16 +33,19 @@ class AppState: ObservableObject {
     /// fall back to the currently-active network behavior when `nil`.
     @Published var platformProtocolVersion: UInt32?
 
-    /// Monotonic tick incremented when a wallet-scoped service rebind
-    /// is needed but neither of the standard triggers
-    /// (`currentNetwork.onChange`, `wallets.keys.onChange`) will fire.
-    /// Concretely: a devnet→devnet SDK rebuild from OptionsView swaps
-    /// the cached `PlatformWalletManager` but leaves the network and
-    /// wallet ID set unchanged, so `PlatformBalanceSyncService` and
-    /// `ShieldedService` keep their references to the old manager.
-    /// SwiftExampleAppApp observes this tick to re-run
-    /// `rebindWalletScopedServices()` in that edge case.
-    @Published var walletScopedServicesRebindTick: Int = 0
+    /// Monotonic tick bumped after `rebuildSdk` moves the wallet manager
+    /// onto a rebuilt SDK and publishes it: a network switch, the Docker
+    /// toggle or a devnet edit. SwiftExampleAppApp observes it to re-run
+    /// `rebindWalletScopedServices()` against the new manager. A
+    /// same-network rebuild changes neither the network nor the wallet ID
+    /// set, so without the tick `PlatformBalanceSyncService` and
+    /// `ShieldedService` would keep the old manager.
+    @Published private(set) var walletScopedServicesRebindTick: Int = 0
+
+    /// Whether an SDK rebuild is running, started from any window. Options
+    /// disables its rebuild controls on it; `rebuildSdk` refuses a second
+    /// rebuild by itself.
+    @Published private(set) var isRebuildingSdk = false
 
     @Published var useDockerSetup: Bool {
         didSet {
@@ -46,12 +54,41 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
-            // Docker endpoints only matter on regtest. The Options picker turns
-            // Docker off after it has published the next network, whose own
-            // `currentNetwork` rebuild then picks the flag up; rebuilding here
-            // too would race that rebuild.
-            guard currentNetwork == .regtest else { return }
-            Task { await switchNetwork(to: currentNetwork) }
+            // The SDK reads these keys when it is built. OptionsView's Docker
+            // toggle rebuilds it, and moves the wallet manager onto it, after
+            // changing this.
+        }
+    }
+
+    /// User-selected policy for which quorum source proof verification uses.
+    enum QuorumMode: String, CaseIterable, Identifiable {
+        /// SPV once its masternode list is synced, trusted before that and
+        /// for any key SPV cannot serve.
+        case auto
+        /// Force SPV as soon as the SPV client is running (proofs fail closed
+        /// until synced; no trusted fallback).
+        case spv
+        /// Force the trusted HTTP quorum provider.
+        case trusted
+
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .auto: return "Auto"
+            case .spv: return "SPV"
+            case .trusted: return "Trusted"
+            }
+        }
+    }
+
+    /// Which quorum source the user wants. Every change is applied to every
+    /// SDK this object built (see `applyQuorumMode`); `quorumSource` reflects
+    /// the source the adaptive provider asks first (SPV may not be ready
+    /// yet).
+    @Published var quorumMode: QuorumMode {
+        didSet {
+            UserDefaults.standard.set(quorumMode.rawValue, forKey: "quorumMode")
+            applyQuorumMode()
         }
     }
 
@@ -63,6 +100,12 @@ class AppState: ObservableObject {
     // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
+
+    /// Every SDK `makeSdk` built that is still alive: the published one, one a
+    /// rebuild is moving the wallet manager onto, and the wallet managers'
+    /// background SDKs. `applyQuorumMode` applies the user's mode to all of
+    /// them.
+    private let builtSdks = NSHashTable<SDK>.weakObjects()
 
     init() {
         // Load saved network preference or use default. Read via
@@ -85,6 +128,11 @@ class AppState: ObservableObject {
             // Persist so SDK.swift can read it (didSet doesn't fire in init)
             UserDefaults.standard.set(legacyLocal, forKey: "useDockerSetup")
         }
+        // Default: Auto — SPV once synced, trusted before that and for any
+        // key SPV cannot serve.
+        self.quorumMode =
+            UserDefaults.standard.string(forKey: "quorumMode").flatMap(QuorumMode.init(rawValue:))
+            ?? .auto
     }
 
     func initializeSDK(modelContext: ModelContext) {
@@ -103,17 +151,15 @@ class AppState: ObservableObject {
                 SDK.enableLogging(level: .debug)
 
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                let newSDK = try SDK(network: currentNetwork)
+                let newSDK = try makeSdk(for: currentNetwork)
                 sdk = newSDK
+                quorumSource = newSDK.quorumSource
                 NSLog("✅ AppState: SDK created successfully")
 
                 // Eagerly learn the network's protocol version so
                 // fee-sensitive flows reserve correctly before the
                 // first metadata-bearing response ratchets the SDK.
                 refreshProtocolVersion(for: newSDK)
-
-                // Load known contracts into the SDK's trusted provider
-                await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
                 isLoading = false
             } catch {
@@ -125,44 +171,161 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Apply the current policy to the adaptive provider of every SDK
+    /// `makeSdk` built that is still alive, the wallet managers' background
+    /// SDKs included, so none keeps a mode the user has left, then refresh
+    /// the active-source indicator. Runs on every `quorumMode` change;
+    /// `makeSdk` applies the mode to an SDK it builds.
+    ///
+    /// - `.auto`: SPV while it runs with the header + masternode lists fully
+    ///   synced, trusted otherwise, and trusted for any key SPV cannot serve.
+    /// - `.spv`: SPV unconditionally — installed even before the SPV client
+    ///   starts. The lookup fails closed ("SPV Client not started" / proofs
+    ///   fail until synced) rather than falling back to trusted.
+    /// - `.trusted`: always the trusted HTTP quorum provider.
+    ///
+    /// `quorumSource` tracks the source the provider asks first, which may
+    /// lag the requested mode while SPV isn't ready.
+    private func applyQuorumMode() {
+        for builtSdk in builtSdks.allObjects {
+            do {
+                try builtSdk.setQuorumMode(sdkQuorumMode)
+            } catch {
+                NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
+            }
+        }
+        refreshQuorumSource()
+    }
+
+    /// Read the published SDK's current quorum source into `quorumSource`.
+    /// In Auto the adaptive provider follows SPV readiness by itself, so when
+    /// SPV progress or running state changes only the indicator needs
+    /// refreshing, not the mode.
+    func refreshQuorumSource() {
+        guard let sdk else { return }
+        // Called on every SPV progress tick. Assigning an unchanged value
+        // still publishes, and every view observing this object, the root
+        // tab view among them, would re-render with each tick.
+        let source = sdk.quorumSource
+        if quorumSource != source {
+            quorumSource = source
+        }
+    }
+
     func showError(message: String) {
         errorMessage = message
         showError = true
     }
 
-    func switchNetwork(to network: Network) async {
-        guard let modelContext = modelContext else { return }
+    /// Rebuild the SDK for `target` through `rebuildSdkAndMoveWalletManager`
+    /// (see it for the steps and the rollback), or refuse with `.busy`,
+    /// running none of the steps, while another rebuild runs.
+    ///
+    /// Every window shares this object, and a rebuild changes shared
+    /// settings, the published SDK and network, and the active wallet
+    /// manager: a second rebuild beside the first would roll its prepared
+    /// settings back over the first one's, or publish its network in
+    /// whichever order the two finish. The rebuild is reserved before its
+    /// first suspension and released after its publish or rollback. This is
+    /// the only way the SDK and its network change after the bootstrap.
+    ///
+    /// The steps this object does not own are injected: `stopSpv` (the
+    /// wallet manager's), `prepare` and `rollBack` (the settings the flow
+    /// changes), `activateManager` (the wallet manager store's) and
+    /// `beforePublish` (the flow's own state).
+    func rebuildSdk(
+        from network: Network,
+        to target: Network,
+        stopSpv: @MainActor () async -> Bool,
+        prepare: @MainActor () -> Void,
+        activateManager: @MainActor (Network, SDK) async -> Bool,
+        rollBack: @MainActor () -> Void,
+        beforePublish: @MainActor () -> Void
+    ) async -> SdkRebuildOutcome {
+        guard !isRebuildingSdk else {
+            SDKLogger.event(
+                "sdk_rebuild_refused",
+                category: .lifecycle,
+                fields: ["network": .publicText(target.displayName)]
+            )
+            return .busy
+        }
+        isRebuildingSdk = true
+        defer { isRebuildingSdk = false }
+        return await rebuildSdkAndMoveWalletManager(
+            from: network,
+            to: target,
+            stopSpv: stopSpv,
+            currentNetwork: { self.currentNetwork },
+            prepare: prepare,
+            buildSdk: { self.buildSdk(for: $0) },
+            activateManager: activateManager,
+            rollBack: rollBack,
+            publish: { (target: Network, sdk: SDK) in
+                beforePublish()
+                self.publish(sdk, for: target)
+            },
+            rebindWalletScopedServices: { self.walletScopedServicesRebindTick &+= 1 }
+        )
+    }
 
-        // Identities, contracts, documents, and token balances are
-        // scoped per-network inside SwiftData. `@Query` consumers
-        // filter by `network` and update reactively once we swap
-        // the DataManager's scope below — nothing to clear here.
+    /// Build an SDK for `network` the way this app builds every SDK, without
+    /// publishing it: one adaptive provider, the quorum mode the user picked,
+    /// and the stored contracts. The bootstrap, SDK rebuilds and the wallet
+    /// managers' background SDKs all build here, and `applyQuorumMode`
+    /// reaches every SDK built here while it lives.
+    func makeSdk(for network: Network) throws -> SDK {
+        let newSDK = try SDK(network: network, contextProvider: .adaptive)
+        // Apply the mode before any proven query can run on this SDK. With
+        // no SPV source yet, strict SPV fails closed until a wallet manager
+        // serves one.
+        try newSDK.setQuorumMode(sdkQuorumMode)
+        if let modelContext {
+            loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+        }
+        builtSdks.add(newSDK)
+        return newSDK
+    }
 
-        // Update DataManager's current network
-        dataManager?.currentNetwork = network
-
-        // Re-initialize SDK with new network
+    /// Build an SDK for a rebuild with `makeSdk`. Returns `nil` after showing
+    /// the failure.
+    private func buildSdk(for network: Network) -> SDK? {
+        isLoading = true
+        defer { isLoading = false }
         do {
-            isLoading = true
-
-            // Create new SDK instance for the network
-            let newSDK = try SDK(network: network)
-            sdk = newSDK
-
-            // Eagerly learn the new network's protocol version (see
-            // `initializeSDK`). Non-fatal: the SDK still ratchets from
-            // metadata if this fails.
-            refreshProtocolVersion(for: newSDK)
-
-            // Load known contracts into the SDK's trusted provider
-            await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-            isLoading = false
+            return try makeSdk(for: network)
         } catch {
-            sdk = nil
-            showError(message: "Failed to switch network: \(error.localizedDescription)")
-            NSLog("❌ AppState.switchNetwork: \(error)")
-            isLoading = false
+            showError(
+                message: "Could not build the SDK for \(network.displayName), so the app stays on its current SDK. SPV stays stopped until you restart it from the Wallet tab. \(error.localizedDescription)"
+            )
+            NSLog("❌ AppState.buildSdk: \(error)")
+            return nil
+        }
+    }
+
+    /// Make `sdk`, built for `network`, the current SDK and `network` the
+    /// current network, together. The `publish` step of `rebuildSdk`, after
+    /// the wallet manager moved onto `sdk`, so the selected network, the SDK
+    /// and the manager change in one main-actor turn.
+    private func publish(_ sdk: SDK, for network: Network) {
+        // Identities, contracts, documents and token balances are scoped
+        // per network inside SwiftData; `@Query` consumers filter by
+        // `network` and follow the DataManager's scope.
+        dataManager?.currentNetwork = network
+        currentNetwork = network
+        self.sdk = sdk
+        quorumSource = sdk.quorumSource
+        // Eagerly learn the network's protocol version (see
+        // `initializeSDK`). Non-fatal: the SDK still ratchets from metadata
+        // if this fails.
+        refreshProtocolVersion(for: sdk)
+    }
+
+    private var sdkQuorumMode: SDK.QuorumMode {
+        switch quorumMode {
+        case .auto: return .auto
+        case .spv: return .spv
+        case .trusted: return .trusted
         }
     }
 
@@ -204,7 +367,7 @@ class AppState: ObservableObject {
 
     // MARK: - Contract Loading
 
-    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) async {
+    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) {
         do {
             // Fetch all stored contracts from SwiftData
             let descriptor = FetchDescriptor<PersistentDataContract>()

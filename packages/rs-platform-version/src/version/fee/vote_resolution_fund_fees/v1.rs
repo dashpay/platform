@@ -10,4 +10,8 @@ pub const VOTE_RESOLUTION_FUND_FEES_VERSION1: VoteResolutionFundFees = VoteResol
     // Before protocol version 14 every contender paid the same fund, however many had joined
     contested_document_contenders_before_fund_doubling: 0,
     contested_document_contenders_per_fund_doubling: 0,
+    // Decision proposals exist from protocol version 15; unread before it.
+    decision_proposal_fund_required_amount: 0,
+    // Multiple choice proposals exist from protocol version 15; 0 charges nothing before it.
+    multiple_choice_proposal_processing_fee: 0,
 };

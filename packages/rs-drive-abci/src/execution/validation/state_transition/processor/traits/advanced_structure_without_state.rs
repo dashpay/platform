@@ -11,8 +11,8 @@ use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
 /// A trait for validating state transitions within a blockchain.
-/// The advanced structure validation should always happen in a block
-/// and not in check_tx
+/// The advanced structure validation happens in a block and not in check_tx, except that check_tx
+/// also verifies the proofs of possession of the keys an identity update adds
 pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///

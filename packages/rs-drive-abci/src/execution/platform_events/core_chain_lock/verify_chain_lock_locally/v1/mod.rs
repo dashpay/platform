@@ -1,6 +1,6 @@
 use dpp::bls::Signature;
 
-use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
 use dpp::dashcore_rpc::json::QuorumType;
 
@@ -67,11 +67,12 @@ where
 
         let window_width = quorum_config.window;
 
-        // The last block in the window where the quorums would be the same
-        let last_block_in_window = platform_state.last_committed_core_height()
-            - platform_state.last_committed_core_height() % window_width
-            + window_width
-            - 1;
+        // The last block in the window where the quorums would be the same. The window is a
+        // `NonZeroU32`, so the remainder cannot divide by zero, and a window ending past the
+        // largest core height wraps, as it does in release builds, instead of overflowing.
+        let last_block_in_window = (platform_state.last_committed_core_height()
+            - platform_state.last_committed_core_height() % window_width)
+            .wrapping_add(window_width.get() - 1);
 
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 
@@ -116,13 +117,13 @@ where
         // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
         // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
-        let mut engine = QuorumSigningRequestId::engine();
+        let mut engine = sha256d::Hash::engine();
 
         engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
         engine.input(chain_lock.block_height.to_le_bytes().as_slice());
 
-        let request_id = QuorumSigningRequestId::from_engine(engine);
+        let request_id = QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
         tracing::trace!(
             ?chain_lock,
@@ -317,6 +318,7 @@ mod tests {
     use dpp::dashcore_rpc::json::QuorumType;
     use dpp::version::drive_abci_versions::drive_abci_method_versions::DkgMiningSchedule;
     use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
+    use std::num::{NonZeroU16, NonZeroU32};
     use std::str::FromStr;
 
     fn verify(
@@ -334,8 +336,8 @@ mod tests {
         ChainLockConfig {
             quorum_type: QuorumType::Llmq400_60,
             quorum_size: 400,
-            quorum_window: 288,
-            quorum_active_signers: 4,
+            quorum_window: NonZeroU32::new(288).unwrap(),
+            quorum_active_signers: NonZeroU16::new(4).unwrap(),
             quorum_rotation: false,
         }
     }
@@ -699,6 +701,66 @@ mod tests {
                     "{case} has more than one schedule"
                 );
             }
+        }
+    }
+
+    /// Platform versions that verify chain locks locally from version 1 on.
+    fn platform_versions_verifying_chain_locks_locally_from_version_1(
+    ) -> impl Iterator<Item = &'static PlatformVersion> {
+        let platform_versions = PLATFORM_VERSIONS.iter().filter(|platform_version| {
+            platform_version
+                .drive_abci
+                .methods
+                .core_chain_lock
+                .verify_chain_lock_locally
+                >= 1
+        });
+        assert!(
+            platform_versions.clone().next().is_some(),
+            "some protocol version verifies chain locks locally from version 1 on"
+        );
+        platform_versions
+    }
+
+    /// Version 1 fails every chain lock in a mining window without the DKG mining schedules of
+    /// its version table, and so every validator fails the block. A table that selects it must
+    /// carry them, not inherit `None` from an earlier table.
+    #[test]
+    fn should_have_dkg_mining_schedules_in_every_platform_version_verifying_chain_locks_locally_from_version_1(
+    ) {
+        for platform_version in platform_versions_verifying_chain_locks_locally_from_version_1() {
+            assert!(
+                platform_version
+                    .drive_abci
+                    .methods
+                    .core_chain_lock
+                    .dkg_mining_schedules
+                    .is_some(),
+                "protocol version {} has no DKG mining schedules",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// Version 1 leaves to Core chain locks version 0 rejected locally, so it is only safe when
+    /// Core checks their signature: from `verify_chain_lock_through_core` 1, `verifychainlock`
+    /// does before `submitchainlock`, which skips that check for a height Core already has a
+    /// chain lock at or above. With `verify_chain_lock_through_core` 0 a forged chain lock at
+    /// such a height would be accepted.
+    #[test]
+    fn should_check_chain_locks_left_to_core_with_verifychainlock_in_every_platform_version_verifying_locally_from_version_1(
+    ) {
+        for platform_version in platform_versions_verifying_chain_locks_locally_from_version_1() {
+            assert!(
+                platform_version
+                    .drive_abci
+                    .methods
+                    .core_chain_lock
+                    .verify_chain_lock_through_core
+                    >= 1,
+                "protocol version {} submits chain locks left to Core without verifychainlock",
+                platform_version.protocol_version
+            );
         }
     }
 

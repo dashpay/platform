@@ -1235,6 +1235,18 @@ fn should_refuse_consuming_a_type_whose_delete_costs_something_or_asks_a_stricte
 }
 
 #[test]
+fn should_refuse_registering_a_consume_of_deletable_history_at_protocol_15() {
+    let schema = dpns_contract_with(
+        dpns_salt_reveal(),
+        json!({}),
+        json!({ "documentsKeepHistory": true, "canBeDeleted": true }),
+    );
+    contract_on(schema.clone(), false, PlatformVersion::latest())
+        .expect("the stored history type is itself valid");
+    assert_refused(contract(schema), "its documents keep history");
+}
+
+#[test]
 fn should_list_the_types_a_create_may_consume() {
     let parsed = contract(dpns_contract(dpns_salt_reveal())).expect("the DPNS reveal should parse");
     let names = |type_name: &str| {

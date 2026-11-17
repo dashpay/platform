@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::drive::DriveError;
 use crate::verify::RootHash;
@@ -44,9 +45,10 @@ impl SingleDocumentDriveQuery {
             .verify_proof_keep_serialized
         {
             0 => self.verify_proof_keep_serialized_v0(is_subset, proof, platform_version),
+            1 => self.verify_proof_keep_serialized_v1(is_subset, proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "SingleDocumentDriveQuery::verify_proof_keep_serialized".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -82,7 +84,7 @@ mod tests {
 
         assert!(
             matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
-                if method == "SingleDocumentDriveQuery::verify_proof_keep_serialized" && known_versions == vec![0] && received == 255
+                if method == "SingleDocumentDriveQuery::verify_proof_keep_serialized" && known_versions == vec![0, 1] && received == 255
             )
         );
     }

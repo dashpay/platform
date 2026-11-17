@@ -5,7 +5,6 @@ use crate::platform_types::signature_verification_quorum_set::SignatureVerificat
 use bincode::Encode;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersionsFieldsBeforeVersion4;
 use dpp::platform_serialization::de::Decode;

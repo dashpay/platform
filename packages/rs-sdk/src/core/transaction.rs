@@ -8,7 +8,6 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{
     Address, Block, BlockHash, InstantLock, MerkleBlock, OutPoint, Transaction, Txid,
 };

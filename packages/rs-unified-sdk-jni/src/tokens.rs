@@ -1625,12 +1625,35 @@ unsafe fn take_identifier_array_blob(
         .unwrap_or(ptr::null_mut())
 }
 
+/// Destroy every `ContactRequest` handle in a sync result, then free the
+/// array buffer. The sync bridges below call the FFI only for its side effect
+/// on wallet state and never hand these handles to Kotlin, so this is the
+/// only place that can release them; freeing just the buffer would leave one
+/// `CONTACT_REQUEST_STORAGE` entry per returned request on every sync.
+///
+/// # Safety
+/// `array` must be the (possibly empty) array a contact request sync wrote,
+/// not yet freed, whose handles nobody else holds.
+unsafe fn release_contact_request_handles(
+    array: &mut platform_wallet_ffi::ContactRequestHandleArray,
+) {
+    if !array.handles.is_null() && array.count > 0 {
+        let handles = std::slice::from_raw_parts(array.handles, array.count);
+        for &handle in handles {
+            let mut result = platform_wallet_ffi::contact_request_destroy(handle);
+            platform_wallet_ffi_result_free(&mut result);
+        }
+    }
+    platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(
+        array as *mut platform_wallet_ffi::ContactRequestHandleArray,
+    );
+}
+
 /// Sync incoming contact requests from Platform for every managed identity
 /// on the wallet (bridges `platform_wallet_sync_contact_requests`). Applies
 /// them to the wallet's in-memory state (the side effect that
 /// [`getManagedIdentity`] and the id readers then observe); the returned
-/// handle array is freed here (the underlying `ContactRequest` handles stay
-/// in native storage). Blocking.
+/// handles and their array are released here. Blocking.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_syncContactRequests(
     mut env: JNIEnv,
@@ -1648,21 +1671,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_syncCont
                 &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
             )
         };
-        // Free the array regardless of outcome (the handles it references
-        // remain valid in native storage; we only own the buffer).
-        unsafe {
-            platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(
-                &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
-            )
-        };
+        // Release regardless of outcome: on error the FFI leaves the empty
+        // sentinel, which this no-ops on.
+        unsafe { release_contact_request_handles(&mut array) };
         let _ = take_pwffi_error(env, result);
     })
 }
 
 /// Fetch the contact requests sent by `identityId` from Platform (bridges
 /// `platform_wallet_fetch_sent_contact_requests`). Applies them to the
-/// wallet's in-memory state; the returned handle array is freed here.
-/// Blocking.
+/// wallet's in-memory state; the returned handles and their array are
+/// released here. Blocking.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_fetchSentContactRequests(
     mut env: JNIEnv,
@@ -1685,11 +1704,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_fetchSen
                 &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
             )
         };
-        unsafe {
-            platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(
-                &mut array as *mut platform_wallet_ffi::ContactRequestHandleArray,
-            )
-        };
+        unsafe { release_contact_request_handles(&mut array) };
         let _ = take_pwffi_error(env, result);
     })
 }
@@ -1963,9 +1978,70 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_getIncom
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_wallet_ffi::contact_request::CONTACT_REQUEST_STORAGE;
+    use platform_wallet_ffi::ContactRequestHandleArray;
 
     // profile_to_json is pure marshalling logic (no JNIEnv), so it is unit
     // testable on the JVM-free host. The natives above need a device.
+
+    /// Store a contact request through the public FFI, as a sync does, and
+    /// return its handle.
+    fn stored_contact_request(seed: u8) -> Handle {
+        let sender = [seed; 32];
+        let recipient = [seed.wrapping_add(1); 32];
+        let encrypted_key = [seed; 96];
+        let mut handle: Handle = 0;
+        let mut result = unsafe {
+            platform_wallet_ffi::contact_request_create(
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                0,
+                1,
+                0,
+                encrypted_key.as_ptr(),
+                encrypted_key.len(),
+                100_000,
+                1_700_000_000,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        handle
+    }
+
+    fn is_stored(handle: Handle) -> bool {
+        CONTACT_REQUEST_STORAGE.with_item(handle, |_| ()).is_some()
+    }
+
+    #[test]
+    fn should_destroy_every_contact_request_handle_a_sync_returned() {
+        let handles: Vec<Handle> = (1..=3).map(stored_contact_request).collect();
+        assert!(handles.iter().all(|&handle| is_stored(handle)));
+        // Same buffer layout `ContactRequestHandleArray::from_requests` builds.
+        let mut array = ContactRequestHandleArray {
+            handles: Box::into_raw(handles.clone().into_boxed_slice()) as *mut Handle,
+            count: handles.len(),
+        };
+
+        unsafe { release_contact_request_handles(&mut array) };
+
+        for handle in handles {
+            assert!(!is_stored(handle), "handle {handle} still in storage");
+        }
+        assert!(array.handles.is_null());
+        assert_eq!(array.count, 0);
+    }
+
+    #[test]
+    fn should_no_op_on_the_empty_array_a_failed_sync_leaves() {
+        let mut array = ContactRequestHandleArray::empty();
+
+        unsafe { release_contact_request_handles(&mut array) };
+
+        assert!(array.handles.is_null());
+        assert_eq!(array.count, 0);
+    }
 
     #[test]
     fn token_jlong_raw_bits_cover_the_full_u64_domain() {

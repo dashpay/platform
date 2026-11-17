@@ -14,4 +14,10 @@ pub enum CryptoError {
 
     #[error("Invalid compact xpub length (DIP-15 requires exactly 69 bytes, got {0})")]
     InvalidCompactXpubLength(usize),
+
+    #[error("Invalid encrypted shielded address length (expected 64 bytes, got {0})")]
+    InvalidEncryptedShieldedAddressLength(usize),
+
+    #[error("Invalid shielded address length (expected 43 bytes, got {0})")]
+    InvalidShieldedAddressLength(usize),
 }

@@ -45,15 +45,14 @@ final class SpvManyTxWalletImportHistoryIntegrationTests: IntegrationTestCase {
     func testImportedWalletRecoversHistoryEitherSideOfRegistration() async throws {
         let mnemonic = try Mnemonic.generate(wordCount: 24)
 
-        // 1. Derive the receive addresses from a throwaway KeyWallet manager
-        //    (regtest-encoded — the manager's network drives encoding), so the
-        //    SPV-driving manager stays empty and the client knows nothing about
-        //    this wallet until step 4.
-        let km = try WalletManager(network: .regtest)
-        let walletId = try km.addWallet(mnemonic: mnemonic)
-        let addresses = try Self.deriveExternalAddresses(
-            manager: km, walletId: walletId, count: halfTxCount * 2
-        )
+        // 1. Derive the receive addresses from a throwaway manager that never
+        //    starts SPV (regtest-encoded — the wallet's network drives
+        //    encoding), so the SPV-driving manager stays empty and the client
+        //    knows nothing about this wallet until step 4.
+        let sdk = env.sdk
+        let addressCount = halfTxCount * 2
+        let addresses = try await Self.deriveExternalAddresses(
+            sdk: sdk, mnemonic: mnemonic, count: addressCount)
 
         // 2. Fund the pre-registration half, one transaction per block.
         var preTxids: [Data] = []
@@ -180,86 +179,55 @@ final class SpvManyTxWalletImportHistoryIntegrationTests: IntegrationTestCase {
         return Data(displayBytes.reversed())
     }
 
-    // MARK: - KeyWallet address enumeration
+    // MARK: - Receive address enumeration
 
-    /// Generate and return BIP-44 external (receive) addresses in
-    /// `[0, count)` from a KeyWallet `WalletManager` handle.
-    ///
-    /// `managed_wallet_get_bip_44_external_address_range` is a single Rust-side
-    /// call that generates addresses lazily if they don't yet exist, so it can
-    /// hand back the full 0..<count range regardless of the default gap limit —
-    /// no Swift-side derivation or gap-limit walking required.
+    /// Returns the first `count` BIP-44 account 0 receive addresses of
+    /// `mnemonic`, read from the external pool of a throwaway in-memory
+    /// manager. Creating the account pre-generates that pool up to the gap
+    /// limit, so no SPV or address use is needed to reach `count`.
+    @MainActor
     private static func deriveExternalAddresses(
-        manager: WalletManager, walletId: Data, count: Int
-    ) throws -> [String] {
-        var error = FFIError()
-
-        guard let managedInfo = walletId.withUnsafeBytes({ raw in
-            wallet_manager_get_managed_wallet_info(
-                manager.ffiHandle,
-                raw.bindMemory(to: UInt8.self).baseAddress,
-                &error
-            )
-        }) else {
-            throw SetupError(description: "wallet_manager_get_managed_wallet_info failed: \(Self.take(&error))")
-        }
-        defer { managed_wallet_info_free(managedInfo) }
-
-        // Owning: the manager clones the wallet out of its map and boxes it
-        // fresh on every call, so this pointer is ours to free.
-        guard let wallet = walletId.withUnsafeBytes({ raw in
-            wallet_manager_get_wallet(
-                manager.ffiHandle,
-                raw.bindMemory(to: UInt8.self).baseAddress,
-                &error
-            )
-        }) else {
-            throw SetupError(description: "wallet_manager_get_wallet failed: \(Self.take(&error))")
-        }
-        defer { wallet_free_const(wallet) }
-
-        var addressesOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>? = nil
-        var outCount = 0
-        let ok = managed_wallet_get_bip_44_external_address_range(
-            managedInfo,
-            wallet,
-            /* account_index */ 0,
-            /* start_index   */ 0,
-            /* end_index     */ UInt32(count),
-            &addressesOut,
-            &outCount,
-            &error
+        sdk: SDK, mnemonic: String, count: Int
+    ) async throws -> [String] {
+        let throwaway = try PlatformWalletManager(
+            sdk: sdk,
+            modelContainer: try DashModelContainer.createInMemory()
         )
-        guard ok, let arr = addressesOut else {
-            throw SetupError(description: "managed_wallet_get_bip_44_external_address_range failed: \(Self.take(&error))")
+        let addresses = Result {
+            try externalAddresses(of: throwaway, mnemonic: mnemonic, count: count)
         }
-        defer { address_array_free(arr, outCount) }
-
-        var result: [String] = []
-        result.reserveCapacity(outCount)
-        for i in 0..<outCount {
-            if let cstr = arr[i] {
-                result.append(String(cString: cstr))
-            }
-        }
-
-        // Null entries are skipped above, so a short result would otherwise
-        // surface downstream as an out-of-range crash in the funding loop.
-        guard result.count == count else {
-            throw SetupError(
-                description: "expected \(count) external addresses, got \(result.count)"
-            )
-        }
-        return result
+        await throwaway.shutdown()
+        return try addresses.get()
     }
 
-    /// Read (and free) an `FFIError` message, returning a display string.
-    private static func take(_ error: inout FFIError) -> String {
-        guard let msg = error.message else { return "code \(error.code.rawValue)" }
-        defer {
-            error_message_free(msg)
-            error.message = nil
+    @MainActor
+    private static func externalAddresses(
+        of manager: PlatformWalletManager, mnemonic: String, count: Int
+    ) throws -> [String] {
+        let wallet = try manager.createWallet(
+            mnemonic: mnemonic,
+            network: .regtest,
+            createDefaultAccounts: true
+        )
+        guard let bip44 = manager.accountBalances(for: wallet.walletId).first(where: {
+            $0.typeTag == 0 && $0.standardTag == 0 && $0.index == 0
+        }) else {
+            throw SetupError(description: "the throwaway wallet has no BIP-44 account 0")
         }
-        return String(cString: msg)
+        guard let external = manager.accountAddressPools(for: wallet.walletId, balance: bip44)
+            .first(where: { $0.poolType == 0 })
+        else {
+            throw SetupError(description: "BIP-44 account 0 has no external address pool")
+        }
+        let addresses = external.addresses
+            .sorted { $0.addressIndex < $1.addressIndex }
+            .prefix(count)
+            .map(\.address)
+        guard addresses.count == count else {
+            throw SetupError(
+                description: "expected \(count) external addresses, got \(addresses.count)"
+            )
+        }
+        return addresses
     }
 }

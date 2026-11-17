@@ -6,7 +6,7 @@ use crate::drive::tokens::paths::{
     TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_CONTRACT_INFO_KEY,
     TOKEN_DIRECT_SELL_PRICE_KEY, TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY,
     TOKEN_IDENTITY_INFO_KEY, TOKEN_MS_TIMED_DISTRIBUTIONS_KEY,
-    TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY,
+    TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY, TOKEN_ORDER_ESCROW_KEY,
     TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
     TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
@@ -44,6 +44,7 @@ pub(crate) fn structure() -> StructureNode {
     .children(vec![
         distributions(),
         shielded_pools(),
+        order_escrow(),
         StructureNode::fixed(
             "status",
             &[TOKEN_STATUS_INFO_KEY],
@@ -370,6 +371,37 @@ fn distributions() -> StructureNode {
             ]),
         ),
     ])
+}
+
+/// The tokens the token marketplace holds in escrow for open listings, from protocol 15.
+fn order_escrow() -> StructureNode {
+    StructureNode::fixed(
+        "order_escrow",
+        &[TOKEN_ORDER_ESCROW_KEY],
+        "TokenOrderEscrow",
+        "TOKEN_ORDER_ESCROW_KEY",
+    )
+    .kind(ElementKind::BigSumTree)
+    .since(15)
+    .source(SOURCE)
+    .book("data-model/token-marketplace.md")
+    .describe(
+        "The tokens open listings hold in escrow. The sum \
+         joins the identity balances and the shielded pools \
+         in the token conservation check.",
+    )
+    .child(
+        token("The escrowed listings of one token; created with its first listing.")
+            .kind(ElementKind::SumTree)
+            .lazy()
+            .child(
+                StructureNode::identifier("order", "order_id", "The listing's order id")
+                    .kind(ElementKind::SumItem)
+                    .lazy()
+                    .value("token amount")
+                    .describe("What one open listing still holds."),
+            ),
+    )
 }
 
 /// One Orchard pool per token that enables shielded balances in protocol 14.

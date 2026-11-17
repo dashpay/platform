@@ -16,6 +16,7 @@ use crate::services::platform_service::shielded_proof_failure_budget::{
 };
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
+use dpp::state_transition::validate_state_transition_size;
 use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -267,10 +268,8 @@ fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
     // every released version so far shares the same limit, and if a future
     // version raises it, latest ≥ active keeps this a pure pre-filter —
     // Drive still enforces the active version's limit authoritatively.
-    let max_size = PlatformVersion::latest()
-        .system_limits
-        .max_state_transition_size as usize;
-    if tx.len() > max_size {
+    if let Err(e) = validate_state_transition_size(tx.len() as u64, PlatformVersion::latest()) {
+        let max_size = e.max_size_bytes();
         debug!(actual = tx.len(), max_size, "State transition is too large");
         return Err(DapiError::InvalidArgument(format!(
             "State Transition exceeds maximum size of {max_size} bytes"
