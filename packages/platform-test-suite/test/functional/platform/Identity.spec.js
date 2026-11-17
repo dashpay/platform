@@ -635,7 +635,8 @@ describe('Platform', () => {
 
         const identityBeforeUpdate = identity.toObject();
 
-        const publicKeyToDisable = identity.getPublicKeyById(2);
+        // HIGH key 1: the CRITICAL key 2 still stands in for it (DIP-11)
+        const publicKeyToDisable = identity.getPublicKeyById(1);
         const update = {
           disable: [publicKeyToDisable],
         };
@@ -652,8 +653,8 @@ describe('Platform', () => {
         );
 
         expect(identity.getRevision()).to.equal(BigInt(identityBeforeUpdate.revision) + BigInt(1));
-        expect(identity.getPublicKeyById(2)).to.exist();
-        expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
+        expect(identity.getPublicKeyById(1)).to.exist();
+        expect(identity.getPublicKeyById(1).getDisabledAt()).to.be.at.least(now);
 
         expect(identity.getPublicKeyById(0)).to.exist();
         expect(identity.getPublicKeyById(0).getDisabledAt()).to.be.undefined();

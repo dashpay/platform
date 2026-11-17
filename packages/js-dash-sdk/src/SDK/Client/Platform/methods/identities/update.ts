@@ -28,13 +28,17 @@ export async function update(
 
   const { dpp } = this;
 
-  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
+  // Reserve the nonce only once the transition is built: a refused update
+  // (e.g. disabling the last key of a security level) must not advance it.
+  const identityNonce = (await this.nonceManager.getIdentityNonce(identity.getId())) + BigInt(1);
 
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
-    BigInt(identityNonce),
+    identityNonce,
     publicKeys,
   );
+
+  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
 
   this.logger.silly('[Identity#update] Created IdentityUpdateTransition');
 
