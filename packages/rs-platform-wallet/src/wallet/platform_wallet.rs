@@ -806,6 +806,7 @@ impl PlatformWallet {
             sdk_writer: Arc::new(
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
+            document_erase_gate: Default::default(),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
         };
@@ -3252,6 +3253,12 @@ impl Drop for DeferredFinish {
 struct PrivatePaymentRestores {
     /// The store a restoration last succeeded from.
     restored_from: std::sync::Weak<RwLock<FileBackedShieldedStore>>,
+    /// How many restorations succeeded. A restoration that found the store
+    /// busy, or failed, reads it when it learns that and raises the wallet's
+    /// hold only if it is unchanged by the time the raise may go ahead: one
+    /// that succeeded from the same store meanwhile is the newer answer
+    /// ([`PrivatePaymentRestore::raise_hold`]).
+    restorations: u64,
     /// The store a deferred restoration is queued for.
     queued_for: std::sync::Weak<RwLock<FileBackedShieldedStore>>,
     /// How many deferred restorations were queued, for tests.
@@ -3272,36 +3279,69 @@ impl PrivatePaymentRestore {
         let restored = self.restore(wait).await;
         match &restored {
             Ok(Some(_)) => {
-                self.restores_lock().restored_from = Arc::downgrade(self.coordinator.store());
                 self.persister.note_private_payment_restore(None);
+                // Released with the restorations locked, as a raise is made
+                // (`Self::raise_hold`): a raise that waited its turn either
+                // sees this restoration or comes wholly before it.
+                let mut restores = self.restores_lock();
+                restores.restored_from = Arc::downgrade(self.coordinator.store());
+                restores.restorations += 1;
                 self.persister.private_payments_restored();
             }
             Ok(None) if self.restored_from_this_store() => {}
-            Ok(None) => self.persister.hold_until_private_payments_restored(),
+            Ok(None) => self.raise_hold().await,
             Err(error) => {
                 self.persister
                     .note_private_payment_restore(Some(error.to_string()));
-                self.persister.hold_until_private_payments_restored();
+                self.raise_hold().await;
             }
         }
         restored
     }
 
-    /// Whether the requests the wallet tracks are durable now: at once for a
-    /// backend that commits inline, as each was stored before it was
-    /// tracked; after a flush that succeeds otherwise.
+    /// Raise the wallet's hold for a restoration that just found the store
+    /// busy or failed, unless one from this store succeeds before the raise
+    /// may go ahead.
+    ///
+    /// Raising waits for a held request's repeat broadcast in flight
+    /// (`WalletPersister::hold_until_private_payments_restored`), and another
+    /// restoration may succeed and release the hold during that wait. What
+    /// this one learned is then the older answer: raising the hold after the
+    /// release would leave a restored wallet held until some later
+    /// restoration. So the count of restorations is read now, and the hold
+    /// is raised only if it is unchanged, or the one that succeeded since
+    /// was from another store, checked with the restorations locked as the
+    /// release is made.
+    async fn raise_hold(&self) {
+        let restorations = self.restores_lock().restorations;
+        self.persister
+            .hold_until_private_payments_restored_while(|| {
+                let restores = self.restores_lock();
+                let overtaken = restores.restorations != restorations
+                    && restores
+                        .restored_from
+                        .upgrade()
+                        .is_some_and(|store| Arc::ptr_eq(&store, self.coordinator.store()));
+                (!overtaken).then_some(restores)
+            })
+            .await;
+    }
+
+    /// Whether the requests the wallet tracks are durable now
+    /// (`WalletPersister::flush_durably`): at once for a backend that commits
+    /// inline, as each was stored before it was tracked; after a flush that
+    /// succeeds otherwise, with no other flush in progress and none that
+    /// failed for good in this process. A flush that succeeds right after
+    /// one that failed for good wrote nothing of what that one dropped.
     fn settled_requests_durable(&self) -> bool {
-        if self.persister.store_commits_inline() {
-            return true;
-        }
-        match self.persister.flush() {
+        match self.persister.flush_durably() {
             Ok(()) => true,
-            Err(error) => {
+            Err(reason) => {
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
-                    %error,
-                    "the requests settling private payments are not flushed; their journal \
-                     records stay for a later restoration"
+                    ?reason,
+                    "the requests settling private payments are not known to be durable; \
+                     their journal records stay for a later restoration"
                 );
                 false
             }
@@ -3428,10 +3468,7 @@ impl PrivatePaymentRestore {
             .into_iter()
             .filter(|commitment| !self.persister.read_back_awaiting_flush(commitment))
             .collect();
-        if !settled.is_empty()
-            && !self.persister.buffered_writes_lost()
-            && self.settled_requests_durable()
-        {
+        if !settled.is_empty() && self.settled_requests_durable() {
             let store = if wait {
                 Some(self.coordinator.store().write().await)
             } else {
@@ -4005,6 +4042,46 @@ mod private_contact_request_payment_tests {
         );
         assert_eq!(queued(), 2);
         drop(store);
+    }
+
+    /// A restoration that found the store busy, and waits its turn to raise
+    /// the wallet's hold behind a held request's repeat broadcast, does not
+    /// raise it once another restoration from the store has succeeded
+    /// meanwhile: the newer answer stands, and the wallet is not left held.
+    #[tokio::test]
+    async fn should_not_raise_the_hold_over_a_restoration_that_succeeded_meanwhile() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet) = manager_with_wallet().await;
+        let coordinator = coordinator_on(dir.path(), wallet.sdk.network);
+        wallet.persister.private_payments_restored();
+
+        // As a held request's repeat broadcast, mid-dispatch.
+        let dispatching = wallet.persister.held_request_dispatch().await;
+        let store = coordinator.store().write().await;
+        let mut busy = Box::pin(wallet.restore_private_payments_or_defer(&coordinator));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut busy)
+                .await
+                .is_err(),
+            "the raise waits for the dispatch in flight"
+        );
+        drop(store);
+
+        wallet
+            .restore_private_contact_payments(&coordinator)
+            .await
+            .expect("restored meanwhile");
+        drop(dispatching);
+        assert!(
+            busy.await.is_none(),
+            "restored from this store, so nothing is queued"
+        );
+
+        assert!(
+            !wallet.persister.private_payments_unrestored(),
+            "the restoration that succeeded meanwhile stands"
+        );
+        assert!(!wallet.private_payments_held().await);
     }
 
     /// A bind while the shielded store is busy defers the restoration of

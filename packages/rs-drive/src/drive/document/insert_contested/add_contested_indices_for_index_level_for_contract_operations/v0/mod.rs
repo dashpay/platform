@@ -1,13 +1,13 @@
-use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
 use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;
@@ -29,9 +29,7 @@ impl Drive {
         mut any_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            EstimatedLayers,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

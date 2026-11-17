@@ -36,7 +36,7 @@ use dpp::version::PlatformVersion;
 use std::sync::Arc;
 
 /// Whether `id` names a system data contract that does not exist yet at
-/// `platform_version`: the token market contract before protocol version 15. A
+/// `platform_version`: the token market contract before protocol version 16. A
 /// provider serves no contract under such an id, neither one preloaded into its
 /// known contracts nor one its build loads, whichever contract features it has, so
 /// each provider asks this before its known contracts.
@@ -233,7 +233,7 @@ pub(crate) fn system_data_contract(
         }
 
         #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
-        // Below protocol version 15 the token market contract is absent
+        // Below protocol version 16 the token market contract is absent
         // (`is_inactive_system_contract`).
         if *id == SystemDataContract::TokenMarket.id()
             && !is_inactive_system_contract(id, platform_version)
@@ -254,36 +254,43 @@ pub(crate) fn system_data_contract(
 
 #[cfg(test)]
 mod tests {
+    /// The token marketplace starts with protocol version 16, which has no tables yet: the test
+    /// version that selects it stands in for it.
+    fn token_marketplace_version() -> &'static dpp::version::PlatformVersion {
+        &dpp::version::mocks::v5_test::TEST_PLATFORM_V5
+    }
+
     use super::*;
 
-    /// The shared loader serves the token market contract only from protocol version 15,
+    /// The shared loader serves the token market contract only from protocol version 16,
     /// whatever its caller checked: before, none, without an error.
     #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
     #[test]
-    fn should_load_no_token_market_contract_before_protocol_15() {
+    fn should_load_no_token_market_contract_before_protocol_16() {
         let id = data_contracts::SystemDataContract::TokenMarket.id();
         assert!(
-            system_data_contract(&id, PlatformVersion::get(14).expect("protocol version 14"))
+            system_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
                 .expect("a pre-activation load does not error")
                 .is_none()
         );
-        assert!(
-            system_data_contract(&id, PlatformVersion::get(15).expect("protocol version 15"))
-                .expect("the load succeeds at protocol version 15")
-                .is_some()
-        );
+        assert!(system_data_contract(&id, token_marketplace_version())
+            .expect("the load succeeds at protocol version 16")
+            .is_some());
     }
 
     #[test]
-    fn should_mark_only_the_token_market_inactive_before_protocol_15() {
-        let pv14 = PlatformVersion::get(14).expect("protocol version 14");
+    fn should_mark_only_the_token_market_inactive_before_protocol_16() {
         let pv15 = PlatformVersion::get(15).expect("protocol version 15");
+        let marketplace_version = token_marketplace_version();
         let token_market = data_contracts::SystemDataContract::TokenMarket.id();
-        assert!(is_inactive_system_contract(&token_market, pv14));
-        assert!(!is_inactive_system_contract(&token_market, pv15));
+        assert!(is_inactive_system_contract(&token_market, pv15));
+        assert!(!is_inactive_system_contract(
+            &token_market,
+            marketplace_version
+        ));
         assert!(!is_inactive_system_contract(
             &data_contracts::SystemDataContract::DPNS.id(),
-            pv14
+            pv15
         ));
     }
 }

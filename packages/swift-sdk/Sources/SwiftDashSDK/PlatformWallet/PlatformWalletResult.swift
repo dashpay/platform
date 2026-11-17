@@ -759,7 +759,9 @@ public enum PlatformWalletError: LocalizedError {
     /// settles it: the request proved on Platform is recorded as sent, and one
     /// proved unable to write it frees the pair.
     /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
-    /// reads whether the pair is still held so.
+    /// reads whether the pair is still held so. Also thrown by a public send
+    /// or accept made while another public request to that identity is being
+    /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String)
     /// A shielded spend run against a `ShieldedSpendPlan` selected different
     /// notes or a different fee than the plan, as the wallet's notes changed
