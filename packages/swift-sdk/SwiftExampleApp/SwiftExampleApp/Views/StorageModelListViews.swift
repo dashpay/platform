@@ -1866,6 +1866,46 @@ struct TransactionAccountingStorageListView: View {
     }
 }
 
+// MARK: - PersistentCoreInstantLock
+
+/// Every persisted Core InstantSend lock on the active network: one per
+/// `(walletId, txid)`, so a transaction shared by two local wallets appears twice.
+struct CoreInstantLockStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentCoreInstantLock]
+
+    private var scopedRecords: [PersistentCoreInstantLock] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: CoreInstantLockStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.txid.reversed().map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text("\(record.consensusBytes.count) bytes")
+                            .font(.caption2)
+                        Spacer()
+                        Text(record.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("InstantSend Locks (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No InstantSend Locks", systemImage: "bolt.shield")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentPendingInput
 
 /// Diagnostic list of every `PersistentPendingInput` row — one per

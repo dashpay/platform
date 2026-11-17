@@ -2272,6 +2272,30 @@ struct TransactionAccountingStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentCoreInstantLock
+
+struct CoreInstantLockStorageDetailView: View {
+    let record: PersistentCoreInstantLock
+
+    var body: some View {
+        Form {
+            Section("Keys") {
+                FieldRow(label: "Network", value: "\(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "TXID", value: record.txid.reversed().map { String(format: "%02x", $0) }.joined())
+            }
+            Section("Consensus Bytes") {
+                FieldRow(label: "Size", value: "\(record.consensusBytes.count) bytes")
+                Text(hexString(record.consensusBytes))
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle("InstantSend Lock")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentPendingInput
 
 struct PendingInputStorageDetailView: View {
