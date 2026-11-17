@@ -1410,10 +1410,13 @@ class PlatformWalletPersistenceHandler(
         // in Swift's `upsertUtxo`, is a row linked to a spender whose
         // stored row is at or above InstantSend-locked
         // ([hasSettledSpender]): confirmed evidence on record is never
-        // displaced by a re-delivery. A mempool link is not that evidence
-        // — a mempool spender can be dropped or reorged away, and holding
-        // the flag behind it would hide a coin the wallet credits from
-        // every later restore.
+        // displaced by a re-delivery. A spender that funds an asset lock
+        // the network has locked (InstantSendLocked or beyond) counts too,
+        // whatever its own row says — that row is often missing or stuck
+        // at mempool context — mirroring the restore guard (#4336). A
+        // mempool link is not that evidence — a mempool spender can be
+        // dropped or reorged away, and holding the flag behind it would
+        // hide a coin the wallet credits from every later restore.
         //
         // Any credit verdict vetoes that clear (dashpay/platform#4638): the
         // wallet is not handing this coin back as unspent — its record
@@ -2714,13 +2717,19 @@ class PlatformWalletPersistenceHandler(
      * (context >= [CONTEXT_INSTANT_SEND]). The recovery clear in
      * [upsertUtxoRow] refuses only for such a spender, the check Swift's
      * `upsertUtxo` makes on `spendingTransaction.context`. A link whose
-     * spender row is missing, or still at mempool context, is not
-     * settled.
+     * spender row is missing, or still at mempool context, is settled
+     * only when the spender funds an asset lock the network has locked
+     * ([spendByFinalizedAssetLock]): an asset-lock spender's row often
+     * never leaves mempool context, and the lock's own status is the
+     * signal that arrives, as in the restore guard (#4336). An
+     * unreadable asset-lock table fails the save rather than clearing
+     * the row.
      */
     private suspend fun hasSettledSpender(db: DashDatabase, txo: TxoEntity): Boolean {
         val link = txo.spendingTxid ?: return false
-        val spender = db.transactionDao().getByTxid(link) ?: return false
-        return spender.context >= CONTEXT_INSTANT_SEND
+        val spender = db.transactionDao().getByTxid(link)
+        if (spender != null && spender.context >= CONTEXT_INSTANT_SEND) return true
+        return spendByFinalizedAssetLock(db, link)
     }
 
     // ── Sweeps ────────────────────────────────────────────────────────
@@ -4866,8 +4875,8 @@ class PlatformWalletPersistenceHandler(
      * apparent-data-loss this load path must never produce. Mirror of
      * the Swift loader's `finalizedAssetLockFundingTxids` bail.
      */
-    private suspend fun spendByFinalizedAssetLock(spendingTxid: ByteArray): Boolean {
-        val status = database.assetLockDao()
+    private suspend fun spendByFinalizedAssetLock(db: DashDatabase, spendingTxid: ByteArray): Boolean {
+        val status = db.assetLockDao()
             .maxStatusForTxid(spendingTxid.reversedArray().toHex())
         return status != null && status >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED
     }
@@ -4938,7 +4947,7 @@ class PlatformWalletPersistenceHandler(
                 // finality signal that provably arrives; from
                 // InstantSendLocked on this output is gone. Skip it, and
                 // heal the flag so isSpent-based readers stop counting it.
-                if (spendByFinalizedAssetLock(spendingTxid)) {
+                if (spendByFinalizedAssetLock(database, spendingTxid)) {
                     // Heal opportunistically: excluding the row from THIS
                     // restore does not depend on the repair becoming
                     // durable, so a failed write must not fail the load

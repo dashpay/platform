@@ -9700,6 +9700,84 @@ class PlatformWalletPersistenceHandlerTest {
         assertASettledSpenderKeepsTheCoinSpent(spenderContext = 2)
     }
 
+    /** An asset-lock row funded by [lockTxid] (credit output 0) at [statusRaw]. */
+    private suspend fun seedAssetLockFundedBy(lockTxid: ByteArray, statusRaw: Int) {
+        db.assetLockDao().upsert(
+            AssetLockEntity(
+                outPointHex = encodeOutPointHex(makeOutpoint(lockTxid, 0)),
+                walletId = walletId,
+                transactionBytes = ByteArray(10) { 5 },
+                fundingTypeRaw = 0,
+                identityIndexRaw = 0,
+                amountDuffs = 50_000,
+                statusRaw = statusRaw,
+            ),
+        )
+    }
+
+    @Test
+    fun aFinalizedAssetLockSpenderWithNoStoredRowKeepsTheCoinSpentAcrossACreditedRedelivery() = runTest {
+        // An asset-lock spender's own row is often missing (or stuck at
+        // mempool context): the lock burns its value into the payload, so
+        // nothing may ever record it. The lock's status is the finality
+        // signal that arrives — the restore guard (#4336) already trusts
+        // it, and the re-delivery clear must too, or the coin reads
+        // unspent until the next load re-marks it.
+        val fundingTxid = ByteArray(32) { 0x7b }
+        val spender = ByteArray(32) { 0x7c }
+        val coin = seedLinkedCoinMarkedSpentByAVerdict(fundingTxid, spender, spenderContext = 0)
+        // Drop the spender's row but keep the link: the FK would null it,
+        // so switch enforcement off for the rest of this test.
+        db.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys=OFF")
+        db.transactionDao().deleteByTxid(spender)
+        assertNull("sanity: the spender has no stored row", db.transactionDao().getByTxid(spender))
+        assertTrue("sanity: the link survives", spender.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid))
+        seedAssetLockFundedBy(spender, statusRaw = 2)
+
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+
+        val kept = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("an InstantSend-locked asset lock keeps the coin spent", kept.isSpent)
+        assertTrue(spender.contentEquals(kept.spendingTxid))
+    }
+
+    @Test
+    fun aFinalizedAssetLockSpenderAtMempoolContextKeepsTheCoinSpentAcrossACreditedRedelivery() = runTest {
+        // The same, with the spender's row present but still at mempool
+        // context — on its own not settled evidence, but the lock is.
+        val fundingTxid = ByteArray(32) { 0x7d }
+        val spender = ByteArray(32) { 0x7e }
+        val coin = seedLinkedCoinMarkedSpentByAVerdict(fundingTxid, spender, spenderContext = 0)
+        seedAssetLockFundedBy(spender, statusRaw = 2)
+
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+
+        val kept = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("an InstantSend-locked asset lock keeps the coin spent", kept.isSpent)
+        assertTrue(spender.contentEquals(kept.spendingTxid))
+        assertTrue(
+            "and out of the restore set",
+            newHandler().onLoadWalletList().single().utxos.none { it.prevTxid.contentEquals(fundingTxid) },
+        )
+    }
+
+    @Test
+    fun anAssetLockBelowInstantSendLockedDoesNotKeepAMempoolSpentCoinSpent() = runTest {
+        // A lock that has only been broadcast is not final: the mempool
+        // spender can still be dropped, so the credited re-delivery clears
+        // the flag exactly as for any other mempool link.
+        val fundingTxid = ByteArray(32) { 0x7f }
+        val spender = ByteArray(32) { 0x70 }
+        val coin = seedLinkedCoinMarkedSpentByAVerdict(fundingTxid, spender, spenderContext = 0)
+        seedAssetLockFundedBy(spender, statusRaw = 1)
+
+        verdictRound { redeliverFundedCoin(handler, fundingTxid) }
+
+        val recovered = db.txoDao().getByOutpoint(coin)!!
+        assertFalse("a broadcast-only lock does not hold the flag", recovered.isSpent)
+        assertTrue("the spend attribution is kept", spender.contentEquals(recovered.spendingTxid))
+    }
+
     @Test
     fun aSpentRowLinkedToAMempoolSpenderIsClearedByACreditedRedelivery() = runTest {
         // No verdict involved: a spent row whose link names a mempool
