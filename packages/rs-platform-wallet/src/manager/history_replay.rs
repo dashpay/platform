@@ -1462,7 +1462,7 @@ fn funds_account_type(account: &ManagedCoreFundsAccount) -> AccountType {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::BTreeMap;
 
@@ -1512,7 +1512,7 @@ mod tests {
         tx
     }
 
-    async fn checked_instant_lock(
+    pub(crate) async fn checked_instant_lock(
         transaction: &dashcore::Transaction,
     ) -> (InstantLock, ReplayEvidence) {
         use dash_spv::test_utils::{InstantLockFixture, MockNetworkManager};
@@ -1578,7 +1578,7 @@ mod tests {
     /// A confirmed funding with two outputs and a confirmed spend of output 0,
     /// as checker-produced records, plus the persisted projection that holds
     /// only the unspent output 1.
-    async fn confirmed_spend_fixture() -> (
+    pub(crate) async fn confirmed_spend_fixture() -> (
         Wallet,
         ManagedWalletInfo,
         dashcore::Transaction,
