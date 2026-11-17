@@ -2280,7 +2280,7 @@ struct CoreInstantLockStorageDetailView: View {
     var body: some View {
         Form {
             Section("Keys") {
-                FieldRow(label: "Network", value: "\(record.networkRaw)")
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
                 FieldRow(label: "TXID", value: record.txid.reversed().map { String(format: "%02x", $0) }.joined())
             }
