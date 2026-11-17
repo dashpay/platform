@@ -1204,7 +1204,10 @@ mod tests {
     /// whose key 1 is disabled.
     async fn wallet_answering_only_the_contract() -> (Arc<crate::PlatformWallet>, Identifier) {
         let contract = super::super::dashpay_contract().unwrap();
-        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .unwrap();
         sdk.mock()
             .expect_fetch::<DataContract, Identifier>(contract.id(), Some((*contract).clone()))
             .await
