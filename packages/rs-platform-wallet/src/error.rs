@@ -187,7 +187,7 @@ pub enum PlatformWalletError {
 
     /// key-wallet could not build the address pools of a DashPay account
     /// from its xpub.
-    #[error("Failed to build DashPay account {account_type:?}: {source}")]
+    #[error("Failed to build DashPay account {account_type}: {source}")]
     DashpayAccountBuild {
         account_type: AccountType,
         #[source]
