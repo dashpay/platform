@@ -519,7 +519,6 @@ mod tests {
     };
     use dash_sdk::platform::types::epoch::EpochQuery;
     use dash_sdk::platform::LimitQuery;
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Txid};
     use dpp::address_funds::{AddressFundsFeeStrategyStep, AddressWitness};
     use dpp::balances::credits::CREDITS_PER_DUFF;

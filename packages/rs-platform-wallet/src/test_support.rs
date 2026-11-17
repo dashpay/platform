@@ -1115,6 +1115,7 @@ pub async fn track_registration_asset_lock(
             amount: amount_duffs,
             status: AssetLockStatus::ChainLocked,
             proof: None,
+            shielded_recipient: None,
         })
         .await;
 }
