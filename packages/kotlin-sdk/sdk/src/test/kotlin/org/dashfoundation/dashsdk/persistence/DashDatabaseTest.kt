@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
@@ -40,6 +41,31 @@ class DashDatabaseTest {
     @After
     fun tearDown() {
         db.close()
+    }
+
+    @Test
+    fun ordinarySendBalanceIncludesOnlyUnspentAccountZeroNotes() = runTest {
+        val dao = db.shieldedDao()
+        fun note(id: Int, account: Int, value: Long, spent: Boolean = false, wallet: ByteArray = walletId) =
+            ShieldedNoteEntity(
+                nullifier = ByteArray(32) { id.toByte() },
+                walletId = wallet,
+                accountIndex = account,
+                position = id.toLong(),
+                cmx = ByteArray(32),
+                blockHeight = 1,
+                isSpent = spent,
+                value = value,
+                noteData = ByteArray(115),
+            )
+        dao.upsertNote(note(1, 0x40000000, 900))
+        assertEquals(0L, dao.observeUnspentNotesByWalletAccount(walletId, 0).first().sumOf { it.value })
+        dao.upsertNote(note(2, 0, 100))
+        dao.upsertNote(note(3, 0, 200))
+        dao.upsertNote(note(4, 1, 500))
+        dao.upsertNote(note(5, 0, 700, spent = true))
+        dao.upsertNote(note(6, 0, 800, wallet = ByteArray(32) { 2 }))
+        assertEquals(300L, dao.observeUnspentNotesByWalletAccount(walletId, 0).first().sumOf { it.value })
     }
 
     @Test

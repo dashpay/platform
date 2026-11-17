@@ -9,6 +9,17 @@ pub struct SystemLimits {
     /// Maximum retained revisions removed by one erase, read by
     /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
     pub max_document_revisions_erased_per_transition: Option<u16>,
+    /// Most allowed values a document's `enum` violation lists in its parameters and its
+    /// message, the first the schema writes; the others are counted, not listed. Read by the
+    /// native document validator (`validation_schema` 0, which `validate_document` 2 of
+    /// protocol version 15 runs). `None` in the earlier tables, whose document validation
+    /// never reaches it.
+    pub max_enum_violation_listed_values: Option<u16>,
+    /// Most bytes the JSON of the allowed values a document's `enum` violation lists takes
+    /// together; listing stops before the first value that would go past it, or that is an
+    /// array or an object. Read with `max_enum_violation_listed_values`, and `None` where it
+    /// is.
+    pub max_enum_violation_listed_bytes: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,
     /// Maximum insert operations per batch in the CREDIT nullifier activation migration.

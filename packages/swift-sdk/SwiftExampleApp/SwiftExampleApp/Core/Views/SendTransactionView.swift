@@ -52,7 +52,7 @@ struct SendTransactionView: View {
     /// credits".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    /// This wallet's unspent shielded (Orchard) notes. Summed into
+    /// This wallet's unspent account-0 shielded (Orchard) notes. Summed into
     /// `shieldedBalance` below so the shielded source row reflects THIS
     /// wallet's own pool, not the single-mirror `shieldedService`.
     @Query private var shieldedNotes: [PersistentShieldedNote]
@@ -71,8 +71,14 @@ struct SendTransactionView: View {
             }
         )
         _shieldedNotes = Query(
-            filter: PersistentShieldedNote.unspentPredicate(walletId: walletId)
+            filter: Self.shieldedSourcePredicate(walletId: walletId)
         )
+    }
+
+    static func shieldedSourcePredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
+        #Predicate<PersistentShieldedNote> {
+            $0.walletId == walletId && $0.accountIndex == 0 && $0.isSpent == false
+        }
     }
 
     var body: some View {
@@ -486,7 +492,7 @@ struct SendTransactionView: View {
             .reduce(0) { $0 + $1.confirmed }
     }
 
-    /// Per-wallet shielded balance: sum of THIS wallet's unspent
+    /// Account-0 shielded balance: sum of THIS wallet's unspent
     /// `PersistentShieldedNote` values (Rust pushes note rows via the
     /// shielded persister). Reads SwiftData rather than the
     /// single-mirror `shieldedService.shieldedBalance`, so the shielded

@@ -146,7 +146,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `validate_document` 2, which checks a document against its type's typed
 ///    validation schema (`document_type::schema::validation_schema`, built by
 ///    `validation_schema` 0) instead of the `jsonschema` crate, reaching the same verdicts and error codes but for
-///    two rules of its own. First, in a `uniqueItems` list, `0.0` and `-0.0` are
+///    two rules of its own, and reporting an `enum` violation in a bounded form. First, in a `uniqueItems` list, `0.0` and `-0.0` are
 ///    one value however long the list. Second, a `format: regex` value is
 ///    checked for its syntax alone: whether it parses as a regular expression,
 ///    not whether it compiles, since no consensus path uses the value as a
@@ -163,6 +163,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    Protocol v14 refused every value reaching the schema holding such a
 ///    pattern; a value that is not a string, which no pattern applies to, is
 ///    now checked against the rest of that schema alone.
+///    An `enum` violation lists the leading allowed values that fit
+///    `max_enum_violation_listed_values` and `max_enum_violation_listed_bytes`
+///    (`SYSTEM_LIMITS_V5`), none an array or an object, and counts the others,
+///    where protocol v14 lists every allowed value; its keyword, paths and code
+///    are unchanged, and an `enum` of a few short values reads as before.
 ///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
@@ -985,7 +990,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); DashPay v3 states what its data triggers checked (note 24)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25); a multiple choice proposal pays a 0.2 Dash processing fee on create (note 40)
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25); max_document_revisions_erased_per_transition caps an erase at 100 revisions (note 41); max_summed_value_magnitude_without_type_total holds a summed property past ±2^27 to values that are never negative on a type keeping its total (note 46)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25); max_document_revisions_erased_per_transition caps an erase at 100 revisions (note 41); max_enum_violation_listed_values and max_enum_violation_listed_bytes list at most 16 of a document enum violation's allowed values, in at most 256 bytes (note 6); max_summed_value_magnitude_without_type_total holds a summed property past ±2^27 to values that are never negative on a type keeping its total (note 46)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 2, // changed: Tenderdash proposer liveness and round skipping (note 44)
         evidence: Some(ConsensusEvidenceParams {
