@@ -1132,13 +1132,16 @@ struct BalanceCardView: View {
 
     var body: some View {
         let core = coreBalance
+        // A wallet holding any unspent shielded note is not empty even when
+        // its ordinary shielded balance is 0 (all its notes sit in identity
+        // accounts), so the shielded row and its actions stay shown.
         let allZero = WalletBalanceCardState.isEmpty(
             confirmedCore: core.confirmed,
             unconfirmedCore: core.unconfirmed,
             immatureCore: core.immature,
             platform: platformBalance,
             shielded: shieldedBalance
-        )
+        ) && shieldedNotes.isEmpty
 
         VStack(spacing: 12) {
             if allZero {
