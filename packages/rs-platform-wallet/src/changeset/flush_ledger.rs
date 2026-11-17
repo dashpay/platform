@@ -21,6 +21,12 @@ use crate::wallet::platform_wallet::WalletId;
 /// through [`Self::flush`], and every store committed in one step through
 /// [`Self::store_and_commit`]: that step drains the same buffer, so it is
 /// counted as the flush it contains.
+///
+/// A drain the wallet does not make through this ledger is not counted: a
+/// commit the host makes on the backend itself, and a plain `store` on a
+/// backend whose store is the commit and that keeps a buffer
+/// ([`keeps_a_buffer`]), which writes or drops what an earlier commit left
+/// in it. Only the backend can count those.
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
@@ -45,18 +51,16 @@ pub(crate) struct FlushLedger {
 /// failed for good before it stops being counted. A caller that catches the
 /// panic and carries on then finds the loss, as it would any other.
 ///
-/// A backend whose store is the commit buffers nothing, so no flush of it
-/// drops anything, whatever the flush answers: it is counted as failed and
-/// never as lost. That is a statement about its `store` and its `flush`
-/// only. A store committed in one step that fails for good dropped what the
-/// backend had buffered, by that step's contract, whatever the backend's
-/// `store` does: it is counted as lost on every backend
-/// ([`FlushLedger::store_and_commit`]).
+/// A backend that keeps no buffer ([`keeps_a_buffer`]) has nothing a flush
+/// could drop, whatever the flush answers: its flush is counted as failed
+/// and never as lost. A store committed in one step that fails for good
+/// dropped what the backend had buffered, by that step's contract: it is
+/// counted as lost on every backend ([`FlushLedger::store_and_commit`]).
 struct InFlight<'a> {
     ledger: &'a FlushLedger,
     /// Whether a failure for good, or a panic, dropped what the backend had
-    /// buffered: for a flush, whether the backend buffers what is stored
-    /// until a flush, and always for a store committed in one step.
+    /// buffered: for a flush, whether the backend keeps a buffer
+    /// ([`keeps_a_buffer`]), and always for a store committed in one step.
     buffers: bool,
     recorded: bool,
 }
@@ -92,22 +96,40 @@ impl Drop for InFlight<'_> {
     }
 }
 
+/// Whether `backend` can hold records of a wallet that are not on disk, for
+/// a later flush to write or to drop.
+///
+/// One that buffers what is stored until a flush does. So does one that
+/// commits a store in one step
+/// ([`PlatformWalletPersistence::store_and_commit`]), its `store` being the
+/// commit or not
+/// ([`PlatformWalletPersistence::store_commits_inline`]): by that step's
+/// contract a changeset whose commit failed transiently stays buffered, for
+/// a later flush or step to write. Only a backend whose store is the commit
+/// and that does not offer the step holds nothing: a flush of it only
+/// notifies the host.
+pub(crate) fn keeps_a_buffer(backend: &dyn PlatformWalletPersistence) -> bool {
+    !backend.store_commits_inline() || backend.offers_store_and_commit()
+}
+
 impl FlushLedger {
     /// Flush `wallet_id`'s records on `backend`: in progress from before the
     /// backend is called until its outcome is recorded, counted as failed
     /// when it fails, and as lost too when it fails for good (anything but a
     /// transient failure, which keeps the buffer) or the backend panics.
     ///
-    /// Never as lost on a backend whose store is the commit
-    /// ([`PlatformWalletPersistence::store_commits_inline`]): a flush there
-    /// only notifies the host, and what was stored is already on disk
-    /// whatever the notification answers.
+    /// Never as lost on a backend that keeps no buffer ([`keeps_a_buffer`]):
+    /// a flush there only notifies the host, and what was stored is already
+    /// on disk whatever the notification answers. As lost on one whose store
+    /// is the commit and that commits a store in one step: its flush writes
+    /// what a commit that failed transiently left buffered, and drops it
+    /// when it fails for good.
     pub(crate) fn flush(
         &self,
         backend: &dyn PlatformWalletPersistence,
         wallet_id: WalletId,
     ) -> Result<(), PersistenceError> {
-        let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
+        let mut in_flight = InFlight::enter(self, keeps_a_buffer(backend));
         let flushed = backend.flush(wallet_id);
         in_flight.record(flushed.as_ref().err());
         flushed
@@ -306,6 +328,54 @@ mod tests {
             assert_eq!(ledger.failed(), 1, "inline: {inline}");
             assert_eq!(ledger.lost(), u64::from(!inline), "inline: {inline}");
         }
+    }
+
+    /// A backend whose store is the commit and that commits a store in one
+    /// step, whose flush fails for good.
+    struct InlineInOneStepFailing;
+
+    impl PlatformWalletPersistence for InlineInOneStepFailing {
+        fn store_commits_inline(&self) -> bool {
+            true
+        }
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("the database is corrupt"))
+        }
+        fn offers_store_and_commit(&self) -> bool {
+            true
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// A backend whose store is the commit still keeps a buffer when it
+    /// commits a store in one step: a changeset whose commit failed
+    /// transiently stays in it. A flush of such a backend that fails for good
+    /// dropped that changeset, so it is counted as lost, as on a backend
+    /// that buffers every store.
+    #[test]
+    fn should_count_a_flush_that_fails_for_good_as_lost_on_an_inline_backend_that_commits_in_one_step(
+    ) {
+        assert!(keeps_a_buffer(&InlineInOneStepFailing));
+        assert!(!keeps_a_buffer(&Failing { inline: true }));
+        let ledger = FlushLedger::default();
+
+        let flushed = ledger.flush(&InlineInOneStepFailing, [0; 32]);
+
+        assert!(flushed.is_err_and(|error| !error.is_transient()));
+        assert_eq!(
+            (ledger.failed(), ledger.lost()),
+            (1, 1),
+            "what a failed commit left buffered went with the flush"
+        );
     }
 
     /// The ledgers of a backend instance live as long as the instance does,

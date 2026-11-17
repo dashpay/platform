@@ -227,6 +227,14 @@ takes, in either flush mode, so its result is for exactly what it staged:
   A poisoned lock is reported this way too (`LockPoisoned`): detection
   discards every buffered changeset, so the buffer is not as it was.
 
+That holds in `Immediate` mode as well. `store_commits_inline()` is `true`
+there because a `store()` that returns `Ok` is on disk, not because the buffer
+is always empty: a changeset whose commit failed transiently stays in it until
+the next `store()`, `flush()`, `commit_writes()` or `store_and_commit` writes
+it or drops it. A caller that asks whether everything stored is on disk
+flushes in either mode, which is what the wallet does for a backend that
+offers `store_and_commit`.
+
 A `SqlitePersister` configured with [`FlushMode::Manual`] does NOT
 auto-flush from `Drop`; it emits a `tracing::error!` on drop if the buffer
 still holds uncommitted writes (with `dirty_wallets` and `total_fields`

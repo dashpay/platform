@@ -1353,6 +1353,13 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    /// In [`FlushMode::Immediate`] a `store` that answers `Ok` is on disk.
+    /// That says nothing of an empty buffer: a `store` or a
+    /// [`store_and_commit`](Self::store_and_commit) whose commit failed
+    /// transiently left its changeset buffered, in this mode too, until the
+    /// next `store`, `flush`, `commit_writes` or `store_and_commit` writes
+    /// it or drops it. A caller that asks whether everything stored is on
+    /// disk flushes, in either mode.
     fn store_commits_inline(&self) -> bool {
         self.config.flush_mode == FlushMode::Immediate
     }
