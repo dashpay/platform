@@ -14,6 +14,16 @@ use dash_sdk::platform::Fetch;
 
 use super::*;
 
+/// What [`IdentityWallet::fetch_and_fold_identity`] does when storing the fold fails.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FoldStoreFailure {
+    /// Log it and publish the fold anyway.
+    Log,
+    /// Return it and leave the cache unchanged, so a retry still includes the
+    /// fold's key deltas.
+    Return,
+}
+
 /// Where the MASTER auth pubkey hash that probes a single identity
 /// index comes from. The two `load_identity_by_index*` entry points
 /// differ *only* in this: everything else (Platform unique-hash lookup,
@@ -351,7 +361,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        self.fetch_and_fold_identity(identity_id)
+        self.fetch_and_fold_identity(identity_id, FoldStoreFailure::Return)
             .await
             .map(|(identity, _)| identity)
             .map_err(|error| match error {
@@ -504,6 +514,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     pub(crate) async fn fetch_and_fold_identity(
         &self,
         identity_id: &Identifier,
+        on_store_failure: FoldStoreFailure,
     ) -> Result<(Identity, u64), PlatformWalletError> {
         // Verify identity exists in the manager.
         {
@@ -535,13 +546,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let mut wm = self.wallet_manager.write().await;
             let info = self.current_wallet_info_mut(&mut wm)?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                // Publish only after storage succeeds: the fold stores key deltas,
-                // so publishing a failed write would omit those keys on retry.
                 let mut refreshed = managed.clone();
                 refreshed.status = IdentityStatus::Active;
-                refreshed
-                    .store_fetched_identity(&identity, block_time, &self.persister)
-                    .map_err(|e| self.persister.classify_store_failure(e))?;
+                if let Err(e) =
+                    refreshed.store_fetched_identity(&identity, block_time, &self.persister)
+                {
+                    match on_store_failure {
+                        FoldStoreFailure::Log => {
+                            tracing::error!("Failed to persist changeset: {}", e)
+                        }
+                        FoldStoreFailure::Return => {
+                            return Err(self.persister.classify_store_failure(e))
+                        }
+                    }
+                }
                 *managed = refreshed;
                 // The cache as folded.
                 identity = managed.identity.clone();
