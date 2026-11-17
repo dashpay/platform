@@ -625,6 +625,12 @@ identity was prepared in the session. Pass only ordinary accounts to
 `bindShielded`: Rust adds identity accounts itself and refuses one requested
 by number.
 
+The call throws `identityNotFound` when the wallet holds no such identity,
+`shieldedRecoveryCorrupted` or `shieldedRecoveryKeysRequired` when the bind
+meets unusable persisted shielded state, and `walletOperation` for every other
+failure, such as a wallet that was not bound or a seed that does not derive the
+identity's key.
+
 ## Identity-funded shield recovery
 
 An unresolved identity-funded shield blocks another debit from the same identity

@@ -2050,6 +2050,14 @@ class PlatformWalletManager(
      * [bindShielded] of [walletId]. Repeated calls are idempotent. Only
      * meaningful on a shielded build ([Sdk.hasShielded]); the native entry
      * point is absent otherwise and this throws.
+     *
+     * Throws [DashSdkError.NotFound] when the wallet holds no identity
+     * [identityId], [DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted] or
+     * [DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired] when the bind
+     * meets unusable persisted shielded state, and
+     * [DashSdkError.PlatformWallet.WalletOperation] for every other failure
+     * (an unbound wallet, a seed that does not derive the identity's key),
+     * with the wallet's reason in the message.
      */
     suspend fun prepareShieldedIdentityAddress(
         walletId: ByteArray,

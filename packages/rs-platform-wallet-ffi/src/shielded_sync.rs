@@ -21,7 +21,7 @@ use platform_wallet::PlatformWalletError;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
-use crate::runtime::{block_on_worker, catch_query_panic, runtime};
+use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_send::resolve_wallet_and_coordinator;
 use crate::shielded_types::{
     ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
@@ -513,6 +513,33 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 // Identity shielded accounts
 // ---------------------------------------------------------------------------
 
+/// Post-panic guidance for exports that move no funds. Paired with
+/// `ErrorWalletOperation` in [`catch_query_panic`].
+const QUERY_PANIC_GUIDANCE: &str = "No funds were moved; the call may be retried.";
+
+/// [`catch_panic_to_code`] for exports that spend nothing (identity shielded
+/// account preparation). A panic there is a plain failure of the call, so it
+/// maps to [`PlatformWalletFFIResultCode::ErrorWalletOperation`] and the host
+/// may retry. An unwind that reaches the `extern "C"` frame aborts the
+/// process before the JNI guard on the far side can translate it, so these
+/// exports need the boundary as much as the spend path does.
+///
+/// The boundary only works where panics unwind: the Android and host/test
+/// profiles. The iOS profiles (`dev-ios` / `release-ios`) build with
+/// `panic = "abort"`, so on iOS a panic still ends the process before this
+/// guard sees it.
+fn catch_query_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        QUERY_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 /// Prepare the dedicated shielded account of a wallet-owned identity and
 /// write its default 43-byte raw Orchard address to `out_address`. Publishes
 /// nothing and moves no funds.
@@ -529,9 +556,19 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 /// call; it and the derived seed live in zeroizing buffers and are scrubbed
 /// before this function returns.
 ///
-/// `out_address` is zeroed on entry and written only on success. A panic
-/// inside the call is returned as `ErrorWalletOperation`: nothing was moved
-/// and the call may be retried.
+/// `out_address` is zeroed on entry and written only on success. Error
+/// codes a host sees:
+/// - `ErrorIdentityNotFound`: the wallet holds no identity with that id.
+/// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
+///   the bind step met unusable persisted shielded state.
+/// - `ErrorWalletOperation`: every other failure, including a wallet that
+///   was not bound, a seed that does not derive the identity's key, and an
+///   unknown wallet. The message carries the wallet's reason.
+///
+/// In a build that unwinds (Android and the host tests), a panic inside the
+/// call is returned as `ErrorWalletOperation`: nothing was moved and the call
+/// may be retried. The iOS profiles build with `panic = "abort"`, so there a
+/// panic ends the process; see [`catch_query_panic`].
 ///
 /// # Safety
 /// - `wallet_id_bytes` and `identity_id_bytes` must point at 32 readable bytes.
@@ -581,7 +618,11 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_identity_addre
                 address = bytes;
                 PlatformWalletFFIResult::ok()
             }
-            Err(e) => e.into(),
+            // Typed, as the wallet reports it to every caller that names an
+            // identity; everything else is a wallet-operation failure with the
+            // wallet's reason, as for the bind above.
+            Err(e @ PlatformWalletError::IdentityNotFound(..)) => e.into(),
+            Err(e) => map_shielded_error(e, "prepare shielded identity address"),
         }
     });
     if result.code == PlatformWalletFFIResultCode::Success {
@@ -1669,10 +1710,12 @@ mod identity_account_tests {
     use key_wallet::Mnemonic;
     use platform_wallet::changeset::PersistenceCapabilities;
     use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
+    use platform_wallet::PlatformWallet;
     use platform_wallet::{shielded_identity_account_index, MASTER_KEY_INDEX};
     use rs_sdk_ffi::{mnemonic_resolver_result, MnemonicResolverVTable};
     use std::collections::BTreeMap;
     use std::ffi::c_void;
+    use std::sync::Arc;
 
     /// The phrase the test resolver answers for every wallet id; the wallet
     /// under test is created from it, so the resolved seed belongs to it.
@@ -1717,9 +1760,9 @@ mod identity_account_tests {
     }
 
     /// A manager with a configured shielded store and one wallet created
-    /// from [`TEST_MNEMONIC`], bound on account 0 through the exported bind.
+    /// from [`TEST_MNEMONIC`] whose shielded sub-wallet is not bound.
     /// Returns the store path to clean up.
-    fn bound_manager() -> (Handle, [u8; 32], std::path::PathBuf) {
+    fn configured_manager() -> (Handle, [u8; 32], std::path::PathBuf) {
         unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
             0
         }
@@ -1761,7 +1804,16 @@ mod identity_account_tests {
                 .expect("create wallet")
                 .wallet_id()
         });
-        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        (
+            PLATFORM_WALLET_MANAGER_STORAGE.insert(manager),
+            wallet_id,
+            path,
+        )
+    }
+
+    /// [`configured_manager`], bound on account 0 through the exported bind.
+    fn bound_manager() -> (Handle, [u8; 32], std::path::PathBuf) {
+        let (handle, wallet_id, path) = configured_manager();
         let (_vtable, mut resolver) = test_resolver();
         let accounts = [0u32];
         let mut r = unsafe {
@@ -1883,28 +1935,37 @@ mod identity_account_tests {
         })
     }
 
-    /// Preparing through the export binds the identity's account next to
-    /// the ordinary one, returns that account's default address and records
-    /// the preparation.
-    #[test]
-    fn should_prepare_the_identity_account_and_bind_it() {
-        const IDENTITY_INDEX: u32 = 2;
-        let (handle, wallet_id, path) = bound_manager();
+    /// Adds the identity `id` at `identity_index` to the manager's wallet,
+    /// carrying the MASTER key the seed derives there, and returns the wallet.
+    fn add_identity_at_slot(
+        handle: Handle,
+        wallet_id: [u8; 32],
+        id: Identifier,
+        identity_index: u32,
+    ) -> Arc<PlatformWallet> {
         let wallet = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |manager| manager.get_wallet_blocking(&wallet_id))
             .flatten()
             .expect("the wallet");
-        let id = Identifier::from([0x42; 32]);
-        let identity = identity_at_slot(id, IDENTITY_INDEX);
+        let identity = identity_at_slot(id, identity_index);
         runtime().block_on(async {
             let mut wm = wallet.wallet_manager().write().await;
             wm.get_wallet_info_mut(&wallet_id)
                 .expect("the wallet's info")
                 .identity_manager
-                .add_identity(identity, IDENTITY_INDEX, wallet_id, wallet.persister())
+                .add_identity(identity, identity_index, wallet_id, wallet.persister())
                 .expect("add the identity");
         });
-        let account = shielded_identity_account_index(IDENTITY_INDEX).expect("identity account");
+        wallet
+    }
+
+    /// Calls the export for `id` with a pre-filled buffer and returns the
+    /// result code, its message and the buffer.
+    fn prepare(
+        handle: Handle,
+        wallet_id: [u8; 32],
+        id: Identifier,
+    ) -> (PlatformWalletFFIResultCode, Option<String>, [u8; 43]) {
         let (_vtable, mut resolver) = test_resolver();
         let mut out_address = [0xAAu8; 43];
         let mut r = unsafe {
@@ -1916,13 +1977,24 @@ mod identity_account_tests {
                 out_address.as_mut_ptr(),
             )
         };
-        assert_eq!(
-            r.code,
-            PlatformWalletFFIResultCode::Success,
-            "{:?}",
-            (!r.message.is_null()).then(|| message_of(&r))
-        );
+        let message = (!r.message.is_null()).then(|| message_of(&r));
+        let code = r.code;
         unsafe { platform_wallet_ffi_result_free(&mut r) };
+        (code, message, out_address)
+    }
+
+    /// Preparing through the export binds the identity's account next to
+    /// the ordinary one, returns that account's default address and records
+    /// the preparation.
+    #[test]
+    fn should_prepare_the_identity_account_and_bind_it() {
+        const IDENTITY_INDEX: u32 = 2;
+        let (handle, wallet_id, path) = bound_manager();
+        let id = Identifier::from([0x42; 32]);
+        let wallet = add_identity_at_slot(handle, wallet_id, id, IDENTITY_INDEX);
+        let account = shielded_identity_account_index(IDENTITY_INDEX).expect("identity account");
+        let (code, message, out_address) = prepare(handle, wallet_id, id);
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message:?}");
         let (default_address, prepared, bound) = runtime().block_on(async {
             (
                 wallet.shielded_default_address(account).await,
@@ -1933,9 +2005,97 @@ mod identity_account_tests {
         assert_eq!(default_address, Some(out_address));
         assert_eq!(prepared, Some(account));
         assert_eq!(bound, vec![0, account]);
-
         drop(wallet);
         destroy_manager(handle, path);
+    }
+
+    #[test]
+    fn should_return_the_same_address_when_prepared_twice() {
+        const IDENTITY_INDEX: u32 = 4;
+        let (handle, wallet_id, path) = bound_manager();
+        let id = Identifier::from([0x44; 32]);
+        let wallet = add_identity_at_slot(handle, wallet_id, id, IDENTITY_INDEX);
+        let account = shielded_identity_account_index(IDENTITY_INDEX).expect("identity account");
+        let (first_code, first_message, first) = prepare(handle, wallet_id, id);
+        assert_eq!(
+            first_code,
+            PlatformWalletFFIResultCode::Success,
+            "{first_message:?}"
+        );
+        let (second_code, second_message, second) = prepare(handle, wallet_id, id);
+        assert_eq!(
+            second_code,
+            PlatformWalletFFIResultCode::Success,
+            "{second_message:?}"
+        );
+        assert_eq!(first, second);
+        let (prepared, bound) = runtime().block_on(async {
+            (
+                wallet.prepared_shielded_identity_account(&id).await,
+                wallet.shielded_account_indices().await,
+            )
+        });
+        assert_eq!(prepared, Some(account));
+        assert_eq!(bound, vec![0, account]);
+        drop(wallet);
+        destroy_manager(handle, path);
+    }
+
+    /// The store is configured and the identity proves its slot, so the
+    /// call reaches the wallet, which refuses it because the wallet's
+    /// shielded sub-wallet was never bound (`ShieldedNotBound`). That reaches
+    /// the host as a wallet-operation failure, not as an unknown error.
+    #[test]
+    fn should_refuse_preparation_on_an_unbound_wallet() {
+        let (handle, wallet_id, path) = configured_manager();
+        let id = Identifier::from([0x43; 32]);
+        let wallet = add_identity_at_slot(handle, wallet_id, id, 3);
+        let (code, message, out_address) = prepare(handle, wallet_id, id);
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "{message:?}"
+        );
+        let message = message.expect("an error message");
+        assert!(
+            message.starts_with("prepare shielded identity address failed:")
+                && message.contains("Shielded sub-wallet not bound"),
+            "{message}"
+        );
+        assert_eq!(out_address, [0u8; 43]);
+        let prepared = runtime().block_on(wallet.prepared_shielded_identity_account(&id));
+        assert_eq!(prepared, None);
+        drop(wallet);
+        destroy_manager(handle, path);
+    }
+
+    #[test]
+    fn should_map_a_query_panic_to_a_retryable_wallet_operation() {
+        let mut result = catch_query_panic("shielded identity address preparation", || {
+            panic!("tokio worker panicked");
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded identity address preparation panicked")
+                && message.contains("tokio worker panicked")
+                && message.contains("may be retried"),
+            "{message}"
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_pass_a_query_result_through_when_nothing_panics() {
+        let result = catch_query_panic(
+            "shielded identity address preparation",
+            PlatformWalletFFIResult::ok,
+        );
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(result.message.is_null());
     }
 
     #[test]

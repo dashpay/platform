@@ -297,7 +297,13 @@ extension PlatformWalletManager {
     /// before the native call returns.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
-    /// flight, as `bindShielded` does: the preparation is a bind.
+    /// flight, as `bindShielded` does: the preparation is a bind. From the
+    /// native call it throws `identityNotFound` when the wallet holds no
+    /// identity `identityId`, `shieldedRecoveryCorrupted` or
+    /// `shieldedRecoveryKeysRequired` when the bind meets unusable persisted
+    /// shielded state, and `walletOperation` for every other failure (an
+    /// unbound wallet, a seed that does not derive the identity's key), with
+    /// the wallet's reason in the message.
     public func prepareShieldedIdentityAddress(
         walletId: Data,
         identityId: Data,
