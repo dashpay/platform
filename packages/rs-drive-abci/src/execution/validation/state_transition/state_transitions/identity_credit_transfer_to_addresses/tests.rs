@@ -5030,7 +5030,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should remove balance");
 
@@ -5174,7 +5173,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should remove balance");
 

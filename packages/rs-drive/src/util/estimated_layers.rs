@@ -337,6 +337,35 @@ impl EstimatedLayers {
         }
     }
 
+    /// Describes the layer at `path` as `layer` unless the description written last for it is
+    /// at least as deep (`estimate_levels`, which gives a description by element count a depth
+    /// too: one that may hold the most elements a layer can is 32 levels deep, the worst case);
+    /// the estimate keeps the description it does not write among the path's other
+    /// descriptions either way.
+    pub(crate) fn insert_keeping_deeper(
+        &mut self,
+        path: KeyInfoPath,
+        layer: EstimatedLayerInformation,
+    ) {
+        match self.last_written.entry(path) {
+            Entry::Occupied(mut written) => {
+                let kept = if written.get().estimated_layer_count.estimate_levels()
+                    >= layer.estimated_layer_count.estimate_levels()
+                {
+                    layer
+                } else {
+                    written.insert(layer)
+                };
+                if kept != *written.get() {
+                    keep_other_description(&mut self.other_descriptions, written.key(), kept);
+                }
+            }
+            Entry::Vacant(unwritten) => {
+                unwritten.insert(layer);
+            }
+        }
+    }
+
     /// The last description written for the layer at `path`.
     pub fn get(&self, path: &KeyInfoPath) -> Option<&EstimatedLayerInformation> {
         self.last_written.get(path)
@@ -376,10 +405,41 @@ impl EstimatedLayers {
     }
 }
 
+/// Describes the layer at `path` as `layer`, unless the estimate already describes it at least as
+/// deep ([`EstimatedLayers::insert_keeping_deeper`]).
+pub(crate) fn insert_estimated_layer_keeping_deeper(
+    estimated_costs_only_with_layer_info: &mut EstimatedLayers,
+    path: KeyInfoPath,
+    layer: EstimatedLayerInformation,
+) {
+    estimated_costs_only_with_layer_info.insert_keeping_deeper(path, layer);
+}
+
+/// Runs `register`, an estimation that overwrites the descriptions of the layers at `paths`, and
+/// puts back each description it replaced that was deeper.
+pub(crate) fn register_keeping_deeper_estimated_layers(
+    estimated_costs_only_with_layer_info: &mut EstimatedLayers,
+    paths: &[KeyInfoPath],
+    register: impl FnOnce(&mut EstimatedLayers),
+) {
+    let before: Vec<(KeyInfoPath, EstimatedLayerInformation)> = paths
+        .iter()
+        .filter_map(|path| {
+            estimated_costs_only_with_layer_info
+                .get(path)
+                .map(|layer| (path.clone(), *layer))
+        })
+        .collect();
+    register(estimated_costs_only_with_layer_info);
+    for (path, layer) in before {
+        insert_estimated_layer_keeping_deeper(estimated_costs_only_with_layer_info, path, layer);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grovedb::EstimatedLayerCount::ApproximateElements;
+    use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
     use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
     use grovedb::EstimatedSumTrees::{AllBigSumTrees, NoSumTrees};
     use grovedb::TreeType;
@@ -591,5 +651,91 @@ mod tests {
             Some(&at_level(4, AllSubtrees(1, NoSumTrees, None)))
         );
         assert_eq!(resolved.get(&undescribed), None);
+    }
+
+    fn layer(level: u32) -> EstimatedLayerInformation {
+        at_level(level, AllSubtrees(1, NoSumTrees, None))
+    }
+
+    fn level_at(estimation: &EstimatedLayers, path: &KeyInfoPath) -> Option<u32> {
+        estimation
+            .get(path)
+            .and_then(|layer| match layer.estimated_layer_count {
+                EstimatedLevel(level, _) => Some(level),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn should_insert_unless_a_deeper_or_equal_level_is_described() {
+        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let mut estimation = EstimatedLayers::new();
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(1));
+        assert_eq!(level_at(&estimation, &path), Some(1));
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(2));
+        assert_eq!(level_at(&estimation, &path), Some(2));
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(1));
+        assert_eq!(level_at(&estimation, &path), Some(2));
+        // A description by element count has a depth too: one that may hold the most elements
+        // a layer can (32 levels, the worst case) is kept over a shallower level, and one of a
+        // few elements gives way to a deeper level.
+        let at_max = EstimatedLayerInformation {
+            estimated_layer_count: PotentiallyAtMaxElements,
+            ..layer(0)
+        };
+        estimation.insert(path.clone(), at_max);
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(5));
+        assert_eq!(estimation.get(&path), Some(&at_max));
+        estimation.insert(
+            path.clone(),
+            EstimatedLayerInformation {
+                estimated_layer_count: ApproximateElements(3),
+                ..layer(0)
+            },
+        );
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(5));
+        assert_eq!(level_at(&estimation, &path), Some(5));
+    }
+
+    /// `insert_estimated_layer_keeping_deeper` writes the deeper of two descriptions and keeps
+    /// the other: a shallower description of wider nodes and a deeper one of narrower nodes
+    /// resolve to the wider nodes at the deeper depth, in either order.
+    #[test]
+    fn should_resolve_with_the_nodes_of_a_description_not_kept_deeper() {
+        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let shallow_wide = at_level(3, AllItems(32, 8, None));
+        let deep_narrow = at_level(4, AllItems(1, 1, None));
+        let deep_wide = at_level(4, AllItems(32, 8, None));
+        assert!(credits(&deep_wide) > credits(&deep_narrow));
+        for order in orders(&[shallow_wide, deep_narrow]) {
+            let mut estimation = EstimatedLayers::new();
+            for description in &order {
+                insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), *description);
+            }
+            assert_eq!(estimation.get(&path), Some(&deep_narrow), "order {order:?}");
+            let resolved = estimation
+                .resolve(PlatformVersion::latest())
+                .expect("expected to resolve");
+            assert_eq!(resolved.get(&path), Some(&deep_wide), "order {order:?}");
+        }
+    }
+
+    #[test]
+    fn should_put_back_a_deeper_level_an_estimation_overwrote() {
+        let deep = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let shallow = KeyInfoPath::from_known_path([[2u8].as_slice()]);
+        let mut estimation = EstimatedLayers::new();
+        estimation.insert(deep.clone(), layer(2));
+        estimation.insert(shallow.clone(), layer(0));
+        register_keeping_deeper_estimated_layers(
+            &mut estimation,
+            &[deep.clone(), shallow.clone()],
+            |estimation| {
+                estimation.insert(deep.clone(), layer(1));
+                estimation.insert(shallow.clone(), layer(1));
+            },
+        );
+        assert_eq!(level_at(&estimation, &deep), Some(2));
+        assert_eq!(level_at(&estimation, &shallow), Some(1));
     }
 }

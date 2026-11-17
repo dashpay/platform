@@ -2,6 +2,7 @@ mod address_tests;
 mod basic_tests;
 mod chain_lock_update_tests;
 mod comprehensive_tests;
+mod core_fork_activation_tests;
 mod core_height_increase;
 mod core_update_tests;
 mod credit_pool_backfill_tests;

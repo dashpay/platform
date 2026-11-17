@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import DashCoreLib from '@dashevo/dashcore-lib';
 import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import activateKnownCoreSporks from '../../../../core/activateKnownCoreSporks.js';
 
 import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
 
@@ -12,7 +13,6 @@ const { PrivateKey } = DashCoreLib;
  * @param {startCore} startCore
  * @param {generateBlocks} generateBlocks
  * @param {waitForCoreSync} waitForCoreSync
- * @param {activateCoreSpork} activateCoreSpork
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {generateBlsKeys} generateBlsKeys
@@ -26,7 +26,6 @@ export default function configureCoreTaskFactory(
   startCore,
   generateBlocks,
   waitForCoreSync,
-  activateCoreSpork,
   generateToAddressTask,
   registerMasternodeTask,
   generateBlsKeys,
@@ -241,10 +240,7 @@ export default function configureCoreTaskFactory(
                   'SPORK_19_CHAINLOCKS_ENABLED',
                 ];
 
-                await Promise.all(
-                  sporks.map(async (spork) => (
-                    activateCoreSpork(ctx.seedCoreService.getRpcClient(), spork))),
-                );
+                await activateKnownCoreSporks(ctx.seedCoreService.getRpcClient(), sporks);
               },
             },
             {

@@ -20,16 +20,18 @@ use platform_wallet::manager::accessors::{
     AccountAddressInfoSnapshot, AccountAddressPoolSnapshot, AccountMetadataSnapshot,
     AccountTransactionSnapshot, AccountUtxoSnapshot, AddressBanInfoSnapshot,
     CoreWalletStateSnapshot, IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot,
-    PlatformAddressProviderStateSnapshot, PlatformAddressSyncConfigSnapshot,
-    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
+    OutpointClass, OutpointOwnershipQuery, PlatformAddressProviderStateSnapshot,
+    PlatformAddressSyncConfigSnapshot, TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
+    WalletUtxoRow,
 };
 
 use crate::check_ptr;
 use crate::core_wallet_types::{
     AccountAddressPoolEntryFFI, AccountMetadataFFI, AccountTransactionEntryFFI,
     AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
-    IdentitySyncConfigFFI, IdentityWalletStateFFI, PlatformAddressProviderStateFFI,
-    PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    IdentitySyncConfigFFI, IdentityWalletStateFFI, OutpointOwnershipQueryFFI,
+    PlatformAddressProviderStateFFI, PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI,
+    WalletIdentityRowFFI, WalletUtxoEntryFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -864,7 +866,7 @@ fn txid_to_array(txid: &dashcore::Txid) -> [u8; 32] {
     out
 }
 
-fn optional_into_raw(s: Option<String>) -> *mut c_char {
+pub(crate) fn optional_into_raw(s: Option<String>) -> *mut c_char {
     match s {
         Some(string) => match CString::new(string) {
             Ok(c) => c.into_raw(),
@@ -982,174 +984,89 @@ fn account_spec_from_raw_tags(
     }
 }
 
-/// One page of a wallet's UTXO inventory across every funds account, in
-/// `(account, outpoint)` order, starting strictly after `cursor` (null =
-/// from the beginning). `limit` is clamped natively (0 = default page,
-/// never more than the engine's maximum); `out_has_more` says whether a
-/// further page exists. The rows and their strings/scripts are released by
-/// `platform_wallet_wallet_utxos_page_free`.
-///
-/// The wallet lock is taken OUTSIDE the handle registry's guard (see
-/// `platform_wallet_manager_sync_progress` for why), so a caller parked
-/// behind block processing never stalls `platform_wallet_manager_destroy`.
-///
-/// # Safety
-/// `wallet_id` points at 32 readable bytes; `cursor` is null or points at a
-/// live `WalletUtxoCursorFFI`; the out-pointers are writable.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
-    manager_handle: Handle,
-    wallet_id: *const u8,
-    cursor: *const crate::core_wallet_types::WalletUtxoCursorFFI,
-    limit: usize,
-    out_rows: *mut *const crate::core_wallet_types::WalletUtxoEntryFFI,
-    out_count: *mut usize,
-    out_has_more: *mut bool,
-) -> PlatformWalletFFIResult {
-    use crate::core_wallet_types::{account_type_to_tags, WalletUtxoEntryFFI};
-    use platform_wallet::manager::accessors::{wallet_utxos_page, WalletUtxoCursor};
+/// The C row for one inventory row. Its `address` and `script_pubkey`
+/// allocations move to the caller and are released by
+/// [`release_wallet_utxo_entry`].
+pub(crate) fn wallet_utxo_entry_ffi(row: WalletUtxoRow) -> WalletUtxoEntryFFI {
+    use crate::core_wallet_types::{account_type_to_tags, OutPointFFI};
 
-    check_ptr!(wallet_id);
-    check_ptr!(out_rows);
-    check_ptr!(out_count);
-    check_ptr!(out_has_more);
-    *out_rows = std::ptr::null();
-    *out_count = 0;
-    *out_has_more = false;
-    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-
-    let after: Option<WalletUtxoCursor> = if cursor.is_null() {
-        None
+    let tags = account_type_to_tags(&row.account_type);
+    let script_len = row.script_pubkey.len();
+    let script_ptr = if script_len == 0 {
+        std::ptr::null_mut()
     } else {
-        let c = &*cursor;
-        let spec = account_spec_from_raw_tags(
-            c.type_tag,
-            c.standard_tag,
-            c.index,
-            c.registration_index,
-            c.key_class,
-            c.user_identity_id,
-            c.friend_identity_id,
-        );
-        let account_type = match account_type_from_spec_ref(&spec) {
-            Ok(at) => at,
-            Err(e) => {
-                return PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                    format!("cursor: {e}"),
-                );
-            }
-        };
-        Some((account_type, dashcore::OutPoint::from(&c.outpoint)))
+        Box::into_raw(row.script_pubkey.into_boxed_slice()) as *mut u8
     };
-
-    let Some(wallet_manager) =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.wallet_manager_arc())
-    else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "Manager handle invalid".to_string(),
-        );
-    };
-    let (rows, has_more) = {
-        let wm = wallet_manager.blocking_read();
-        wallet_utxos_page(&wm, &wid, after.as_ref(), limit)
-    };
-    *out_has_more = has_more;
-    if rows.is_empty() {
-        return PlatformWalletFFIResult::ok();
+    let address = CString::new(row.address)
+        .unwrap_or_else(|_| CString::new("").expect("empty string has no NUL"))
+        .into_raw();
+    WalletUtxoEntryFFI {
+        type_tag: tags.type_tag,
+        standard_tag: tags.standard_tag,
+        index: tags.index,
+        registration_index: tags.registration_index,
+        key_class: tags.key_class,
+        user_identity_id: tags.user_identity_id,
+        friend_identity_id: tags.friend_identity_id,
+        outpoint: OutPointFFI::from(&row.outpoint),
+        value_duffs: row.value_duffs,
+        address,
+        script_pubkey: script_ptr,
+        script_pubkey_len: script_len,
+        height: row.height,
+        is_confirmed: row.is_confirmed,
+        is_instantlocked: row.is_instantlocked,
+        is_coinbase: row.is_coinbase,
+        is_locked: row.is_locked,
     }
-
-    let entries: Vec<WalletUtxoEntryFFI> = rows
-        .into_iter()
-        .map(|row| {
-            let tags = account_type_to_tags(&row.account_type);
-            let script_len = row.script_pubkey.len();
-            let script_ptr = if script_len == 0 {
-                std::ptr::null_mut()
-            } else {
-                Box::into_raw(row.script_pubkey.into_boxed_slice()) as *mut u8
-            };
-            let address = CString::new(row.address)
-                .unwrap_or_else(|_| CString::new("").expect("empty string has no NUL"))
-                .into_raw();
-            WalletUtxoEntryFFI {
-                type_tag: tags.type_tag,
-                standard_tag: tags.standard_tag,
-                index: tags.index,
-                registration_index: tags.registration_index,
-                key_class: tags.key_class,
-                user_identity_id: tags.user_identity_id,
-                friend_identity_id: tags.friend_identity_id,
-                outpoint: crate::core_wallet_types::OutPointFFI::from(&row.outpoint),
-                value_duffs: row.value_duffs,
-                address,
-                script_pubkey: script_ptr,
-                script_pubkey_len: script_len,
-                height: row.height,
-                is_confirmed: row.is_confirmed,
-                is_instantlocked: row.is_instantlocked,
-                is_coinbase: row.is_coinbase,
-                is_locked: row.is_locked,
-            }
-        })
-        .collect();
-    let count = entries.len();
-    *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
-    *out_count = count;
-    PlatformWalletFFIResult::ok()
 }
 
-/// Release a page returned by `platform_wallet_wallet_utxos_page`.
+/// Release the allocations one [`wallet_utxo_entry_ffi`] row owns (not the
+/// row itself).
 ///
 /// # Safety
-/// `rows`/`count` must be exactly what one call returned, released once.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_wallet_utxos_page_free(
-    rows: *mut crate::core_wallet_types::WalletUtxoEntryFFI,
-    count: usize,
-) {
-    if rows.is_null() || count == 0 {
-        return;
+/// `entry` must come from [`wallet_utxo_entry_ffi`], released once.
+pub(crate) unsafe fn release_wallet_utxo_entry(entry: &WalletUtxoEntryFFI) {
+    if !entry.address.is_null() {
+        let _ = CString::from_raw(entry.address);
     }
-    let slice = std::slice::from_raw_parts(rows, count);
-    for entry in slice {
-        if !entry.address.is_null() {
-            let _ = CString::from_raw(entry.address);
-        }
-        if !entry.script_pubkey.is_null() && entry.script_pubkey_len > 0 {
-            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                entry.script_pubkey,
-                entry.script_pubkey_len,
-            ));
-        }
+    if !entry.script_pubkey.is_null() && entry.script_pubkey_len > 0 {
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            entry.script_pubkey,
+            entry.script_pubkey_len,
+        ));
     }
-    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(rows, count));
 }
 
-/// Classify `count` store rows for `wallet_id` — see the
-/// `OUTPOINT_CLASS_*` constants; `out_classes[i]` answers `queries[i]`, so
-/// `out_classes` must have room for `count` bytes. A query whose account
-/// tag this build cannot map keeps `OUTPOINT_CLASS_UNKNOWN` in its slot
-/// and the remaining queries are still classified; the call fails only on
-/// a bad handle or pointer. Cost is `count × accounts`, never the size of
-/// the inventory. Same lock discipline as
-/// `platform_wallet_wallet_utxos_page`.
+/// The error for a manager handle that is not live.
+pub(crate) fn invalid_manager_handle() -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorInvalidHandle,
+        "Manager handle invalid".to_string(),
+    )
+}
+
+/// The marshalling of `platform_wallet_txo_reconcile_classify_outpoints`:
+/// read `count` store rows, hand the ones this build can map to
+/// `classify`, which makes the one engine call, and write its answers back
+/// to their positions in `out_classes`. A query whose account tag this
+/// build cannot map keeps `OUTPOINT_CLASS_UNKNOWN` in its slot. An `Err`
+/// from `classify` is returned as is.
 ///
 /// # Safety
 /// `wallet_id` points at 32 readable bytes; `queries` points at `count`
 /// live entries whose script pointers are valid for the call;
 /// `out_classes` is writable for `count` bytes.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_classify_outpoints(
-    manager_handle: Handle,
+pub(crate) unsafe fn classify_outpoint_rows(
     wallet_id: *const u8,
-    queries: *const crate::core_wallet_types::OutpointOwnershipQueryFFI,
+    queries: *const OutpointOwnershipQueryFFI,
     count: usize,
     out_classes: *mut u8,
+    classify: impl FnOnce(
+        [u8; 32],
+        Vec<OutpointOwnershipQuery>,
+    ) -> Result<Vec<OutpointClass>, PlatformWalletFFIResult>,
 ) -> PlatformWalletFFIResult {
-    use platform_wallet::manager::accessors::{classify_outpoints, OutpointOwnershipQuery};
-
     check_ptr!(wallet_id);
     if count == 0 {
         return PlatformWalletFFIResult::ok();
@@ -1165,7 +1082,7 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
     // behind it is durable, so a batch failure would repeat on every run,
     // and the caller already leaves `Unknown` alone.
     let out = std::slice::from_raw_parts_mut(out_classes, count);
-    out.fill(platform_wallet::manager::accessors::OutpointClass::Unknown.as_u8());
+    out.fill(OutpointClass::Unknown.as_u8());
     let mut owned: Vec<OutpointOwnershipQuery> = Vec::with_capacity(count);
     let mut positions: Vec<usize> = Vec::with_capacity(count);
     for (i, q) in std::slice::from_raw_parts(queries, count)
@@ -1198,17 +1115,9 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
         });
     }
 
-    let Some(wallet_manager) =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.wallet_manager_arc())
-    else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "Manager handle invalid".to_string(),
-        );
-    };
-    let classes = {
-        let wm = wallet_manager.blocking_read();
-        classify_outpoints(&wm, &wid, &owned)
+    let classes = match classify(wid, owned) {
+        Ok(classes) => classes,
+        Err(error) => return error,
     };
     for (position, class) in positions.into_iter().zip(classes) {
         out[position] = class.as_u8();

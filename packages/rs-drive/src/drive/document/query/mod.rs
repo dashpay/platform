@@ -138,13 +138,11 @@ impl Drive {
             protocol_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = self.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                self.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -193,13 +191,11 @@ impl Drive {
             protocol_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = self.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                self.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -232,13 +228,11 @@ impl Drive {
             protocol_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = self.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                self.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -295,13 +289,11 @@ impl Drive {
                 protocol_version,
             )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = self.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                self.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -360,13 +352,11 @@ impl Drive {
             protocol_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = self.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                self.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -461,14 +451,8 @@ impl Drive {
             platform_version,
         )?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result = Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                epoch,
-                self.config.epochs_per_era,
-                platform_version,
-                None,
-            )?;
+            let fee_result =
+                self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
             fee_result.processing_fee
         } else {
             0
@@ -605,7 +589,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -666,7 +649,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -737,7 +719,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -842,7 +823,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 

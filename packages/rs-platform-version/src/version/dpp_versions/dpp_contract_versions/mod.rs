@@ -112,10 +112,11 @@ pub struct DocumentTypeMethodVersions {
     /// keyword: the method returns an empty result there, so the shipped
     /// `DataContract::validate_document_properties` 0 that calls it is inert.
     pub validate_property_constraints: OptionalFeatureVersion,
-    /// `Index::extract_contested_values`: writes an identifier property given as bytes or as
-    /// an array of byte values as `Value::Identifier` in a contest's index values, so every
-    /// contender names one contest with one poll. `None` on versions that predate it, where
-    /// the values are taken as given.
+    /// `Index::extract_contested_values`: writes a contest's index values one way, so every
+    /// contender names one contest with one poll. Generation 0 writes an identifier property
+    /// given as bytes or as an array of byte values as `Value::Identifier`; generation 1 writes
+    /// the value of every property the one way its type keys it. `None` on versions that
+    /// predate it, where the values are taken as given.
     pub canonical_contested_index_values: OptionalFeatureVersion,
     /// `fill_generated_properties`: writes each `generatedFrom` property a
     /// created or replaced document leaves out, generated from its params,
@@ -133,6 +134,12 @@ pub struct DocumentTypeMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
+    /// The contract grammar (document meta-schema generation). From generation 3 an index
+    /// can key the elements of a typed array and time and integer windows.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves
+    /// `contains` / `containsAny` clauses and window selections
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub document_type_schema: FeatureVersion,
     /// How full validation checks a document type's schema at registration. 0: against the
     /// document meta-schema `document_type_schema` names, through the `jsonschema` crate,
@@ -146,7 +153,12 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     /// Folds the `refersTo` reference keyword into the parsed property type.
     /// `None` on versions that predate the keyword: they ignore it entirely,
-    /// exactly as they parsed before it existed.
+    /// exactly as they parsed before it existed. 0 (protocol version 14) reads every
+    /// reference that names its target in the schema. 1 (protocol version 15) also reads,
+    /// on an identifier property, a permanent or moderated document reference whose target
+    /// the referring document names (`contractId` and `documentType` written
+    /// `"$self.<property>"`, with `documentTypeRequirements`), and refuses such a
+    /// declaration wherever else a reference sits.
     pub apply_property_reference: OptionalFeatureVersion,
     /// Parses the `requiredSince` property keyword (the contract version from
     /// which a property is required). `None` on versions that predate the
@@ -204,6 +216,14 @@ pub struct DocumentTypeSchemaVersions {
     /// the contracts admitted under meta-schema v0, which left the doctype level open. 0
     /// (protocol version 15).
     pub parse_private_document: OptionalFeatureVersion,
+    /// `ContestedIndexResolution::try_from_schema_value`: reads the `resolution` a contested
+    /// index declares. Version 0 also reads 2
+    /// (`ContestedIndexResolution::MasternodeVoteOnDocuments`): each document entered for the
+    /// index values is a contender of its own, named by its document id, so an identity may
+    /// enter several. `None` on versions that predate it: the value is converted as it always
+    /// was, which refuses 2 as an unknown resolution, and so do the meta-schemas (v1 to v3
+    /// list the resolutions they admit). 0 (protocol version 15).
+    pub parse_contested_documents_resolution: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
@@ -279,9 +299,12 @@ mod tests {
     }
 
     /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
-    /// sized from the private document store limits, and reads, proves and verifies a page of
-    /// it through `fetch_private_document_entries`, `prove_private_document_entries` and
-    /// `verify_private_document_entries`: a protocol version parsing private types without
+    /// sized from the private document store limits, reads, proves and verifies a page of it
+    /// through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`, and appends a private document create's entries,
+    /// at most `max_private_document_entries_per_transition` of them, through
+    /// `append_private_document_entries_operations`, after the transition's basic structure: a
+    /// protocol version parsing private types without
     /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
@@ -338,6 +361,29 @@ mod tests {
                         .methods
                         .document
                         .prove_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "append_private_document_entries_operations",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .append_private_document_entries_operations
+                        .is_some(),
+                ),
+                (
+                    "max_private_document_entries_per_transition",
+                    limits.max_private_document_entries_per_transition.is_some(),
+                ),
+                (
+                    "private_document_create_from_shielded_pool basic_structure",
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                        .basic_structure
                         .is_some(),
                 ),
                 (

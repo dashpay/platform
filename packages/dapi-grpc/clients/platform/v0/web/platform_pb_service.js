@@ -298,6 +298,15 @@ Platform.waitForStateTransitionResult = {
   responseType: platform_pb.WaitForStateTransitionResultResponse
 };
 
+Platform.getRecentStateTransitionStatus = {
+  methodName: "getRecentStateTransitionStatus",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetRecentStateTransitionStatusRequest,
+  responseType: platform_pb.GetRecentStateTransitionStatusResponse
+};
+
 Platform.getConsensusParams = {
   methodName: "getConsensusParams",
   service: Platform,
@@ -692,6 +701,24 @@ Platform.getPrivateDocumentEntries = {
   responseStream: false,
   requestType: platform_pb.GetPrivateDocumentEntriesRequest,
   responseType: platform_pb.GetPrivateDocumentEntriesResponse
+};
+
+Platform.getOwnerTransactionsInBlock = {
+  methodName: "getOwnerTransactionsInBlock",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetOwnerTransactionsInBlockRequest,
+  responseType: platform_pb.GetOwnerTransactionsInBlockResponse
+};
+
+Platform.getBlocks = {
+  methodName: "getBlocks",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetBlocksRequest,
+  responseType: platform_pb.GetBlocksResponse
 };
 
 exports.Platform = Platform;
@@ -1667,6 +1694,37 @@ PlatformClient.prototype.waitForStateTransitionResult = function waitForStateTra
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.waitForStateTransitionResult, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getRecentStateTransitionStatus = function getRecentStateTransitionStatus(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getRecentStateTransitionStatus, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -3031,6 +3089,68 @@ PlatformClient.prototype.getPrivateDocumentEntries = function getPrivateDocument
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getPrivateDocumentEntries, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getOwnerTransactionsInBlock = function getOwnerTransactionsInBlock(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getOwnerTransactionsInBlock, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getBlocks = function getBlocks(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getBlocks, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

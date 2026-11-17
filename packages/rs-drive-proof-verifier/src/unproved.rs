@@ -34,7 +34,6 @@ use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;

@@ -39,6 +39,10 @@ pub const PROPOSAL_DOCUMENT_TYPE_NAME: &str = "proposal";
 /// proposal's own type. A contested create names its contested index there instead.
 pub const DECISION_PROPOSAL_FUND_NAME: &str = PROPOSAL_DOCUMENT_TYPE_NAME;
 
+/// The name of the multiple choice proposal document type: a question whose answers are the
+/// choices entered for it, which contend in a masternode vote the first choice opens.
+pub const MULTIPLE_CHOICE_PROPOSAL_DOCUMENT_TYPE_NAME: &str = "multipleChoiceProposal";
+
 /// The properties of a proposal.
 pub mod properties {
     /// The question, in one line. Editable for a day after the proposal is created.
@@ -74,6 +78,25 @@ pub fn decision_proposal_required_fund(platform_version: &PlatformVersion) -> Cr
         .fee_version
         .vote_resolution_fund_fees
         .decision_proposal_fund_required_amount
+}
+
+/// Whether a document of `document_type_name` in the contract `contract_id` is a multiple
+/// choice proposal: a `multipleChoiceProposal` of the decision proposals contract. Its create
+/// opens no poll and states no fund; it pays the multiple choice proposal processing fee.
+pub fn is_multiple_choice_proposal(contract_id: &Identifier, document_type_name: &str) -> bool {
+    *contract_id == DECISION_PROPOSALS_CONTRACT_ID
+        && document_type_name == MULTIPLE_CHOICE_PROPOSAL_DOCUMENT_TYPE_NAME
+}
+
+/// What creating one multiple choice proposal adds to the processing fee of its batch: the
+/// fee version's `multiple_choice_proposal_processing_fee`. Unlike a yes/no proposal's fund
+/// it prefunds no votes, since the proposal opens no poll: it goes to the processing fee
+/// pools, and the create does not state it. 0 before protocol version 15.
+pub fn multiple_choice_proposal_processing_fee(platform_version: &PlatformVersion) -> Credits {
+    platform_version
+        .fee_version
+        .vote_resolution_fund_fees
+        .multiple_choice_proposal_processing_fee
 }
 
 /// The id of the yes/no poll the proposal `document_id` opens: the id of the purpose

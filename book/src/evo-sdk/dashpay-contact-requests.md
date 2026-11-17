@@ -46,6 +46,38 @@ identity, account, and address index. The sender then encrypts that xpub with an
 ECDH shared secret from the sender's identity encryption private key and the
 recipient's identity decryption public key.
 
+## What consensus checks
+
+From protocol version 15 a contact request may also carry the optional
+`encryptedShieldedAddress`: the sender's shielded payment address for this
+contact, encrypted with the same shared secret. Wallets write it in 64 bytes:
+
+- 16 bytes: AES-CBC initialization vector, drawn at random for this field
+- 48 bytes: AES-CBC ciphertext of the 43-byte address (an 11-byte diversifier
+  followed by a 32-byte transmission key)
+
+That is the current encoding, not the only length the contract accepts: it
+takes 64 or 80 bytes, the two lengths in its range that are an IV plus whole
+blocks, and wallets keep 80 for a later encoding. A reader that cannot decode
+a value ignores it instead of refusing the contact request. A sender gives
+each contact a different address, so a payment that arrives on one is
+attributed to that contact.
+
+From protocol version 15 the DashPay contract (v3) states these checks in its
+schema, and a contact request that fails one is refused (and the fee charged):
+
+| Rule | Declared as | Error |
+| --- | --- | --- |
+| `toUserId` is not the sender | `distinctFrom: "$ownerId"` on `toUserId` | `DocumentPropertyNotDistinctError` (10419) |
+| The recipient identity exists | `refersTo` of type `identity` on `toUserId` | `ReferencedEntityNotFoundError` (40120) |
+| `encryptedPublicKey`, `encryptedAccountLabel` and `encryptedShieldedAddress` are a 16-byte IV plus whole 16-byte blocks | `encryptedFor` with scheme `ecdh-secp256k1-aes256-cbc` | `InvalidEncryptedPropertyShapeError` (10420) |
+
+Up to protocol version 14 a data trigger made only the first two checks and
+reported both as a `DataTriggerConditionError` (40500). Neither version checks
+that the two key indexes name keys the identities hold, the purpose of those
+keys, or that the bytes decrypt. Wallets and SDKs can read the encryption
+recipe from the contract (`encrypted_properties()` in Rust).
+
 ## Derive the contact payment xpub
 
 ```typescript

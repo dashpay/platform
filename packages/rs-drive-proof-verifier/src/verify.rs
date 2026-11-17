@@ -111,7 +111,8 @@ fn ensure_proof_signed_at_verifier_version(
 /// ## Returns
 ///
 /// Returns:
-/// * `Ok(())` when the proof is valid
+/// * `Ok(())` when the proof is valid, after reporting the signing quorum
+///   and the response's Core height to [ContextProvider::core_height_verified]
 /// * `Err(Error)` when the proof is invalid
 ///
 pub(crate) fn verify_tenderdash_proof(
@@ -128,6 +129,11 @@ pub(crate) fn verify_tenderdash_proof(
 /// Verify a Tenderdash signature for an endpoint whose proof payload is not a
 /// direct `GroveDBProof` envelope. The endpoint must validate the version of
 /// every nested GroveDB proof before calling this function.
+///
+/// Once the signature verifies, and only then, the response's Core ChainLocked
+/// height is reported to [ContextProvider::core_height_verified], with the
+/// quorum type and hash its key was looked up by: the quorum signed it, so it
+/// is a height Platform committed.
 pub(crate) fn verify_tenderdash_signature(
     proof: &Proof,
     mtd: &ResponseMetadata,
@@ -149,14 +155,7 @@ pub(crate) fn verify_tenderdash_signature(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
-    let pubkey_bytes = provider
-        .get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)
-        .map_err(|error| Error::QuorumKeyUnavailable {
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height: core_locked_height,
-            error,
-        })?;
+    let pubkey_bytes = quorum_public_key(provider, quorum_type, quorum_hash, core_locked_height)?;
 
     let state_id = StateId {
         app_version: version,
@@ -198,32 +197,83 @@ pub(crate) fn verify_tenderdash_signature(
             error: e.to_string(),
         })?;
 
-    let signature = TryInto::<[u8; 96]>::try_into(proof.signature.as_slice()).map_err(|e| {
-        Error::InvalidSignatureFormat {
+    tracing::trace!(?state_id, "verify the signature over a state id");
+
+    verify_quorum_signature(
+        provider,
+        quorum_type,
+        quorum_hash,
+        core_locked_height,
+        &pubkey_bytes,
+        &sign_digest,
+        &proof.signature,
+    )
+}
+
+/// The public key the provider holds for the quorum a response names as its signer.
+///
+/// The arguments come from a response that is not verified yet: they say which key to look
+/// for, not that the quorum exists.
+pub(crate) fn quorum_public_key(
+    provider: &dyn ContextProvider,
+    quorum_type: u32,
+    quorum_hash: [u8; 32],
+    core_chain_locked_height: u32,
+) -> Result<[u8; 48], Error> {
+    provider
+        .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+        .map_err(|error| Error::QuorumKeyUnavailable {
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height,
+            error,
+        })
+}
+
+/// Verify a quorum's threshold `signature` over `sign_digest` with `public_key`, the key
+/// [`quorum_public_key`] returned for the same quorum and height.
+///
+/// Once the signature verifies, and only then, the Core ChainLocked height is reported to
+/// [ContextProvider::core_height_verified], with the quorum type and hash its key was looked
+/// up by. The caller passes a height the signed data covers, so it is a height Platform
+/// committed.
+pub(crate) fn verify_quorum_signature(
+    provider: &dyn ContextProvider,
+    quorum_type: u32,
+    quorum_hash: [u8; 32],
+    core_chain_locked_height: u32,
+    public_key: &[u8; 48],
+    sign_digest: &[u8],
+    signature: &[u8],
+) -> Result<(), Error> {
+    let signature =
+        TryInto::<[u8; 96]>::try_into(signature).map_err(|e| Error::InvalidSignatureFormat {
             error: "invalid signature size: ".to_string() + &e.to_string(),
-        }
-    })?;
+        })?;
 
     let pubkey =
-        bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
+        bls::PublicKey::try_from(public_key.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
         })?;
 
     tracing::trace!(
-        ?state_id,
         signature = hex::encode(signature),
-        sign_digest = hex::encode(&sign_digest),
+        sign_digest = hex::encode(sign_digest),
         ?pubkey,
         "verify signature"
     );
 
-    match verify_signature_digest(&sign_digest, &signature, &pubkey)? {
-        true => Ok(()),
+    match verify_signature_digest(sign_digest, &signature, &pubkey)? {
+        true => {
+            // Only now is the Core height one the quorum signed.
+            provider.core_height_verified(quorum_type, quorum_hash, core_chain_locked_height);
+            Ok(())
+        }
         false => Err(Error::InvalidSignature {
             error: format!(
                 "signature {} could not be verified with public key {} for sign digest {}",
                 hex::encode(signature),
-                hex::encode(pubkey_bytes),
+                hex::encode(public_key),
                 hex::encode(sign_digest)
             ),
         }),
@@ -263,7 +313,7 @@ mod tests {
     };
     use platform_serialization::PLATFORM_BINCODE_CONFIG;
     use std::collections::BTreeMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     fn grovedb_proof_bytes(version: u32) -> Vec<u8> {
         let proof = match version {
@@ -420,18 +470,30 @@ mod tests {
 
     /// A ContextProvider that returns a cryptographically valid public key
     /// so that tests can progress past the public-key parsing step and
-    /// reach deeper code paths (e.g. signature verification).
+    /// reach deeper code paths (e.g. signature verification). It records
+    /// the quorums and Core heights reported verified.
     struct ValidKeyContextProvider {
         pubkey_bytes: [u8; 48],
+        verified: Mutex<Vec<(u32, [u8; 32], u32)>>,
     }
 
     impl ValidKeyContextProvider {
         fn new() -> Self {
-            let (_, pk) = test_keypair();
-            let pk_vec = pk.to_bytes().to_vec();
+            Self::serving(&test_keypair().0)
+        }
+
+        /// Serves the public key of `key`.
+        fn serving(key: &bls::SecretKey) -> Self {
             let mut pubkey_bytes = [0u8; 48];
-            pubkey_bytes.copy_from_slice(&pk_vec);
-            Self { pubkey_bytes }
+            pubkey_bytes.copy_from_slice(&key.public_key().to_bytes());
+            Self {
+                pubkey_bytes,
+                verified: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn verified(&self) -> Vec<(u32, [u8; 32], u32)> {
+            self.verified.lock().expect("not poisoned").clone()
         }
     }
 
@@ -462,6 +524,19 @@ mod tests {
 
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
+        }
+
+        fn core_height_verified(
+            &self,
+            quorum_type: u32,
+            quorum_hash: [u8; 32],
+            core_chain_locked_height: u32,
+        ) {
+            self.verified.lock().expect("not poisoned").push((
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ));
         }
     }
 
@@ -733,12 +808,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
-        let metadata = test_metadata();
-        let provider = ValidKeyContextProvider::new();
-        let (key, _) = test_keypair();
-        let root = [7; 32];
+    /// A proof of `root` at `metadata`, signed by `key` as a quorum signs a
+    /// precommit.
+    fn signed_proof(key: &bls::SecretKey, metadata: &ResponseMetadata, root: [u8; 32]) -> Proof {
         let mut proof = Proof {
             grovedb_proof: grovedb_proof_bytes(1),
             quorum_hash: vec![2; 32],
@@ -778,6 +850,16 @@ mod tests {
             )
             .expect("hash vote");
         proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
+        proof
+    }
+
+    #[test]
+    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+        let (key, _) = test_keypair();
+        let root = [7; 32];
+        let proof = signed_proof(&key, &metadata, root);
         verify_tenderdash_proof(&proof, &metadata, &root, &provider)
             .expect("matching app hash control");
         let mut different_root = root;
@@ -786,6 +868,47 @@ mod tests {
             verify_tenderdash_proof(&proof, &metadata, &different_root, &provider),
             Err(Error::InvalidSignature { .. })
         ));
+    }
+
+    /// The provider learns a response's Core height only once the quorum's
+    /// signature over it verified: a response with an altered height, or
+    /// signed by another key, reports nothing, so a forged response cannot
+    /// pass for Platform progress.
+    #[test]
+    fn should_report_the_core_height_verified_only_after_the_signature_verifies() {
+        let (key, _) = test_keypair();
+        let root = [7; 32];
+        let metadata = ResponseMetadata {
+            core_chain_locked_height: 4321,
+            ..test_metadata()
+        };
+        let proof = signed_proof(&key, &metadata, root);
+
+        let provider = ValidKeyContextProvider::serving(&key);
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider).expect("verifies");
+        // With the quorum that signed it, as the key was looked up.
+        assert_eq!(provider.verified(), [(1, [2; 32], 4321)]);
+
+        // The same signature, with the Core height one above the signed one.
+        let provider = ValidKeyContextProvider::serving(&key);
+        let forged = ResponseMetadata {
+            core_chain_locked_height: 4322,
+            ..metadata.clone()
+        };
+        assert!(matches!(
+            verify_tenderdash_proof(&proof, &forged, &root, &provider),
+            Err(Error::InvalidSignature { .. })
+        ));
+        assert!(provider.verified().is_empty());
+
+        // Signed by a key other than the one the provider serves.
+        let other = bls::SecretKey::from_be_bytes(&[0x11; 32]).expect("a secret key");
+        let provider = ValidKeyContextProvider::serving(&other);
+        assert!(matches!(
+            verify_tenderdash_proof(&proof, &metadata, &root, &provider),
+            Err(Error::InvalidSignature { .. })
+        ));
+        assert!(provider.verified().is_empty());
     }
 
     mod verify_page_drive_proves {

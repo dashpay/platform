@@ -64,6 +64,36 @@ impl Drive {
             .owned_document_info
             .document_info
             .get_storage_flags_ref();
+        // The key the poll keeps this contender under: its owner's id, or, in a vote among
+        // documents, its own id, so that an identity may enter several. No contract
+        // registered before protocol version 15 declares that resolution, so every poll
+        // before it keys its contenders by their owners, as it always did.
+        let contender_key = if contested_index
+            .contested_index
+            .as_ref()
+            .is_some_and(|contested| contested.resolution.contenders_are_documents())
+        {
+            match document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_document_id_as_slice()
+            {
+                Some(document_id) => <[u8; 32]>::try_from(document_id).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a contested document's id must be 32 bytes",
+                    ))
+                })?,
+                // An estimate has no document: any key of this size prices the contender
+                None if estimated_costs_only_with_layer_info.is_some() => owner_id,
+                None => {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a contested document must have an id",
+                    )))
+                }
+            }
+        } else {
+            owner_id
+        };
 
         // we need to construct the path for documents on the contract
         // the path is
@@ -240,7 +270,7 @@ impl Drive {
         }
 
         self.batch_insert_empty_tree_if_not_exists(
-            DriveKeyInfo::Key(owner_id.to_vec()).add_path_info(index_path_info.clone()),
+            DriveKeyInfo::Key(contender_key.to_vec()).add_path_info(index_path_info.clone()),
             TreeType::NormalTree,
             storage_flags,
             choice_apply_type,
@@ -275,7 +305,7 @@ impl Drive {
         )?;
 
         let mut towards_identity_index_path_info = index_path_info.clone();
-        towards_identity_index_path_info.push(DriveKeyInfo::Key(owner_id.to_vec()))?;
+        towards_identity_index_path_info.push(DriveKeyInfo::Key(contender_key.to_vec()))?;
 
         //                Inter-wizard championship (event type)
         //                             |

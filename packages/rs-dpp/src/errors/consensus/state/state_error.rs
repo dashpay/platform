@@ -84,6 +84,9 @@ use crate::consensus::state::document::referenced_document_removed_error::Refere
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use crate::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
+use crate::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
+use crate::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -761,6 +764,19 @@ pub enum StateError {
     // A document reference names a private document type (protocol version 15).
     #[error(transparent)]
     ReferencedDocumentTypePrivateError(ReferencedDocumentTypePrivateError),
+
+    // A `PrivateDocumentCreateFromShieldedPool` (protocol version 15) names a type that is not
+    // private, or carries entries that do not take the type's `entrySize`.
+    #[error(transparent)]
+    DocumentTypeNotPrivateError(DocumentTypeNotPrivateError),
+
+    #[error(transparent)]
+    PrivateDocumentEntrySizeMismatchError(PrivateDocumentEntrySizeMismatchError),
+
+    // A document reference naming its target through the referring document points at a
+    // document type that does not meet its `documentTypeRequirements` (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypeRequirementNotMetError(ReferencedDocumentTypeRequirementNotMetError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1720,6 +1736,37 @@ mod tests {
                 )
             )),
             178
+        );
+        // A `PrivateDocumentCreateFromShieldedPool`'s target (protocol version 15): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotPrivateError(
+                DocumentTypeNotPrivateError::new(identity_id, "contactRequest".to_string())
+            )),
+            179
+        );
+        assert_eq!(
+            discriminant_of(StateError::PrivateDocumentEntrySizeMismatchError(
+                PrivateDocumentEntrySizeMismatchError::new(
+                    identity_id,
+                    "privateContactRequest".to_string(),
+                    585,
+                    584,
+                )
+            )),
+            180
+        );
+        // A dynamic document reference's unmet `documentTypeRequirements` (protocol version
+        // 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeRequirementNotMetError(
+                ReferencedDocumentTypeRequirementNotMetError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "descriptionId".to_string(),
+                )
+            )),
+            181
         );
     }
 }

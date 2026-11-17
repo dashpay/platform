@@ -1,3 +1,4 @@
+import DashSDKFFI
 import SwiftData
 import XCTest
 
@@ -66,10 +67,9 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
 
         // Derive the identity-auth pubkey at (identity 3, key 2) from the seed so
         // the seeded row matches what the resolver derives at sign time.
-        let wallet = try Wallet(mnemonic: mnemonic, network: .testnet)
         let path = try KeyDerivation.getIdentityAuthenticationPath(
             network: .testnet, identityIndex: 3, keyIndex: 2)
-        let pubkey = try XCTUnwrap(Data(hexString: wallet.derivePublicKey(path: path)))
+        let pubkey = try derivePublicKey(path: path)
         XCTAssertEqual(pubkey.count, 33, "compressed secp256k1 pubkey")
 
         // Seed the resolver's source: the mnemonic in WalletStorage, keyed by walletId.
@@ -111,10 +111,9 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
         let container = try DashModelContainer.createInMemory()
         let walletId = Data(repeating: 0x7B, count: 32)
 
-        let wallet = try Wallet(mnemonic: mnemonic, network: .testnet)
         let truePath = try KeyDerivation.getIdentityAuthenticationPath(
             network: .testnet, identityIndex: 3, keyIndex: 2)
-        let pubkey = try XCTUnwrap(Data(hexString: wallet.derivePublicKey(path: truePath)))
+        let pubkey = try derivePublicKey(path: truePath)
         // The row stores a DIFFERENT path that derives a different key.
         let wrongPath = try KeyDerivation.getIdentityAuthenticationPath(
             network: .testnet, identityIndex: 9, keyIndex: 9)
@@ -140,5 +139,22 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
             XCTFail("expected binding rejection, got \(String(describing: result))")
             return
         }
+    }
+
+    /// Derives the compressed public key at `path` from `mnemonic` through the
+    /// platform wallet's derivation, the same one the resolver signs with.
+    private func derivePublicKey(path: String) throws -> Data {
+        var secretKey = [UInt8](repeating: 0, count: 32)
+        var chainCode = [UInt8](repeating: 0, count: 32)
+        var publicKey = [UInt8](repeating: 0, count: 33)
+        let result = mnemonic.withCString { mnemonicPtr -> PlatformWalletFFIResult in
+            path.withCString { pathPtr -> PlatformWalletFFIResult in
+                platform_wallet_derive_ext_priv_key_from_mnemonic(
+                    mnemonicPtr, nil, Network.testnet.ffiValue, pathPtr,
+                    &secretKey, &chainCode, &publicKey)
+            }
+        }
+        try result.check()
+        return Data(publicKey)
     }
 }

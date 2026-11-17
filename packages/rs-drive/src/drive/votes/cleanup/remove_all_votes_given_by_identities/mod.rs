@@ -43,9 +43,6 @@ impl Drive {
             ),
             1 => self.remove_all_votes_given_by_identities_v1(
                 identity_ids_as_byte_arrays,
-                block_height,
-                network,
-                chain_id,
                 transaction,
                 platform_version,
             ),

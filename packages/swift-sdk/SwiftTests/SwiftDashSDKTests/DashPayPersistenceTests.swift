@@ -91,13 +91,13 @@ final class DashPayContactPersistenceTests: XCTestCase {
         ignored: [PlatformWalletPersistenceHandler.ContactIgnoredSenderSnapshot] = []
     ) {
         handler.beginChangeset(walletId: walletId)
-        handler.persistContacts(
+        XCTAssertNoThrow(try handler.persistContacts(
             walletId: walletId,
             upserts: upserts,
             removedSent: removedSent,
             removedIncoming: removedIncoming,
             ignored: ignored
-        )
+        ))
         handler.endChangeset(walletId: walletId, success: true)
     }
 
@@ -283,10 +283,13 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(rows.first).paymentChannelBroken)
     }
 
-    /// A contact upsert whose owner identity Swift hasn't seen yet is
-    /// skipped (next sync round replays it) — it must not crash or
-    /// insert an orphan row.
-    func testUpsertSkipsUnknownOwnerIdentity() throws {
+    /// A contact upsert whose owner identity is not persisted fails the
+    /// round instead of being skipped: the store declares the private
+    /// contact request scan state, so an acknowledged round without the
+    /// row would let the wallet store a read position past it. The callback
+    /// reports the failure, the rolled-back round leaves nothing, and once
+    /// the owner is persisted the same upsert (the next scan's) lands.
+    func testUnknownOwnerIdentityFailsTheRound() throws {
         let unknownOwner = Data(repeating: 0x77, count: 32)
         var snapshot = makeSnapshot(isOutgoing: false)
         snapshot = .init(
@@ -308,9 +311,47 @@ final class DashPayContactPersistenceTests: XCTestCase {
             contactAccountLabel: snapshot.contactAccountLabel,
             contactAcceptedAccounts: snapshot.contactAcceptedAccounts
         )
-        applyContacts(upserts: [snapshot])
-
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertThrowsError(try handler.persistContacts(
+            walletId: walletId, upserts: [snapshot], removedSent: [], removedIncoming: [], ignored: []))
+        // The callback's failure makes Rust end the round unsuccessfully.
+        handler.endChangeset(walletId: walletId, success: false)
         XCTAssertEqual(try fetchContactRows().count, 0)
+
+        // The callback shim reports it as a failed callback.
+        let callbacks = handler.makeCallbacks()
+        defer { Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(callbacks.context!).release() }
+        let contactsFn = try XCTUnwrap(callbacks.on_persist_contacts_fn)
+        var row = ContactRequestFFI()
+        row.owner_id = Self.tuple32(unknownOwner)
+        row.contact_id = Self.tuple32(contactId)
+        let rc = walletId.withUnsafeBytes { wid in
+            withUnsafePointer(to: &row) { rowPtr in
+                contactsFn(callbacks.context, wid.bindMemory(to: UInt8.self).baseAddress,
+                           rowPtr, 1, nil, 0, nil, 0, nil, 0)
+            }
+        }
+        XCTAssertNotEqual(rc, 0)
+
+        // A later scan, once the owner identity is persisted, stores it.
+        let context = ModelContext(container)
+        context.insert(PersistentIdentity(identityId: unknownOwner, isLocal: false, network: .testnet))
+        try context.save()
+        applyContacts(upserts: [snapshot])
+        XCTAssertEqual(try fetchContactRows().map(\.ownerIdentityId), [unknownOwner])
+    }
+
+    /// An ignore whose owner identity is not persisted fails the round too.
+    func testIgnoreForAnUnknownOwnerFailsTheRound() throws {
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertThrowsError(try handler.persistContacts(
+            walletId: walletId, upserts: [], removedSent: [], removedIncoming: [],
+            ignored: [.init(
+                ownerIdentityId: Data(repeating: 0x77, count: 32),
+                senderIdentityId: otherSenderId,
+                isIgnored: true)]))
+        handler.endChangeset(walletId: walletId, success: false)
+        XCTAssertEqual(try fetchIgnoredRows().count, 0)
     }
 
     // MARK: Ignored senders (per-sender mute, local-only)
@@ -665,7 +706,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
     func testPaymentRefreshDoesNotCommitAnOpenChangesetRound() throws {
         // Open a round and stage an (uncommitted) contact write.
         handler.beginChangeset(walletId: walletId)
-        handler.persistContacts(
+        try handler.persistContacts(
             walletId: walletId,
             upserts: [makeSnapshot(isOutgoing: false)],
             removedSent: [],

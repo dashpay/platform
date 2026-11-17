@@ -7,7 +7,6 @@ use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-use dashcore::hashes::Hash;
 use dashcore::{Address as DashAddress, OutPoint, TxOut, Txid};
 use key_wallet::account::ManagedAccountCollection;
 use key_wallet::managed_account::ManagedCoreFundsAccount;

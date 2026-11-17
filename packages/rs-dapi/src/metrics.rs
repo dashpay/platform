@@ -577,6 +577,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getIdentityByPublicKeyHash",
                 "getIdentityByNonUniquePublicKeyHash",
                 "waitForStateTransitionResult",
+                "getRecentStateTransitionStatus",
                 "getConsensusParams",
                 "getProtocolVersionUpgradeState",
                 "getProtocolVersionUpgradeVoteStatus",
@@ -621,6 +622,8 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getShieldedNotesCount",
                 "getShieldedNullifiers",
                 "getPrivateDocumentEntries",
+                "getOwnerTransactionsInBlock",
+                "getBlocks",
             ]
         )
     })

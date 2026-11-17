@@ -76,7 +76,6 @@ impl<C> Platform<C> {
             &block_info,
             transaction,
             platform_version,
-            None, // No previous_fee_versions needed for genesis state creation
         )?;
 
         Ok(())

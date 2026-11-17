@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -43,9 +44,15 @@ impl Drive {
                 );
                 Ok(())
             }
+            2 => {
+                Self::add_estimation_costs_for_prefunded_specialized_balance_update_v2(
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_prefunded_specialized_balance_update".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

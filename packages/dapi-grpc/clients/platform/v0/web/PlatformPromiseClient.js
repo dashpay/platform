@@ -312,6 +312,52 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetOwnerTransactionsInBlockRequest} getOwnerTransactionsInBlockRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetOwnerTransactionsInBlockResponse>}
+   */
+  getOwnerTransactionsInBlock(getOwnerTransactionsInBlockRequest, metadata = {}) {
+    return promisify(
+      this.client.getOwnerTransactionsInBlock.bind(this.client),
+    )(
+      getOwnerTransactionsInBlockRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetBlocksRequest} getBlocksRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetBlocksResponse>}
+   */
+  getBlocks(getBlocksRequest, metadata = {}) {
+    return promisify(
+      this.client.getBlocks.bind(this.client),
+    )(
+      getBlocksRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * What the answering node knows of a state transition, by hash, without waiting: committed,
+   * pending in its mempool, or unknown. Unproved and per node: use it to decide whether waiting
+   * longer makes sense, never to decide that a transition cannot execute.
+   *
+   * @param {!GetRecentStateTransitionStatusRequest} getRecentStateTransitionStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetRecentStateTransitionStatusResponse>}
+   */
+  getRecentStateTransitionStatus(getRecentStateTransitionStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getRecentStateTransitionStatus.bind(this.client),
+    )(
+      getRecentStateTransitionStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

@@ -6,7 +6,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -24,7 +23,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
@@ -32,19 +30,18 @@ impl Drive {
             document_id,
             contract,
             document_type_name,
+            &block_info,
+            None,
             estimated_costs_only_with_layer_info,
-            block_info.time_ms,
             transaction,
             &mut drive_operations,
             platform_version,
         )?;
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )?;
         Ok(fees)
     }
