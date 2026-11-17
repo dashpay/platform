@@ -18,6 +18,9 @@
 //!    on the caller, but it parks almost immediately — all the
 //!    compute happens on the tokio worker.
 
+#[cfg(feature = "shielded")]
+use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+
 /// Worker thread stack size for the shared runtime. 8 MB gives proof
 /// verification + GroveDB comfortable headroom without meaningfully
 /// affecting memory footprint (we spin up a small number of workers).
@@ -89,9 +92,37 @@ pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> 
     })
 }
 
+/// Post-panic guidance for exports that move no funds. Paired with
+/// `ErrorWalletOperation` in [`catch_query_panic`].
+#[cfg(feature = "shielded")]
+const QUERY_PANIC_GUIDANCE: &str = "No funds were moved; the call may be retried.";
+
+/// [`catch_panic_to_code`] for exports that spend nothing (identity
+/// shielded account preparation). A panic there is a plain failure of the
+/// call, so it maps to [`PlatformWalletFFIResultCode::ErrorWalletOperation`]
+/// and the host may retry. An unwind that reaches the `extern "C"` frame
+/// aborts the process before the JNI guard on the far side can translate it,
+/// so these exports need the boundary as much as the spend path does.
+#[cfg(feature = "shielded")]
+pub(crate) fn catch_query_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        QUERY_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "shielded")]
+    use crate::error::platform_wallet_ffi_result_free;
+    #[cfg(feature = "shielded")]
+    use std::ffi::CStr;
 
     #[test]
     fn run_on_big_stack_thread_round_trips_return_value() {
@@ -121,6 +152,37 @@ mod tests {
         // under WORKER_STACK_BYTES.
         let out = run_on_big_stack_thread(|| recurse(1_000)).expect("spawn should succeed");
         assert!(out > 0);
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_map_a_query_panic_to_a_retryable_wallet_operation() {
+        let mut result = catch_query_panic("shielded identity address preparation", || {
+            panic!("tokio worker panicked");
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }.to_string_lossy();
+        assert!(
+            message.contains("shielded identity address preparation panicked")
+                && message.contains("tokio worker panicked")
+                && message.contains("may be retried"),
+            "{message}"
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_pass_a_query_result_through_when_nothing_panics() {
+        let result = catch_query_panic(
+            "shielded identity address preparation",
+            PlatformWalletFFIResult::ok,
+        );
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(result.message.is_null());
     }
 }
 

@@ -20,11 +20,14 @@ use platform_wallet::PlatformWalletError;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
+use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
+use crate::runtime::{block_on_worker, catch_query_panic, runtime};
+use crate::shielded_send::resolve_wallet_and_coordinator;
 use crate::shielded_types::{
     ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
     ShieldedLocalBalanceStatusFFI, ShieldedSyncWalletResultFFI,
 };
+use crate::types::read_identifier;
 use crate::{check_ptr, unwrap_option_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
@@ -504,6 +507,87 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     }
 
     PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
+// Identity shielded accounts
+// ---------------------------------------------------------------------------
+
+/// Prepare the dedicated shielded account of a wallet-owned identity and
+/// write its default 43-byte raw Orchard address to `out_address`. Publishes
+/// nothing and moves no funds.
+///
+/// Calls `PlatformWallet::prepare_shielded_identity_address`, which proves
+/// the identity's slot with the seed, binds the identity's account next to
+/// the wallet's bound accounts, persists its viewing key and records the
+/// preparation for this session. A contact request sent afterwards carries
+/// the sender's per-contact shielded address only once this preparation
+/// stands. Requires a prior [`platform_wallet_manager_bind_shielded`] on this
+/// manager. Repeated calls are idempotent.
+///
+/// The mnemonic is resolved through `mnemonic_resolver_handle` on every
+/// call; it and the derived seed live in zeroizing buffers and are scrubbed
+/// before this function returns.
+///
+/// `out_address` is zeroed on entry and written only on success. A panic
+/// inside the call is returned as `ErrorWalletOperation`: nothing was moved
+/// and the call may be retried.
+///
+/// # Safety
+/// - `wallet_id_bytes` and `identity_id_bytes` must point at 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   [`crate::dash_sdk_mnemonic_resolver_create`].
+/// - `out_address` must point at 43 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_identity_address(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_id_bytes: *const u8,
+    out_address: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_address);
+    std::ptr::write_bytes(out_address, 0, 43);
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(identity_id_bytes);
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = match read_identifier(identity_id_bytes) {
+        Ok(id) => id,
+        Err(e) => return e.into(),
+    };
+    // Wallet, coordinator and seed resolution, the worker call and its
+    // result mapping all sit inside the panic boundary: resolution blocks on
+    // the runtime, which panics when the host calls from inside one. The raw
+    // output write happens outside it and only on success, so a panic leaves
+    // the zeroed buffer untouched.
+    let mut address = [0u8; 43];
+    let result = catch_query_panic("shielded identity address preparation", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
+            Ok(seed) => seed,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            wallet
+                .prepare_shielded_identity_address(seed.as_ref(), &identity_id, &coordinator)
+                .await
+        }) {
+            Ok(bytes) => {
+                address = bytes;
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => e.into(),
+        }
+    });
+    if result.code == PlatformWalletFFIResultCode::Success {
+        std::ptr::copy_nonoverlapping(address.as_ptr(), out_address, 43);
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -1564,5 +1648,331 @@ mod fresh_address_tests {
             assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
             crate::platform_wallet_ffi_result_free(&mut r);
         }
+    }
+}
+
+#[cfg(test)]
+mod identity_account_tests {
+    use super::*;
+    use crate::manager::platform_wallet_manager_destroy;
+    use crate::persistence::{FFIPersister, PersistenceCallbacks};
+    use crate::test_fixtures::{
+        mock_manager_with, noop_free_viewing_keys, noop_load_viewing_keys,
+        noop_persist_viewing_keys,
+    };
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::Identifier;
+    use key_wallet::bip32::ExtendedPrivKey;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Mnemonic;
+    use platform_wallet::changeset::PersistenceCapabilities;
+    use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
+    use platform_wallet::{shielded_identity_account_index, MASTER_KEY_INDEX};
+    use rs_sdk_ffi::{mnemonic_resolver_result, MnemonicResolverVTable};
+    use std::collections::BTreeMap;
+    use std::ffi::c_void;
+
+    /// The phrase the test resolver answers for every wallet id; the wallet
+    /// under test is created from it, so the resolved seed belongs to it.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon \
+                                 abandon abandon abandon abandon about";
+
+    unsafe extern "C" fn resolve_test_mnemonic(
+        _ctx: *const c_void,
+        _wallet_id: *const u8,
+        out: *mut c_char,
+        cap: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        let phrase = TEST_MNEMONIC.as_bytes();
+        assert!(cap >= phrase.len());
+        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out.cast::<u8>(), phrase.len());
+        *out_len = phrase.len();
+        mnemonic_resolver_result::SUCCESS
+    }
+
+    unsafe extern "C" fn destroy_test_resolver(_ctx: *mut c_void) {}
+
+    /// A resolver over [`TEST_MNEMONIC`]. The vtable is boxed so the handle
+    /// can point at it for as long as the pair lives.
+    fn test_resolver() -> (Box<MnemonicResolverVTable>, MnemonicResolverHandle) {
+        let mut vtable = Box::new(MnemonicResolverVTable {
+            resolve: resolve_test_mnemonic,
+            destroy: destroy_test_resolver,
+        });
+        let handle = MnemonicResolverHandle {
+            ctx: std::ptr::null_mut(),
+            vtable: &mut *vtable,
+        };
+        (vtable, handle)
+    }
+
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(!result.message.is_null(), "error result carries a message");
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// A manager with a configured shielded store and one wallet created
+    /// from [`TEST_MNEMONIC`], bound on account 0 through the exported bind.
+    /// Returns the store path to clean up.
+    fn bound_manager() -> (Handle, [u8; 32], std::path::PathBuf) {
+        unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        // A seed-backed bind persists the viewing keys, so the persister
+        // declares it can hold them atomically.
+        let manager = mock_manager_with(FFIPersister::new_with_persistence_capabilities(
+            PersistenceCallbacks {
+                on_changeset_begin_fn: Some(begin),
+                on_changeset_end_fn: Some(end),
+                on_persist_shielded_viewing_keys_fn: Some(noop_persist_viewing_keys),
+                on_load_shielded_viewing_keys_fn: Some(noop_load_viewing_keys),
+                on_load_shielded_viewing_keys_free_fn: Some(noop_free_viewing_keys),
+                ..Default::default()
+            },
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS),
+        ));
+        let path = std::env::temp_dir().join(format!(
+            "ffi-shielded-identity-account-{}-{}.sqlite",
+            std::process::id(),
+            next_handle()
+        ));
+        let wallet_id = runtime().block_on(async {
+            manager
+                .configure_shielded(&path)
+                .await
+                .expect("configure shielded");
+            manager
+                .create_wallet_from_mnemonic(
+                    TEST_MNEMONIC,
+                    dashcore::Network::Testnet,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create wallet")
+                .wallet_id()
+        });
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        let (_vtable, mut resolver) = test_resolver();
+        let accounts = [0u32];
+        let mut r = unsafe {
+            platform_wallet_manager_bind_shielded(
+                handle,
+                wallet_id.as_ptr(),
+                &mut resolver,
+                accounts.as_ptr(),
+                accounts.len(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        (handle, wallet_id, path)
+    }
+
+    fn destroy_manager(handle: Handle, path: std::path::PathBuf) {
+        let mut destroyed = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut destroyed) };
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Resolution blocks on the runtime, which panics when the host calls
+    /// from inside one. The export contains it as a retryable failure and no
+    /// address escapes.
+    #[test]
+    fn should_contain_a_preparation_panic_inside_a_runtime() {
+        let (handle, wallet_id, path) = bound_manager();
+        let (_vtable, mut resolver) = test_resolver();
+        let identity_id = [0x21u8; 32];
+        let mut out_address = [0xAAu8; 43];
+        let mut r = runtime().block_on(async {
+            unsafe {
+                platform_wallet_manager_prepare_shielded_identity_address(
+                    handle,
+                    wallet_id.as_ptr(),
+                    &mut resolver,
+                    identity_id.as_ptr(),
+                    out_address.as_mut_ptr(),
+                )
+            }
+        });
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        let message = message_of(&r);
+        assert!(
+            message.contains("shielded identity address preparation panicked")
+                && message.contains("may be retried"),
+            "{message}"
+        );
+        assert_eq!(out_address, [0u8; 43]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        destroy_manager(handle, path);
+    }
+
+    /// The export reaches the wallet with the resolved seed and returns the
+    /// wallet's typed refusal for an identity it does not hold, with the
+    /// output left zeroed.
+    #[test]
+    fn should_refuse_preparing_an_identity_the_wallet_does_not_hold() {
+        let (handle, wallet_id, path) = bound_manager();
+        let (_vtable, mut resolver) = test_resolver();
+        let identity_id = [0x21u8; 32];
+        let mut out_address = [0xAAu8; 43];
+        let mut r = unsafe {
+            platform_wallet_manager_prepare_shielded_identity_address(
+                handle,
+                wallet_id.as_ptr(),
+                &mut resolver,
+                identity_id.as_ptr(),
+                out_address.as_mut_ptr(),
+            )
+        };
+        assert_eq!(
+            r.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound,
+            "{}",
+            message_of(&r)
+        );
+        assert_eq!(out_address, [0u8; 43]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        destroy_manager(handle, path);
+    }
+
+    /// The identity whose MASTER authentication key is the one
+    /// [`TEST_MNEMONIC`] derives at `identity_index`, which is what the
+    /// seed proof checks.
+    fn identity_at_slot(id: Identifier, identity_index: u32) -> Identity {
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("test mnemonic")
+            .to_seed("");
+        let master = ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &seed[..])
+            .expect("master key");
+        let public_key = derive_ecdsa_identity_auth_keypair_from_master(
+            &master,
+            key_wallet::Network::Testnet,
+            identity_index,
+            MASTER_KEY_INDEX,
+        )
+        .expect("derive the master key")
+        .public_key;
+        Identity::V0(IdentityV0 {
+            id,
+            public_keys: BTreeMap::from([(
+                0,
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(public_key.to_vec()),
+                    disabled_at: None,
+                }),
+            )]),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Preparing through the export binds the identity's account next to
+    /// the ordinary one, returns that account's default address and records
+    /// the preparation.
+    #[test]
+    fn should_prepare_the_identity_account_and_bind_it() {
+        const IDENTITY_INDEX: u32 = 2;
+        let (handle, wallet_id, path) = bound_manager();
+        let wallet = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |manager| manager.get_wallet_blocking(&wallet_id))
+            .flatten()
+            .expect("the wallet");
+        let id = Identifier::from([0x42; 32]);
+        let identity = identity_at_slot(id, IDENTITY_INDEX);
+        runtime().block_on(async {
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("the wallet's info")
+                .identity_manager
+                .add_identity(identity, IDENTITY_INDEX, wallet_id, wallet.persister())
+                .expect("add the identity");
+        });
+        let account = shielded_identity_account_index(IDENTITY_INDEX).expect("identity account");
+        let (_vtable, mut resolver) = test_resolver();
+        let mut out_address = [0xAAu8; 43];
+        let mut r = unsafe {
+            platform_wallet_manager_prepare_shielded_identity_address(
+                handle,
+                wallet_id.as_ptr(),
+                &mut resolver,
+                id.as_bytes().as_ptr(),
+                out_address.as_mut_ptr(),
+            )
+        };
+        assert_eq!(
+            r.code,
+            PlatformWalletFFIResultCode::Success,
+            "{:?}",
+            (!r.message.is_null()).then(|| message_of(&r))
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        let (default_address, prepared, bound) = runtime().block_on(async {
+            (
+                wallet.shielded_default_address(account).await,
+                wallet.prepared_shielded_identity_account(&id).await,
+                wallet.shielded_account_indices().await,
+            )
+        });
+        assert_eq!(default_address, Some(out_address));
+        assert_eq!(prepared, Some(account));
+        assert_eq!(bound, vec![0, account]);
+
+        drop(wallet);
+        destroy_manager(handle, path);
+    }
+
+    #[test]
+    fn should_zero_the_address_and_refuse_an_invalid_manager_handle() {
+        let (_vtable, mut resolver) = test_resolver();
+        let wallet_id = [0x11u8; 32];
+        let identity_id = [0x21u8; 32];
+        let mut out_address = [0xAAu8; 43];
+        let mut r = unsafe {
+            platform_wallet_manager_prepare_shielded_identity_address(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                &mut resolver,
+                identity_id.as_ptr(),
+                out_address.as_mut_ptr(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(out_address, [0u8; 43]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+    }
+
+    #[test]
+    fn should_zero_the_address_before_rejecting_a_null_argument() {
+        let identity_id = [0x21u8; 32];
+        let mut out_address = [0xAAu8; 43];
+        let mut r = unsafe {
+            platform_wallet_manager_prepare_shielded_identity_address(
+                NULL_HANDLE,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                identity_id.as_ptr(),
+                out_address.as_mut_ptr(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(out_address, [0u8; 43]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
     }
 }
