@@ -720,7 +720,8 @@ class WalletManagerRoundTripTest {
      * count the credited coin only. Skipped when the native library was
      * built without the `test-hooks` cargo feature
      * (`./build_android.sh --test-hooks`), which is the only build with
-     * that hook.
+     * that hook, unless the run passes `-PrequireTestHooks=true` (as CI
+     * does): then a missing hook fails the test.
      *
      * Fixture, all paying the wallet's own BIP44 receive addresses:
      *  - tx 1 vout 0, [CREDITED]: no verdict, so it is restored.
@@ -849,7 +850,8 @@ class WalletManagerRoundTripTest {
             // Round 1: tx 2 alone, credited, so the HELD row exists. The
             // hook is only in a library built with the `test-hooks` cargo
             // feature: without it this first call is an UnsatisfiedLinkError,
-            // which skips the test. Any other error still fails it.
+            // which skips the test, or fails it when the run asked for the
+            // hook (`-PrequireTestHooks=true`). Any other error still fails it.
             try {
                 VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound(
                     handler,
@@ -862,6 +864,16 @@ class WalletManagerRoundTripTest {
                     blockHeight = BLOCK_HEIGHT,
                 )
             } catch (e: UnsatisfiedLinkError) {
+                val required = InstrumentationRegistry.getArguments()
+                    .getString("requireTestHooks")
+                    ?.toBoolean() == true
+                if (required) {
+                    throw AssertionError(
+                        "requireTestHooks is set but the library has no test hook; " +
+                            "build with ./build_android.sh --test-hooks",
+                        e,
+                    )
+                }
                 throw AssumptionViolatedException(
                     "library built without the test-hooks feature; run ./build_android.sh --test-hooks",
                     e,
