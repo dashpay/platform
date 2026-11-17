@@ -1765,7 +1765,12 @@ mod idempotent_load_tests {
             instant_locks: BTreeMap::from([(funding.txid(), fixture.instant_lock().clone())]),
         };
         let manager = PlatformWalletManager::new(
-            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(Network::Testnet)
+                    .build()
+                    .unwrap(),
+            ),
             Arc::new(RecordedHistoryPersister {
                 wallet: ctx.wallet,
                 managed: ctx.managed_wallet,
@@ -2969,7 +2974,13 @@ mod idempotent_load_tests {
     fn make_history_manager(
         persister: RecordedHistoryPersister,
     ) -> Arc<PlatformWalletManager<PreparedHistoryPersister>> {
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        // Testnet, like the SPV client these tests start for history evidence.
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
         Arc::new(PlatformWalletManager::new(
             sdk,
