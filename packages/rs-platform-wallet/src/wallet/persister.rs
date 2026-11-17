@@ -208,7 +208,8 @@ pub(crate) enum NotDurable {
     /// backend that commits a store in one step
     /// ([`PlatformWalletPersistence::store_and_commit`]) it says more: the
     /// changeset was refused before it was staged, so none of it is buffered
-    /// and none of it is on disk.
+    /// and none of it is on disk, and after a transient failure it may be
+    /// issued again.
     #[error("{0}")]
     Store(PersistenceError),
     /// The flush this call made failed, or the commit of a store made in one
@@ -735,8 +736,20 @@ impl WalletPersister {
     /// reported the same way: refused before it was staged as the store's
     /// failure, and a failed commit as the flush failure, with the backend's
     /// own kind.
+    ///
+    /// One difference for the store's failure. From a backend that commits a
+    /// store in one step it keeps the backend's kind, a transient one
+    /// included: that answer says nothing of the changeset was staged or
+    /// written, which is all a retry needs, so it does not wait on
+    /// [`PlatformWalletPersistence::store_transient_is_reissuable`], which
+    /// speaks for a plain `store`. On such a backend every
+    /// [`NotDurable::Store`] is that answer, as [`Self::store_durably`]
+    /// makes no plain store there.
     pub(crate) fn classify_not_durable(&self, not_durable: NotDurable) -> PlatformWalletError {
         match not_durable {
+            NotDurable::Store(error) if self.inner.offers_store_and_commit() => {
+                PlatformWalletError::from_unstaged_store_failure(error)
+            }
             NotDurable::Store(error) => self.classify_store_failure(error),
             NotDurable::Flush(error) => PlatformWalletError::from_flush_failure(error),
             NotDurable::Lost => PlatformWalletError::from_flush_failure(
@@ -1487,11 +1500,12 @@ mod tests {
     /// The answer of a store committed in one step is the answer, and the
     /// two ways it fails stay apart for the callers that report them
     /// differently. A changeset refused before it was staged is the store's
-    /// failure: nothing of it is buffered or written, and a transient one is
-    /// narrowed as any store failure is. A commit that failed is the flush's
-    /// failure, with the backend's own kind: buffered still when transient,
-    /// dropped otherwise. The backend is neither stored to nor flushed
-    /// beside the step.
+    /// failure: nothing of it is buffered or written, so a transient one
+    /// stays transient and may be issued again, though the backend does not
+    /// attest that for its plain `store`. A commit that failed is the
+    /// flush's failure, with the backend's own kind: buffered still when
+    /// transient, dropped otherwise. The backend is neither stored to nor
+    /// flushed beside the step.
     #[test]
     fn should_report_a_refused_changeset_as_a_failed_store_and_a_failed_commit_as_a_failed_flush() {
         let refused = InOneStep::answering(StoreAndCommitError::NotStaged(busy()));
@@ -1503,10 +1517,14 @@ mod tests {
             matches!(&not_durable, NotDurable::Store(error) if error.is_transient()),
             "{not_durable:?}"
         );
+        assert!(
+            !refused.store_transient_is_reissuable(),
+            "the backend says nothing of its plain store"
+        );
         let reported = persister.classify_not_durable(not_durable);
         assert!(
-            matches!(&reported, PlatformWalletError::PersisterStore(error) if !error.is_transient()),
-            "{reported:?}"
+            matches!(&reported, PlatformWalletError::PersisterStore(error) if error.is_transient()),
+            "nothing was staged, so it may be issued again: {reported:?}"
         );
 
         for (failure, kind) in [
@@ -1533,6 +1551,44 @@ mod tests {
             assert_eq!(failed.stored_plainly.load(Ordering::SeqCst), 0);
             assert_eq!(failed.flushed.load(Ordering::SeqCst), 0);
         }
+    }
+
+    /// A plain store that fails transiently on a backend without the step is
+    /// still narrowed to a failure for good, unless the backend attests that
+    /// it kept nothing of the changeset: only the step's own answer says
+    /// that by itself.
+    #[test]
+    fn should_still_narrow_a_transient_store_failure_of_a_backend_without_the_step() {
+        struct RefusesItsStore;
+        impl PlatformWalletPersistence for RefusesItsStore {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Err(busy())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let persister = WalletPersister::new([0; 32], Arc::new(RefusesItsStore) as _);
+        let not_durable = persister
+            .store_durably(PlatformWalletChangeSet::default())
+            .expect_err("refused");
+        assert!(
+            matches!(&not_durable, NotDurable::Store(error) if error.is_transient()),
+            "{not_durable:?}"
+        );
+        let reported = persister.classify_not_durable(not_durable);
+        assert!(
+            matches!(&reported, PlatformWalletError::PersisterStore(error) if !error.is_transient()),
+            "{reported:?}"
+        );
     }
 
     /// A commit made in one step that fails for good dropped the wallet's

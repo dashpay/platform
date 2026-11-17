@@ -1136,6 +1136,14 @@ impl SqlitePersister {
     /// buffer lock leaves what it guards out of reach for good. Both are
     /// reported as `NotCommitted` with [`PersistenceError::LockPoisoned`],
     /// which is not transient: what the wallet had buffered is gone.
+    ///
+    /// That discard is every wallet's, here as on every other path that
+    /// finds the connection poisoned, and this call answers for its own
+    /// wallet alone. The others are not told by it. They cannot be misled
+    /// either: from then on every `store`, `flush` and `store_and_commit`
+    /// of every wallet on this persister fails with `LockPoisoned`, so none
+    /// is told a record is on disk, and each wallet's next flush or step
+    /// reports the loss to whoever made it.
     fn stage_and_commit(
         &self,
         wallet_id: WalletId,
@@ -1503,6 +1511,18 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// commits everything buffered for the wallet, as `flush` does, the
     /// changeset last. In [`FlushMode::Immediate`] it is `store` with the
     /// two failures told apart.
+    ///
+    /// # Other processes
+    ///
+    /// The guard is this persister's connection, so the step is one step
+    /// with every drain of THIS persister's buffer. Another process that
+    /// has the same database open buffers on its own. SQLite serializes the
+    /// two transactions, and a later commit by that process lands over this
+    /// one, exactly as it lands over a `store` or a `flush`: nothing in this
+    /// crate orders what two processes hold in memory. As for
+    /// [`delete_wallet`](Self::delete_wallet) and
+    /// [`restore_from`](Self::restore_from), callers that let two processes
+    /// write one wallet serialize them.
     ///
     /// # Errors
     ///

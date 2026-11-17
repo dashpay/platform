@@ -486,6 +486,17 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// before it or wholly after. A deletion that follows removes what the
     /// step committed, as it removes everything else of the wallet's.
     ///
+    /// ## Scope: one backend instance
+    ///
+    /// Everything above is about this backend instance and the buffer it
+    /// keeps. It orders nothing against another instance over the same
+    /// storage, such as another process that has the same database open:
+    /// that one is a writer of its own, with a buffer of its own, and what
+    /// it writes later lands later, through this step or through `store`
+    /// and `flush` alike. A wallet's records go through one backend
+    /// instance, and whoever lets a second one write them serializes the
+    /// two.
+    ///
     /// The reentrancy contract of [`store`](Self::store) applies, and the
     /// call does the I/O of a `flush`.
     ///
