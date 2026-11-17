@@ -67,10 +67,8 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
             platform_version,
         )?;
         if !result.is_valid() {
-            if result
-                .errors
-                .first()
-                .is_some_and(is_unreadable_byte_array_refusal)
+            // Only the refusal alone: beside any other error the batch is charged as before
+            if matches!(result.errors.as_slice(), [error] if is_unreadable_byte_array_refusal(error))
             {
                 return Ok(ConsensusValidationResult::new_with_errors(result.errors));
             }

@@ -15,6 +15,7 @@ use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::codes::ErrorWithCode;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::IdentityPublicKey;
@@ -26,6 +27,9 @@ use simple_signer::signer::SimpleSigner;
 
 /// `JsonSchemaError`'s consensus code.
 const JSON_SCHEMA_ERROR: u32 = 10101;
+
+/// The entropy of the `blob` a fixture creates.
+const ENTROPY: [u8; 32] = [3; 32];
 
 /// A `blob` type with a plain byte array `data` and an identifier `target`.
 fn blob_schema() -> Value {
@@ -89,13 +93,8 @@ impl Fixture {
         }
     }
 
-    /// The raw bytes of a signed create of a `blob` holding `properties`.
-    async fn creation(&self, properties: Value) -> Vec<u8> {
-        let document_type = self
-            .contract
-            .document_type_for_name("blob")
-            .expect("expected the document type");
-        let entropy = [3; 32];
+    /// The `blob` a create holding `properties` makes.
+    fn blob(&self, properties: Value) -> Document {
         let mut document = Document::V0(DocumentV0 {
             owner_id: self.owner,
             properties: properties
@@ -105,12 +104,23 @@ impl Fixture {
             ..Default::default()
         });
         document
-            .set_id_for_creation(document_type, &entropy, 1, self.version)
+            .set_id_for_creation(self.blob_type(), &ENTROPY, 1, self.version)
             .expect("expected an id");
+        document
+    }
+
+    fn blob_type(&self) -> DocumentTypeRef<'_> {
+        self.contract
+            .document_type_for_name("blob")
+            .expect("expected the document type")
+    }
+
+    /// The raw bytes of a signed create of a `blob` holding `properties`.
+    async fn creation(&self, properties: Value) -> Vec<u8> {
         let transition = BatchTransition::new_document_creation_transition_from_document(
-            document,
-            document_type,
-            entropy,
+            self.blob(properties),
+            self.blob_type(),
+            ENTROPY,
             &self.key,
             1,
             0,
@@ -121,6 +131,38 @@ impl Fixture {
         )
         .await
         .expect("expected the transition to sign");
+        self.raw(transition)
+    }
+
+    /// The raw bytes of a signed replace of `blob`, the next write of its owner, holding
+    /// `properties`.
+    async fn replacement(&self, blob: &Document, properties: Value) -> Vec<u8> {
+        let mut replacement = blob.clone();
+        replacement
+            .increment_revision()
+            .expect("expected the revision to increment");
+        replacement.set_properties(
+            properties
+                .into_btree_string_map()
+                .expect("expected a map of properties"),
+        );
+        let transition = BatchTransition::new_document_replacement_transition_from_document(
+            replacement,
+            self.blob_type(),
+            &self.key,
+            2,
+            0,
+            None,
+            &self.signer,
+            self.version,
+            None,
+        )
+        .await
+        .expect("expected the transition to sign");
+        self.raw(transition)
+    }
+
+    fn raw(&self, transition: StateTransition) -> Vec<u8> {
         let raw = transition
             .serialize_to_bytes()
             .expect("expected the transition to serialize");
@@ -145,7 +187,12 @@ impl Fixture {
             .map(|result| result.errors)
     }
 
+    /// The result of `raw` in a block, whose writes are dropped.
     fn process(&self, raw: Vec<u8>) -> StateTransitionExecutionResult {
+        self.process_keeping(raw, false)
+    }
+
+    fn process_keeping(&self, raw: Vec<u8>, keep: bool) -> StateTransitionExecutionResult {
         let tx = self.platform.drive.grove.start_transaction();
         let result = self
             .platform
@@ -160,6 +207,14 @@ impl Fixture {
                 None,
             )
             .expect("expected the transitions to process");
+        if keep {
+            self.platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("expected the block to commit");
+        }
         result.execution_results()[0].clone()
     }
 }
@@ -209,6 +264,49 @@ async fn should_refuse_at_check_tx_a_byte_array_of_integers_that_are_not_bytes()
             other => panic!("expected an unpaid consensus error for {properties:?}, got {other:?}"),
         }
     }
+}
+
+/// A replace is held to the same check as a create, and refused unpaid as one is.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_refuse_unpaid_a_replace_writing_a_byte_array_of_integers_that_are_not_bytes() {
+    let fixture = Fixture::new(PlatformVersion::latest());
+    let written = platform_value!({ "data": Value::Bytes(vec![1, 2, 3]) });
+    let blob = fixture.blob(written.clone());
+    assert!(
+        matches!(
+            fixture.process_keeping(fixture.creation(written).await, true),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        ),
+        "expected the create to succeed"
+    );
+
+    let raw = fixture
+        .replacement(&blob, platform_value!({ "data": u64_members(&[4, 5]) }))
+        .await;
+    let errors = fixture
+        .check_tx(&raw)
+        .expect("expected check_tx to return a consensus error, not an internal error");
+    assert_eq!(byte_array_refusal(&errors), Some("/data/0"), "{errors:?}");
+    match fixture.process(raw) {
+        StateTransitionExecutionResult::UnpaidConsensusError(error) => {
+            assert_eq!(byte_array_refusal(&[error]), Some("/data/0"))
+        }
+        other => panic!("expected an unpaid consensus error, got {other:?}"),
+    }
+
+    // Written as bytes, the replace is stored
+    let raw = fixture
+        .replacement(&blob, platform_value!({ "data": Value::Bytes(vec![4, 5]) }))
+        .await;
+    let errors = fixture.check_tx(&raw).expect("expected check_tx to run");
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(
+        matches!(
+            fixture.process(raw),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        ),
+        "expected the replace to succeed"
+    );
 }
 
 /// A member out of byte range is a schema violation, paid as every other one is.

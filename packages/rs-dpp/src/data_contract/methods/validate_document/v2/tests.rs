@@ -1254,6 +1254,29 @@ fn should_refuse_members_out_of_byte_range_by_the_schema_check_at_both_protocol_
     }
 }
 
+/// The refusal is told from any other error under its keyword by the empty schema path and
+/// property name it is built with, so nothing else is refused unpaid in its place.
+#[test]
+fn should_not_take_another_error_under_the_byte_array_keyword_for_the_refusal() {
+    let error = |schema_path: &str, property_name: &str| -> ConsensusError {
+        JsonSchemaError::new(
+            "not bytes".to_string(),
+            "byteArray".to_string(),
+            "/data/0".to_string(),
+            schema_path.to_string(),
+            platform_value!({ "byteArray": true }),
+            property_name.to_string(),
+        )
+        .into()
+    };
+    assert!(is_unreadable_byte_array_refusal(&error("", "")));
+    assert!(!is_unreadable_byte_array_refusal(&error(
+        "/properties/data/byteArray",
+        ""
+    )));
+    assert!(!is_unreadable_byte_array_refusal(&error("", "data")));
+}
+
 /// Protocol version 14 keeps passing a byte array of integers that are not bytes, as it did.
 #[test]
 fn should_pass_a_byte_array_holding_integers_that_are_not_bytes_at_protocol_version_14() {

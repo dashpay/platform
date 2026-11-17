@@ -20,13 +20,18 @@ use platform_value::{platform_value, Value};
 /// The keyword of the refusal. No schema check reports a violation under it.
 const KEYWORD: &str = "byteArray";
 
-/// Whether `error` is the refusal [`unreadable_byte_array`] gives.
+/// Whether `error` is the refusal [`unreadable_byte_array`] gives: its keyword, and the empty
+/// schema path and property name it is built with, which a violation the schema check reports
+/// at a keyword of the schema does not have.
 pub(in crate::data_contract::methods::validate_document) fn is_refusal(
     error: &ConsensusError,
 ) -> bool {
     matches!(
         error,
-        ConsensusError::BasicError(BasicError::JsonSchemaError(error)) if error.keyword() == KEYWORD
+        ConsensusError::BasicError(BasicError::JsonSchemaError(error))
+            if error.keyword() == KEYWORD
+                && error.schema_path().is_empty()
+                && error.property_name().is_empty()
     )
 }
 

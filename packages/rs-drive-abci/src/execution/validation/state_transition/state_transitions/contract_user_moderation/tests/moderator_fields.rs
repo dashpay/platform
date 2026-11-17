@@ -1357,3 +1357,46 @@ async fn should_refuse_unpaid_a_moderator_change_writing_a_byte_array_of_integer
         Some(&Value::Bytes(vec![1, 2]))
     );
 }
+
+/// Protocol version 14 is unchanged: document validation passes the list and writing the
+/// document fails, an internal error rather than a consensus error. A block holding the change
+/// is rejected there too, so refusing it unpaid from protocol version 15 leaves blocks as they
+/// were.
+#[tokio::test]
+async fn should_keep_handling_a_moderator_change_writing_such_a_byte_array_as_before_at_protocol_version_14(
+) {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        |contract| add_document_type(contract, SEAL, seal_schema()),
+    )
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (seal, create_seal) = setup
+        .create_document_of_type_with(&setup.user, SEAL, |document| {
+            let properties = document.properties_mut();
+            properties.clear();
+            properties.insert("title".to_string(), Value::Text("first".to_string()));
+        })
+        .await;
+    assert_success(&setup.process(&create_seal, &transaction));
+    setup.commit(transaction);
+
+    let not_bytes = setup
+        .moderate(
+            &setup.moderator,
+            change_action(
+                SEAL,
+                seal.id(),
+                platform_value!({ "mark": [Value::U64(1), Value::U64(2)] }),
+            ),
+        )
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let execution = setup.process(&not_bytes, &transaction);
+    assert!(
+        matches!(execution, StateTransitionExecutionResult::InternalError(..)),
+        "expected the change to end as an internal error at protocol version 14, got \
+         {execution:?}"
+    );
+}
