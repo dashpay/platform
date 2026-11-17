@@ -1031,6 +1031,8 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::platform_state::PlatformState;
     use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::consensus::basic::BasicError;
@@ -1039,6 +1041,7 @@ mod dpns_username_transfer_tests {
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::prelude::IdentityNonce;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use drive::query::drive_document_average_query::{
         AverageMode, DocumentAverageRequest, DocumentAverageResponse,
@@ -3317,5 +3320,302 @@ mod dpns_username_transfer_tests {
                 ..
             }]
         );
+    }
+
+    /// What a price update did: what `check_tx` said, the block's result, and what the
+    /// seller was charged.
+    struct ListingOutcome {
+        check_tx_valid: Result<bool, String>,
+        result: StateTransitionExecutionResult,
+        charged: Credits,
+    }
+
+    /// The seller's latest copy of its only name.
+    fn only_domain_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        owner_id: Identifier,
+    ) -> Document {
+        let mut documents =
+            query_domain_documents_by_record_identity(platform, dpns_contract, owner_id);
+        assert_eq!(documents.len(), 1);
+        documents.remove(0)
+    }
+
+    /// A signed price update of the seller's only name, run through `check_tx` and a block.
+    async fn list_only_domain_at(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        seller: &(Identity, SimpleSigner, IdentityPublicKey),
+        dpns_contract: &DataContract,
+        price: Credits,
+        nonce: IdentityNonce,
+        platform_version: &PlatformVersion,
+    ) -> ListingOutcome {
+        let (identity, signer, key) = seller;
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+        let mut document = only_domain_of(platform, dpns_contract, identity.id());
+        document.increment_revision().expect("expected a revision");
+
+        let transition = BatchTransition::new_document_update_price_transition_from_document(
+            document,
+            domain,
+            price,
+            key,
+            nonce,
+            0,
+            None,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition for the price update");
+        let serialized = transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let check_tx_valid = platform
+            .check_tx(
+                &serialized,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .map(|result| result.is_valid())
+            .map_err(|error| error.to_string());
+
+        let balance = |platform: &TempPlatform<MockCoreRPCLike>| {
+            platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch the balance")
+                .expect("expected a balance")
+        };
+        let balance_before = balance(platform);
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 3000 * nonce,
+                ),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        ListingOutcome {
+            check_tx_valid,
+            result: processing_result.into_execution_results().remove(0),
+            charged: balance_before.saturating_sub(balance(platform)),
+        }
+    }
+
+    /// The first nonce a seller's price update carries: the preorder and the name took 2 and 3.
+    const FIRST_LISTING_NONCE: IdentityNonce = 4;
+
+    /// Three identities, each holding one name of the DPNS contract.
+    async fn three_name_holders(
+        protocol_version: ProtocolVersion,
+    ) -> (
+        TempPlatform<MockCoreRPCLike>,
+        &'static PlatformVersion,
+        Arc<DataContract>,
+        Vec<(Identity, SimpleSigner, IdentityPublicKey)>,
+    ) {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(438);
+
+        let holders = vec![
+            setup_identity(&mut platform, 959, dash_to_credits!(0.5)),
+            setup_identity(&mut platform, 451, dash_to_credits!(0.5)),
+            setup_identity(&mut platform, 452, dash_to_credits!(0.5)),
+        ];
+        let mut dpns_contract = None;
+        for (holder, label) in holders.iter().zip(["quantum9", "quantum8", "quantum7"]) {
+            let (_, contract) =
+                register_dpns_username(&mut platform, holder, &mut rng, label, platform_version)
+                    .await;
+            dpns_contract = Some(contract);
+        }
+
+        (
+            platform,
+            platform_version,
+            dpns_contract.expect("expected the DPNS contract"),
+            holders,
+        )
+    }
+
+    /// The sum the document history contract keeps of the prices listed for `dpns_contract`.
+    fn listed_price_sum(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> i64 {
+        history_aggregate_price_average(
+            platform,
+            "priceUpdate",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(0, 9_999_999_999_999),
+            ],
+            platform_version,
+        )
+        .1
+    }
+
+    /// One listing at the largest price a signed 64-bit integer holds fills the sum the
+    /// document history contract keeps of a contract's listed prices. Every later listing
+    /// of any name at a price above zero then passes `check_tx` and ends in the block as an
+    /// internal error: the seller pays nothing, the nonce stays, and the name is not listed.
+    async fn run_listing_after_the_listed_price_sum_is_full(protocol_version: ProtocolVersion) {
+        let (platform, platform_version, dpns_contract, holders) =
+            three_name_holders(protocol_version).await;
+
+        let filling = list_only_domain_at(
+            &platform,
+            &holders[0],
+            &dpns_contract,
+            i64::MAX as u64,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+        assert_eq!(filling.check_tx_valid, Ok(true));
+        assert_matches!(
+            filling.result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            listed_price_sum(&platform, &dpns_contract, platform_version),
+            i64::MAX
+        );
+
+        let other_seller = &holders[1];
+        let nonce_of_other_seller = || {
+            platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    other_seller.0.id().to_buffer(),
+                    dpns_contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the nonce")
+        };
+        let nonce_before = nonce_of_other_seller();
+
+        let refused = list_only_domain_at(
+            &platform,
+            other_seller,
+            &dpns_contract,
+            1,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+        assert_eq!(refused.check_tx_valid, Ok(true));
+        assert_matches!(
+            &refused.result,
+            StateTransitionExecutionResult::InternalError(message) if message.contains("overflow")
+        );
+        assert_eq!(refused.charged, 0);
+        assert_eq!(nonce_of_other_seller(), nonce_before);
+        assert!(
+            only_domain_of(&platform, &dpns_contract, other_seller.0.id())
+                .properties()
+                .get("$price")
+                .is_none()
+        );
+
+        // A price of zero adds nothing to the sum, so it is still recorded
+        let free = list_only_domain_at(
+            &platform,
+            other_seller,
+            &dpns_contract,
+            0,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            free.result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(free.charged > 0);
+    }
+
+    #[tokio::test]
+    async fn should_end_a_listing_as_an_internal_error_once_the_listed_price_sum_is_full() {
+        run_listing_after_the_listed_price_sum_is_full(PlatformVersion::latest().protocol_version)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn should_end_a_listing_as_an_internal_error_once_the_listed_price_sum_is_full_protocol_version_14(
+    ) {
+        run_listing_after_the_listed_price_sum_is_full(14).await;
+    }
+
+    #[tokio::test]
+    async fn should_end_a_listing_as_an_internal_error_once_the_listed_price_sum_is_full_protocol_version_13(
+    ) {
+        run_listing_after_the_listed_price_sum_is_full(13).await;
+    }
+
+    /// A price above what a signed 64-bit integer holds cannot be written to the history
+    /// document at all: `check_tx` fails on it, and in a block it is an internal error.
+    #[tokio::test]
+    async fn should_end_a_listing_above_the_signed_range_as_an_internal_error() {
+        let (platform, platform_version, dpns_contract, holders) =
+            three_name_holders(PlatformVersion::latest().protocol_version).await;
+
+        let outcome = list_only_domain_at(
+            &platform,
+            &holders[2],
+            &dpns_contract,
+            i64::MAX as u64 + 1,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+
+        assert_matches!(&outcome.check_tx_valid, Err(message) if message.contains("out of bounds"));
+        assert_matches!(
+            &outcome.result,
+            StateTransitionExecutionResult::InternalError(message)
+                if message.contains("out of bounds")
+        );
+        assert_eq!(outcome.charged, 0);
     }
 }
