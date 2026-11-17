@@ -811,6 +811,38 @@ fn stored_choice(
     stored_document(platform, contract, choice::NAME, choice_id)
 }
 
+/// The ids of the choices of the proposal `proposal_id` a document query finds through the
+/// `byProposal` index, as a client reads the choice a vote kept: the choices a vote still
+/// holds are in the vote's own storage, not there.
+fn choices_found_by_proposal(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    proposal_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Vec<Identifier> {
+    let document_type = contract
+        .document_type_for_name(choice::NAME)
+        .expect("expected the choice type");
+    let query = DriveDocumentQuery::from_value(
+        platform_value!({
+            "where": [[choice::properties::PROPOSAL_ID, "==", proposal_id]],
+        }),
+        contract,
+        document_type,
+        &platform.config.drive,
+        platform_version,
+    )
+    .expect("expected a document query");
+    platform
+        .drive
+        .query_documents(query, None, false, None, None)
+        .expect("expected to query the choices")
+        .documents()
+        .iter()
+        .map(|document| document.id())
+        .collect()
+}
+
 /// A serialized edit of the multiple choice proposal `question` by `proposer` (its owner)
 /// setting `changes`, its revision bumped.
 async fn edit_transition(
@@ -1007,8 +1039,12 @@ async fn should_keep_the_choice_the_masternodes_vote_for_most() {
         prefunded_balance(&platform, &poll, platform_version),
         4 * fund
     );
-    // A choice is held by the vote, not stored, until the vote ends
+    // A choice is held by the vote, not stored, until the vote ends: a document query of the
+    // proposal's choices finds none of the four
     assert!(stored_choice(&platform, &contract, bob_choice).is_none());
+    assert!(
+        choices_found_by_proposal(&platform, &contract, proposal_id, platform_version).is_empty()
+    );
 
     // A vote names a choice by its document id. Two masternodes for Bob's choice, one each for
     // Alice's and Carol's, one for none of them
@@ -1044,6 +1080,11 @@ async fn should_keep_the_choice_the_masternodes_vote_for_most() {
     for other in [alice_choice, carol_choice, proposer_choice] {
         assert!(stored_choice(&platform, &contract, other).is_none());
     }
+    // Which leaves the kept choice the only one a document query of the proposal's finds
+    assert_eq!(
+        choices_found_by_proposal(&platform, &contract, proposal_id, platform_version),
+        vec![bob_choice]
+    );
 }
 
 #[tokio::test]
@@ -1112,6 +1153,9 @@ async fn should_keep_no_choice_when_the_lock_votes_outnumber_every_choice() {
     for entered in [alice_choice, bob_choice] {
         assert!(stored_choice(&platform, &contract, entered).is_none());
     }
+    assert!(
+        choices_found_by_proposal(&platform, &contract, proposal_id, platform_version).is_empty()
+    );
 
     // The masternodes' answer stands: no choice can be entered for the proposal again
     let (again, _) = choice_transition(

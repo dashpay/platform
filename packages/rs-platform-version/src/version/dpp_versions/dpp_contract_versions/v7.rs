@@ -18,6 +18,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `check_document_type_schema`, 1 rather than 0: a schema is checked at registration
 ///   natively instead of against the document meta-schema through the `jsonschema` crate, and
 ///   every new document type must have a validation schema;
+/// - `validate_update`, 2 rather than 1: an update of a contract is refused when an object of
+///   a stored document type's schema, or of the stored `$defs`, names a key twice, as
+///   registration from this version refuses a schema that does;
 /// - `validate_max_depth`, 2 rather than 1: the depth and cycle check resolves `$ref`
 ///   pointers by RFC 6901, as the native validator does;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
@@ -62,6 +65,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         validate_schema_patterns: Some(0),
         // changed: the fee estimate bills an index without compiling its field matches
         registration_cost: 3,
+        // changed: an update of a contract whose stored schema repeats a key is refused
+        validate_update: 2,
         ..CONTRACT_VERSIONS_V6.methods
     },
     document_type_versions: DocumentTypeVersions {
