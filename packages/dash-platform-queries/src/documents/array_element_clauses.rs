@@ -9,7 +9,8 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 use drive::query::{
-    key_array_element_clauses, validate_and_canonicalize_where_clauses, WhereClause, WhereOperator,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses, CountMode, WhereClause,
+    WhereOperator,
 };
 
 /// `where_clauses`, read against the document type `document_type_name` of
@@ -39,18 +40,20 @@ pub fn key_element_clauses(
     )
 }
 
-/// [`aggregate_where_clauses`] of `request` before it is sent. Callers pass the
-/// request with its pending window selections resolved, as the verifier resolves
-/// them (`DocumentQuery::resolved_for_checking`), so whatever this refuses the
+/// [`aggregate_where_clauses`] of `request` before it is sent, a request the
+/// routing answers in `mode`. Callers pass the request with its pending window
+/// selections resolved, as the verifier resolves them
+/// (`DocumentQuery::resolved_for_checking`), so whatever this refuses the
 /// verifier refuses too.
 pub(super) fn aggregate_request_where_clauses(
     request: &DocumentQuery,
+    mode: CountMode,
     folds_entries: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, drive_proof_verifier::Error> {
     aggregate_where_clauses(
         document_type_named(&request.data_contract, &request.document_type_name)?,
-        &request.group_by,
+        mode,
         request.where_clauses.clone(),
         folds_entries,
         platform_version,
@@ -69,8 +72,10 @@ pub(super) fn document_type_named<'a>(
 }
 
 /// Whether a request grouped by `group_by` is grouped by one field that an
-/// `In` or a `containsAny` constrains: the shape drive-abci routes as
-/// `GroupByIn` (its `is_in_field`), which the SDK cannot call.
+/// `In` or a `containsAny` constrains: the shape Drive's routing answers as
+/// `CountMode::GroupByIn` from protocol version 14
+/// (`drive::query::aggregate_routing`), which the count, sum and average
+/// views route through themselves.
 pub fn grouped_by_in_field(group_by: &[String], where_clauses: &[WhereClause]) -> bool {
     match group_by {
         [field] => where_clauses.iter().any(|clause| {
@@ -91,18 +96,20 @@ pub fn grouped_by_in_field(group_by: &[String], where_clauses: &[WhereClause]) -
 /// detection, and the verifier's must run over the same shape or a valid
 /// proof is refused.
 ///
-/// `folds_entries` is whether the caller adds the verified entries up into
-/// one total (`DocumentCount`, `DocumentSum`, `DocumentAverage`): several
-/// elements are then refused even grouped by the array, since the total
-/// would count a document once per element it holds.
+/// `mode` is the grouped mode the routing answers the request in: several
+/// elements are read only grouped by the `In` field (`CountMode::GroupByIn`),
+/// as the server keys them. `folds_entries` is whether the caller adds the
+/// verified entries up into one total (`DocumentCount`, `DocumentSum`,
+/// `DocumentAverage`): several elements are then refused even grouped by the
+/// array, since the total would count a document once per element it holds.
 pub(super) fn aggregate_where_clauses(
     document_type: DocumentTypeRef,
-    group_by: &[String],
+    mode: CountMode,
     where_clauses: Vec<WhereClause>,
     folds_entries: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, drive_proof_verifier::Error> {
-    let grouped_by_in = !folds_entries && grouped_by_in_field(group_by, &where_clauses);
+    let grouped_by_in = !folds_entries && matches!(mode, CountMode::GroupByIn);
     let keyed = key_clauses_of(
         document_type,
         where_clauses,

@@ -33,13 +33,11 @@ pub(crate) fn fetch_contender(
     let mut result =
         contender_query.execute(drive, transaction, &mut drive_operations, platform_version)?;
 
-    let fee = Drive::calculate_fee(
+    let fee = drive.calculate_fee(
         None,
         Some(drive_operations),
         &block_info.epoch,
-        drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     match result.contenders.pop() {
         None => Ok((None, fee)),

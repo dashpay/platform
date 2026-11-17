@@ -17,7 +17,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 use crate::address_private_key::secret_string_into_raw;
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
@@ -139,8 +139,7 @@ pub unsafe extern "C" fn platform_wallet_mnemonic_generate(
         word_count as usize,
         language.into()
     ));
-    *out_mnemonic =
-        unwrap_result_or_return!(secret_string_into_raw(Zeroizing::new(mnemonic.phrase())));
+    *out_mnemonic = unwrap_result_or_return!(secret_string_into_raw(mnemonic.phrase()));
     PlatformWalletFFIResult::ok()
 }
 

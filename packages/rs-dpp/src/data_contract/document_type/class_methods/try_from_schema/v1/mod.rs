@@ -96,6 +96,7 @@ impl DocumentTypeV1 {
             false,
             validation_operations,
             &common::ParserGeneration {
+                admit_lifecycle: false,
                 document_type_schema_version,
                 admit_history: document_type_schema_version >= 2,
                 admit_count_indexes: platform_version.protocol_version >= 12,

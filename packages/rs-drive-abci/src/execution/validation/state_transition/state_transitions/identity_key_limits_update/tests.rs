@@ -15,21 +15,26 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::random_document::{
+    CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+};
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use dpp::platform_value::Bytes32;
 use dpp::serialization::{PlatformSerializable, Signable};
-use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::identity_key_limits_update_transition::methods::IdentityKeyLimitsUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_key_limits_update_transition::v0::IdentityKeyLimitsUpdateTransitionV0;
 use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::{StateTransition, StateTransitionSingleSigned};
-use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
@@ -206,27 +211,61 @@ impl Setup {
         transition
     }
 
-    /// A data contract creation signed by the limited key: a transition a CRITICAL key may
+    /// A DPNS preorder creation signed by the limited key: a transition a key with limits may
     /// sign, so the mempool judges the key's budget on it
-    async fn contract_creation_signed_by_limited_key(&self) -> StateTransition {
+    async fn document_creation_signed_by_limited_key(&self) -> StateTransition {
         let platform_version = PlatformVersion::latest();
-        let data_contract = get_data_contract_fixture(
-            Some(self.identity.id()),
-            1,
-            platform_version.protocol_version,
-        )
-        .data_contract_owned();
-        DataContractCreateTransition::new_from_data_contract(
-            data_contract,
-            self.take_nonce(),
-            &self.identity.clone().into_partial_identity_info(),
-            LIMITED_KEY_ID,
+        let dpns = self
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the DPNS contract");
+        let preorder = dpns
+            .document_type_for_name("preorder")
+            .expect("expected the preorder type");
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = preorder
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                self.identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a document");
+        // The first identity contract nonce, which the document id commits to
+        let identity_contract_nonce = 2;
+        document
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                identity_contract_nonce,
+                platform_version,
+            )
+            .expect("expected to set the document id");
+        let limited_key = self
+            .identity
+            .public_keys()
+            .get(&LIMITED_KEY_ID)
+            .expect("expected the limited key");
+        BatchTransition::new_document_creation_transition_from_document(
+            document,
+            preorder,
+            entropy.0,
+            limited_key,
+            identity_contract_nonce,
+            0,
+            None,
             &self.signer,
             platform_version,
             None,
         )
         .await
-        .expect("expected to build the contract creation")
+        .expect("expected to build the document creation")
     }
 
     fn process(
@@ -346,7 +385,7 @@ async fn should_raise_the_budget_of_a_spent_key_so_it_can_sign_again() {
             version,
         )
         .expect("expected to spend the whole budget");
-    let errors = setup.check_tx(&setup.contract_creation_signed_by_limited_key().await);
+    let errors = setup.check_tx(&setup.document_creation_signed_by_limited_key().await);
     assert!(
         matches!(errors.as_slice(), [error] if error.code() == PUBLIC_KEY_BUDGET_EXHAUSTED),
         "a spent key is refused at admission: {errors:?}"
@@ -377,7 +416,7 @@ async fn should_raise_the_budget_of_a_spent_key_so_it_can_sign_again() {
         .expect("expected to commit");
 
     // The key is usable again: its transitions are admitted to the mempool.
-    let errors = setup.check_tx(&setup.contract_creation_signed_by_limited_key().await);
+    let errors = setup.check_tx(&setup.document_creation_signed_by_limited_key().await);
     assert!(
         errors.is_empty(),
         "a topped up key is admitted again: {errors:?}"

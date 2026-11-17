@@ -52,8 +52,10 @@ pub(crate) fn private_document_entries_from_response(
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;
+    // The response carries no chunk power; only a proof binds it.
     Ok(PrivateDocumentEntries {
         entries,
         total_count,
+        chunk_power: None,
     })
 }

@@ -9,12 +9,15 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use crate::data_contract::document_type::property::{ByteArrayPropertySizes, DocumentPropertyType};
+use crate::data_contract::document_type::property::{
+    ByteArrayPropertySizes, DocumentProperty, DocumentPropertyType,
+};
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::document_type::{DocumentTypeRef, PrivateDocumentConfig};
 use crate::data_contract::errors::DataContractError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
+use indexmap::IndexMap;
 use platform_version::version::PlatformVersion;
 
 /// Per-update exceptions selected by the versioned validator. Defaults retain
@@ -419,6 +422,35 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // A private type's entries are immutable and do not say which version of the contract
+        // wrote them, so every one is read with the type as it is now. The document property
+        // encoding writes the type's properties, and each object's members, in the order the
+        // type parses them (inside an object, the schema's map order), so an update may only add
+        // properties after the existing ones, at the end of the type and of every object: an
+        // entry written before then reads the added ones as absent. Schema compatibility already
+        // freezes each existing property's position and type, but not that order. In place: only
+        // protocol version 15 parses a private type, so `private_document()` is `None` on both
+        // sides at every earlier version and the check is skipped there.
+        if self.private_document().is_some() {
+            if let Some(member_list) =
+                first_reordered_member_list(self.properties(), new_document_type.properties(), None)
+            {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "a private document type can only add properties after its existing \
+                             ones: {member_list} would no longer start with its existing \
+                             properties in their order, so the entries written before would read \
+                             wrong"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+
         // The entry payload is part of every stored entry's value layout:
         // adding, dropping or renaming a payload property would leave the
         // existing entries undecodable (and their commitments unrecomputable).
@@ -522,6 +554,38 @@ impl DocumentTypeRef<'_> {
 
         Ok(SimpleConsensusValidationResult::new_with_errors(errors))
     }
+}
+
+/// The first member list of `new` that does not start with `old`'s members in their order: the
+/// type's own properties when `path` is `None`, else those of the object at `path`, searched at
+/// every depth. `None` when every list of `old` is a prefix of the matching list of `new`.
+fn first_reordered_member_list(
+    old: &IndexMap<String, DocumentProperty>,
+    new: &IndexMap<String, DocumentProperty>,
+    path: Option<&str>,
+) -> Option<String> {
+    let keeps_order =
+        new.len() >= old.len() && old.keys().zip(new.keys()).all(|(old, new)| old == new);
+    if !keeps_order {
+        return Some(path.map_or_else(
+            || "the type".to_string(),
+            |path| format!("the object {path}"),
+        ));
+    }
+    old.iter().find_map(|(name, old_property)| {
+        let (
+            DocumentPropertyType::Object(old_members),
+            Some(DocumentPropertyType::Object(new_members)),
+        ) = (
+            &old_property.property_type,
+            new.get(name).map(|property| &property.property_type),
+        )
+        else {
+            return None;
+        };
+        let member_path = path.map_or_else(|| name.clone(), |path| format!("{path}.{name}"));
+        first_reordered_member_list(old_members, new_members, Some(&member_path))
+    })
 }
 
 #[cfg(test)]

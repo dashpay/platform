@@ -75,7 +75,7 @@ final class DashModelMigrationTests: XCTestCase {
         SDKLogger.flush()
         let log = try String(contentsOf: session.appendingPathComponent("swift/run.log"), encoding: .utf8)
         XCTAssertTrue(log.contains("event=store_open_started"))
-        XCTAssertTrue(log.contains("route=\"historical-v2-to-v5\""))
+        XCTAssertTrue(log.contains("route=\"historical-v2-to-v3\""))
         XCTAssertTrue(log.contains("source_version=\"2.0.0\""))
         XCTAssertTrue(log.contains("source_checksum=\"\(sourceChecksum)\""))
         XCTAssertTrue(log.contains("target_version=\"5.0.0\""))
@@ -513,7 +513,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV5.self)
         let v2Configuration = ModelConfiguration(
             "DashKeyLimitsMigrationTest",
             schema: v2Schema,
@@ -590,7 +590,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV5.self)
         let v2Configuration = ModelConfiguration(
             "DashContractBoundsKindMigrationTest",
             schema: v2Schema,

@@ -12,14 +12,14 @@ impl Drive {
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
-        start_at_ms: u64,
+        start_after_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<PathQuery, Error> {
         // In place, unversioned in effect: no type is private before protocol version 15
         refuse_a_private_document_type(document_type).map_err(Error::Query)?;
         let limit = Self::validate_document_history_limit(limit)?;
-        let encoded_start = DocumentPropertyType::encode_date_timestamp(start_at_ms);
+        let encoded_start = DocumentPropertyType::encode_date_timestamp(start_after_ms);
         let query = Query::new_single_query_item_with_direction(
             QueryItem::RangeAfter(std::ops::RangeFrom {
                 start: encoded_start,

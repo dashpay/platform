@@ -233,13 +233,11 @@ impl VotePollsByDocumentTypeQuery {
         let result =
             self.execute_no_proof(drive, transaction, &mut drive_operations, platform_version)?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {

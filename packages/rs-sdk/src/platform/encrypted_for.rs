@@ -33,7 +33,7 @@ use dpp::data_contract::document_type::{
 };
 use dpp::document::{property_names, Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::contract_bounds::DocumentTypeBoundsCheck;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
 use dpp::platform_value::btreemap_extensions::{
@@ -636,15 +636,9 @@ fn why_unfit(
         .iter()
         .any(|declaration| declaration.bound_to.is_some());
     if let (false, Some(bounds)) = (bound_to_declared, key.contract_bounds()) {
-        let in_scope = match bounds {
-            ContractBounds::SingleContract { id } => *id == declaring_contract_id,
-            ContractBounds::SingleContractDocumentType {
-                id,
-                document_type_name: bound_document_type_name,
-            } => *id == declaring_contract_id && bound_document_type_name == document_type_name,
-            ContractBounds::ContractGroup { .. } => false,
-        };
-        if !in_scope {
+        if bounds.check_document_type(&declaring_contract_id, document_type_name)
+            != DocumentTypeBoundsCheck::Allowed
+        {
             return Some(format!(
                 "is bound to {bounds:?}, not to contract {declaring_contract_id} or its document \
                  type {document_type_name}"

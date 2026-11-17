@@ -199,6 +199,9 @@ impl IdentityWallet {
             .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, settings)
             .await
         {
+            if e.is_state_transition_result_unconfirmed() {
+                return Err(PlatformWalletError::Sdk(e));
+            }
             self.take_rejected_revision(identity_id, transition_revision, &e)
                 .await;
             return Err(PlatformWalletError::InvalidIdentityData(format!(
@@ -890,14 +893,34 @@ mod update_identity_tests {
     async fn should_keep_the_cached_revision_unless_drive_holds_a_lower_one() {
         let identity_id = Identifier::default();
         let other = Identifier::from([7; 32]);
-        for (cached, transition, error) in [
-            (5, 6, revision_refusal(identity_id, 5, 0)),
-            (5, 6, revision_refusal(identity_id, 9, 1)),
-            (7, 6, revision_refusal(identity_id, 5, 0)),
-            (6, 6, revision_refusal(identity_id, 3, 1)),
-            (5, 6, revision_refusal(other, 2, 0)),
-            (5, 6, dash_sdk::Error::Generic("timeout".to_string())),
-        ] {
+        for (cached, transition, error) in
+            [
+                (5, 6, revision_refusal(identity_id, 5, 0)),
+                (5, 6, revision_refusal(identity_id, 9, 1)),
+                (7, 6, revision_refusal(identity_id, 5, 0)),
+                (6, 6, revision_refusal(identity_id, 3, 1)),
+                (5, 6, revision_refusal(other, 2, 0)),
+                (5, 6, dash_sdk::Error::Generic("timeout".to_string())),
+                (
+                    6,
+                    7,
+                    dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(revision_refusal(
+                        identity_id,
+                        5,
+                        0,
+                    ))),
+                ),
+                (
+                    6,
+                    7,
+                    dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                        dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                            revision_refusal(identity_id, 5, 1),
+                        )),
+                    )),
+                ),
+            ]
+        {
             let store = Arc::new(CapturingStore::default());
             let wallet = wallet_at_revision_on(cached, store.clone()).await;
             let wallet = wallet.identity();

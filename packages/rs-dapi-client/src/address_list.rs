@@ -504,7 +504,9 @@ impl AddressList {
     /// place, falling back to evicted members if there are too few standbys.
     ///
     /// This is the failover path for callers that disable banning
-    /// ([RequestSettings::ban_failed_address](crate::RequestSettings)): a
+    /// ([RequestSettings::ban_failed_address](crate::RequestSettings)), and for a
+    /// busy node a request asks not to ban
+    /// ([RequestSettings::ban_busy_address](crate::RequestSettings)): a
     /// failing node yields its slot's traffic to an available standby even
     /// when it is never banned.
     pub fn evict_from_rotation(&self, address: &Address) {
@@ -1147,6 +1149,7 @@ mod tests {
         let failed = list.get_live_address().unwrap();
 
         let result: ExecutionResult<i32, TransportError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: TransportError::Grpc(Status::unavailable("node down")),
             retries: 0,
             address: Some(failed.clone()),

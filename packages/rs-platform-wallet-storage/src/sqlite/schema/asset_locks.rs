@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::{AssetLockChangeSet, AssetLockPersistenceAction};
+use platform_wallet::changeset::{
+    AssetLockChangeSet, AssetLockPersistenceAction, SHIELDED_RECIPIENT_SIZE,
+};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -24,11 +26,9 @@ use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
 use {
-    dashcore::{OutPoint, Txid},
-    platform_wallet::changeset::AssetLockEntry,
-    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock,
-    rusqlite::Connection,
-    std::collections::{BTreeMap, HashSet},
+    dashcore::OutPoint, platform_wallet::changeset::AssetLockEntry,
+    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock, rusqlite::Connection,
+    std::collections::BTreeMap,
 };
 
 use crate::sqlite::schema::blob::impl_persistable_blob;
@@ -64,6 +64,7 @@ impl_persistable_blob!(AssetLockEntryWire);
 /// Nullable recovery columns read independently of the frozen lifecycle blob.
 struct AssetLockRecoveryRow {
     operation_id: Option<Vec<u8>>,
+    shielded_recipient: Option<Vec<u8>>,
     lifecycle_blob: Vec<u8>,
     operation_revision: i64,
 }
@@ -126,6 +127,7 @@ impl AssetLockEntryWire {
             operation_id: None,
             operation_revision: 0,
             expected_operation_revision: None,
+            shielded_recipient: None,
         })
     }
 }
@@ -141,8 +143,8 @@ pub fn apply(
         // SQL also protects a consumed column if its blob has drifted.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
-                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, operation_revision) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, shielded_recipient, operation_revision) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
              ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
                 status = excluded.status, \
                 account_index = excluded.account_index, \
@@ -150,6 +152,7 @@ pub fn apply(
                 amount_duffs = excluded.amount_duffs, \
                 lifecycle_blob = excluded.lifecycle_blob, \
                 operation_id = COALESCE(excluded.operation_id, asset_locks.operation_id), \
+                shielded_recipient = COALESCE(excluded.shielded_recipient, asset_locks.shielded_recipient), \
                 operation_revision = excluded.operation_revision \
              WHERE asset_locks.status != 'consumed' OR excluded.status = 'consumed'",
         )?;
@@ -157,14 +160,30 @@ pub fn apply(
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
             let existing: Option<AssetLockRecoveryRow> = tx.query_row(
-                "SELECT operation_id, lifecycle_blob, operation_revision FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                "SELECT operation_id, shielded_recipient, lifecycle_blob, operation_revision FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![wallet_id.as_slice(), &op_bytes[..]],
                 |row| Ok(AssetLockRecoveryRow {
                     operation_id: row.get(0)?,
-                    lifecycle_blob: row.get(1)?,
-                    operation_revision: row.get(2)?,
+                    shielded_recipient: row.get(1)?,
+                    lifecycle_blob: row.get(2)?,
+                    operation_revision: row.get(3)?,
                 }),
             ).optional()?;
+            // The shielded recipient is immutable once stored. Reject the
+            // whole snapshot before any lifecycle or sidecar write.
+            let shielded_recipient = entry.shielded_recipient;
+            if let (Some(incoming), Some(stored)) = (
+                shielded_recipient.as_ref(),
+                existing
+                    .as_ref()
+                    .and_then(|row| row.shielded_recipient.as_deref()),
+            ) {
+                if incoming.as_slice() != stored {
+                    return Err(WalletStorageError::blob_decode(
+                        "asset lock shielded recipient cannot change",
+                    ));
+                }
+            }
             let previous = existing
                 .map(|stored| -> Result<_, WalletStorageError> {
                     let old: AssetLockEntryWire = blob::decode(&stored.lifecycle_blob)?;
@@ -178,6 +197,16 @@ pub fn apply(
                         .map(|id| {
                             id.try_into().map_err(|_| {
                                 WalletStorageError::blob_decode("invalid operation UUID")
+                            })
+                        })
+                        .transpose()?;
+                    previous.shielded_recipient = stored
+                        .shielded_recipient
+                        .map(|bytes| {
+                            <[u8; SHIELDED_RECIPIENT_SIZE]>::try_from(bytes).map_err(|_| {
+                                WalletStorageError::blob_decode(
+                                    "asset_locks.shielded_recipient must contain 43 bytes",
+                                )
                             })
                         })
                         .transpose()?;
@@ -203,6 +232,9 @@ pub fn apply(
                 )?,
                 lifecycle_blob,
                 entry.operation_id.as_ref().map(|id| id.as_slice()),
+                shielded_recipient
+                    .as_ref()
+                    .map(|recipient| recipient.as_slice()),
                 crate::sqlite::util::safe_cast::u64_to_i64(
                     "asset_locks.operation_revision",
                     entry.operation_revision
@@ -224,36 +256,6 @@ pub fn apply(
         }
     }
     Ok(())
-}
-
-/// Block bound replay losers and remove unbound ones in the Core repair transaction.
-pub(crate) fn remove_swept(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    txids: &HashSet<Txid>,
-) -> Result<(), WalletStorageError> {
-    let mut changes = AssetLockChangeSet::default();
-    for mut lock in load_unconsumed(tx, wallet_id, &LoadCtx::strict())?
-        .into_values()
-        .flat_map(BTreeMap::into_values)
-    {
-        if !txids.contains(&lock.out_point.txid)
-            || lock.status.is_consumed()
-            || lock.status == AssetLockStatus::Conflicted
-        {
-            continue;
-        }
-        if lock.operation_id.is_some() {
-            lock.status = AssetLockStatus::Conflicted;
-            lock.proof = None;
-            let mut entry = AssetLockEntry::from(&lock);
-            entry.advance_operation_revision();
-            changes.asset_locks.insert(lock.out_point, entry);
-        } else {
-            changes.removed.insert(lock.out_point);
-        }
-    }
-    apply(tx, wallet_id, &changes)
 }
 
 /// Test-only drift guard for the `asset_locks.status` TEXT-column
@@ -319,6 +321,7 @@ fn decode_row(
     blob_bytes: &[u8],
     typed_status: &str,
     operation_id: Option<Vec<u8>>,
+    shielded_recipient: Option<Vec<u8>>,
     operation_revision: i64,
     ctx: &LoadCtx,
 ) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
@@ -329,6 +332,15 @@ fn decode_row(
         .map(|bytes| {
             bytes.try_into().map_err(|_| {
                 WalletStorageError::blob_decode("asset_locks.operation_id must contain 16 bytes")
+            })
+        })
+        .transpose()?;
+    entry.shielded_recipient = shielded_recipient
+        .map(|bytes| {
+            <[u8; SHIELDED_RECIPIENT_SIZE]>::try_from(bytes).map_err(|_| {
+                WalletStorageError::blob_decode(
+                    "asset_locks.shielded_recipient must contain 43 bytes",
+                )
             })
         })
         .transpose()?;
@@ -392,6 +404,7 @@ fn decode_row(
         proof: entry.proof,
         operation_id: entry.operation_id,
         operation_revision: entry.operation_revision,
+        shielded_recipient: entry.shielded_recipient,
     };
     Ok((account_index, outpoint, tracked))
 }
@@ -407,7 +420,7 @@ pub fn load_state(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, operation_revision \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient, operation_revision \
          FROM asset_locks WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -420,13 +433,15 @@ pub fn load_state(
         let blob_bytes: Vec<u8> = row.get(4)?;
         let status: String = row.get(5)?;
         let operation_id: Option<Vec<u8>> = row.get(6)?;
+        let shielded_recipient: Option<Vec<u8>> = row.get(7)?;
         let (acct, outpoint, tracked) = decode_row(
             &op_bytes,
             account_index,
             &blob_bytes,
             &status,
             operation_id,
-            row.get(7)?,
+            shielded_recipient,
+            row.get(8)?,
             ctx,
         )?;
         out.entry(acct).or_default().insert(outpoint, tracked);
@@ -447,7 +462,7 @@ pub fn load_unconsumed(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, operation_revision \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient, operation_revision \
          FROM asset_locks WHERE wallet_id = ?1 AND (status != 'consumed' OR operation_id IS NOT NULL)",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -460,13 +475,15 @@ pub fn load_unconsumed(
         let blob_bytes: Vec<u8> = row.get(4)?;
         let status: String = row.get(5)?;
         let operation_id: Option<Vec<u8>> = row.get(6)?;
+        let shielded_recipient: Option<Vec<u8>> = row.get(7)?;
         let (acct, outpoint, tracked) = decode_row(
             &op_bytes,
             account_index,
             &blob_bytes,
             &status,
             operation_id,
-            row.get(7)?,
+            shielded_recipient,
+            row.get(8)?,
             ctx,
         )?;
         if tracked.status.is_consumed() && tracked.operation_id.is_none() {
@@ -501,8 +518,6 @@ mod tests {
         conn
     }
 
-    use dashcore::hashes::Hash;
-
     fn sample_outpoint(b: u8) -> OutPoint {
         OutPoint {
             txid: dashcore::Txid::from_byte_array([b; 32]),
@@ -535,6 +550,7 @@ mod tests {
             operation_id: None,
             operation_revision: 0,
             expected_operation_revision: None,
+            shielded_recipient: None,
             amount_duffs: 1000,
             status,
             proof,
@@ -575,6 +591,7 @@ mod tests {
                 operation_id: tracked.operation_id,
                 operation_revision: tracked.operation_revision,
                 expected_operation_revision: None,
+                shielded_recipient: tracked.shielded_recipient,
             })
             .expect("stored asset lock must load back")
     }
@@ -767,6 +784,7 @@ mod tests {
             operation_id: None,
             operation_revision: 0,
             expected_operation_revision: None,
+            shielded_recipient: None,
             amount_duffs: 1000,
             status: AssetLockStatus::Built,
             proof: None,

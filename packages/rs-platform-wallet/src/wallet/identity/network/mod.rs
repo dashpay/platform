@@ -75,6 +75,14 @@ mod payments;
 pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
 mod prepared_payment;
 pub use prepared_payment::PreparedDashPayPayment;
+mod private_contact_requests;
+#[cfg(feature = "shielded")]
+pub(crate) use private_contact_requests::{
+    restore_journaled_private_payments, JournaledPrivatePayment,
+};
+pub use private_contact_requests::{
+    PaymentStarted, PrivateContactReadiness, PrivateContactSyncReport, PrivateDocumentKeyPaths,
+};
 mod profile;
 mod public_keys;
 pub use public_keys::{fetch_identity_public_keys, FetchedIdentityPublicKeys};

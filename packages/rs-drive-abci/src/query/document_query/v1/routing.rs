@@ -5,13 +5,11 @@
 //! the routing *rules* version through the
 //! `compute_aggregate_mode_and_check_limit` table it calls into.
 
-use super::compute_aggregate_mode_and_check_limit::{
-    compute_aggregate_mode_and_check_limit, AggregateRouting,
-};
 use super::{not_yet_implemented, RoutingDecision};
 use crate::error::query::QueryError;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::query::aggregate_routing::{compute_aggregate_mode_and_check_limit, AggregateRouting};
 use drive::query::{HavingClause, OrderClause, SelectFunction, SelectProjection, WhereClause};
 #[cfg(test)]
 use {
@@ -152,7 +150,7 @@ pub(super) fn validate_and_route(
                         .to_string(),
                 ));
             }
-            match compute_aggregate_mode_and_check_limit(
+            match route_aggregate(
                 select,
                 group_by,
                 where_clauses,
@@ -197,7 +195,7 @@ pub(super) fn validate_and_route(
                         .to_string(),
                 ));
             }
-            match compute_aggregate_mode_and_check_limit(
+            match route_aggregate(
                 select,
                 group_by,
                 where_clauses,
@@ -258,7 +256,7 @@ pub(super) fn validate_and_route(
             // but the `any` shape is used here too so the routing
             // logic doesn't bake in an assumption that could go
             // stale if that validator's contract ever relaxes.
-            match compute_aggregate_mode_and_check_limit(
+            match route_aggregate(
                 select,
                 group_by,
                 where_clauses,
@@ -274,6 +272,38 @@ pub(super) fn validate_and_route(
             }
         }
     }
+}
+
+/// Drive's routing of a `SELECT COUNT` / `SUM` / `AVG` request
+/// ([`compute_aggregate_mode_and_check_limit`]), which a client runs before
+/// sending too, with its refusals as the handler reports them: a query
+/// syntax refusal as a query error, anything else (an unknown method
+/// version) as a Drive error.
+#[allow(clippy::too_many_arguments)]
+fn route_aggregate(
+    select: &SelectProjection,
+    group_by: &[String],
+    where_clauses: &[WhereClause],
+    order_by: &[OrderClause],
+    limit: Option<u32>,
+    having: &[HavingClause],
+    function_name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<AggregateRouting, QueryError> {
+    compute_aggregate_mode_and_check_limit(
+        select,
+        group_by,
+        where_clauses,
+        order_by,
+        limit,
+        having,
+        function_name,
+        platform_version,
+    )
+    .map_err(|error| match error {
+        drive::error::Error::Query(error) => QueryError::Query(error),
+        error => QueryError::Drive(error),
+    })
 }
 
 /// The `OFFSET` gate, applied **after** routing.

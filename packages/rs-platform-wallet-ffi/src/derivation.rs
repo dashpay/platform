@@ -10,7 +10,6 @@ use platform_wallet::wallet::identity::network::identity_auth_derivation_path_fo
 use platform_wallet::{
     first_receive_address_for_mnemonic, parse_mnemonic_any_language, wallet_id_for_mnemonic,
 };
-use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::types::{FFINetwork, Network};
@@ -48,7 +47,7 @@ use crate::{check_ptr, unwrap_result_or_return};
 ///
 /// # Zeroization
 /// The derived master xpriv, the derived xpriv at `path`, and the
-/// intermediate seed are wrapped in [`Zeroizing`] inside this
+/// intermediate seed are wrapped in [`zeroize::Zeroizing`] inside this
 /// function. The only material left in memory after return is the
 /// 32-byte secret bytes written into the caller's buffer (caller's
 /// responsibility to manage).
@@ -81,7 +80,7 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
 
     let mnemonic_obj = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
 
-    let seed = Zeroizing::new(mnemonic_obj.to_seed(passphrase_str));
+    let seed = mnemonic_obj.to_seed(passphrase_str);
 
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(network, &*seed));
 

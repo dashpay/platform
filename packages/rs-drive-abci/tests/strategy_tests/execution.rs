@@ -24,6 +24,7 @@ use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use dpp::dashcore_rpc::Error as CoreRpcError;
 use drive::structure::conformance::check_conformance;
 use drive::structure::drive_structure;
 use drive_abci::abci::app::FullAbciApplication;
@@ -507,18 +508,64 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 .clone())
         });
 
+    // Core's state of one masternode at a height, as the strategy made it. From protocol version
+    // 15 a block reads it for an operator key change printed without a payout.
+    let masternodes_by_height = with_extra_masternodes_with_updates.clone();
+    let hpmns_by_height = with_extra_hpmns_with_updates.clone();
+    let initial_masternodes = initial_all_masternodes.clone();
+    platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(move |pro_tx_hash, block| {
+            let at_height = masternodes_by_height
+                .get(&block)
+                .into_iter()
+                .chain(hpmns_by_height.get(&block))
+                .flatten()
+                .find(|masternode| masternode.pro_tx_hash() == *pro_tx_hash)
+                .map(|masternode| masternode.get_state_at_height(block).state.clone());
+            at_height
+                .or_else(|| {
+                    initial_masternodes
+                        .iter()
+                        .find(|masternode| masternode.pro_tx_hash() == *pro_tx_hash)
+                        .map(|masternode| masternode.get_state_at_height(block).state.clone())
+                })
+                .ok_or_else(|| {
+                    CoreRpcError::UnexpectedStructure(format!(
+                        "no masternode {pro_tx_hash} in the strategy at core height {block}"
+                    ))
+                })
+        });
+
+    let genesis_core_height = config.abci.genesis_core_height;
     platform
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
             let diff = if base_block.is_none() {
-                MasternodeListDiff {
-                    base_height: 0,
-                    block_height: block,
-                    added_mns: initial_all_masternodes
+                // Core's whole list at `block`: the initial masternodes at the genesis core
+                // height, where init chain starts, and what the strategy made of them at a later
+                // height, which the first block of protocol version 15 reads to reconcile
+                // operator payouts.
+                let added_mns = match (
+                    with_extra_masternodes_with_updates.get(&block),
+                    with_extra_hpmns_with_updates.get(&block),
+                ) {
+                    (Some(masternodes), Some(hpmns)) if block != genesis_core_height => masternodes
+                        .iter()
+                        .chain(hpmns)
+                        .map(|masternode| masternode.get_state_at_height(block).clone())
+                        .collect(),
+                    _ => initial_all_masternodes
                         .iter()
                         .map(|masternode_list_item| masternode_list_item.masternode.clone())
                         .collect(),
+                };
+                MasternodeListDiff {
+                    base_height: 0,
+                    block_height: block,
+                    added_mns,
                     removed_mns: vec![],
                     updated_mns: vec![],
                 }
@@ -697,7 +744,7 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
                 // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
-                let mut engine = QuorumSigningRequestId::engine();
+                let mut engine = sha256d::Hash::engine();
 
                 // Prefix
                 let prefix_len = VarInt("clsig".len() as u64);
@@ -708,7 +755,8 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 engine.input("clsig".as_bytes());
                 engine.input(block_height.to_le_bytes().as_slice());
 
-                let request_id = QuorumSigningRequestId::from_engine(engine);
+                let request_id =
+                    QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
                 // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 

@@ -119,7 +119,6 @@ fn create_test_mn_share_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert a document successfully");
 

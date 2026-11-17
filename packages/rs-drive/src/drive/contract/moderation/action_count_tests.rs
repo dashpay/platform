@@ -116,7 +116,6 @@ fn apply(
             &BlockInfo::default(),
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("expected to apply the operations")
 }

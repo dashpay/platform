@@ -420,10 +420,10 @@ async fn refresh(
     let name = network.to_string();
     let quorum_type = network.platform_type();
     let params = quorum_type.params();
-    let interval = params.dkg_params.interval;
+    let interval = u32::from(params.dkg_interval);
     // Half a quorum lifetime: Platform's Core height trails the tip by a few
     // blocks unless it halts.
-    let depth = interval * params.signing_active_quorum_count / 2;
+    let depth = interval * u32::from(params.signing_active_quorum_count) / 2;
 
     let url = format!("{relay}/quorums");
     let response = client

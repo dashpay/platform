@@ -132,9 +132,7 @@ impl DriveDocumentCountQuery<'_> {
         // `.unwrap()` on it: `CostContext::unwrap` is infallible (it just
         // drops the cost field), but the visual pattern collides with
         // `Option/Result::unwrap` and makes review noisier. Cost is
-        // discarded here because the per-mode dispatcher in
-        // `drive_dispatcher` wraps these executors with its own fee
-        // accounting.
+        // discarded here as the dispatcher's proof executor discards it.
         let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
             &path_query,
             None,

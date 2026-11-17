@@ -132,7 +132,6 @@ fn assert_compound_cursor_pages_for_index(
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should insert row");
             rows.push((a, b, document));
@@ -376,7 +375,6 @@ fn setup_left_over_fixture(
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should insert row");
         inserted.push((*values, document));

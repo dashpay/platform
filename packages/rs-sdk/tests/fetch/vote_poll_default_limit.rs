@@ -13,7 +13,7 @@ use dash_sdk::platform::QuerySettings;
 use dash_sdk::platform::{FetchMany, Query};
 use dash_sdk::query_types::ResourceVoteWithCount;
 use dash_sdk::{Sdk, SdkBuilder};
-use dpp::dashcore::{hashes::Hash, ProTxHash};
+use dpp::dashcore::ProTxHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{DataContract, Identifier};

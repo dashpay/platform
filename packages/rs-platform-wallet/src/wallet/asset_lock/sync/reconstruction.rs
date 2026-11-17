@@ -237,6 +237,7 @@ fn reconstruct_candidates(
             Some(TrackedAssetLock {
                 operation_id: None,
                 operation_revision: 0,
+                shielded_recipient: None,
                 out_point,
                 transaction: record.transaction.clone(),
                 account_index,
@@ -577,7 +578,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, Network, OutPoint, Transaction};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::account::AccountType;
@@ -695,6 +695,7 @@ mod tests {
 
         let info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -802,6 +803,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     operation_revision: 0,
+                    shielded_recipient: None,
                     out_point,
                     transaction: tx.clone(),
                     account_index: 0,
@@ -1039,6 +1041,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         operation_revision: 0,
+                        shielded_recipient: None,
                         out_point,
                         transaction: tx.clone(),
                         account_index: 0,

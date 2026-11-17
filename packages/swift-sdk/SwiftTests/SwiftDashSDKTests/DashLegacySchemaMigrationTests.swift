@@ -16,7 +16,9 @@ private enum BridgeFutureV6: VersionedSchema {
     static var models: [any PersistentModel.Type] { DashSchemaV5.models + [BridgeFutureMarker.self] }
 }
 private enum BridgeFuturePlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, DashSchemaV5.self, BridgeFutureV6.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, DashSchemaV5.self, BridgeFutureV6.self]
+    }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
          .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),

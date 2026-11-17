@@ -4,35 +4,25 @@
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-
-use dashcore::ephemerealdata::instant_lock::InstantLock;
-use dashcore::transaction::TransactionPayload;
-use dashcore::{OutPoint, Txid};
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::transaction_record::TransactionRecord;
-use key_wallet::managed_account::ManagedCoreFundsAccount;
-use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
+use std::collections::HashSet;
 
-use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
-use platform_wallet::changeset::{is_owned, AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
-use crate::sqlite::util::safe_cast;
 use crate::WalletStorageError;
 
 /// Build a [`Wallet`] that will be provided to the platform-wallet during rehydration.
@@ -46,21 +36,7 @@ pub(crate) fn build_wallet(
             wallet_id: expected_wallet_id,
         });
     }
-    let mut accounts = AccountCollection::new();
-    for entry in &manifest.ecdsa {
-        // `Account::from_xpub` is infallible in the pinned key-wallet rev; this
-        // map_err is a defensive guard for when that signature becomes fallible.
-        let account = Account::from_xpub(
-            Some(expected_wallet_id),
-            entry.account_type,
-            entry.account_xpub,
-            network,
-        )
-        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
-        accounts
-            .insert(account)
-            .map_err(|_| WalletStorageError::AccountRegistrationEntryMismatch)?;
-    }
+    let mut accounts = ecdsa_accounts(network, expected_wallet_id, &manifest.ecdsa)?;
     // Provider accounts use separate curve-specific slots in the collection.
     for entry in &manifest.provider {
         rebuild_provider_key_account(
@@ -84,6 +60,30 @@ pub(crate) fn build_wallet(
         expected_wallet_id,
         accounts,
     ))
+}
+
+/// The watch-only ECDSA accounts of `entries`, rebuilt from their xpubs.
+fn ecdsa_accounts(
+    network: Network,
+    expected_wallet_id: [u8; 32],
+    entries: &[AccountRegistrationEntry],
+) -> Result<AccountCollection, WalletStorageError> {
+    let mut accounts = AccountCollection::new();
+    for entry in entries {
+        // `Account::from_xpub` is infallible in the pinned key-wallet rev; this
+        // map_err is a defensive guard for when that signature becomes fallible.
+        let account = Account::from_xpub(
+            Some(expected_wallet_id),
+            entry.account_type,
+            entry.account_xpub,
+            network,
+        )
+        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+        accounts
+            .insert(account)
+            .map_err(|_| WalletStorageError::AccountRegistrationEntryMismatch)?;
+    }
+    Ok(accounts)
 }
 
 /// Restore pre-derived platform-node public keys from typed address-pool rows.
@@ -195,19 +195,19 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - `core`: the persisted core-state changeset to apply.
 /// - `utxo_accounts`: per-outpoint owning-account side channel from
 ///   [`load_state`](crate::sqlite::schema::core_state::load_state) — the
-///   `CoreChangeSet` cannot carry it. Each restored unspent UTXO is routed
-///   to the funds account whose identity matches its entry; a UTXO absent
-///   from the map (its script matched no pool row) falls back to the first
-///   funds account and re-warms on the next sync.
+///   `CoreChangeSet` cannot carry it. A UTXO goes to the account that
+///   derives its address (below); the entry only pre-derives a deep address
+///   in its account and places a UTXO no account reaches. One naming an
+///   account this wallet's funds accounts lack is reported as store drift.
 /// - `used_pool_addresses`: addresses the persisted pool snapshot marked
 ///   used, each mapped to its owning account (`None` when the script matched
-///   no pool row). Each is routed to its owning funds account — via the same
-///   identity match as `utxo_accounts` — and marked used there, in union with
-///   the still-unspent UTXO addresses, so a previously-used address whose
-///   funds were since spent is never re-handed-out as a fresh receive address
-///   from its own account (address-reuse guard). An owner absent from this
-///   wallet's funds accounts, or a `None` owner, falls back to the first
-///   account. Empty = no pool used-state carried.
+///   no pool row). One with an owner among this wallet's funds accounts is
+///   marked used there first; every one is then marked used in whichever
+///   funds account derives it once the pools are extended, so a
+///   previously-used address whose funds were since spent is never
+///   re-handed-out as a fresh receive address (address-reuse guard), and
+///   extends the reach of the UTXO restore as a rescan's would. Empty = no
+///   pool used-state carried.
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
@@ -216,11 +216,15 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   and wallet totals are recomputed via `update_balance()`. A UTXO
 ///   carrying a block height is marked confirmed so it lands in the
 ///   `confirmed` bucket; the wallet total is exact regardless.
-/// - **UTXO set**: every unspent persisted outpoint is restored into its
-///   owning funds-bearing account (matched via `utxo_accounts` across any
-///   topology — BIP44, BIP32, CoinJoin, DashPay), so per-account balance,
-///   coin selection, and reservations are correct after restart. An
-///   outpoint that resolves to no account falls back to the first.
+/// - **UTXO set**: every unspent persisted outpoint is restored into the
+///   funds account whose pools derive its address
+///   (`ManagedWalletInfo::restore_utxos`, any topology — BIP44, BIP32,
+///   CoinJoin, DashPay), each pool extended to its gap limit past its used
+///   addresses as a rescan would, so per-account balance, coin selection,
+///   and reservations are correct after restart, and a later rescan of the
+///   coin's block credits the account that already holds it. An outpoint no
+///   account reaches falls back to the first funds account, counted at
+///   [`LoadSite::UnresolvedUtxoAddress`].
 /// - **Address-pool depth**: each pool is forward-derived to cover
 ///   restored UTXOs at deep derivation indices, then the gap window is
 ///   refilled beyond the deepest restored index so the per-address view
@@ -255,29 +259,31 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **Deep-index address visibility**: each chain's pool scan stops
-///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after `gap_limit`
-///   consecutive non-matching indices past the deepest resolved index.
-///   The horizon only advances when an unspent UTXO anchors a match, so a
-///   UTXO address can be left unresolved in two distinct cases: (1) it is
-///   genuinely foreign (a different account's key routed here, or corrupt),
-///   and (2) it is a *legitimately-owned but deep-and-sparse* address —
-///   owned by this account, yet sitting past the first `gap_limit` window
-///   with no nearer unspent UTXO to walk the horizon out to it. Both cases
-///   are counted and logged via `tracing::warn!` and re-warm on the next
-///   full sync. The wallet *total* stays exact (every UTXO is summed
-///   regardless of pool visibility); only the per-address view is
-///   incomplete until that sync. This is the accepted behavior of the
-///   horizon-walk algorithm — see [`extend_pools_for_restored_addresses`].
+/// - **Deep-index address visibility**: a stored address no funds pool
+///   holds after the marking rounds, a coin's or a used one's, whatever
+///   owner its row names, is looked for in every funds account past each
+///   pool: through one index past what the pool holds, and one past a
+///   `gap_limit` beyond each address found, up to
+///   [`MAX_REHYDRATION_DERIVATION_INDEX`]
+///   ([`discover_in_funds_accounts`]); what that derives is marked, refilled
+///   and matched again, the refills carrying on past that index from each
+///   stored address within a gap of the last. An address can still be left
+///   unresolved in two distinct cases: (1) it is genuinely foreign (another
+///   wallet's key, or corrupt), and (2) it is a *legitimately-owned but
+///   deep-and-sparse* address, past that reach with no stored address
+///   nearer to it. Both are counted at [`LoadSite::UnresolvedUtxoAddress`]
+///   and re-warm on the next full sync; such a coin falls back to its stored
+///   owner, else the first funds account. The wallet *total* stays exact
+///   (every UTXO is summed regardless of pool visibility); only the
+///   per-address view is incomplete until that sync.
 /// - **Per-UTXO `is_coinbase` / `is_trusted` flags**: not columns in
 ///   `core_utxos`; conservatively defaulted (non-coinbase,
 ///   confirmed-by-height) and refreshed on the next scan.
 ///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
-/// - **Transaction records**: the SQLite loader replays recorded history
-///   through the wallet checker after this projection, in dependency order
-///   (in-set parents first, otherwise chain order).
+/// - **Transaction-record history**: rebuilt by the next scan; not a
+///   balance input.
 ///
 /// # Errors
 ///
@@ -318,17 +324,19 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
-    // Restore the UTXO set, routing each unspent outpoint to its true owning
-    // funds account via `utxo_accounts` (matched on the same account identity
-    // the writer keyed the pool row on). Two miss cases share the first-account
-    // best-effort fallback but differ in signal:
-    //   (a) no side-channel entry — the UTXO's script matched no pool row; an
-    //       expected fallback (deep/sparse or non-funds address) that re-warms
-    //       on the next sync, no log.
-    //   (b) a side-channel entry whose owner is not among this wallet's funds
-    //       accounts — a pool row references an unregistered account (store
-    //       drift). Counted and surfaced via `tracing::warn!` after the loop so
-    //       the misattribution is never silent.
+    // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
+    // records, but they cannot be replayed here — injecting one needs the raw
+    // `dashcore::Transaction`, and this crate persists only the abstracted
+    // `TransactionRecord` blob. History re-warms on the next scan and is not a
+    // balance input.
+
+    // Restore the UTXO set into the funds accounts that derive each unspent
+    // outpoint's address (`restore_utxos`, below). The `utxo_accounts` side
+    // channel (the account identity the writer keyed the pool row on) only
+    // pre-derives a deep address in its account and places a UTXO no account
+    // reaches. A side-channel owner not among this wallet's funds accounts — a
+    // pool row referencing an unregistered account (store drift) — is counted
+    // and surfaced via `tracing::warn!` after the loop so it is never silent.
     // A wallet with unspent UTXOs but no funds account at all fails closed
     // rather than silently reconstructing a zero balance.
     let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
@@ -355,47 +363,56 @@ pub fn apply_persisted_core_state(
     if !unspent.is_empty() && funding.is_empty() {
         return Err(WalletStorageError::MissingAccount { wallet_id });
     }
+    let account_keys: Vec<OwningAccount> = funding.iter().map(|a| owning_account_of(a)).collect();
+    // Every stored used address, whatever owner its row names: marked
+    // wherever the pools, once extended, derive it. None without a funds
+    // account, which has no pool to mark one in.
+    let mut used: Vec<key_wallet::Address> = Vec::new();
+    // Pools whose gap refill was refused and reported, so a later check
+    // refuses them without reporting them again.
+    let mut refused = RefusedRefills::new();
     if !funding.is_empty() {
-        let account_keys: Vec<OwningAccount> =
-            funding.iter().map(|a| owning_account_of(a)).collect();
-
         // Per-account addresses to derive-and-mark-used: each account gets only
-        // its own restored UTXO addresses, so `extend_pools_for_restored_addresses`
+        // its own attributed addresses, so `extend_pools_for_restored_addresses`
         // never scans another account's keys as "unresolved".
         let mut per_account_addrs: Vec<Vec<key_wallet::Address>> = vec![Vec::new(); funding.len()];
+        // Used addresses of the keys-only accounts this wallet rebuilt are
+        // already back on their own pools, and no funds account derives them.
+        let funds_used: Vec<(&key_wallet::Address, Option<&OwningAccount>)> = used_pool_addresses
+            .iter()
+            .map(|(addr, owner)| (addr, owner.as_ref()))
+            .filter(|(_, owner)| !owner.is_some_and(|owner| keys_owners.contains(owner)))
+            .collect();
+        used.extend(funds_used.iter().map(|(addr, _)| (*addr).clone()));
 
-        // Owners that resolve to no funds account (case (b) above), plus used
-        // addresses with an owner absent from this wallet — collected across
-        // both routing loops and warned once after them, never per iteration.
+        // Owners that resolve to no funds account (store drift, above), plus
+        // used addresses with an owner absent from this wallet — collected
+        // across both loops and warned once after them, never per iteration.
         let mut orphaned_owners: Vec<String> = Vec::new();
         for utxo in &unspent {
-            let target = route_to_funds_account(
-                &account_keys,
-                utxo_accounts.get(&utxo.outpoint),
-                &mut orphaned_owners,
-            );
-            funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
-            per_account_addrs[target].push(utxo.address.clone());
+            if let Some(owner) = utxo_accounts.get(&utxo.outpoint) {
+                match account_keys.iter().position(|k| k == owner) {
+                    Some(target) => per_account_addrs[target].push(utxo.address.clone()),
+                    None => orphaned_owners.push(owner_label(owner)),
+                }
+            }
         }
 
         // The persisted pool used-state restores addresses whose funds were
         // since spent — without it a previously-used address comes back marked
         // unused and could be handed out again as a fresh receive address
-        // (address-reuse privacy leak). Each is routed to its owning funds
-        // account (same identity match as the UTXOs), so a used address on a
-        // non-first account is marked used on ITS OWN pool. A `None` owner, or
-        // one absent from this wallet, falls back to the first account. An
-        // empty map marks only the unspent-UTXO addresses.
-        for (addr, owner) in used_pool_addresses {
-            if owner
-                .as_ref()
-                .is_some_and(|owner| keys_owners.contains(owner))
-            {
+        // (address-reuse privacy leak). One whose owner is a funds account is
+        // first marked used on ITS OWN pool; every one is matched by
+        // derivation below. An empty map marks only the unspent-UTXO
+        // addresses.
+        for (addr, owner) in funds_used {
+            let Some(owner) = owner else {
                 continue;
+            };
+            match account_keys.iter().position(|k| k == owner) {
+                Some(target) => per_account_addrs[target].push(addr.clone()),
+                None => orphaned_owners.push(owner_label(owner)),
             }
-            let target =
-                route_to_funds_account(&account_keys, owner.as_ref(), &mut orphaned_owners);
-            per_account_addrs[target].push(addr.clone());
         }
 
         // Degraded in BOTH policies, never fatal. Used addresses of the
@@ -412,9 +429,9 @@ pub fn apply_persisted_core_state(
                     affected: orphaned_owners.len(),
                     detail: None,
                 },
-                "restored UTXOs or used addresses were routed to the first funds account \
-                 because their own owning accounts are not funds accounts of this wallet; \
-                 the per-account view re-warms on the next sync",
+                "restored UTXOs or used addresses name owning accounts that are not funds \
+                 accounts of this wallet; they are placed in the funds account that derives \
+                 their address, or in the first one when the bounded search finds none",
             );
         }
 
@@ -428,8 +445,107 @@ pub fn apply_persisted_core_state(
                     &per_account_addrs[i],
                     wallet_id,
                     ctx,
+                    &mut refused,
                 )?;
             }
+        }
+    }
+
+    if !unspent.is_empty() || !used.is_empty() {
+        let wallet = Wallet::new_external_signable(
+            wallet_info.network(),
+            wallet_id,
+            ecdsa_accounts(wallet_info.network(), wallet_id, manifest)?,
+        );
+        let (mut unmatched, restorable) = restore_owned_utxos(
+            wallet_info,
+            &wallet,
+            &unspent,
+            &used,
+            wallet_id,
+            ctx,
+            &mut refused,
+        )?;
+        // Addresses still outside every funds pool, a coin's or a used one's,
+        // are looked for past each pool as a rescan would reach them, and
+        // whatever that derives is marked and refilled. Every coin is then
+        // offered to `restore_utxos` again, not only the unmatched ones: a
+        // coin the first restore placed in a DashPay contact account, outside
+        // the balance, moves to the funds account that now derives its
+        // script, which comes first in `restore_utxos` order, and the contact
+        // copy is removed. A coin already in its account is taken in again in
+        // its own place, keeping its flags (`take_in_output` carries them
+        // from the copy it replaces), so it is held and credited once. Up to
+        // `MAX_REHYDRATION_DERIVATION_INDEX` one pass reaches as far as
+        // repeating it would: past each find it probes one index beyond the
+        // window the refill after it opens, which is where a next pass would
+        // start and stop. Past that index the probe stops, and the restore's
+        // rounds carry on from the refill past the deepest find, as a rescan
+        // would. A restore that already failed would only fail, and be
+        // reported, again.
+        if restorable {
+            let mut outside = outside_funds_pools(
+                wallet_info,
+                (unspent.iter().map(|u| &u.address)).chain(&used),
+            );
+            if !outside.is_empty()
+                && discover_in_funds_accounts(wallet_info, manifest, &mut outside, wallet_id, ctx)?
+                    > 0
+            {
+                (unmatched, _) = restore_owned_utxos(
+                    wallet_info,
+                    &wallet,
+                    &unspent,
+                    &used,
+                    wallet_id,
+                    ctx,
+                    &mut refused,
+                )?;
+            }
+        }
+        if !unmatched.is_empty() {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                count = unmatched.len(),
+                duffs = unmatched.iter().map(|u| u.value()).sum::<u64>(),
+                "restored UTXOs whose address no funds account derives within its gap limit \
+                 were placed by their stored owner, or in the first funds account"
+            );
+        }
+        // Every stored address no funds pool holds now, counted once: the
+        // fallback coins' and the used ones', whatever owner their rows name.
+        let unresolved = outside_funds_pools(
+            wallet_info,
+            (unmatched.iter().map(|u| &u.address)).chain(&used),
+        )
+        .len();
+        let mut funding = wallet_info.accounts.all_funding_accounts_mut();
+        for utxo in unmatched {
+            let target = fallback_account(&account_keys, utxo_accounts.get(&utxo.outpoint));
+            funding[target].utxos.insert(utxo.outpoint, utxo);
+        }
+        drop(funding);
+        // Degraded in BOTH policies, never fatal: a foreign address and a
+        // legitimately-owned deep-and-sparse one look the same in the stored
+        // rows, and no fix short of an unbounded scan tells them apart. The
+        // wallet total is exact either way, except for a coin of ours only a
+        // DashPay contact account holds: `restore_utxos` places it there,
+        // outside the total. Discovery moves one a funds account derives
+        // within its reach; one past that reach stays, as does one placed
+        // after a refused or failed refill (Recovery only), where discovery
+        // is skipped (`place_held_coins`).
+        if unresolved > 0 {
+            ctx.note_degraded(
+                LoadSite::UnresolvedUtxoAddress,
+                SiteCoords {
+                    wallet_id: Some(wallet_id),
+                    account_type: &"any funds account",
+                    affected: unresolved,
+                    detail: None,
+                },
+                "restored coin or used addresses did not resolve against any funds account's \
+                 xpub within its reach; they re-warm on the next full sync",
+            );
         }
     }
 
@@ -448,714 +564,356 @@ pub fn apply_persisted_core_state(
     Ok(())
 }
 
-/// Restore spend reservations and finality guards without re-crediting outputs excluded by persistence.
+/// The position among `account_keys` of a UTXO's stored owner, or the first
+/// funds account when it has none there. Only for a UTXO no funds account
+/// derives (`restore_owned_utxos` returned it).
+fn fallback_account(account_keys: &[OwningAccount], owner: Option<&OwningAccount>) -> usize {
+    // INTENTIONAL(funds-account-fallback): an unattributable UTXO routes to
+    // account 0 rather than failing or being dropped, so the wallet total stays
+    // exact. Accepted risk: such a UTXO sits in an account that cannot sign for
+    // it, and a rescan that derives its address in its own account credits it
+    // there too. Failing closed here would brick wallets whose owners
+    // legitimately have no funds account (provider accounts sit on a
+    // non-secp256k1 curve), which is the worse outcome.
+    owner
+        .and_then(|owner| account_keys.iter().position(|k| k == owner))
+        .unwrap_or(0)
+}
+
+fn owner_label(owner: &OwningAccount) -> String {
+    format!("{}[{}]", owner.account_type, owner.account_index)
+}
+
+/// Restore `unspent` into the funds accounts whose pools derive each address,
+/// after marking `used` and the coins' addresses wherever the pools derive
+/// them. Returns the UTXOs no account reaches, and whether `restore_utxos` may
+/// run again: false once a refill was refused or a restore failed.
 ///
-/// Unconfirmed (mempool / InstantSend) spends are replayed too: without them a
-/// redelivered funding transaction would re-credit an output they reserve.
-/// `instant_locks` are the persisted InstantSend locks: a lock that arrived
-/// after its transaction was stored never rewrote the stored record, so the
-/// replay upgrades that record's mempool context itself.
-pub(crate) fn restore_recorded_transactions(
+/// Used addresses and the coins' own extend the reach as a rescan's would:
+/// each round marks the ones the funds pools now hold, and the address each
+/// coin's script pays wherever a funds or DashPay contact pool holds it, as
+/// the final restore marks it. It then extends every pool to its gap limit
+/// past its highest used address, until a round marks nothing and its refill
+/// derives nothing in any of those pools, so a run of spent addresses longer
+/// than one gap window still leads to the coins past it, and a coin's refill
+/// to the spent addresses past it. The final restore then marks nothing the
+/// rounds left unused, so its refill derives nothing: every pool it could
+/// grow was refilled first by a round, bounded as below. The first round
+/// looks up every address those pools hold; each later round only the ones
+/// the previous refill derived, so the rounds together look up each derived
+/// address once.
+///
+/// Terminates: every round but the last marks at least one more address of a
+/// finite set, or is the call's first and its refill derived addresses no
+/// round has looked up. A later round that marks nothing leaves each pool's
+/// highest used address where the refill before it found it, so its own
+/// refill derives nothing and the loop exits. Each refill is bounded as
+/// below.
+///
+/// Every refill of the marking rounds is bounded first, as
+/// [`extend_pools_for_restored_addresses`] bounds its own
+/// ([`gap_refills_bounded`]). A pool past those bounds stops the refills; so
+/// does a derivation error, which is reported at
+/// [`LoadSite::RehydrationMaintainGapLimit`]. Either way the coins whose
+/// script a pool already holds are still placed, without growing any pool
+/// ([`place_held_coins`]), and only the others are returned unmatched.
+fn restore_owned_utxos(
     wallet_info: &mut ManagedWalletInfo,
-    wallet: &mut Wallet,
-    records: Vec<TransactionRecord>,
-    instant_locks: &BTreeMap<Txid, InstantLock>,
-) -> Result<Vec<SweepBatch>, WalletStorageError> {
-    let unreplayable = validate_replay_amounts(wallet_info, &records)?;
-    // Where the load projection parked each unspent outpoint; its keys are
-    // the outputs persistence still considers unspent.
-    let placed: HashMap<OutPoint, AccountType> = wallet_info
-        .accounts
-        .all_funding_accounts()
-        .into_iter()
-        .flat_map(|account| {
-            let owner = funds_account_type(account);
-            account.utxos.keys().map(move |outpoint| (*outpoint, owner))
+    wallet: &Wallet,
+    unspent: &[&key_wallet::Utxo],
+    used: &[key_wallet::Address],
+    wallet_id: [u8; 32],
+    ctx: &LoadCtx,
+    refused: &mut RefusedRefills,
+) -> Result<(Vec<key_wallet::Utxo>, bool), WalletStorageError> {
+    // The addresses the coins' scripts pay, which `restore_utxos` marks in
+    // every pool holding them.
+    let paid: HashSet<key_wallet::Address> = (unspent.iter())
+        .filter_map(|u| {
+            key_wallet::Address::from_script(&u.txout.script_pubkey, wallet.network).ok()
         })
         .collect();
-    if records.is_empty() {
-        return Ok(Vec::new());
-    }
-    // TODO(bound-load-history-replay): every stored record is replayed on each
-    // load; bounding it to records above the last chain lock needs care so
-    // finality and spend guards for older records are not lost.
-    // SQLite checks owned-input authorization before replay. Authorized pending
-    // spends retain their reservations until Core settles or cancels them.
-    if !unreplayable.is_empty() {
-        // Count only: the txids are peer-supplied.
-        tracing::warn!(
-            wallet_id = %hex::encode(wallet_info.wallet_id),
-            set_aside = unreplayable.len(),
-            "unconfirmed transaction records with unsafe amounts restored without replay; conflict settlement still sees them"
-        );
-    }
-    let mut records = records;
-    for record in &mut records {
-        // A set-aside record stays unconfirmed: it may lose a conflict, never settle one.
-        if unreplayable.contains_key(&record.txid) {
-            continue;
-        }
-        record.context = match &record.context {
-            // Height alone cannot establish ancestry: persistence may still contain
-            // an old branch until its truncation is recorded.
-            TransactionContext::InBlock(block)
-                if wallet_info
-                    .metadata
-                    .last_applied_chain_lock
-                    .as_ref()
-                    .is_some_and(|lock| {
-                        block.height() == lock.block_height && block.block_hash() == lock.block_hash
-                    }) =>
-            {
-                TransactionContext::InChainLockedBlock(*block)
+    let paid: HashSet<&key_wallet::Address> = paid.iter().collect();
+    let wanted: HashSet<&key_wallet::Address> = (used.iter())
+        .chain(unspent.iter().map(|u| &u.address))
+        .chain(paid.iter().copied())
+        .collect();
+    // Per pool, funds pools in `all_funding_accounts_mut` x
+    // `address_pools_mut` order and then the contact pools, the highest index
+    // already looked up.
+    let mut looked_up: Vec<Option<u32>> = Vec::new();
+    loop {
+        let mut marked_any = false;
+        let mut slot = 0;
+        let mut look_up = |pool: &mut key_wallet::managed_account::address_pool::AddressPool,
+                           wanted: &HashSet<&key_wallet::Address>| {
+            if looked_up.len() == slot {
+                looked_up.push(None);
             }
-            TransactionContext::Mempool => instant_locks
-                .get(&record.txid)
-                .filter(|lock| lock_matches_record(lock, record))
-                .map(|lock| TransactionContext::InstantSend(lock.clone()))
-                .unwrap_or(TransactionContext::Mempool),
-            context => context.clone(),
+            let seen = &mut looked_up[slot];
+            slot += 1;
+            let from = seen.map_or(0, |seen| seen.saturating_add(1));
+            *seen = pool.highest_generated;
+            let Some(to) = pool.highest_generated.filter(|to| from <= *to) else {
+                return false;
+            };
+            let hits: Vec<u32> = (pool.addresses.range(from..=to))
+                .filter(|(_, info)| wanted.contains(&info.address))
+                .map(|(index, _)| *index)
+                .collect();
+            hits.into_iter()
+                .fold(false, |marked, index| pool.mark_index_used(index) | marked)
         };
-    }
-    // Ordered once the locks are applied: a locked record must not replay after
-    // unrelated mempool records.
-    let mut replay = replay_order(records);
-
-    // Kept only to undo a replay the checker suspended part-way through.
-    let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
-    let mut sweeps = plan_replay_sweeps(wallet_info, &replay);
-    let removed: HashSet<_> = sweeps
-        .iter()
-        .flat_map(|sweep| sweep.txids.iter().copied())
-        .collect();
-    replay.retain(|record| !removed.contains(&record.txid));
-    // Built from what planning left: a conflict it settled is not asked about again.
-    let spends = unconfirmed_spends(&replay);
-    for account in wallet_info.accounts.all_funding_accounts_mut() {
-        account
-            .utxos
-            .retain(|outpoint, _| !removed.contains(&outpoint.txid));
-    }
-    let (unreplayed, replay): (Vec<_>, Vec<_>) = replay
-        .into_iter()
-        .partition(|record| unreplayable.contains_key(&record.txid));
-    stage_recorded_spent_inputs(wallet_info, &replay, &placed);
-    let completed = poll_ready(async {
-        for record in &replay {
-            let result = wallet_info
-                .check_core_transaction(
-                    &record.transaction,
-                    record.context.clone(),
-                    wallet,
-                    true,
-                    false,
-                )
-                .await;
-            if !result.swept_transactions.is_empty() {
-                sweeps.push(replay_sweep(
-                    record,
-                    result.swept_transactions,
-                    result.released_outpoints,
-                ));
+        for funds in wallet_info.accounts.all_funding_accounts_mut() {
+            for pool in funds.managed_account_type_mut().address_pools_mut() {
+                marked_any |= look_up(pool, &wanted);
             }
         }
-    })
-    .is_some();
-    if !completed {
-        // Degrade to the pre-replay projection: persisted spends stay
-        // excluded, only redelivery guards are missing until the next sync.
-        tracing::error!(
-            wallet_id = %hex::encode(wallet_info.wallet_id),
-            "transaction checker suspended during load replay; restored spend guards skipped"
-        );
-        *wallet_info = info_before;
-        *wallet = wallet_before;
-        return Ok(Vec::new());
-    }
-    // After the replay, so each replayed final record does not scan their inputs:
-    // planning has settled them, and the pass below sees them again.
-    restore_unreplayed_records(wallet_info, unreplayed.into_iter(), &unreplayable);
-    // A settled spend's first sweep cannot reach competitors replayed later.
-    // The upstream sweep preserves ChainLock/InstantSend precedence.
-    for record in &replay {
-        if !shares_unconfirmed_input(record, &spends) {
-            continue;
+        for contact in wallet_info.accounts.dashpay_external_accounts.values_mut() {
+            for pool in contact.managed_account_type_mut().address_pools_mut() {
+                marked_any |= look_up(pool, &paid);
+            }
         }
-        let result = wallet_info.sweep_conflicts(&record.transaction, &record.context);
-        if !result.txids.is_empty() {
-            sweeps.push(replay_sweep(
-                record,
-                result.txids,
-                result.released_outpoints,
-            ));
+        if !gap_refills_bounded(wallet_info, wallet_id, ctx, refused)? {
+            return place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false));
+        }
+        if let Err(source) = wallet_info.restore_utxos(wallet, std::iter::empty()) {
+            restore_failed(ctx, wallet_id, source)?;
+            return place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false));
+        }
+        if !marked_any && !derived_past(wallet_info, &looked_up) {
+            break;
         }
     }
+    match wallet_info.restore_utxos(wallet, unspent.iter().map(|u| (*u).clone())) {
+        Ok(unmatched) => Ok((unmatched, true)),
+        Err(source) => {
+            restore_failed(ctx, wallet_id, source)?;
+            place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false))
+        }
+    }
+}
 
-    let spent: HashSet<_> = wallet_info
-        .observed_spent_outpoints()
-        .keys()
-        .copied()
-        .collect();
-    // Replay credits an output to the account whose pool derives it. When
-    // that differs from the load-time fallback, the fallback copy is a
-    // duplicate: drop it so each outpoint lives in exactly one account.
-    let misplaced: HashSet<(OutPoint, AccountType)> = wallet_info
-        .accounts
-        .all_funding_accounts()
+/// Places each of `unspent` whose script an account's pools already hold as
+/// `restore_utxos` does: in the first account holding it, in its order, with
+/// the address marked used and any copy in another account removed. Derives
+/// nothing: the restore runs against `wallet` without its accounts, so no
+/// pool has a key source and its refill skips every one. Returns the coins no
+/// account holds. The placement can't fail: `restore_utxos` errs only from a
+/// refill, and with no key source there is none. Were it to fail, it is
+/// reported as a failed restore is and every coin comes back, which is right
+/// only while no earlier restore of this load has placed any of them.
+///
+/// Only the pools as far as the marking rounds grew them are matched, so a
+/// coin a DashPay contact account already holds before its funds account's
+/// pool reaches it lands in the contact account, outside the balance and not
+/// counted as unresolved.
+fn place_held_coins(
+    wallet_info: &mut ManagedWalletInfo,
+    wallet: &Wallet,
+    unspent: &[&key_wallet::Utxo],
+    ctx: &LoadCtx,
+) -> Result<Vec<key_wallet::Utxo>, WalletStorageError> {
+    let keyless =
+        Wallet::new_external_signable(wallet.network, wallet.wallet_id, AccountCollection::new());
+    let coins = || unspent.iter().map(|u| (*u).clone());
+    match wallet_info.restore_utxos(&keyless, coins()) {
+        Ok(unmatched) => Ok(unmatched),
+        Err(source) => restore_failed(ctx, wallet.wallet_id, source).map(|()| coins().collect()),
+    }
+}
+
+/// Whether a funds or DashPay contact pool holds addresses past the highest
+/// index `looked_up` records for it, in [`restore_owned_utxos`]'s pool order.
+fn derived_past(wallet_info: &ManagedWalletInfo, looked_up: &[Option<u32>]) -> bool {
+    let accounts = &wallet_info.accounts;
+    let pools = (accounts.all_funding_accounts().into_iter())
+        .chain(accounts.dashpay_external_accounts.values())
+        .flat_map(|account| account.managed_account_type().address_pools());
+    pools
+        .zip(looked_up)
+        .any(|(pool, seen)| pool.highest_generated > *seen)
+}
+
+/// Pools, by account and pool type, whose gap refill was refused and
+/// reported during this load.
+type RefusedRefills = HashSet<(AccountType, AddressPoolType)>;
+
+/// Whether a gap-limit refill of every pool `restore_utxos` extends (every
+/// funds and DashPay contact pool) is representable and within
+/// [`MAX_REHYDRATION_GAP_REFILL`]. Each refused pool not yet in `refused` is
+/// reported through the load policy at the site
+/// [`extend_pools_for_restored_addresses`] reports it at, with its account
+/// and pool type, and added: strict fails the load, recovery counts it once.
+fn gap_refills_bounded(
+    wallet_info: &ManagedWalletInfo,
+    wallet_id: [u8; 32],
+    ctx: &LoadCtx,
+    refused: &mut RefusedRefills,
+) -> Result<bool, WalletStorageError> {
+    let accounts = &wallet_info.accounts;
+    let mut bounded = true;
+    for account in (accounts.all_funding_accounts().into_iter())
+        .chain(accounts.dashpay_external_accounts.values())
+    {
+        let account_type = account.managed_account_type().to_account_type();
+        for pool in account.managed_account_type().address_pools() {
+            let (site, error) = match ImpliedRefill::of(
+                pool.highest_used,
+                pool.highest_generated,
+                pool.gap_limit,
+            ) {
+                Ok(refill) if refill.implied <= MAX_REHYDRATION_GAP_REFILL => continue,
+                Ok(refill) => (LoadSite::RehydrationGapLimit, refill.too_large()),
+                Err(error) => (LoadSite::RehydrationMaintainGapLimit, error),
+            };
+            bounded = false;
+            if refused.insert((account_type, pool.pool_type)) {
+                ctx.tolerate_at(
+                    site,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
+                    error,
+                )?;
+            }
+        }
+    }
+    Ok(bounded)
+}
+
+/// The `addresses` no funds pool of `wallet_info` holds, once each.
+fn outside_funds_pools<'a>(
+    wallet_info: &ManagedWalletInfo,
+    addresses: impl IntoIterator<Item = &'a key_wallet::Address>,
+) -> HashSet<key_wallet::Address> {
+    let funding = wallet_info.accounts.all_funding_accounts();
+    addresses
         .into_iter()
-        .flat_map(|account| {
-            let owner = funds_account_type(account);
-            let placed = &placed;
-            account.utxos.keys().filter_map(move |outpoint| {
-                placed
-                    .get(outpoint)
-                    .filter(|parked| **parked != owner)
-                    .map(|parked| (*outpoint, *parked))
-            })
+        .filter(|address| {
+            !(funding.iter()).any(|a| a.managed_account_type().contains_address(address))
         })
-        .collect();
-    for account in wallet_info.accounts.all_funding_accounts_mut() {
-        let owner = funds_account_type(account);
-        account.utxos.retain(|outpoint, _| {
-            placed.contains_key(outpoint)
-                && !spent.contains(outpoint)
-                && !misplaced.contains(&(*outpoint, owner))
-        });
-    }
-    // The stored checkpoint proves only its exact block. Ancestor membership
-    // must be re-established by Core sync before its height can finalize history.
-    wallet_info.update_balance();
-    Ok(sweeps)
-}
-
-/// The upstream checker casts each unsigned operand before signed subtraction.
-/// A fitting net does not make an overflowing operand safe. Include every source
-/// of replay inputs: durable coins, parent outputs, and staged input details.
-///
-/// Returns the unconfirmed records that must be left out of the replay, each
-/// with whether its input amounts are safe to keep in account history. Nothing
-/// authenticates a mempool transaction, so its amounts are peer-supplied data,
-/// not corruption; only a network-final record fails the load.
-fn validate_replay_amounts(
-    wallet_info: &ManagedWalletInfo,
-    records: &[TransactionRecord],
-) -> Result<HashMap<Txid, bool>, WalletStorageError> {
-    fn total(
-        field: &'static str,
-        values: impl IntoIterator<Item = u64>,
-    ) -> Result<(), WalletStorageError> {
-        let mut sum = 0_u64;
-        for value in values {
-            safe_cast::u64_to_i64(field, value)?;
-            // Both operands are at most i64::MAX, so this addition fits u64.
-            sum += value;
-            safe_cast::u64_to_i64(field, sum)?;
-        }
-        Ok(())
-    }
-
-    /// The operands `record` alone hands the checker.
-    fn own_amounts(record: &TransactionRecord) -> Result<(), WalletStorageError> {
-        total(
-            "replay.input_details",
-            record.input_details.iter().map(|d| d.value),
-        )?;
-        total(
-            "replay.output_details",
-            record.output_details.iter().map(|d| d.value),
-        )?;
-        let credit_outputs = match &record.transaction.special_transaction_payload {
-            Some(TransactionPayload::AssetLockPayloadType(payload)) => {
-                payload.credit_outputs.as_slice()
-            }
-            _ => &[],
-        };
-        total(
-            "replay.outputs",
-            record
-                .transaction
-                .output
-                .iter()
-                .chain(credit_outputs)
-                .map(|o| o.value),
-        )
-    }
-
-    /// Whether `record` passed `checked`; an unconfirmed failure is set aside instead.
-    fn replayable(
-        record: &TransactionRecord,
-        checked: Result<(), WalletStorageError>,
-        safe_inputs: bool,
-        unreplayable: &mut HashMap<Txid, bool>,
-    ) -> Result<bool, WalletStorageError> {
-        match checked {
-            Ok(()) => Ok(true),
-            Err(_) if matches!(record.context, TransactionContext::Mempool) => {
-                unreplayable.insert(record.txid, safe_inputs);
-                Ok(false)
-            }
-            Err(error) => Err(error),
-        }
-    }
-
-    let mut unreplayable = HashMap::new();
-    let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
-    let mut remember = |outpoint, value| {
-        amounts
-            .entry(outpoint)
-            .and_modify(|known| *known = (*known).max(value))
-            .or_insert(value);
-    };
-    for account in wallet_info.accounts.all_funding_accounts() {
-        for (outpoint, coin) in &account.utxos {
-            safe_cast::u64_to_i64("replay.utxo", coin.txout.value)?;
-            remember(*outpoint, coin.txout.value);
-        }
-    }
-    for record in records {
-        // A record left out credits nothing, so its outputs are no child's input amount.
-        let safe_inputs = fits_i64(record.input_details.iter().map(|d| d.value));
-        if !replayable(record, own_amounts(record), safe_inputs, &mut unreplayable)? {
-            continue;
-        }
-        let txid = record.transaction.txid();
-        for (index, output) in record.transaction.output.iter().enumerate() {
-            remember(OutPoint::new(txid, index as u32), output.value);
-        }
-        for detail in &record.input_details {
-            if let Some(input) = record.transaction.input.get(detail.index as usize) {
-                remember(input.previous_output, detail.value);
-            }
-        }
-    }
-    for record in records {
-        let inputs = total(
-            "replay.inputs",
-            record
-                .transaction
-                .input
-                .iter()
-                .filter_map(|input| amounts.get(&input.previous_output).copied()),
-        );
-        // A funding redelivery would attribute these to the stored record.
-        replayable(record, inputs, false, &mut unreplayable)?;
-    }
-    Ok(unreplayable)
-}
-
-fn replay_sweep(
-    record: &TransactionRecord,
-    txids: Vec<Txid>,
-    released_outpoints: Vec<OutPoint>,
-) -> SweepBatch {
-    SweepBatch {
-        txids,
-        superseded_by: record.txid,
-        winner_mined_height: record.block_info().map(|block| block.height()),
-        released_outpoints,
-    }
-}
-
-/// How many unconfirmed records spend each outpoint.
-fn unconfirmed_spends(records: &[TransactionRecord]) -> HashMap<OutPoint, u32> {
-    let mut spends = HashMap::new();
-    for record in records.iter().filter(|record| !record.is_confirmed()) {
-        for input in &record.transaction.input {
-            *spends.entry(input.previous_output).or_default() += 1;
-        }
-    }
-    spends
-}
-
-/// Whether another unconfirmed record spends one of `record`'s inputs.
-///
-/// Only then can the upstream sweep find a loser; asked anyway, it scans every
-/// unconfirmed record's inputs to say no, once per final record. Records only
-/// ever leave the history `spends` was built from, so it never under-counts.
-fn shares_unconfirmed_input(record: &TransactionRecord, spends: &HashMap<OutPoint, u32>) -> bool {
-    let own = u32::from(!record.is_confirmed());
-    record.transaction.input.iter().any(|input| {
-        spends
-            .get(&input.previous_output)
-            .is_some_and(|count| *count > own)
-    })
-}
-
-fn spent_by(record: &TransactionRecord) -> impl Iterator<Item = OutPoint> + '_ {
-    let inputs = record.transaction.input.iter();
-    inputs.map(|input| input.previous_output)
-}
-
-/// The unconfirmed records of a history, with who spends each outpoint and who
-/// spends an output of each transaction.
-#[derive(Default)]
-struct Pending<'a> {
-    records: HashMap<Txid, &'a TransactionRecord>,
-    spenders: HashMap<OutPoint, Vec<Txid>>,
-    children: HashMap<Txid, Vec<Txid>>,
-}
-
-impl<'a> Pending<'a> {
-    fn of(records: &'a [TransactionRecord]) -> Self {
-        let mut pending = Self::default();
-        for record in records.iter().filter(|record| !record.is_confirmed()) {
-            pending.records.insert(record.txid, record);
-            for spent in spent_by(record) {
-                pending.spenders.entry(spent).or_default().push(record.txid);
-                let children = pending.children.entry(spent.txid).or_default();
-                children.push(record.txid);
-            }
-        }
-        pending
-    }
-
-    /// What a conflict sweep for `winner` could remove: the records still
-    /// spending one of its inputs, and their unconfirmed descendants.
-    fn candidates(
-        &self,
-        winner: &TransactionRecord,
-        removed: &HashSet<Txid>,
-    ) -> BTreeMap<Txid, TransactionRecord> {
-        let mut candidates = BTreeMap::new();
-        let spenders = spent_by(winner).filter_map(|spent| self.spenders.get(&spent));
-        let mut queue: Vec<Txid> = spenders.flatten().copied().collect();
-        while let Some(txid) = queue.pop() {
-            if txid == winner.txid || removed.contains(&txid) || candidates.contains_key(&txid) {
-                continue;
-            }
-            if let Some(record) = self.records.get(&txid) {
-                candidates.insert(txid, (*record).clone());
-                queue.extend(self.children.get(&txid).into_iter().flatten());
-            }
-        }
-        candidates
-    }
-}
-
-/// Resolve the full history before a defeated lock can sweep another spender.
-///
-/// The upstream sweep decides every conflict, but scans the account it runs in
-/// whole: each final record's sweep is handed only [`Pending::candidates`].
-fn plan_replay_sweeps(
-    wallet_info: &ManagedWalletInfo,
-    records: &[TransactionRecord],
-) -> Vec<SweepBatch> {
-    let mut conflicts = wallet_info.clone();
-    // The sweep decides from records alone, and scans every coin once per loser.
-    for account in conflicts.accounts.all_funding_accounts_mut() {
-        account.utxos.clear();
-    }
-    let pending = Pending::of(records);
-    let mut winners: Vec<_> = records
-        .iter()
-        .filter(|record| !matches!(record.context, TransactionContext::Mempool))
-        .collect();
-    winners.sort_by_key(|record| {
-        let priority = match record.context {
-            TransactionContext::InChainLockedBlock(_) => 0,
-            TransactionContext::InstantSend(_) => 1,
-            _ => 2,
-        };
-        (priority, record.txid)
-    });
-    let mut removed = HashSet::new();
-    let mut sweeps = Vec::new();
-    for record in winners {
-        if removed.contains(&record.txid) {
-            continue;
-        }
-        let candidates = pending.candidates(record, &removed);
-        // One scratch account lets the upstream sweep follow descendants across accounts.
-        let mut accounts = conflicts.accounts.all_funding_accounts_mut();
-        let Some(account) = accounts.first_mut().filter(|_| !candidates.is_empty()) else {
-            continue;
-        };
-        *account.transactions_mut() = candidates;
-        let result = conflicts.sweep_conflicts(&record.transaction, &record.context);
-        if !result.txids.is_empty() {
-            removed.extend(result.txids.iter().copied());
-            sweeps.push(replay_sweep(
-                record,
-                result.txids,
-                result.released_outpoints,
-            ));
-        }
-    }
-    // A released input stays claimed while a record not yet removed spends it:
-    // one that survives, or one a later sweep removes.
-    let survivors = records.iter().filter(|r| !removed.contains(&r.txid));
-    let mut claimed: HashSet<_> = survivors.flat_map(spent_by).collect();
-    for sweep in sweeps.iter_mut().rev() {
-        sweep
-            .released_outpoints
-            .retain(|outpoint| !removed.contains(&outpoint.txid) && !claimed.contains(outpoint));
-        for txid in &sweep.txids {
-            let swept = pending.records.get(txid).copied();
-            claimed.extend(swept.into_iter().flat_map(spent_by));
-        }
-    }
-    sweeps
-}
-
-/// Restore set-aside records without the checker, so the conflict sweep still
-/// finds what they spend: it reads inputs and contexts, never amounts. Every
-/// account a record touches holds a copy, with the wallet-level amounts, and
-/// so does every account the load parked one of its outputs in.
-///
-/// The only arithmetic upstream runs over a stored record is the signed net of
-/// its owned outputs and attributed inputs, when a late funding is attributed
-/// to it. A record whose owned outputs alone exceed `i64` goes back without its
-/// output details, and one whose input amounts `safe_inputs` rules out without
-/// its input details; the store keeps both. What a later funding attributes
-/// upstream sums unchecked, as it does for a record it recorded itself.
-/// Temporary sanitization until key-wallet provides checked restoration:
-/// https://github.com/dashpay/rust-dashcore/issues/1213.
-fn restore_unreplayed_records(
-    wallet_info: &mut ManagedWalletInfo,
-    records: impl Iterator<Item = TransactionRecord>,
-    safe_inputs: &HashMap<Txid, bool>,
-) {
-    let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
-    // Where the load actually parked each record's outputs. An output no
-    // address pool row routes lands in the first account, which need not be
-    // one the record names or derives an address for.
-    let holding: Vec<HashSet<Txid>> = accounts
-        .iter()
-        .map(|account| account.utxos.keys().map(|outpoint| outpoint.txid).collect())
-        .collect();
-    for mut record in records {
-        let outputs = record.output_details.iter().map(|d| d.address.clone());
-        let inputs = record.input_details.iter().map(|d| Some(d.address.clone()));
-        let addresses: Vec<_> = outputs.chain(inputs).flatten().collect();
-        let owned = record.output_details.iter().filter(|d| is_owned(d.role));
-        if !fits_i64(owned.map(|d| d.value)) {
-            record.output_details.clear();
-        }
-        if safe_inputs.get(&record.txid) != Some(&true) {
-            record.input_details.clear();
-        }
-        // The upstream sweep drops a loser's coins and descendants only in an
-        // account that records it, so the record goes wherever the checker
-        // would have put it, each account owning one of its addresses, and
-        // wherever one of its coins actually sits.
-        let touches = |index: usize, account: &ManagedCoreFundsAccount| {
-            funds_account_type(account) == record.account_type
-                || holding[index].contains(&record.txid)
-                || addresses.iter().any(|a| account.contains_address(a))
-        };
-        // Any funding account will do as a fallback: the sweep searches them all.
-        let fallback = !accounts
-            .iter()
-            .enumerate()
-            .any(|(index, account)| touches(index, account));
-        for (index, account) in accounts.iter_mut().enumerate() {
-            if touches(index, account) || (fallback && index == 0) {
-                let copy = record.clone();
-                account.transactions_mut().insert(copy.txid, copy);
-            }
-        }
-    }
-}
-
-/// Whether `values` sum within `i64`, the type upstream nets a stored record in.
-fn fits_i64(values: impl Iterator<Item = u64>) -> bool {
-    values
-        .map(i64::try_from)
-        .try_fold(0_i64, |sum, value| sum.checked_add(value.ok()?))
-        .is_some()
-}
-
-/// Park every owned input a record spends whose funding no replayed record credits.
-///
-/// Persistence excludes spent outputs from the load projection, so without
-/// this a spender of a height-only funding row replays with no owned input and
-/// rebuilds no spent mark; a redelivered funding transaction would then
-/// re-credit the coin once finality prunes the observed spend. The stored
-/// `input_details` are the evidence: wallet-owned by construction and repaired
-/// from persisted outputs. Staged coins are never in `placed`, so the
-/// retention pass drops whatever replay leaves behind.
-fn stage_recorded_spent_inputs(
-    wallet_info: &mut ManagedWalletInfo,
-    records: &[TransactionRecord],
-    placed: &HashMap<OutPoint, AccountType>,
-) {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
-    let replayed: HashSet<Txid> = records.iter().map(|record| record.txid).collect();
-    let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
-    for record in records {
-        for detail in &record.input_details {
-            let Some(input) = record.transaction.input.get(detail.index as usize) else {
-                continue;
-            };
-            let outpoint = input.previous_output;
-            if placed.contains_key(&outpoint) || replayed.contains(&outpoint.txid) {
-                continue;
-            }
-            let Some(account) = accounts
-                .iter_mut()
-                .find(|account| account.contains_address(&detail.address))
-            else {
-                continue;
-            };
-            account.utxos.entry(outpoint).or_insert_with(|| {
-                let txout = dashcore::TxOut {
-                    value: detail.value,
-                    script_pubkey: detail.address.script_pubkey(),
-                };
-                key_wallet::Utxo::new(outpoint, txout, detail.address.clone(), 0, false)
-            });
-        }
-    }
-}
-
-/// Whether `lock` really locks `record`, so upgrading its context is safe.
-///
-/// The lock map is keyed by the stored `txid` column and a record's `txid` is
-/// stored beside its transaction, so neither is proof on its own. A mismatch
-/// keeps the record's stored context: the lock's conflict sweep must not drop
-/// history on the strength of a lock that belongs to another transaction.
-fn lock_matches_record(lock: &InstantLock, record: &TransactionRecord) -> bool {
-    let transaction_txid = record.transaction.txid();
-    let matches = lock.txid == record.txid && transaction_txid == record.txid;
-    if !matches {
-        tracing::warn!(
-            record_txid = %record.txid,
-            transaction_txid = %transaction_txid,
-            lock_txid = %lock.txid,
-            "persisted InstantSend lock does not match its transaction record; replaying without it"
-        );
-    }
-    matches
-}
-
-/// Poll `future` once, returning its output only if it completed without suspending.
-///
-/// The wallet checker is `async` only by trait shape: it never awaits, so it
-/// completes on the first poll and load needs no async runtime. A test pins
-/// that; an upstream change that adds a real await fails it.
-fn poll_ready<F: std::future::Future>(future: F) -> Option<F::Output> {
-    let mut future = std::pin::pin!(future);
-    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
-    match future.as_mut().poll(&mut cx) {
-        std::task::Poll::Ready(output) => Some(output),
-        std::task::Poll::Pending => None,
-    }
-}
-
-/// Order records as the chain would deliver them: every in-set parent ahead of
-/// its children, otherwise confirmed by block position, then InstantSend-locked,
-/// then plain mempool. Replaying a final record makes upstream scan every
-/// unconfirmed record already in history, so only its own ancestors go ahead
-/// of it: the other unlocked records go last.
-///
-/// Dependencies span both partitions: a parent's stored record can still say
-/// mempool after it confirmed (a height-only confirmation never rewrites an
-/// existing record), while its child's record is already confirmed.
-fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
-    let mut records = records;
-    records.sort_by_key(|record| {
-        let block = record.block_info();
-        (
-            block.is_none(),
-            matches!(record.context, TransactionContext::Mempool),
-            block.map(|block| (block.height(), block.position())),
-            record.txid,
-        )
-    });
-    let index: HashMap<Txid, usize> = records
-        .iter()
-        .enumerate()
-        .map(|(position, record)| (record.txid, position))
-        .collect();
-    let mut children: Vec<Vec<usize>> = vec![Vec::new(); records.len()];
-    let mut waiting_on: Vec<usize> = vec![0; records.len()];
-    for (child, record) in records.iter().enumerate() {
-        let parents: BTreeSet<usize> = record
-            .transaction
-            .input
-            .iter()
-            .filter_map(|input| index.get(&input.previous_output.txid).copied())
-            .filter(|parent| *parent != child)
-            .collect();
-        waiting_on[child] = parents.len();
-        for parent in parents {
-            children[parent].push(child);
-        }
-    }
-    // Ranks are sorted positions, so the smallest ready one is next in chain order.
-    let chain = |rank: &[usize]| {
-        let mut waiting_on = waiting_on.clone();
-        let mut ready: BTreeSet<(usize, usize)> = (0..records.len())
-            .filter(|position| waiting_on[*position] == 0)
-            .map(|position| (rank[position], position))
-            .collect();
-        let mut order = Vec::with_capacity(records.len());
-        while let Some((_, position)) = ready.pop_first() {
-            order.push(position);
-            for &child in &children[position] {
-                waiting_on[child] -= 1;
-                if waiting_on[child] == 0 {
-                    ready.insert((rank[child], child));
-                }
-            }
-        }
-        order
-    };
-    // A record ranks with its earliest descendant. Ranked on its own, a mempool
-    // ancestor of final records lets unrelated mempool records into history
-    // first, and each of those final records then scans them.
-    let mut rank: Vec<usize> = (0..records.len()).collect();
-    for &position in chain(&rank).iter().rev() {
-        for &child in &children[position] {
-            rank[position] = rank[position].min(rank[child]);
-        }
-    }
-    let mut order = chain(&rank);
-    // Unreachable for real transactions (txids cannot form a cycle); keep the
-    // rest in chain order rather than drop a reservation.
-    let emitted: HashSet<usize> = order.iter().copied().collect();
-    order.extend((0..records.len()).filter(|position| !emitted.contains(position)));
-    let mut slots: Vec<Option<TransactionRecord>> = records.into_iter().map(Some).collect();
-    order
-        .into_iter()
-        .filter_map(|position| slots[position].take())
+        .cloned()
         .collect()
 }
 
-/// Account identity of a funds account, stable across replay mutations.
-fn funds_account_type(account: &ManagedCoreFundsAccount) -> AccountType {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    account.managed_account_type().to_account_type()
+/// Derives into the funds pools the `wanted` addresses they derive past what
+/// they hold, from each account's xpub in `manifest`, removing each found
+/// from `wanted`, and marks them used. Each pool is probed through one index
+/// past what it holds (its gap limit when it holds less), and past each
+/// address found through one index past the gap-limit window a refill would
+/// then hold, up to [`MAX_REHYDRATION_DERIVATION_INDEX`], so addresses a gap
+/// limit and one apart are found in one call. The probe derives on a copy of
+/// the pool, so the pool itself grows only to the deepest address found. Every
+/// funds account is probed, whatever owner a coin's row names, since only
+/// derivation proves which account can sign for an address. Returns how many
+/// were derived.
+///
+/// A pool that does not derive its deepest find reports it at
+/// [`LoadSite::RehydrationEnsureDerived`] (strict fails the load); its finds
+/// are then not counted.
+fn discover_in_funds_accounts(
+    wallet_info: &mut ManagedWalletInfo,
+    manifest: &[AccountRegistrationEntry],
+    wanted: &mut HashSet<key_wallet::Address>,
+    wallet_id: [u8; 32],
+    ctx: &LoadCtx,
+) -> Result<usize, WalletStorageError> {
+    use key_wallet::managed_account::address_pool::KeySource;
+
+    let mut derived = 0;
+    for account in wallet_info.accounts.all_funding_accounts_mut() {
+        if wanted.is_empty() {
+            break;
+        }
+        let account_type = account.managed_account_type().to_account_type();
+        let Some(key_source) = (manifest.iter())
+            .find(|e| e.account_type == account_type)
+            .map(|e| KeySource::Public(e.account_xpub))
+        else {
+            continue;
+        };
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            if wanted.is_empty() {
+                break;
+            }
+            if pool.pool_type == AddressPoolType::AbsentHardened {
+                continue;
+            }
+            let gap = pool.gap_limit;
+            let start = pool.highest_generated.map_or(0, |h| h.saturating_add(1));
+            let mut horizon = start.max(gap);
+            let mut index = start;
+            let mut probe = pool.clone();
+            let mut found = Vec::new();
+            let mut deepest = None;
+            while index <= horizon
+                && index <= MAX_REHYDRATION_DERIVATION_INDEX
+                && !wanted.is_empty()
+            {
+                let Some(address) = ensure_derived(&mut probe, &key_source, index) else {
+                    break;
+                };
+                if wanted.remove(&address) {
+                    found.push(address);
+                    deepest = Some(index);
+                    horizon = horizon.max(index.saturating_add(gap).saturating_add(1));
+                }
+                index = index.saturating_add(1);
+            }
+            if index.saturating_sub(start) > REHYDRATION_DEEP_SCAN_WARN_INDEX {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    account_type = ?account_type,
+                    pool_type = ?pool.pool_type,
+                    scanned_to = index.saturating_sub(1),
+                    "rehydration: discovery past the pool scanned abnormally deep — \
+                     likely a foreign-heavy or sparse UTXO set"
+                );
+            }
+            let Some(deepest) = deepest else {
+                continue;
+            };
+            if ensure_derived(pool, &key_source, deepest).is_none() {
+                ctx.tolerate_at(
+                    LoadSite::RehydrationEnsureDerived,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
+                    WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
+                )?;
+                continue;
+            }
+            for address in &found {
+                pool.mark_used(address);
+            }
+            derived += found.len();
+        }
+    }
+    Ok(derived)
 }
 
-/// Resolve an owning account to its position among `account_keys`, or fall
-/// back to the first funds account. A `None` owner (no attribution available)
-/// falls back silently; an owner not present in `account_keys` (store drift)
-/// falls back too but is recorded in `orphaned_owners` for a single post-loop
-/// `tracing::warn!`. Shared by the UTXO and used-address routing loops so both
-/// bucket funds and used-state by the exact same identity match.
-fn route_to_funds_account(
-    account_keys: &[OwningAccount],
-    owner: Option<&OwningAccount>,
-    orphaned_owners: &mut Vec<String>,
-) -> usize {
-    // INTENTIONAL(funds-account-fallback): an unattributable owner routes to
-    // account 0 rather than failing. Accepted risk: until the next sync warms
-    // the per-account view, such a UTXO or used address is attributed to the
-    // first funds account instead of its own. Failing closed here would brick
-    // wallets whose owners legitimately have no funds account (provider
-    // accounts sit on a non-secp256k1 curve), which is the worse outcome.
-    match owner {
-        None => 0,
-        Some(owner) => account_keys
-            .iter()
-            .position(|k| k == owner)
-            .unwrap_or_else(|| {
-                orphaned_owners.push(format!("{}[{}]", owner.account_type, owner.account_index));
-                0
-            }),
-    }
+fn restore_failed(
+    ctx: &LoadCtx,
+    wallet_id: [u8; 32],
+    source: key_wallet::Error,
+) -> Result<(), WalletStorageError> {
+    ctx.tolerate_at(
+        LoadSite::RehydrationMaintainGapLimit,
+        SiteCoords {
+            wallet_id: Some(wallet_id),
+            account_type: &"restore_utxos",
+            affected: 1,
+            detail: None,
+        },
+        WalletStorageError::RehydrationGapLimitFailed { source },
+    )
 }
 
 /// Owning-account identity of a funds account, keyed on the same
@@ -1164,7 +922,9 @@ fn route_to_funds_account(
 /// to pick one account among funding accounts that share a numeric index
 /// (Standard BIP44/BIP32 and CoinJoin can all sit at index 0; DashPay accounts
 /// all carry index 0 and differ only by the identity pair).
-fn owning_account_of(account: &ManagedCoreFundsAccount) -> OwningAccount {
+fn owning_account_of(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+) -> OwningAccount {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     owning_account_for(&account.managed_account_type().to_account_type())
 }
@@ -1203,9 +963,16 @@ const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 /// `Address` / `ScriptBuf` — so this holds a single refill near 100 MB.
 /// Legitimate refills span one gap window (tens of addresses); reaching
 /// this cap needs `highest_used` far past `highest_generated`, which
-/// `mark_used` — the only writer today — cannot produce. Defense in depth
-/// against a future upstream invariant break, not a currently reachable path.
+/// `mark_used` — the only writer today — cannot produce, or a gap limit near
+/// the cap, which key-wallet's own pools never have. Defense in depth
+/// against a future upstream invariant break or a caller-built pool, not a
+/// path a stored wallet reaches.
+#[cfg(not(test))]
 const MAX_REHYDRATION_GAP_REFILL: u32 = 250_000;
+/// The same bound, smaller in unit tests, so a test that crosses it derives
+/// little on the way.
+#[cfg(test)]
+const MAX_REHYDRATION_GAP_REFILL: u32 = 2_000;
 
 /// Highest BIP-32 non-hardened child index. A derivation target at or past
 /// `2^31` names a hardened child, which no address pool can derive from a
@@ -1222,9 +989,10 @@ const MAX_NORMAL_CHILD_INDEX: u32 = (1u32 << 31) - 1;
 /// is the hard ceiling. Addresses that don't resolve from this account's
 /// xpub — foreign keys, multi-account mismatch, or legitimately-owned but
 /// deep-and-sparse slots with no nearer resolved address to anchor the horizon —
-/// are counted and logged via `tracing::warn!`; they re-warm on the next
-/// full sync. Every resolved address the pools *do* hold (in-window or
-/// deep-resolved) is marked used so a funded or previously-used address is
+/// are left to the caller, which looks for them past every funds pool and
+/// counts those still unresolved once. Every resolved address the pools *do*
+/// hold (in-window or deep-resolved) is marked used so a funded or
+/// previously-used address is
 /// never handed out as a fresh receive address.
 ///
 /// Tested with Standard BIP44 topology (External + Internal pools) and
@@ -1245,15 +1013,15 @@ const MAX_NORMAL_CHILD_INDEX: u32 = (1u32 << 31) - 1;
 ///
 /// Never touches key material — the xpub is the keyless account public key.
 fn extend_pools_for_restored_addresses(
-    account: &mut ManagedCoreFundsAccount,
+    account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     manifest: &[AccountRegistrationEntry],
     restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],
     ctx: &LoadCtx,
+    refused: &mut RefusedRefills,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use std::collections::HashSet;
 
     let account_type = account.managed_account_type().to_account_type();
 
@@ -1352,28 +1120,9 @@ fn extend_pools_for_restored_addresses(
             }
         }
 
-        // Still-unresolved addresses are either foreign (a different account's
-        // key routed here, or corrupt) or legitimately-owned but deep-and-sparse
-        // (past the first gap window with no nearer unspent UTXO to anchor the
-        // horizon). Either way they re-warm on the next full sync; the wallet
-        // total is exact regardless.
-        // Degraded in BOTH policies, never fatal: the two explanations above
-        // are indistinguishable from the persisted rows alone, and no
-        // root-cause fix exists short of an unbounded scan. The wallet total
-        // is exact either way.
-        if !unresolved.is_empty() {
-            ctx.note_degraded(
-                LoadSite::UnresolvedUtxoAddress,
-                SiteCoords {
-                    wallet_id: Some(wallet_id),
-                    account_type: &account_type,
-                    affected: unresolved.len(),
-                    detail: None,
-                },
-                "restored addresses did not resolve against this account's xpub; they re-warm \
-                 on the next full sync and the balance total is exact",
-            );
-        }
+        // Still-unresolved addresses are left to the caller: discovery past
+        // every funds pool may still resolve them, in this account or
+        // another, and the caller counts what it does not.
     }
 
     // No explicit aggregate-derivation cap is needed: a funds account exposes
@@ -1479,15 +1228,19 @@ fn extend_pools_for_restored_addresses(
             // the way out. Validity first: an unrepresentable target has no
             // meaningful cost to weigh against the cap, and upstream panics
             // computing it (debug) or wraps it into a bogus one (release).
-            let refill = match ImpliedRefill::of(
+            let refusal = match ImpliedRefill::of(
                 pool.highest_used,
                 pool.highest_generated,
                 pool.gap_limit,
             ) {
-                Ok(refill) => refill,
-                Err(error) => {
+                Ok(refill) if refill.implied <= MAX_REHYDRATION_GAP_REFILL => None,
+                Ok(refill) => Some((LoadSite::RehydrationGapLimit, refill.too_large())),
+                Err(error) => Some((LoadSite::RehydrationMaintainGapLimit, error)),
+            };
+            if let Some((site, error)) = refusal {
+                if refused.insert((account_type, pool.pool_type)) {
                     ctx.tolerate_at(
-                        LoadSite::RehydrationMaintainGapLimit,
+                        site,
                         SiteCoords {
                             wallet_id: Some(wallet_id),
                             account_type: &account_type,
@@ -1496,25 +1249,7 @@ fn extend_pools_for_restored_addresses(
                         },
                         error,
                     )?;
-                    break;
                 }
-            };
-            if refill.implied > MAX_REHYDRATION_GAP_REFILL {
-                ctx.tolerate_at(
-                    LoadSite::RehydrationGapLimit,
-                    SiteCoords {
-                        wallet_id: Some(wallet_id),
-                        account_type: &account_type,
-                        affected: 1,
-                        detail: Some(&pool.pool_type),
-                    },
-                    WalletStorageError::RehydrationGapLimitRefillTooLarge {
-                        refill_target: refill.target,
-                        already_generated: refill.already_generated,
-                        implied: refill.implied,
-                        cap: MAX_REHYDRATION_GAP_REFILL,
-                    },
-                )?;
                 break;
             }
 
@@ -1592,6 +1327,16 @@ impl ImpliedRefill {
             implied: target.saturating_add(1).saturating_sub(already_generated),
         })
     }
+
+    /// The refusal of this refill for exceeding [`MAX_REHYDRATION_GAP_REFILL`].
+    fn too_large(&self) -> WalletStorageError {
+        WalletStorageError::RehydrationGapLimitRefillTooLarge {
+            refill_target: self.target,
+            already_generated: self.already_generated,
+            implied: self.implied,
+            cap: MAX_REHYDRATION_GAP_REFILL,
+        }
+    }
 }
 
 /// Ensure `pool` has derived through `index` (generating only the missing
@@ -1617,11 +1362,7 @@ fn ensure_derived(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::Hash as _;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-    use platform_wallet::test_support::core_fixtures::{
-        block, outside, pay, records_of, spend_of, stored_utxo, wallet_with_receive_address,
-    };
 
     fn manifest_for(w: &Wallet) -> Vec<AccountRegistrationEntry> {
         w.accounts
@@ -3268,7 +3009,6 @@ mod tests {
     fn rehydration_utxos_without_funds_account_errors() {
         use dashcore::address::Payload;
         use dashcore::blockdata::transaction::txout::TxOut;
-        use dashcore::hashes::Hash;
         use dashcore::{OutPoint, PubkeyHash, Txid};
         use key_wallet::account::AccountType;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -3386,7 +3126,6 @@ mod tests {
     #[test]
     fn rehydration_restores_last_applied_chain_lock() {
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
@@ -3576,7 +3315,14 @@ mod tests {
         let restored = std::slice::from_ref(&fixture.marked);
         let manifest = fixture.manifest.clone();
         let mut funding = fixture.wallet_info.accounts.all_funding_accounts_mut();
-        extend_pools_for_restored_addresses(funding[0], &manifest, restored, wallet_id, ctx)
+        extend_pools_for_restored_addresses(
+            funding[0],
+            &manifest,
+            restored,
+            wallet_id,
+            ctx,
+            &mut RefusedRefills::new(),
+        )
     }
 
     /// A pool whose `highest_used` sits far past `highest_generated` implies a
@@ -3959,917 +3705,1595 @@ mod tests {
         );
     }
 
-    fn burn(value: u64) -> dashcore::TxOut {
-        dashcore::TxOut {
-            value,
-            script_pubkey: dashcore::ScriptBuf::new(),
-        }
-    }
-
-    fn lock_of(txid: Txid, inputs: Vec<OutPoint>) -> InstantLock {
-        InstantLock {
-            inputs,
-            txid,
-            ..Default::default()
-        }
-    }
-
-    /// Load replays history without an async runtime by polling the checker
-    /// once. If upstream ever makes it suspend, this fails in CI instead of
-    /// load silently skipping the restored spend guards in production.
-    #[test]
-    fn should_complete_transaction_checker_on_first_poll() {
-        use key_wallet::transaction_checking::BlockInfo;
-
-        let (mut wallet, mut info, address) = wallet_with_receive_address();
-        let funding = spend_of(&[outside(9)], vec![pay(1_000, &address)]);
-        let spend = spend_of(&[OutPoint::new(funding.txid(), 0)], Vec::new());
-        let block =
-            TransactionContext::InBlock(BlockInfo::new(1, dashcore::BlockHash::all_zeros(), 1));
-        for (tx, context) in [(&funding, block), (&spend, TransactionContext::Mempool)] {
-            let result =
-                poll_ready(info.check_core_transaction(tx, context, &mut wallet, true, false));
-            assert!(
-                result.is_some_and(|r| r.is_relevant),
-                "the checker must complete on its first poll"
-            );
-        }
-    }
-
-    /// Same-block funding and spend, with and without in-block positions: an
-    /// output the load projection still parks as unspent must end up excluded,
-    /// and recorded as observed spent, whichever of the two is stored first.
-    #[tokio::test]
-    async fn should_exclude_spent_output_for_either_same_height_replay_order() {
-        use dashcore::BlockHash;
-        use key_wallet::transaction_checking::BlockInfo;
-
-        for (spend_first, positioned) in
-            [(false, false), (true, false), (false, true), (true, true)]
-        {
-            let case = format!("spend_first={spend_first} positioned={positioned}");
-            let (mut wallet, mut info, address) = wallet_with_receive_address();
-            let funding = spend_of(
-                &[outside(15)],
-                vec![pay(100_000, &address), pay(20_000, &address)],
-            );
-            let [spent, available] = [0, 1].map(|vout| OutPoint::new(funding.txid(), vout));
-            let spending = spend_of(&[spent], vec![burn(99_000)]);
-            let context = |position: u32| {
-                let block = BlockInfo::new(100, BlockHash::from_byte_array([7; 32]), 100);
-                TransactionContext::InBlock(if positioned {
-                    block.with_position(position)
-                } else {
-                    block
-                })
-            };
-            let mut records = records_of(&mut info, &mut wallet, &funding, context(1)).await;
-            records.extend(records_of(&mut info, &mut wallet, &spending, context(2)).await);
-            assert_eq!(records.len(), 2);
-            assert!(records.iter().all(|r| r
-                .block_info()
-                .is_some_and(|b| b.position().is_some() == positioned)));
-            if spend_first {
-                records.reverse();
-            }
-
-            // A stale projection that still parks the spent output as unspent.
-            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
-            let account = restored
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&0)
-                .unwrap();
-            for outpoint in [spent, available] {
-                let coin = stored_utxo(&funding, outpoint.vout, address.clone());
-                account.utxos.insert(outpoint, coin);
-            }
-            restore_recorded_transactions(&mut restored, &mut wallet, records, &Default::default())
-                .unwrap();
-
-            let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
-            assert!(!coins.contains_key(&spent), "{case}");
-            assert!(coins.contains_key(&available), "{case}");
-            assert!(
-                restored.observed_spent_outpoints().contains_key(&spent),
-                "{case}"
-            );
-            assert_eq!(restored.balance.total(), 20_000, "{case}");
-        }
-    }
-
-    /// A lock that arrived after its transaction was stored lives only in
-    /// `core_instant_locks`; the stored record still says mempool. Replay must
-    /// restore the InstantSend context and run its conflict sweep, since the
-    /// already-marked lock deduplicates any later lock event.
-    #[tokio::test]
-    async fn should_replay_mempool_record_with_persisted_lock_as_instant_send() {
-        let (mut wallet, mut info, address) = wallet_with_receive_address();
-        let funding = spend_of(&[outside(21)], vec![pay(100_000, &address)]);
-        let coin = OutPoint::new(funding.txid(), 0);
-        let spend = |value| spend_of(&[coin], vec![burn(value)]);
-        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
-        // Both double spends as stored: unconfirmed, recorded independently.
-        let (mut winner, mut loser) = (spend(99_000), spend(98_000));
-        for tx in [&winner, &loser] {
-            let mut scratch = info.clone();
-            let mempool = TransactionContext::Mempool;
-            records.extend(records_of(&mut scratch, &mut wallet, tx, mempool).await);
-        }
-        assert_eq!(records.len(), 3);
-        // Unconfirmed siblings replay by txid: lock the later one so the
-        // loser is already recorded when the winner's sweep runs.
-        if winner.txid() < loser.txid() {
-            std::mem::swap(&mut winner, &mut loser);
-        }
-        let locks: BTreeMap<Txid, InstantLock> =
-            [(winner.txid(), lock_of(winner.txid(), vec![coin]))].into();
-
-        let record_of = |txid: Txid| records.iter().find(|r| r.txid == txid).unwrap().clone();
-
-        // Alone, the locked spend comes back InstantSend.
-        let mut alone = ManagedWalletInfo::from_wallet(&wallet, 0);
-        let pair = vec![record_of(funding.txid()), record_of(winner.txid())];
-        restore_recorded_transactions(&mut alone, &mut wallet, pair, &locks).unwrap();
-        assert!(
-            alone.accounts.standard_bip44_accounts[&0]
-                .transactions()
-                .get(&winner.txid())
-                .is_some_and(|record| matches!(record.context, TransactionContext::InstantSend(_))),
-            "the locked record must come back InstantSend, not mempool"
-        );
-
-        // Replayed after a conflicting spend, its lock sweeps that spend.
-        let mut contested = ManagedWalletInfo::from_wallet(&wallet, 0);
-        restore_recorded_transactions(&mut contested, &mut wallet, records.clone(), &locks)
-            .unwrap();
-        assert!(
-            !contested.accounts.standard_bip44_accounts[&0]
-                .transactions()
-                .contains_key(&loser.txid()),
-            "the lock's conflict sweep must drop the competing spend"
-        );
-    }
-
-    /// Settled spends must sweep persisted competing change after all siblings replay.
-    #[tokio::test]
-    async fn should_sweep_conflicting_spend_for_either_sibling_replay_order() {
-        use dashcore::BlockHash;
-        use key_wallet::transaction_checking::BlockInfo;
-        use key_wallet::Utxo;
-
-        for (settlement, locked_competitor) in [
-            ("instant_send", false),
-            ("block", false),
-            ("chainlock", false),
-            ("block", true),
-            ("chainlock", true),
-            ("persisted_chainlock", true),
-            ("persisted_chainlock_below", true),
-        ] {
-            for winner_later_txid in [false, true] {
-                let case = format!("{settlement}, locked_competitor={locked_competitor}, winner_later_txid={winner_later_txid}");
-                let (mut wallet, mut info, address) = wallet_with_receive_address();
-                let funding = spend_of(&[outside(23)], vec![pay(100_000, &address)]);
-                let coin = OutPoint::new(funding.txid(), 0);
-                let spend =
-                    |change| spend_of(&[coin], vec![burn(99_000 - change), pay(change, &address)]);
-                let block = TransactionContext::InBlock(BlockInfo::new(
-                    100,
-                    BlockHash::from_byte_array([9; 32]),
-                    100,
-                ));
-                let mut records = records_of(&mut info, &mut wallet, &funding, block).await;
-                let (mut winner, mut loser) = (spend(40_000), spend(30_000));
-                if (winner.txid() > loser.txid()) != winner_later_txid {
-                    std::mem::swap(&mut winner, &mut loser);
-                }
-                // Both siblings as stored: unconfirmed, each credited its change.
-                let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
-                for tx in [&winner, &loser] {
-                    let mut scratch = info.clone();
-                    let mempool = TransactionContext::Mempool;
-                    records.extend(records_of(&mut scratch, &mut wallet, tx, mempool).await);
-                    let change = OutPoint::new(tx.txid(), 1);
-                    let credited =
-                        Utxo::new(change, tx.output[1].clone(), address.clone(), 0, false);
-                    let account = restored.accounts.standard_bip44_accounts.get_mut(&0);
-                    account.unwrap().utxos.insert(change, credited);
-                }
-                assert_eq!(records.len(), 3, "{case}");
-                let mut locks = BTreeMap::new();
-                if settlement == "instant_send" {
-                    locks.insert(winner.txid(), lock_of(winner.txid(), vec![coin]));
-                } else {
-                    let block = BlockInfo::new(101, BlockHash::from_byte_array([10; 32]), 101);
-                    let record = records
-                        .iter_mut()
-                        .find(|r| r.txid == winner.txid())
-                        .unwrap();
-                    record.context = if settlement == "chainlock" {
-                        TransactionContext::InChainLockedBlock(block)
-                    } else {
-                        TransactionContext::InBlock(block)
-                    };
-                }
-                if let Some(below) = settlement.strip_prefix("persisted_chainlock") {
-                    let block_height = if below.is_empty() { 101 } else { 100 };
-                    let block_hash = BlockHash::from_byte_array([10; 32]);
-                    let signature = [0; 96].into();
-                    restored.metadata.last_applied_chain_lock =
-                        Some(dashcore::ephemerealdata::chain_lock::ChainLock {
-                            block_height,
-                            block_hash,
-                            signature,
-                        });
-                }
-                if locked_competitor {
-                    locks.insert(loser.txid(), lock_of(loser.txid(), vec![coin]));
-                }
-
-                restore_recorded_transactions(&mut restored, &mut wallet, records, &locks).unwrap();
-
-                let account = &restored.accounts.standard_bip44_accounts[&0];
-                let keep_competitor = matches!(settlement, "block" | "persisted_chainlock_below")
-                    && locked_competitor;
-                assert_eq!(
-                    account.transactions().contains_key(&loser.txid()),
-                    keep_competitor,
-                    "{case}: only a chainlock can overrule an InstantSend lock"
-                );
-                assert_eq!(
-                    account.utxos.contains_key(&OutPoint::new(loser.txid(), 1)),
-                    keep_competitor,
-                    "{case}: the swept spend's change must not stay selectable"
-                );
-                assert!(
-                    account.utxos.contains_key(&OutPoint::new(winner.txid(), 1)),
-                    "{case}: the winner's change stays"
-                );
-                let expected_balance = winner.output[1].value
-                    + if keep_competitor {
-                        loser.output[1].value
-                    } else {
-                        0
-                    };
-                assert_eq!(restored.balance.total(), expected_balance, "{case}");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn should_remove_cross_account_descendant_of_conflicting_spend_after_replay() {
-        use key_wallet::wallet::managed_wallet_info::coin_selection::{
-            CoinSelector, SelectionStrategy,
+    mod restore_owned {
+        use super::*;
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::{BlockHash, OutPoint, Transaction, TxIn, Txid};
+        use key_wallet::managed_account::address_pool::AddressPool;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
         };
-        use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
-        use key_wallet::Utxo;
-        use platform_wallet::changeset::{
-            PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
-        };
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        use key_wallet::{Address, Utxo};
+        use std::collections::{BTreeSet, HashMap};
 
-        use crate::{SqlitePersister, SqlitePersisterConfig};
+        const VALUE: u64 = 100_001_000;
+        const HEIGHT: u32 = 1_000;
 
-        let mut wallet = Wallet::new_random(
-            Network::Testnet,
-            WalletAccountCreationOptions::BIP44AccountsOnly([0, 1].into_iter().collect()),
-        )
-        .unwrap();
-        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
-        let addresses = [0, 1].map(|index| {
-            let xpub = wallet.accounts.standard_bip44_accounts[&index].account_xpub;
-            let account = info.accounts.standard_bip44_accounts.get_mut(&index);
-            account
-                .unwrap()
-                .next_receive_address(Some(&xpub), true)
-                .unwrap()
-        });
-        let funding = spend_of(&[outside(41)], vec![pay(100_000, &addresses[0])]);
-        let root = spend_of(
-            &[OutPoint::new(funding.txid(), 0)],
-            vec![pay(99_000, &addresses[0])],
-        );
-        let child = spend_of(
-            &[OutPoint::new(root.txid(), 0)],
-            vec![pay(98_000, &addresses[1])],
-        );
-        let winner = spend_of(&[OutPoint::new(funding.txid(), 0)], vec![burn(97_000)]);
-        let mempool = TransactionContext::Mempool;
-        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
-        let mut winner_info = info.clone();
-        records.extend(records_of(&mut info, &mut wallet, &root, mempool.clone()).await);
-        records.extend(records_of(&mut info, &mut wallet, &child, mempool).await);
-        let recorded = |account: u32, tx: &dashcore::Transaction| {
-            let account = &info.accounts.standard_bip44_accounts[&account];
-            account.transactions().contains_key(&tx.txid())
-        };
-        assert_eq!(
-            [recorded(0, &root), recorded(1, &root)],
-            [true, false],
-            "the root is recorded only where it spends"
-        );
-        assert_eq!(
-            [recorded(0, &child), recorded(1, &child)],
-            [true, true],
-            "the child is recorded in both accounts"
-        );
-        records.extend(records_of(&mut winner_info, &mut wallet, &winner, block(101)).await);
-        platform_wallet::test_support::fold_wallet_records(&mut records);
-        let child_outpoint = OutPoint::new(child.txid(), 0);
-        let dir = tempfile::tempdir().unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        fn cj() -> AccountType {
+            AccountType::CoinJoin { index: 0 }
         }
-        let path = dir.path().join("cross-account-replay.sqlite");
-        let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-        let coin = |tx: &dashcore::Transaction, owner: usize, height| {
-            let outpoint = OutPoint::new(tx.txid(), 0);
-            let address = addresses[owner].clone();
-            Utxo::new(outpoint, tx.output[0].clone(), address, height, false)
-        };
-        let (funded, root_coin) = (coin(&funding, 0, 100), coin(&root, 0, 0));
-        let round = PlatformWalletChangeSet {
-            wallet_metadata: Some(WalletMetadataEntry {
-                network: Network::Testnet,
-                wallet_group_id: [0; 32],
-                birth_height: 0,
-            }),
-            account_registrations: manifest_for(&wallet),
-            core: Some(CoreChangeSet {
-                records,
-                new_utxos: vec![funded.clone(), root_coin.clone(), coin(&child, 1, 0)],
-                spent_utxos: vec![funded, root_coin],
-                synced_height: Some(101),
-                last_processed_height: Some(101),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        persister.store(wallet.wallet_id, round).unwrap();
-        drop(persister);
-        let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-        let mut loaded = persister.load().unwrap();
-        let loaded = loaded
-            .wallets
-            .remove(&wallet.wallet_id)
-            .unwrap()
-            .wallet_info;
-        let loaded_coins = &loaded.accounts.standard_bip44_accounts[&1].utxos;
-        let selection = CoinSelector::new(SelectionStrategy::LargestFirst).select_coins(
-            loaded_coins.values(),
-            10_000,
-            FeeRate::default(),
-            101,
-        );
-        assert!(
-            !loaded_coins.contains_key(&child_outpoint),
-            "SQLite store/load must discard a cross-account descendant of a conflicting spend"
-        );
-        assert!(
-            selection.is_err(),
-            "a conflicting descendant cannot fund a spend"
-        );
-        assert_eq!(loaded.balance.total(), 0);
-        for txid in [root.txid(), child.txid()] {
-            assert!(persister
-                .get_core_tx_record(wallet.wallet_id, &txid)
-                .unwrap()
-                .is_none());
-        }
-        assert_eq!(
-            persister.load().unwrap().wallets[&wallet.wallet_id]
-                .wallet_info
-                .balance
-                .total(),
-            0
-        );
-    }
 
-    /// A persisted lock is trusted only when it names the record it is keyed
-    /// under and that record's transaction really has that txid; otherwise the
-    /// record replays in its stored mempool context and no sweep runs.
-    #[tokio::test]
-    async fn should_not_upgrade_record_to_instant_send_with_mismatched_lock() {
-        let (mut wallet, mut info, address) = wallet_with_receive_address();
-        let funding = spend_of(&[outside(23)], vec![pay(100_000, &address)]);
-        let coin = OutPoint::new(funding.txid(), 0);
-        let spend = spend_of(&[coin], vec![burn(99_000)]);
-        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
-        let mempool = TransactionContext::Mempool;
-        records.extend(records_of(&mut info, &mut wallet, &spend, mempool).await);
-        assert_eq!(records.len(), 2);
-        let foreign = Txid::from_byte_array([24; 32]);
-        let mut forged_record = records.clone();
-        forged_record
-            .iter_mut()
-            .find(|record| record.txid == spend.txid())
-            .unwrap()
-            .txid = foreign;
-        let cases = [
-            // The lock row is keyed under the record but locks another txid.
-            (
-                "lock txid",
-                records.clone(),
-                spend.txid(),
-                lock_of(foreign, vec![coin]),
-            ),
-            // Record and lock agree, but the record's transaction is another one.
-            (
-                "record txid",
-                forged_record,
-                foreign,
-                lock_of(foreign, vec![coin]),
-            ),
-        ];
-        for (case, records, key, lock) in cases {
-            let locks: BTreeMap<Txid, InstantLock> = [(key, lock)].into_iter().collect();
-            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
-            restore_recorded_transactions(&mut restored, &mut wallet, records, &locks).unwrap();
-            let transactions = restored.accounts.standard_bip44_accounts[&0].transactions();
-            assert!(
-                !transactions
-                    .values()
-                    .any(|record| matches!(record.context, TransactionContext::InstantSend(_))),
-                "{case}: a mismatched lock must not upgrade any record"
-            );
-            assert!(
-                transactions.contains_key(&spend.txid()),
-                "{case}: the spend must still replay in its stored context"
-            );
-        }
-    }
-
-    /// A record spending `parents` (output 0 of each); `value` keeps txids distinct.
-    fn replay_record(
-        parents: &[Txid],
-        value: u64,
-        context: TransactionContext,
-    ) -> TransactionRecord {
-        use key_wallet::account::StandardAccountType;
-        use key_wallet::managed_account::transaction_record::TransactionDirection;
-        use key_wallet::transaction_checking::TransactionType;
-
-        let inputs: Vec<_> = parents
-            .iter()
-            .map(|parent| OutPoint::new(*parent, 0))
-            .collect();
-        TransactionRecord::new(
-            spend_of(&inputs, vec![burn(value)]),
+        fn bip44() -> AccountType {
             AccountType::Standard {
                 index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
-            context,
-            TransactionType::Standard,
-            TransactionDirection::Outgoing,
-            Vec::new(),
-            Vec::new(),
-            0,
-        )
-    }
-
-    fn in_block(height: u32, position: Option<u32>) -> TransactionContext {
-        use key_wallet::transaction_checking::BlockInfo;
-
-        let block = BlockInfo::new(height, dashcore::BlockHash::all_zeros(), height);
-        TransactionContext::InBlock(position.map_or(block, |p| block.with_position(p)))
-    }
-
-    /// A history from `shape`: per record, which coins it spends (a small shared
-    /// pool, or output 0 of an earlier record), and its context.
-    fn generated_history(shape: &[(Vec<u8>, u8, u32)]) -> Vec<TransactionRecord> {
-        use dashcore::ephemerealdata::instant_lock::InstantLock;
-        use key_wallet::transaction_checking::BlockInfo;
-
-        let mut records: Vec<TransactionRecord> = Vec::new();
-        for (position, (coins, kind, height)) in shape.iter().enumerate() {
-            let parents: Vec<Txid> = coins
-                .iter()
-                .map(|coin| match (records.is_empty(), *coin < 6) {
-                    (false, false) => records[*coin as usize % records.len()].txid,
-                    _ => Txid::from_byte_array([*coin + 1; 32]),
-                })
-                .collect();
-            let mut record =
-                replay_record(&parents, position as u64 + 1, TransactionContext::Mempool);
-            let block = BlockInfo::new(100 + height, dashcore::BlockHash::all_zeros(), 0);
-            record.context = match kind {
-                0 | 1 => TransactionContext::Mempool,
-                2 => TransactionContext::InstantSend(InstantLock {
-                    txid: record.txid,
-                    ..Default::default()
-                }),
-                3 => TransactionContext::InBlock(block),
-                _ => TransactionContext::InChainLockedBlock(block),
-            };
-            records.push(record);
-        }
-        records
-    }
-
-    /// The planner as it was while every sweep scanned the whole history: the
-    /// reference for what handing each sweep only its candidates must not change.
-    fn plan_scanning_whole_history(
-        wallet_info: &ManagedWalletInfo,
-        records: &[TransactionRecord],
-    ) -> Vec<SweepBatch> {
-        let mut conflicts = wallet_info.clone();
-        let mut accounts = conflicts.accounts.all_funding_accounts_mut();
-        accounts[0]
-            .transactions_mut()
-            .extend(records.iter().map(|record| (record.txid, record.clone())));
-        let mut winners: Vec<_> = records
-            .iter()
-            .filter(|record| !matches!(record.context, TransactionContext::Mempool))
-            .collect();
-        winners.sort_by_key(|record| {
-            let priority = match record.context {
-                TransactionContext::InChainLockedBlock(_) => 0,
-                TransactionContext::InstantSend(_) => 1,
-                _ => 2,
-            };
-            (priority, record.txid)
-        });
-        let mut removed = HashSet::new();
-        let mut sweeps = Vec::new();
-        for record in winners {
-            if removed.contains(&record.txid) {
-                continue;
-            }
-            let result = conflicts.sweep_conflicts(&record.transaction, &record.context);
-            if !result.txids.is_empty() {
-                removed.extend(result.txids.iter().copied());
-                sweeps.push(replay_sweep(
-                    record,
-                    result.txids,
-                    result.released_outpoints,
-                ));
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
             }
         }
-        let claimed: HashSet<_> = records
-            .iter()
-            .filter(|record| !removed.contains(&record.txid))
-            .flat_map(|record| &record.transaction.input)
-            .map(|input| input.previous_output)
-            .collect();
-        for sweep in &mut sweeps {
-            sweep.released_outpoints.retain(|outpoint| {
-                !removed.contains(&outpoint.txid) && !claimed.contains(outpoint)
-            });
+
+        /// A BIP44 and a CoinJoin account; the CoinJoin pools hold their
+        /// registration window (0..=99) only, as a reloaded store's rows do.
+        fn fixture(seed: u8) -> (Wallet, Vec<AccountRegistrationEntry>) {
+            let opts = WalletAccountCreationOptions::SpecificAccounts(
+                BTreeSet::from([0]),
+                BTreeSet::new(),
+                BTreeSet::from([0]),
+                BTreeSet::new(),
+                BTreeSet::new(),
+                None,
+            );
+            let wallet = Wallet::from_seed_bytes([seed; 64], Network::Testnet, opts).unwrap();
+            let manifest = manifest_for(&wallet);
+            (wallet, manifest)
         }
-        sweeps
-    }
 
-    proptest::proptest! {
-        /// Batch for batch: which records each final record removes, and which
-        /// inputs each removal releases. Load reads nothing else from the plan.
-        #[test]
-        fn should_plan_the_same_sweeps_as_a_planner_scanning_the_whole_history(
-            shape in proptest::collection::vec(
-                (proptest::collection::vec(0u8..16, 1..4), 0u8..5, 0u32..4),
-                1..18,
-            )
-        ) {
-            static WALLET: std::sync::OnceLock<(ManagedWalletInfo, dashcore::Address)> =
-                std::sync::OnceLock::new();
-            let (info, address) = WALLET.get_or_init(|| {
-                let (_, info, address) = wallet_with_receive_address();
-                (info, address)
-            });
-            let records = generated_history(&shape);
-            // A coin per record: the reference planner sweeps with them in place.
-            let mut info = info.clone();
-            let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
-            for record in &records {
-                let outpoint = OutPoint::new(record.txid, 0);
-                let txout = record.transaction.output[0].clone();
-                let coin = key_wallet::Utxo::new(outpoint, txout, address.clone(), 0, false);
-                account.utxos.insert(outpoint, coin);
-            }
-
-            let planned = plan_replay_sweeps(&info, &records);
-
-            proptest::prop_assert_eq!(planned, plan_scanning_whole_history(&info, &records));
+        /// The CoinJoin external address at `index`, derived on a copy of
+        /// the account's pool.
+        fn coinjoin_address(wallet: &Wallet, index: u32) -> Address {
+            external_address(wallet, &cj(), index)
         }
-    }
 
-    /// The upstream sweep scans every input of every record in the account it
-    /// runs in, so what it is handed is what a conflict costs.
-    #[test]
-    fn should_hand_a_sweep_only_the_competitors_of_its_winner_and_their_descendants() {
-        let coin = |n: u32| {
-            let mut bytes = [0xC0; 32];
+        /// `account`'s external address at `index`, derived on a copy of its
+        /// pool.
+        fn external_address(wallet: &Wallet, account: &AccountType, index: u32) -> Address {
+            let info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let pool = external_pool(&info, account);
+            let mut probe = AddressPool::new_without_generation(
+                pool.base_path.clone(),
+                pool.pool_type,
+                pool.gap_limit,
+                Network::Testnet,
+            );
+            probe
+                .generate_addresses(index + 1, &wallet.key_source_for_account(*account), true)
+                .unwrap();
+            probe.address_at_index(index).unwrap()
+        }
+
+        fn external_pool(info: &ManagedWalletInfo, account: &AccountType) -> AddressPool {
+            info.accounts
+                .funds_account(account)
+                .unwrap()
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|p| p.pool_type == AddressPoolType::External)
+                .unwrap()
+                .clone()
+        }
+
+        fn txid(n: u32) -> Txid {
+            let mut bytes = [0xA5u8; 32];
             bytes[..4].copy_from_slice(&n.to_le_bytes());
             Txid::from_byte_array(bytes)
-        };
-        let pending =
-            |parents: &[Txid], value| replay_record(parents, value, TransactionContext::Mempool);
-        let winner = replay_record(&[coin(0)], 1, in_block(100, Some(0)));
-        let competitor = pending(&[coin(0), coin(1)], 2);
-        let child = pending(&[competitor.txid], 3);
-        let grandchild = pending(&[child.txid, coin(2)], 4);
-        let mut history = vec![
-            winner.clone(),
-            competitor.clone(),
-            child.clone(),
-            grandchild.clone(),
-        ];
-        // Unrelated pending history: many records, and one with many inputs.
-        history.extend((10..510).map(|n| pending(&[coin(n)], u64::from(n))));
-        let crowded: Vec<Txid> = (1_000..3_000).map(coin).collect();
-        history.push(pending(&crowded, 5));
+        }
 
-        let candidates = Pending::of(&history).candidates(&winner, &HashSet::new());
+        fn utxo(n: u32, to: &Address) -> Utxo {
+            let mut utxo = Utxo::new(
+                OutPoint::new(txid(n), 0),
+                TxOut {
+                    value: VALUE,
+                    script_pubkey: to.script_pubkey(),
+                },
+                to.clone(),
+                HEIGHT,
+                false,
+            );
+            utxo.is_confirmed = true;
+            utxo
+        }
 
-        let mut expected = vec![competitor.txid, child.txid, grandchild.txid];
-        expected.sort();
-        assert_eq!(candidates.keys().copied().collect::<Vec<_>>(), expected);
-        let (_, info, _) = wallet_with_receive_address();
-        let sweeps = plan_replay_sweeps(&info, &history);
-        assert_eq!(sweeps.len(), 1);
-        assert_eq!(sweeps[0].txids, expected);
-        assert_eq!(
-            sweeps[0].released_outpoints,
-            vec![OutPoint::new(coin(1), 0), OutPoint::new(coin(2), 0)]
-        );
-    }
-
-    /// Counts the records the pass after the replay asks the upstream sweep
-    /// about: none for a history without shared inputs.
-    #[test]
-    fn should_ask_for_a_sweep_only_where_an_unconfirmed_record_shares_an_input() {
-        let coin = |byte| Txid::from_byte_array([byte; 32]);
-        let candidates = |records: &[TransactionRecord]| {
-            let spends = unconfirmed_spends(records);
-            records
-                .iter()
-                .filter(|record| shares_unconfirmed_input(record, &spends))
-                .map(|record| record.txid)
-                .collect::<Vec<_>>()
-        };
-        let mut history: Vec<_> = (0..50u8)
-            .map(|n| replay_record(&[coin(n)], 1, in_block(100 + u32::from(n), Some(0))))
-            .collect();
-        history
-            .extend((50..60u8).map(|n| replay_record(&[coin(n)], 1, TransactionContext::Mempool)));
-        assert_eq!(
-            candidates(&history),
-            Vec::new(),
-            "no final record shares an input with an unconfirmed one"
-        );
-
-        let loser = replay_record(&[coin(7), coin(200)], 2, TransactionContext::Mempool);
-        history.push(loser.clone());
-
-        assert_eq!(
-            candidates(&history),
-            vec![history[7].txid],
-            "only the final record spending the loser's coin is swept for"
-        );
-        let (_, info, _) = wallet_with_receive_address();
-        let sweeps = plan_replay_sweeps(&info, &history);
-        assert_eq!(sweeps.len(), 1);
-        assert_eq!(sweeps[0].txids, vec![loser.txid]);
-    }
-
-    fn replayed_txids(records: Vec<TransactionRecord>) -> Vec<Txid> {
-        replay_order(records).into_iter().map(|r| r.txid).collect()
-    }
-
-    #[test]
-    fn should_restore_set_aside_record_without_the_amounts_unsafe_to_sum() {
-        use key_wallet::managed_account::transaction_record::{
-            InputDetail, OutputDetail, OutputRole,
-        };
-
-        let detail = |index, role, value| OutputDetail {
-            index,
-            role,
-            address: None,
-            value,
-        };
-        let (_, mut info, address) = wallet_with_receive_address();
-        let mut foreign_overflow = replay_record(&[], 1, TransactionContext::Mempool);
-        foreign_overflow.output_details = vec![
-            detail(0, OutputRole::Sent, i64::MAX as u64),
-            detail(1, OutputRole::Change, 1_000),
-        ];
-        let mut owned_overflow = replay_record(&[], 2, TransactionContext::Mempool);
-        owned_overflow.output_details = vec![
-            detail(0, OutputRole::Received, (1 << 62) + 1),
-            detail(1, OutputRole::Received, (1 << 62) + 1),
-        ];
-        let parents = [1, 2].map(|byte| Txid::from_byte_array([byte; 32]));
-        let mut input_overflow = replay_record(&parents, 3, TransactionContext::Mempool);
-        input_overflow.input_details = (0..2)
-            .map(|index| InputDetail {
-                index,
-                value: (1 << 62) + 1,
-                address: address.clone(),
-            })
-            .collect();
-        let records = [foreign_overflow, owned_overflow, input_overflow];
-
-        let verdicts = validate_replay_amounts(&info, &records).unwrap();
-
-        let [foreign_overflow, owned_overflow, input_overflow] = &records;
-        assert_eq!(
-            [foreign_overflow, owned_overflow, input_overflow]
-                .map(|record| verdicts.get(&record.txid).copied()),
-            [Some(true), Some(true), Some(false)],
-            "only the third has input amounts unsafe to keep"
-        );
-        let (kept, withheld) = (foreign_overflow.txid, owned_overflow.txid);
-        let (unsafe_inputs, records) = (input_overflow.txid, records.into_iter());
-        restore_unreplayed_records(&mut info, records, &verdicts);
-        let history = info.accounts.standard_bip44_accounts[&0].transactions();
-        assert!(
-            history[&unsafe_inputs].input_details.is_empty(),
-            "input amounts past i64 are withheld from the upstream net"
-        );
-        assert_eq!(
-            history[&kept].output_details.len(),
-            2,
-            "a record whose owned outputs fit keeps its details"
-        );
-        assert!(
-            history[&withheld].output_details.is_empty(),
-            "owned outputs past i64 are withheld from the upstream net"
-        );
-    }
-
-    /// An InstantSend-locked record settles conflicts when replayed, which makes
-    /// upstream scan every unconfirmed record already in history: plain mempool
-    /// records therefore wait until the locked ones are in.
-    #[test]
-    fn should_replay_instant_send_records_before_unrelated_mempool_records() {
-        use dashcore::ephemerealdata::instant_lock::InstantLock;
-
-        let locked = |record: TransactionRecord| TransactionRecord {
-            context: TransactionContext::InstantSend(InstantLock {
-                txid: record.txid,
+        fn load(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            utxos: Vec<Utxo>,
+            utxo_accounts: &HashMap<OutPoint, OwningAccount>,
+            used: &HashMap<Address, Option<OwningAccount>>,
+        ) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let core = CoreChangeSet {
+                new_utxos: utxos,
+                last_processed_height: Some(HEIGHT),
+                synced_height: Some(HEIGHT),
                 ..Default::default()
-            }),
-            ..record
-        };
-        let coin = |byte| Txid::from_byte_array([byte; 32]);
-        let pending: Vec<_> = (1..=8u8)
-            .map(|n| replay_record(&[coin(n)], u64::from(n), TransactionContext::Mempool))
-            .collect();
-        let parent = pending[0].clone();
-        let settled: Vec<_> = (20..24u8)
-            .map(|n| {
-                locked(replay_record(
-                    &[coin(n)],
-                    u64::from(n),
-                    TransactionContext::Mempool,
-                ))
-            })
-            .collect();
-        let child = locked(replay_record(
-            &[parent.txid],
-            30,
-            TransactionContext::Mempool,
-        ));
-        let mut records = pending.clone();
-        records.push(child.clone());
-        records.extend(settled.iter().cloned());
+            };
+            apply_persisted_core_state(
+                &mut info,
+                manifest,
+                &core,
+                utxo_accounts,
+                used,
+                &LoadCtx::strict(),
+            )
+            .unwrap();
+            info
+        }
 
-        let order = replayed_txids(records);
+        fn holders(info: &ManagedWalletInfo, outpoint: &OutPoint) -> Vec<AccountType> {
+            info.accounts
+                .all_funding_accounts()
+                .into_iter()
+                .filter(|a| a.utxos.contains_key(outpoint))
+                .map(|a| a.managed_account_type().to_account_type())
+                .collect()
+        }
 
-        let position = |txid| order.iter().position(|seen| *seen == txid).unwrap();
-        let last_locked = settled
-            .iter()
-            .chain([&child])
-            .map(|record| position(record.txid))
-            .max();
-        for unrelated in &pending[1..] {
+        /// A CoinJoin coin past the stored window, with no pool row, lands
+        /// in CoinJoin, where its key is found.
+        #[test]
+        fn a_coinjoin_utxo_past_its_stored_window_restores_into_coinjoin() {
+            let (wallet, manifest) = fixture(21);
+            let near = coinjoin_address(&wallet, 60);
+            let deep = coinjoin_address(&wallet, 150);
+            let coins = vec![utxo(1, &near), utxo(2, &deep)];
+            let info = load(
+                &wallet,
+                &manifest,
+                coins.clone(),
+                &HashMap::new(),
+                &HashMap::new(),
+            );
+            for coin in &coins {
+                assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
+            }
+            assert!(external_pool(&info, &cj()).contains_address(&deep));
+            assert_eq!(info.balance.total(), 2 * VALUE);
+        }
+
+        /// Spent addresses with no pool row chain the reach as a rescan
+        /// would: three spent coins 90 apart lead to the coin past them,
+        /// though no unspent coin sits within one gap window (100) of it.
+        #[test]
+        fn a_spent_run_longer_than_the_gap_still_reaches_the_coin_past_it() {
+            let (wallet, manifest) = fixture(22);
+            let spent: Vec<Address> = [60, 150, 240]
+                .iter()
+                .map(|i| coinjoin_address(&wallet, *i))
+                .collect();
+            let used = spent.iter().map(|a| (a.clone(), None)).collect();
+            let coin = utxo(1, &coinjoin_address(&wallet, 330));
+            let info = load(
+                &wallet,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &used,
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
+            let pool = external_pool(&info, &cj());
+            for address in &spent {
+                assert!(
+                    pool.address_info(address).is_some_and(|i| i.is_used()),
+                    "a spent address must come back used"
+                );
+            }
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Coins chained 90 apart reach past index 10,000, the old discovery
+        /// ceiling, and the pool keeps its gap past the deepest one.
+        #[test]
+        fn chained_coins_past_index_ten_thousand_restore_into_coinjoin_and_keep_the_gap() {
+            let (wallet, manifest) = fixture(23);
+            let indexes: Vec<u32> = (60..=10_200).step_by(90).collect();
+            let deepest = *indexes.last().unwrap();
+            assert!(deepest > 10_000);
+            let probe = {
+                let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let pool = external_pool(&info, &cj());
+                let mut probe = AddressPool::new_without_generation(
+                    pool.base_path.clone(),
+                    pool.pool_type,
+                    pool.gap_limit,
+                    Network::Testnet,
+                );
+                probe
+                    .generate_addresses(deepest + 1, &wallet.key_source_for_account(cj()), true)
+                    .unwrap();
+                probe
+            };
+            let coins: Vec<Utxo> = indexes
+                .iter()
+                .map(|i| utxo(*i, &probe.address_at_index(*i).unwrap()))
+                .collect();
+            let info = load(
+                &wallet,
+                &manifest,
+                coins.clone(),
+                &HashMap::new(),
+                &HashMap::new(),
+            );
+            for coin in &coins {
+                assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
+            }
+            let pool = external_pool(&info, &cj());
+            assert_eq!(pool.highest_used, Some(deepest));
+            assert!(pool.highest_generated >= Some(deepest + pool.gap_limit));
+            assert_eq!(info.balance.total(), VALUE * coins.len() as u64);
+        }
+
+        /// A coin no account derives within its gap limit keeps today's
+        /// placement: in the account its pool row names, else the first.
+        #[test]
+        fn a_utxo_no_account_reaches_goes_to_its_stored_owner_or_the_first_account() {
+            let (wallet, manifest) = fixture(24);
+            let (other, _) = fixture(25);
+            let foreign = utxo(1, &coinjoin_address(&other, 0));
+            let isolated = utxo(2, &coinjoin_address(&wallet, 5_000));
+            let cj_owner = {
+                let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                owning_account_of(info.accounts.funds_account(&cj()).unwrap())
+            };
+            let side = HashMap::from([(isolated.outpoint, cj_owner)]);
+            let info = load(
+                &wallet,
+                &manifest,
+                vec![foreign.clone(), isolated.clone()],
+                &side,
+                &HashMap::new(),
+            );
+            assert_eq!(holders(&info, &foreign.outpoint), vec![bip44()]);
+            assert_eq!(holders(&info, &isolated.outpoint), vec![cj()]);
+            assert_eq!(info.balance.total(), 2 * VALUE);
+        }
+
+        /// A coin whose stale stored owner names another account lands in
+        /// the account that derives it once the horizon walk from a coin with
+        /// no stored owner (BIP44 index 30, one past the generated window)
+        /// reaches it (index 45).
+        #[test]
+        fn a_coin_only_another_coins_walk_reaches_restores_into_that_account() {
+            let (wallet, manifest) = fixture(27);
+            let walked = utxo(1, &external_address(&wallet, &bip44(), 30));
+            let reached = utxo(2, &external_address(&wallet, &bip44(), 45));
+            let owner_of = |account: &AccountType| {
+                let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                owning_account_of(info.accounts.funds_account(account).unwrap())
+            };
+            let side = HashMap::from([(reached.outpoint, owner_of(&cj()))]);
+            let info = load(
+                &wallet,
+                &manifest,
+                vec![walked.clone(), reached.clone()],
+                &side,
+                &HashMap::new(),
+            );
+            assert_eq!(holders(&info, &walked.outpoint), vec![bip44()]);
+            assert_eq!(holders(&info, &reached.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), 2 * VALUE);
+        }
+
+        /// Two loads of the same store place every coin and grow every pool
+        /// the same way.
+        #[test]
+        fn every_load_places_the_coins_the_same_way() {
+            let (wallet, manifest) = fixture(26);
+            let used: HashMap<Address, Option<OwningAccount>> = [60, 150]
+                .iter()
+                .map(|i| (coinjoin_address(&wallet, *i), None))
+                .collect();
+            let coins = vec![
+                utxo(1, &coinjoin_address(&wallet, 240)),
+                utxo(2, &coinjoin_address(&wallet, 3)),
+            ];
+            let state = |info: &ManagedWalletInfo| {
+                info.accounts
+                    .all_funding_accounts()
+                    .into_iter()
+                    .map(|a| {
+                        let pools: Vec<_> = a
+                            .managed_account_type()
+                            .address_pools()
+                            .iter()
+                            .map(|p| (p.highest_generated, p.highest_used))
+                            .collect();
+                        (a.utxos.keys().copied().collect::<Vec<_>>(), pools)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let first = load(&wallet, &manifest, coins.clone(), &HashMap::new(), &used);
+            let second = load(&wallet, &manifest, coins, &HashMap::new(), &used);
+            assert_eq!(state(&first), state(&second));
+        }
+
+        fn pays(n: u32, to: &Address) -> Transaction {
+            Transaction {
+                version: 2,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output: OutPoint::new(txid(n), 7),
+                    ..Default::default()
+                }],
+                output: vec![TxOut {
+                    value: VALUE,
+                    script_pubkey: to.script_pubkey(),
+                }],
+                special_transaction_payload: None,
+            }
+        }
+
+        fn restored(tx: &Transaction, to: &Address) -> Utxo {
+            let mut utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output[0].clone(),
+                to.clone(),
+                HEIGHT,
+                false,
+            );
+            utxo.is_confirmed = true;
+            utxo
+        }
+
+        /// A rescan of the coins' blocks after the load (the DIP-15 rescan, a
+        /// user rescan, a crash catch-up) credits the account that already
+        /// holds them: the balance counts each once (rust-dashcore#1294).
+        #[tokio::test]
+        async fn a_rescan_after_the_load_counts_each_restored_coin_once() {
+            let (mut wallet, manifest) = fixture(27);
+            let near = coinjoin_address(&wallet, 60);
+            let deep = coinjoin_address(&wallet, 150);
+            let txs = [pays(1, &near), pays(2, &deep)];
+            let coins = vec![restored(&txs[0], &near), restored(&txs[1], &deep)];
+            let mut info = load(
+                &wallet,
+                &manifest,
+                coins.clone(),
+                &HashMap::new(),
+                &HashMap::new(),
+            );
+            assert_eq!(info.balance.total(), 2 * VALUE);
+            for tx in &txs {
+                let context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    HEIGHT,
+                    BlockHash::from_byte_array([1; 32]),
+                    1_793_598_712,
+                ));
+                info.check_core_transaction(tx, context, &mut wallet, true, true)
+                    .await;
+            }
+            info.update_balance();
+            assert_eq!(info.balance.total(), 2 * VALUE);
+            for coin in &coins {
+                assert_eq!(holders(&info, &coin.outpoint), vec![cj()]);
+            }
+        }
+
+        /// A coin no account reaches at load stays in the first funds
+        /// account, and a rescan of its block reaches it no further, so it
+        /// is still counted once.
+        #[tokio::test]
+        async fn a_rescan_after_the_load_leaves_an_unreached_coin_counted_once() {
+            let (mut wallet, manifest) = fixture(28);
+            let isolated = coinjoin_address(&wallet, 5_000);
+            let tx = pays(3, &isolated);
+            let coin = restored(&tx, &isolated);
+            let mut info = load(
+                &wallet,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &HashMap::new(),
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
+            let context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+                HEIGHT,
+                BlockHash::from_byte_array([1; 32]),
+                1_793_598_712,
+            ));
+            info.check_core_transaction(&tx, context, &mut wallet, true, true)
+                .await;
+            info.update_balance();
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// A stored coin on an address of a DashPay contact's chain (theirs,
+        /// watched) restores into that contact's account: no funds account
+        /// holds it and the balance leaves it out.
+        #[test]
+        fn a_coin_on_a_contacts_address_stays_out_of_the_funds_accounts() {
+            let (mut wallet, _) = fixture(29);
+            let contact = AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xbb; 32],
+            };
+            wallet.add_account(contact, None).unwrap();
+            let manifest = manifest_for(&wallet);
+            let theirs = {
+                let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let account = info.accounts.dashpay_external_accounts.values().next();
+                let pools = account.unwrap().managed_account_type().address_pools();
+                pools[0].address_at_index(0).unwrap()
+            };
+            let ours = external_address(&wallet, &bip44(), 0);
+            let contact_coin = utxo(1, &theirs);
+            let own_coin = utxo(2, &ours);
+            let info = load(
+                &wallet,
+                &manifest,
+                vec![contact_coin.clone(), own_coin.clone()],
+                &HashMap::new(),
+                &HashMap::new(),
+            );
+            assert!(holders(&info, &contact_coin.outpoint).is_empty());
+            assert!(info
+                .accounts
+                .dashpay_external_accounts
+                .values()
+                .any(|a| a.utxos.contains_key(&contact_coin.outpoint)));
+            assert_eq!(holders(&info, &own_coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// The used set as the persister loads it: every stored script, spent
+        /// or unspent, with no owner (no pool row covers any of them).
+        fn ownerless(addresses: &[&Address]) -> HashMap<Address, Option<OwningAccount>> {
+            addresses.iter().map(|a| ((*a).clone(), None)).collect()
+        }
+
+        /// Whether `account`'s pools hold `address`, marked used.
+        fn used_in(info: &ManagedWalletInfo, account: &AccountType, address: &Address) -> bool {
+            let funds = info.accounts.funds_account(account).unwrap();
+            (funds.managed_account_type().address_pools().iter())
+                .any(|p| p.address_info(address).is_some_and(|i| i.is_used()))
+        }
+
+        /// Whether `account` can sign for `address`: coin selection finds its
+        /// derivation path there.
+        fn derives(info: &ManagedWalletInfo, account: &AccountType, address: &Address) -> bool {
+            let funds = info.accounts.funds_account(account).unwrap();
+            (funds.managed_account_type())
+                .get_address_derivation_path(address)
+                .is_some()
+        }
+
+        /// `account`'s identity as its pool rows name it.
+        fn owner(wallet: &Wallet, account: &AccountType) -> OwningAccount {
+            let info = ManagedWalletInfo::from_wallet(wallet, 1);
+            owning_account_of(info.accounts.funds_account(account).unwrap())
+        }
+
+        /// [`load`] under `ctx`, onto `info` as the caller prepared it.
+        fn load_into(
+            info: &mut ManagedWalletInfo,
+            manifest: &[AccountRegistrationEntry],
+            utxos: Vec<Utxo>,
+            utxo_accounts: &HashMap<OutPoint, OwningAccount>,
+            used: &HashMap<Address, Option<OwningAccount>>,
+            ctx: &LoadCtx,
+        ) -> Result<(), WalletStorageError> {
+            let core = CoreChangeSet {
+                new_utxos: utxos,
+                last_processed_height: Some(HEIGHT),
+                synced_height: Some(HEIGHT),
+                ..Default::default()
+            };
+            apply_persisted_core_state(info, manifest, &core, utxo_accounts, used, ctx)
+        }
+
+        /// Loads `coin` and `used` strictly, then checks the coin is held
+        /// once, by `account`, which signs for it; that every `used` address
+        /// comes back used there; that the total is exact; and that nothing
+        /// was left unresolved.
+        fn assert_restored(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            coin: &Utxo,
+            utxo_accounts: &HashMap<OutPoint, OwningAccount>,
+            used: &HashMap<Address, Option<OwningAccount>>,
+            account: AccountType,
+        ) {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                manifest,
+                vec![coin.clone()],
+                utxo_accounts,
+                used,
+                &ctx,
+            )
+            .unwrap();
+            assert_eq!(holders(&info, &coin.outpoint), vec![account]);
             assert!(
-                Some(position(unrelated.txid)) > last_locked,
-                "no unrelated mempool record enters history ahead of a locked one"
+                derives(&info, &account, &coin.address),
+                "the coin is signable"
+            );
+            for address in used.keys() {
+                assert!(
+                    used_in(&info, &account, address),
+                    "{address} comes back used"
+                );
+            }
+            assert!(used_in(&info, &account, &coin.address));
+            assert_eq!(info.balance.total(), VALUE);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::UnresolvedUtxoAddress),
+                None
             );
         }
-        // A locked child takes its unconfirmed parent along, ahead of the rest.
-        assert!(position(parent.txid) < position(child.txid));
-    }
 
-    /// A final record waits for its in-set ancestors, and a parent's stored
-    /// record can still say mempool: those ancestors replay as early as the
-    /// final record would, not behind unrelated mempool records it then scans.
-    #[test]
-    fn should_keep_unrelated_mempool_records_behind_a_mempool_ancestor_of_final_records() {
-        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        /// A spent BIP44 address one past the generated window (30) with no
+        /// pool row leads to the coin past it (45), with no stored owner for
+        /// either, whether or not the coin's own script is in the used set.
+        #[test]
+        fn a_spent_address_one_past_the_pool_leads_to_the_coin_past_it() {
+            let (wallet, manifest) = fixture(31);
+            let spent = external_address(&wallet, &bip44(), 30);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 45));
+            for used in [ownerless(&[&spent]), ownerless(&[&spent, &coin.address])] {
+                assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, bip44());
+            }
+        }
 
-        let coin = |byte| Txid::from_byte_array([byte; 32]);
-        let pending =
-            |parents: &[Txid], value| replay_record(parents, value, TransactionContext::Mempool);
-        let grandparent = pending(&[coin(1)], 1);
-        let parent = pending(&[grandparent.txid], 2);
-        let confirmed = replay_record(&[parent.txid], 3, in_block(50, Some(0)));
-        let mut locked = pending(&[parent.txid, coin(2)], 4);
-        locked.context = TransactionContext::InstantSend(InstantLock {
-            txid: locked.txid,
-            ..Default::default()
-        });
-        // Unrelated records sorting ahead of both ancestors by txid.
-        let first = grandparent.txid.min(parent.txid);
-        let unrelated: Vec<_> = (100..)
-            .map(|value| pending(&[coin(3)], value))
-            .filter(|record| record.txid < first)
-            .take(4)
-            .collect();
-        let mut records = unrelated.clone();
-        records.extend([
-            locked.clone(),
-            confirmed.clone(),
-            parent.clone(),
-            grandparent.clone(),
-        ]);
+        /// The reverse: the coin one past the window (30) brings the spent
+        /// address past it (45) back used, never as a fresh receive address.
+        #[test]
+        fn a_coin_one_past_the_pool_brings_the_spent_address_past_it_back_used() {
+            let (wallet, manifest) = fixture(32);
+            let spent = external_address(&wallet, &bip44(), 45);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 30));
+            let used = ownerless(&[&spent, &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, bip44());
+        }
 
-        let order = replayed_txids(records);
+        /// Spent addresses past the window bridge to a deeper coin: 30, then
+        /// 55 (within a gap of 30), then the coin at 84 (within a gap of 55).
+        #[test]
+        fn spent_addresses_past_the_pool_bridge_to_a_deeper_coin() {
+            let (wallet, manifest) = fixture(33);
+            let spent: Vec<Address> = [30, 55]
+                .iter()
+                .map(|i| external_address(&wallet, &bip44(), *i))
+                .collect();
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 84));
+            let used = ownerless(&[&spent[0], &spent[1], &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, bip44());
+        }
 
-        let mut last: Vec<_> = unrelated.iter().map(|record| record.txid).collect();
-        last.sort();
-        let mut expected = vec![grandparent.txid, parent.txid, confirmed.txid, locked.txid];
-        expected.extend(last);
-        assert_eq!(order, expected);
-    }
+        /// A lone CoinJoin coin one past its pool (100, the pool generated
+        /// through 99), with no stored owner and no other coin to extend
+        /// CoinJoin, restores into CoinJoin, not the first funds account:
+        /// with and without its script in the used set.
+        #[test]
+        fn a_lone_coinjoin_coin_one_past_its_pool_restores_into_coinjoin() {
+            let (wallet, manifest) = fixture(34);
+            assert_eq!(
+                external_pool(&ManagedWalletInfo::from_wallet(&wallet, 1), &cj()).highest_generated,
+                Some(99)
+            );
+            let coin = utxo(1, &coinjoin_address(&wallet, 100));
+            for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, cj());
+            }
+        }
 
-    fn txid(byte: u8) -> Txid {
-        Txid::from_byte_array([byte; 32])
-    }
+        /// A spent CoinJoin address one past its pool (100) leads to the
+        /// coin past it (180), neither with a stored owner.
+        #[test]
+        fn a_spent_coinjoin_address_one_past_its_pool_leads_to_the_coin_past_it() {
+            let (wallet, manifest) = fixture(35);
+            let spent = coinjoin_address(&wallet, 100);
+            let coin = utxo(1, &coinjoin_address(&wallet, 180));
+            let used = ownerless(&[&spent, &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, cj());
+        }
 
-    /// Replay follows dependencies, then chain order. An unconfirmed child
-    /// whose txid sorts ahead of its parent's still replays after it, so its
-    /// input reserves the parent's output; a parent whose stored record is
-    /// still mempool replays ahead of a child already recorded as confirmed.
-    /// Independent records follow height, then in-block position, then
-    /// unconfirmed; within one block a spend follows the funding it spends,
-    /// and unrelated transactions keep their place around the pair. Records
-    /// that name each other as parents (impossible for real txids) still all
-    /// replay, after everything that is ready.
-    #[test]
-    fn should_replay_records_in_dependency_then_chain_order() {
-        let mempool = || TransactionContext::Mempool;
-        let parent = replay_record(&[txid(1)], 1_000, mempool());
-        let child = (0..)
-            .map(|value| replay_record(&[parent.txid], value, mempool()))
-            .find(|child| child.txid < parent.txid)
+        /// A wallet whose DashPay contact pool has a gap limit of 0, a pool
+        /// no gap refill can be computed for, with one shallow BIP44 coin.
+        fn unrefillable_contact_fixture() -> (Wallet, Vec<AccountRegistrationEntry>, Utxo) {
+            let (mut wallet, _) = fixture(36);
+            let contact = AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xbb; 32],
+            };
+            wallet.add_account(contact, None).unwrap();
+            let manifest = manifest_for(&wallet);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 3));
+            (wallet, manifest, coin)
+        }
+
+        fn with_unrefillable_contact_pool(wallet: &Wallet) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+            for pool in contact
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut()
+            {
+                pool.gap_limit = 0;
+            }
+            info
+        }
+
+        /// The refill preflight's refusal of a pool no extension visits (the
+        /// contact pool) fails a strict load with its typed error.
+        #[test]
+        fn an_unrefillable_contact_pool_fails_a_strict_load() {
+            let (wallet, manifest, coin) = unrefillable_contact_fixture();
+            let mut info = with_unrefillable_contact_pool(&wallet);
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![coin],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refused refill must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitTargetOutOfRange { gap_limit: 0, .. }
+                ),
+                "{err:?}"
+            );
+        }
+
+        /// Under recovery the same refusal is counted, and the coin stays
+        /// counted.
+        #[test]
+        fn an_unrefillable_contact_pool_is_counted_under_recovery() {
+            let (wallet, manifest, coin) = unrefillable_contact_fixture();
+            let mut info = with_unrefillable_contact_pool(&wallet);
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &ownerless(&[&coin.address]),
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            let degradation = ctx.degradation();
+            assert_eq!(
+                degradation
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1),
+                "{:?}",
+                degradation.by_site
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Every account holding `outpoint`, the DashPay contact accounts
+        /// included.
+        fn every_holder(info: &ManagedWalletInfo, outpoint: &OutPoint) -> Vec<AccountType> {
+            (info.accounts.all_funding_accounts().into_iter())
+                .chain(info.accounts.dashpay_external_accounts.values())
+                .filter(|a| a.utxos.contains_key(outpoint))
+                .map(|a| a.managed_account_type().to_account_type())
+                .collect()
+        }
+
+        /// The address `coin`'s script pays.
+        fn paid_address(coin: &Utxo) -> Address {
+            Address::from_script(&coin.txout.script_pubkey, Network::Testnet).unwrap()
+        }
+
+        /// Loads `coins` under recovery onto [`with_unrefillable_contact_pool`]
+        /// prepared by `prepare`, checking the contact pool's refusal was
+        /// counted once.
+        fn load_past_refused_refill(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            coins: &[Utxo],
+            utxo_accounts: &HashMap<OutPoint, OwningAccount>,
+            used: &HashMap<Address, Option<OwningAccount>>,
+            prepare: impl FnOnce(&mut ManagedWalletInfo),
+        ) -> (ManagedWalletInfo, LoadCtx) {
+            let mut info = with_unrefillable_contact_pool(wallet);
+            prepare(&mut info);
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                manifest,
+                coins.to_vec(),
+                utxo_accounts,
+                used,
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1)
+            );
+            (info, ctx)
+        }
+
+        /// Checks `coin` is held by CoinJoin alone, which signs for the
+        /// address its script pays and has it marked used.
+        fn assert_held_by_coinjoin(info: &ManagedWalletInfo, coin: &Utxo) {
+            let address = paid_address(coin);
+            assert_eq!(every_holder(info, &coin.outpoint), vec![cj()]);
+            assert!(derives(info, &cj(), &address), "the coin is signable");
+            assert!(used_in(info, &cj(), &address), "{address} comes back used");
+        }
+
+        /// An ownerless CoinJoin coin whose script CoinJoin already holds
+        /// (50) stays in CoinJoin when an unrelated contact pool's refill is
+        /// refused, with or without its script in the used set.
+        #[test]
+        fn a_held_coin_keeps_its_account_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                let (info, ctx) = load_past_refused_refill(
+                    &wallet,
+                    &manifest,
+                    std::slice::from_ref(&coin),
+                    &HashMap::new(),
+                    &used,
+                    |_| {},
+                );
+                assert_held_by_coinjoin(&info, &coin);
+                assert_eq!(info.balance.total(), VALUE);
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    None
+                );
+            }
+        }
+
+        /// Past a refused refill, a held coin goes to the account holding
+        /// its script, not to the account its row names (BIP44).
+        #[test]
+        fn a_held_coin_goes_by_its_script_not_its_stored_owner_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let side = HashMap::from([(coin.outpoint, owner(&wallet, &bip44()))]);
+            for used in [HashMap::new(), ownerless(&[&coin.address])] {
+                let (info, _) = load_past_refused_refill(
+                    &wallet,
+                    &manifest,
+                    std::slice::from_ref(&coin),
+                    &side,
+                    &used,
+                    |_| {},
+                );
+                assert_held_by_coinjoin(&info, &coin);
+                assert_eq!(info.balance.total(), VALUE);
+            }
+        }
+
+        /// Past a refused refill, a coin is matched by the script it pays,
+        /// not by the address stored with it (here a BIP44 one).
+        #[test]
+        fn a_held_coin_goes_by_its_script_not_its_stored_address_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let mut coin = utxo(1, &coinjoin_address(&wallet, 50));
+            coin.address = external_address(&wallet, &bip44(), 5);
+            let (info, _) = load_past_refused_refill(
+                &wallet,
+                &manifest,
+                std::slice::from_ref(&coin),
+                &HashMap::new(),
+                &HashMap::new(),
+                |_| {},
+            );
+            assert_held_by_coinjoin(&info, &coin);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Past a refused refill, only the coin no account holds (another
+        /// wallet's address) takes the fallback and is counted unresolved;
+        /// the held CoinJoin coin stays in CoinJoin.
+        #[test]
+        fn only_a_coin_no_account_holds_falls_back_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let (foreign_wallet, _) = fixture(99);
+            let held = utxo(1, &coinjoin_address(&wallet, 50));
+            let foreign = utxo(2, &external_address(&foreign_wallet, &bip44(), 0));
+            for used in [
+                HashMap::new(),
+                ownerless(&[&held.address, &foreign.address]),
+            ] {
+                let (info, ctx) = load_past_refused_refill(
+                    &wallet,
+                    &manifest,
+                    &[held.clone(), foreign.clone()],
+                    &HashMap::new(),
+                    &used,
+                    |_| {},
+                );
+                assert_held_by_coinjoin(&info, &held);
+                assert_eq!(every_holder(&info, &foreign.outpoint), vec![bip44()]);
+                assert_eq!(info.balance.total(), 2 * VALUE);
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    Some(&1)
+                );
+            }
+        }
+
+        /// Past a refused refill, a script two accounts hold (CoinJoin's,
+        /// also put in the contact pool) goes to the first of them in
+        /// `restore_utxos` order: CoinJoin before the contact account.
+        #[test]
+        fn a_script_two_accounts_hold_goes_to_the_first_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let (info, _) = load_past_refused_refill(
+                &wallet,
+                &manifest,
+                std::slice::from_ref(&coin),
+                &HashMap::new(),
+                &HashMap::new(),
+                |info| {
+                    let funds = info.accounts.funds_account(&cj()).unwrap();
+                    let pools = funds.managed_account_type().address_pools();
+                    let mut held = (pools.iter())
+                        .find_map(|p| p.address_info(&coin.address))
+                        .unwrap()
+                        .clone();
+                    let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+                    let mut pools = contact
+                        .unwrap()
+                        .managed_account_type_mut()
+                        .address_pools_mut();
+                    let pool = &mut pools[0];
+                    let index = pool.highest_generated.map_or(0, |h| h + 1);
+                    held.index = index;
+                    pool.address_index.insert(held.address.clone(), index);
+                    pool.script_pubkey_index
+                        .insert(held.script_pubkey.clone(), index);
+                    pool.addresses.insert(index, held);
+                    pool.highest_generated = Some(index);
+                    // Unrefillable whether or not the coin marks it.
+                    pool.gap_limit = u32::MAX;
+                },
+            );
+            assert_held_by_coinjoin(&info, &coin);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Past a refused refill, a copy of a held coin that another account
+        /// (BIP44) holds is removed when the coin is placed.
+        #[test]
+        fn a_copy_another_account_holds_is_removed_past_a_refused_refill() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let (info, _) = load_past_refused_refill(
+                &wallet,
+                &manifest,
+                std::slice::from_ref(&coin),
+                &HashMap::new(),
+                &HashMap::new(),
+                |info| {
+                    let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+                    funds.utxos.insert(coin.outpoint, coin.clone());
+                },
+            );
+            assert_held_by_coinjoin(&info, &coin);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// Every pool's highest generated index, the contact pools included.
+        fn pool_heights(info: &ManagedWalletInfo) -> Vec<Option<u32>> {
+            (info.accounts.all_funding_accounts().into_iter())
+                .chain(info.accounts.dashpay_external_accounts.values())
+                .flat_map(|a| a.managed_account_type().address_pools())
+                .map(|p| p.highest_generated)
+                .collect()
+        }
+
+        /// The held-coin placement grows no pool, refused or not: the coin on
+        /// CoinJoin's last generated address (99), which a refill would grow
+        /// CoinJoin past, is placed in CoinJoin and every pool keeps its
+        /// height.
+        #[test]
+        fn placing_held_coins_grows_no_pool() {
+            let (wallet, _, _) = unrefillable_contact_fixture();
+            let coin = utxo(1, &coinjoin_address(&wallet, 99));
+            for refused in [false, true] {
+                let mut info = match refused {
+                    true => with_unrefillable_contact_pool(&wallet),
+                    false => ManagedWalletInfo::from_wallet(&wallet, 1),
+                };
+                let heights = pool_heights(&info);
+                let left =
+                    place_held_coins(&mut info, &wallet, &[&coin], &LoadCtx::strict()).unwrap();
+                assert!(left.is_empty());
+                assert_held_by_coinjoin(&info, &coin);
+                assert_eq!(pool_heights(&info), heights, "refused: {refused}");
+            }
+        }
+
+        /// The address at `index` of `account`'s first pool, the DashPay
+        /// contact accounts included, derived on a copy of the pool.
+        fn first_pool_address(wallet: &Wallet, account: &AccountType, index: u32) -> Address {
+            let info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let holder = (info.accounts.all_funding_accounts().into_iter())
+                .chain(info.accounts.dashpay_external_accounts.values())
+                .find(|a| a.managed_account_type().to_account_type() == *account)
+                .unwrap();
+            let mut probe = holder.managed_account_type().address_pools()[0].clone();
+            ensure_derived(&mut probe, &wallet.key_source_for_account(*account), index).unwrap()
+        }
+
+        /// A wallet with the DashPay receiving account of a friendship between
+        /// two of its identities and the reverse contact account it also
+        /// holds, added as key-wallet's `befriend_both_ways` adds them: both
+        /// derive the same addresses. Returns the wallet, its manifest, both
+        /// account types and their shared address one past the receiving
+        /// pool's window.
+        fn befriended_both_ways(
+            seed: u8,
+        ) -> (
+            Wallet,
+            Vec<AccountRegistrationEntry>,
+            AccountType,
+            AccountType,
+            Address,
+        ) {
+            let (mut wallet, _) = fixture(seed);
+            let (us, them) = ([0xaa; 32], [0xbb; 32]);
+            let receiving = AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: us,
+                friend_identity_id: them,
+            };
+            let reverse = AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: them,
+                friend_identity_id: us,
+            };
+            for account in [receiving, reverse] {
+                wallet.add_account(account, None).unwrap();
+            }
+            let manifest = manifest_for(&wallet);
+            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT;
+            let shared = first_pool_address(&wallet, &receiving, past);
+            assert_eq!(first_pool_address(&wallet, &reverse, past), shared);
+            (wallet, manifest, receiving, reverse, shared)
+        }
+
+        /// `wallet`'s managed state with the reverse contact pool derived one
+        /// past the receiving pool's window, through their shared address.
+        fn with_deeper_contact_pool(
+            wallet: &Wallet,
+            receiving: &AccountType,
+            reverse: &AccountType,
+        ) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let past = key_wallet::gap_limit::DEFAULT_DASHPAY_GAP_LIMIT;
+            let funds = info.accounts.funds_account(receiving).unwrap();
+            let window = funds.managed_account_type().address_pools()[0].highest_generated;
+            assert_eq!(window, Some(past - 1));
+            let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+            let mut pools = contact
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut();
+            let key_source = wallet.key_source_for_account(*reverse);
+            ensure_derived(&mut *pools[0], &key_source, past).unwrap();
+            info
+        }
+
+        /// Loads a coin on the address the receiving and the reverse contact
+        /// accounts share, past the receiving pool's window but inside the
+        /// contact pool, under `ctx`, with its address in the used set or
+        /// not. Checks it ends in the receiving account, which discovery
+        /// derives it in: signable, in the balance, gone from the contact
+        /// account, and nothing left unresolved.
+        fn assert_ends_in_the_receiving_account(seed: u8, ctx: LoadCtx, coin_used: bool) {
+            let (wallet, manifest, receiving, reverse, shared) = befriended_both_ways(seed);
+            let coin = utxo(1, &shared);
+            let used = if coin_used {
+                ownerless(&[&coin.address])
+            } else {
+                HashMap::new()
+            };
+            let mut info = with_deeper_contact_pool(&wallet, &receiving, &reverse);
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
             .unwrap();
-        let mempool_parent = replay_record(&[txid(2)], 1_000, mempool());
-        let confirmed_child = replay_record(&[mempool_parent.txid], 900, in_block(50, Some(3)));
-        let unrelated = replay_record(&[txid(3)], 700, in_block(40, None));
-        let pending = replay_record(&[txid(4)], 1, mempool());
-        let late_second = replay_record(&[txid(5)], 2, in_block(10, Some(2)));
-        let late_first = replay_record(&[txid(6)], 3, in_block(10, Some(1)));
-        let early = replay_record(&[txid(7)], 4, in_block(9, Some(5)));
-        let funding = replay_record(&[txid(9)], 10, in_block(20, Some(1)));
-        let spend = replay_record(&[funding.txid], 9, in_block(20, Some(2)));
-        let before = replay_record(&[txid(10)], 8, in_block(20, Some(0)));
-        let after = replay_record(&[txid(11)], 7, in_block(20, Some(3)));
-        let (a, b) = (txid(0xAA), txid(0xBB));
-        let first = TransactionRecord {
-            txid: a,
-            ..replay_record(&[b], 1, mempool())
-        };
-        let second = TransactionRecord {
-            txid: b,
-            ..replay_record(&[a], 2, mempool())
-        };
-        let ready = replay_record(&[txid(8)], 3, mempool());
-        let cases: [(&str, Vec<&TransactionRecord>, Vec<&TransactionRecord>); 5] = [
-            (
-                "unconfirmed parent before its child",
-                vec![&child, &parent],
-                vec![&parent, &child],
-            ),
-            (
-                "mempool parent before its confirmed child",
-                vec![&confirmed_child, &unrelated, &mempool_parent],
-                vec![&unrelated, &mempool_parent, &confirmed_child],
-            ),
-            (
-                "height, then block position, then unconfirmed",
-                vec![&pending, &late_second, &late_first, &early],
-                vec![&early, &late_first, &late_second, &pending],
-            ),
-            (
-                "block position within one block",
-                vec![&after, &spend, &before, &funding],
-                vec![&before, &funding, &spend, &after],
-            ),
-            (
-                "every record of a dependency cycle",
-                vec![&second, &first, &ready],
-                vec![&ready, &first, &second],
-            ),
-        ];
-        for (case, stored, expected) in cases {
-            let expected: Vec<_> = expected.iter().map(|record| record.txid).collect();
-            let stored = stored.into_iter().cloned().collect();
-            assert_eq!(replayed_txids(stored), expected, "{case}");
+            assert_eq!(every_holder(&info, &coin.outpoint), vec![receiving]);
+            assert!(
+                derives(&info, &receiving, &coin.address),
+                "the coin is signable"
+            );
+            assert_eq!(info.balance.total(), VALUE);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::UnresolvedUtxoAddress),
+                None
+            );
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account() {
+            assert_ends_in_the_receiving_account(42, LoadCtx::strict(), true);
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account_unused() {
+            assert_ends_in_the_receiving_account(44, LoadCtx::strict(), false);
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account_in_recovery() {
+            assert_ends_in_the_receiving_account(45, LoadCtx::recovery(), true);
+        }
+
+        #[test]
+        fn a_coin_a_deeper_contact_pool_holds_ends_in_the_receiving_account_unused_in_recovery() {
+            assert_ends_in_the_receiving_account(46, LoadCtx::recovery(), false);
+        }
+
+        /// After discovery derives something every coin is offered to
+        /// key-wallet again, and a coin already in its account comes back
+        /// once, unchanged: a BIP44 coin, instant-locked, trusted and locked,
+        /// beside a CoinJoin coin one past its pool that only discovery
+        /// reaches.
+        #[test]
+        fn a_placed_coin_offered_again_after_discovery_is_held_once_unchanged() {
+            let (wallet, manifest) = fixture(43);
+            let mut placed = utxo(1, &external_address(&wallet, &bip44(), 3));
+            placed.is_instantlocked = true;
+            placed.is_trusted = true;
+            placed.is_locked = true;
+            let deep = utxo(2, &coinjoin_address(&wallet, 100));
+            for used in [HashMap::new(), ownerless(&[&placed.address, &deep.address])] {
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                load_into(
+                    &mut info,
+                    &manifest,
+                    vec![placed.clone(), deep.clone()],
+                    &HashMap::new(),
+                    &used,
+                    &LoadCtx::strict(),
+                )
+                .unwrap();
+                assert_eq!(every_holder(&info, &placed.outpoint), vec![bip44()]);
+                let funds = info.accounts.funds_account(&bip44()).unwrap();
+                assert_eq!(funds.utxos.get(&placed.outpoint), Some(&placed));
+                assert_eq!(every_holder(&info, &deep.outpoint), vec![cj()]);
+                assert_eq!(info.balance.total(), 2 * VALUE);
+            }
+        }
+
+        fn contact() -> AccountType {
+            AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xaa; 32],
+                friend_identity_id: [0xbb; 32],
+            }
+        }
+
+        /// The first pool of [`unrefillable_contact_fixture`]'s contact
+        /// account.
+        fn contact_pool(info: &ManagedWalletInfo) -> &AddressPool {
+            let contact = info.accounts.dashpay_external_accounts.values().next();
+            contact.unwrap().managed_account_type().address_pools()[0]
+        }
+
+        /// [`unrefillable_contact_fixture`]'s managed state with its contact
+        /// pool's gap limit one past the refill budget, derived through
+        /// `through` when given.
+        fn with_wide_contact_pool(wallet: &Wallet, through: Option<u32>) -> ManagedWalletInfo {
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let account = info.accounts.dashpay_external_accounts.values_mut().next();
+            let mut pools = account
+                .unwrap()
+                .managed_account_type_mut()
+                .address_pools_mut();
+            let pool = &mut *pools[0];
+            pool.gap_limit = MAX_REHYDRATION_GAP_REFILL + 1;
+            if let Some(index) = through {
+                let key_source = wallet.key_source_for_account(contact());
+                ensure_derived(pool, &key_source, index).unwrap();
+            }
+            info
+        }
+
+        /// A coin on the last address a contact pool holds, whose gap limit
+        /// is one past the refill budget, would have that pool refilled past
+        /// the budget once marked. A strict load fails at the refill site,
+        /// and the pool derives nothing more.
+        #[test]
+        fn a_coin_cannot_push_a_contact_pool_refill_past_the_budget() {
+            let (wallet, manifest, own) = unrefillable_contact_fixture();
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = with_wide_contact_pool(&wallet, Some(budget));
+            let theirs = utxo(2, &contact_pool(&info).address_at_index(budget).unwrap());
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![own, theirs],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refill past the budget must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+        }
+
+        /// Under recovery the same refusal is counted once, the contact pool
+        /// derives nothing more, and both coins are still placed: the BIP44
+        /// coin in BIP44 and the contact coin in the contact account.
+        #[test]
+        fn a_coin_cannot_push_a_contact_pool_refill_past_the_budget_in_recovery() {
+            let (wallet, manifest, own) = unrefillable_contact_fixture();
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = with_wide_contact_pool(&wallet, Some(budget));
+            let theirs = utxo(2, &contact_pool(&info).address_at_index(budget).unwrap());
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![own.clone(), theirs.clone()],
+                &HashMap::new(),
+                &HashMap::new(),
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationGapLimit),
+                Some(&1)
+            );
+            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+            assert_eq!(every_holder(&info, &own.outpoint), vec![bip44()]);
+            assert_eq!(every_holder(&info, &theirs.outpoint), vec![contact()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// A contact pool whose own refill first derives a coin's address
+        /// (its window, 0..=9, grows to the gap limit, one past the budget)
+        /// cannot then be refilled past the budget by that coin's mark: the
+        /// rounds look up what the refill derived before the final restore,
+        /// although the round before marked nothing.
+        #[test]
+        fn a_coin_a_contact_refill_reaches_cannot_push_it_past_the_budget() {
+            let (wallet, manifest, _) = unrefillable_contact_fixture();
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = with_wide_contact_pool(&wallet, None);
+            assert_eq!(contact_pool(&info).highest_generated, Some(9));
+            let theirs = utxo(2, &first_pool_address(&wallet, &contact(), budget));
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![theirs],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refill past the budget must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(contact_pool(&info).highest_generated, Some(budget));
+        }
+
+        /// A coin whose stored address (BIP44's at 5) differs from the one
+        /// its script pays (CoinJoin's last, in a pool whose gap limit is one
+        /// past the budget) cannot push the CoinJoin pool past the budget: the
+        /// rounds mark the script's address before any refill.
+        #[test]
+        fn a_coin_cannot_push_its_scripts_pool_past_the_budget_by_its_stored_address() {
+            let (wallet, manifest) = fixture(47);
+            let budget = MAX_REHYDRATION_GAP_REFILL;
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let funds = info.accounts.funds_account_mut(&cj()).unwrap();
+            let mut pools = funds.managed_account_type_mut().address_pools_mut();
+            let pool = (pools.iter_mut())
+                .find(|p| p.pool_type == AddressPoolType::External)
+                .unwrap();
+            pool.gap_limit = budget + 1;
+            let key_source = wallet.key_source_for_account(cj());
+            let paid = ensure_derived(pool, &key_source, budget).unwrap();
+            let mut coin = utxo(1, &paid);
+            coin.address = external_address(&wallet, &bip44(), 5);
+            let err = load_into(
+                &mut info,
+                &manifest,
+                vec![coin],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .expect_err("a refill past the budget must fail a strict load");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge { .. }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(external_pool(&info, &cj()).highest_generated, Some(budget));
+        }
+
+        /// A coin on a contact address within the pool (9, its last) still
+        /// has the contact pool refilled one gap past it, marked used.
+        #[test]
+        fn a_contact_coin_keeps_its_pool_refilled_past_it() {
+            let (wallet, manifest, own) = unrefillable_contact_fixture();
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let theirs = utxo(2, &contact_pool(&info).address_at_index(9).unwrap());
+            load_into(
+                &mut info,
+                &manifest,
+                vec![own, theirs.clone()],
+                &HashMap::new(),
+                &HashMap::new(),
+                &LoadCtx::strict(),
+            )
+            .unwrap();
+            let pool = contact_pool(&info);
+            assert_eq!(pool.highest_generated, Some(9 + pool.gap_limit));
+            assert!(pool.address_info(&theirs.address).unwrap().is_used());
+            assert_eq!(every_holder(&info, &theirs.outpoint), vec![contact()]);
+        }
+
+        /// A funds pool whose refill both its owner's extension and the
+        /// preflight before the restore refuse (a gap limit past
+        /// [`MAX_REHYDRATION_GAP_REFILL`]) is counted once under recovery,
+        /// and its coin stays in its account.
+        #[test]
+        fn a_refill_refused_by_the_extension_and_the_preflight_is_counted_once() {
+            let (wallet, manifest) = fixture(41);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 3));
+            let side = HashMap::from([(coin.outpoint, owner(&wallet, &bip44()))]);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+            for pool in funds.managed_account_type_mut().address_pools_mut() {
+                if pool.pool_type == AddressPoolType::External {
+                    pool.gap_limit = MAX_REHYDRATION_GAP_REFILL + 1_000;
+                }
+            }
+            let ctx = LoadCtx::recovery();
+            load_into(
+                &mut info,
+                &manifest,
+                vec![coin.clone()],
+                &side,
+                &HashMap::new(),
+                &ctx,
+            )
+            .expect("recovery tolerates the refusal");
+            let degradation = ctx.degradation();
+            assert_eq!(
+                degradation.by_site.get(&LoadSite::RehydrationGapLimit),
+                Some(&1),
+                "{:?}",
+                degradation.by_site
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
+        }
+
+        /// A used address whose pool row names its account (55) behind one
+        /// with no row (30, one past the window) comes back used, never as a
+        /// fresh receive address, whether the coin sits on the unrowed
+        /// address or past both (70).
+        #[test]
+        fn a_rowed_used_address_behind_an_unrowed_one_comes_back_used() {
+            let (wallet, manifest) = fixture(37);
+            let unrowed = external_address(&wallet, &bip44(), 30);
+            let rowed = external_address(&wallet, &bip44(), 55);
+            for coin in [
+                utxo(1, &unrowed),
+                utxo(2, &external_address(&wallet, &bip44(), 70)),
+            ] {
+                let mut used = ownerless(&[&unrowed, &coin.address]);
+                used.insert(rowed.clone(), Some(owner(&wallet, &bip44())));
+                assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, bip44());
+            }
+        }
+
+        /// A coin its stored owner's extension misses (45, past that
+        /// account's first window), but which discovery past the pool
+        /// reaches through a spent address (30), is restored and not counted
+        /// as unresolved.
+        #[test]
+        fn a_coin_its_owner_misses_but_discovery_reaches_is_not_counted() {
+            let (wallet, manifest) = fixture(38);
+            let spent = external_address(&wallet, &bip44(), 30);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 45));
+            let side = HashMap::from([(coin.outpoint, owner(&wallet, &bip44()))]);
+            let used = ownerless(&[&spent]);
+            assert_restored(&wallet, &manifest, &coin, &side, &used, bip44());
+        }
+
+        /// Stored addresses a gap limit and one apart (BIP44 gap 30: spent
+        /// 30 and 61, then the coin at 92) lead to the coin past them.
+        #[test]
+        fn stored_addresses_a_gap_and_one_apart_lead_to_the_coin_past_them() {
+            let (wallet, manifest) = fixture(39);
+            let spent: Vec<Address> = [30, 61]
+                .iter()
+                .map(|i| external_address(&wallet, &bip44(), *i))
+                .collect();
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 92));
+            let used = ownerless(&[&spent[0], &spent[1], &coin.address]);
+            assert_restored(&wallet, &manifest, &coin, &HashMap::new(), &used, bip44());
+        }
+
+        /// A coin no funds account reaches (BIP44 5000) is counted once as
+        /// unresolved, with no stored owner, also in the used set, or with a
+        /// stored owner whose extension misses it too; it falls back to
+        /// BIP44 and the total stays exact.
+        #[test]
+        fn a_coin_past_every_reach_is_counted_once() {
+            let (wallet, manifest) = fixture(40);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 5_000));
+            let bip44_owner = owner(&wallet, &bip44());
+            let cases = [
+                ("no owner", HashMap::new(), HashMap::new()),
+                (
+                    "no owner, in the used set",
+                    HashMap::new(),
+                    ownerless(&[&coin.address]),
+                ),
+                (
+                    "stored owner",
+                    HashMap::from([(coin.outpoint, bip44_owner.clone())]),
+                    HashMap::from([(coin.address.clone(), Some(bip44_owner))]),
+                ),
+            ];
+            for (case, side, used) in cases {
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let ctx = LoadCtx::strict();
+                load_into(&mut info, &manifest, vec![coin.clone()], &side, &used, &ctx).unwrap();
+                assert_eq!(holders(&info, &coin.outpoint), vec![bip44()], "{case}");
+                assert_eq!(info.balance.total(), VALUE, "{case}");
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    Some(&1),
+                    "{case}"
+                );
+            }
+        }
+
+        /// Loads `coins` strictly with only the `spent` addresses as the used
+        /// set, none with a stored owner, then checks each coin is held once,
+        /// by its account, which signs for it; that every coin and spent
+        /// address comes back used in its account; that the total is exact;
+        /// and that nothing was left unresolved.
+        fn assert_live_and_spent(
+            wallet: &Wallet,
+            manifest: &[AccountRegistrationEntry],
+            coins: &[(Utxo, AccountType)],
+            spent: &[(Address, AccountType)],
+        ) {
+            let used: HashMap<Address, Option<OwningAccount>> =
+                spent.iter().map(|(a, _)| (a.clone(), None)).collect();
+            let utxos = coins.iter().map(|(coin, _)| coin.clone()).collect();
+            let mut info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let ctx = LoadCtx::strict();
+            load_into(&mut info, manifest, utxos, &HashMap::new(), &used, &ctx).unwrap();
+            for (coin, account) in coins {
+                assert_eq!(holders(&info, &coin.outpoint), vec![*account]);
+                assert!(
+                    derives(&info, account, &coin.address),
+                    "{} is signable",
+                    coin.address
+                );
+                assert!(used_in(&info, account, &coin.address));
+            }
+            for (address, account) in spent {
+                assert!(
+                    used_in(&info, account, address),
+                    "{address} comes back used"
+                );
+            }
+            assert_eq!(info.balance.total(), VALUE * coins.len() as u64);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::UnresolvedUtxoAddress),
+                None
+            );
+        }
+
+        /// A used set holding only a spent address (45) and not the live
+        /// coin's, as the API allows: the coin in the window (20) brings the
+        /// spent address into the pool, and it comes back used.
+        #[test]
+        fn a_live_coin_in_the_window_brings_a_spent_address_back_used() {
+            let (wallet, manifest) = fixture(42);
+            let spent = external_address(&wallet, &bip44(), 45);
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 20));
+            assert_live_and_spent(&wallet, &manifest, &[(coin, bip44())], &[(spent, bip44())]);
+        }
+
+        /// The spent address a live coin brings in (45, from the coin at 20)
+        /// leads on to a deeper live coin (70), which restores signable.
+        #[test]
+        fn a_spent_address_a_live_coin_brings_in_leads_to_the_coin_past_it() {
+            let (wallet, manifest) = fixture(43);
+            let spent = external_address(&wallet, &bip44(), 45);
+            let coins =
+                [20, 70].map(|i| (utxo(i, &external_address(&wallet, &bip44(), i)), bip44()));
+            assert_live_and_spent(&wallet, &manifest, &coins, &[(spent, bip44())]);
+        }
+
+        /// The same in two accounts in one load: BIP44 (coin 20, spent 45)
+        /// and CoinJoin (coin 50, spent 140; gap 100).
+        #[test]
+        fn live_coins_in_two_accounts_bring_their_spent_addresses_back_used() {
+            let (wallet, manifest) = fixture(44);
+            let coins = [
+                (utxo(1, &external_address(&wallet, &bip44(), 20)), bip44()),
+                (utxo(2, &coinjoin_address(&wallet, 50)), cj()),
+            ];
+            let spent = [
+                (external_address(&wallet, &bip44(), 45), bip44()),
+                (coinjoin_address(&wallet, 140), cj()),
+            ];
+            assert_live_and_spent(&wallet, &manifest, &coins, &spent);
+        }
+
+        /// A live CoinJoin coin (50) brings the spent address its refill
+        /// derives (140; gap 100) back used, with only that spent address in
+        /// the used set.
+        #[test]
+        fn a_live_coinjoin_coin_brings_its_spent_address_back_used() {
+            let (wallet, manifest) = fixture(48);
+            let coin = utxo(1, &coinjoin_address(&wallet, 50));
+            let spent = coinjoin_address(&wallet, 140);
+            assert_live_and_spent(&wallet, &manifest, &[(coin, cj())], &[(spent, cj())]);
+        }
+
+        /// `account`'s `pool_type` pool, derived through `through` on a copy.
+        fn pool_through(
+            wallet: &Wallet,
+            account: AccountType,
+            pool_type: AddressPoolType,
+            through: u32,
+        ) -> AddressPool {
+            let info = ManagedWalletInfo::from_wallet(wallet, 1);
+            let funds = info.accounts.funds_account(&account).unwrap();
+            let pools = funds.managed_account_type().address_pools();
+            let pool = pools
+                .into_iter()
+                .find(|p| p.pool_type == pool_type)
+                .unwrap();
+            let mut probe = AddressPool::new_without_generation(
+                pool.base_path.clone(),
+                pool.pool_type,
+                pool.gap_limit,
+                Network::Testnet,
+            );
+            probe
+                .generate_addresses(through + 1, &wallet.key_source_for_account(account), true)
+                .unwrap();
+            probe
+        }
+
+        /// Ownerless spent addresses a gap apart in `account`'s `pool_type`
+        /// pool, from one gap through `last`, then a coin at last + gap/2, a
+        /// spent address at last + gap + gap/5 and a coin at last + 2 gaps:
+        /// each within a gap of the one before, as a rescan reaches them.
+        /// With and without the coins in the used set (the SQLite loader
+        /// passes both), every stored address comes back used, both coins
+        /// restore signable into `account`, and nothing is unresolved.
+        fn assert_chain_restored(
+            seed: u8,
+            account: AccountType,
+            pool_type: AddressPoolType,
+            last: u32,
+        ) {
+            let (wallet, manifest) = fixture(seed);
+            let gap = pool_through(&wallet, account, pool_type, 0).gap_limit;
+            let probe = pool_through(&wallet, account, pool_type, last + 2 * gap);
+            let at = |i: u32| probe.address_at_index(i).unwrap();
+            let mut spent: Vec<Address> = (gap..=last).step_by(gap as usize).map(at).collect();
+            spent.push(at(last + gap + gap / 5));
+            let coins = [utxo(1, &at(last + gap / 2)), utxo(2, &at(last + 2 * gap))];
+            for coins_in_used in [false, true] {
+                let mut used = ownerless(&spent.iter().collect::<Vec<_>>());
+                if coins_in_used {
+                    used.extend(ownerless(
+                        &coins.iter().map(|c| &c.address).collect::<Vec<_>>(),
+                    ));
+                }
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let ctx = LoadCtx::strict();
+                let utxos = coins.to_vec();
+                load_into(&mut info, &manifest, utxos, &HashMap::new(), &used, &ctx).unwrap();
+                for coin in &coins {
+                    assert_eq!(holders(&info, &coin.outpoint), vec![account]);
+                    assert!(
+                        derives(&info, &account, &coin.address),
+                        "{} is signable (coins in used: {coins_in_used})",
+                        coin.address
+                    );
+                }
+                for address in &spent {
+                    assert!(
+                        used_in(&info, &account, address),
+                        "{address} comes back used (coins in used: {coins_in_used})"
+                    );
+                }
+                assert_eq!(info.balance.total(), 2 * VALUE);
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::UnresolvedUtxoAddress),
+                    None
+                );
+            }
+        }
+
+        /// The chain's last stored address (10000) sits at the discovery
+        /// ceiling, so the coin and spent address past it (10050, 10120) and
+        /// the coin past those (10200) are reached by the refills after
+        /// discovery, not by its probe.
+        #[test]
+        fn a_coinjoin_chain_to_the_discovery_ceiling_reaches_the_coins_past_it() {
+            assert_chain_restored(45, cj(), AddressPoolType::External, 10_000);
+        }
+
+        /// The same on a BIP44 change chain (gap 30, through 9990): the coin
+        /// past the ceiling (10005), the spent address past it (10026) and
+        /// the coin past that (10050).
+        #[test]
+        fn a_change_chain_to_the_discovery_ceiling_reaches_the_coins_past_it() {
+            assert_chain_restored(46, bip44(), AddressPoolType::Internal, 9_990);
+        }
+
+        /// The same CoinJoin chain ending well below the ceiling (5000),
+        /// which discovery's probe covers on its own.
+        #[test]
+        fn a_coinjoin_chain_below_the_discovery_ceiling_reaches_the_coins_past_it() {
+            assert_chain_restored(47, cj(), AddressPoolType::External, 5_000);
         }
     }
 }

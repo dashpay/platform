@@ -16,7 +16,6 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Transaction, Txid};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;
@@ -55,6 +54,7 @@ fn entry(op: OutPoint, status: AssetLockStatus, proof: Option<AssetLockProof>) -
         operation_id: None,
         operation_revision: 0,
         expected_operation_revision: None,
+        shielded_recipient: None,
         amount_duffs: 1000,
         status,
         proof,

@@ -17,7 +17,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use dash_sdk::RequestSettings;
-use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, Txid};
 
 /// What a header store answered for one height.
@@ -107,6 +106,7 @@ const LOCATE_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     timeout: Some(Duration::from_secs(5)),
     retries: Some(1),
     ban_failed_address: None,
+    ban_busy_address: None,
     max_decoding_message_size: None,
 };
 
@@ -118,6 +118,7 @@ const BLOCK_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     timeout: Some(Duration::from_secs(10)),
     retries: Some(1),
     ban_failed_address: None,
+    ban_busy_address: None,
     max_decoding_message_size: Some(4 << 20),
 };
 
