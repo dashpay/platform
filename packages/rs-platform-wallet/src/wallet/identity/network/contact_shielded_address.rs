@@ -64,6 +64,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The seed proved the prepared account to be the identity's, and that does not
     /// change with what the wallet records later: an identity recorded at another slot
     /// by the time of this call gets no address, never the address of another account.
+    ///
+    /// The identity the address is derived for is the one that sends the request. The
+    /// public send calls this with the pair claimed (`DashPayView::claim_public_pair`)
+    /// and keeps the claim until the request is recorded, and an identity with a claim
+    /// held is not removed (`IdentityManager::remove_identity`), so it is not replaced
+    /// under its id while the request is signed and broadcast. A refresh from Platform
+    /// adds keys or disables them, and a disabled key still proves the slot.
     pub(crate) async fn contact_shielded_address(
         &self,
         owner_id: &Identifier,
