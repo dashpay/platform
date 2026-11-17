@@ -165,12 +165,40 @@ pub fn usable_signing_key<'a>(
         security_levels,
         key_types,
         scope,
+        true,
+        wall_clock_ms(),
+    )
+}
+
+/// [`usable_signing_key`] among the keys without limits only: a key with a budget or an
+/// expiry is never chosen.
+pub(super) fn usable_unlimited_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+    purpose: Purpose,
+    security_levels: &[SecurityLevel],
+    key_types: &[KeyType],
+    scope: SigningScope<'_>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_signing_key_at(
+        identity,
+        signer,
+        purpose,
+        security_levels,
+        key_types,
+        scope,
+        false,
         wall_clock_ms(),
     )
 }
 
 /// [`usable_signing_key`] at wall-clock time `now`, in milliseconds since the Unix epoch;
-/// `None` when the clock cannot be read.
+/// `None` when the clock cannot be read. A key with limits qualifies only when
+/// `limits_allowed`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the selection criteria of usable_signing_key plus the limits rule and the clock"
+)]
 fn usable_signing_key_at<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -178,10 +206,12 @@ fn usable_signing_key_at<'a>(
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
     scope: SigningScope<'_>,
+    limits_allowed: bool,
     now: Option<u64>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let qualifies = |key: &IdentityPublicKey| {
-        key.purpose() == purpose
+        (limits_allowed || !key.has_limits())
+            && key.purpose() == purpose
             && security_levels.contains(&key.security_level())
             && key_types.contains(&key.key_type())
             && !key.is_disabled()
@@ -1028,6 +1058,7 @@ pub(super) mod tests {
                 &LEVELS,
                 &TYPES,
                 document_scope(),
+                true,
                 None,
             )
             .unwrap()
