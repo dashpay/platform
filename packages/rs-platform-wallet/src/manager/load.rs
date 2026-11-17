@@ -71,6 +71,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Start SPV before loading history that requires InstantLock verification.
     /// If its quorum evidence is unavailable, load fails without registering
     /// that history; the caller may retry after SPV synchronization progresses.
+    /// Status-only legacy InstantSend rows without proof material load unconfirmed
+    /// and rewind the filter cursor to wallet birth on every load until rediscovered.
     ///
     /// Any `Err` rolls back partial inserts and leaves the manager usable: fix
     /// the store and call again, or reconstruct. Reconstructing over the same
@@ -1577,7 +1579,7 @@ mod idempotent_load_tests {
         use dpp::prelude::AssetLockProof;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
         for (status, has_proof, needs_evidence) in [
-            (AssetLockStatus::InstantSendLocked, false, true),
+            (AssetLockStatus::InstantSendLocked, false, false),
             (AssetLockStatus::Broadcast, true, true),
             (AssetLockStatus::Consumed, true, false),
         ] {
@@ -1624,6 +1626,17 @@ mod idempotent_load_tests {
                         super::super::history_replay::HistoryReplayError::MissingFinalityEvidence { .. }
                     )
                 ));
+            } else if !has_proof {
+                result.unwrap();
+                assert_eq!(
+                    wallet.unused_asset_locks[&0]
+                        .values()
+                        .next()
+                        .unwrap()
+                        .status,
+                    AssetLockStatus::Broadcast
+                );
+                assert!(wallet.wallet_info.instant_send_locks().is_empty());
             } else {
                 let outcome = result.unwrap();
                 assert!(!outcome.withheld_asset_lock_inputs.is_empty());
@@ -2926,6 +2939,225 @@ mod idempotent_load_tests {
             0,
             "the coin the unsafe record spends must stay reserved"
         );
+    }
+
+    #[tokio::test]
+    async fn should_load_legacy_status_only_history_and_recompute_rescan_after_restart() {
+        use crate::manager::history_replay::tests::confirmed_spend_fixture;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::transaction_checking::WalletTransactionChecker;
+
+        let (wallet, mut managed, funding, mut records, spent) = confirmed_spend_fixture().await;
+        managed.metadata.birth_height = 80;
+        managed.update_synced_height(500);
+        let spend = records[1].transaction.clone();
+        let mined = records[1].context.clone();
+        records[1].context = TransactionContext::Mempool;
+        // V4 -> V5 adds an empty lock table; the host restores only the IS status.
+        let mut history = RecordedHistory {
+            required_instant_locks: [spend.txid()].into(),
+            transactions: records.into_iter().map(StoredTransaction::from).collect(),
+            ..Default::default()
+        };
+        for row in &mut history.transactions {
+            row.owned_inputs.clear(); // The host restore ABI carries no input details.
+        }
+        let id = wallet.compute_wallet_id();
+        for _restart in 0..2 {
+            let manager = make_history_manager(RecordedHistoryPersister {
+                wallet: wallet.clone(),
+                managed: managed.clone(),
+                history: history.clone(),
+                asset_locks: BTreeMap::new(),
+            });
+            manager.load_from_persistor().await.unwrap();
+            let wm = manager.wallet_manager.read().await;
+            let mut core = wm.get_wallet_info(&id).unwrap().core_wallet.clone();
+            assert!(core.synced_height() <= 79);
+            assert!(matches!(
+                core.accounts.standard_bip44_accounts[&0].transactions()[&spend.txid()].context,
+                TransactionContext::Mempool
+            ));
+            assert!(!core.instant_send_locks().contains(&spend.txid()));
+            assert!(!core.utxos().iter().any(|coin| coin.outpoint == spent));
+            drop(wm);
+            // A filter rescan redelivers the funding before its spending block.
+            core.check_core_transaction(
+                &funding,
+                history.transactions[0].context.clone(),
+                &mut wallet.clone(),
+                true,
+                true,
+            )
+            .await;
+            assert!(!core.utxos().iter().any(|coin| coin.outpoint == spent));
+            core.check_core_transaction(&spend, mined.clone(), &mut wallet.clone(), true, true)
+                .await;
+            assert_eq!(
+                core.accounts.standard_bip44_accounts[&0].transactions()[&spend.txid()].context,
+                mined
+            );
+        }
+        // Persisted block context ends recovery without supplying an InstantLock.
+        history.transactions[1].context = mined;
+        history.required_instant_locks.clear();
+        let manager = make_history_manager(RecordedHistoryPersister {
+            wallet,
+            managed,
+            history,
+            asset_locks: BTreeMap::new(),
+        });
+        manager.load_from_persistor().await.unwrap();
+        assert_eq!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&id)
+                .unwrap()
+                .core_wallet
+                .synced_height(),
+            500
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_legacy_status_only_inputs_claimed_without_funding_history() {
+        use crate::manager::history_replay::tests::confirmed_spend_fixture;
+        use key_wallet::transaction_checking::WalletTransactionChecker;
+
+        let (mut wallet, managed, funding, records, spent) = confirmed_spend_fixture().await;
+        let mut spend = StoredTransaction::from(records[1].clone());
+        spend.context = TransactionContext::Mempool;
+        spend.owned_inputs.clear();
+        let id = wallet.compute_wallet_id();
+        let manager = make_history_manager(RecordedHistoryPersister {
+            wallet: wallet.clone(),
+            managed,
+            history: RecordedHistory {
+                required_instant_locks: [spend.txid].into(),
+                transactions: vec![spend],
+                ..Default::default()
+            },
+            asset_locks: BTreeMap::new(),
+        });
+        manager.load_from_persistor().await.unwrap();
+        let mut core = manager
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&id)
+            .unwrap()
+            .core_wallet
+            .clone();
+        core.check_core_transaction(
+            &funding,
+            records[0].context.clone(),
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+        assert!(!core.utxos().iter().any(|coin| coin.outpoint == spent));
+    }
+
+    #[tokio::test]
+    async fn should_clear_legacy_finality_flags_without_advancing_an_earlier_cursor() {
+        use crate::manager::history_replay::tests::confirmed_spend_fixture;
+
+        let (wallet, mut managed, funding, records, _) = confirmed_spend_fixture().await;
+        managed.metadata.birth_height = 80;
+        for coin in managed
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .utxos
+            .values_mut()
+        {
+            coin.is_instantlocked = true;
+        }
+        let mut incoming = StoredTransaction::from(records[0].clone());
+        incoming.context = TransactionContext::Mempool;
+        let id = wallet.compute_wallet_id();
+        for cursor in [0, 50, 500] {
+            managed.update_synced_height(cursor);
+            // Exercise the default persister path, which delegates replay to load.rs.
+            let manager = PlatformWalletManager::new(
+                Arc::new(
+                    dash_sdk::SdkBuilder::new_mock()
+                        .with_network(Network::Testnet)
+                        .build()
+                        .unwrap(),
+                ),
+                Arc::new(RecordedHistoryPersister {
+                    wallet: wallet.clone(),
+                    managed: managed.clone(),
+                    history: RecordedHistory {
+                        required_instant_locks: [funding.txid()].into(),
+                        transactions: vec![incoming.clone()],
+                        ..Default::default()
+                    },
+                    asset_locks: BTreeMap::new(),
+                }),
+                Arc::new(NoopTestEventHandler),
+            );
+            manager.load_from_persistor().await.unwrap();
+            let wm = manager.wallet_manager.read().await;
+            let core = &wm.get_wallet_info(&id).unwrap().core_wallet;
+            assert_eq!(core.synced_height(), cursor.min(79));
+            assert_eq!(core.balance.confirmed(), 0);
+            assert_eq!(core.balance.unconfirmed(), 20_000);
+            assert!(core
+                .utxos()
+                .iter()
+                .all(|coin| !coin.is_instantlocked && !coin.is_confirmed));
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_legacy_status_with_stored_unverified_lock_material() {
+        use crate::manager::history_replay::{
+            replay_wallet_history_blocking, tests::confirmed_spend_fixture,
+        };
+        use dashcore::InstantLock;
+
+        let (wallet, managed, _, records, _) = confirmed_spend_fixture().await;
+        let mut spend = StoredTransaction::from(records[1].clone());
+        spend.context = TransactionContext::Mempool;
+        let txid = spend.txid;
+        let persister = RecordedHistoryPersister {
+            wallet,
+            managed,
+            history: RecordedHistory {
+                required_instant_locks: [txid].into(),
+                instant_locks: [(
+                    txid,
+                    InstantLock {
+                        txid,
+                        ..Default::default()
+                    },
+                )]
+                .into(),
+                transactions: vec![spend],
+                ..Default::default()
+            },
+            asset_locks: BTreeMap::new(),
+        };
+        let mut state = persister
+            .load()
+            .unwrap()
+            .wallets
+            .into_values()
+            .next()
+            .unwrap();
+        assert!(matches!(
+            replay_wallet_history_blocking(&mut state, &Default::default()),
+            Err(super::HistoryReplayError::MissingFinalityEvidence { txids }) if txids.contains(&txid)
+        ));
+        let manager = make_history_manager(persister);
+        assert!(manager.load_from_persistor().await.is_err());
+        assert!(manager.list_wallet_ids_blocking().is_empty());
     }
 
     /// Loader unit fixture: supplies owner-prepared outcomes; real backend transaction

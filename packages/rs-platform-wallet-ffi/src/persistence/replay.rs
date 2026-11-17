@@ -485,6 +485,9 @@ mod tests {
         mode: Cell<u8>,
         fail_read: Cell<bool>,
         transaction: RefCell<Option<Transaction>>,
+        instant_lock: RefCell<Vec<u8>>,
+        birth_height: Cell<u32>,
+        synced_height: Cell<u32>,
         replacement: RefCell<Option<Transaction>>,
         claim_frees: Cell<usize>,
         claim_mode: Cell<u8>,
@@ -641,6 +644,8 @@ mod tests {
         });
         *rows = Box::into_raw(Box::new(WalletRestoreEntryFFI {
             wallet_id: [41; 32],
+            birth_height: host.birth_height.get(),
+            synced_height: host.synced_height.get(),
             accounts: account.unwrap_or(std::ptr::null_mut()),
             accounts_count: usize::from(account.is_some()),
             network: FFINetwork::Testnet,
@@ -880,6 +885,31 @@ mod tests {
         }
     }
 
+    unsafe extern "C" fn load_instant_lock(
+        ctx: *mut c_void,
+        _: *const u8,
+        _: *const u8,
+        bytes: *mut *const u8,
+        len: *mut usize,
+    ) -> i32 {
+        let host = &*ctx.cast::<Host>();
+        let stored = host.instant_lock.borrow().clone().into_boxed_slice();
+        *len = stored.len();
+        *bytes = if stored.is_empty() {
+            std::ptr::null()
+        } else {
+            Box::into_raw(stored).cast()
+        };
+        0
+    }
+
+    unsafe extern "C" fn free_instant_lock(_: *mut c_void, bytes: *const u8, len: usize) {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            bytes.cast_mut(),
+            len,
+        )));
+    }
+
     fn persister(host: &Host) -> FFIPersister {
         FFIPersister::new_with_persistence_capabilities_and_extensions(
             PersistenceCallbacks {
@@ -894,6 +924,8 @@ mod tests {
                 load_replay_claims: Some(claims),
                 free_replay_claims: Some(free_claims),
                 apply_replay_effects: Some(apply),
+                load_core_instant_lock: Some(load_instant_lock),
+                free_core_instant_lock: Some(free_instant_lock),
                 ..Default::default()
             },
         )
@@ -965,11 +997,14 @@ mod tests {
         let host = Host::default();
         let transaction = transaction(2);
         *host.transaction.borrow_mut() = Some(transaction.clone());
+        let evidence = checked_evidence(&transaction).await;
+        *host.instant_lock.borrow_mut() = dashcore::consensus::serialize(
+            evidence.instant_locks[&transaction.txid()].instant_lock(),
+        );
         let persister = persister(&host);
         assert!(persister
             .load_wallet_with_replay([41; 32], &ReplayEvidence::default())
             .is_err());
-        let evidence = checked_evidence(&transaction).await;
         let restored = persister
             .load_wallet_with_replay([41; 32], &evidence)
             .unwrap();
@@ -986,6 +1021,8 @@ mod tests {
         let persister = persister(&host);
         let _discovery = persister.load_read_snapshot().unwrap();
         let evidence = checked_evidence(&old).await;
+        *host.instant_lock.borrow_mut() =
+            dashcore::consensus::serialize(evidence.instant_locks[&old.txid()].instant_lock());
         let fresh = transaction(4);
         let fresh_id = fresh.txid();
         *host.replacement.borrow_mut() = Some(fresh);
@@ -997,18 +1034,47 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_missing_required_proof_before_any_host_effects() {
+    fn should_recover_status_only_legacy_history_and_retry_without_injecting_proof() {
+        use key_wallet::transaction_checking::TransactionContext;
+
         let host = Host::default();
         let transaction = transaction(1);
         let txid = transaction.txid();
-        *host.transaction.borrow_mut() = Some(transaction);
-        let error = persister(&host)
-            .load_wallet_with_replay([41; 32], &ReplayEvidence::default())
-            .unwrap_err();
-        assert!(error.to_string().contains(&txid.to_string()));
+        *host.transaction.borrow_mut() = Some(transaction.clone());
+        host.birth_height.set(80);
+        host.synced_height.set(500);
+        // V4 -> V5 leaves the lock table empty; each fresh host read retains the status.
+        for _restart in 0..2 {
+            let loaded = persister(&host)
+                .load_wallet_with_replay([41; 32], &ReplayEvidence::default())
+                .unwrap();
+            let wallet = &loaded.state.wallets[&[41; 32]];
+            assert_eq!(wallet.wallet_info.metadata.synced_height, 79);
+            assert!(wallet.wallet_info.instant_send_locks().is_empty());
+            assert!(wallet
+                .recorded_history
+                .required_instant_locks
+                .contains(&txid));
+            assert!(matches!(
+                wallet.recorded_history.transactions[0].context,
+                TransactionContext::Mempool
+            ));
+        }
         assert_eq!(host.effects.get(), 0);
-        assert_eq!(host.claim_frees.get(), 1);
-        assert!(host.transaction.borrow().is_some());
+        assert_eq!(host.claim_frees.get(), 2);
+        // Catch-up replaces the status-only row with block context, ending the rewind.
+        *host.transaction.borrow_mut() = None;
+        *host.additional.borrow_mut() = vec![(transaction, 2)];
+        let loaded = persister(&host)
+            .load_wallet_with_replay([41; 32], &ReplayEvidence::default())
+            .unwrap();
+        assert_eq!(
+            loaded.state.wallets[&[41; 32]]
+                .wallet_info
+                .metadata
+                .synced_height,
+            500
+        );
     }
 
     #[test]

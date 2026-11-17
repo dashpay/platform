@@ -187,6 +187,37 @@ pub async fn replay_wallet_history(
         &mut history,
         state.unused_asset_locks.values().flat_map(BTreeMap::values),
     );
+    // Status-only legacy observations have nothing the verifier can retry.
+    // Keep the stored marker in prepared_history so every load recomputes recovery.
+    let legacy: BTreeSet<_> = history
+        .transactions
+        .iter()
+        .filter(|row| {
+            history.required_instant_locks.contains(&row.txid)
+                && matches!(row.context, TransactionContext::Mempool)
+                && !history.instant_locks.contains_key(&row.txid)
+                && !evidence.instant_locks.contains_key(&row.txid)
+                && !state
+                    .unused_asset_locks
+                    .values()
+                    .flat_map(BTreeMap::values)
+                    .any(|lock| lock.transaction.txid() == row.txid && lock.proof.is_some())
+        })
+        .map(|row| row.txid)
+        .collect();
+    history
+        .required_instant_locks
+        .retain(|txid| !legacy.contains(txid));
+    for account in state.wallet_info.accounts.all_funding_accounts_mut() {
+        for coin in account
+            .utxos
+            .values_mut()
+            .filter(|coin| legacy.contains(&coin.outpoint.txid))
+        {
+            coin.is_instantlocked = false;
+            coin.is_confirmed = false;
+        }
+    }
     let withheld_records = detach_unconfirmed_records(&mut state.wallet_info, &withheld);
     let mut outcome = replay_recorded_history_with_evidence(
         &mut state.wallet_info,
@@ -200,6 +231,53 @@ pub async fn replay_wallet_history(
     outcome.recorded_conflicts = recorded_conflicts;
     state.unconfirmed_outgoing_txs =
         outcome.resendable(std::mem::take(&mut state.unconfirmed_outgoing_txs));
+    for lock in state
+        .unused_asset_locks
+        .values_mut()
+        .flat_map(BTreeMap::values_mut)
+    {
+        if legacy.contains(&lock.transaction.txid())
+            && lock.status == AssetLockStatus::InstantSendLocked
+        {
+            lock.status = AssetLockStatus::Broadcast;
+        }
+    }
+    if !legacy.is_empty() {
+        // StoredTransaction has no first_seen; wallet birth is the supported safe floor.
+        // This runs before registration, so no live filter batch can overtake the rewind.
+        let floor = state.wallet_info.birth_height().saturating_sub(1);
+        let cursor = state.wallet_info.synced_height().min(floor);
+        state.wallet_info.update_synced_height(cursor);
+        // The host ABI may omit both funding bodies and input ownership. Keep their
+        // claims even when the checker cannot attribute the unconfirmed spend yet.
+        let claims: Vec<_> = state
+            .recorded_history
+            .transactions
+            .iter()
+            .filter(|row| {
+                legacy.contains(&row.txid)
+                    && !outcome.defeated.contains(&row.txid)
+                    && !outcome.authorization.rejected.contains(&row.txid)
+            })
+            .flat_map(|row| {
+                row.transaction
+                    .input
+                    .iter()
+                    .map(|input| (input.previous_output, Some(row.txid)))
+            })
+            .collect();
+        let inputs: BTreeSet<_> = claims.iter().map(|(input, _)| *input).collect();
+        for account in state.wallet_info.accounts.all_funding_accounts_mut() {
+            account.utxos.retain(|input, _| !inputs.contains(input));
+        }
+        state.wallet_info.restore_spent_outpoints(&claims);
+        tracing::warn!(
+            wallet_id = %hex::encode(state.wallet_info.wallet_id),
+            transactions = legacy.len(),
+            synced_height = cursor,
+            "load: legacy InstantSend proof material absent; restored as unconfirmed and rewound filter scan to wallet birth"
+        );
+    }
     let final_claims = final_lock_input_claims(
         state
             .unused_asset_locks
