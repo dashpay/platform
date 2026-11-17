@@ -32,6 +32,9 @@ impl Drive {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree()
             }
+            TreeType::ProvableCountProvableBigSumTree => {
+                Element::empty_provable_count_provable_big_sum_tree()
+            }
             TreeType::ProvableSumTree => Element::empty_provable_sum_tree(),
             TreeType::CommitmentTree(chunk_power) => Element::empty_commitment_tree(chunk_power)?,
             TreeType::MmrTree => Element::empty_mmr_tree(),

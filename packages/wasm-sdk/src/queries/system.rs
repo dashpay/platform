@@ -35,6 +35,7 @@ export type GroveElementType =
   | "itemWithSumItemWithBackwardsReferences"
   | "provableCountSumTree"
   | "provableCountProvableSumTree"
+  | "provableCountProvableBigSumTree"
   | "provableSumTree"
   | "provableSumIndexedTree"
   | "provableCountIndexedTree"
@@ -57,6 +58,7 @@ export type GroveElementType =
   | "nonCountedReferenceWithSumItem"
   | "nonCountedProvableCountSumTree"
   | "nonCountedProvableCountProvableSumTree"
+  | "nonCountedProvableCountProvableBigSumTree"
   | "nonCountedProvableSumTree"
   | "nonCountedProvableSumIndexedTree"
   | "nonCountedProvableCountIndexedTree"
@@ -71,12 +73,14 @@ export type GroveElementType =
   | "notSummedCountSumTree"
   | "notSummedProvableCountSumTree"
   | "notSummedProvableCountProvableSumTree"
+  | "notSummedProvableCountProvableBigSumTree"
   | "notSummedProvableSumTree"
   | "notCountedOrSummedSumTree"
   | "notCountedOrSummedBigSumTree"
   | "notCountedOrSummedCountSumTree"
   | "notCountedOrSummedProvableCountSumTree"
   | "notCountedOrSummedProvableCountProvableSumTree"
+  | "notCountedOrSummedProvableCountProvableBigSumTree"
   | "notCountedOrSummedProvableSumTree";
 "#;
 
@@ -883,6 +887,7 @@ fn element_sum(element: &Element) -> Option<i128> {
         Element::ItemWithSumItem(_, sum, _) => Some(*sum as i128),
         Element::ProvableCountSumTree(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableCountProvableSumTree(_, _, sum, _) => Some(*sum as i128),
+        Element::ProvableCountProvableBigSumTree(_, _, sum, _) => Some(*sum),
         Element::ReferenceWithSumItem(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableSumTree(_, sum, _) => Some(*sum as i128),
         // Indexed trees carry the same aggregate as their non-indexed
@@ -952,6 +957,7 @@ fn element_type_name(element: &Element) -> &'static str {
         Element::ReferenceWithSumItem(_, _, _, _) => "referenceWithSumItem",
         Element::ProvableCountSumTree(_, _, _, _) => "provableCountSumTree",
         Element::ProvableCountProvableSumTree(_, _, _, _) => "provableCountProvableSumTree",
+        Element::ProvableCountProvableBigSumTree(_, _, _, _) => "provableCountProvableBigSumTree",
         Element::ProvableSumTree(_, _, _) => "provableSumTree",
         Element::ProvableSumIndexedTree(_, _, _, _) => "provableSumIndexedTree",
         Element::ProvableCountIndexedTree(_, _, _, _) => "provableCountIndexedTree",
@@ -992,6 +998,9 @@ fn non_counted_element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountProvableSumTree(_, _, _, _) => {
             "nonCountedProvableCountProvableSumTree"
         }
+        Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
+            "nonCountedProvableCountProvableBigSumTree"
+        }
         Element::ProvableSumTree(_, _, _) => "nonCountedProvableSumTree",
         Element::ProvableSumIndexedTree(_, _, _, _) => "nonCountedProvableSumIndexedTree",
         Element::ProvableCountIndexedTree(_, _, _, _) => "nonCountedProvableCountIndexedTree",
@@ -1019,6 +1028,9 @@ fn not_summed_element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountProvableSumTree(_, _, _, _) => {
             "notSummedProvableCountProvableSumTree"
         }
+        Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
+            "notSummedProvableCountProvableBigSumTree"
+        }
         Element::ProvableSumTree(_, _, _) => "notSummedProvableSumTree",
         _ => element_type_name(element),
     }
@@ -1032,6 +1044,9 @@ fn not_counted_or_summed_element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountSumTree(_, _, _, _) => "notCountedOrSummedProvableCountSumTree",
         Element::ProvableCountProvableSumTree(_, _, _, _) => {
             "notCountedOrSummedProvableCountProvableSumTree"
+        }
+        Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
+            "notCountedOrSummedProvableCountProvableBigSumTree"
         }
         Element::ProvableSumTree(_, _, _) => "notCountedOrSummedProvableSumTree",
         _ => element_type_name(element),

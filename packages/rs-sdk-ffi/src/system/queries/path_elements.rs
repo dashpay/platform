@@ -191,6 +191,9 @@ fn format_element_data(element: &Element) -> String {
         Element::ProvableCountProvableSumTree(_, count, sum, _) => {
             format!("provable_count_provable_sum_tree:{}:{}", count, sum)
         }
+        Element::ProvableCountProvableBigSumTree(_, count, sum, _) => {
+            format!("provable_count_provable_big_sum_tree:{}:{}", count, sum)
+        }
         Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
         // Indexed trees render their aggregate exactly like the
         // non-indexed Provable* tree they mirror. The secondary root
@@ -250,6 +253,9 @@ fn format_element_type(element: &Element) -> String {
         Element::ProvableCountSumTree(_, _, _, _) => "provable_count_sum_tree".to_string(),
         Element::ProvableCountProvableSumTree(_, _, _, _) => {
             "provable_count_provable_sum_tree".to_string()
+        }
+        Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
+            "provable_count_provable_big_sum_tree".to_string()
         }
         Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
         Element::ProvableSumIndexedTree(_, _, _, _) => "provable_sum_indexed_tree".to_string(),
