@@ -238,6 +238,55 @@ fn tc3_established_contact_restores_onto_identity() {
     assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
+/// The outbound-account marker survives a reopen, so a contact whose
+/// outbound account was already built for its current account reference is
+/// not torn down and rebuilt on every cold start.
+#[test]
+fn tc3b_established_contact_restores_its_outbound_account_marker() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xCB);
+    ensure_wallet_meta(&persister, &w);
+    let owner = Identifier::from([0x11; 32]);
+    let contact = Identifier::from([0x22; 32]);
+    let contact_state = EstablishedContact {
+        external_account_reference: Some(3),
+        ..established(owner, contact)
+    };
+    let mut established_map = BTreeMap::new();
+    established_map.insert(
+        SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: contact,
+        },
+        contact_state.clone(),
+    );
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(owner, w, 0)])),
+                contacts: Some(ContactChangeSet {
+                    established: established_map,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let managed = &state.wallets[&w].identity_manager.wallet_identities[&w][&0];
+    assert_eq!(
+        managed
+            .dashpay()
+            .established_contacts()
+            .get(&contact)
+            .and_then(|c| c.external_account_reference),
+        Some(3)
+    );
+}
+
 /// Pending sent and incoming requests restore with correct
 /// directionality and map keys.
 #[test]

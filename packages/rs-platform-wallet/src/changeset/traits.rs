@@ -315,6 +315,19 @@ pub trait PlatformWalletPersistence: Send + Sync {
         false
     }
 
+    /// Whether this backend serves a read-only view and refuses every
+    /// [`store`](Self::store) and [`flush`](Self::flush) — a storage backend
+    /// opened to recover a damaged database, for example.
+    ///
+    /// Loading such a backend must not need a write to succeed: housekeeping
+    /// a load would otherwise write back (replacing a stale backfill record)
+    /// is applied in memory only and left on the host for a writable load.
+    ///
+    /// The default is `false`: a backend that accepts writes.
+    fn refuses_writes(&self) -> bool {
+        false
+    }
+
     /// Compatibility summary for older invitation callers. It is true when the
     /// backend attests atomic changesets plus durably persisted invitation rows
     /// and asset-lock funding indices. This does not attest restart hydration;
