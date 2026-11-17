@@ -1170,9 +1170,23 @@ mod tests {
     /// resolves, with its dump directory.
     #[cfg(feature = "mocks")]
     async fn sdk_at_14_resolving(contract: &DataContract) -> (Sdk, tempfile::TempDir) {
+        sdk_resolving(
+            PlatformVersion::get(14).expect("protocol version 14"),
+            contract,
+        )
+        .await
+    }
+
+    /// A mock SDK seeded at `version` that holds `contract` as the DashPay it resolves,
+    /// with its dump directory.
+    #[cfg(feature = "mocks")]
+    async fn sdk_resolving(
+        version: &'static PlatformVersion,
+        contract: &DataContract,
+    ) -> (Sdk, tempfile::TempDir) {
         let directory = tempfile::tempdir().expect("a mock dump directory");
         let mut sdk: Sdk = crate::SdkBuilder::new_mock()
-            .with_initial_version(PlatformVersion::get(14).expect("protocol version 14"))
+            .with_initial_version(version)
             .with_dump_dir(directory.path())
             .build()
             .expect("a mock sdk");
@@ -1233,6 +1247,28 @@ mod tests {
         .await;
 
         assert!(created.is_err(), "the request is refused");
+        assert!(!asked_secret, "the shared secret was not asked for");
+        assert!(!asked_xpub, "the extended public key was not asked for");
+    }
+
+    /// An SDK at a protocol version that carries the address, resolving a DashPay contract
+    /// whose contact requests have no property for it: the version gate passes, and the
+    /// schema refuses the address before the host is asked for the shared secret or the
+    /// extended public key.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_an_address_the_schema_lacks_before_asking_the_host_for_keys() {
+        let without_property = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
+        let (sdk, _directory) = sdk_resolving(PlatformVersion::latest(), &without_property).await;
+
+        let (created, asked_secret, asked_xpub) = created_contact_request(
+            &sdk,
+            contact_request_input(Some([3u8; SHIELDED_ADDRESS_LEN])),
+        )
+        .await;
+
+        let refusal = created.expect_err("the request is refused").to_string();
+        assert!(refusal.contains(ENCRYPTED_SHIELDED_ADDRESS), "{refusal}");
         assert!(!asked_secret, "the shared secret was not asked for");
         assert!(!asked_xpub, "the extended public key was not asked for");
     }
