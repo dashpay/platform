@@ -105,10 +105,14 @@ impl IdentityWallet {
     /// flush that failed transiently kept the record buffered for a later
     /// one to write, and any other failure is the backend refusing or
     /// dropping what it was given, which its contract says not to retry
-    /// (`PlatformWalletPersistence::flush`). The two answers stored again
-    /// are the ones that leave it unknown whether a record this call stored
-    /// and flushed without an error is on disk, and the second store is
-    /// what settles that.
+    /// (`PlatformWalletPersistence::flush`). That outcome is this call's
+    /// flush's to tell only when no other flush could have taken the
+    /// record, and `store_durably` answers with its own flush's failure
+    /// only then: a flush that failed while another held the record, which
+    /// may drop it later with nothing left buffered, is one of the two
+    /// answers stored again. Those are the ones that leave it unknown
+    /// whether a record this call stored is on disk or still buffered, and
+    /// the second store is what settles that.
     fn record_funded_invitation(&self, entry: InvitationEntry) -> Result<(), PlatformWalletError> {
         let mut inv_cs = InvitationChangeSet::default();
         inv_cs.invitations.insert(entry.out_point, entry);
@@ -596,7 +600,8 @@ mod tests {
 
     mod funded_record {
         use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::{Arc, Mutex};
+        use std::sync::{mpsc, Arc, Mutex};
+        use std::time::Duration;
 
         use dashcore::{OutPoint, Txid};
         use key_wallet::mnemonic::Mnemonic;
@@ -639,16 +644,21 @@ mod tests {
             overtaking: AtomicBool,
         }
 
+        /// The outpoints of the invitation records in `durable`, in order.
+        fn invitations_in(durable: &Mutex<Vec<PlatformWalletChangeSet>>) -> Vec<OutPoint> {
+            durable
+                .lock()
+                .expect("durable")
+                .iter()
+                .filter_map(|changeset| changeset.invitations.as_ref())
+                .flat_map(|invitations| invitations.invitations.keys().copied())
+                .collect()
+        }
+
         impl BufferingPersistence {
             /// The outpoints of the invitation records on disk, in order.
             fn durable_invitations(&self) -> Vec<OutPoint> {
-                self.durable
-                    .lock()
-                    .expect("durable")
-                    .iter()
-                    .filter_map(|changeset| changeset.invitations.as_ref())
-                    .flat_map(|invitations| invitations.invitations.keys().copied())
-                    .collect()
+                invitations_in(&self.durable)
             }
         }
 
@@ -699,7 +709,129 @@ mod tests {
             }
         }
 
-        async fn wallet_on(persistence: Arc<BufferingPersistence>) -> Arc<PlatformWallet> {
+        /// A backend that buffers what is stored until a flush writes it to
+        /// `durable`, and that one flush, made from another thread, holds:
+        /// the flush made once `next_flush_holds` is set takes the first
+        /// record stored after it began, before that store returns, and
+        /// stays inside the backend until released, when it fails for good
+        /// and drops what it took. A flush made meanwhile finds the backend
+        /// busy and fails transiently, leaving what is buffered where it is.
+        struct HeldByAnotherFlush {
+            buffered: Mutex<Vec<PlatformWalletChangeSet>>,
+            durable: Mutex<Vec<PlatformWalletChangeSet>>,
+            next_flush_holds: AtomicBool,
+            /// While set, the flush that holds is inside the backend.
+            holding: AtomicBool,
+            /// Whether that flush has been handed a record.
+            handed_over: AtomicBool,
+            entered: Mutex<mpsc::Sender<()>>,
+            stored: (Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>),
+            taken: (Mutex<mpsc::Sender<()>>, Mutex<mpsc::Receiver<()>>),
+            release: Mutex<mpsc::Receiver<()>>,
+        }
+
+        impl HeldByAnotherFlush {
+            /// A new one, with what tells that the holding flush is inside
+            /// the backend, and what releases it.
+            fn new() -> (Arc<Self>, mpsc::Receiver<()>, mpsc::Sender<()>) {
+                let (entered, has_entered) = mpsc::channel();
+                let (stored, is_stored) = mpsc::channel();
+                let (taken, is_taken) = mpsc::channel();
+                let (release, released) = mpsc::channel();
+                let backend = Arc::new(Self {
+                    buffered: Mutex::default(),
+                    durable: Mutex::default(),
+                    next_flush_holds: AtomicBool::new(false),
+                    holding: AtomicBool::new(false),
+                    handed_over: AtomicBool::new(false),
+                    entered: Mutex::new(entered),
+                    stored: (Mutex::new(stored), Mutex::new(is_stored)),
+                    taken: (Mutex::new(taken), Mutex::new(is_taken)),
+                    release: Mutex::new(released),
+                });
+                (backend, has_entered, release)
+            }
+        }
+
+        impl PlatformWalletPersistence for HeldByAnotherFlush {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.buffered.lock().expect("buffered").push(changeset);
+                if self.holding.load(Ordering::SeqCst)
+                    && !self.handed_over.swap(true, Ordering::SeqCst)
+                {
+                    // The other flush takes the record before a flush of
+                    // the storing call can.
+                    self.stored
+                        .0
+                        .lock()
+                        .expect("stored")
+                        .send(())
+                        .expect("the other flush waits");
+                    self.taken
+                        .1
+                        .lock()
+                        .expect("taken")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("the other flush took the record");
+                }
+                Ok(())
+            }
+
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                if self.next_flush_holds.swap(false, Ordering::SeqCst) {
+                    self.holding.store(true, Ordering::SeqCst);
+                    self.entered
+                        .lock()
+                        .expect("entered")
+                        .send(())
+                        .expect("the test waits");
+                    self.stored
+                        .1
+                        .lock()
+                        .expect("stored")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("a record is stored");
+                    let taken = std::mem::take(&mut *self.buffered.lock().expect("buffered"));
+                    self.taken
+                        .0
+                        .lock()
+                        .expect("taken")
+                        .send(())
+                        .expect("the store waits");
+                    self.release
+                        .lock()
+                        .expect("release")
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("released");
+                    // Failed for good: what it took is gone.
+                    drop(taken);
+                    self.holding.store(false, Ordering::SeqCst);
+                    return Err(PersistenceError::backend("the database is corrupt"));
+                }
+                if self.holding.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    ));
+                }
+                let flushed = std::mem::take(&mut *self.buffered.lock().expect("buffered"));
+                self.durable.lock().expect("durable").extend(flushed);
+                Ok(())
+            }
+
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        async fn wallet_on<P>(persistence: Arc<P>) -> Arc<PlatformWallet>
+        where
+            P: PlatformWalletPersistence + 'static,
+        {
             let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
             let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
             let manager = Arc::new(crate::PlatformWalletManager::new(sdk, persistence, handler));
@@ -835,6 +967,56 @@ mod tests {
                 "both flushes were overtaken"
             );
             assert!(persistence.durable_invitations().is_empty(), "on no disk");
+        }
+
+        /// A funded voucher's record is stored once more when the call's own
+        /// flush fails transiently while another flush of the wallet's
+        /// records holds the record: that failure says nothing of a record
+        /// the flush never took, and the other flush then fails for good and
+        /// drops it. The voucher is reported unrecorded, no flush having
+        /// written it yet, and the record stored once more is buffered
+        /// still: the next flush writes it.
+        #[tokio::test]
+        async fn should_record_a_funded_invitation_again_when_its_flush_failed_while_another_held_it(
+        ) {
+            let (persistence, has_entered, release) = HeldByAnotherFlush::new();
+            let wallet = wallet_on(Arc::clone(&persistence)).await;
+            let iw = wallet.identity();
+            let voucher = funded_voucher();
+            persistence.next_flush_holds.store(true, Ordering::SeqCst);
+            let other = {
+                let persister = iw.persister.clone();
+                std::thread::spawn(move || persister.flush())
+            };
+            has_entered
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the other flush is inside the backend");
+
+            let unrecorded = iw.record_funded_invitation(voucher.clone());
+
+            release.send(()).expect("the other flush waits");
+            let other = other.join().expect("the other flush returns");
+            assert!(
+                other.is_err_and(|error| !error.is_transient()),
+                "the other flush dropped what it took"
+            );
+            assert!(
+                matches!(&unrecorded, Err(PlatformWalletError::AssetLockTransaction(message))
+                    if message.contains("funded but its record could not be persisted")),
+                "{unrecorded:?}"
+            );
+            assert!(
+                invitations_in(&persistence.durable).is_empty(),
+                "no flush wrote the record yet"
+            );
+
+            iw.persister.flush().expect("the next flush");
+
+            assert_eq!(
+                invitations_in(&persistence.durable),
+                vec![voucher.out_point],
+                "the record stored once more is on disk"
+            );
         }
     }
 }
