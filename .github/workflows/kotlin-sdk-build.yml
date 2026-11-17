@@ -95,7 +95,7 @@ jobs:
           for tool in cmake curl jq python3 rustup unzip zip; do
             command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
           done
-          for pkg in build-essential libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config; do
+          for pkg in build-essential libpulse0 libssl-dev libx11-xcb1 pkg-config; do
             dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
           done
           if [ ${#missing[@]} -gt 0 ]; then

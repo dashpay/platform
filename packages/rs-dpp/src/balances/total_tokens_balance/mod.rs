@@ -12,7 +12,7 @@ pub struct TotalTokensBalance {
     /// all the tokens held in token shielded pools (0 before protocol version 14)
     pub total_token_shielded_pool_balances: SumTokenAmount,
     /// all the tokens the token marketplace holds in escrow for open listings (0 before
-    /// protocol version 15)
+    /// protocol version 16)
     pub total_token_order_escrow_balances: SumTokenAmount,
 }
 
@@ -72,7 +72,7 @@ impl TotalTokensBalance {
         }
 
         // Every protocol version runs this check. The escrow term is zero below protocol
-        // version 15, where `calculate_total_tokens_balance` 0 and 1 report none, so this
+        // version 16, where `calculate_total_tokens_balance` 0 and 1 report none, so this
         // refusal and its share of the sum below cannot change their verdict.
         if total_token_order_escrow_balances < 0 {
             return Err(ProtocolError::CriticalCorruptedCreditsCodeExecution(

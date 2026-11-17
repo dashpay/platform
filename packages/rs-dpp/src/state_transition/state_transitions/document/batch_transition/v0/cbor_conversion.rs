@@ -8,13 +8,16 @@ use crate::state_transition::documents_batch_transition::fields::property_names:
 use crate::state_transition::documents_batch_transition::{
     document_base_transition, document_create_transition, DocumentsBatchTransitionV0,
 };
-use crate::state_transition::{FeatureVersioned, StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert};
+use crate::state_transition::{
+    FeatureVersioned, StateTransitionCborConvert, StateTransitionFieldTypes,
+    StateTransitionValueConvert,
+};
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::ProtocolError;
 use anyhow::Context;
 use ciborium::Value as CborValue;
-use std::convert::TryInto;
 use integer_encoding::VarInt;
+use std::convert::TryInto;
 
 impl<'a> StateTransitionCborConvert<'a> for DocumentsBatchTransitionV0 {
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {

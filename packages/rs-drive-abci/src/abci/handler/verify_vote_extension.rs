@@ -8,7 +8,9 @@ use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 /// transactions this node built for the same block.
 ///
 /// Tenderdash asks about every non-nil precommit of another validator at the height it is
-/// deciding, whatever the round, and drops the vote when it is rejected.
+/// deciding, whatever the round, and drops the vote when it is rejected. It also asks about a
+/// commit's threshold-recovered extensions, with an empty `validator_pro_tx_hash`, after
+/// `process_proposal` of the committed block; a rejection there halts block replay and sync.
 pub fn verify_vote_extension<A, C>(
     app: &A,
     request: proto::RequestVerifyVoteExtension,
@@ -127,6 +129,27 @@ mod tests {
             hash: block_hash.to_vec(),
             validator_pro_tx_hash: vec![0u8; 32],
             height: height as i64,
+            round: round as i32,
+            vote_extensions,
+        };
+
+        verify_vote_extension::<_, MockCoreRPCLike>(app, request)
+            .expect("verification answers with a status")
+            .status
+    }
+
+    /// A commit's extension vector, as Tenderdash sends it after `process_proposal` of the
+    /// committed block: no validator, the commit round, only threshold-recoverable extensions.
+    fn verify_commit(
+        app: &FullAbciApplication<MockCoreRPCLike>,
+        round: u32,
+        block_hash: [u8; 32],
+        vote_extensions: Vec<ExtendVoteExtension>,
+    ) -> i32 {
+        let request = proto::RequestVerifyVoteExtension {
+            hash: block_hash.to_vec(),
+            validator_pro_tx_hash: vec![],
+            height: HEIGHT as i64,
             round: round as i32,
             vote_extensions,
         };
@@ -346,6 +369,44 @@ mod tests {
         assert_eq!(
             verify(&app, HEIGHT, 1, ROUND_1_BLOCK, vec![]),
             VerifyStatus::Reject as i32
+        );
+    }
+
+    /// Tenderdash verifies a commit's extensions before it finalizes the block, also during
+    /// block sync and replay, and halts on a rejection.
+    #[test]
+    fn should_accept_the_extensions_of_a_commit_of_an_accepted_block() {
+        let platform = platform();
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        accept_round_0(&app);
+        accept_round_1(&app);
+
+        assert_eq!(
+            verify_commit(&app, 1, ROUND_1_BLOCK, round_1_extensions()),
+            VerifyStatus::Accept as i32
+        );
+        assert_eq!(
+            verify_commit(&app, 0, ROUND_0_BLOCK, round_0_extensions()),
+            VerifyStatus::Accept as i32
+        );
+        assert_eq!(
+            verify_commit(&app, 1, ROUND_1_BLOCK, round_0_extensions()),
+            VerifyStatus::Reject as i32
+        );
+    }
+
+    #[test]
+    fn should_accept_the_empty_extensions_of_a_commit_without_withdrawals() {
+        let platform = platform();
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(HEIGHT, 0, ROUND_0_BLOCK, vec![]);
+
+        assert_eq!(
+            verify_commit(&app, 0, ROUND_0_BLOCK, vec![]),
+            VerifyStatus::Accept as i32
         );
     }
 }
