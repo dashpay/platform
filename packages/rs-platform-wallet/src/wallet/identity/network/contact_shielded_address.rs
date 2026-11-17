@@ -10,11 +10,9 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
 use crate::wallet::shielded::shielded_identity_account_index;
 #[cfg(feature = "shielded")]
+use dash_sdk::platform::dashpay::dashpay_contact_requests_carry_shielded_address;
+#[cfg(feature = "shielded")]
 use dash_sdk::platform::Fetch;
-#[cfg(feature = "shielded")]
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-#[cfg(feature = "shielded")]
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(feature = "shielded")]
 use dpp::data_contracts::SystemDataContract;
 #[cfg(feature = "shielded")]
@@ -22,14 +20,6 @@ use dpp::prelude::DataContract;
 use dpp::prelude::Identifier;
 #[cfg(feature = "shielded")]
 use key_wallet_manager::WalletManager;
-
-/// The DashPay document type of a contact request.
-#[cfg(feature = "shielded")]
-const CONTACT_REQUEST: &str = "contactRequest";
-
-/// The `contactRequest` property that carries the sender's shielded address.
-#[cfg(feature = "shielded")]
-const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 
 /// Log why `owner_id`'s contact request goes without a shielded address. The
 /// request is still sent, so this is the only trace of the reason.
@@ -128,6 +118,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 );
                 return Ok(None);
             }
+            // Compared with the requests sent or held so far. A send to another contact
+            // in flight at this moment is not among them: for the two to share an
+            // address takes the same 87-bit collision between two requests signed at
+            // once, and a payment to it would still reach this identity's account.
             let others = managed.other_sent_account_references(to_user_id);
 
             let owner = owner_id.as_bytes();
@@ -190,7 +184,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
     /// Whether the connected network's DashPay contract gives contact requests the
     /// property that carries a shielded address, which it does from DashPay v3 at
-    /// protocol version 15. Read from the network: the bundled schema is the latest one.
+    /// protocol version 15. The contract is read from the network: the bundled schema
+    /// is the latest one, and an SDK seeded at the latest version resolves it before
+    /// the network has activated it. What the property is, the SDK alone says
+    /// (`dashpay_contact_requests_carry_shielded_address`).
     #[cfg(feature = "shielded")]
     async fn contact_requests_carry_shielded_address(&self) -> Result<bool, PlatformWalletError> {
         let contract = DataContract::fetch(&self.sdk, SystemDataContract::Dashpay.id())
@@ -200,11 +197,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     "DashPay contract is not available".to_string(),
                 )
             })?;
-        let contact_request = contract
-            .document_type_for_name(CONTACT_REQUEST)
-            .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
-        Ok(contact_request
-            .properties()
-            .contains_key(ENCRYPTED_SHIELDED_ADDRESS))
+        Ok(dashpay_contact_requests_carry_shielded_address(&contract))
     }
 }

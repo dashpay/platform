@@ -31,6 +31,9 @@ use platform_encryption::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// The DashPay document type of a contact request.
+const CONTACT_REQUEST: &str = "contactRequest";
+
 /// The `contactRequest` property that carries the sender's shielded payment address.
 const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 
@@ -117,6 +120,25 @@ pub struct ContactRequestInput {
     pub shielded_address: Option<[u8; SHIELDED_ADDRESS_LEN]>,
 }
 
+/// Whether the contact requests of `dashpay`, a DashPay contract, have the property that
+/// carries a shielded address. They gain it with DashPay v3 at protocol version 15.
+///
+/// The schema is asked here alone. The SDK refuses an address against a contract without
+/// the property, and a wallet that reads the network's contract asks here whether to send
+/// one, so the two cannot come to differ on what the property is.
+pub fn dashpay_contact_requests_carry_shielded_address(dashpay: &DataContract) -> bool {
+    dashpay
+        .document_type_for_name(CONTACT_REQUEST)
+        .is_ok_and(carries_shielded_address)
+}
+
+/// Whether `contact_request_document_type` has a property for a shielded address.
+fn carries_shielded_address(contact_request_document_type: DocumentTypeRef) -> bool {
+    contact_request_document_type
+        .properties()
+        .contains_key(ENCRYPTED_SHIELDED_ADDRESS)
+}
+
 /// Fails unless the network's `contactRequest` type has a property for a shielded address.
 ///
 /// It gains it with DashPay v3 at protocol version 15, and consensus refuses a request that
@@ -124,10 +146,7 @@ pub struct ContactRequestInput {
 fn ensure_carries_shielded_address(
     contact_request_document_type: DocumentTypeRef,
 ) -> Result<(), Error> {
-    if contact_request_document_type
-        .properties()
-        .contains_key(ENCRYPTED_SHIELDED_ADDRESS)
-    {
+    if carries_shielded_address(contact_request_document_type) {
         return Ok(());
     }
     Err(Error::Generic(format!(
@@ -408,7 +427,7 @@ impl Sdk {
             .dashpay_contract_for_contact_request(input.shielded_address.is_some())
             .await?;
         let contact_request_document_type = dashpay_contract
-            .document_type_for_name("contactRequest")
+            .document_type_for_name(CONTACT_REQUEST)
             .map_err(|_| {
                 Error::Generic("DashPay contactRequest document type not found".to_string())
             })?;
@@ -765,6 +784,15 @@ mod tests {
         // Each call draws its own IV, so the same address never encrypts the same way twice.
         assert_ne!(first[..16], second[..16]);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn should_tell_whether_a_dashpay_contract_gives_contact_requests_a_shielded_address() {
+        let before = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
+        assert!(!dashpay_contact_requests_carry_shielded_address(&before));
+        assert!(dashpay_contact_requests_carry_shielded_address(&dashpay(
+            PlatformVersion::latest()
+        )));
     }
 
     #[test]
