@@ -44,7 +44,7 @@ fn without_address(owner_id: &Identifier, reason: &str) {
 /// The slot (identity index) an identity is recorded at and the shielded account that
 /// slot selects (`shielded_identity_account_index`), named so the two are not swapped.
 #[cfg(feature = "shielded")]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct IdentityShieldedAccount {
     slot: u32,
     account: u32,
@@ -147,7 +147,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             {
                 let wm = self.wallet_manager.read().await;
                 if self
-                    .proved_identity(&wm, owner_id, held.account, &master_key_hash)
+                    .proved_identity(&wm, owner_id, held, &master_key_hash)
                     .is_none()
                 {
                     return Ok(None);
@@ -170,9 +170,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // between it and the derivation. Holding the key guard while that lock is
             // taken cannot deadlock: no path takes the key map while it holds the
             // wallet manager. What this does not cover is a change after the address
-            // is derived; the paragraph on the pair claim above says what keeps the
-            // identity in place from here, and keys bound again after this return are
-            // the concern of the bind.
+            // is derived. The paragraph on the pair claim above says what keeps the
+            // identity in place from here. The keys are not held past this call: a
+            // bind with the same seed derives the same keys, and other keys reach an
+            // account only through a Clear and a bind with another seed, which leaves
+            // behind every address the wallet has given out, not this one alone.
+            // Holding the key guard through the send would also hold it across the
+            // private send's payment, which reads the key map again
+            // (`derive_spend_keyset`): with a bind waiting to write in between, that
+            // second read would never be granted.
             let Some(keys) = self
                 .contact_shielded_addresses
                 .account_keys(held.account)
@@ -184,16 +190,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 );
                 return Ok(None);
             };
-            let wm = self.wallet_manager.read().await;
-            let Some(managed) = self.proved_identity(&wm, owner_id, held.account, &master_key_hash)
-            else {
-                return Ok(None);
-            };
             // Compared with the requests sent or held so far. A send to another contact
             // in flight at this moment is not among them: for the two to share an
             // address takes the same 87-bit collision between two requests signed at
-            // once, and a payment to it would still reach this identity's account.
-            let others = managed.other_sent_account_references(to_user_id);
+            // once, and a payment to it would still reach this identity's account. The
+            // wallet-manager lock is held for the proof and this copy only; the hashing
+            // below needs neither.
+            let others = {
+                let wm = self.wallet_manager.read().await;
+                let Some(managed) = self.proved_identity(&wm, owner_id, held, &master_key_hash)
+                else {
+                    return Ok(None);
+                };
+                managed.other_sent_account_references(to_user_id)
+            };
 
             let owner = owner_id.as_bytes();
             let reference = u64::from(account_reference);
@@ -243,8 +253,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         Some((held, managed))
     }
 
-    /// The identity `owner_id` as `wm` holds it, when its slot still selects `account`
-    /// and it carries the MASTER key whose hash is `master_key_hash`
+    /// The identity `owner_id` as `wm` holds it, when it still holds the slot and
+    /// account of `proved` and carries the MASTER key whose hash is `master_key_hash`
     /// (`carries_master_key`), the key the seed derives at that slot. `None` otherwise,
     /// with the reason logged.
     #[cfg(feature = "shielded")]
@@ -252,11 +262,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         &self,
         wm: &'a WalletManager<PlatformWalletInfo>,
         owner_id: &Identifier,
-        account: u32,
+        proved: IdentityShieldedAccount,
         master_key_hash: &[u8; 20],
     ) -> Option<&'a ManagedIdentity> {
         let (held, managed) = self.held_identity_account(wm, owner_id)?;
-        if held.account != account {
+        if held != proved {
             without_address(
                 owner_id,
                 "the identity moved to another slot while the address was derived",
