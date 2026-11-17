@@ -380,9 +380,7 @@ pub async fn replay_recorded_history_with_evidence(
             )
         })
         .collect();
-    let unsafe_txids = unsafe_replay_amounts(wallet_info, &operands)
-        .into_keys()
-        .collect();
+    let invalid_txids = invalid_bodies(&unsafe_replay_amounts(wallet_info, &operands));
     let marker_preview = (!history.required_instant_locks.is_empty()).then(|| {
         let mut records = history.transactions.clone();
         for stored in &mut records {
@@ -408,7 +406,7 @@ pub async fn replay_recorded_history_with_evidence(
     let chain_final_losers = plan_replay_sweeps_where(
         wallet_info,
         marker_preview.as_deref().unwrap_or(&history.transactions),
-        &unsafe_txids,
+        &invalid_txids,
         |stored| matches!(stored.context, TransactionContext::InChainLockedBlock(_)),
     )
     .removed;
@@ -606,7 +604,7 @@ pub async fn replay_recorded_history_with_evidence(
     let unsafe_txids: HashSet<Txid> = unsafe_amounts.keys().copied().collect();
     // Losers leave the replay and the projection; `swept` also keeps their
     // held raw records from coming back as fallbacks.
-    let plan = plan_replay_sweeps(wallet_info, &replay, &unsafe_txids);
+    let plan = plan_replay_sweeps(wallet_info, &replay, &invalid_bodies(&unsafe_amounts));
     tracing::debug!(
         wallet_id = %hex::encode(wallet_info.wallet_id),
         sweeps = plan.sweeps,
@@ -1025,6 +1023,17 @@ pub fn unsafe_replay_amounts(
     unsafe_amounts
 }
 
+/// The records [`unsafe_replay_amounts`] proves invalid by their bodies alone.
+///
+/// One unsafe only by stored amounts may still confirm, so it can win a conflict.
+fn invalid_bodies(unsafe_amounts: &HashMap<Txid, UnsafeAmounts>) -> HashSet<Txid> {
+    unsafe_amounts
+        .iter()
+        .filter(|(_, reason)| **reason == UnsafeAmounts::Outputs)
+        .map(|(txid, _)| *txid)
+        .collect()
+}
+
 /// What [`plan_replay_sweeps`] decided, and what deciding it cost.
 #[derive(Debug, Default)]
 struct SweepPlan {
@@ -1050,19 +1059,20 @@ struct SweepPlan {
 /// spending one of its inputs, and their unconfirmed descendants. A locked
 /// competitor a plain block cannot remove is handed again to each such block.
 ///
-/// `unsafe_txids` are planned on their inputs alone, like every other record.
+/// `invalid_txids`, records that can never confirm, lose conflicts but never
+/// win one; they are planned on their inputs alone, like every other record.
 fn plan_replay_sweeps(
     wallet_info: &ManagedWalletInfo,
     records: &[StoredTransaction],
-    unsafe_txids: &HashSet<Txid>,
+    invalid_txids: &HashSet<Txid>,
 ) -> SweepPlan {
-    plan_replay_sweeps_where(wallet_info, records, unsafe_txids, |_| true)
+    plan_replay_sweeps_where(wallet_info, records, invalid_txids, |_| true)
 }
 
 fn plan_replay_sweeps_where(
     wallet_info: &ManagedWalletInfo,
     records: &[StoredTransaction],
-    unsafe_txids: &HashSet<Txid>,
+    invalid_txids: &HashSet<Txid>,
     eligible_winner: impl Fn(&StoredTransaction) -> bool,
 ) -> SweepPlan {
     // The scratch wallet lends the sweep its rules and nothing to scan: its
@@ -1102,8 +1112,7 @@ fn plan_replay_sweeps_where(
         .iter()
         .filter(|stored| !matches!(stored.context, TransactionContext::Mempool))
         .filter(|stored| eligible_winner(stored))
-        // A record with unsafe amounts can lose a conflict, never win one.
-        .filter(|stored| !unsafe_txids.contains(&stored.txid))
+        .filter(|stored| !invalid_txids.contains(&stored.txid))
         .collect();
     winners.sort_by_key(|stored| {
         let priority = match stored.context {
@@ -3488,6 +3497,107 @@ pub(crate) mod tests {
             account.utxos.contains_key(&coin_b),
             "the input unused by the winner becomes available after its claimant is swept"
         );
+    }
+
+    /// Amounts stored beside a transaction do not make it invalid, so an
+    /// InstantSend-locked record unsafe only by them still settles its
+    /// conflicts: an unconfirmed competitor for its input cannot confirm.
+    #[tokio::test]
+    async fn should_let_instant_locked_record_with_unsafe_stored_amounts_sweep_its_competitor() {
+        use dashcore::{Transaction, TxIn};
+
+        let (mut wallet, mut restored, address) = wallet_with_receive_address();
+        let coin = OutPoint::new(Txid::from_byte_array([73; 32]), 0);
+        restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .utxos
+            .insert(
+                coin,
+                Utxo::new(
+                    coin,
+                    TxOut {
+                        value: 10_000,
+                        script_pubkey: address.script_pubkey(),
+                    },
+                    address.clone(),
+                    99,
+                    false,
+                ),
+            );
+        let spend = |value| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: coin,
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        };
+        let winner = spend(9_000);
+        let competitor = authorize(&wallet, &restored, &address, spend(8_000));
+        let (lock, evidence) = checked_instant_lock(&winner).await;
+        let history = RecordedHistory {
+            required_instant_locks: Default::default(),
+            owned_prevouts: Default::default(),
+            transactions: vec![
+                StoredTransaction {
+                    txid: winner.txid(),
+                    transaction: winner.clone(),
+                    context: TransactionContext::InstantSend(lock),
+                    stored_net_amount: None,
+                    stored_direction: None,
+                    owned_inputs: vec![InputDetail {
+                        index: 0,
+                        value: 1 << 63,
+                        address,
+                    }],
+                },
+                StoredTransaction {
+                    txid: competitor.txid(),
+                    transaction: competitor.clone(),
+                    context: TransactionContext::Mempool,
+                    stored_net_amount: None,
+                    stored_direction: None,
+                    owned_inputs: Vec::new(),
+                },
+            ],
+            instant_locks: BTreeMap::new(),
+        };
+        let operands: Vec<ReplayOperands<'_>> = history
+            .transactions
+            .iter()
+            .map(|stored| {
+                (
+                    stored.txid,
+                    &stored.transaction,
+                    stored.owned_inputs.as_slice(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            unsafe_replay_amounts(&restored, &operands).get(&winner.txid()),
+            Some(&UnsafeAmounts::Stored)
+        );
+
+        let outcome =
+            replay_recorded_history_with_evidence(&mut restored, &mut wallet, history, &evidence)
+                .await
+                .unwrap();
+
+        assert!(
+            outcome.defeated.contains(&competitor.txid()),
+            "the locked record must sweep the competitor for its input"
+        );
+        assert!(!restored.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&competitor.txid()));
     }
 
     /// Planning must not run one whole-history sweep per settled record that
