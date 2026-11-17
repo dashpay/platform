@@ -634,3 +634,26 @@ async fn should_still_give_the_address_after_a_clear_from_the_keys_held_in_memor
         Some(before)
     );
 }
+
+/// A wallet created from one seed cannot have another seed's keys bound: the bind is
+/// refused, so a contact request from it never carries an address of the other seed's
+/// account, though the crypto provider of the wallet's own seed proves the slot.
+#[tokio::test]
+async fn should_never_give_an_address_of_another_seeds_account() {
+    let (wallet, seed, id) = fixture("contact_address_foreign_bind", 15, false).await;
+    let coordinator = coordinator_at(&temp_dir("contact_address_foreign_bind"));
+    let err = wallet
+        .bind_shielded(&[0x42; 64], &[0], &coordinator)
+        .await
+        .expect_err("another seed's keys are not bound");
+    assert!(
+        err.to_string().contains("does not belong to this wallet"),
+        "{err}"
+    );
+    assert!(!wallet.is_shielded_bound().await);
+
+    assert_eq!(
+        address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE, &own_provider(&seed)).await,
+        None
+    );
+}

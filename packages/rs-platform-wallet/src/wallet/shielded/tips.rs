@@ -13,6 +13,8 @@ use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
+use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+use key_wallet::Wallet;
 use key_wallet_manager::WalletManager;
 use std::sync::{Arc, PoisonError, Weak};
 
@@ -141,6 +143,34 @@ impl PlatformWallet {
             .collect())
     }
 
+    /// Fails unless `seed` is the seed this wallet was created from: the wallet id is
+    /// computed from the seed's root public key, with or without the network. A wallet
+    /// restored watch-only or externally signed keeps the id it was created with, so
+    /// the same seed passes for it.
+    ///
+    /// A shielded bind derives the wallet's viewing keys from the seed it is given, and
+    /// a first bind has no persisted key against which to detect a wrong one. Keys of
+    /// another seed would give out addresses, a contact address among them, that a
+    /// restore from this wallet's own seed never finds.
+    pub(crate) fn ensure_seed_of_this_wallet(
+        &self,
+        seed: &[u8],
+    ) -> Result<(), PlatformWalletError> {
+        let root = RootExtendedPrivKey::new_master(seed)
+            .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
+        let public = root.to_root_extended_pub_key();
+        drop(root);
+        let scoped_id =
+            Wallet::compute_wallet_id_from_root_extended_pub_key(&public, Some(self.sdk.network));
+        let legacy_id = Wallet::compute_wallet_id_from_root_extended_pub_key(&public, None);
+        if self.wallet_id() != scoped_id && self.wallet_id() != legacy_id {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(
+                "The supplied seed does not belong to this wallet".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Prepare a dedicated receiving account without publishing anything. Full
     /// bind persists its viewing key and registers it with the coordinator before
     /// callers can publish the returned address. Repeated calls are idempotent.
@@ -161,23 +191,8 @@ impl PlatformWallet {
         // the host wipes its own rows only after that Clear returns: the bind
         // here would load them and restore the notes the Clear removed.
         let clear_generation = coordinator.clear_generation();
-        // Do not publish a key from a mis-associated mnemonic. A first bind
-        // has no persisted FVK against which to detect a wrong seed.
-        let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
-            .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
-        let public = root.to_root_extended_pub_key();
-        drop(root);
-        let scoped_id = key_wallet::Wallet::compute_wallet_id_from_root_extended_pub_key(
-            &public,
-            Some(self.sdk.network),
-        );
-        let legacy_id =
-            key_wallet::Wallet::compute_wallet_id_from_root_extended_pub_key(&public, None);
-        if self.wallet_id() != scoped_id && self.wallet_id() != legacy_id {
-            return Err(PlatformWalletError::ShieldedKeyDerivation(
-                "The supplied seed does not belong to this wallet".to_string(),
-            ));
-        }
+        // Refused before any wait, as the bind below refuses it too.
+        self.ensure_seed_of_this_wallet(seed)?;
         let _lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletNotFound(hex::encode(
