@@ -2733,8 +2733,12 @@ mod tests {
     };
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::network::contacts::RegisterExternalError;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::identity::network::MASTER_KEY_INDEX;
     #[cfg(feature = "shielded")]
     use crate::wallet::persister::NotDurable;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
@@ -2749,8 +2753,9 @@ mod tests {
     };
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
-        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
-        PrivatePaymentRecord, ShieldedNote, ShieldedStore, SubwalletId,
+        shielded_identity_account_index, FileBackedShieldedStore, NetworkShieldedCoordinator,
+        OrchardKeySet, PrivateContactPayment, PrivatePaymentRecord, ShieldedNote, ShieldedStore,
+        SubwalletId,
     };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
@@ -9020,6 +9025,112 @@ mod tests {
         .await
         .expect("Bob holds Alice's request");
         (entry, received)
+    }
+
+    /// A private request sent with no address handed to it carries the one the
+    /// sender's wallet derives. Alice's identity shielded account is prepared
+    /// against her seed, and Bob reads from the store the address that account
+    /// derives for this request: its sender, its recipient and its account
+    /// reference.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_carry_the_derived_shielded_address_in_a_private_contact_request() {
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        // The key the seed derives for identity index 0, as the identity's
+        // MASTER key: what preparing the identity's shielded account proves.
+        let master =
+            key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
+                .expect("master key");
+        let derived = derive_ecdsa_identity_auth_keypair_from_master(
+            &master,
+            Network::Testnet,
+            0,
+            MASTER_KEY_INDEX,
+        )
+        .expect("the identity's master key");
+        alice.add_public_key(IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(derived.public_key.to_vec()),
+            disabled_at: None,
+        }));
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+
+        // A backend that keeps the viewing key, so the wallet binds.
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::SHIELDED_FVK_RESTART
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+        );
+        let (_alice_manager, alice_wallet) =
+            wallet_on(persistence, ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let db_path = dir.path().join("tree.sqlite");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::clone(&alice_wallet.identity().sdk),
+            Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
+        ));
+        alice_wallet
+            .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+            .await
+            .expect("bound");
+        alice_wallet
+            .prepare_shielded_identity_address(&seed(ALICE_PHRASE), &alice.id(), &coordinator)
+            .await
+            .expect("the identity's shielded account is prepared");
+
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends");
+        let entry = kept.lock().expect("kept").remove(0).to_vec();
+
+        let (_bob_manager, bob_wallet) =
+            wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        let received = managed(&bob_wallet, BOB, |managed| {
+            managed
+                .dashpay()
+                .private_contact(&alice.id())
+                .expect("noted")
+                .shielded_address
+        })
+        .await;
+
+        let account = shielded_identity_account_index(0).expect("identity account");
+        let derived = OrchardKeySet::from_seed(&seed(ALICE_PHRASE), Network::Testnet, account)
+            .expect("Alice's identity account keys")
+            .viewing_keys()
+            .contact_address(
+                alice.id().as_bytes(),
+                bob.id().as_bytes(),
+                u64::from(sent.account_reference),
+            )
+            .to_raw_address_bytes();
+        assert_eq!(received, Some(derived));
     }
 
     /// For a backend attesting the scan state, a sync stores the private

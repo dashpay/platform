@@ -218,17 +218,18 @@ pub(crate) mod test_hooks {
     }
 
     /// While it lives, every contact request sent from this thread carries the address.
-    pub(crate) struct GivenAddress(());
+    /// Dropped, it puts back what the thread's requests carried before it.
+    #[must_use = "the address is given only while the guard lives"]
+    pub(crate) struct GivenAddress(Option<[u8; 43]>);
 
     /// Have every contact request this thread sends carry `address`.
     pub(crate) fn give_every_contact(address: [u8; 43]) -> GivenAddress {
-        GIVEN.set(Some(address));
-        GivenAddress(())
+        GivenAddress(GIVEN.replace(Some(address)))
     }
 
     impl Drop for GivenAddress {
         fn drop(&mut self) {
-            GIVEN.set(None);
+            GIVEN.set(self.0);
         }
     }
 
