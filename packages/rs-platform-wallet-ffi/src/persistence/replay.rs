@@ -8,10 +8,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
 use parking_lot::Mutex;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;
-use platform_wallet::changeset::{PersistenceError, RecordedHistory};
+use platform_wallet::changeset::{
+    ClientStartState, ClientWalletStartState, PersistenceError, RecordedHistory,
+};
 use platform_wallet::manager::history_replay::{
-    replay_wallet_history_blocking, HistoryReplayError, HistoryReplayLoad, ReplayClaimEffect,
-    StoredReplayClaim,
+    repair_wallet_history, HistoryRepairStore, HistoryReplayEffects, HistoryReplayLoad,
+    HistoryReplayOperationEffects, ReplayClaimEffect, StoredReplayClaim,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -122,8 +124,6 @@ enum ReplayAdapterError {
     ClaimRead(i32),
     #[error("wallet replay effect callback failed (code {0})")]
     EffectWrite(i32),
-    #[error("wallet disappeared during atomic history replay")]
-    MissingWallet,
 }
 
 impl ReplayCallbacks {
@@ -235,126 +235,91 @@ impl FFIPersister {
         wallet_id: WalletId,
         evidence: &ReplayEvidence,
     ) -> Result<HistoryReplayLoad, PersistenceError> {
-        let mut state = self.load_snapshot_unlocked(Some(wallet_id))?;
-        let Some(wallet) = state.wallets.get_mut(&wallet_id) else {
-            return Ok(HistoryReplayLoad {
-                state,
-                outcomes: BTreeMap::new(),
-            });
+        let mut store = FfiRepairStore {
+            persister: self,
+            wallet_id,
+            snapshot: ClientStartState::default(),
         };
-        let mut claims = self.load_replay_claims(wallet_id, &mut wallet.recorded_history)?;
-        let outcome =
-            replay_wallet_history_blocking(wallet, evidence).map_err(PersistenceError::backend)?;
-        let records = wallet.recorded_history.transactions.clone();
-        let effects = outcome
-            .storage_effects(&records, &claims)
-            .map_err(PersistenceError::backend)?;
-        let has_effects = !effects.removed_records.is_empty()
-            || !effects.removed_evidence.is_empty()
-            || !effects.claims.is_empty();
-        if (!outcome.sweeps.is_empty() || !outcome.authorization.rejected.is_empty())
-            && !has_effects
-        {
+        let repaired = repair_wallet_history(&mut store, evidence)?;
+        let mut state = store.snapshot;
+        let mut outcomes = BTreeMap::new();
+        if let Some((wallet, outcome)) = repaired {
+            state.wallets.insert(wallet_id, wallet);
+            outcomes.insert(wallet_id, outcome);
+        }
+        Ok(HistoryReplayLoad { state, outcomes })
+    }
+
+    fn apply_replay_effects(
+        &self,
+        wallet_id: WalletId,
+        effects: &HistoryReplayEffects,
+        operations: &HistoryReplayOperationEffects,
+    ) -> Result<(), PersistenceError> {
+        let Some(apply) = self.replay_callbacks.apply else {
             return Err(PersistenceError::backend(
-                HistoryReplayError::UnsettledAfterReplay,
+                ReplayAdapterError::IncompleteCallbacks,
             ));
+        };
+        let removed_records: Vec<_> = effects
+            .removed_records
+            .iter()
+            .map(|id| id.to_byte_array())
+            .collect();
+        let removed_evidence: Vec<_> = effects
+            .removed_evidence
+            .iter()
+            .map(|id| id.to_byte_array())
+            .collect();
+        let claim_effects: Vec<_> = effects
+            .claims
+            .iter()
+            .map(|(outpoint, effect)| {
+                let (action, claimant, height) = match effect {
+                    ReplayClaimEffect::Remove => (0, None, None),
+                    ReplayClaimEffect::Release => (1, None, None),
+                    ReplayClaimEffect::Hold {
+                        claimant,
+                        mined_height,
+                    } => (2, *claimant, *mined_height),
+                };
+                ReplayClaimEffectFFI {
+                    txid: outpoint.txid.to_byte_array(),
+                    vout: outpoint.vout,
+                    action,
+                    has_claimant: claimant.is_some(),
+                    claimant: claimant.map(|id| id.to_byte_array()).unwrap_or_default(),
+                    has_mined_height: height.is_some(),
+                    mined_height: height.unwrap_or_default(),
+                }
+            })
+            .collect();
+        let asset_locks: Vec<_> = operations
+            .asset_locks
+            .removed
+            .iter()
+            .map(OutPointFFI::from)
+            .collect();
+        let (payments, _payment_strings) = build_payment_persist_entries(&operations.payments);
+        let ffi = HistoryReplayEffectsFFI {
+            removed_records: slice_pointer(&removed_records),
+            removed_records_count: removed_records.len(),
+            removed_evidence: slice_pointer(&removed_evidence),
+            removed_evidence_count: removed_evidence.len(),
+            claims: slice_pointer(&claim_effects),
+            claims_count: claim_effects.len(),
+            removed_asset_locks: slice_pointer(&asset_locks),
+            removed_asset_locks_count: asset_locks.len(),
+            payments: slice_pointer(&payments),
+            payments_count: payments.len(),
+        };
+        let code = unsafe { apply(self.callbacks.context, wallet_id.as_ptr(), &ffi) };
+        if code != 0 {
+            return Err(PersistenceError::backend(ReplayAdapterError::EffectWrite(
+                code,
+            )));
         }
-        if has_effects {
-            let Some(apply) = self.replay_callbacks.apply else {
-                return Err(PersistenceError::backend(
-                    ReplayAdapterError::IncompleteCallbacks,
-                ));
-            };
-            let removed_records: Vec<_> = effects
-                .removed_records
-                .iter()
-                .map(|id| id.to_byte_array())
-                .collect();
-            let removed_evidence: Vec<_> = effects
-                .removed_evidence
-                .iter()
-                .map(|id| id.to_byte_array())
-                .collect();
-            let claim_effects: Vec<_> = effects
-                .claims
-                .iter()
-                .map(|(outpoint, effect)| {
-                    let (action, claimant, height) = match effect {
-                        ReplayClaimEffect::Remove => (0, None, None),
-                        ReplayClaimEffect::Release => (1, None, None),
-                        ReplayClaimEffect::Hold {
-                            claimant,
-                            mined_height,
-                        } => (2, *claimant, *mined_height),
-                    };
-                    ReplayClaimEffectFFI {
-                        txid: outpoint.txid.to_byte_array(),
-                        vout: outpoint.vout,
-                        action,
-                        has_claimant: claimant.is_some(),
-                        claimant: claimant.map(|id| id.to_byte_array()).unwrap_or_default(),
-                        has_mined_height: height.is_some(),
-                        mined_height: height.unwrap_or_default(),
-                    }
-                })
-                .collect();
-            let operations = effects.operation_effects(wallet);
-            let asset_locks: Vec<_> = operations
-                .asset_locks
-                .removed
-                .iter()
-                .map(OutPointFFI::from)
-                .collect();
-            let (payments, _payment_strings) = build_payment_persist_entries(&operations.payments);
-            let ffi = HistoryReplayEffectsFFI {
-                removed_records: slice_pointer(&removed_records),
-                removed_records_count: removed_records.len(),
-                removed_evidence: slice_pointer(&removed_evidence),
-                removed_evidence_count: removed_evidence.len(),
-                claims: slice_pointer(&claim_effects),
-                claims_count: claim_effects.len(),
-                removed_asset_locks: slice_pointer(&asset_locks),
-                removed_asset_locks_count: asset_locks.len(),
-                payments: slice_pointer(&payments),
-                payments_count: payments.len(),
-            };
-            let code = unsafe { apply(self.callbacks.context, wallet_id.as_ptr(), &ffi) };
-            if code != 0 {
-                return Err(PersistenceError::backend(ReplayAdapterError::EffectWrite(
-                    code,
-                )));
-            }
-            state = self.load_snapshot_unlocked(Some(wallet_id))?;
-            let wallet = state
-                .wallets
-                .get_mut(&wallet_id)
-                .ok_or_else(|| PersistenceError::backend(ReplayAdapterError::MissingWallet))?;
-            claims = self.load_replay_claims(wallet_id, &mut wallet.recorded_history)?;
-            let remaining = replay_wallet_history_blocking(wallet, evidence)
-                .map_err(PersistenceError::backend)?;
-            if !remaining.sweeps.is_empty()
-                || !remaining.authorization.rejected.is_empty()
-                || !remaining.withheld_asset_lock_inputs.is_empty()
-            {
-                return Err(PersistenceError::backend(
-                    HistoryReplayError::UnsettledAfterReplay,
-                ));
-            }
-            wallet.unconfirmed_outgoing_txs =
-                outcome.resendable(std::mem::take(&mut wallet.unconfirmed_outgoing_txs));
-        }
-        if let Some(wallet) = state.wallets.get_mut(&wallet_id) {
-            wallet.wallet_info.restore_spent_outpoints(
-                &claims
-                    .iter()
-                    .map(|claim| (claim.outpoint, claim.claimant))
-                    .collect::<Vec<_>>(),
-            );
-        }
-        Ok(HistoryReplayLoad {
-            state,
-            outcomes: [(wallet_id, outcome)].into(),
-        })
+        Ok(())
     }
 
     fn load_replay_claims(
@@ -460,6 +425,39 @@ struct ClaimRowsGuard {
 impl Drop for ClaimRowsGuard {
     fn drop(&mut self) {
         unsafe { (self.free)(self.context, self.rows, self.count) }
+    }
+}
+
+/// Marshals the wallet-owned repair onto the host's snapshot, claim and effect callbacks.
+struct FfiRepairStore<'a> {
+    persister: &'a FFIPersister,
+    wallet_id: WalletId,
+    /// The last snapshot read, without the wallet handed to the repair.
+    snapshot: ClientStartState,
+}
+
+impl HistoryRepairStore for FfiRepairStore<'_> {
+    fn read_wallet(&mut self) -> Result<Option<ClientWalletStartState>, PersistenceError> {
+        self.snapshot = self
+            .persister
+            .load_snapshot_unlocked(Some(self.wallet_id))?;
+        Ok(self.snapshot.wallets.remove(&self.wallet_id))
+    }
+
+    fn read_claims(
+        &mut self,
+        history: &mut RecordedHistory,
+    ) -> Result<Vec<StoredReplayClaim>, PersistenceError> {
+        self.persister.load_replay_claims(self.wallet_id, history)
+    }
+
+    fn write_effects(
+        &mut self,
+        effects: &HistoryReplayEffects,
+        operations: &HistoryReplayOperationEffects,
+    ) -> Result<(), PersistenceError> {
+        self.persister
+            .apply_replay_effects(self.wallet_id, effects, operations)
     }
 }
 

@@ -5,6 +5,7 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 mod history_authorization;
 mod history_claims;
+mod history_repair;
 pub mod history_replay;
 pub mod identity_sync;
 mod load;

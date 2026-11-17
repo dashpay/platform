@@ -13,7 +13,9 @@ use platform_wallet::changeset::{
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::manager::history_replay::{
-    replay_wallet_history_blocking, HistoryReplay, HistoryReplayError, HistoryReplayLoad,
+    repair_wallet_history, HistoryRepairError, HistoryRepairStore, HistoryReplay,
+    HistoryReplayEffects, HistoryReplayError, HistoryReplayLoad, HistoryReplayOperationEffects,
+    StoredReplayClaim,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -1786,6 +1788,48 @@ fn replay_failure(error: HistoryReplayError) -> PersistenceError {
     }
 }
 
+fn repair_failure(error: HistoryRepairError) -> PersistenceError {
+    match error {
+        HistoryRepairError::Replay(error) => replay_failure(error),
+        error => error.into(),
+    }
+}
+
+/// Marshals the wallet-owned repair onto one wallet's rows in an open transaction.
+struct SqliteRepairStore<'a, 'conn> {
+    tx: &'a rusqlite::Transaction<'conn>,
+    wallet_id: WalletId,
+    ctx: &'a LoadCtx,
+}
+
+impl HistoryRepairStore for SqliteRepairStore<'_, '_> {
+    fn read_wallet(
+        &mut self,
+    ) -> Result<Option<platform_wallet::changeset::ClientWalletStartState>, PersistenceError> {
+        load_wallet_snapshot(self.tx, self.wallet_id, self.ctx).map(Some)
+    }
+
+    fn read_claims(
+        &mut self,
+        _history: &mut platform_wallet::changeset::RecordedHistory,
+    ) -> Result<Vec<StoredReplayClaim>, PersistenceError> {
+        history_replay::load_spent_claims(self.tx, &self.wallet_id).map_err(PersistenceError::from)
+    }
+
+    fn write_effects(
+        &mut self,
+        effects: &HistoryReplayEffects,
+        operations: &HistoryReplayOperationEffects,
+    ) -> Result<(), PersistenceError> {
+        history_replay::apply_effects(self.tx, &self.wallet_id, effects)
+            .map_err(PersistenceError::from)?;
+        schema::asset_locks::apply(self.tx, &self.wallet_id, &operations.asset_locks)
+            .map_err(PersistenceError::from)?;
+        schema::dashpay::apply(self.tx, &self.wallet_id, None, Some(&operations.payments))
+            .map_err(PersistenceError::from)
+    }
+}
+
 fn load_one_wallet(
     conn: &Connection,
     wallet_id: WalletId,
@@ -1802,46 +1846,14 @@ fn load_one_wallet(
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
-    let mut state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-    let mut outcome =
-        replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
-    let records = state.recorded_history.transactions.clone();
-    let mut claims =
-        history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
-    let effects = outcome
-        .storage_effects(&records, &claims)
-        .map_err(replay_failure)?;
-    if !effects.removed_records.is_empty()
-        || !effects.removed_evidence.is_empty()
-        || !effects.claims.is_empty()
-    {
-        let operations = effects.operation_effects(&state);
-        history_replay::apply_effects(&tx, &wallet_id, &effects).map_err(PersistenceError::from)?;
-        schema::asset_locks::apply(&tx, &wallet_id, &operations.asset_locks)
-            .map_err(PersistenceError::from)?;
-        schema::dashpay::apply(&tx, &wallet_id, None, Some(&operations.payments))
-            .map_err(PersistenceError::from)?;
-        state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-        let remaining =
-            replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
-        state.unconfirmed_outgoing_txs = outcome.resendable(state.unconfirmed_outgoing_txs);
-        if !remaining.sweeps.is_empty()
-            || !remaining.authorization.rejected.is_empty()
-            || !remaining.withheld_asset_lock_inputs.is_empty()
-        {
-            return Err(PersistenceError::backend(
-                HistoryReplayError::UnsettledAfterReplay,
-            ));
-        }
-        claims =
-            history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
-    }
-    state.wallet_info.restore_spent_outpoints(
-        &claims
-            .iter()
-            .map(|claim| (claim.outpoint, claim.claimant))
-            .collect::<Vec<_>>(),
-    );
+    let mut store = SqliteRepairStore {
+        tx: &tx,
+        wallet_id,
+        ctx,
+    };
+    let (state, mut outcome) = repair_wallet_history(&mut store, evidence)
+        .map_err(repair_failure)?
+        .ok_or_else(|| repair_failure(HistoryRepairError::WalletVanished))?;
     outcome.read_only = policy == LoadPolicy::Recovery;
     if outcome.read_only {
         tx.rollback()

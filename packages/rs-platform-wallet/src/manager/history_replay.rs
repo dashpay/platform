@@ -37,6 +37,7 @@ pub use super::history_claims::{
     held_sweep_claimant, HistoryReplayEffects, HistoryReplayOperationEffects, ReplayClaimEffect,
     StoredReplayClaim,
 };
+pub use super::history_repair::{repair_wallet_history, HistoryRepairError, HistoryRepairStore};
 use crate::changeset::changeset::SweepBatch;
 use crate::changeset::recorded_history::ReplayEvidence;
 use crate::changeset::{
