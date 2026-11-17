@@ -59,12 +59,13 @@ internal object QueriesNative {
     external fun dataContractDestroy(handle: Long)
 
     /**
-     * Pre-load data contracts into the SDK's trusted context provider so
-     * proof verification resolves them without a network fetch. [contractIds]
+     * Pre-load data contracts into the SDK's context provider so proof
+     * verification resolves them without a network fetch. [contractIds]
      * is a comma-separated list of base58 contract ids; [serializedContracts]
      * holds each contract's versioned binary serialization in the SAME order.
-     * Empty input is a no-op. Throws on error (missing trusted provider,
-     * malformed contract, or id/contract count mismatch).
+     * Empty input is a no-op, and a provider that keeps no contracts ignores
+     * them. Throws on error (malformed contract, or id/contract count
+     * mismatch).
      */
     external fun addKnownContracts(
         sdk: Long,
@@ -144,6 +145,24 @@ internal object QueriesNative {
         orderByJson: String?,
         limit: Int,
         startAt: Int,
+    ): String?
+
+    /**
+     * JSON page of a keep-history document's revisions plus its lifecycle
+     * block, from `dash_sdk_document_fetch_history`. [filter] is the C
+     * enum discriminant (0 start-at time, 1 start-after cursor, 2 start-at
+     * revision, 3 single revision); [timeMs] / [revision] are read according
+     * to it; [limit] 0 takes the server default.
+     */
+    external fun documentHistory(
+        sdk: Long,
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        filter: Int,
+        timeMs: Long,
+        revision: Long,
+        limit: Int,
     ): String?
 
     /** JSON count result (optionally grouped). */

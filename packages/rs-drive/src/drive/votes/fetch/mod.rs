@@ -1,3 +1,4 @@
+mod fetch_contest_opening_protocol_version;
 mod fetch_contested_document_vote_poll_contender_count;
 mod fetch_contested_document_vote_poll_stored_info;
 mod fetch_identities_voting_for_contenders;

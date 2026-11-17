@@ -156,6 +156,7 @@ left when the contest ends is released as processing fees. The amounts are
 | Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash | 0.1 Dash |
 | Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash | 0.5 Dash |
 | Decision proposal fund (a `proposal` on the decision proposals contract) | none exist | none exist | 0.5 Dash |
+| Multiple choice proposal processing fee (a `multipleChoiceProposal` on the decision proposals contract; not a fund, see below) | none exist | none exist | 0.2 Dash |
 | One vote | 0.0001 Dash | 0.00002 Dash | 0.00002 Dash |
 
 `required_vote_resolution_fund` in `rs-dpp` picks between the two contest
@@ -167,6 +168,13 @@ vote poll rather than a contest, and its fund
 (`decision_proposal_fund_required_amount`, added in `FEE_VERSION4` for
 protocol version 15) prefunds that poll's votes the same way. The schedules
 before 15 carry 0 there, unread.
+
+A multiple choice proposal opens no poll of its own: the first choice entered
+for it opens a contest, and each choice pays the contested document fund. So
+its create prefunds nothing, and pays a flat processing fee instead
+(`multiple_choice_proposal_processing_fee`, also added in `FEE_VERSION4`): the
+amount is added to the processing fee of the batch that creates it and goes
+to the fee pools. The schedules before 15 carry 0 there.
 
 ## User Fee Increase
 

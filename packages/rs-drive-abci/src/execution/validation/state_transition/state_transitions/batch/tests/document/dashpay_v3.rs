@@ -8,6 +8,9 @@
 //!   `toUserId` (40120), where the trigger refused it (40500).
 //! - An account label that is not an IV plus whole AES blocks: `encryptedFor`
 //!   (10420), accepted up to protocol version 14.
+//! - A contact request's shielded address, the optional `encryptedShieldedAddress`
+//!   DashPay v3 adds: an IV plus whole AES blocks (10420), and no property of
+//!   DashPay v2.
 //! - A profile payment address whose type byte is not 0x00 or 0x01, on create and
 //!   on replace: the `byteAt` rules (10422), where the trigger refused it (40500).
 //! - A profile without either payment address or both, on create and on replace:
@@ -126,6 +129,9 @@ mod dashpay_v3_tests {
                 "encryptedAccountLabel",
                 Value::Bytes(vec![8u8; label_length]),
             );
+            // DashPay v3's optional shielded address, which the random fill gives any
+            // length from 64 to 80: left out unless a test sets it.
+            document.remove("encryptedShieldedAddress");
             (document, entropy)
         }
 
@@ -316,6 +322,51 @@ mod dashpay_v3_tests {
             paid_error(fixture.create("contactRequest", document, entropy, 2).await),
             ConsensusError::BasicError(BasicError::InvalidEncryptedPropertyShapeError(e))
                 if e.property() == "encryptedAccountLabel" && e.actual_length() == 50
+        );
+    }
+
+    /// New in DashPay v3: a contact request may carry the sender's shielded payment
+    /// address for this contact in 64 bytes, with 80 kept for a later encoding.
+    #[tokio::test]
+    async fn should_create_a_contact_request_carrying_an_encrypted_shielded_address() {
+        for length in [64, 80] {
+            let fixture = Fixture::latest();
+            let (mut document, entropy) = fixture.contact_request(fixture.recipient.id(), 48);
+            document.set("encryptedShieldedAddress", Value::Bytes(vec![9u8; length]));
+
+            assert_matches!(
+                fixture.create("contactRequest", document, entropy, 2).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "a shielded address field of {length} bytes"
+            );
+        }
+    }
+
+    /// The address is encrypted as the contact key is, so of the schema's 64 to 80
+    /// bytes only an IV plus whole AES blocks is accepted.
+    #[tokio::test]
+    async fn should_refuse_a_shielded_address_that_is_not_an_iv_plus_whole_blocks() {
+        let fixture = Fixture::latest();
+        let (mut document, entropy) = fixture.contact_request(fixture.recipient.id(), 48);
+        document.set("encryptedShieldedAddress", Value::Bytes(vec![9u8; 70]));
+
+        assert_matches!(
+            paid_error(fixture.create("contactRequest", document, entropy, 2).await),
+            ConsensusError::BasicError(BasicError::InvalidEncryptedPropertyShapeError(e))
+                if e.property() == "encryptedShieldedAddress" && e.actual_length() == 70
+        );
+    }
+
+    /// Up to protocol version 14 DashPay v2 has no such property.
+    #[tokio::test]
+    async fn should_refuse_a_shielded_address_before_dashpay_v3() {
+        let fixture = Fixture::with_triggers();
+        let (mut document, entropy) = fixture.contact_request(fixture.recipient.id(), 48);
+        document.set("encryptedShieldedAddress", Value::Bytes(vec![9u8; 64]));
+
+        assert_matches!(
+            paid_error(fixture.create("contactRequest", document, entropy, 2).await),
+            ConsensusError::BasicError(BasicError::JsonSchemaError(_))
         );
     }
 

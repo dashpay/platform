@@ -6,6 +6,7 @@ use std::time::Duration;
 use dashcore::{BlockHash, OutPoint, Txid};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::transaction_checking::TransactionContext;
 
 use crate::changeset::PersistenceError;
 use crate::error::PlatformWalletError;
@@ -295,8 +296,23 @@ pub(in crate::wallet::asset_lock) fn funding_tx_record(
     account_index: u32,
     txid: &Txid,
 ) -> Option<TransactionRecord> {
-    funding_accounts(accounts, account_index)
-        .find_map(|account| account.transactions().get(txid).cloned())
+    let mut record = funding_accounts(accounts, account_index)
+        .find_map(|account| account.transactions().get(txid).cloned())?;
+    // An InstantSend lock finalizes the transaction, not one account's record,
+    // and a spend with no change can leave the lock only on the credit
+    // output's account.
+    if !record.is_confirmed() && !matches!(record.context, TransactionContext::InstantSend(_)) {
+        let lock = accounts.all_accounts().into_iter().find_map(|account| {
+            match &account.transactions().get(txid)?.context {
+                TransactionContext::InstantSend(lock) => Some(lock.clone()),
+                _ => None,
+            }
+        });
+        if let Some(lock) = lock {
+            record.update_context(TransactionContext::InstantSend(lock));
+        }
+    }
+    Some(record)
 }
 
 /// The account families a lock funded from `account_index` can have filed
@@ -687,6 +703,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             tokio::pin!(notified);
             notified.as_mut().enable();
 
+            // Reconstruction attaches a chain proof to the tracked lock from a
+            // chain-locked record that the funding accounts may no longer hold.
+            if let Some(h) = self.tracked_chain_proof_height(out_point).await {
+                tracing::info!(
+                    "ChainLock wait for tx {} resolved from the tracked lock's chain proof ({})",
+                    out_point.txid,
+                    h,
+                );
+                return Ok(h);
+            }
+
             // Check — might have been updated by SPV sync. Falls back
             // to the persister so a chainlock that arrived between
             // polls (and was evicted from the in-memory map) is still
@@ -774,6 +801,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
+        }
+    }
+
+    /// Returns the height of the ChainLock proof the tracked lock already carries.
+    async fn tracked_chain_proof_height(&self, out_point: &OutPoint) -> Option<u32> {
+        let wm = self.wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&self.wallet_id)?
+            .tracked_asset_locks
+            .get(out_point)?;
+        match &lock.proof {
+            Some(dpp::prelude::AssetLockProof::Chain(proof)) => {
+                Some(proof.core_chain_locked_height)
+            }
+            _ => None,
         }
     }
 
@@ -1314,6 +1356,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use dashcore::blockdata::transaction::Transaction;
+    use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::TxIn;
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::account::AccountType;
@@ -1374,6 +1417,41 @@ mod tests {
         let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
             .expect("BIP44-family record must be found by the shared lookup");
         assert_eq!(found.txid, txid);
+    }
+
+    /// A spend with no change can leave the InstantSend lock only on the
+    /// account its credit output pays; the funding record must still carry it.
+    #[test]
+    fn should_take_the_instant_send_lock_from_any_account_holding_the_txid() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = record_with_txid(0x43);
+        let txid = record.txid;
+        let mut locked = record.clone();
+        locked.update_context(TransactionContext::InstantSend(InstantLock::default()));
+        ctx.managed_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("default wallet has BIP44 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+        ctx.managed_wallet
+            .accounts
+            .asset_lock_shielded_address_topup
+            .as_mut()
+            .expect("default wallet has the shielded top-up account")
+            .transactions_mut()
+            .insert(txid, locked);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP44-family record must be found by the shared lookup");
+        assert!(
+            matches!(found.context, TransactionContext::InstantSend(_)),
+            "got {:?}",
+            found.context
+        );
     }
 
     /// BIP32-family regression for [`funding_tx_record`]: a POOLED asset
@@ -2529,6 +2607,28 @@ mod chain_lock_wait_tests {
             assert_eq!(row.status, AssetLockStatus::ChainLocked);
             assert_eq!(row.proof, Some(effective));
         }
+    }
+
+    /// A chain proof already on the tracked row resolves the wait even when the
+    /// funding record never leaves the mempool and nothing can locate it.
+    #[tokio::test(start_paused = true)]
+    async fn should_resolve_the_chain_lock_wait_from_the_tracked_rows_chain_proof() {
+        let ctx = ctx(TransactionContext::Mempool, Network::Testnet, None).await;
+        ctx.manager
+            .advance_asset_lock_status(
+                &ctx.out_point,
+                AssetLockStatus::RecoveredFromChain,
+                Some(chain_proof_at(&ctx, 120)),
+            )
+            .await
+            .expect("advance");
+
+        let proof = ctx
+            .manager
+            .upgrade_to_chain_lock_proof(&ctx.out_point, Some(Duration::from_secs(600)))
+            .await
+            .expect("the row's chain proof resolves the wait");
+        assert_eq!(chain_proof_height(proof), 120);
     }
 
     /// The record shape a promotion wait can never satisfy: without a

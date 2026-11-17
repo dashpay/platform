@@ -106,6 +106,7 @@ const LOCATE_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     timeout: Some(Duration::from_secs(5)),
     retries: Some(1),
     ban_failed_address: None,
+    ban_busy_address: None,
     max_decoding_message_size: None,
 };
 
@@ -117,6 +118,7 @@ const BLOCK_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     timeout: Some(Duration::from_secs(10)),
     retries: Some(1),
     ban_failed_address: None,
+    ban_busy_address: None,
     max_decoding_message_size: Some(4 << 20),
 };
 

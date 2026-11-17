@@ -15,6 +15,7 @@ pub use contact_request::{
     recipient_key_purpose_is_acceptable_on_receive, recipient_key_purpose_is_valid,
     sender_key_purpose_is_acceptable_on_receive, ContactRequestInput, ContactRequestResult,
     EcdhProvider, RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
+    SignedContactRequest,
 };
 pub use contact_request_queries::{ContactRequestDocuments, ResumableContactRequests};
 pub use invitation::{

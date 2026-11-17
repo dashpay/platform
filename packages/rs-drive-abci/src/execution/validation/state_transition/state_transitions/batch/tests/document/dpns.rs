@@ -1031,6 +1031,7 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
+    use crate::platform_types::platform_state::PlatformState;
     use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
@@ -1584,6 +1585,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &rejected_transaction,
                 12,
@@ -1628,6 +1630,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &retry_transaction,
                 12,
@@ -1683,6 +1686,7 @@ mod dpns_username_transfer_tests {
         clean_control
             .perform_events_on_first_block_of_protocol_change(
                 &clean_control_state,
+                &mut PlatformState::clone(&clean_control_state),
                 &block_info,
                 &clean_control_transaction,
                 12,
@@ -1934,6 +1938,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 block_info,
                 &transaction,
                 12,
@@ -2002,6 +2007,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &v13_activation_block_info(),
                 &transaction,
                 12,

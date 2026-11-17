@@ -54,9 +54,10 @@ use dpp::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE,
 };
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
 
-use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
+use crate::broadcast_outcome::{broadcast_tracking_delivery, BroadcastDelivery};
 use crate::error::{PlatformWalletError, SIGNER_KEY_UNAVAILABLE_PREFIX};
 use crate::wallet::core::is_signable_funding_account;
 use crate::wallet::identity::network::{
@@ -288,14 +289,16 @@ impl PlatformWallet {
     /// - the identity is missing, or doesn't carry the expected
     ///   `OWNER` / `TRANSFER` key for the wallet's hash160.
     ///
-    /// Outcomes after the transition leaves this wallet are kept distinct:
-    /// a definitive rejection (consensus error, or a transport verdict that
-    /// rules out delivery) is an ordinary error and may be retried; anything
-    /// ambiguous — broadcast accepted (or its ACK lost) and the result wait
-    /// failed — is [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`]
-    /// and MUST NOT be retried until the claimable balance is re-read: the
-    /// identity nonce was already consumed for this attempt, so a blind retry
-    /// would submit a second withdrawal.
+    /// Outcomes of the broadcast are kept distinct. A transition that never
+    /// left this wallet (refused before anything was sent) is an ordinary
+    /// error and may be retried. Once a dispatch may have reached a node,
+    /// anything short of a proved result, an endpoint's refusal or a
+    /// consensus verdict included, is
+    /// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`] and MUST NOT
+    /// be retried until the claimable balance is re-read: no proof backs an
+    /// endpoint's answer, and the identity nonce was already taken for this
+    /// attempt, so a blind retry would submit a second withdrawal with the
+    /// next one.
     pub async fn masternode_withdraw<S: CoreSigner + ?Sized>(
         &self,
         request: MasternodeWithdrawalRequest,
@@ -387,9 +390,11 @@ impl PlatformWallet {
 /// `expected_hash160`, sign with `signer` at `path` through
 /// [`DerivedKeyIdentitySigner`] (which re-checks the derived key against
 /// `expected_hash160` before emitting a signature), broadcast, and wait for
-/// the proved balance. Error semantics: definitive rejections stay
-/// retryable, ambiguous outcomes are
-/// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`].
+/// the proved balance. Error semantics: a failure before the broadcast, or a
+/// broadcast refused before anything was sent, stays retryable; every other
+/// outcome short of a proved result is
+/// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`]
+/// ([`settle_masternode_withdrawal`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>(
     sdk: &dash_sdk::Sdk,
@@ -481,38 +486,94 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
     .await
     .map_err(|e| definitive(dash_sdk::Error::Protocol(e)))?;
 
-    // Broadcast, then wait — split so an ambiguous outcome stays typed.
-    let unconfirmed = |reason: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
-        identity_id,
-        amount_credits,
-        reason,
-    };
-    match state_transition.broadcast(sdk, None).await {
-        Ok(()) => {}
-        Err(e) if broadcast_definitely_failed(&e) => return Err(definitive(e)),
-        Err(e) => {
+    broadcast_masternode_withdrawal(sdk, &state_transition, identity_id, amount_credits).await
+}
+
+/// Broadcast the signed masternode withdrawal `state_transition`, keeping
+/// what every dispatch proved ([`broadcast_tracking_delivery`]), then wait
+/// for its result: split so an outcome that is not known stays typed
+/// ([`settle_masternode_withdrawal`]).
+async fn broadcast_masternode_withdrawal(
+    sdk: &dash_sdk::Sdk,
+    state_transition: &StateTransition,
+    identity_id: Identifier,
+    amount_credits: u64,
+) -> Result<u64, PlatformWalletError> {
+    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    settle_masternode_withdrawal(identity_id, amount_credits, delivery, || {
+        state_transition.wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+    })
+    .await
+}
+
+/// What a signed masternode withdrawal's broadcast (`delivery`) and result
+/// wait (`wait`, run only when a dispatch may have reached a node) came to:
+/// the identity's proved remaining balance, or the error the withdrawal
+/// reports.
+///
+/// Only a transition that never left the wallet
+/// ([`BroadcastDelivery::NeverDelivered`]: refused before anything was sent)
+/// is an ordinary, retryable error: nothing holds its bytes but the wallet,
+/// so it can never execute. Once a dispatch may have reached a node, every
+/// outcome short of the proved balance is
+/// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`]: a wait that
+/// fails, an endpoint's refusal of the broadcast and a consensus verdict on
+/// either call included. The endpoint that sends a verdict is
+/// unauthenticated, no proof or quorum signature backs it, and one that kept
+/// or forwarded the signed transition can answer with any verdict, while a
+/// retry signs a second withdrawal with the next identity nonce.
+///
+/// The withdrawal keeps no record of its signed transition: what settles an
+/// unconfirmed one is the identity's nonce (once the nonce it signed with
+/// reads as used, it executed or can no longer execute) and the claimable
+/// balance, which the host re-reads before it submits again.
+async fn settle_masternode_withdrawal<W, Fut>(
+    identity_id: Identifier,
+    amount_credits: u64,
+    delivery: BroadcastDelivery,
+    wait: W,
+) -> Result<u64, PlatformWalletError>
+where
+    W: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<StateTransitionProofResult, dash_sdk::Error>>,
+{
+    // What the broadcast was answered with, kept for the reason an
+    // unconfirmed withdrawal reports.
+    let broadcast_answer = match delivery {
+        BroadcastDelivery::Admitted => None,
+        BroadcastDelivery::NeverDelivered(e) => {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "masternode withdrawal failed: {e}"
+            )));
+        }
+        BroadcastDelivery::MaybeDelivered(e) => {
             tracing::warn!(
                 identity = %identity_id,
                 error = %e,
-                "masternode withdrawal broadcast returned no verdict; the transition may \
-                 have been admitted — falling through to the result wait"
+                "masternode withdrawal broadcast may have been delivered; falling through \
+                 to the result wait"
             );
+            Some(e.to_string())
         }
-    }
+    };
+    let unconfirmed = |waited: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+        identity_id,
+        amount_credits,
+        reason: match &broadcast_answer {
+            Some(answer) => format!("{waited}; its broadcast answered: {answer}"),
+            None => waited,
+        },
+    };
 
-    match state_transition
-        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
-        .await
-    {
+    match wait().await {
         Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => partial
             .balance
             .ok_or_else(|| unconfirmed("the result proof carried no identity balance".to_string())),
-        // Proved, but not the shape a withdrawal produces — the transition
-        // landed; only the balance read-back is missing.
+        // Verified, but not the identity balance a withdrawal's result
+        // carries: the remaining balance is not proved.
         Ok(_) => Err(unconfirmed(
             "the result proof did not carry the identity's balance".to_string(),
         )),
-        Err(e) if carries_consensus_rejection(&e) => Err(definitive(e)),
         Err(e) => Err(unconfirmed(e.to_string())),
     }
 }
@@ -724,10 +785,220 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::broadcast_outcome::test_sdks::{sdk_refusing_connections, sdk_without_addresses};
+    use dash_sdk::dapi_client::transport::TransportError;
+    use dash_sdk::dapi_client::DapiClientError;
+    use dash_sdk::dapi_grpc::tonic::{Code, Status};
+    use dash_sdk::error::StateTransitionBroadcastError;
     use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSecretKey as SecretKey};
+    use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
+    use dpp::consensus::ConsensusError;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{Purpose, SecurityLevel};
+    use dpp::identity::{PartialIdentity, Purpose, SecurityLevel};
+    use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+    use std::cell::Cell;
     use std::str::FromStr;
+
+    /// The identity the withdrawal tests withdraw from, and the amount.
+    const WITHDRAWN_FROM: [u8; 32] = [0x31; 32];
+    const WITHDRAWN: u64 = 1_000_000;
+
+    /// A node's refusal of a dispatch, as an offline or overloaded endpoint
+    /// answers one.
+    fn unavailable() -> dash_sdk::Error {
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+            Status::new(Code::Unavailable, "test"),
+        )))
+    }
+
+    fn verdict() -> ConsensusError {
+        ConsensusError::BasicError(BasicError::UnsupportedFeatureError(
+            UnsupportedFeatureError::new("test".to_string(), 1),
+        ))
+    }
+
+    /// A consensus verdict as a broadcast returns one.
+    fn broadcast_verdict() -> dash_sdk::Error {
+        dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(verdict())))
+    }
+
+    /// A consensus verdict as the result wait returns one.
+    fn wait_verdict() -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 1,
+            message: "rejected".to_string(),
+            cause: Some(verdict()),
+        })
+    }
+
+    fn wait_timeout() -> dash_sdk::Error {
+        dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(80), "waiting".to_string())
+    }
+
+    fn proved_balance(balance: Option<u64>) -> StateTransitionProofResult {
+        StateTransitionProofResult::VerifiedPartialIdentity(PartialIdentity {
+            id: Identifier::from(WITHDRAWN_FROM),
+            loaded_public_keys: Default::default(),
+            balance,
+            revision: None,
+            not_found_public_keys: Default::default(),
+        })
+    }
+
+    fn is_unconfirmed(settled: &Result<u64, PlatformWalletError>) -> bool {
+        matches!(
+            settled,
+            Err(PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+                identity_id,
+                amount_credits: WITHDRAWN,
+                ..
+            }) if *identity_id == Identifier::from(WITHDRAWN_FROM)
+        )
+    }
+
+    /// Once a dispatch may have reached a node, a withdrawal whose result is
+    /// not proved is unconfirmed, never failed: a node's refusal of the
+    /// broadcast and a consensus verdict on either call included, as no proof
+    /// backs an endpoint's answer and a retry signs a second withdrawal. The
+    /// reason keeps what the wait and the broadcast were answered with.
+    #[tokio::test]
+    async fn should_report_a_masternode_withdrawal_unconfirmed_once_a_dispatch_may_have_reached_a_node(
+    ) {
+        let cases = [
+            (
+                "a node refused the broadcast, the wait timed out",
+                BroadcastDelivery::MaybeDelivered(unavailable()),
+                wait_timeout(),
+            ),
+            (
+                "the broadcast was answered with a consensus verdict",
+                BroadcastDelivery::MaybeDelivered(broadcast_verdict()),
+                wait_timeout(),
+            ),
+            (
+                "admitted, the wait was answered with a consensus verdict",
+                BroadcastDelivery::Admitted,
+                wait_verdict(),
+            ),
+            (
+                "admitted, the wait timed out",
+                BroadcastDelivery::Admitted,
+                wait_timeout(),
+            ),
+        ];
+        for (case, delivery, wait_error) in cases {
+            let broadcast_answer = match &delivery {
+                BroadcastDelivery::MaybeDelivered(e) => Some(e.to_string()),
+                _ => None,
+            };
+            let waited = wait_error.to_string();
+            let settled = settle_masternode_withdrawal(
+                Identifier::from(WITHDRAWN_FROM),
+                WITHDRAWN,
+                delivery,
+                || std::future::ready(Err(wait_error)),
+            )
+            .await;
+            let Err(PlatformWalletError::MasternodeWithdrawalUnconfirmed { reason, .. }) = settled
+            else {
+                panic!("{case}: {settled:?}");
+            };
+            assert!(reason.contains(&waited), "{case}: {reason}");
+            if let Some(answer) = broadcast_answer {
+                assert!(reason.contains(&answer), "{case}: {reason}");
+            }
+        }
+    }
+
+    /// Only a withdrawal whose transition never left the wallet is an
+    /// ordinary, retryable failure, and nothing waits for its result.
+    #[tokio::test]
+    async fn should_report_a_masternode_withdrawal_failed_only_when_nothing_was_sent() {
+        let waited = Cell::new(false);
+        let settled = settle_masternode_withdrawal(
+            Identifier::from(WITHDRAWN_FROM),
+            WITHDRAWN,
+            BroadcastDelivery::NeverDelivered(dash_sdk::Error::DapiClientError(
+                DapiClientError::NoAvailableAddresses,
+            )),
+            || {
+                waited.set(true);
+                std::future::ready(Err(wait_timeout()))
+            },
+        )
+        .await;
+        assert!(
+            matches!(settled, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{settled:?}"
+        );
+        assert!(!waited.get(), "nothing was sent, so nothing is waited for");
+    }
+
+    /// A proved result returns the identity's remaining balance, whatever the
+    /// broadcast answered; a proof that carries no balance leaves the
+    /// withdrawal unconfirmed.
+    #[tokio::test]
+    async fn should_return_a_masternode_withdrawal_s_proved_balance() {
+        for delivery in [
+            BroadcastDelivery::Admitted,
+            BroadcastDelivery::MaybeDelivered(unavailable()),
+        ] {
+            let settled = settle_masternode_withdrawal(
+                Identifier::from(WITHDRAWN_FROM),
+                WITHDRAWN,
+                delivery,
+                || std::future::ready(Ok(proved_balance(Some(7)))),
+            )
+            .await;
+            assert!(matches!(settled, Ok(7)), "{settled:?}");
+        }
+        let settled = settle_masternode_withdrawal(
+            Identifier::from(WITHDRAWN_FROM),
+            WITHDRAWN,
+            BroadcastDelivery::Admitted,
+            || std::future::ready(Ok(proved_balance(None))),
+        )
+        .await;
+        assert!(is_unconfirmed(&settled), "{settled:?}");
+    }
+
+    /// The broadcast of a signed withdrawal through a network SDK: a node that
+    /// refuses the connection leaves it unconfirmed, as a transport failure
+    /// cannot show that nothing was sent, and an SDK with no address to send
+    /// to leaves it failed.
+    #[tokio::test]
+    async fn should_report_a_masternode_withdrawal_unconfirmed_when_its_node_refuses_the_connection(
+    ) {
+        let transition: StateTransition = IdentityCreditWithdrawalTransitionV1 {
+            identity_id: Identifier::from(WITHDRAWN_FROM),
+            amount: WITHDRAWN,
+            nonce: 4,
+            ..Default::default()
+        }
+        .into();
+
+        let (refusing, _port) = sdk_refusing_connections();
+        let refused = broadcast_masternode_withdrawal(
+            &refusing,
+            &transition,
+            Identifier::from(WITHDRAWN_FROM),
+            WITHDRAWN,
+        )
+        .await;
+        assert!(is_unconfirmed(&refused), "{refused:?}");
+
+        let never_sent = broadcast_masternode_withdrawal(
+            &sdk_without_addresses(),
+            &transition,
+            Identifier::from(WITHDRAWN_FROM),
+            WITHDRAWN,
+        )
+        .await;
+        assert!(
+            matches!(never_sent, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{never_sent:?}"
+        );
+    }
 
     /// Test signer: one fixed secp256k1 key regardless of path.
     struct FixedKeySigner {

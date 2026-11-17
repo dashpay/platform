@@ -319,6 +319,7 @@ impl ErrorWithCode for SignatureError {
             Self::PublicKeyBudgetExhaustedError(_) => 20015,
             Self::PublicKeyExpiredError(_) => 20016,
             Self::PublicKeyWithLimitsCannotUpdateKeyLimitsError(_) => 20017,
+            Self::PublicKeyWithLimitsCannotSignDataContractTransitionError(_) => 20018,
         }
     }
 }
@@ -400,6 +401,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentTypePrivateError(_) => 40150,
             Self::DocumentTypeNotPrivateError(_) => 40151,
             Self::PrivateDocumentEntrySizeMismatchError(_) => 40152,
+            Self::ReferencedDocumentTypeRequirementNotMetError(_) => 40153,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

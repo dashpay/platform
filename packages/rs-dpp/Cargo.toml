@@ -70,6 +70,8 @@ sha2 = { version = "0.10" }
 thiserror = { version = "2.0.17" }
 url = { version = "2.5", optional = true }
 # The native document validator reproduces the JSON Schema validator with the crates it uses
+# regex-syntax is the parser the `regex` crate uses; it must match the version `regex` pulls in
+regex-syntax = { version = "0.8.11", optional = true }
 num-cmp = { version = "0.1", optional = true }
 fraction = { version = "0.15", default-features = false, features = [
   "with-bigint",
@@ -234,6 +236,7 @@ json-schema-validation = [
 validation-schema = [
   "platform-value-json",
   "dep:url",
+  "dep:regex-syntax",
   "dep:num-cmp",
   "dep:fraction",
   "dep:time",

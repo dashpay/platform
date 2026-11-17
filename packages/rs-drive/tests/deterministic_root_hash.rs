@@ -315,8 +315,9 @@ mod tests {
             // document types beside its schemas, and is DashPay v3, which declares the checks of
             // its data triggers and adds the private `privateContactRequest` type, whose store
             // the insert creates, at chunk power 10 (605-byte stored entries under the 1 MiB
-            // chunk target of `SYSTEM_LIMITS_V5`).
-            _ => "adb6a2e6be5a67bb2730c27ca9a63cc4cacf485b634ec4a0ad998b0da508a7e2",
+            // chunk target of `SYSTEM_LIMITS_V5`), and a contact request's optional
+            // `encryptedShieldedAddress`.
+            _ => "3ef193e9d125d0e6cce24e208e1c0e9d723e7226db1150ae6dbcc1a06622c3f3",
         };
 
         assert_eq!(
