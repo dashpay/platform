@@ -2242,6 +2242,25 @@ impl PlatformWalletPersistence for FFIPersister {
             && self.callbacks.on_persist_wallet_changeset_fn.is_some()
     }
 
+    fn persists_shielded_settlement(&self) -> bool {
+        // `store` skips activity rows without the activity callback and spent
+        // notes without the nullifiers-spent callback, and still acknowledges
+        // the round: a held identity create's record may only go where both
+        // reach the host.
+        #[cfg(feature = "shielded")]
+        {
+            self.callbacks.on_persist_shielded_activity_fn.is_some()
+                && self
+                    .callbacks
+                    .on_persist_shielded_nullifiers_spent_fn
+                    .is_some()
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            false
+        }
+    }
+
     fn store_commits_inline(&self) -> bool {
         // The end callback commits (or rolls back) the host transaction before
         // `store` returns. `flush` is only a later general-purpose notification.
@@ -9878,6 +9897,44 @@ mod tests {
 
         assert!(FFIPersister::new(callbacks).store_commits_inline());
         assert!(!FFIPersister::new(PersistenceCallbacks::default()).store_commits_inline());
+    }
+
+    /// A host with the end callback commits inline, but persists a settled
+    /// shielded identity create only with both the activity and the
+    /// nullifiers-spent callbacks: missing either, its records are kept.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn shielded_settlement_needs_both_shielded_callbacks() {
+        unsafe extern "C" fn noop_activity(
+            _context: *mut c_void,
+            _wallet_id: *const u8,
+            _entries: *const crate::shielded_persistence::ShieldedActivityFFI,
+            _count: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn noop_spent(
+            _context: *mut c_void,
+            _wallet_id: *const u8,
+            _entries: *const crate::shielded_persistence::ShieldedNullifierSpentFFI,
+            _count: usize,
+        ) -> i32 {
+            0
+        }
+        let with = |activity: bool, spent: bool| {
+            FFIPersister::new(PersistenceCallbacks {
+                on_changeset_end_fn: Some(noop_end),
+                on_persist_shielded_activity_fn: activity.then_some(noop_activity as _),
+                on_persist_shielded_nullifiers_spent_fn: spent.then_some(noop_spent as _),
+                ..PersistenceCallbacks::default()
+            })
+        };
+
+        assert!(with(true, true).persists_shielded_settlement());
+        assert!(with(false, true).store_commits_inline());
+        assert!(!with(false, true).persists_shielded_settlement());
+        assert!(!with(true, false).persists_shielded_settlement());
+        assert!(!with(false, false).persists_shielded_settlement());
     }
 
     /// Partial callback pairs attest only complete, independently testable

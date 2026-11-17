@@ -865,6 +865,13 @@ impl WalletPersister {
         self.inner.store_commits_inline()
     }
 
+    /// Whether the backend persists a settled shielded identity create's
+    /// rows and spent notes
+    /// ([`PlatformWalletPersistence::persists_shielded_settlement`]).
+    pub(crate) fn persists_shielded_settlement(&self) -> bool {
+        self.inner.persists_shielded_settlement()
+    }
+
     /// Whether the backend can hold a durable DashPay backfill record (see
     /// [`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage)).
     pub(crate) fn persists_backfill_coverage(&self) -> bool {

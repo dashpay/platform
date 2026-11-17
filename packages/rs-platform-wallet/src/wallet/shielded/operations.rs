@@ -3705,12 +3705,12 @@ pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
 /// `changeset`, so what it writes there comes last:
 ///
 /// - a create whose outcome is not proven yet, whose node is known and whose notes the scan saw
-///   spent is read at that node ([`classify_held_identity_create`]). A read that proves nothing
-///   counts an attempt. The attempts are shared with its re-broadcasts, so a create is read while
-///   they are at most [`MAX_REDRIVE_ATTEMPTS`]: one whose re-broadcasts spent them still gets one
-///   read. Past that it is not read again; its record stays held and its row is never confirmed
-///   from its outputs alone: it stays unconfirmed. So does a create with no known node, which is
-///   never read;
+///   spent is read at that node ([`classify_held_identity_create`]), on every pass until its
+///   outcome is proven and kept. Reads are not counted against [`MAX_REDRIVE_ATTEMPTS`], which
+///   bounds re-broadcasts only: a node that answers nothing for a while, or an outcome that was
+///   proven but not kept, is read again on a later pass, after a restart included. Until then its
+///   record stays held and its row is never confirmed from its outputs alone: it stays
+///   unconfirmed. So does a create with no known node, which is never read;
 /// - a create whose outcome is proven, now or by an earlier pass or result wait, gets its
 ///   activity row written with that outcome (Confirmed, or Failed at `consumed_by_height`) in
 ///   place of any row `changeset` already carries for it, and every note it consumed put on
@@ -3760,7 +3760,6 @@ pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
                 Some(outcome) if outcome.is_proven() => true,
                 Some(IdentityCreateOutcome::Awaiting) => {
                     redrive.outcome_endpoint.is_some()
-                        && redrive.attempts <= MAX_REDRIVE_ATTEMPTS
                         && !redrive.nullifiers.is_empty()
                         && redrive.nullifiers.iter().all(|n| spent.contains(n))
                 }
@@ -3779,7 +3778,10 @@ pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
                 match classify_held_identity_create(sdk, store, persister, id, &redrive).await {
                     HeldIdentityCreate::Proven(outcome) => outcome,
                     HeldIdentityCreate::Unknown => {
-                        count_unproven_identity_create_read(store, id, &redrive.activity_id).await;
+                        debug!(
+                            activity_id = %hex::encode(redrive.activity_id),
+                            "held identity create: outcome not proven and kept; read again next pass"
+                        );
                         continue;
                     }
                 }
@@ -3794,26 +3796,6 @@ pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
         }
     }
     settled
-}
-
-/// Count a read of held identity create `activity_id` that proved nothing. The last read
-/// ([`settle_held_identity_creates`]) leaves it held and unconfirmed.
-async fn count_unproven_identity_create_read<S: ShieldedStore>(
-    store: &Arc<RwLock<S>>,
-    id: SubwalletId,
-    activity_id: &[u8; 32],
-) {
-    match store.write().await.bump_redrive_attempts(id, activity_id) {
-        Ok(attempts) if attempts > MAX_REDRIVE_ATTEMPTS => warn!(
-            activity_id = %hex::encode(activity_id),
-            attempts,
-            "held identity create: its outcome could not be read; it stays unconfirmed"
-        ),
-        Ok(_) => {}
-        Err(e) => {
-            warn!(error = %e, "held identity create: attempt not counted; retried next pass")
-        }
-    }
 }
 
 /// Write identity create `activity_id`'s row with its proven `outcome` into the in-memory store
