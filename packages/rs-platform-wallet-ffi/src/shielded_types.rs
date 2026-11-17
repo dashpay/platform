@@ -123,7 +123,10 @@ pub struct ShieldedSyncWalletResultFFI {
     pub total_scanned: u64,
     /// Notes newly detected as spent this pass.
     pub newly_spent: u32,
-    /// Current unspent shielded balance after the pass.
+    /// Unspent shielded balance of the wallet's ordinary accounts after the
+    /// pass: what a send from those accounts can spend. Identity accounts,
+    /// which the wallet binds and scans too, are left out
+    /// (`ShieldedSyncSummary::ordinary_balance_total`).
     pub balance: u64,
     /// NUL-terminated UTF-8 error message; valid until the callback
     /// returns. NULL on success and skipped wallets.

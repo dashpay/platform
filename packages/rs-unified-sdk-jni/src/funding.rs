@@ -1259,3 +1259,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let _ = take_pwffi_error(env, result);
     })
 }
+
+/// Whether `account` is an identity shielded account, by the wallet's rule.
+/// Bridges `platform_wallet_is_shielded_identity_account`. The `jint` is
+/// passed on as its `u32` bit pattern, so Kotlin's `Int` account index and
+/// Rust's `u32` name the same account.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_isShieldedIdentityAccount(
+    mut env: JNIEnv,
+    _class: JClass,
+    account: jint,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |_env| {
+        if platform_wallet_ffi::platform_wallet_is_shielded_identity_account(account as u32) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
