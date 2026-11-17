@@ -133,6 +133,19 @@ fun WalletDetailScreen(
         container.shieldedService.ordinaryBalance(walletId)
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
+    // Whether the wallet holds any unspent shielded note, in any account.
+    // Only the empty-wallet check reads it: notes in an identity's shielded
+    // account leave the ordinary balance at 0 but still make the wallet
+    // non-empty.
+    val hasShieldedNotes by remember(walletIdHex) {
+        if (hasShielded) {
+            container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
+                .map { notes -> notes.isNotEmpty() }
+        } else {
+            MutableStateFlow(false)
+        }
+    }.collectAsStateWithLifecycle(initialValue = false)
+
     // Distinct on-chain transactions this wallet participates in — union
     // of every TXO's creating and spending tx (WalletDetailView's
     // transactionCount).
@@ -232,12 +245,16 @@ fun WalletDetailScreen(
                 // Shielded shows the single label instead of three zero rows.
                 // Includes immature (a row this screen renders that the
                 // Swift surface doesn't) so mined-but-unmatured funds are
-                // never hidden behind the placeholder.
+                // never hidden behind the placeholder. A wallet holding any
+                // unspent shielded note is not empty even when its ordinary
+                // shielded balance is 0 (all its notes sit in identity
+                // accounts), so the shielded row and its actions stay shown.
                 val allZero = (core?.confirmed ?: 0) == 0L &&
                     (core?.unconfirmed ?: 0) == 0L &&
                     (core?.immature ?: 0) == 0L &&
                     platformBalance == 0L &&
-                    shieldedBalance == 0L
+                    shieldedBalance == 0L &&
+                    !hasShieldedNotes
                 if (allZero) {
                     Text(
                         "Empty Wallet",

@@ -1243,7 +1243,10 @@ struct WalletRowView: View {
         // re-invoking the accessor.
         let core = coreBalanceTotals()
         let coreTotal = Self.sumCoreBalance(core)
+        // Unspent notes in identity accounts leave the ordinary shielded
+        // balance at 0, but the wallet is not empty while it holds any.
         let hasAny = coreTotal > 0 || platformBalance > 0 || shieldedBalance > 0
+            || !shieldedNotes.isEmpty
         return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
