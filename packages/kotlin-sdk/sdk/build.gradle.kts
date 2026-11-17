@@ -47,6 +47,11 @@ android {
         // `TestnetGuard`. Enable with `-Ptestnet=true`.
         testInstrumentationRunnerArguments["testnet"] =
             (project.findProperty("testnet")?.toString() ?: "false")
+
+        // Tests that need the `test-hooks` native library skip when it lacks
+        // the hook; `-PrequireTestHooks=true` (set in CI) makes them fail.
+        testInstrumentationRunnerArguments["requireTestHooks"] =
+            (project.findProperty("requireTestHooks")?.toString() ?: "false")
     }
 
     compileOptions {

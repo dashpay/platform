@@ -162,9 +162,11 @@ jobs:
           test -w /dev/kvm
           ls -l /dev/kvm
 
-      - name: Build native library (x86_64, dev profile)
+      # Includes the test-only JNI hooks the instrumented suite needs. This
+      # library is never published: release-kotlin-sdk.yml builds its own.
+      - name: Build native library (x86_64, dev profile, test hooks)
         working-directory: packages/kotlin-sdk
-        run: ./build_android.sh --abi x86_64 --profile dev --verify
+        run: ./build_android.sh --abi x86_64 --profile dev --verify --test-hooks
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -183,7 +185,9 @@ jobs:
 
       - name: Run instrumented FFI smoke test (prebaked emulator)
         working-directory: packages/kotlin-sdk
-        run: ci-android-emulator bash ../../.github/scripts/kotlin-instrumented-tests.sh
+        # -PrequireTestHooks=true fails (not skips) the hook tests if the
+        # library above was built without --test-hooks.
+        run: ci-android-emulator bash ../../.github/scripts/kotlin-instrumented-tests.sh -PrequireTestHooks=true
 
       - name: Upload test reports on failure
         if: failure()
