@@ -1,6 +1,7 @@
 use super::*;
 
 mod creation_tests {
+    use crate::platform_types::platform_state::PlatformState;
     use super::*;
     use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
@@ -64,6 +65,7 @@ mod creation_tests {
     use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// The block after the one holding the preorders: from protocol version 15 a domain
     /// reveals a preorder made in an earlier block.
@@ -167,14 +169,25 @@ mod creation_tests {
             .expect("expected to commit transaction");
     }
 
+    /// Up to protocol version 14 the profile data trigger checks the type byte of
+    /// both DIP-33 payment addresses; from 15 the DashPay v3 rules
+    /// `corePaymentAddressType` and `platformPaymentAddressType` do.
     #[tokio::test]
     async fn should_enforce_profile_payment_address_type_bytes() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            enforce_profile_payment_address_type_bytes_at(protocol_version).await;
+        }
+    }
+
+    async fn enforce_profile_payment_address_type_bytes_at(protocol_version: u32) {
+        use dpp::consensus::basic::BasicError;
         use dpp::consensus::state::data_trigger::DataTriggerError;
         use dpp::consensus::state::state_error::StateError;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a known protocol version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -196,7 +209,7 @@ mod creation_tests {
             .document_type_for_name("profile")
             .expect("expected a profile document type");
 
-        // (field under test, leading type byte, accepted by the data trigger)
+        // (field under test, leading type byte, accepted)
         let cases = [
             ("corePaymentAddress", 0x00u8, true),
             ("corePaymentAddress", 0x01, true),
@@ -274,9 +287,10 @@ mod creation_tests {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                    "{field} with type byte 0x{leading_byte:02x} must be accepted"
+                    "{field} with type byte 0x{leading_byte:02x} must be accepted at protocol \
+                     version {protocol_version}"
                 );
-            } else {
+            } else if protocol_version <= 14 {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::PaidConsensusError {
@@ -285,7 +299,21 @@ mod creation_tests {
                         )),
                         ..
                     }],
-                    "{field} with type byte 0x{leading_byte:02x} must be rejected"
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected by the data \
+                     trigger at protocol version {protocol_version}"
+                );
+            } else {
+                let rule = format!("{field}Type");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::DocumentPropertyConstraintViolatedError(e)
+                        ),
+                        ..
+                    }] if e.constraint() == rule,
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected by the \
+                     {rule} rule at protocol version {protocol_version}"
                 );
             }
         }
@@ -995,9 +1023,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1402,9 +1428,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1693,9 +1717,7 @@ mod creation_tests {
 
         // The contest must not exist: no contender was added under the real
         // contested index, and no document was created.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1990,9 +2012,7 @@ mod creation_tests {
         );
 
         // The contest still has exactly its two original contenders.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2255,9 +2275,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2863,9 +2881,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -3949,6 +3965,7 @@ mod creation_tests {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let platform_state = platform.state.load();
@@ -3971,6 +3988,7 @@ mod creation_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &BlockInfo::default_with_time(
                     platform_state
                         .last_committed_block_time_ms()

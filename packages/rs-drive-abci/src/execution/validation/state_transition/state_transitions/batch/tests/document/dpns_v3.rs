@@ -18,6 +18,7 @@ mod dpns_v3_tests {
     use crate::execution::validation::state_transition::tests::{
         create_dpns_name_contest_give_key_info, perform_votes_multi,
     };
+    use crate::platform_types::platform_state::PlatformState;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::dpns::dpns_preorder_properties;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
@@ -98,6 +99,7 @@ mod dpns_v3_tests {
             let mut platform = TestPlatformBuilder::new()
                 .with_initial_protocol_version(protocol_version)
                 .build_with_mock_rpc()
+                .with_no_core_masternodes()
                 .set_genesis_state();
 
             let mut writer = |seed| {
@@ -413,6 +415,7 @@ mod dpns_v3_tests {
             self.platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform_state,
+                    &mut PlatformState::clone(&platform_state),
                     &block(height),
                     &transaction,
                     previous,
@@ -885,7 +888,6 @@ mod dpns_v3_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to store the copy");
         }
@@ -1250,6 +1252,7 @@ mod dpns_v3_tests {
         let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         assert_eq!(
             preorder_type_layout(&fixture.platform, fixture.platform_version),
@@ -1311,6 +1314,7 @@ mod dpns_v3_tests {
         let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         assert_eq!(
             preorder_type_layout(&fixture.platform, fixture.platform_version),
@@ -1410,6 +1414,7 @@ mod dpns_v3_tests {
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let platform_state = platform.state.load();
 
@@ -1565,13 +1570,17 @@ mod dpns_v3_tests {
                 measured.push((fee_result.processing_fee, fee_result.storage_fee, refund));
             }
         }
+        // At 15 each create also reads the DPNS contract through a contracts tree holding the
+        // decision proposals and token market contracts, two more siblings registered at
+        // genesis, which reshape the tree so the DPNS contract's node is billed more bytes to
+        // reach (+95_920 a create).
         assert_eq!(
             measured,
             vec![
                 (1_159_720, 31_158_000, 0),
                 (1_846_280, 42_687_000, 0),
-                (5_495_080, 11_558_570, 0),
-                (3_654_380, 42_687_000, 0)
+                (5_591_000, 11_558_570, 0),
+                (3_739_640, 42_687_000, 0)
             ]
         );
     }

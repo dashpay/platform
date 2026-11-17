@@ -214,7 +214,6 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             }];
         }
         Domain::Invitations => {
-            use dashcore::hashes::Hash;
             use dashcore::{OutPoint, Txid};
             use platform_wallet::changeset::{
                 InvitationChangeSet, InvitationEntry, InvitationStatus,
@@ -342,7 +341,6 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
 }
 
 fn asset_lock_changeset() -> AssetLockChangeSet {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::changeset::AssetLockEntry;
@@ -369,6 +367,7 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
             operation_id: None,
             operation_revision: 0,
             expected_operation_revision: None,
+            shielded_recipient: None,
             amount_duffs: 1,
             status: AssetLockStatus::Built,
             proof: None,

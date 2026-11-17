@@ -1,5 +1,6 @@
 //! Common test utilities for wasm-drive-verify tests
 
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -10,7 +11,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// discriminant so it clears the envelope policy that every public entry
 /// point applies first; the rest is filler that never decodes as a proof.
 pub fn mock_proof(size: usize) -> Vec<u8> {
-    let mut proof = bincode::encode_to_vec(1u32, bincode::config::standard().with_big_endian())
+    let mut proof = bincode::encode_to_vec(1u32, PLATFORM_BINCODE_CONFIG)
         .expect("encode V1 envelope discriminant");
     proof.resize(size.max(proof.len()), 0xAB);
     proof

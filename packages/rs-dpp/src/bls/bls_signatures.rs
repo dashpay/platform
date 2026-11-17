@@ -1,6 +1,8 @@
 //! Platform BLS keys and Basic signatures backed by rust-dashcore's dash-pkc primitives.
 
-use dash_pkc::bls::{BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature, Fr};
+use dashcore_crypto::dash_pkc::bls::{
+    BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature, Fr,
+};
 use rand::{CryptoRng, Rng, RngCore};
 use std::fmt;
 use zeroize::Zeroizing;
@@ -143,7 +145,7 @@ impl SecretKey {
 
     /// Sign arbitrary message bytes with the Basic IETF domain separation tag.
     pub fn sign(&self, message: &[u8]) -> Result<Signature, BlsError> {
-        Ok(Signature::from_validated(self.0.sign(message)))
+        Ok(Signature::from_validated(self.0.sign_message(message)))
     }
 }
 
@@ -201,7 +203,7 @@ impl Signature {
                 "public key is the identity point".into(),
             ));
         };
-        key.verify(message.as_ref(), signature)
+        key.verify_message(message.as_ref(), signature)
             .map_err(|_| BlsError::InvalidSignature)
     }
 
@@ -235,7 +237,7 @@ impl Signature {
             .collect::<Result<_, _>>()?;
         let signature = self.0.as_ref().ok_or(BlsError::InvalidSignature)?;
         signature
-            .secure_verify_aggregates(message.as_ref(), &keys)
+            .secure_verify_aggregates_message(message.as_ref(), &keys)
             .map_err(|_| BlsError::InvalidSignature)
     }
 }

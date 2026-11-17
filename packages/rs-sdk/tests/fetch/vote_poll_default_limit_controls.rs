@@ -74,7 +74,7 @@ async fn should_preserve_exact_voting_pages_for_short_full_descending_and_explic
                     .map(|i| {
                         let poll = fixture::poll(&contract, i);
                         (
-                            poll.unique_id().unwrap(),
+                            poll.unique_id(sdk.version()).unwrap(),
                             Some(ResourceVoteWithCount {
                                 resource_vote: ResourceVote::V0(ResourceVoteV0 {
                                     vote_poll: poll,

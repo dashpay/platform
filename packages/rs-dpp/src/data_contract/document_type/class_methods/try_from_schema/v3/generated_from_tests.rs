@@ -83,8 +83,34 @@ fn schema_with(value: Value) -> Value {
     })
 }
 
+/// Protocol version 14, which keeps `apply_generated_from` 0, and the latest version, which
+/// selects 1: both parse a string transformation alike.
+fn platform_versions() -> [&'static PlatformVersion; 2] {
+    [
+        PlatformVersion::get(14).expect("protocol version 14"),
+        PlatformVersion::latest(),
+    ]
+}
+
+/// Every property's `generatedFrom`, by path.
+fn generated_froms(document_type: &DocumentType) -> BTreeMap<String, Option<GeneratedFrom>> {
+    document_type
+        .as_ref()
+        .flattened_properties()
+        .iter()
+        .map(|(path, property)| (path.clone(), property.generated_from.clone()))
+        .collect()
+}
+
+/// The schema parsed at the latest version, after checking protocol version 14 parses it to
+/// the same `generatedFrom` declarations.
 fn parse(schema: Value) -> DocumentType {
-    parse_dispatched(schema, PlatformVersion::latest(), true).expect("the schema parses")
+    let [before, latest] = platform_versions();
+    let parsed_before = parse_dispatched(schema.clone(), before, true)
+        .expect("the schema parses at protocol version 14");
+    let parsed = parse_dispatched(schema, latest, true).expect("the schema parses");
+    assert_eq!(generated_froms(&parsed_before), generated_froms(&parsed));
+    parsed
 }
 
 fn generated_from_of(document_type: &DocumentType, path: &str) -> Option<GeneratedFrom> {
@@ -97,18 +123,21 @@ fn generated_from_of(document_type: &DocumentType, path: &str) -> Option<Generat
         .clone()
 }
 
-/// Both parses refuse the declaration: the validating one with the meta-schema
-/// (or, for a check the meta-schema cannot state, with the parser's
-/// structure error), the one that skips the meta-schema with the parser's.
+/// Both parses refuse the declaration, at protocol version 14 and at the latest version: the
+/// validating one with the meta-schema (or, for a check the meta-schema cannot state, with the
+/// parser's structure error), the one that skips the meta-schema with the parser's.
 fn expect_refused(schema: Value, needle: &str) {
-    assert!(
-        parse_dispatched(schema.clone(), PlatformVersion::latest(), true).is_err(),
-        "a validating parse refuses it ({needle})"
-    );
-    expect_structure_error(
-        parse_dispatched(schema, PlatformVersion::latest(), false),
-        needle,
-    );
+    for platform_version in platform_versions() {
+        assert!(
+            parse_dispatched(schema.clone(), platform_version, true).is_err(),
+            "a validating parse at protocol version {} refuses it ({needle})",
+            platform_version.protocol_version
+        );
+        expect_structure_error(
+            parse_dispatched(schema.clone(), platform_version, false),
+            needle,
+        );
+    }
 }
 
 fn first_basic_error(result: SimpleConsensusValidationResult) -> BasicError {

@@ -11,7 +11,53 @@ use crate::wallet::identity::{
     ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
 };
 use dpp::prelude::Identifier;
+use dpp::state_transition::StateTransition;
+use key_wallet::bip32::ExtendedPubKey;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// How an identity and a contact exchanged private contact requests (protocol
+/// version 15), and what those carry beyond what a [`ContactRequest`] holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PrivateContact {
+    /// The contact's tracked request to this identity came privately
+    /// ([`ContactRequest::came_privately`]), so accepting it replies privately
+    /// too.
+    pub received_privately: bool,
+    /// This identity's tracked request to the contact went privately.
+    pub sent_privately: bool,
+    /// The Orchard address the contact asked to be paid at privately: an
+    /// 11-byte diversifier and a 32-byte transmission key.
+    pub shielded_address: Option<[u8; 43]>,
+}
+
+/// The private request to one recipient that may be in flight: the attempt
+/// that reserved it and, once sealed, the commitment of its entry. Only that
+/// attempt notes the commitment or releases it; the private sync settles it
+/// by the commitment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PendingPrivateReply {
+    pub(crate) attempt: u64,
+    pub(crate) commitment: Option<[u8; 32]>,
+}
+
+/// A public contact request to one recipient whose broadcast may have been
+/// delivered, and whose outcome no proof settled yet
+/// ([`DashPayState::public_contact_request_unconfirmed`]): the signed
+/// transition, which a retry broadcasts again, and what recording the request
+/// takes once it is proved on Platform. Only the attempt that held it settles
+/// it.
+#[derive(Debug, Clone)]
+pub(crate) struct UnconfirmedPublicRequest {
+    pub(crate) attempt: u64,
+    pub(crate) transition: StateTransition,
+    /// The account reference the request carries: its document is looked up
+    /// by the sender, the recipient and it, DashPay's unique index.
+    pub(crate) account_reference: u32,
+    /// Our receiving (friendship) account for the pair, registered once the
+    /// request is recorded, as a send registers it.
+    pub(crate) account_index: u32,
+    pub(crate) contact_xpub: ExtendedPubKey,
+}
 
 /// DashPay social state carried by one [`ManagedIdentity`](super::ManagedIdentity).
 #[derive(Debug, Clone, Default)]
@@ -79,6 +125,125 @@ pub struct DashPayState {
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub(super) high_water_sent_ms: Option<u64>,
 
+    /// The position of DashPay's private contact request store (protocol
+    /// version 15) to scan from next for this identity: every entry before it
+    /// was read and what it held for this identity ingested. Persisted, after
+    /// what the entries before it held, for a backend attesting
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`, so a relaunch reads on from it;
+    /// otherwise a cold start scans the store again from 0, and ingest is a
+    /// fixpoint. [`ManagedIdentity::unignore_sender`] rewinds it, as it does
+    /// the received cursor.
+    ///
+    /// [`ManagedIdentity::unignore_sender`]: super::ManagedIdentity::unignore_sender
+    pub(super) private_contact_requests_position: u64,
+
+    /// Whether a private sync read DashPay's private contact request store
+    /// to its end for this identity since the wallet was loaded, with nothing
+    /// held back. Until then a private send or accept reads it first: a
+    /// request paid for in an earlier process may be in the store unread, and
+    /// the reservation that kept it from being paid twice did not survive.
+    /// In memory only; a rewind of the read clears it
+    /// (`ManagedIdentity::rewind_private_store_read`).
+    pub(super) private_contact_requests_read: bool,
+
+    /// The highest height a read of a page of DashPay's private contact
+    /// request store was proved at, among the pages a private sync read for
+    /// this identity since load, a page completed from several reads counting
+    /// its highest: what `private_contact_requests_read` rests on. A request sealed
+    /// to one of its keys is in such a page only if the key was added at or
+    /// below it, so the store read covers the identity's keys as proved at or
+    /// above it, and a public request is decided only with those
+    /// (`DashPayView::read_private_store_before_deciding`). `None` before any
+    /// page was read with the identity's keys since its read was last rewound
+    /// (`ManagedIdentity::rewind_private_store_read`). In memory only.
+    pub(super) private_store_read_height: Option<u64>,
+
+    /// The highest `private_store_read_height` a rewind of the read reset:
+    /// the store was seen at that height, so a read since, with the keys the
+    /// rewind was for, counts as read to the end
+    /// (`private_contact_requests_read`) only once it reaches it. A read from
+    /// a node behind it would otherwise pass over entries the wallet already
+    /// saw, which the earlier keys could not open. `None` before any rewind of
+    /// a read. In memory only; never lowered.
+    pub(super) private_store_read_floor: Option<u64>,
+
+    /// The fingerprint of the scanning keys `private_contact_requests_position`
+    /// and `private_contact_requests_read` hold for
+    /// (`ManagedIdentity::private_scan_key_fingerprint`): entries to or from
+    /// a key added since were not opened. When the identity's keys no
+    /// longer match it, both are rewound (`reconcile_private_scan_keys`).
+    /// `None` before the first reconcile.
+    pub(super) private_scan_keys: Option<[u8; 32]>,
+
+    /// The shielded address each contact's tracked private request to this
+    /// identity carries. Persisted for a backend attesting
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE`; otherwise rebuilt by the scan a
+    /// cold start runs. Whether a request came privately is the request's
+    /// own ([`ContactRequest::came_privately`]), so it holds across restarts.
+    pub(super) private_shielded_addresses: BTreeMap<Identifier, [u8; 43]>,
+
+    /// The private requests to each recipient that are being paid for, or
+    /// were paid for and are not yet read back from the store, each owned by
+    /// the attempt that reserved it. While one is pending no other request to
+    /// the recipient is sent, private or public, as the store keeps every
+    /// entry appended and a second payment could execute too. The private
+    /// sync settles one when it reads the entry back and records it. In
+    /// memory only: after a restart, those whose payment is unconfirmed are
+    /// restored from the shielded store's unconfirmed spends.
+    pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
+
+    /// The public requests to each recipient being sent, by attempt: each
+    /// claims the pair from before its channel is decided until it is
+    /// submitted and recorded, and while one does no private request to the
+    /// recipient is reserved, as a reserved one refuses a public send. A
+    /// claim is released only by its own attempt, whose id is process-wide,
+    /// so a send that outlived its wallet's removal and re-creation under the
+    /// same id cannot release a claim of the new wallet. In memory only.
+    pub(super) public_contact_request_claims: BTreeMap<Identifier, BTreeSet<u64>>,
+
+    /// The public request to each recipient whose broadcast may have been
+    /// delivered while no proof settled its outcome: it may still execute, so
+    /// no other request to the recipient is signed, public or private, until a
+    /// proved read shows its document on Platform (it is then recorded as
+    /// sent) or shows the transition can no longer write it. A retry
+    /// broadcasts the same signed bytes. In memory only, bound to the wallet
+    /// generation that holds this state: a process that starts afresh reads
+    /// the identity contract nonce from Platform and finds a request already
+    /// on Platform before it sends, which is what keeps a second one from
+    /// executing then.
+    pub(super) unconfirmed_public_requests: BTreeMap<Identifier, UnconfirmedPublicRequest>,
+
+    /// Whether this identity was loaded with a private contact request
+    /// payment that may be unresolved
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`) and no
+    /// restoration from the shielded store has restored its reservations
+    /// since. While set, the identity sends and accepts no public contact
+    /// request, as no reservation holds the pair its payment is for. In
+    /// memory, from what a load restored.
+    pub(super) private_payments_unrestored: bool,
+
+    /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
+    /// `contactRequest` docs to each recipient seen by a sweep this process.
+    ///
+    /// Every request to one recipient carries the same receiving xpub, so this
+    /// is the earliest height a payment to it can appear at — the receiving
+    /// account's scan checkpoint. The tracked outgoing request is only the
+    /// newest one, so its height can be too high.
+    ///
+    /// In-memory only (never persisted), like [`Self::high_water_sent_ms`]:
+    /// that cursor resets on cold start, so each process's first successful
+    /// sent fetch returns every sent doc and refills this map. Only sweeps fill
+    /// it, because replayed or live-sent state knows only the newest request.
+    /// Until [`Self::sent_sweep_completed`] is set the map is not
+    /// authoritative, and `reconcile_dashpay_rescan` defers contacts missing
+    /// from it.
+    pub(super) earliest_sent_core_heights: BTreeMap<Identifier, u32>,
+
+    /// Whether a sync sweep fetched and ingested this identity's sent requests
+    /// this process, filling [`Self::earliest_sent_core_heights`].
+    /// In-memory only: a cold start clears it along with the map.
+    pub(super) sent_sweep_completed: bool,
+
     /// DashPay profile (display name, bio, avatar, public message)
     /// published via the DashPay data contract. `None` until the
     /// profile has been fetched or set.
@@ -126,13 +291,9 @@ pub struct DashPayState {
     /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
     pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
 
-    /// Contacts for which a historical L1 rescan has already been triggered this
-    /// process lifetime (DIP-15 §12.6 coreHeight backfill). When the rescan
-    /// reconcile lowers the wallet's SPV `synced_height` to a contact's funding
-    /// height so the filter manager re-scans for payments that landed before the
-    /// receival address was watched, the contact is recorded here so the
-    /// recurring sweep does not re-lower the height every pass — which would
-    /// reset the in-flight backfill and prevent it from ever completing.
+    /// Contacts handled by this process's historical-payment reconciliation.
+    /// Only outgoing request changes clear the mark. Durable coverage decides
+    /// whether to rewind; a process-local mark alone never certifies a scan.
     ///
     /// This set is the in-memory half of the guard and is never persisted: a
     /// relaunch clears it. Its durable half is the wallet's
@@ -204,5 +365,149 @@ impl DashPayState {
     /// session.
     pub fn high_water_sent_ms(&self) -> Option<u64> {
         self.high_water_sent_ms
+    }
+
+    /// Our tracked outgoing request to `contact`: the established contact's
+    /// outgoing side, else a pending sent request.
+    pub fn outgoing_request(&self, contact: &Identifier) -> Option<&ContactRequest> {
+        self.established_contacts
+            .get(contact)
+            .map(|established| &established.outgoing_request)
+            .or_else(|| self.sent_contact_requests.get(contact))
+    }
+
+    /// The contact's tracked request to us: the established contact's
+    /// incoming side, else a pending incoming request.
+    pub fn incoming_request(&self, contact: &Identifier) -> Option<&ContactRequest> {
+        self.established_contacts
+            .get(contact)
+            .map(|established| &established.incoming_request)
+            .or_else(|| self.incoming_contact_requests.get(contact))
+    }
+
+    /// The position of DashPay's private contact request store to scan from
+    /// next for this identity; see the field doc.
+    pub fn private_contact_requests_position(&self) -> u64 {
+        self.private_contact_requests_position
+    }
+
+    /// Whether a private request to `contact` is being paid for, or was paid
+    /// for and is not yet read back from the store; see the field doc.
+    pub fn private_reply_pending(&self, contact: &Identifier) -> bool {
+        self.pending_private_replies.contains_key(contact)
+    }
+
+    /// Whether any private request this identity sent is reserved as
+    /// pending ([`Self::private_reply_pending`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn private_replies_pending(&self) -> bool {
+        !self.pending_private_replies.is_empty()
+    }
+
+    /// A recipient this identity holds a contact request in flight to, if
+    /// any: a private request it is paying for or has not read back
+    /// ([`Self::private_reply_pending`]), or a public one claimed and not yet
+    /// recorded ([`Self::public_contact_request_claimed`]) or unconfirmed
+    /// ([`Self::public_contact_request_unconfirmed`]).
+    pub fn contact_request_in_flight(&self) -> Option<Identifier> {
+        self.pending_private_replies
+            .keys()
+            .chain(self.public_contact_request_claims.keys())
+            .chain(self.unconfirmed_public_requests.keys())
+            .next()
+            .copied()
+    }
+
+    /// Whether a public request to `contact` was broadcast and may have been
+    /// delivered, with no proof settling its outcome yet; see the field doc.
+    pub fn public_contact_request_unconfirmed(&self, contact: &Identifier) -> bool {
+        self.unconfirmed_public_requests.contains_key(contact)
+    }
+
+    /// The unconfirmed public request to `contact`, if any
+    /// ([`Self::public_contact_request_unconfirmed`]).
+    pub(crate) fn unconfirmed_public_request(
+        &self,
+        contact: &Identifier,
+    ) -> Option<&UnconfirmedPublicRequest> {
+        self.unconfirmed_public_requests.get(contact)
+    }
+
+    /// The recipients this identity holds an unconfirmed public request to
+    /// ([`Self::public_contact_request_unconfirmed`]).
+    pub(crate) fn unconfirmed_public_request_recipients(&self) -> Vec<Identifier> {
+        self.unconfirmed_public_requests.keys().copied().collect()
+    }
+
+    /// Whether this identity was loaded with a private contact request payment
+    /// that may be unresolved, and no restoration from the shielded store has
+    /// restored its reservations since: its public contact requests are held.
+    pub fn private_payments_unrestored(&self) -> bool {
+        self.private_payments_unrestored
+    }
+
+    /// Whether a private contact request this identity paid for may still be
+    /// unresolved, as its position record stores it
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`): it
+    /// holds a private request it is paying for or has not read back, or it
+    /// was loaded with one no restoration has restored since.
+    pub fn private_payments_unresolved(&self) -> bool {
+        !self.pending_private_replies.is_empty() || self.private_payments_unrestored
+    }
+
+    /// The shielded address kept for `contact`, whichever way the tracked
+    /// requests went; [`Self::private_contact`] gives it only while the
+    /// contact's request to us came privately.
+    pub(crate) fn private_shielded_address(&self, contact: &Identifier) -> Option<[u8; 43]> {
+        self.private_shielded_addresses.get(contact).copied()
+    }
+
+    /// Whether a public request to `contact` is being sent; see the field
+    /// doc.
+    pub fn public_contact_request_claimed(&self, contact: &Identifier) -> bool {
+        self.public_contact_request_claims.contains_key(contact)
+    }
+
+    /// Whether a private sync read DashPay's private contact request store
+    /// to its end for this identity since load; see the field doc.
+    pub fn private_contact_requests_read(&self) -> bool {
+        self.private_contact_requests_read
+    }
+
+    /// The highest proved height of a store page a private sync read for this
+    /// identity since load, if one did ([`Self::private_contact_requests_read`]).
+    pub(crate) fn private_store_read_height(&self) -> Option<u64> {
+        self.private_store_read_height
+    }
+
+    /// How this identity and `contact` exchanged private requests, from the
+    /// tracked requests either way; `None` when neither went privately.
+    pub fn private_contact(&self, contact: &Identifier) -> Option<PrivateContact> {
+        let received_privately = self
+            .incoming_request(contact)
+            .is_some_and(ContactRequest::came_privately);
+        let sent_privately = self
+            .outgoing_request(contact)
+            .is_some_and(ContactRequest::came_privately);
+        (received_privately || sent_privately).then(|| PrivateContact {
+            received_privately,
+            sent_privately,
+            shielded_address: self
+                .private_shielded_addresses
+                .get(contact)
+                .copied()
+                .filter(|_| received_privately),
+        })
+    }
+
+    /// Whether a sent-request sweep completed this process; see the field doc.
+    pub fn sent_sweep_completed(&self) -> bool {
+        self.sent_sweep_completed
+    }
+
+    /// Earliest `$createdAtCoreBlockHeight` a sweep saw this process among our
+    /// sent requests to `recipient`; see the field doc.
+    pub fn earliest_sent_core_height(&self, recipient: &Identifier) -> Option<u32> {
+        self.earliest_sent_core_heights.get(recipient).copied()
     }
 }

@@ -170,6 +170,7 @@ mod tests {
             document: ConsumedDocument {
                 document_id: Identifier::from(document_id),
                 document_type_name: "preorder".to_string(),
+                read: None,
             },
             referenced_id: Identifier::from([9; 32]),
             reference_target: DocumentPropertyReferenceTarget::Identity,

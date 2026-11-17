@@ -26,6 +26,12 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use drive_proof_verifier::types::private_document_entries::{
+    PrivateDocumentEntries, PrivateDocumentEntry,
+};
+use drive_proof_verifier::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
 use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationActionCounts, ContractModerationEntries,
@@ -246,6 +252,170 @@ impl MockResponse for Document {
     }
 }
 
+/// Entries as (time, revision, document bytes); the lifecycle as its state
+/// discriminant, the remaining revision count and the four lifecycle times,
+/// so a mocked deleted or erasing history round-trips with its metadata.
+type MockDocumentHistory = (
+    Vec<(u64, u64, Vec<u8>)>,
+    Option<(u8, u64, u64, u64, u64, u64)>,
+);
+
+impl MockResponse for drive_proof_verifier::types::DocumentHistoryProofInfo {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        use dapi_grpc::Message;
+        bincode::encode_to_vec(
+            (
+                self.history.mock_serialize(sdk),
+                self.response.encode_to_vec(),
+            ),
+            BINCODE_CONFIG,
+        )
+        .expect("encode document history proof info")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
+        use dapi_grpc::Message;
+        let ((history, response), _): ((Vec<u8>, Vec<u8>), _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode document history proof info");
+        Self {
+            history: drive_proof_verifier::types::DocumentHistory::mock_deserialize(sdk, &history),
+            response: dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1::decode(response.as_slice())
+                .expect("decode document history response"),
+        }
+    }
+}
+
+impl MockResponse for drive_proof_verifier::types::DocumentHistory {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        use drive_proof_verifier::types::DocumentHistoryState;
+        let entries = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.time_ms,
+                    entry.revision,
+                    entry.document.mock_serialize(sdk),
+                )
+            })
+            .collect::<Vec<_>>();
+        let lifecycle = self.lifecycle.as_ref().map(|lifecycle| {
+            let state = match lifecycle.state {
+                DocumentHistoryState::Active => 0u8,
+                DocumentHistoryState::Deleted => 1,
+                DocumentHistoryState::Erasing => 2,
+                DocumentHistoryState::Absent => 3,
+            };
+            (
+                state,
+                lifecycle.remaining_revisions,
+                lifecycle.times.deleted_at_ms,
+                lifecycle.times.erasing_started_at_ms,
+                lifecycle.times.erasing_from_time_ms,
+                lifecycle.times.erasing_from_revision,
+            )
+        });
+        bincode::encode_to_vec((entries, lifecycle), BINCODE_CONFIG)
+            .expect("encode document history")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
+        use drive_proof_verifier::types::{
+            DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+            DocumentHistoryState,
+        };
+        let ((entries, lifecycle), _): (MockDocumentHistory, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode document history");
+        Self {
+            entries: entries
+                .into_iter()
+                .map(|(time_ms, revision, bytes)| DocumentHistoryEntry {
+                    time_ms,
+                    revision,
+                    document: Document::mock_deserialize(sdk, &bytes),
+                })
+                .collect(),
+            lifecycle: lifecycle.map(
+                |(
+                    state,
+                    remaining_revisions,
+                    deleted_at_ms,
+                    erasing_started_at_ms,
+                    erasing_from_time_ms,
+                    erasing_from_revision,
+                )| DocumentHistoryLifecycle {
+                    state: match state {
+                        0 => DocumentHistoryState::Active,
+                        1 => DocumentHistoryState::Deleted,
+                        2 => DocumentHistoryState::Erasing,
+                        _ => DocumentHistoryState::Absent,
+                    },
+                    remaining_revisions,
+                    times: DocumentHistoryLifecycleTimes {
+                        deleted_at_ms,
+                        erasing_started_at_ms,
+                        erasing_from_time_ms,
+                        erasing_from_revision,
+                    },
+                },
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod document_history_mock_tests {
+    use super::*;
+    use drive_proof_verifier::types::{
+        DocumentHistory, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+        DocumentHistoryState,
+    };
+
+    /// Every lifecycle state and every lifecycle time survives the mock
+    /// round trip, so a mocked deleted or erasing history looks to the caller
+    /// exactly as the verified one would.
+    #[test]
+    fn should_round_trip_every_lifecycle_state_with_its_times() {
+        let mut sdk = crate::SdkBuilder::default()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .unwrap();
+        let mock = sdk.mock();
+        let sdk: &MockDashPlatformSdk = &mock;
+        for (state, remaining_revisions) in [
+            (DocumentHistoryState::Active, 3),
+            (DocumentHistoryState::Deleted, 3),
+            (DocumentHistoryState::Erasing, 1),
+            (DocumentHistoryState::Absent, 0),
+        ] {
+            let history = DocumentHistory {
+                entries: vec![],
+                lifecycle: Some(DocumentHistoryLifecycle {
+                    state,
+                    remaining_revisions,
+                    times: DocumentHistoryLifecycleTimes {
+                        deleted_at_ms: 5_000,
+                        erasing_started_at_ms: 6_000,
+                        erasing_from_time_ms: 4_000,
+                        erasing_from_revision: 3,
+                    },
+                }),
+            };
+            let recovered = DocumentHistory::mock_deserialize(sdk, &history.mock_serialize(sdk));
+            assert_eq!(recovered, history, "{state:?} did not round-trip");
+        }
+        let without_lifecycle = DocumentHistory {
+            entries: vec![],
+            lifecycle: None,
+        };
+        assert_eq!(
+            DocumentHistory::mock_deserialize(sdk, &without_lifecycle.mock_serialize(sdk)),
+            without_lifecycle
+        );
+    }
+}
+
 impl MockResponse for Element {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         // Create a bincode configuration
@@ -410,6 +580,102 @@ impl MockResponse for ContractModerationListStatuses {
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractModerationListStatuses");
         ContractModerationListStatuses(statuses)
+    }
+}
+
+impl MockResponse for YesNoVotePollState {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let state = (
+            self.stored_info.clone(),
+            self.yes_voting_power,
+            self.no_voting_power,
+            self.abstain_voting_power,
+        );
+        bincode::encode_to_vec(state, BINCODE_CONFIG).expect("encode YesNoVotePollState")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ((stored_info, yes_voting_power, no_voting_power, abstain_voting_power), _): (
+            (Option<YesNoVotePollStoredInfo>, u32, u32, u32),
+            usize,
+        ) = bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode YesNoVotePollState");
+        YesNoVotePollState {
+            stored_info,
+            yes_voting_power,
+            no_voting_power,
+            abstain_voting_power,
+        }
+    }
+}
+
+/// A page of private document entries as the mock encodes it: each entry's position, block
+/// height, block time and data, the store's count, and its chunk power when the page has it.
+type MockPrivateDocumentEntries = (Vec<(u64, u64, u64, Vec<u8>)>, u64, Option<u8>);
+
+impl MockResponse for PrivateDocumentEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let entries: Vec<(u64, u64, u64, Vec<u8>)> = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.position,
+                    entry.block_height,
+                    entry.block_time_ms,
+                    entry.data.clone(),
+                )
+            })
+            .collect();
+        bincode::encode_to_vec(
+            (entries, self.total_count, self.chunk_power),
+            BINCODE_CONFIG,
+        )
+        .expect("encode PrivateDocumentEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ((entries, total_count, chunk_power), _): (MockPrivateDocumentEntries, usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode PrivateDocumentEntries");
+        PrivateDocumentEntries {
+            entries: entries
+                .into_iter()
+                .map(
+                    |(position, block_height, block_time_ms, data)| PrivateDocumentEntry {
+                        position,
+                        block_height,
+                        block_time_ms,
+                        data,
+                    },
+                )
+                .collect(),
+            total_count,
+            chunk_power,
+        }
+    }
+}
+
+impl MockResponse for MasternodeYesNoVote {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec((self.vote_choice, self.times_voted), BINCODE_CONFIG)
+            .expect("encode MasternodeYesNoVote")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ((vote_choice, times_voted), _): ((YesNoAbstainVoteChoice, u16), usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode MasternodeYesNoVote");
+        MasternodeYesNoVote {
+            vote_choice,
+            times_voted,
+        }
     }
 }
 

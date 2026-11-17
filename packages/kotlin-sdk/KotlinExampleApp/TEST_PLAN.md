@@ -146,7 +146,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ADDR-01 | Query address info / multiple infos | Platform | Common | ✅ | | `AddressQueriesScreen` → `dash_sdk_address_fetch_info(s)`. |
 | ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Transfer Credits** (`TransferPlatformAddressScreen`) → `platform_address_wallet_transfer` (Keystore-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. |
 | ADDR-03 | Top up address from an existing (pending) asset lock | Cross | Thorough | ✅ | | Resume a stuck/pending Platform-address asset-lock funding: `IdentitiesHomeScreen` → `PendingAssetLocksList` → `ManagedPlatformWallet.resumeFundFromAssetLock` → `WalletManagerNative.walletResumeFundFromAssetLock`. Distinct from `ADDR-09`, which builds a **new** lock from Core. Needs a pending-lock fixture (an asset lock whose consume did not complete). |
-| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. |
+| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. The partial-amount overload `withdrawCredits(coreAddress, inputs, …)` has no screen here (none in SwiftExampleApp either); its input encoding is covered by `WithdrawalInputTest`. |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressSheet`, platform tab): QR + bech32m DIP-17 address + Copy. |
 | ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
 | ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
@@ -169,13 +169,19 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| VOTE-01 | Vote on contested DPNS username (masternode vote) | Platform | Thorough | ✅ | contested, masternode | `ContestDetailScreen` cast-vote → `dash_sdk_contested_resource_cast_vote`. **Requires masternode voting credentials** — environment-limited otherwise. |
+| VOTE-01 | Vote on contested DPNS username (masternode vote) | Platform | Thorough | ✅ | contested, masternode | `ContestDetailScreen` cast-vote → `dash_sdk_contested_resource_cast_vote`. The voting key (`contestDetail.votingKey`) shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE). **Requires masternode voting credentials** — environment-limited otherwise. |
 | VOTE-02 | Query contested resources | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResources). |
 | VOTE-03 | Query contested-resource vote state | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResourceVoteState). |
 | VOTE-04 | Query voters for a contestant identity | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResourceVotersForIdentity). |
 | VOTE-05 | Query an identity's votes | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResourceIdentityVotes). |
 | VOTE-06 | Query vote polls by end date | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getVotePollsByEndDate). |
 | VOTE-07 | Masternode vote (generic builder entry) | Platform | — | ➖ | | Retired — covered by `VOTE-01`. |
+| VOTE-08 | List decision proposals (open / mine / newest, paged) | Platform | Thorough | ✅ | proposal, read-only | `QueriesListScreen` → Decision Proposals (`votingQueries.decisionProposalsLink`) → `DecisionProposalsScreen`: listing picker (`decisionProposals.listing`), identity picker for Mine (`decisionProposals.ownerPicker`), Load More (`decisionProposals.loadMore`). Needs protocol version 15; an earlier network shows a load error. |
+| VOTE-09 | Create a decision proposal | Platform | Thorough | ✅ | proposal | `DecisionProposalsScreen` + (`decisionProposals.create`) → `CreateDecisionProposalScreen` (`createDecisionProposal.*`) → `PlatformWalletManager.decisionProposals.create` (one `platform_wallet_decision_proposal_create` call; the success section shows the returned id). Pays the decision proposal fund (0.5 Dash) plus fees. While it broadcasts, system Back does nothing, and a rotation or a bottom-tab switch does not cancel it: the screen shows the outcome when it composes again. Platform refuses a pass percent outside 50 to 80, a turnout above 50 and an end date outside one to four weeks. Protocol version 15. |
+| VOTE-10 | View a decision proposal and its poll state | Platform | Thorough | ✅ | proposal, read-only | `DecisionProposalDetailScreen` (row `decisionProposals.row.<id>`): rule, poll status (`decisionProposal.pollStatus`: open with tallies, or finished with its result), poll id. |
+| VOTE-11 | Edit a decision proposal's text | Platform | Thorough | ✅ | proposal | Detail → Edit Text (`decisionProposal.edit`, shown only when a local wallet identity filed it) → `editDecisionProposal.*` → `PlatformWalletManager.decisionProposals.edit` (one `platform_wallet_decision_proposal_edit` call; no signing key is chosen in the app). Accepted for a day after creation; an edit that changes nothing is refused before anything is broadcast, and an edit that raced another one is refused by Platform (consensus code 40106) rather than overwriting it. The dialog cannot be dismissed while it broadcasts. |
+| VOTE-12 | Masternode vote on a decision proposal (yes / no / abstain) | Platform | Thorough | ✅ | proposal, masternode | Detail → Vote (`decisionProposal.vote`) → `decisionProposalVote.choice` / `.proTxHash` / `.votingKey` / `.submit` → `dash_sdk_decision_proposal_cast_vote`. The voting key shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE). **Requires masternode voting credentials**; a vote from a regular wallet is refused (no voter identity). |
+| VOTE-13 | Read a masternode's answer on a decision proposal | Platform | Thorough | ✅ | proposal, masternode, read-only | Vote dialog → Read This Masternode's Answer (`decisionProposalVote.lookUp`) → `dash_sdk_decision_proposal_get_masternode_vote`. No answer once the poll finished. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -205,6 +211,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🧪 | | **Sum / Average Documents** screen (op selector → **Sum**) → `dash_sdk_document_sum`. |
 | DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🧪 | | Same screen (op selector → **Average**) → `dash_sdk_document_average`. |
 | DOC-15 | Document transfer / purchase across wallets | Platform | Uncommon | ✅ | multiwallet | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). |
+| DOC-16 | Erase a deleted keep-history document's revisions | Platform | Thorough | 🧪 | | **Browse Documents** → document → **Actions…** → **Erase Document…** (or the **Erase Document** catalog entry) → `DocumentTransactions.erase` → `platform_wallet_document_erase`. Needs a `documentsKeepHistory` type with `canBeErased: true` and a document already deleted via `DOC-04`; the first erase must be signed by the owner, later ones by any identity, each removing up to 100 revisions. Not driven on a device; no such type exists on testnet yet. |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -293,6 +300,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view → `dash_sdk_system_get_path_elements`. Enter `path` + `keys` JSON array; returns `[{key, element, type}]`. Use a **bounded** path. |
 | SYS-07 | Platform balance sync covers every registered wallet | Platform | — | ➖ | | Retired — the row verified a per-active-wallet staleness caveat that no longer exists: the Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (platform twin of `CORE-20`), and the cross-wallet receives (`SH-15`, `DOC-15`) already exercise it. |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
+| SYS-09 | Quorum Source picker + Proof Quorum Source indicator | Platform | Thorough | ✅ | | Settings → **Quorum Source** (`settings.quorumMode`, port of SwiftExampleApp's Options picker): pick Auto / SPV / Trusted; the choice applies to the current SDK at once and survives a relaunch. **Proof Quorum Source** (`settings.quorumSource`): in Auto it reads *Trusted (HTTP)* until SPV, started from the Sync tab, has synced, then *SPV*; SPV mode reads *SPV* at once (proofs fail closed until synced); Trusted reads *Trusted (HTTP)*. Proofs keep verifying in Auto while SPV syncs. |
 
 ---
 
@@ -306,7 +314,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 29 | yes |
-| Thorough | 35 | yes |
+| Thorough | 42 | yes |
 | Uncommon | 25 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
@@ -315,7 +323,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~74 |
+| Platform | ~80 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -329,13 +337,13 @@ Membership of each feature category across **all** sections (primary section mem
 - **Identity** — `ID-01..15`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
-- **Voting** — `VOTE-01..07`, `DPNS-05`, `DPNS-08`
+- **Voting** — `VOTE-01..13`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
-- **System / Diagnostics** — `SYS-01..08`
+- **System / Diagnostics** — `SYS-01..09`
 
 ### Tag index
 
@@ -346,5 +354,6 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `TOK-18`, `TOK-19`
-- **masternode** — `VOTE-01`
+- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `TOK-18`, `TOK-19`
+- **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`
+- **proposal** (decision proposals, protocol version 15): `VOTE-08..13`

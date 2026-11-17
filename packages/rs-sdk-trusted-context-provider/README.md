@@ -117,9 +117,273 @@ let sdk = SdkBuilder::new(AddressList::default())
     .build()?;
 ```
 
+## Verified Quorum Keys (opt-in)
+
+`VerifiedHttpContextProvider` trusts no HTTP endpoint for quorum keys. It
+starts from a checkpoint, a ChainLocked Core block and the masternode and
+quorum Merkle roots its coinbase commits to, and accepts a Platform quorum key
+only after a Core quorum proof chain (DIP 175, `DASHNC02`) verifies from that
+checkpoint and opens the quorum's commitment. Relays that serve the proofs are
+untrusted byte sources: a relay that lies, stalls or fails can delay requests,
+but cannot make the SDK accept a forged key or ban an honest node.
+
+```rust
+use dash_sdk::SdkBuilder;
+use dpp::dashcore::Network;
+use rs_sdk_trusted_context_provider::VerifiedHttpContextProvider;
+use std::num::NonZeroUsize;
+
+// Embedded checkpoint, network's public quorum service as the relay.
+let provider = VerifiedHttpContextProvider::new(
+    Network::Testnet,
+    NonZeroUsize::new(100).expect("cache size"),
+)?;
+
+// The SDK refuses a provider for another network than its own.
+let sdk = SdkBuilder::new_testnet()
+    .with_context_provider(provider)
+    .build()?;
+```
+
+`with_options` takes the defaults (the embedded checkpoint, the network's
+public quorum service, a cache of `DEFAULT_QUORUM_KEY_CACHE_SIZE` keys) for
+every option it is not given: a starting point, relays (1 to 8, `https`
+except on loopback) and the cache size.
+
+```rust
+use rs_sdk_trusted_context_provider::{
+    Continuation, StartingPoint, VerifiedHttpContextProvider, VerifiedProviderOptions,
+};
+
+let provider = VerifiedHttpContextProvider::with_options(
+    Network::Testnet,
+    VerifiedProviderOptions {
+        sources: Some(vec!["https://relay.example.org".to_string()]),
+        ..Default::default()
+    },
+)?;
+
+// Later: persist where proofs got to...
+let saved = serde_json::to_string(&provider.continuation())?;
+
+// ...and resume from it on the next start.
+let continuation: Continuation = serde_json::from_str(&saved)?;
+let next = VerifiedHttpContextProvider::with_options(
+    Network::Testnet,
+    VerifiedProviderOptions {
+        start: Some(StartingPoint::Continuation(continuation)),
+        ..Default::default()
+    },
+)?;
+```
+
+Behaviour:
+
+- Mainnet and testnet only. Each provider POSTs to `<source>/proofs` with the
+  checkpoint hash, a height, the quorum hash and type, and `nodeCount: 0`.
+- A key is returned for a Core height `H` only when verified proofs show that
+  the quorum was mined by `H` and active at some height in `[H - 24, H]`:
+  among the targets whose quorum roots opened the quorum, one is at or below
+  `H` and one at or above `H - 24` (see the trust model below). Failures of
+  any kind (timeouts, HTTP errors, oversize or invalid proofs, proofs of
+  other quorums) are reported as an unavailable quorum source, so the SDK
+  tries another node without banning the one that named the quorum. A
+  quorum of another type than the network's Platform quorum type is
+  rejected as invalid.
+- Serving costs about one small proof per 24 Core blocks per quorum in use.
+  The first proof of a quorum asks for the height itself; Core usually
+  answers with a target exactly there, since Platform's Core height is
+  ChainLocked. Past one DKG interval (24 blocks) above the highest proven
+  target, the relay is usually asked for its latest ChainLock, which serves
+  the next 24 heights or more. A relay that answers with a target above the
+  height, because the height has no ChainLock of its own, is asked again for
+  a target up to 24 blocks below it, which serves the height by itself; the
+  later target is kept as evidence.
+- Fetches of one quorum are shared, and requests for at most two quorums
+  are in flight at once (a fetch waiting out a backoff gives its place up).
+  A relay that cannot serve a quorum for two asks (the tip or the height,
+  then a height 24 blocks below it) is not asked again in that fetch; a busy
+  relay (503) is retried after a backoff; relays that fail otherwise cool
+  down, and so does a quorum at a height whose fetch failed. A fetch gives up after 70 s.
+  Redirects are refused and responses are capped at 1 MiB.
+- The cache must hold at least the active Platform quorums (24 on mainnet
+  and testnet), or the provider is not built; 32 or more avoids proving keys
+  again just because they were evicted.
+- Data contracts come from the known-contracts cache and the system contracts
+  enabled by cargo features; token configurations from the known cache.
+- The public mainnet quorum service currently answers `/proofs` with HTTP 403.
+  `VerifiedHttpContextProvider::new(Network::Mainnet, ..)` builds, but its
+  fetches fail until the service serves proofs; pass working mainnet relays
+  in `VerifiedProviderOptions::sources` meanwhile.
+- The SDK refuses the provider with proofs turned off (`with_proofs(false)`)
+  or on an SDK for another network: it reports both requirements through
+  `ContextProvider::requires_proofs` and `ContextProvider::network`.
+
+### Trust model
+
+What a served key proves: the quorum was mined by the response's Core height
+`H`, and active at some height in `[H - 24, H]`. Platform quorums (mainnet
+type 4, testnet type 6) do not rotate: the active set at a height is the
+newest quorums mined by it, so a quorum enters the set when it is mined and
+never returns once it leaves. A quorum in the quorum roots of two verified
+targets was therefore active at every height between them. All targets are
+proven from one checkpoint through ChainLocks, so they lie on one chain. A
+target above `H` is never evidence that the quorum existed at `H`.
+
+The 24 blocks, one DKG interval of the Platform quorum types, cover how Drive
+rotates validator sets. It moves off its quorum only at the end of the first
+block whose Core height drops that quorum from the active set
+(`validator_set_update_v2` in
+`packages/rs-drive-abci/src/execution/platform_events/block_end/validator_set_update/v2/mod.rs`),
+so that block is still signed by a quorum Core has just rotated out at the
+height it reports. The Core height can advance between consecutive Platform
+blocks, and the rotation applies only after the block.
+
+The checkpoint is trust configuration, like a hard-coded block hash: whoever
+chooses it chooses the chain. Beyond it, the provider trusts that no ChainLock
+quorum active at the checkpoint or mined after it ever signs dishonestly,
+retired ones included, as `dash-core-proof` documents. A valid proof shows a
+quorum was mined, not that its target is the newest ChainLock; how fresh a
+response must be is the SDK's policy.
+
+### Checkpoint shelf life
+
+A proof covers every ChainLock quorum rotation between its starting state and
+its target, so it grows as the checkpoint ages, and a relay has to keep the
+blocks back to it. Each release moves the embedded checkpoints forward, as
+below.
+A long-lived application should persist `continuation()` and resume from it
+on the next start (`StartingPoint::Continuation`), so its proofs stay short.
+
+A continuation is an anchor and the verified states above it. The anchor is
+the newest verified state strictly below one DKG interval (24 blocks) under
+the lowest Core height of a response the SDK verified with the provider's
+keys, or the provider's own checkpoint when none was verified or no state is
+kept below that height. The proof verifier reports that height, with the
+quorum that signed it, through `ContextProvider::core_height_verified` only
+after the response's Tenderdash signature verified, so the height was signed
+by a Platform quorum as part of the state it committed: Platform reached it.
+The provider counts it only when its own cache serves that quorum's key at
+that height, so it could have supplied the key; routing the height to the
+provider that did is the job of any provider combining others. The next
+session needs heights at or above Platform's Core height, which only rises,
+so the lowest height verified this session is at or below every height the
+next session needs. A key verified at a height `H`
+may rest on evidence up to one DKG interval below `H`: it is served up to
+24 blocks past the highest target that opened its quorum, for the block on
+which Drive still signs with a quorum Core has just retired, and that quorum
+is in no quorum root above its retirement. A proof starts from a state
+strictly below its target, so the continuation keeps a state below `H - 24`
+as its anchor, and every state above it, and the next session can prove such
+a key again by asking for a target at or above `H - 24`. The heights keys
+are looked up or fetched for come from responses not verified yet and never
+count, so a forged response, or one that fails verification, cannot move the
+anchor. Verified states above the heights verified, such as the relay's tip
+or a target above the height asked for, never become the anchor. A node
+answering from an older block can only make the anchor older, and proofs
+longer. The anchor advances when the SDK verifies responses at heights more
+than one DKG interval above the states verified before them.
+Persisting `latest_verified_state()` as the next checkpoint instead would
+strand the next session: that state is often the relay's tip, above the
+Core height Platform reports, so no key at or below it could be proven until
+Platform passes it. The states above the anchor keep later proofs short.
+Every state in a continuation is trust configuration, like the checkpoint:
+only resume from a continuation this provider produced, or one from a
+provider verified from a checkpoint you trust.
+
+### Limitations
+
+- Keys are proven for the Core height Platform reports in its responses. If
+  Platform halts, that height stops while Core moves on. A quorum not cached
+  before the halt is still proven with a proof whose target is that height,
+  as long as the relay's Core has that ChainLock.
+- A height at or below the checkpoint (a continuation's anchor) cannot be
+  proven, since every proof starts from it.
+- If the Core height jumps by more than 24 blocks between two Platform blocks,
+  for example on the first block after a long idle period or a halt, that one
+  block's responses cannot be verified until the next Platform block. The
+  provider reports the source as unavailable, so no node is banned.
+- A node may name a retired quorum at an old height; it is proven from a
+  state below that height, possibly the checkpoint. That is bounded by the
+  same fetch limits and costs only cache churn, not safety.
+- An inclusion proof cannot show that a quorum does not exist, so the
+  provider never reports a quorum as absent; nodes naming fake quorums are
+  skipped by the SDK, not banned.
+
+### Refreshing the embedded checkpoints
+
+`checkpoints/<network>.json` hold Core `ProofState` JSON (hashes in RPC display
+order). `yarn release` moves both forward with
+
+```sh
+cargo run -p rs-sdk-trusted-context-provider --example refresh_checkpoints -- [mainnet] [testnet]
+```
+
+For each network it asks the public relay for two proofs from the current
+checkpoint, one to the relay's tip and one to a block about a day below it
+(just past the oldest active Platform quorum's mining), verifies both, and
+writes the lower target as the new checkpoint. Each new checkpoint is proven
+from the one it replaces, so a refresh adds no trust in the relay. It also
+rewrites `tests/data/checkpoint-evidence-<network>.json` from the proof: the target's
+raw header, its coinbase transaction and the coinbase's Merkle branch. The
+`checkpoints` test recomputes the block hash, the header's Merkle root and
+both roots from that evidence.
+
+`MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` points a network at another
+relay serving `/quorums` and `/proofs`, for example a self-hosted one while
+public mainnet `/proofs` returns 403 (the provider behind the Platform check
+below accepts `http` only on loopback). A network that fails keeps its
+checkpoint, and the release prints a warning and records it in the release
+PR; an older checkpoint stays valid and only makes proofs longer. Any other
+failure, including checkpoint files that cannot be written and an
+interrupt, stops the release with the committed checkpoints restored, and
+so does a checkpoint that no longer matches its evidence.
+
+The relay's quorum list only suggests the height to ask for. The new
+checkpoint must be at least half a Platform quorum lifetime (about 12 hours)
+below both the verified tip and the Core height Platform reports, so the
+heights Platform reports after the release are above it. A relay cannot prove
+a ChainLock above the real tip, and one that hides its tip only makes the
+checkpoint older. Platform's Core height stops while Platform halts. It is
+read from proved `getEpochsInfo` responses of up to 5 evonodes from the
+network's seed list: the height is part of the state a Platform quorum signs,
+and this crate's provider proves that quorum's key from the current
+checkpoint. Unless a threshold of a Platform quorum signed a false block, the
+assumption behind every proof, a verified height is one Platform committed,
+and no evonode can report a higher one. The highest verified height is used;
+if no evonode gives one, the network keeps its checkpoint.
+
+A refresh relies on the same thing every proof does: that no quorum on the way
+from the old checkpoint signed a false ChainLock. A bad checkpoint would carry
+into every later SDK build, so the release PR's reviewer should compare each
+printed block hash with a block explorer at that height.
+
+To move a checkpoint by hand, for example when no relay can serve it:
+
+1. Pick a height with `chainlock: true` in `getblock` on two independent Core
+   nodes, and confirm `getblockhash H` and the block hash on a block explorer
+   agree.
+2. Write the state from the block: `network` (0 mainnet, 1 testnet), `height`,
+   `block_hash`, and the coinbase payload's `merkleRootMNList` and
+   `merkleRootQuorums` as `masternode_root` and `quorum_root`.
+3. Write the evidence file: the raw header (`getblockheader <hash> false`), the
+   raw coinbase transaction, and the coinbase's Merkle branch (sibling hashes
+   in wire order).
+
 ## Implementation Details
 
-The `TrustedHttpContextProvider` implements the `ContextProvider` trait and provides:
+Both providers implement the `ContextProvider` trait.
+
+`VerifiedHttpContextProvider` provides:
+
+1. **Quorum Public Keys**: proven from its checkpoint with DIP 175 proofs from
+   its relays, and kept in an LRU cache
+2. **Data Contracts**: pre-loaded or registered known contracts, then the
+   system contracts enabled by cargo features, otherwise `None`
+3. **Token Configurations**: pre-loaded known configurations, otherwise `None`
+4. **Platform Activation Height**: hardcoded values for each network
+
+`TrustedHttpContextProvider` provides:
 
 1. **Quorum Public Keys**: Fetched from trusted HTTP endpoints with LRU caching
 2. **Data Contracts**: 

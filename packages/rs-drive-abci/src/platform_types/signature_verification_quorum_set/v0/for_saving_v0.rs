@@ -5,7 +5,6 @@ use crate::platform_types::signature_verification_quorum_set::{
     VerificationQuorum,
 };
 use bincode::{Decode, Encode};
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
 
@@ -147,6 +146,7 @@ mod tests {
     use super::*;
     use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
     use dpp::dashcore_rpc::json::QuorumType;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     fn assert_quorum(
         quorums: &Quorums<VerificationQuorum>,
@@ -167,9 +167,7 @@ mod tests {
     #[test]
     fn should_restore_current_and_previous_quorums_from_frozen_v0_storage() {
         let bytes = hex::decode(super::super::storage_vectors::QUORUM_STORAGE_V0.trim()).unwrap();
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let (stored, consumed): (SignatureVerificationQuorumSetForSaving, _) =
             bincode::decode_from_slice(&bytes, config).unwrap();
         assert_eq!(consumed, bytes.len());
@@ -181,9 +179,9 @@ mod tests {
 
         let SignatureVerificationQuorumSet::V0(restored) = stored.into();
         assert_eq!(restored.config.quorum_type, QuorumType::Llmq400_60);
-        assert_eq!(restored.config.active_signers, 4);
+        assert_eq!(restored.config.active_signers.get(), 4);
         assert!(!restored.config.rotation);
-        assert_eq!(restored.config.window, 288);
+        assert_eq!(restored.config.window.get(), 288);
         assert_eq!(restored.current_quorums.len(), 2);
         assert_quorum(
             &restored.current_quorums,

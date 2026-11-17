@@ -5,6 +5,7 @@ use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyElementInfo::{PathKeyElement, PathKeyElementSize};
 use crate::util::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
@@ -12,8 +13,7 @@ use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     #[inline(always)]
@@ -23,9 +23,7 @@ impl Drive {
         document_id: Option<[u8; 32]>,
         entry: &DocumentExpirationEntry,
         expires_at_ms: TimestampMillis,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

@@ -15,6 +15,19 @@ pub struct DPPContractVersions {
     pub max_serialized_size: u32,
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
+    /// The format a node stores a contract in: the `DataContractInSerializationFormat` variant
+    /// Drive writes to state. It is a separate selector because a stored format need not be one
+    /// that state transitions carry or clients are sent. Each protocol version so far selects the
+    /// format of `contract_serialization_version`'s default; format 2, the stored format with
+    /// compiled document types, is written only from the protocol version whose table selects it.
+    pub contract_storage_serialization_version: FeatureVersion,
+    /// The generation of a document type's stored form (`DocumentTypeInSerializationFormat`)
+    /// that a contract stored in format 2 holds each of its document types in. The stored form
+    /// carries its generation, so changing this changes only what is written from then on; a
+    /// generation is paired with the builders whose output it stores, so one that rebuilds an
+    /// index structure on load (generation 0 rebuilds it with `index_levels_from_indices` 0)
+    /// is selected only with them.
+    pub contract_storage_document_type_version: FeatureVersion,
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
@@ -99,10 +112,11 @@ pub struct DocumentTypeMethodVersions {
     /// keyword: the method returns an empty result there, so the shipped
     /// `DataContract::validate_document_properties` 0 that calls it is inert.
     pub validate_property_constraints: OptionalFeatureVersion,
-    /// `Index::extract_contested_values`: writes an identifier property given as bytes or as
-    /// an array of byte values as `Value::Identifier` in a contest's index values, so every
-    /// contender names one contest with one poll. `None` on versions that predate it, where
-    /// the values are taken as given.
+    /// `Index::extract_contested_values`: writes a contest's index values one way, so every
+    /// contender names one contest with one poll. Generation 0 writes an identifier property
+    /// given as bytes or as an array of byte values as `Value::Identifier`; generation 1 writes
+    /// the value of every property the one way its type keys it. `None` on versions that
+    /// predate it, where the values are taken as given.
     pub canonical_contested_index_values: OptionalFeatureVersion,
     /// `fill_generated_properties`: writes each `generatedFrom` property a
     /// created or replaced document leaves out, generated from its params,
@@ -120,13 +134,31 @@ pub struct DocumentTypeMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
+    /// The contract grammar (document meta-schema generation). From generation 3 an index
+    /// can key the elements of a typed array and time and integer windows.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves
+    /// `contains` / `containsAny` clauses and window selections
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub document_type_schema: FeatureVersion,
+    /// How full validation checks a document type's schema at registration. 0: against the
+    /// document meta-schema `document_type_schema` names, through the `jsonschema` crate,
+    /// which also compiles the schema. 1 (protocol version 15): with the rules of document
+    /// meta-schema v3 in Platform's own code, an index property name held to 255 bytes, and
+    /// the type required to have a typed validation schema, which its documents are checked
+    /// against natively (`validate_document` 2).
+    pub check_document_type_schema: FeatureVersion,
     pub should_add_creator_id: FeatureVersion,
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
     /// Folds the `refersTo` reference keyword into the parsed property type.
     /// `None` on versions that predate the keyword: they ignore it entirely,
-    /// exactly as they parsed before it existed.
+    /// exactly as they parsed before it existed. 0 (protocol version 14) reads every
+    /// reference that names its target in the schema. 1 (protocol version 15) also reads,
+    /// on an identifier property, a permanent or moderated document reference whose target
+    /// the referring document names (`contractId` and `documentType` written
+    /// `"$self.<property>"`, with `documentTypeRequirements`), and refuses such a
+    /// declaration wherever else a reference sits.
     pub apply_property_reference: OptionalFeatureVersion,
     /// Parses the `requiredSince` property keyword (the contract version from
     /// which a property is required). `None` on versions that predate the
@@ -164,6 +196,34 @@ pub struct DocumentTypeSchemaVersions {
     /// documents a `countOf` or `sumOf` totals by integer, string or
     /// identifier keys; 1 (protocol version 15) by byte array keys too.
     pub parse_property_constraints: OptionalFeatureVersion,
+    /// Builds a document type's typed validation schema and its native validator
+    /// (`document_type::schema::validation_schema`), which `validate_document` 2 checks
+    /// documents against. `None` on versions whose document validation does not read one;
+    /// 0 (protocol version 15) builds what the document validator of protocol version 14
+    /// compiles.
+    pub validation_schema: OptionalFeatureVersion,
+    /// Parses the doctype-level `private` keyword (`{ "entrySize": n }`) onto the document
+    /// type: a private document type, whose documents are fixed-size encrypted entries an
+    /// anonymous shielded transition appends, with no index and no field the chain reads.
+    /// On every parse it also holds the type to what a private type may declare, and under
+    /// full validation `entrySize` to `max_private_document_entry_size`. Every version whose
+    /// native schema check (`check_document_type_schema` 1) admits the key sets this
+    /// (`should_parse_private_wherever_the_native_schema_check_admits_it`).
+    /// `None` on versions that predate the keyword: they ignore it entirely, exactly as they
+    /// parsed before it existed. Registration refuses it from protocol version 12 on
+    /// (meta-schemas v1 to v3 close the doctype level), and no stored contract carries it: the
+    /// protocol version 12 migration stripped the keys meta-schema v1 does not declare from
+    /// the contracts admitted under meta-schema v0, which left the doctype level open. 0
+    /// (protocol version 15).
+    pub parse_private_document: OptionalFeatureVersion,
+    /// `ContestedIndexResolution::try_from_schema_value`: reads the `resolution` a contested
+    /// index declares. Version 0 also reads 2
+    /// (`ContestedIndexResolution::MasternodeVoteOnDocuments`): each document entered for the
+    /// index values is a contender of its own, named by its document id, so an identity may
+    /// enter several. `None` on versions that predate it: the value is converted as it always
+    /// was, which refuses 2 as an unknown resolution, and so do the meta-schemas (v1 to v3
+    /// list the resolutions they admit). 0 (protocol version 15).
+    pub parse_contested_documents_resolution: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
@@ -189,4 +249,161 @@ pub struct DocumentTypeSchemaVersions {
 #[derive(Clone, Debug, Default)]
 pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::version::protocol_version::PLATFORM_VERSIONS;
+
+    /// The native schema check (`check_document_type_schema` 1) admits `private` as a key of a
+    /// document schema, and only parser generation 3 under `parse_private_document` reads it:
+    /// a table selecting the check without both would register a public type whose schema
+    /// says it is private.
+    #[test]
+    fn should_parse_private_wherever_the_native_schema_check_admits_it() {
+        let admitting: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                platform_version
+                    .dpp
+                    .contract_versions
+                    .document_type_versions
+                    .schema
+                    .check_document_type_schema
+                    >= 1
+            })
+            .collect();
+        assert!(
+            !admitting.is_empty(),
+            "expected a protocol version selecting the native schema check"
+        );
+        for platform_version in admitting {
+            let document_type_versions = &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions;
+            assert!(
+                document_type_versions
+                    .schema
+                    .parse_private_document
+                    .is_some(),
+                "protocol version {} admits `private` without parsing it",
+                platform_version.protocol_version
+            );
+            assert!(
+                document_type_versions.class_method_versions.try_from_schema >= 3,
+                "protocol version {} admits `private` with a parser that does not read it",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
+    /// sized from the private document store limits, reads, proves and verifies a page of it
+    /// through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`, and appends a private document create's entries,
+    /// at most `max_private_document_entries_per_transition` of them, through
+    /// `append_private_document_entries_operations`, after the transition's basic structure: a
+    /// protocol version parsing private types without
+    /// them could not register or read one, and one setting them where no type is private
+    /// states a rule nothing reads.
+    #[test]
+    fn should_set_the_private_document_store_methods_and_limits_exactly_where_private_types_parse()
+    {
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let parses_private = platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .parse_private_document
+                .is_some();
+            let limits = &platform_version.system_limits;
+            for (name, is_set) in [
+                (
+                    "private_document_store_target_chunk_bytes",
+                    limits.private_document_store_target_chunk_bytes.is_some(),
+                ),
+                (
+                    "private_document_store_min_chunk_power",
+                    limits.private_document_store_min_chunk_power.is_some(),
+                ),
+                (
+                    "private_document_store_max_chunk_power",
+                    limits.private_document_store_max_chunk_power.is_some(),
+                ),
+                (
+                    "max_private_document_entry_size",
+                    limits.max_private_document_entry_size.is_some(),
+                ),
+                (
+                    "insert_empty_private_document_store_operation",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .insert_empty_private_document_store_operation
+                        .is_some(),
+                ),
+                (
+                    "fetch_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .fetch_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "prove_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .prove_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "append_private_document_entries_operations",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .append_private_document_entries_operations
+                        .is_some(),
+                ),
+                (
+                    "max_private_document_entries_per_transition",
+                    limits.max_private_document_entries_per_transition.is_some(),
+                ),
+                (
+                    "private_document_create_from_shielded_pool basic_structure",
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                        .basic_structure
+                        .is_some(),
+                ),
+                (
+                    "verify_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .verify
+                        .document
+                        .verify_private_document_entries
+                        .is_some(),
+                ),
+            ] {
+                assert_eq!(
+                    is_set,
+                    parses_private,
+                    "protocol version {}: {name} set {is_set}, private types parsed {parses_private}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
 }

@@ -1,61 +1,31 @@
+# Runs one yarn script for each of several JS packages after a single setup.
+# `.github/scripts/js-packages.py plan` (in tests.yml's `changes` job) decides
+# which packages share a job; see its docstring for why.
 on:
   workflow_call:
     inputs:
-      package:
-        description: The package name to run tests for
+      job:
+        description: The job name, such as Tests or Linting
         type: string
         required: true
-      direct-packages:
-        description: JSON array of JS packages that changed directly
+      packages:
+        description: JSON array of {"package", "command"} objects, run in order as `yarn workspace <package> <command>`
         type: string
-        default: '[]'
-      skip-tests:
-        description: Skip running tests
-        type: boolean
-        default: false
-      test-command:
-        description: Test command to run
-        type: string
-        default: test
+        required: true
 
 jobs:
-  lint:
-    name: Linting
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    if: contains(fromJSON(inputs.direct-packages), inputs.package)
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
-
-      - name: Download JS build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          path: packages
-
-      - name: Run ESLinter
-        run: yarn workspace "${{ inputs.package }}" lint
-
-  test:
-    name: Tests
+  run:
+    name: ${{ inputs.job }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
-    if: ${{ !inputs.skip-tests }}
     steps:
+      # No JS test or lint reads git history, so the default shallow checkout
+      # is enough.
       - name: Check out repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -70,5 +40,7 @@ jobs:
         run: |
           cp packages/dapi/.env.example packages/dapi/.env
 
-      - name: Run tests
-        run: yarn workspace "${{ inputs.package }}" ${{ inputs.test-command }}
+      - name: Run ${{ inputs.job }}
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: python3 .github/scripts/js-packages.py run

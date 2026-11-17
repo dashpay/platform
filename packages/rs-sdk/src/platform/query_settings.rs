@@ -54,4 +54,14 @@ impl<'a> QuerySettings<'a> {
             ..*self
         }
     }
+
+    /// The protocol version a request may rely on both the network and this SDK serving:
+    /// the lower of [`Self::protocol_version`] and [`Self::verified_protocol_version`], 0
+    /// before any verified answer. A request whose newer shape older nodes refuse or answer
+    /// differently uses it only at or above the version that added the shape.
+    pub fn network_protocol_basis(&self) -> u32 {
+        self.protocol_version
+            .protocol_version
+            .min(self.verified_protocol_version)
+    }
 }

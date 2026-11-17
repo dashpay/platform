@@ -267,10 +267,19 @@ impl BatchTransitionActionV0 {
             .filter_map(|transition| match transition {
                 BatchedTransitionAction::DocumentAction(
                     DocumentTransitionAction::CreateAction(document_create_transition_action),
-                ) => document_create_transition_action
-                    .prefunded_voting_balance()
-                    .iter()
-                    .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val)),
+                ) => {
+                    let contest_fund = document_create_transition_action
+                        .prefunded_voting_balance()
+                        .iter()
+                        .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val));
+                    // A decision proposal's fund (protocol version 15) leaves its owner's balance
+                    // for its poll's as a contest's does; a create is one or the other
+                    let decision_proposal_fund = document_create_transition_action
+                        .decision_proposal()
+                        .and_then(|decision_proposal| decision_proposal.stated_fund.as_ref())
+                        .map_or(0, |(_, fund)| *fund);
+                    contest_fund.and_then(|fund| fund.checked_add(decision_proposal_fund))
+                }
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {

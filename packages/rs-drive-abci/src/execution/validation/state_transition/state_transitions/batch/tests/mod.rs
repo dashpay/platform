@@ -3,8 +3,9 @@ mod token;
 
 /// Sets valid DIP-33 payment addresses on a random profile document when the
 /// schema version carries the fields (dashpay v2, protocol version 14+): the
-/// generator fills them with random bytes, and the data trigger requires a
-/// valid leading type byte (0x00 P2PKH / 0x01 P2SH).
+/// generator fills them with random bytes, and a valid leading type byte (0x00
+/// P2PKH / 0x01 P2SH) is required, by the data trigger at protocol version 14 and
+/// by the DashPay v3 rules from 15.
 pub(crate) fn set_valid_profile_payment_addresses(
     document: &mut dpp::document::Document,
     profile: dpp::data_contract::document_type::DocumentTypeRef,

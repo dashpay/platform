@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 
 use crate::drive::prefunded_specialized_balances::{
@@ -13,9 +14,8 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// The operations to add to the specialized balance
@@ -24,9 +24,7 @@ impl Drive {
         &self,
         specialized_balance_id: Identifier,
         error_if_does_not_exist: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Credits, Vec<LowLevelDriveOperation>), Error> {
@@ -90,11 +88,11 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
     use grovedb::batch::GroveOp;
-    use std::collections::HashMap;
 
     /// Returns true if the op vec contains any GroveDB delete op. Each test
     /// operates on a fresh drive and only touches one balance id, so any
@@ -193,7 +191,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let id = Identifier::from([23u8; 32]);
 
-        let mut estimated = Some(HashMap::new());
+        let mut estimated = Some(EstimatedLayers::new());
         let (credits, ops) = drive
             .empty_prefunded_specialized_balance_operations_v0(
                 id,

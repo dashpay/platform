@@ -24,7 +24,7 @@ use jni::sys::{jbyteArray, jint, jlong};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
     dash_sdk_sign_with_mnemonic_and_path, dash_sdk_signer_create_from_private_key,
-    dash_sdk_signer_create_with_ctx, dash_sdk_signer_destroy, dash_sdk_signer_sign,
+    dash_sdk_signer_create_with_ctx, dash_sdk_signer_destroy, dash_sdk_signer_sign, FFINetwork,
     SignCompletionCallback, SignerHandle, SIGN_WITH_MNEMONIC_OK,
 };
 use std::ffi::{c_void, CString};
@@ -300,10 +300,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         let mut key = key;
 
         let network = match network {
-            0 => dash_network::ffi::FFINetwork::Mainnet,
-            2 => dash_network::ffi::FFINetwork::Devnet,
-            3 => dash_network::ffi::FFINetwork::Regtest,
-            _ => dash_network::ffi::FFINetwork::Testnet,
+            0 => FFINetwork::Mainnet,
+            2 => FFINetwork::Devnet,
+            3 => FFINetwork::Regtest,
+            _ => FFINetwork::Testnet,
         };
 
         let created =
@@ -431,10 +431,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         mnemonic_bytes.push(0);
 
         let network = match network {
-            0 => dash_network::ffi::FFINetwork::Mainnet,
-            2 => dash_network::ffi::FFINetwork::Devnet,
-            3 => dash_network::ffi::FFINetwork::Regtest,
-            _ => dash_network::ffi::FFINetwork::Testnet,
+            0 => FFINetwork::Mainnet,
+            2 => FFINetwork::Devnet,
+            3 => FFINetwork::Regtest,
+            _ => FFINetwork::Testnet,
         };
 
         // ECDSA compact-recoverable signatures are 65 bytes; 128 leaves

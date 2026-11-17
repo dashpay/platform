@@ -7,6 +7,7 @@ use crate::drive::identity::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
@@ -14,10 +15,8 @@ use crate::util::storage_flags::SINGLE_EPOCH_FLAGS_SIZE;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
 use grovedb::element::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Generates a vector of operations for inserting key searchable references.
@@ -27,9 +26,7 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,

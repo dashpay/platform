@@ -480,7 +480,7 @@ struct CreateIdentityView: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
-                        "Broadcast succeeded — confirmation pending",
+                        "Result not confirmed",
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .foregroundColor(.orange)
@@ -494,10 +494,10 @@ struct CreateIdentityView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Text(
-                        "The transition was broadcast and accepted, but its "
-                        + "execution-result proof couldn't be confirmed. The "
-                        + "identity will appear in the Identities tab after the "
-                        + "next sync. Do NOT re-register these keys — the slot "
+                        "The transition may have reached the network, but its "
+                        + "result couldn't be confirmed. If it went through, the "
+                        + "identity will appear in the Identities tab after a "
+                        + "later sync. Do NOT re-register these keys: the slot "
                         + "is held to prevent burning funds."
                     )
                     .font(.caption)
@@ -1541,8 +1541,8 @@ struct CreateIdentityView: View {
                     // the inline failure state.
                     return
                 case .unconfirmed:
-                    // Broadcast landed but its result couldn't be confirmed;
-                    // the identity is probably already live on chain. Mark the
+                    // The transition may have reached a node; its result is not
+                    // proved, and the identity may already be live on chain. Mark the
                     // slot used (same as `.completed`) — `usedIdentityIndices`
                     // unions the persisted `isUsed` reservation with the
                     // `PersistentIdentity` rows, so this is the reservation
@@ -2134,8 +2134,8 @@ struct CreateIdentityView: View {
     /// identity-registration account.
     ///
     /// The union matters for `.unconfirmed` Type-20 registrations: the
-    /// broadcast landed but no `PersistentIdentity` row exists until the
-    /// next sync confirms the identity, so `markIdentitySlotUsed`'s
+    /// transition may have reached a node, yet no `PersistentIdentity` row
+    /// exists until the next sync confirms it, so `markIdentitySlotUsed`'s
     /// persisted `isUsed` flag is the ONLY artifact holding the slot once
     /// the in-memory controller is gone. Without it the same index would
     /// be offered again and a duplicate submission would burn funds

@@ -29,6 +29,7 @@ fn parse_with(
         &config,
         full_validation,
         &mut vec![],
+        &PARSER_GENERATION,
         platform_version,
     )
 }

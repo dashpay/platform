@@ -68,6 +68,13 @@ final class InvitationPersistenceTests: XCTestCase {
             // may ride this store's rounds — genuinely attested.
             | PlatformWalletPersistenceCapabilities.dashpayPayments
             | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+            // Shielded recipients: the handler wires both recipient slots and
+            // lands the bytes on `PersistentAssetLock.shieldedRecipientRaw43`.
+            | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
+            // Private contact request scan state: the handler wires the
+            // persist/load/free trio onto `PersistentPrivateContactRequestsPosition`
+            // and `PersistentPrivateShieldedAddress`.
+            | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
 
         XCTAssertEqual(
             capabilities.version,

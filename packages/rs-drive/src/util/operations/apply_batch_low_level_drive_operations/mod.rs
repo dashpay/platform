@@ -5,11 +5,11 @@ mod v1;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
+use std::collections::BTreeSet;
 
 impl Drive {
     /// Applies a batch of Drive operations to groveDB depending on the drive version.
@@ -19,7 +19,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `estimated_costs_only_with_layer_info` - An optional hashmap containing estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional `EstimatedLayers` containing estimated layer information.
     /// * `transaction` - The transaction argument to pass to the groveDB.
     /// * `batch_operations` - A vector of low-level drive operations to apply to the groveDB.
     /// * `drive_operations` - A mutable reference to a vector of drive operations.
@@ -34,11 +34,30 @@ impl Drive {
     ///
     pub fn apply_batch_low_level_drive_operations(
         &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: Vec<LowLevelDriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        self.apply_batch_low_level_drive_operations_with_owner_handover(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            None,
+            drive_operations,
+            drive_version,
+        )
+    }
+
+    /// [`Self::apply_batch_low_level_drive_operations`], with the batch's `owner_handover`
+    /// (see [`GroveDbOpBatch`](crate::util::batch::GroveDbOpBatch)).
+    pub(crate) fn apply_batch_low_level_drive_operations_with_owner_handover(
+        &self,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        owner_handover: Option<BTreeSet<[u8; 32]>>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -68,6 +87,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     transaction,
                     batch_operations,
+                    owner_handover,
                     drive_operations,
                     drive_version,
                 )

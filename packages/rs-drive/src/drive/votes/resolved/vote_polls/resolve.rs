@@ -1,6 +1,7 @@
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::TransactionArg;
@@ -44,6 +45,12 @@ pub trait VotePollResolver {
     ) -> Result<ResolvedVotePoll, Error>;
 }
 
+/// Resolution looks up a contested poll's contract; a yes/no poll needs nothing from the state.
+/// The end of block check closes a yes/no poll before resolving, and a resource vote naming one
+/// is refused before resolution (and does not decode before protocol version 15), so a yes/no
+/// poll never reaches here.
+const YES_NO_VOTE_POLL_NOT_RESOLVED: &str = "a yes/no vote poll is never resolved";
+
 impl VotePollResolver for VotePoll {
     fn resolve(
         &self,
@@ -63,6 +70,9 @@ impl VotePollResolver for VotePoll {
                     ),
                 )
             }
+            VotePoll::YesNoVotePoll(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                YES_NO_VOTE_POLL_NOT_RESOLVED,
+            ))),
         }
     }
 
@@ -84,6 +94,9 @@ impl VotePollResolver for VotePoll {
                     ),
                 )
             }
+            VotePoll::YesNoVotePoll(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                YES_NO_VOTE_POLL_NOT_RESOLVED,
+            ))),
         }
     }
 }

@@ -110,7 +110,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
@@ -276,18 +276,22 @@ mod tests {
 
     #[test]
     fn should_refuse_the_query_before_protocol_version_14() {
-        // Keys cannot carry a budget before protocol version 14 and the subtree does not exist:
-        // the query answers with an error instead of an internal failure.
+        // Keys cannot carry a budget before protocol version 14 and the subtree does not exist.
+        // Every node at that version refuses the query alike, so the answer is INVALID_ARGUMENT,
+        // which clients do not retry on other nodes.
         let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
         for prove in [false, true] {
-            let result = platform
-                .query_identity_keys_remaining_budgets_v0(
+            let status =
+                assert_invalid_argument_status(platform.query_identity_keys_remaining_budgets_v0(
                     request(vec![0; 32], vec![1], prove),
                     &state,
                     version,
-                )
-                .expect("expected a validation result, not an internal error");
-            assert!(!result.errors.is_empty());
+                ));
+            assert!(
+                status.message().contains("not active"),
+                "{}",
+                status.message()
+            );
         }
     }
 }

@@ -6,8 +6,9 @@ use drive_proof_verifier::types::{
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
 };
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
-use super::sync_notes_across;
+use super::{sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::error::PlatformWalletError;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
 use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
@@ -27,7 +28,7 @@ async fn pool_sdk_with_total(note_count: u8, total_count: u64) -> Arc<Sdk> {
                 .max_query_chunks,
         );
     // Cover the stream's speculative window; only the first chunk has notes.
-    for chunk in 0..16 {
+    for chunk in 0..MAX_CONCURRENT_CHUNK_FETCHES as u64 {
         let notes = if chunk == 0 {
             (1..=note_count)
                 .map(|i| ShieldedEncryptedNote {
@@ -78,21 +79,21 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         .collect();
     let sequential = seeded_store(initial_size, subwallets[0].0);
     let concurrent = seeded_store(initial_size, subwallets[0].0);
+    let never = CancellationToken::new();
     let baseline_sdk = pool_sdk(4).await;
-    sync_notes_across(&baseline_sdk, &sequential, &subwallets, None, None)
+    sync_notes_across(&baseline_sdk, &sequential, &subwallets, None, None, &never)
         .await
         .unwrap();
 
     let first_sdk = pool_sdk(4).await;
     let second_sdk = pool_sdk(4).await;
-    let first = sync_notes_across(&first_sdk, &concurrent, &subwallets, None, None);
-    let second = sync_notes_across(&second_sdk, &concurrent, &subwallets, None, None);
+    let first = sync_notes_across(&first_sdk, &concurrent, &subwallets, None, None, &never);
+    let second = sync_notes_across(&second_sdk, &concurrent, &subwallets, None, None, &never);
     futures::pin_mut!(first, second);
 
     // Queue both at their first store lock, without sleeps or scheduler races.
-    // Releasing the writer grants both queued readers their permits: each can
-    // snapshot before either acquires the append lock. An atomic write-locked
-    // snapshot instead serializes these same two queued syncs.
+    // Were that lock a shared read, releasing the writer would let both passes
+    // snapshot before either appends; the write-locked snapshot serializes them.
     let guard = concurrent.write().await;
     assert!(futures::poll!(first.as_mut()).is_pending());
     assert!(futures::poll!(second.as_mut()).is_pending());
@@ -121,7 +122,7 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
 
     // A later real position must remain appendable after the overlapping scans.
     let next_sdk = pool_sdk(5).await;
-    sync_notes_across(&next_sdk, &concurrent, &subwallets, None, None)
+    sync_notes_across(&next_sdk, &concurrent, &subwallets, None, None, &never)
         .await
         .unwrap();
     let actual = concurrent.read().await;
@@ -151,16 +152,31 @@ async fn should_reject_duplicated_commitments_after_sync() {
         AccountViewingKeys::from_full_viewing_key(keys.full_viewing_key),
     )];
     let store = seeded_store(4, id);
-    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
-        .await
-        .unwrap();
+    sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(store.read().await.tree_sync_height().unwrap(), Some(0));
     store
         .write()
         .await
         .append_commitment(&[4; 32], true)
         .unwrap();
-    let result = sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None).await;
+    let result = sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await;
     assert!(
         matches!(
             result,
@@ -188,9 +204,16 @@ async fn should_accept_healthy_and_behind_trees() {
     )];
     for initial_size in [0, 2, 4] {
         let store = seeded_store(initial_size, id);
-        sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
-            .await
-            .unwrap();
+        sync_notes_across(
+            &pool_sdk(4).await,
+            &store,
+            &subwallets,
+            None,
+            None,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(store.read().await.tree_size().unwrap(), 4);
     }
 }
@@ -208,6 +231,7 @@ async fn should_accept_tree_behind_streams_maximum_count() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .unwrap();
@@ -227,6 +251,7 @@ async fn should_skip_lower_count_for_legacy_tree_with_unknown_height() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .expect("an older source must not diagnose a healthy tree as corrupt");
@@ -246,12 +271,20 @@ async fn should_not_infer_tree_height_from_speculative_total() {
         &subwallets,
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .unwrap();
     assert_eq!(store.read().await.tree_sync_height().unwrap(), None);
-    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
-        .await
-        .unwrap();
+    sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(store.read().await.last_synced_note_index(id).unwrap(), 5);
 }

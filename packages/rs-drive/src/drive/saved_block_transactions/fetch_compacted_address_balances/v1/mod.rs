@@ -6,6 +6,7 @@ use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 
 use crate::verify::address_funds::verify_compacted_address_balance_changes::CompactedAddressBalanceProof;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 impl Drive {
     /// Version 1 implementation for proving compacted address balance changes
@@ -105,9 +106,7 @@ impl Drive {
                 predecessor_proof,
                 forward_proof,
             },
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
+            PLATFORM_BINCODE_CONFIG,
         )
         .map_err(|e| {
             Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(

@@ -113,6 +113,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },
+                fetch_core_fork_activation_height: None,
+                store_core_fork_activation_height: None,
             },
             operations: DriveOperationsMethodVersion {
                 rollback_transaction: 0,
@@ -181,7 +183,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            document_sub_queries: None,
+            chained_document_query: None,
             document_history: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            private_document_entries: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
@@ -369,6 +378,16 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 contested_resources: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                yes_no_vote_poll_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                masternode_yes_no_vote: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -579,15 +598,26 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
     fee_version: FEE_VERSION1,
     system_limits: SystemLimits {
+        max_document_revisions_erased_per_transition: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
         max_document_value_depth: None,
         max_typed_array_items: 1024,
+        max_index_property_name_bytes: 255,
+        max_compiled_contract_size: None,
+        max_private_document_entry_size: None,
+        private_document_store_target_chunk_bytes: None,
+        private_document_store_min_chunk_power: None,
+        private_document_store_max_chunk_power: None,
+        max_private_document_entries_per_transition: None,
         max_references_per_document: 256,
         max_reference_operands: 4,
         max_reference_expression_depth: 4,
+        max_document_type_requirement_slots: 4,
+        max_document_type_requirement_condition_nodes: 16,
+        max_document_type_requirement_condition_text_length: 256,
         max_property_constraints: 16,
         max_property_constraint_nodes: 32,
         max_property_constraint_aggregates: 4,
@@ -615,6 +645,13 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderators: 16,
         max_contract_suspension_until: 9_007_199_254_740_991,
         max_contract_moderation_reason_length: 1024,
+        max_yes_no_vote_poll_minimum_voting_power: 2000,
+        max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
+        max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+        min_yes_no_vote_poll_duration_ms: 604_800_000, // one week
+        min_yes_no_vote_poll_supermajority_percent: 50, // a simple majority
+        yes_no_vote_poll_masternode_vote_strength: 1,
+        yes_no_vote_poll_evonode_vote_strength: 4,
         max_contract_warnings_per_identity: 16,
         max_contract_moderation_reason_documents: 16,
         min_mainnet_contract_moderation_election_window_seconds: 86_400,
@@ -646,5 +683,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
+        evidence: None,
     },
 };

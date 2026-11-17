@@ -66,6 +66,7 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_json_value;
+use dpp::version::PlatformVersion;
 use grovedb::element::indexed::compute_avg_fixed_point;
 use grovedb::element::IndexAxis;
 use grovedb::Element;
@@ -168,7 +169,6 @@ fn insert_post(
             true,
             None,
             pv,
-            None,
         )
         .expect("insert the post");
     post.id().to_buffer()
@@ -1028,7 +1028,6 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
                 &BlockInfo::default(),
                 None,
                 pv,
-                None,
             )
             .map(|_| ());
         assert!(refused(result), "apply: {apply}");
@@ -1061,7 +1060,7 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
             operations.reverse();
         }
         let result = drive
-            .apply_drive_operations(operations, true, &BlockInfo::default(), None, pv, None)
+            .apply_drive_operations(operations, true, &BlockInfo::default(), None, pv)
             .map(|_| ());
         assert!(
             refused(result),
@@ -1089,23 +1088,15 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
     }
 
     drive
-        .apply_drive_operations(
-            vec![add(&likes[0])],
-            true,
-            &BlockInfo::default(),
-            None,
-            pv,
-            None,
-        )
+        .apply_drive_operations(vec![add(&likes[0])], true, &BlockInfo::default(), None, pv)
         .expect("one like a batch applies");
     let a_posts = level(&contract, &[b"postAuthor", &AUTHOR_A, b"postId"]);
     let counter = read_grove_element(&drive, &a_posts, &post).expect("the counter");
     assert!(matches!(counter, Element::SumItem(1, _)), "got {counter:?}");
 }
 
-/// Both generations of the batch conversion through its dispatcher: v1
-/// (protocol version 14) refuses a batch writing two likes, while v0, every
-/// earlier version's, converts it as it always has.
+/// Counter-checking converters, selected from protocol version 14, refuse two
+/// likes in one batch; generation 0 converts them as it always has.
 #[test]
 fn should_refuse_two_likes_only_from_the_convert_generation_that_checks_counter_moves() {
     let (drive, contract) = setup(true);
@@ -1121,19 +1112,22 @@ fn should_refuse_two_likes_only_from_the_convert_generation_that_checks_counter_
             .collect::<Vec<_>>()
     };
     let latest = platform_version();
-    let refused = drive.convert_drive_operations_to_grove_operations(
-        operations(),
-        &BlockInfo::default(),
-        None,
-        latest,
-    );
-    assert!(
-        matches!(
-            refused,
-            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
-        ),
-        "v1 refuses the batch"
-    );
+    for version in [PlatformVersion::get(14).unwrap(), latest] {
+        let refused = drive.convert_drive_operations_to_grove_operations(
+            operations(),
+            &BlockInfo::default(),
+            None,
+            version,
+        );
+        assert!(
+            matches!(
+                refused,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "counter-checking converters refuse the batch at protocol {}",
+            version.protocol_version
+        );
+    }
     let mut first_generation = latest.clone();
     first_generation
         .drive

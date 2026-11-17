@@ -4,4 +4,9 @@ pub const VOTING_VERSION_V1: DPPVotingVersions = DPPVotingVersions {
     default_vote_poll_time_duration_mainnet_ms: 1_209_600_000, //2 weeks
     default_vote_poll_time_duration_test_network_ms: 1_209_600_000, //2 weeks
     contested_document_vote_poll_stored_info_version: 0,
+    yes_no_vote_poll_stored_info_version: None,
+    yes_no_vote_poll_id: None,
+    yes_no_vote_poll_parameters: None,
+    yes_no_vote_poll_decision: None,
+    decision_proposal_vote_poll: None,
 };

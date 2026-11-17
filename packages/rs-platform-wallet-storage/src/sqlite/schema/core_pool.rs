@@ -1031,8 +1031,6 @@ mod tests {
 
     #[test]
     fn should_accept_current_and_legacy_pool_account_labels() {
-        use dashcore::hashes::Hash;
-
         let conn = migrated_conn();
         let wallet = [0x79; 32];
         conn.execute(
@@ -1073,7 +1071,6 @@ mod tests {
     #[test]
     fn shared_script_resolvers_apply_their_distinct_source_filters() {
         use dashcore::address::Payload;
-        use dashcore::hashes::Hash;
         use dashcore::PubkeyHash;
 
         let mut conn = migrated_conn();
@@ -1169,7 +1166,6 @@ mod tests {
     #[test]
     fn apply_pools_refuses_an_empty_script() {
         use dashcore::address::Payload;
-        use dashcore::hashes::Hash;
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::bip32::DerivationPath;
         use key_wallet::managed_account::address_pool::AddressState;

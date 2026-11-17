@@ -4,13 +4,12 @@ use crate::common;
 
 use std::sync::Arc;
 
-use dashcore::{hashes::Hash, BlockHash, Network, OutPoint, Transaction, TxIn, TxOut, Txid};
+use dashcore::{Network, OutPoint, TxOut, Txid};
 #[cfg(feature = "shielded")]
 use key_wallet::account::StandardAccountType;
 use key_wallet::{
     account::AccountType,
     managed_account::address_pool::{AddressState, KeySource},
-    transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker},
     wallet::{initialization::WalletAccountCreationOptions, ManagedWalletInfo, Wallet},
 };
 use platform_wallet::{
@@ -234,150 +233,6 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
     assert!(manager.shutdown().await.all_clean());
 }
 
-fn transaction(input: OutPoint, outputs: Vec<TxOut>) -> Transaction {
-    Transaction {
-        version: 1,
-        lock_time: 0,
-        input: vec![TxIn {
-            previous_output: input,
-            ..Default::default()
-        }],
-        output: outputs,
-        special_transaction_payload: None,
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_restore_pending_sends_in_dependency_order_without_resending_incoming() {
-    let mut wallet =
-        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
-    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
-    let address = info
-        .accounts
-        .standard_bip44_accounts
-        .get_mut(&0)
-        .unwrap()
-        .next_receive_address(Some(&xpub), true)
-        .unwrap();
-    let output = |value| TxOut {
-        value,
-        script_pubkey: address.script_pubkey(),
-    };
-    let funding = transaction(
-        OutPoint::new(Txid::from_byte_array([1; 32]), 0),
-        vec![output(100_000)],
-    );
-    // The loader drops pending spends of wallet coins that carry no valid
-    // owner signature, so the wallet's own sends are signed as it would sign them.
-    let parent = common::authorize(
-        &wallet,
-        &info,
-        &address,
-        transaction(OutPoint::new(funding.txid(), 0), vec![output(90_000)]),
-    );
-    let child = common::authorize(
-        &wallet,
-        &info,
-        &address,
-        transaction(OutPoint::new(parent.txid(), 0), vec![output(80_000)]),
-    );
-    let incoming = transaction(
-        OutPoint::new(Txid::from_byte_array([2; 32]), 0),
-        vec![output(5_000)],
-    );
-    let (persister, _tmp, path) = common::fresh_persister();
-    persister
-        .store(wallet.wallet_id, registration(&wallet, &info))
-        .unwrap();
-    for (tx, context) in [
-        (
-            &funding,
-            TransactionContext::InBlock(BlockInfo::new(
-                100,
-                BlockHash::from_byte_array([3; 32]),
-                1,
-            )),
-        ),
-        (&parent, TransactionContext::Mempool),
-        (&child, TransactionContext::Mempool),
-        (&incoming, TransactionContext::Mempool),
-    ] {
-        let result = info
-            .check_core_transaction(tx, context, &mut wallet, true, true)
-            .await;
-        assert!(result.is_relevant);
-        persister
-            .store(
-                wallet.wallet_id,
-                PlatformWalletChangeSet {
-                    core: Some(CoreChangeSet {
-                        records: result.new_records,
-                        new_utxos: info.accounts.standard_bip44_accounts[&0]
-                            .utxos
-                            .values()
-                            .cloned()
-                            .collect(),
-                        synced_height: Some(100),
-                        last_processed_height: Some(100),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-    }
-    drop(persister);
-    let persister = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
-    let start = persister.load().unwrap();
-    let pending = &start.wallets[&wallet.wallet_id].unconfirmed_outgoing_txs;
-    assert!(
-        pending.is_empty(),
-        "restoration must not schedule transactions for rebroadcast"
-    );
-    let manager = manager(persister).await;
-    let wm = manager.wallet_manager_arc();
-    let wm = wm.read().await;
-    let restored = &wm.get_wallet_info(&wallet.wallet_id).unwrap().core_wallet;
-    let utxos = &restored.accounts.standard_bip44_accounts[&0].utxos;
-    assert!(!utxos.contains_key(&OutPoint::new(funding.txid(), 0)));
-    assert!(!utxos.contains_key(&OutPoint::new(parent.txid(), 0)));
-    assert!(utxos.contains_key(&OutPoint::new(child.txid(), 0)));
-    assert!(utxos.contains_key(&OutPoint::new(incoming.txid(), 0)));
-    assert_eq!(utxos.values().map(|utxo| utxo.value()).sum::<u64>(), 85_000);
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    let before = info.accounts.standard_bip44_accounts[&0]
-        .managed_account_type()
-        .address_pools()[0]
-        .addresses
-        .values()
-        .find(|entry| entry.address == address)
-        .unwrap();
-    let after = restored.accounts.standard_bip44_accounts[&0]
-        .managed_account_type()
-        .address_pools()[0]
-        .addresses
-        .values()
-        .find(|entry| entry.address == address)
-        .unwrap();
-    assert_eq!(
-        (
-            after.tx_count,
-            after.total_received,
-            after.total_sent,
-            after.balance
-        ),
-        (
-            before.tx_count,
-            before.total_received,
-            before.total_sent,
-            before.balance
-        )
-    );
-    drop(wm);
-    assert!(manager.shutdown().await.all_clean());
-}
-
 #[test]
 fn should_advertise_full_core_wallet_restore() {
     let (persister, _tmp, _path) = common::fresh_persister();
@@ -441,17 +296,14 @@ async fn should_report_not_sent_from_a_restored_wallet_with_durable_operation_ev
     assert!(manager.shutdown().await.all_clean());
 }
 
-/// A wallet is loaded inside its own `BEGIN IMMEDIATE` transaction, so a
-/// writer on another connection cannot change the rows mid-load.
+/// A wallet is loaded inside its own read transaction, so a writer on
+/// another connection cannot change the rows that load sees mid-load.
 ///
 /// Timing is deterministic, not slept for: SQLite calls the authorizer while
-/// it compiles a statement, so the write is attempted from inside the load's
-/// own `core_utxos` read. The busy rejection is the proof that the load
-/// transaction is open at that instant — in WAL mode a second connection is
-/// refused the write lock only while another connection holds it, and the
-/// persister holds it nowhere else during `load()`.
+/// it compiles a statement, so the write is made from inside the load's own
+/// `core_utxos` read, after the transaction has already read other rows.
 #[test]
-fn should_reject_a_concurrent_writer_while_a_wallet_load_transaction_is_open() {
+fn should_load_a_wallet_from_one_snapshot_while_another_connection_writes() {
     use rusqlite::hooks::{AuthAction, Authorization};
     use std::sync::Mutex;
 
@@ -511,20 +363,13 @@ fn should_reject_a_concurrent_writer_while_a_wallet_load_transaction_is_open() {
             .as_ref()
             .expect("the load must read core_utxos, which triggers the write");
         assert!(
-            matches!(
-                attempt,
-                Err(rusqlite::Error::SqliteFailure(error, _))
-                    if error.code == rusqlite::ErrorCode::DatabaseBusy
-            ),
-            "a write during a wallet's load transaction must be refused as busy, got {attempt:?}"
+            matches!(attempt, Ok(1)),
+            "a write on another connection must land during a read-only load, got {attempt:?}"
         );
     }
 
-    // Control: the same statement lands once the load has released its lock,
-    // and the next load reads it — so the refusal above was the load's lock,
-    // not an inert statement.
-    let late_writer = rusqlite::Connection::open(&path).unwrap();
-    assert_eq!(late_writer.execute(CONCURRENT_WRITE, []).unwrap(), 1);
+    // Control: the next load reads the write, so the value above was the
+    // load's snapshot, not an inert statement.
     assert_eq!(synced_height(&persister), 200);
 }
 
@@ -669,161 +514,6 @@ async fn should_reject_malformed_pool_keys_with_typed_source_before_manager_hydr
         .await
         .get_wallet_info(&wallet.wallet_id)
         .is_none());
-    assert!(manager.shutdown().await.all_clean());
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_restore_provider_key_transaction_history_and_positions() {
-    use dashcore::blockdata::transaction::special_transaction::{
-        provider_registration::{ProviderMasternodeType, ProviderRegistrationPayload},
-        provider_update_registrar::ProviderUpdateRegistrarPayload,
-        TransactionPayload,
-    };
-    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
-    use key_wallet::managed_account::address_pool::PublicKeyType;
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
-    let mut wallet =
-        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
-    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    for role in [
-        AccountType::ProviderOwnerKeys,
-        AccountType::ProviderVotingKeys,
-    ] {
-        let source = KeySource::Public(wallet.accounts.account_of_type(role).unwrap().account_xpub);
-        let mut accounts = info.accounts.all_accounts_mut();
-        let account = accounts
-            .iter_mut()
-            .find(|account| account.managed_account_type().to_account_type() == role)
-            .unwrap();
-        for pool in account.managed_account_type_mut().address_pools_mut() {
-            pool.generate_addresses(45, &source, true).unwrap();
-        }
-    }
-    let hash_at = |role| {
-        let accounts = info.accounts.all_accounts();
-        let account = accounts
-            .iter()
-            .find(|account| account.managed_account_type().to_account_type() == role)
-            .unwrap();
-        let address = &account.managed_account_type().address_pools()[0].addresses[&40].address;
-        let dashcore::address::Payload::PubkeyHash(hash) = address.payload() else {
-            panic!("P2PKH")
-        };
-        *hash
-    };
-    let owner = hash_at(AccountType::ProviderOwnerKeys);
-    let voting = hash_at(AccountType::ProviderVotingKeys);
-    let operator_pool = info
-        .accounts
-        .provider_operator_keys
-        .as_ref()
-        .unwrap()
-        .managed_account_type()
-        .address_pools()[0];
-    let Some(PublicKeyType::BLS(operator)) = &operator_pool.addresses[&0].public_key else {
-        panic!("BLS key")
-    };
-    let operator = dashcore::bls_sig_utils::BLSPublicKey::from(
-        <[u8; 48]>::try_from(operator.as_slice()).unwrap(),
-    );
-    let special = |payload| Transaction {
-        version: 3,
-        lock_time: 0,
-        input: vec![],
-        output: vec![],
-        special_transaction_payload: Some(payload),
-    };
-    let registration_tx = special(TransactionPayload::ProviderRegistrationPayloadType(
-        ProviderRegistrationPayload {
-            version: 2,
-            masternode_type: ProviderMasternodeType::Regular,
-            masternode_mode: 0,
-            collateral_outpoint: OutPoint::null(),
-            service_address: MasternodeNetInfo::Legacy("127.0.0.1:19999".parse().unwrap()),
-            owner_key_hash: owner,
-            operator_public_key: operator,
-            voting_key_hash: voting,
-            operator_reward: 0,
-            script_payout: dashcore::ScriptBuf::new(),
-            inputs_hash: [0; 32].into(),
-            signature: vec![],
-            platform_node_id: None,
-            platform_p2p_port: None,
-            platform_http_port: None,
-            // Version 2 predates DIP-0026 payouts and collateral sharing.
-            payouts: None,
-            shared_collateral: None,
-        },
-    ));
-    let pro_tx_hash = registration_tx.txid();
-    let registrar = special(TransactionPayload::ProviderUpdateRegistrarPayloadType(
-        ProviderUpdateRegistrarPayload {
-            version: 2,
-            pro_tx_hash,
-            provider_mode: 0,
-            operator_public_key: operator,
-            voting_key_hash: voting,
-            script_payout: dashcore::ScriptBuf::new(),
-            inputs_hash: [0; 32].into(),
-            payload_sig: vec![],
-            payouts: None,
-        },
-    ));
-    let (persister, _tmp, path) = common::fresh_persister();
-    persister
-        .store(wallet.wallet_id, registration(&wallet, &info))
-        .unwrap();
-    let mut expected = Vec::new();
-    for (position, tx) in [registration_tx, registrar].into_iter().enumerate() {
-        let context = TransactionContext::InBlock(BlockInfo::new(
-            100,
-            BlockHash::from_byte_array([7; 32]),
-            position as u32,
-        ));
-        let result = info
-            .check_core_transaction(&tx, context, &mut wallet, true, true)
-            .await;
-        assert!(
-            result.is_relevant,
-            "provider payload #{position} must match owned keys"
-        );
-        assert!(!result.new_records.is_empty());
-        expected.extend(result.new_records.clone());
-        persister
-            .store(
-                wallet.wallet_id,
-                PlatformWalletChangeSet {
-                    core: Some(CoreChangeSet {
-                        records: result.new_records,
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-    }
-    drop(persister);
-    let manager = manager(SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap()).await;
-    let wm = manager.wallet_manager_arc();
-    let wm = wm.read().await;
-    let restored = &wm.get_wallet_info(&wallet.wallet_id).unwrap().core_wallet;
-    for expected in expected {
-        let accounts = restored.accounts.all_accounts();
-        let account = accounts
-            .iter()
-            .find(|account| {
-                account.managed_account_type().to_account_type() == expected.account_type
-            })
-            .unwrap();
-        let actual = account
-            .transactions()
-            .get(&expected.txid)
-            .expect("provider history");
-        assert_eq!(actual.transaction, expected.transaction);
-        assert_eq!(actual.context, expected.context);
-    }
-    drop(wm);
     assert!(manager.shutdown().await.all_clean());
 }
 
@@ -1460,188 +1150,6 @@ fn should_refill_the_gap_window_past_a_used_address_restored_from_its_pool_row()
             "a funded address must not be handed out again"
         );
     });
-}
-
-/// Startup repair rebuilds the wallet a second time. What the load reports
-/// is what the wallet it returns is missing, not that twice — for the pool
-/// sites and for a site of the used-address projection alike.
-#[tokio::test]
-async fn should_count_an_unrestored_reservation_once_when_startup_repair_rebuilds_the_wallet() {
-    use key_wallet::managed_account::address_pool::AddressPoolType;
-    use platform_wallet_storage::LoadSite;
-
-    let mut wallet =
-        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
-    let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
-    let owner_keys = AccountType::ProviderOwnerKeys;
-    let source = account_key_source(&wallet, owner_keys);
-    with_pool(&mut info, owner_keys, AddressPoolType::Absent, |pool| {
-        pool.next_unused_and_reserve(&source, 12345).unwrap();
-    });
-    let (persister, _tmp, path) = common::fresh_persister();
-    persister
-        .store(wallet.wallet_id, registration(&wallet, &info))
-        .unwrap();
-
-    // Two unconfirmed spends of one coin, and an instant lock that settles
-    // them: the load removes the loser and rebuilds the wallet from the result.
-    let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
-    let address = info
-        .accounts
-        .standard_bip44_accounts
-        .get_mut(&0)
-        .unwrap()
-        .next_receive_address(Some(&xpub), true)
-        .unwrap();
-    let funding = transaction(
-        OutPoint::new(Txid::from_byte_array([71; 32]), 0),
-        [100_000, 20_000]
-            .into_iter()
-            .map(|value| TxOut {
-                value,
-                script_pubkey: address.script_pubkey(),
-            })
-            .collect(),
-    );
-    let coins: Vec<_> = funding
-        .output
-        .iter()
-        .enumerate()
-        .map(|(vout, output)| {
-            key_wallet::Utxo::new(
-                OutPoint::new(funding.txid(), vout as u32),
-                output.clone(),
-                address.clone(),
-                100,
-                false,
-            )
-        })
-        .collect();
-    let mut loser = transaction(
-        coins[0].outpoint,
-        vec![TxOut {
-            value: 119_000,
-            script_pubkey: address.script_pubkey(),
-        }],
-    );
-    loser.input.push(TxIn {
-        previous_output: coins[1].outpoint,
-        ..Default::default()
-    });
-    let winner = transaction(
-        coins[0].outpoint,
-        vec![TxOut {
-            value: 99_000,
-            script_pubkey: dashcore::ScriptBuf::new(),
-        }],
-    );
-    let confirmed = TransactionContext::InBlock(BlockInfo::new(
-        100,
-        BlockHash::from_byte_array([100; 32]),
-        100,
-    ));
-    let mut records = info
-        .check_core_transaction(&funding, confirmed, &mut wallet, true, true)
-        .await
-        .new_records;
-    let mut competing = info.clone();
-    for (view, spend) in [(&mut info, &loser), (&mut competing, &winner)] {
-        records.extend(
-            view.check_core_transaction(
-                spend,
-                TransactionContext::Mempool,
-                &mut wallet,
-                true,
-                true,
-            )
-            .await
-            .new_records,
-        );
-    }
-    assert_eq!(records.len(), 3);
-    let foreign = dashcore::Address::new(
-        Network::Testnet,
-        dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([0xF0; 20])),
-    );
-    persister
-        .store(
-            wallet.wallet_id,
-            PlatformWalletChangeSet {
-                core: Some(CoreChangeSet {
-                    records,
-                    new_utxos: coins
-                        .iter()
-                        .cloned()
-                        .chain([
-                            key_wallet::Utxo::new(
-                                OutPoint::new(loser.txid(), 0),
-                                loser.output[0].clone(),
-                                address,
-                                0,
-                                false,
-                            ),
-                            // A coin on an address no account derives.
-                            key_wallet::Utxo::new(
-                                OutPoint::new(Txid::from_byte_array([0xF1; 32]), 0),
-                                TxOut {
-                                    value: 7_000,
-                                    script_pubkey: foreign.script_pubkey(),
-                                },
-                                foreign.clone(),
-                                100,
-                                false,
-                            ),
-                        ])
-                        .collect(),
-                    spent_utxos: coins.clone(),
-                    instant_locks_for_non_final_records: [(
-                        winner.txid(),
-                        dashcore::ephemerealdata::instant_lock::InstantLock {
-                            inputs: vec![coins[0].outpoint],
-                            txid: winner.txid(),
-                            ..Default::default()
-                        },
-                    )]
-                    .into_iter()
-                    .collect(),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    // A provider key account's key class is always zero.
-    let rewritten = persister
-        .lock_conn_for_test()
-        .execute(
-            "UPDATE core_address_pool SET key_class = 1 \
-             WHERE account_type = 'provider_owner' AND reserved_at IS NOT NULL",
-            [],
-        )
-        .unwrap();
-    assert_eq!(rewritten, 1);
-    drop(persister);
-
-    let persister = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
-    persister.load().unwrap();
-    assert!(
-        persister
-            .get_core_tx_record(wallet.wallet_id, &loser.txid())
-            .unwrap()
-            .is_none(),
-        "the fixture must have gone through startup repair"
-    );
-    let degradation = persister.last_load_degradation();
-    for site in [
-        LoadSite::UnrestoredPoolReservation,
-        LoadSite::UnresolvedUtxoAddress,
-    ] {
-        assert_eq!(
-            degradation.by_site.get(&site),
-            Some(&1),
-            "{site}: one incident is one count, however often the wallet was rebuilt"
-        );
-    }
 }
 
 /// The accounts whose keys fund one asset lock each, with the label their

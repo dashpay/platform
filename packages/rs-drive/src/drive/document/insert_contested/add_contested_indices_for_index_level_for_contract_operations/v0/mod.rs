@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
@@ -29,7 +30,7 @@ impl Drive {
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+            EstimatedLayers,
         >,
         event_id: [u8; 32],
         transaction: TransactionArg,

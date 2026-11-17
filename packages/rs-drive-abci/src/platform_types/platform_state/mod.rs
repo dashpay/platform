@@ -9,7 +9,6 @@ use crate::error::Error;
 
 use crate::platform_types::validator_set::ValidatorSet;
 use derive_more::From;
-use dpp::bincode::config;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{
@@ -30,9 +29,9 @@ use crate::platform_types::platform_state::platform_state_for_saving::v2::Platfo
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -69,7 +68,9 @@ pub struct PlatformState {
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
-    /// previous FeeVersions
+    /// The fee versions earlier epochs ran on. Saved with the state and not read by block
+    /// execution: from protocol version 15 a refund uses the schedule of the epoch that stored
+    /// the bytes, read from that epoch's tree, and before it the removing block's schedule.
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
 
     /// True when a field carried only by the full saved record has changed since
@@ -159,7 +160,7 @@ impl PlatformState {
     /// and the validator sets as entries in the database, so a structure 1
     /// record cannot be read on its own; this always writes structure 0.
     pub fn serialize_standalone_to_bytes(&self) -> Result<Vec<u8>, Error> {
-        let config = config::standard().with_big_endian().with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let saving_v1: PlatformStateForSavingV1 = self.try_into()?;
         bincode::encode_to_vec(PlatformStateForSaving::V1(saving_v1), config).map_err(|e| {
             ProtocolError::PlatformSerializationError(format!(
@@ -225,7 +226,7 @@ impl PlatformSerializable for PlatformState {
 
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
         let platform_version = self.current_platform_version()?;
-        let config = config::standard().with_big_endian().with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let platform_state_for_saving: PlatformStateForSaving =
             self.try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
@@ -246,7 +247,7 @@ impl PlatformDeserializableFromVersionedStructureTrusted for PlatformState {
     where
         Self: Sized,
     {
-        let config = config::standard().with_big_endian().with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let platform_state_in_save_format: PlatformStateForSaving =
             bincode::decode_from_slice(data, config)
                 .map_err(|e| {
