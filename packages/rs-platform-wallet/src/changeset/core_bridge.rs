@@ -9615,6 +9615,7 @@ mod utxo_credit_verdict_tests {
                 dashpay_backfill: Default::default(),
                 rewind_barrier: Default::default(),
                 observed_input_conflicts: Default::default(),
+                finalized_spends: Default::default(),
             };
             let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
             let wallet_id = wm.insert_wallet(ctx.wallet, info).unwrap();
@@ -9976,6 +9977,7 @@ mod no_change_asset_lock_block_projection_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
