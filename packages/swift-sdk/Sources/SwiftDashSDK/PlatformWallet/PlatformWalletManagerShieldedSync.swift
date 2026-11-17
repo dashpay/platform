@@ -280,6 +280,17 @@ extension PlatformWalletManager {
         }
     }
 
+    /// Whether `account` is an identity shielded account, by the wallet's
+    /// rule (`platform_wallet_is_shielded_identity_account`). A bind also
+    /// binds and scans each identity's shielded account, but a send from the
+    /// wallet's ordinary accounts cannot spend its notes, so the sync
+    /// result's `balance` leaves those accounts out. Use
+    /// `PersistentShieldedNote.ordinaryBalance(_:)` to sum persisted notes
+    /// by the same rule.
+    nonisolated public static func isShieldedIdentityAccount(_ account: UInt32) -> Bool {
+        platform_wallet_is_shielded_identity_account(account)
+    }
+
     /// Configure the network-scoped shielded coordinator. Opens
     /// the per-network commitment-tree SQLite file at `dbPath`
     /// and installs a single shared handle every subsequent

@@ -1040,14 +1040,15 @@ struct BalanceCardView: View {
         )
     }
 
-    /// Per-wallet shielded balance: sum of this wallet's unspent
-    /// `PersistentShieldedNote` values. Reads SwiftData (Rust pushes
+    /// Per-wallet shielded balance: the ordinary balance of this
+    /// wallet's unspent `PersistentShieldedNote` rows, which leaves out
+    /// identity accounts by the wallet's rule. Reads SwiftData (Rust pushes
     /// note rows via the shielded persister) rather than the single-mirror
     /// `shieldedService.shieldedBalance`, so the card is correct for a
     /// non-`firstWallet` wallet whose engine binding is live but whose UI
     /// mirror is pointed elsewhere.
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+        PersistentShieldedNote.ordinaryBalance(shieldedNotes)
     }
 
     /// Core-chain balance summed from one Rust in-memory account snapshot.

@@ -125,15 +125,12 @@ fun WalletDetailScreen(
             .map { rows -> rows.sumOf { it.balance } }
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
-    // Shielded credits — unspent-note sum, only when compiled in.
+    // Shielded credits: the wallet's ordinary shielded balance as the SDK
+    // reports it, which leaves out identity accounts by the wallet's rule.
+    // The SDK emits 0 when shielded support is not compiled in.
     val hasShielded = remember { Sdk.hasShielded() }
     val shieldedBalance by remember(walletIdHex) {
-        if (hasShielded) {
-            container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
-                .map { notes -> notes.sumOf { it.value } }
-        } else {
-            MutableStateFlow(0L)
-        }
+        container.shieldedService.ordinaryBalance(walletId)
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
     // Distinct on-chain transactions this wallet participates in — union

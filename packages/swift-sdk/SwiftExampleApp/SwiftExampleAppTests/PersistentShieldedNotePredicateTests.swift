@@ -139,6 +139,33 @@ final class PersistentShieldedNotePredicateTests: XCTestCase {
         XCTAssertEqual(notes.filter { $0.walletId == otherWallet }.reduce(UInt64(0)) { $0 + $1.value }, 300)
     }
 
+    /// The ordinary balance leaves out only identity accounts: account 0
+    /// and account 1 count, account 0x4000_0000 (identity 0's shielded
+    /// account) does not. Calls the native rule through the SDK, so it runs
+    /// with the app's linked DashSDKFFI framework.
+    func testOrdinaryBalanceLeavesOutIdentityAccounts() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let wallet = walletId(0xAA)
+        context.insert(makeNote(walletId: wallet, nullifier: 0x01, isSpent: false, value: 100))
+        context.insert(makeNote(walletId: wallet, accountIndex: 1,
+                                nullifier: 0x02, isSpent: false, value: 50))
+        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
+                                nullifier: 0x03, isSpent: false, value: 900))
+        try context.save()
+
+        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
+            predicate: PersistentShieldedNote.unspentPredicate(walletId: wallet)
+        ))
+        XCTAssertEqual(notes.count, 3)
+        XCTAssertEqual(notes.reduce(UInt64(0)) { $0 + $1.value }, 1_050)
+        XCTAssertEqual(PersistentShieldedNote.ordinaryBalance(notes), 150)
+        XCTAssertEqual(PersistentShieldedNote.ordinaryBalance([PersistentShieldedNote]()), 0)
+        XCTAssertTrue(PlatformWalletManager.isShieldedIdentityAccount(0x4000_0000))
+        XCTAssertFalse(PlatformWalletManager.isShieldedIdentityAccount(0))
+        XCTAssertFalse(PlatformWalletManager.isShieldedIdentityAccount(1))
+    }
+
     private func makeNote(
         walletId: Data,
         accountIndex: UInt32 = 0,
