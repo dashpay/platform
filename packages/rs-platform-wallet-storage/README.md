@@ -204,6 +204,27 @@ operators can walk `Error::source()` for the full typed chain; the outer
 `Display` carries the variant marker + hex wallet id so production-log greps
 still work.
 
+##### One changeset, one answer (`store_and_commit`)
+
+`store()` followed by `flush()` is two calls, and in `Manual` mode anything
+that drains the wallet's buffer can run between them: a `commit_writes()`,
+another `flush()`. If that drain takes the changeset and fails for good, the
+caller's own `flush()` then succeeds over an empty buffer and reports nothing.
+A caller that acts on a record being on disk uses
+`PlatformWalletPersistence::store_and_commit` instead. It merges the changeset
+and commits the wallet's buffer under the one connection guard every drain
+takes, in either flush mode, so its result is for exactly what it staged:
+
+- `Ok(())`: the changeset is on disk, behind everything that was buffered
+  for the wallet before it.
+- `StoreAndCommitError::NotStaged`: refused before it reached the buffer
+  (recovery mode, an unusable connection, an identity-slot conflict). The
+  buffer is as it was and nothing was written.
+- `StoreAndCommitError::NotCommitted`: merged, and the transaction failed.
+  After a transient failure the changeset is back in the buffer for a later
+  `flush()`, `commit_writes()` or `store_and_commit`; **do not issue it
+  again**. After any other failure it was dropped with the rest of the buffer.
+
 A `SqlitePersister` configured with [`FlushMode::Manual`] does NOT
 auto-flush from `Drop`; it emits a `tracing::error!` on drop if the buffer
 still holds uncommitted writes (with `dirty_wallets` and `total_fields`

@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
-use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
+use crate::changeset::changeset::PlatformWalletChangeSet;
+use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence, StoreAndCommitError};
 use crate::wallet::platform_wallet::WalletId;
 
 /// What this process knows of the flushes of one wallet's records.
@@ -17,7 +18,9 @@ use crate::wallet::platform_wallet::WalletId;
 /// manager made over the backend and by every handle of a wallet under that
 /// id, a removed wallet's handles and its same-id successor's alike
 /// ([`FlushLedgers::of_backend`]). Every flush of the wallet's records goes
-/// through [`Self::flush`].
+/// through [`Self::flush`], and every store committed in one step through
+/// [`Self::store_and_commit`]: that step drains the same buffer, so it is
+/// counted as the flush it contains.
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
@@ -34,7 +37,8 @@ pub(crate) struct FlushLedger {
     lost: AtomicU64,
 }
 
-/// One flush in progress, counted in its [`FlushLedger`] until dropped.
+/// One flush in progress, or one store being committed in one step, counted
+/// in its [`FlushLedger`] until dropped.
 ///
 /// Dropped before its outcome was recorded, its backend panicked: what that
 /// did with what it took from the buffer is not known, so it is recorded as
@@ -61,10 +65,11 @@ impl<'a> InFlight<'a> {
         }
     }
 
-    /// Record the backend's answer: a failure is counted, and counted as
-    /// lost too when it is for good and the backend buffers.
-    fn record(&mut self, flushed: &Result<(), PersistenceError>) {
-        if let Err(error) = flushed {
+    /// Record the backend's answer, `failure` being how its write of what
+    /// it took from the buffer failed, if it did: a failure is counted, and
+    /// counted as lost too when it is for good and the backend buffers.
+    fn record(&mut self, failure: Option<&PersistenceError>) {
+        if let Some(error) = failure {
             self.ledger
                 .record_failure(self.buffers && !error.is_transient());
         }
@@ -98,8 +103,37 @@ impl FlushLedger {
     ) -> Result<(), PersistenceError> {
         let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
         let flushed = backend.flush(wallet_id);
-        in_flight.record(&flushed);
+        in_flight.record(flushed.as_ref().err());
         flushed
+    }
+
+    /// Stage `changeset` and commit `wallet_id`'s buffer on `backend` in one
+    /// step ([`PlatformWalletPersistence::store_and_commit`]), counted as
+    /// [`Self::flush`] counts a flush: in progress from before the backend
+    /// is called until its outcome is recorded, as failed when the commit
+    /// fails, and as lost too when it fails for good on a backend that
+    /// buffers, or the backend panics.
+    ///
+    /// The caller needs none of this for its own answer, which the backend
+    /// gives. It is counted for every other reader of the ledger: a commit
+    /// that fails for good drops the whole buffer, what other handles stored
+    /// plainly included, and they learn of it here.
+    ///
+    /// A changeset refused before it was staged took nothing from the
+    /// buffer, so it is not counted as a failure.
+    pub(crate) fn store_and_commit(
+        &self,
+        backend: &dyn PlatformWalletPersistence,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), StoreAndCommitError> {
+        let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
+        let committed = backend.store_and_commit(wallet_id, changeset);
+        in_flight.record(match &committed {
+            Err(StoreAndCommitError::NotCommitted(error)) => Some(error),
+            Ok(()) | Err(StoreAndCommitError::NotStaged(_)) => None,
+        });
+        committed
     }
 
     /// Count one flush that failed, `for_good` when the backend dropped what
@@ -197,7 +231,7 @@ mod tests {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     use super::*;
-    use crate::changeset::{ClientStartState, PlatformWalletChangeSet};
+    use crate::changeset::{ClientStartState, PersistenceErrorKind};
 
     /// A backend whose flush panics.
     struct Panicking;
@@ -333,6 +367,153 @@ mod tests {
         assert!(
             Arc::ptr_eq(&ledger_of(&first), &of_first),
             "the same instance has the same ledger"
+        );
+    }
+
+    /// A backend that commits a store in one step, and answers each call
+    /// with the next of `answers`, or panics once they run out. It buffers
+    /// unless `inline`. It notes how many flushes its ledger counted as in
+    /// progress while the step ran.
+    struct InOneStep {
+        inline: bool,
+        answers: Mutex<Vec<Result<(), StoreAndCommitError>>>,
+        ledger: Arc<FlushLedger>,
+        in_flight_during_the_step: AtomicUsize,
+    }
+
+    impl InOneStep {
+        /// A backend that gives `answers` in order, with its ledger.
+        fn answering(inline: bool, mut answers: Vec<Result<(), StoreAndCommitError>>) -> Self {
+            answers.reverse();
+            Self {
+                inline,
+                answers: Mutex::new(answers),
+                ledger: Arc::default(),
+                in_flight_during_the_step: AtomicUsize::new(0),
+            }
+        }
+
+        fn step(&self) -> Result<(), StoreAndCommitError> {
+            self.ledger
+                .store_and_commit(self, [0; 32], PlatformWalletChangeSet::default())
+        }
+    }
+
+    impl PlatformWalletPersistence for InOneStep {
+        fn store_commits_inline(&self) -> bool {
+            self.inline
+        }
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn offers_store_and_commit(&self) -> bool {
+            true
+        }
+        fn store_and_commit(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), StoreAndCommitError> {
+            self.in_flight_during_the_step
+                .store(self.ledger.in_flight(), Ordering::SeqCst);
+            self.answers
+                .lock()
+                .expect("answers")
+                .pop()
+                .expect("the backend panics in its step")
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn busy() -> PersistenceError {
+        PersistenceError::backend_with_kind(PersistenceErrorKind::Transient, "the disk is busy")
+    }
+
+    fn corrupt() -> PersistenceError {
+        PersistenceError::backend("the database is corrupt")
+    }
+
+    /// A store committed in one step drains the buffer every flush drains,
+    /// so its commit is counted as a flush is: failed when it fails, and lost
+    /// too when it fails for good on a backend that buffers, as it dropped
+    /// what other handles had stored with it. A changeset refused before it
+    /// was staged took nothing from the buffer, and one that committed
+    /// dropped nothing: neither is counted.
+    #[test]
+    fn should_count_a_failed_commit_of_a_store_made_in_one_step_as_a_failed_flush() {
+        let backend = InOneStep::answering(
+            false,
+            vec![
+                Ok(()),
+                Err(StoreAndCommitError::NotStaged(corrupt())),
+                Err(StoreAndCommitError::NotCommitted(busy())),
+                Err(StoreAndCommitError::NotCommitted(corrupt())),
+            ],
+        );
+        let counted = |backend: &InOneStep| (backend.ledger.failed(), backend.ledger.lost());
+
+        assert!(backend.step().is_ok());
+        assert_eq!(counted(&backend), (0, 0), "committed");
+        assert!(matches!(
+            backend.step(),
+            Err(StoreAndCommitError::NotStaged(_))
+        ));
+        assert_eq!(counted(&backend), (0, 0), "refused before it was staged");
+        assert!(matches!(
+            backend.step(),
+            Err(StoreAndCommitError::NotCommitted(_))
+        ));
+        assert_eq!(counted(&backend), (1, 0), "put back");
+        assert!(matches!(
+            backend.step(),
+            Err(StoreAndCommitError::NotCommitted(_))
+        ));
+        assert_eq!(counted(&backend), (2, 1), "dropped");
+
+        let inline = InOneStep::answering(
+            true,
+            vec![Err(StoreAndCommitError::NotCommitted(corrupt()))],
+        );
+        assert!(inline.step().is_err());
+        assert_eq!(
+            counted(&inline),
+            (1, 0),
+            "a backend whose store is the commit had nothing of another handle's buffered"
+        );
+    }
+
+    /// A store being committed in one step is counted as a flush in progress
+    /// from before the backend is called until its outcome is recorded: a
+    /// reader that infers from the ledger then waits for it, as it would for
+    /// a flush. One whose backend panics is recorded as lost first.
+    #[test]
+    fn should_count_a_store_being_committed_in_one_step_as_a_flush_in_progress() {
+        let backend = InOneStep::answering(false, vec![Ok(())]);
+
+        assert!(backend.step().is_ok());
+        assert_eq!(
+            backend.in_flight_during_the_step.load(Ordering::SeqCst),
+            1,
+            "in progress while the backend ran it"
+        );
+        assert_eq!(backend.ledger.in_flight(), 0, "and not afterwards");
+
+        let panicked = catch_unwind(AssertUnwindSafe(|| backend.step()));
+        assert!(panicked.is_err(), "the panic reaches the caller");
+        assert_eq!(backend.ledger.in_flight(), 0, "no longer in progress");
+        assert_eq!(
+            (backend.ledger.failed(), backend.ledger.lost()),
+            (1, 1),
+            "counted as failed for good"
         );
     }
 
