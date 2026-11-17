@@ -110,15 +110,15 @@ pub fn repair_wallet_history(
 /// The stored claims to restore after `replay` settled `state`.
 ///
 /// A claim is left out only when the replay guards its coin in a way a fork
-/// releases: the coin's funding and its claimant both went through the
-/// wallet checker and were not retired, the
-/// claimant in a plain block above the restored chain lock and without an
+/// releases after the claimant is mined: the coin's funding and its claimant
+/// both went through the wallet checker and were not retired, the claimant
+/// in the mempool or a plain block above the restored chain lock and without an
 /// InstantSend lock, and the claim was not stamped at or below the chain lock.
 /// The claimant's account then records the spend of the coin, and a fork
 /// dropping the claimant gives the coin back; a claim would keep it spent.
 /// Without the funding the spend is only an observed spend, which finality
 /// prunes, so the claim stays.
-fn restorable_claims(
+pub(super) fn restorable_claims(
     state: &ClientWalletStartState,
     replay: &HistoryReplay,
     claims: &[StoredReplayClaim],
@@ -144,6 +144,7 @@ fn restorable_claims(
             funded.contains(&stored.transaction.txid()) && !replay.retired.contains(&stored.txid)
         })
         .filter(|stored| match &stored.context {
+            TransactionContext::Mempool => true,
             TransactionContext::InBlock(block) => {
                 chain_locked.is_none_or(|locked| block.height() > locked)
             }
@@ -354,6 +355,72 @@ mod tests {
         state.wallet_info.accounts.standard_bip44_accounts[&0]
             .utxos
             .contains_key(&OutPoint::new(funding.txid(), 0))
+    }
+
+    #[tokio::test]
+    async fn should_credit_legacy_status_only_funding_after_its_spend_is_mined_then_reorged() {
+        let fixture = claimed_spend().await;
+        let mut spender = fixture.spender.clone();
+        spender.context = TransactionContext::Mempool;
+        let mut history = stored_history(vec![fixture.funding_row.clone(), spender]);
+        history.required_instant_locks.insert(fixture.spender.txid);
+        let mut store = MemoryStore::new(&fixture, fixture.info.clone(), history);
+        let (mut state, _) = repair_wallet_history(&mut store, &ReplayEvidence::default())
+            .unwrap()
+            .unwrap();
+
+        assert!(!credits_funding(&mut state, &fixture.funding).await);
+        state
+            .wallet_info
+            .check_core_transaction(
+                &fixture.spender.transaction,
+                block(101),
+                &mut state.wallet,
+                true,
+                true,
+            )
+            .await;
+        assert!(!credits_funding(&mut state, &fixture.funding).await);
+        let truncation = state.wallet_info.truncate_above(100).unwrap();
+        assert!(truncation.txids.contains(&fixture.spender.txid));
+        assert!(
+            credits_funding(&mut state, &fixture.funding).await,
+            "a fork removing the reversible legacy spend must release its funding"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_legacy_status_only_spends_guarded_after_finality() {
+        for funding_present in [true, false] {
+            let fixture = claimed_spend().await;
+            let mut spender = fixture.spender.clone();
+            spender.context = TransactionContext::Mempool;
+            let mut history = stored_history(vec![spender]);
+            if funding_present {
+                history.transactions.push(fixture.funding_row.clone());
+            }
+            history.required_instant_locks.insert(fixture.spender.txid);
+            let mut store = MemoryStore::new(&fixture, fixture.info.clone(), history);
+            let (mut state, _) = repair_wallet_history(&mut store, &ReplayEvidence::default())
+                .unwrap()
+                .unwrap();
+            state
+                .wallet_info
+                .check_core_transaction(
+                    &fixture.spender.transaction,
+                    block(101),
+                    &mut state.wallet,
+                    true,
+                    true,
+                )
+                .await;
+            state.wallet_info.apply_chain_lock(chain_lock(300));
+            state.wallet_info.update_synced_height(300);
+            assert!(
+                !credits_funding(&mut state, &fixture.funding).await,
+                "a final spend must guard its coin; funding in history: {funding_present}"
+            );
+        }
     }
 
     /// A stored claim named after a spend in a plain block above the restored
@@ -612,7 +679,7 @@ mod tests {
                 no_locks(),
                 own,
                 None,
-                true,
+                false,
             ),
             (
                 "reversible spend stamped at the chain lock",

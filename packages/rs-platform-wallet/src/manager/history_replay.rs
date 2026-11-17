@@ -37,6 +37,7 @@ pub use super::history_claims::{
     held_sweep_claimant, HistoryReplayEffects, HistoryReplayOperationEffects, ReplayClaimEffect,
     StoredReplayClaim,
 };
+use super::history_repair::restorable_claims;
 pub use super::history_repair::{repair_wallet_history, HistoryRepairError, HistoryRepairStore};
 use crate::changeset::changeset::SweepBatch;
 use crate::changeset::recorded_history::ReplayEvidence;
@@ -260,12 +261,14 @@ pub async fn replay_wallet_history(
                     && !outcome.authorization.rejected.contains(&row.txid)
             })
             .flat_map(|row| {
-                row.transaction
-                    .input
-                    .iter()
-                    .map(|input| (input.previous_output, Some(row.txid)))
+                row.transaction.input.iter().map(|input| StoredReplayClaim {
+                    outpoint: input.previous_output,
+                    claimant: Some(row.txid),
+                    mined_height: None,
+                })
             })
             .collect();
+        let claims = restorable_claims(state, &outcome, &claims);
         let inputs: BTreeSet<_> = claims.iter().map(|(input, _)| *input).collect();
         for account in state.wallet_info.accounts.all_funding_accounts_mut() {
             account.utxos.retain(|input, _| !inputs.contains(input));
