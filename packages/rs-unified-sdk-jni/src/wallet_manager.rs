@@ -3853,7 +3853,6 @@ struct OutpointQuery {
     account: UtxoAccountTuple,
     txid: String,
     vout: u32,
-    #[serde(default)]
     script_hex: String,
 }
 
@@ -5691,6 +5690,7 @@ mod tests {
             "keyClass",
             "txid",
             "vout",
+            "scriptHex",
         ] {
             let mut batch = golden_queries();
             batch[0]
