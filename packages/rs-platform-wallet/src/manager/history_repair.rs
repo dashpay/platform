@@ -174,23 +174,71 @@ fn restorable_claims(
 mod tests {
     use super::*;
     use crate::changeset::StoredTransaction;
-    use crate::manager::history_replay::tests::{checked_instant_lock, confirmed_spend_fixture};
+    use crate::manager::history_replay::tests::{
+        authorize, checked_instant_lock, confirmed_spend_fixture,
+    };
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::{BlockHash, Transaction};
+    use dashcore::{Address, BlockHash, Transaction};
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::{ManagedWalletInfo, Wallet};
+    use std::collections::BTreeMap;
 
-    /// One wallet held in memory; a second snapshot read means effects were written.
+    /// What a [`MemoryStore`] does with the effects written to it.
+    #[derive(Clone, Copy, PartialEq)]
+    enum OnWrite {
+        /// A settled history writes none.
+        Refuse,
+        /// Delete the removed records from the stored history.
+        Apply,
+        /// Keep the stored history as it was.
+        Ignore,
+        /// Lose the wallet before the re-read.
+        Vanish,
+    }
+
+    /// One wallet's rows held in memory.
     struct MemoryStore {
-        state: Option<ClientWalletStartState>,
+        wallet: Wallet,
+        info: ManagedWalletInfo,
+        history: RecordedHistory,
         claims: Vec<StoredReplayClaim>,
+        on_write: OnWrite,
+        writes: usize,
+    }
+
+    impl MemoryStore {
+        fn new(fixture: &ClaimedSpend, info: ManagedWalletInfo, history: RecordedHistory) -> Self {
+            Self {
+                wallet: fixture.wallet.clone(),
+                info,
+                history,
+                claims: Vec::new(),
+                on_write: OnWrite::Refuse,
+                writes: 0,
+            }
+        }
+
+        fn snapshot(&self) -> ClientWalletStartState {
+            ClientWalletStartState {
+                wallet: self.wallet.clone(),
+                wallet_info: self.info.clone(),
+                identity_manager: Default::default(),
+                unused_asset_locks: Default::default(),
+                unconfirmed_outgoing_txs: Vec::new(),
+                recorded_history: self.history.clone(),
+                dashpay_backfill: Default::default(),
+            }
+        }
     }
 
     impl HistoryRepairStore for MemoryStore {
         fn read_wallet(&mut self) -> Result<Option<ClientWalletStartState>, PersistenceError> {
-            Ok(Some(self.state.take().expect("no effects to re-read")))
+            if self.writes > 0 && self.on_write == OnWrite::Vanish {
+                return Ok(None);
+            }
+            Ok(Some(self.snapshot()))
         }
 
         fn read_claims(
@@ -202,10 +250,20 @@ mod tests {
 
         fn write_effects(
             &mut self,
-            _effects: &HistoryReplayEffects,
+            effects: &HistoryReplayEffects,
             _operations: &HistoryReplayOperationEffects,
         ) -> Result<(), PersistenceError> {
-            panic!("a settled history writes no effects")
+            assert!(
+                self.on_write != OnWrite::Refuse,
+                "a settled history writes no effects"
+            );
+            self.writes += 1;
+            if self.on_write == OnWrite::Apply {
+                self.history
+                    .transactions
+                    .retain(|stored| !effects.removed_records.contains(&stored.txid));
+            }
+            Ok(())
         }
     }
 
@@ -258,6 +316,13 @@ mod tests {
         }
     }
 
+    fn stored_history(transactions: Vec<StoredTransaction>) -> RecordedHistory {
+        RecordedHistory {
+            transactions,
+            ..Default::default()
+        }
+    }
+
     /// Load `history` with one stored claim on `spent`, as a backend would.
     fn load(
         fixture: &ClaimedSpend,
@@ -266,21 +331,8 @@ mod tests {
         claim: StoredReplayClaim,
         evidence: &ReplayEvidence,
     ) -> ClientWalletStartState {
-        let mut store = MemoryStore {
-            state: Some(ClientWalletStartState {
-                wallet: fixture.wallet.clone(),
-                wallet_info: info,
-                identity_manager: Default::default(),
-                unused_asset_locks: Default::default(),
-                unconfirmed_outgoing_txs: Vec::new(),
-                recorded_history: RecordedHistory {
-                    transactions: history,
-                    ..Default::default()
-                },
-                dashpay_backfill: Default::default(),
-            }),
-            claims: vec![claim],
-        };
+        let mut store = MemoryStore::new(fixture, info, stored_history(history));
+        store.claims = vec![claim];
         repair_wallet_history(&mut store, evidence)
             .unwrap()
             .expect("the wallet exists")
@@ -363,77 +415,220 @@ mod tests {
         );
     }
 
-    /// A stored claim keeps guarding the coin once finality has pruned the
-    /// observed spend, whenever no fork can drop its spend or the load cannot
-    /// tell.
+    /// Only a claim the replay can stand in for, and a fork can release, is
+    /// left out: every other stored claim is restored.
     #[tokio::test]
-    async fn should_keep_stored_claim_unless_its_spend_is_a_replayed_reversible_block() {
+    async fn should_restore_a_stored_claim_unless_a_fork_releases_its_replayed_spend() {
         let fixture = claimed_spend().await;
         let (lock, evidence) = checked_instant_lock(&fixture.spender.transaction).await;
         let foreign = Txid::from_byte_array([77; 32]);
+        let funding = || fixture.funding_row.clone();
         let spender = |context| StoredTransaction {
             context,
             ..fixture.spender.clone()
         };
-        for (case, chain_locked, history, claimant, mined_height) in [
+        let reversible = || spender(block(101));
+        let locks: BTreeMap<_, _> = [(fixture.spender.txid, lock.clone())].into();
+        let no_locks = BTreeMap::new;
+        let own = fixture.spender.txid;
+        for (case, chain_locked, transactions, instant_locks, claimant, stamp, restored) in [
+            (
+                "reversible spend of a replayed funding",
+                Some(100),
+                vec![funding(), reversible()],
+                no_locks(),
+                own,
+                None,
+                false,
+            ),
+            (
+                "same without any chain lock",
+                None,
+                vec![funding(), reversible()],
+                no_locks(),
+                own,
+                None,
+                false,
+            ),
+            (
+                "reversible spend, funding absent",
+                Some(100),
+                vec![reversible()],
+                no_locks(),
+                own,
+                None,
+                true,
+            ),
             (
                 "spend in the chain-locked block",
                 Some(101),
-                vec![spender(block(101))],
-                fixture.spender.txid,
+                vec![funding(), reversible()],
+                no_locks(),
+                own,
                 None,
+                true,
             ),
             (
                 "spend in a block below the chain lock",
                 Some(150),
-                vec![spender(block(101))],
-                fixture.spender.txid,
+                vec![funding(), reversible()],
+                no_locks(),
+                own,
                 None,
+                true,
+            ),
+            (
+                "mined spend with a verified InstantSend lock",
+                Some(100),
+                vec![funding(), reversible()],
+                locks.clone(),
+                own,
+                None,
+                true,
             ),
             (
                 "InstantSend-locked spend",
                 None,
-                vec![spender(TransactionContext::InstantSend(lock.clone()))],
-                fixture.spender.txid,
+                vec![
+                    funding(),
+                    spender(TransactionContext::InstantSend(lock.clone())),
+                ],
+                no_locks(),
+                own,
                 None,
+                true,
             ),
             (
                 "unconfirmed spend",
                 None,
-                vec![spender(TransactionContext::Mempool)],
-                fixture.spender.txid,
+                vec![funding(), spender(TransactionContext::Mempool)],
+                no_locks(),
+                own,
                 None,
+                true,
+            ),
+            (
+                "reversible spend stamped at the chain lock",
+                Some(100),
+                vec![funding(), reversible()],
+                no_locks(),
+                own,
+                Some(100),
+                true,
+            ),
+            (
+                "reversible spend stamped above the chain lock",
+                Some(100),
+                vec![funding(), reversible()],
+                no_locks(),
+                own,
+                Some(101),
+                false,
             ),
             (
                 "spend absent from history",
                 Some(100),
-                vec![],
+                vec![funding()],
+                no_locks(),
                 foreign,
                 None,
+                true,
             ),
             (
                 "stamped spend absent from history",
                 Some(100),
-                vec![],
+                vec![funding()],
+                no_locks(),
                 foreign,
                 Some(200),
+                true,
             ),
         ] {
             let mut info = fixture.info.clone();
             info.metadata.last_applied_chain_lock = chain_locked.map(chain_lock);
+            let mut store = MemoryStore::new(
+                &fixture,
+                info,
+                RecordedHistory {
+                    instant_locks,
+                    ..stored_history(transactions)
+                },
+            );
+            let mut state = store.snapshot();
+            let replay = replay_wallet_history_blocking(&mut state, &evidence).unwrap();
             let claim = StoredReplayClaim {
                 outpoint: fixture.spent,
                 claimant: Some(claimant),
-                mined_height,
+                mined_height: stamp,
             };
-            let mut state = load(&fixture, info, history, claim, &evidence);
-            state.wallet_info.apply_chain_lock(chain_lock(300));
-            state.wallet_info.update_synced_height(300);
+            store.claims = vec![claim];
 
-            assert!(
-                !credits_funding(&mut state, &fixture.funding).await,
-                "{case}: the stored claim must keep the spent coin from being credited"
+            assert_eq!(
+                restorable_claims(&state, &replay, &store.claims),
+                if restored {
+                    vec![(claim.outpoint, claim.claimant)]
+                } else {
+                    vec![]
+                },
+                "{case}"
             );
+        }
+    }
+
+    /// A stored conflict loser is deleted in the backend transaction, and the
+    /// wallet is read and replayed again to prove the history settled.
+    #[tokio::test]
+    async fn should_write_effects_and_settle_on_the_re_read() {
+        let fixture = claimed_spend().await;
+        let address = Address::from_script(
+            &fixture.funding.output[0].script_pubkey,
+            fixture.wallet.network,
+        )
+        .unwrap();
+        let mut competitor = fixture.spender.transaction.clone();
+        competitor.output[0].value = 98_000;
+        let competitor = authorize(&fixture.wallet, &fixture.info, &address, competitor);
+        let loser = competitor.txid();
+        for on_write in [OnWrite::Apply, OnWrite::Ignore, OnWrite::Vanish] {
+            let mut store = MemoryStore::new(
+                &fixture,
+                fixture.info.clone(),
+                stored_history(vec![
+                    fixture.funding_row.clone(),
+                    fixture.spender.clone(),
+                    StoredTransaction {
+                        txid: loser,
+                        transaction: competitor.clone(),
+                        context: TransactionContext::Mempool,
+                        stored_net_amount: None,
+                        stored_direction: None,
+                        owned_inputs: Vec::new(),
+                    },
+                ]),
+            );
+            store.on_write = on_write;
+
+            let result = repair_wallet_history(&mut store, &ReplayEvidence::default());
+
+            assert_eq!(store.writes, 1);
+            match on_write {
+                OnWrite::Apply => {
+                    let (state, outcome) = result.unwrap().unwrap();
+                    assert!(outcome.defeated.contains(&loser));
+                    assert!(state
+                        .recorded_history
+                        .transactions
+                        .iter()
+                        .all(|stored| stored.txid != loser));
+                }
+                OnWrite::Ignore => assert!(matches!(
+                    result,
+                    Err(HistoryRepairError::Replay(
+                        HistoryReplayError::UnsettledAfterReplay
+                    ))
+                )),
+                _ => assert!(matches!(result, Err(HistoryRepairError::WalletVanished))),
+            }
         }
     }
 }

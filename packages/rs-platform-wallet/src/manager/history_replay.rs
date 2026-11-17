@@ -1491,7 +1491,7 @@ pub(crate) mod tests {
         Wallet::from_mnemonic(mnemonic, Network::Testnet, accounts).unwrap()
     }
 
-    fn authorize(
+    pub(crate) fn authorize(
         wallet: &key_wallet::Wallet,
         info: &key_wallet::wallet::ManagedWalletInfo,
         address: &dashcore::Address,
