@@ -259,10 +259,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // `insert_funds_bearing_account` API exposed by the post-split
         // collection rather than wrapping in `OwnedManagedCoreAccount`.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to build contact account: {e}"
-                ))
+            .map_err(|source| PlatformWalletError::DashpayAccountBuild {
+                account_type,
+                source,
             })?;
 
         // Persist the registration BEFORE the in-memory inserts: a store
@@ -602,10 +601,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // typed `insert_funds` API after the upstream split.
         // An xpub that cannot derive the account's address pool stays unusable on every retry.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account)
-            .map_err(|e| {
-                Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to build external contact account: {e}"
-                )))
+            .map_err(|source| {
+                Permanent(PlatformWalletError::DashpayAccountBuild {
+                    account_type,
+                    source,
+                })
             })?;
 
         #[cfg(test)]
