@@ -109,7 +109,7 @@ pub unsafe extern "C" fn asset_lock_operation_persistence_action(
 mod tests {
     use super::*;
     use crate::asset_lock_persistence::build_asset_lock_entries;
-    use dashcore::{hashes::Hash, OutPoint, Transaction, Txid};
+    use dashcore::{OutPoint, Transaction, Txid};
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dpp::prelude::AssetLockProof;
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -121,6 +121,7 @@ mod tests {
             operation_id: Some([9; 16]),
             operation_revision: 0,
             expected_operation_revision: None,
+            shielded_recipient: None,
             out_point: OutPoint::new(Txid::from_byte_array([7; 32]), 0),
             transaction: Transaction {
                 version: 3,

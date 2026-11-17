@@ -11745,6 +11745,8 @@ mod tests {
             status: platform_wallet::AssetLockStatus::Broadcast,
             proof: None,
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
             shielded_recipient: Some(raw),
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);

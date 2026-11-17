@@ -315,6 +315,10 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 ///
 /// Malformed fields and entry mismatches are always fatal. Status drift is
 /// policy-controlled: Recovery uses the blob status with consumption sticky.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one parameter per selected asset_locks column"
+)]
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,

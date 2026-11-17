@@ -1113,7 +1113,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
                 | AssetLockStatus::Consumed
-                | AssetLockStatus::DrainCompleted => None,
+                | AssetLockStatus::DrainCompleted
+                | AssetLockStatus::Conflicted => None,
             } {
                 tracing::warn!(
                     outpoint = %out_point,
@@ -6264,6 +6265,7 @@ mod tests {
                         out_point,
                         TrackedAssetLock {
                             operation_id: None,
+                            operation_revision: 0,
                             out_point,
                             transaction: transaction.clone(),
                             account_index: 0,

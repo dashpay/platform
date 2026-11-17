@@ -1220,6 +1220,7 @@ mod tests {
                             TrackedAssetLock {
                                 operation_id: entry.operation_id,
                                 operation_revision: entry.operation_revision,
+                                shielded_recipient: entry.shielded_recipient,
                                 out_point: entry.out_point,
                                 transaction: entry.transaction.clone(),
                                 account_index: entry.account_index,

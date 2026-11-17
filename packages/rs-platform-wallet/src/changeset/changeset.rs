@@ -2983,6 +2983,7 @@ mod tests {
             operation_id: Some([0x42; 16]),
             operation_revision: 0,
             expected_operation_revision: None,
+            shielded_recipient: None,
             out_point: OutPoint::default(),
             transaction: Transaction {
                 version: 3,
