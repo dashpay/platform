@@ -1129,6 +1129,13 @@ impl SqlitePersister {
     /// ([`StoreAndCommitError::NotCommitted`]) is back in the buffer after a
     /// transient failure and gone after any other
     /// ([`handle_flush_error`](Self::handle_flush_error)).
+    ///
+    /// A poisoned lock is never `NotStaged`, although nothing was staged:
+    /// the buffer is not as it was. Finding the connection poisoned discards
+    /// every buffered changeset ([`conn`](Self::conn)), and a poisoned
+    /// buffer lock leaves what it guards out of reach for good. Both are
+    /// reported as `NotCommitted` with [`PersistenceError::LockPoisoned`],
+    /// which is not transient: what the wallet had buffered is gone.
     fn stage_and_commit(
         &self,
         wallet_id: WalletId,
@@ -1136,9 +1143,12 @@ impl SqlitePersister {
     ) -> Result<(), StoreAndCommitError> {
         let mut conn = self
             .conn()
-            .map_err(|e| StoreAndCommitError::NotStaged(PersistenceError::from(e)))?;
+            .map_err(|e| StoreAndCommitError::NotCommitted(PersistenceError::from(e)))?;
         self.merge_checked(Some(&conn), wallet_id, changeset)
-            .map_err(StoreAndCommitError::NotStaged)?;
+            .map_err(|refused| match refused {
+                PersistenceError::LockPoisoned => StoreAndCommitError::NotCommitted(refused),
+                refused => StoreAndCommitError::NotStaged(refused),
+            })?;
         #[cfg(any(test, feature = "__test-helpers"))]
         self.run_store_flush_seam();
         self.flush_locked(&mut conn, &wallet_id)
@@ -1498,15 +1508,18 @@ impl PlatformWalletPersistence for SqlitePersister {
     ///
     /// - [`StoreAndCommitError::NotStaged`]: the changeset never reached the
     ///   buffer, which is as it was, and nothing was written. Raised under
-    ///   [`LoadPolicy::Recovery`](crate::LoadPolicy), when the connection is
-    ///   unusable, and for an identity-slot conflict
+    ///   [`LoadPolicy::Recovery`](crate::LoadPolicy) and for an
+    ///   identity-slot conflict
     ///   ([`WalletStorageError::IdentityIndexConflict`] /
     ///   [`WalletStorageError::WalletlessIdentityIndex`]).
     /// - [`StoreAndCommitError::NotCommitted`]: the changeset was merged and
     ///   the transaction failed. A transient failure
     ///   ([`WalletStorageError::FlushRetryable`]) restored the buffer, the
     ///   changeset in it, for a later `flush`, `commit_writes` or
-    ///   `store_and_commit`; any other dropped the buffer.
+    ///   `store_and_commit`; any other dropped the buffer. A poisoned lock
+    ///   is reported this way too, as [`PersistenceError::LockPoisoned`]:
+    ///   finding it discards every buffered changeset, so the buffer is not
+    ///   as it was even though this changeset never reached it.
     fn store_and_commit(
         &self,
         wallet_id: WalletId,

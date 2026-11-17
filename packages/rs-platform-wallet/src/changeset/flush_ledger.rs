@@ -47,10 +47,16 @@ pub(crate) struct FlushLedger {
 ///
 /// A backend whose store is the commit buffers nothing, so no flush of it
 /// drops anything, whatever the flush answers: it is counted as failed and
-/// never as lost.
+/// never as lost. That is a statement about its `store` and its `flush`
+/// only. A store committed in one step that fails for good dropped what the
+/// backend had buffered, by that step's contract, whatever the backend's
+/// `store` does: it is counted as lost on every backend
+/// ([`FlushLedger::store_and_commit`]).
 struct InFlight<'a> {
     ledger: &'a FlushLedger,
-    /// Whether the backend buffers what is stored until a flush.
+    /// Whether a failure for good, or a panic, dropped what the backend had
+    /// buffered: for a flush, whether the backend buffers what is stored
+    /// until a flush, and always for a store committed in one step.
     buffers: bool,
     recorded: bool,
 }
@@ -111,8 +117,17 @@ impl FlushLedger {
     /// step ([`PlatformWalletPersistence::store_and_commit`]), counted as
     /// [`Self::flush`] counts a flush: in progress from before the backend
     /// is called until its outcome is recorded, as failed when the commit
-    /// fails, and as lost too when it fails for good on a backend that
-    /// buffers, or the backend panics.
+    /// fails, and as lost too when it fails for good or the backend panics.
+    ///
+    /// As lost on every backend, one whose store is the commit
+    /// ([`PlatformWalletPersistence::store_commits_inline`]) included. That
+    /// attestation says what a `store` does, and nothing of what this step
+    /// holds: a backend may keep a changeset whose commit failed
+    /// transiently, from a `store` or from this step, and commit it with
+    /// the next one. A step that then fails for good drops it too. Its
+    /// contract says so (everything buffered for the wallet is dropped), and
+    /// whether anything but the step's own changeset was in that buffer is
+    /// not known here, so the loss is counted.
     ///
     /// The caller needs none of this for its own answer, which the backend
     /// gives. It is counted for every other reader of the ledger: a commit
@@ -127,7 +142,7 @@ impl FlushLedger {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), StoreAndCommitError> {
-        let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
+        let mut in_flight = InFlight::enter(self, true);
         let committed = backend.store_and_commit(wallet_id, changeset);
         in_flight.record(match &committed {
             Err(StoreAndCommitError::NotCommitted(error)) => Some(error),
@@ -444,10 +459,15 @@ mod tests {
 
     /// A store committed in one step drains the buffer every flush drains,
     /// so its commit is counted as a flush is: failed when it fails, and lost
-    /// too when it fails for good on a backend that buffers, as it dropped
-    /// what other handles had stored with it. A changeset refused before it
-    /// was staged took nothing from the buffer, and one that committed
-    /// dropped nothing: neither is counted.
+    /// too when it fails for good, as it dropped what other handles had
+    /// stored with it. A changeset refused before it was staged took nothing
+    /// from the buffer, and one that committed dropped nothing: neither is
+    /// counted.
+    ///
+    /// A backend whose store is the commit is counted the same way. Its
+    /// attestation speaks for its `store`, not for what the step held: a
+    /// changeset whose commit failed transiently earlier may still have been
+    /// buffered, and a step that fails for good dropped it.
     #[test]
     fn should_count_a_failed_commit_of_a_store_made_in_one_step_as_a_failed_flush() {
         let backend = InOneStep::answering(
@@ -486,8 +506,8 @@ mod tests {
         assert!(inline.step().is_err());
         assert_eq!(
             counted(&inline),
-            (1, 0),
-            "a backend whose store is the commit had nothing of another handle's buffered"
+            (1, 1),
+            "what the step dropped is a loss whatever the backend's store does"
         );
     }
 

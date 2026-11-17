@@ -182,18 +182,25 @@ pub enum StoreAndCommitError {
     /// before the call is as it was. Also the answer of a backend that does
     /// not offer the step
     /// ([`offers_store_and_commit`](PlatformWalletPersistence::offers_store_and_commit)).
-    #[error("{0}")]
-    NotStaged(PersistenceError),
+    ///
+    /// A backend answers this only when the buffer is untouched. One that
+    /// lost what it had buffered while refusing the changeset (a poisoned
+    /// lock, say) answers [`Self::NotCommitted`] with a failure that is not
+    /// transient, which is what tells the caller the buffer is gone.
+    #[error("the changeset was refused before it was staged: {0}")]
+    NotStaged(#[source] PersistenceError),
     /// The changeset was staged and the commit of the wallet's buffer
-    /// failed. After a [`PersistenceErrorKind::Transient`] failure the
-    /// backend keeps everything it had buffered for the wallet, this
-    /// changeset included, and a later [`flush`](PlatformWalletPersistence::flush)
-    /// or `store_and_commit` writes it: the retry is one of those, never the
-    /// same changeset issued again. After any other failure the backend
-    /// dropped everything it had buffered for the wallet, this changeset
-    /// included, and none of it is on disk.
-    #[error("{0}")]
-    NotCommitted(PersistenceError),
+    /// failed, or the backend lost what it had buffered before it could
+    /// stage the changeset. After a [`PersistenceErrorKind::Transient`]
+    /// failure the backend keeps everything it had buffered for the wallet,
+    /// this changeset included, and a later
+    /// [`flush`](PlatformWalletPersistence::flush) or `store_and_commit`
+    /// writes it: the retry is one of those, never the same changeset issued
+    /// again. After any other failure the backend dropped everything it had
+    /// buffered for the wallet, this changeset included, and none of it is
+    /// on disk.
+    #[error("the changeset was not committed: {0}")]
+    NotCommitted(#[source] PersistenceError),
 }
 
 /// Whether a contact's outbound-account marker
@@ -791,6 +798,33 @@ mod tests {
             matches!(&refused, Err(StoreAndCommitError::NotStaged(error)) if !error.is_transient()),
             "{refused:?}"
         );
+    }
+
+    /// Both ways the atomic step fails carry the backend's error as their
+    /// source, so a caller that walks the chain reaches the typed
+    /// persistence error and, behind it, the backend's own cause.
+    #[test]
+    fn should_keep_the_persistence_error_as_the_source_of_a_failed_atomic_step() {
+        let cause = || {
+            PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "simulated SQLITE_BUSY",
+            )
+        };
+        for failed in [
+            StoreAndCommitError::NotStaged(cause()),
+            StoreAndCommitError::NotCommitted(cause()),
+        ] {
+            let source = StdError::source(&failed)
+                .and_then(|source| source.downcast_ref::<PersistenceError>())
+                .unwrap_or_else(|| panic!("{failed:?} has no persistence error as its source"));
+            assert!(source.is_transient(), "{failed:?}");
+            assert!(
+                StdError::source(source)
+                    .is_some_and(|backend| backend.to_string() == "simulated SQLITE_BUSY"),
+                "the backend's own cause is behind it: {failed:?}"
+            );
+        }
     }
 
     /// Narrowing a verdict must not cost the caller the detail it needs to

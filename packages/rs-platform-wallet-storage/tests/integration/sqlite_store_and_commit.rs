@@ -22,8 +22,8 @@ use common::{
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    CoreChangeSet, IdentityChangeSet, IdentityEntry, PersistenceErrorKind, PlatformWalletChangeSet,
-    PlatformWalletPersistence, StoreAndCommitError, TokenBalanceChangeSet,
+    CoreChangeSet, IdentityChangeSet, IdentityEntry, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet, PlatformWalletPersistence, StoreAndCommitError, TokenBalanceChangeSet,
 };
 use platform_wallet::wallet::identity::IdentityStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -317,6 +317,45 @@ fn should_leave_the_buffer_as_it_was_when_a_changeset_is_refused_before_it_is_st
         !identity_on_disk(&path, &claimant),
         "the refused changeset was never in the buffer"
     );
+}
+
+/// A poisoned connection is not reported as a changeset that was never
+/// staged, though none was: finding the connection poisoned discards every
+/// buffered changeset, so what the wallet had buffered before the call is
+/// gone, and "not staged" promises it is as it was. It is reported as a
+/// commit that failed for good, which says the buffer was dropped.
+#[test]
+fn should_report_a_poisoned_connection_as_a_dropped_buffer_and_not_as_nothing_staged() {
+    let (p, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let p = Arc::new(p);
+    let w = wid(0x87);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, height(5)).expect("buffered before the call");
+
+    let poisoner = Arc::clone(&p);
+    let panicked = std::thread::spawn(move || {
+        let _connection = poisoner.lock_conn_for_test();
+        panic!("poison the SQLite connection mutex");
+    })
+    .join();
+    assert!(panicked.is_err(), "the poisoning thread panics");
+
+    let stored = p.store_and_commit(w, height(6));
+
+    assert!(
+        matches!(
+            &stored,
+            Err(StoreAndCommitError::NotCommitted(
+                PersistenceError::LockPoisoned
+            ))
+        ),
+        "the buffer was discarded, so the answer cannot be that it is as it was: {stored:?}"
+    );
+    assert!(
+        !p.buffer_has_changeset_for_test(&w),
+        "what was buffered before the call is gone"
+    );
+    assert_eq!(read_synced_height(&path, &w), None, "nothing was written");
 }
 
 /// The step is offered in both flush modes, through the trait object the

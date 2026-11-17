@@ -218,12 +218,14 @@ takes, in either flush mode, so its result is for exactly what it staged:
 - `Ok(())`: the changeset is on disk, behind everything that was buffered
   for the wallet before it.
 - `StoreAndCommitError::NotStaged`: refused before it reached the buffer
-  (recovery mode, an unusable connection, an identity-slot conflict). The
-  buffer is as it was and nothing was written.
+  (recovery mode, an identity-slot conflict). The buffer is as it was and
+  nothing was written.
 - `StoreAndCommitError::NotCommitted`: merged, and the transaction failed.
   After a transient failure the changeset is back in the buffer for a later
   `flush()`, `commit_writes()` or `store_and_commit`; **do not issue it
   again**. After any other failure it was dropped with the rest of the buffer.
+  A poisoned lock is reported this way too (`LockPoisoned`): detection
+  discards every buffered changeset, so the buffer is not as it was.
 
 A `SqlitePersister` configured with [`FlushMode::Manual`] does NOT
 auto-flush from `Drop`; it emits a `tracing::error!` on drop if the buffer
