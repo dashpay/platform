@@ -47,28 +47,67 @@ impl DriveHighLevelBatchOperationConverter for TokenTransferTransitionAction {
                     },
                 )];
 
-                ops.push(TokenOperation(TokenOperationType::TokenTransfer {
-                    token_id,
-                    sender_id: owner_id,
-                    recipient_id,
-                    amount,
-                }));
+                // A random transfer (protocol version 15) moves the most it moves from the
+                // sender into a reservation and pays the recipient once the block's random
+                // beacon is known (`Drive::settle_random_token_amounts`), and its history holds
+                // the range's minimum until then. Only a version 1 transfer carries a random minimum amount,
+                // and no protocol version before 15 decodes one
+                // (`StateTransition::active_version_range`), so every earlier version that
+                // selects this generation takes the other branch, as it always did.
+                let history_amount = match self.random_minimum_amount() {
+                    Some(minimum) => {
+                        ops.push(TokenOperation(
+                            TokenOperationType::TokenReserveRandomTransfer {
+                                token_id,
+                                sender_id: owner_id,
+                                recipient_id,
+                                identity_contract_nonce,
+                                minimum,
+                                maximum: amount,
+                            },
+                        ));
+                        minimum
+                    }
+                    None => {
+                        ops.push(TokenOperation(TokenOperationType::TokenTransfer {
+                            token_id,
+                            sender_id: owner_id,
+                            recipient_id,
+                            amount,
+                        }));
+                        amount
+                    }
+                };
 
+                let random_minimum_amount = self.random_minimum_amount();
                 let token_configuration = self.base().token_configuration()?;
                 if token_configuration.keeps_history().keeps_transfer_history() {
                     let (public_note, shared_encrypted_note, private_encrypted_note) =
                         self.notes_owned();
-                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                        token_id,
-                        owner_id,
-                        nonce: identity_contract_nonce,
-                        event: TokenEvent::Transfer(
-                            recipient_id,
-                            public_note,
-                            shared_encrypted_note,
-                            private_encrypted_note,
-                            amount,
-                        ),
+                    let event = TokenEvent::Transfer(
+                        recipient_id,
+                        public_note,
+                        shared_encrypted_note,
+                        private_encrypted_note,
+                        history_amount,
+                    );
+                    // A random transfer's history document id also hashes its range, so a
+                    // proof of the document binds the range the amount was drawn from
+                    ops.push(TokenOperation(match random_minimum_amount {
+                        Some(minimum) => TokenOperationType::TokenRandomAmountHistory {
+                            token_id,
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event,
+                            minimum,
+                            maximum: amount,
+                        },
+                        None => TokenOperationType::TokenHistory {
+                            token_id,
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event,
+                        },
                     }));
                 }
 

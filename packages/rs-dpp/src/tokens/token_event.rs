@@ -35,7 +35,7 @@ pub type TokenEventPersonalEncryptedNote = Option<(
 use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
-use crate::tokens::SharedEncryptedNote;
+use crate::tokens::{token_history_document_id, SharedEncryptedNote};
 use crate::ProtocolError;
 
 /// Alias representing the identity that will receive tokens or other effects from a token operation.
@@ -850,19 +850,25 @@ impl TokenEvent {
         Ok(token_history_contract.document_type_for_name(self.associated_document_type_name())?)
     }
 
+    /// The history document of the event, recorded by the transition of `owner_id` with
+    /// `owner_nonce` on `token_id`, under the id `token_history_document_id` gives it.
+    /// `random_range` is the least and the most a random transfer or mint moves (protocol
+    /// version 15), and `None` for every other event.
     pub fn build_historical_document_owned(
         self,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
+        random_range: Option<(TokenAmount, TokenAmount)>,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-        let document_id = Document::generate_document_id_v0(
+        let document_id = token_history_document_id(
             &token_id,
             &owner_id,
-            format!("history_{}", self.associated_document_type_name()).as_str(),
-            owner_nonce.to_be_bytes().as_slice(),
+            self.associated_document_type_name(),
+            owner_nonce,
+            random_range,
         );
 
         let properties = match self {

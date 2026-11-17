@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::estimated_layers::EstimatedLayers;
+use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
@@ -13,7 +14,10 @@ use platform_version::version::PlatformVersion;
 mod v0;
 
 impl Drive {
-    /// Adds token transaction history
+    /// Adds token transaction history: the history document of `event`, under the id
+    /// `token_history_document_id` gives it. `random_range` is the least and the most a random
+    /// transfer or mint moves (protocol version 15), whose id also hashes them, and `None` for
+    /// every other event, whose id is the one it always had.
     #[allow(clippy::too_many_arguments)]
     pub fn add_token_transaction_history_operations(
         &self,
@@ -21,6 +25,7 @@ impl Drive {
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
         event: TokenEvent,
+        random_range: Option<(TokenAmount, TokenAmount)>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
@@ -38,6 +43,7 @@ impl Drive {
                 owner_id,
                 owner_nonce,
                 event,
+                random_range,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

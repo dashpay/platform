@@ -1,4 +1,5 @@
 use derive_more::From;
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 
 /// transformer module for token issuance transition action
@@ -38,6 +39,12 @@ impl TokenMintTransitionActionAccessorsV0 for TokenMintTransitionAction {
     fn set_mint_amount(&mut self, amount: u64) {
         match self {
             TokenMintTransitionAction::V0(v0) => v0.mint_amount = amount,
+        }
+    }
+
+    fn random_minimum_amount(&self) -> Option<TokenAmount> {
+        match self {
+            TokenMintTransitionAction::V0(v0) => v0.random_minimum_amount,
         }
     }
 
@@ -148,6 +155,7 @@ mod tests {
             mint_amount,
             identity_balance_holder_id: holder,
             public_note,
+            random_minimum_amount: None,
         };
         TokenMintTransitionAction::V0(v0)
     }
@@ -234,6 +242,7 @@ mod tests {
             mint_amount: 555,
             identity_balance_holder_id: Identifier::new([61u8; 32]),
             public_note: Some("derive_more From".to_string()),
+            random_minimum_amount: None,
         };
 
         // The derive_more::From impl must yield an equivalent enum

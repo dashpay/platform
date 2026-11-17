@@ -1004,6 +1004,7 @@ fn make_mint_v0() -> TokenMintTransitionActionV0 {
         mint_amount: 1000,
         identity_balance_holder_id: Identifier::from([0xDD; 32]),
         public_note: Some("mint note".to_string()),
+        random_minimum_amount: None,
     }
 }
 
@@ -1140,6 +1141,7 @@ fn make_token_transfer_v0() -> TokenTransferTransitionActionV0 {
         public_note: Some("transfer note".to_string()),
         shared_encrypted_note: None,
         private_encrypted_note: None,
+        random_minimum_amount: None,
     }
 }
 

@@ -4,7 +4,7 @@
 //!
 
 mod address_funds;
-mod batch;
+pub(crate) mod batch;
 mod contract;
 mod identity;
 mod shielded;

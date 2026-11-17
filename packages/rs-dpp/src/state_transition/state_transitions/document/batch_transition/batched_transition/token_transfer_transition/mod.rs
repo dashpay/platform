@@ -1,5 +1,6 @@
 pub mod v0;
 pub mod v0_methods;
+pub mod v1;
 pub mod validate_structure;
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -11,6 +12,7 @@ use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::*;
+pub use v1::TokenTransferTransitionV1;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
@@ -22,6 +24,10 @@ pub enum TokenTransferTransition {
     #[display("V0({})", "_0")]
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenTransferTransitionV0),
+    /// Can move a random amount (protocol version 15)
+    #[display("V1({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(TokenTransferTransitionV1),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -114,6 +120,77 @@ pub(crate) mod json_convertible_tests {
                     "publicNote": "transfer note",
                     "sharedEncryptedNote": null,
                     "privateEncryptedNote": null,
+            })
+        );
+        let recovered = TokenTransferTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    /// A version 1 transfer moving a random amount from 40 to 250.
+    pub(crate) fn fixture_v1() -> TokenTransferTransition {
+        TokenTransferTransition::V1(TokenTransferTransitionV1 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 14,
+                token_contract_position: 3,
+                data_contract_id: Identifier::new([0xa1; 32]),
+                token_id: Identifier::new([0xb2; 32]),
+                using_group_info: None,
+            }),
+            amount: 250,
+            recipient_id: Identifier::new([0xc3; 32]),
+            public_note: Some("transfer note".to_string()),
+            shared_encrypted_note: None,
+            private_encrypted_note: None,
+            random_minimum_amount: Some(40),
+        })
+    }
+
+    #[test]
+    fn should_round_trip_a_version_1_transfer_through_json() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture_v1();
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "1",
+                "$baseFormatVersion": "0",
+                "$identity-contract-nonce": 14,
+                "$tokenContractPosition": 3,
+                "$dataContractId": Identifier::new([0xa1; 32]),
+                "$tokenId": Identifier::new([0xb2; 32]),
+                "$amount": 250,
+                "recipientId": Identifier::new([0xc3; 32]),
+                "publicNote": "transfer note",
+                "sharedEncryptedNote": null,
+                "privateEncryptedNote": null,
+                "$randomMinimumAmount": 40,
+            })
+        );
+        let recovered = TokenTransferTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn should_round_trip_a_version_1_transfer_through_a_value() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture_v1();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "1",
+                "$baseFormatVersion": "0",
+                "$identity-contract-nonce": 14u64,
+                "$tokenContractPosition": 3u16,
+                "$dataContractId": Identifier::new([0xa1; 32]),
+                "$tokenId": Identifier::new([0xb2; 32]),
+                "$amount": 250u64,
+                "recipientId": Identifier::new([0xc3; 32]),
+                "publicNote": "transfer note",
+                "sharedEncryptedNote": null,
+                "privateEncryptedNote": null,
+                "$randomMinimumAmount": 40u64,
             })
         );
         let recovered = TokenTransferTransition::from_object(value).expect("from_object");

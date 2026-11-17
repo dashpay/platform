@@ -28,6 +28,9 @@ pub struct TokenMintTransitionBuilder {
     pub user_fee_increase: Option<UserFeeIncrease>,
     pub using_group_info: Option<GroupStateTransitionInfoStatus>,
     pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
+    /// The least the mint issues when its amount is random (protocol version 15); see
+    /// [`Self::with_random_minimum_amount`]
+    pub random_minimum_amount: Option<TokenAmount>,
 }
 
 impl TokenMintTransitionBuilder {
@@ -60,6 +63,7 @@ impl TokenMintTransitionBuilder {
             user_fee_increase: None,
             using_group_info: None,
             state_transition_creation_options: None,
+            random_minimum_amount: None,
         }
     }
 
@@ -156,6 +160,30 @@ impl TokenMintTransitionBuilder {
         self
     }
 
+    /// Makes the mint issue a random amount (protocol version 15): the recipient receives an
+    /// amount drawn uniformly from `random_minimum_amount` to the builder's amount, both
+    /// included, from the random beacon of the block that carries the mint. The token's
+    /// maximum supply must have room for the builder's amount, which the block adds to the
+    /// total supply before the draw; what the draw leaves is taken off again. Nobody knows the
+    /// amount before the block is accepted: read it from the proof of the transition, the mint
+    /// history document when the token keeps one.
+    ///
+    /// The transition is built in format version 1, which no protocol version before 15
+    /// accepts. Structure validation requires the minimum to be at least 1 and below the
+    /// amount, a recipient set with [`Self::issued_to_identity_id`], and no group action.
+    ///
+    /// # Arguments
+    ///
+    /// * `random_minimum_amount` - The least the mint issues
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_random_minimum_amount(mut self, random_minimum_amount: TokenAmount) -> Self {
+        self.random_minimum_amount = Some(random_minimum_amount);
+        self
+    }
+
     /// Signs the token mint transition
     ///
     /// # Arguments
@@ -180,6 +208,15 @@ impl TokenMintTransitionBuilder {
             self.token_position,
         ));
 
+        // The random minimum amount rides in the creation options, which the batch builder reads
+        let state_transition_creation_options = match self.random_minimum_amount {
+            Some(random_minimum_amount) => Some(StateTransitionCreationOptions {
+                random_minimum_amount: Some(random_minimum_amount),
+                ..self.state_transition_creation_options.unwrap_or_default()
+            }),
+            None => self.state_transition_creation_options,
+        };
+
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.issuer_id,
@@ -203,7 +240,7 @@ impl TokenMintTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            self.state_transition_creation_options,
+            state_transition_creation_options,
         )
         .await?;
 

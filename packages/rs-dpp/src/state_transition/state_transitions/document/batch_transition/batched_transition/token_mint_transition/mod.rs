@@ -1,5 +1,6 @@
 pub mod v0;
 mod v0_methods;
+pub mod v1;
 pub mod validate_structure;
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -11,6 +12,7 @@ use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::TokenMintTransitionV0;
+pub use v1::TokenMintTransitionV1;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
@@ -22,6 +24,10 @@ pub enum TokenMintTransition {
     #[display("V0({})", "_0")]
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenMintTransitionV0),
+    /// Can issue a random amount (protocol version 15)
+    #[display("V1({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(TokenMintTransitionV1),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -32,7 +38,8 @@ impl ValueConvertible for TokenMintTransition {}
 
 impl Default for TokenMintTransition {
     fn default() -> Self {
-        TokenMintTransition::V0(TokenMintTransitionV0::default()) // since only v0
+        // Version 0, which every protocol version accepts
+        TokenMintTransition::V0(TokenMintTransitionV0::default())
     }
 }
 
@@ -116,6 +123,71 @@ pub(crate) mod json_convertible_tests {
                     "issuedToIdentityId": Identifier::new([0xc3; 32]),
                     "amount": 5_000u64,
                     "publicNote": "minting",
+            })
+        );
+        let recovered = TokenMintTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    /// A version 1 mint issuing a random amount from 1_000 to 5_000.
+    pub(crate) fn fixture_v1() -> TokenMintTransition {
+        TokenMintTransition::V1(TokenMintTransitionV1 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 13,
+                token_contract_position: 2,
+                data_contract_id: Identifier::new([0xa1; 32]),
+                token_id: Identifier::new([0xb2; 32]),
+                using_group_info: None,
+            }),
+            issued_to_identity_id: Some(Identifier::new([0xc3; 32])),
+            amount: 5_000,
+            public_note: Some("minting".to_string()),
+            random_minimum_amount: Some(1_000),
+        })
+    }
+
+    #[test]
+    fn should_round_trip_a_version_1_mint_through_json() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture_v1();
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "1",
+                "$baseFormatVersion": "0",
+                "$identity-contract-nonce": 13,
+                "$tokenContractPosition": 2,
+                "$dataContractId": Identifier::new([0xa1; 32]),
+                "$tokenId": Identifier::new([0xb2; 32]),
+                "issuedToIdentityId": Identifier::new([0xc3; 32]),
+                "amount": 5_000,
+                "publicNote": "minting",
+                "$randomMinimumAmount": 1_000,
+            })
+        );
+        let recovered = TokenMintTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn should_round_trip_a_version_1_mint_through_a_value() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture_v1();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "1",
+                "$baseFormatVersion": "0",
+                "$identity-contract-nonce": 13u64,
+                "$tokenContractPosition": 2u16,
+                "$dataContractId": Identifier::new([0xa1; 32]),
+                "$tokenId": Identifier::new([0xb2; 32]),
+                "issuedToIdentityId": Identifier::new([0xc3; 32]),
+                "amount": 5_000u64,
+                "publicNote": "minting",
+                "$randomMinimumAmount": 1_000u64,
             })
         );
         let recovered = TokenMintTransition::from_object(value).expect("from_object");

@@ -136,7 +136,7 @@ use crate::consensus::basic::token::{
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
     InvalidTokenNoteTooBigError, InvalidTokenOncePerIdentityDistributionAmountError,
-    InvalidTokenPositionError, MissingDefaultLocalizationError,
+    InvalidTokenPositionError, MissingDefaultLocalizationError, RandomTokenMintNotAllowedError,
     TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
     TokenTransferToOurselfError,
 };
@@ -903,6 +903,11 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatePrivateDocumentEntryError(DuplicatePrivateDocumentEntryError),
+
+    // A token mint asking for a random amount it cannot take: a group action, or one leaving
+    // its recipient to the token's configuration (protocol version 15).
+    #[error(transparent)]
+    RandomTokenMintNotAllowedError(RandomTokenMintNotAllowedError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1141,16 +1146,14 @@ mod tests {
             )),
             209
         );
-        // A Batch document transition on a private document type (protocol version 15): the
-        // tail of the enum.
+        // A Batch document transition on a private document type (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::DocumentTypePrivateError(
                 DocumentTypePrivateError::new(Identifier::from([1; 32]), "entry".to_string())
             )),
             210
         );
-        // A `PrivateDocumentCreateFromShieldedPool`'s entries (protocol version 15): the tail
-        // of the enum.
+        // A `PrivateDocumentCreateFromShieldedPool`'s entries (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidPrivateDocumentEntryCountError(
                 InvalidPrivateDocumentEntryCountError::new(17, 16)
@@ -1168,6 +1171,16 @@ mod tests {
                 DuplicatePrivateDocumentEntryError::new(0, 3)
             )),
             213
+        );
+        // A token mint refusing a random amount (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::RandomTokenMintNotAllowedError(
+                RandomTokenMintNotAllowedError::new(
+                    Identifier::from([1; 32]),
+                    "reason".to_string()
+                )
+            )),
+            214
         );
     }
 

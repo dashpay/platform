@@ -34,6 +34,9 @@ use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransition
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::token_mint_transition::validate_structure::TokenMintTransitionStructureValidation;
+use dpp::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
+use dpp::state_transition::batch_transition::{TokenMintTransition, TokenTransferTransition};
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
@@ -95,7 +98,10 @@ impl Drive {
     /// credit balance: a document batch's proof is verified strictly as one merged
     /// query, an identity update's through the identity keys verifier's own
     /// composition, and the others as subsets of the merged proof; the outcome
-    /// carries the balance.
+    /// carries the balance. With `producer_executes_token_format_version_1` false (a producer
+    /// whose version does not execute a token transfer or mint of format version 1) such a
+    /// transition is refused, as it is where the caller's version does not execute one.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
@@ -103,6 +109,7 @@ impl Drive {
         known_contracts_provider_fn: &ContractLookupFn,
         carries_owner_balance: bool,
         proof_document_history_layout: u16,
+        producer_executes_token_format_version_1: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         // The balance a document batch's proof carried, set by its arm.
@@ -657,6 +664,58 @@ impl Drive {
                         )?;
                         let keeps_historical_document = token_config.keeps_history();
 
+                        // A transfer or mint of format version 1 (protocol version 15) executes
+                        // only where that format is active, as the platform decides for the
+                        // whole format (`StateTransition::active_version_range`), whether or not
+                        // it names a random minimum: one naming none would otherwise take the
+                        // proof of a fixed one of format version 0, which has the same history.
+                        // The producer's version decides where the proof was made, and the
+                        // caller's cannot be lowered by it, so both must execute the format.
+                        // A random one executes only in the shape its structure validation
+                        // admits too: a random group mint, say, is refused, while a fixed one of
+                        // the same owner, nonce, recipient and group action can stand in state
+                        // for its proof. Expecting one the platform never executes is refused
+                        // here, by the checks the platform refuses it with, before any branch
+                        // reads the proof.
+                        let format_version_1 = matches!(
+                            token_transition,
+                            TokenTransition::Transfer(TokenTransferTransition::V1(_))
+                                | TokenTransition::Mint(TokenMintTransition::V1(_))
+                        );
+                        if format_version_1
+                            && (!producer_executes_token_format_version_1
+                                || platform_version
+                                    .dpp
+                                    .state_transition_serialization_versions
+                                    .random_token_amount
+                                    .is_none())
+                        {
+                            return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                "protocol version {} does not execute a token transfer or mint of format version 1",
+                                platform_version.protocol_version
+                            ))));
+                        }
+                        if token_transition.random_amount_range().is_some() {
+                            let structure = match token_transition {
+                                TokenTransition::Transfer(transfer) => {
+                                    Some(transfer.validate_structure(owner_id, platform_version)?)
+                                }
+                                TokenTransition::Mint(mint) => {
+                                    Some(mint.validate_structure(platform_version)?)
+                                }
+                                _ => None,
+                            };
+                            if let Some(error) = structure
+                                .as_ref()
+                                .and_then(|structure| structure.errors.first())
+                            {
+                                return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                    "the platform never executes this random token transition: {}",
+                                    error
+                                ))));
+                            }
+                        }
+
                         let historical_query = || {
                             // Resolved here rather than above because the kinds that write into a
                             // shielded pool keep no history and have no document type in the
@@ -705,9 +764,30 @@ impl Drive {
                                         platform_version,
                                     )?;
 
+                                // A random transfer or mint (protocol version 15) moves an amount
+                                // its sender cannot know: the history holds the amount drawn from
+                                // the block's random beacon (the range's minimum until the draw),
+                                // so the amount is taken from the proved document once it lies
+                                // in the range the transition asked for. The document's id
+                                // hashes that range (`token_history_document_id`), so the proof
+                                // is of a document written for this range, not of a fixed
+                                // amount or another range. A transition without a random amount
+                                // compares it as before.
+                                let random_amount_range = token_transition
+                                    .random_amount_range()
+                                    .map(|(minimum, maximum)| minimum..=maximum);
+                                if let Some(range) = &random_amount_range {
+                                    let amount: TokenAmount =
+                                        document.properties().get_integer("amount")?;
+                                    if !range.contains(&amount) {
+                                        return Err(Error::Proof(ProofError::UnexpectedResultProof(format!("proof of state transition execution showed an amount of {}, outside the random range {} to {} the state transition asked for, state transition is [{}]", amount, range.start(), range.end(), token_transition))));
+                                    }
+                                }
+
                                 // Some fields are populated by the drive,
                                 // so we need to ignore them
                                 let ignore_fields = match token_transition {
+                                    _ if random_amount_range.is_some() => Some(vec!["amount"]),
                                     TokenTransition::DestroyFrozenFunds(_) => {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
@@ -3715,6 +3795,9 @@ fn verify_contract_document_change_execution(
 
 #[cfg(test)]
 mod group_burn_tests;
+
+#[cfg(test)]
+mod random_amount_tests;
 
 #[cfg(test)]
 mod tests {

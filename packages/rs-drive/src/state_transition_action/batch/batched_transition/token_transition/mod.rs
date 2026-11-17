@@ -51,7 +51,9 @@ pub mod token_claim_to_pool_transition_action;
 pub mod token_direct_purchase_to_pool_transition_action;
 
 use derive_more::From;
+use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
+use dpp::tokens::token_history_document_id;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
@@ -214,16 +216,29 @@ impl TokenTransitionAction {
         Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
     }
 
-    /// Historical document id
+    /// The least and the most a random transfer or mint moves (protocol version 15); `None`
+    /// for any other action, which moves a fixed amount or none.
+    pub fn random_amount_range(&self) -> Option<(TokenAmount, TokenAmount)> {
+        match self {
+            TokenTransitionAction::TransferAction(transfer) => transfer
+                .random_minimum_amount()
+                .map(|minimum| (minimum, transfer.amount())),
+            TokenTransitionAction::MintAction(mint) => mint
+                .random_minimum_amount()
+                .map(|minimum| (minimum, mint.mint_amount())),
+            _ => None,
+        }
+    }
+
+    /// Historical document id (`token_history_document_id`), which for a random transfer or
+    /// mint also hashes the range it moves an amount from
     pub fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
-        let token_id = self.base().token_id();
-        let name = self.historical_document_type_name();
-        let owner_nonce = self.base().identity_contract_nonce();
-        Document::generate_document_id_v0(
-            &token_id,
+        token_history_document_id(
+            &self.base().token_id(),
             &owner_id,
-            format!("history_{}", name).as_str(),
-            owner_nonce.to_be_bytes().as_slice(),
+            self.historical_document_type_name(),
+            self.base().identity_contract_nonce(),
+            self.random_amount_range(),
         )
     }
 
@@ -241,6 +256,7 @@ impl TokenTransitionAction {
                 token_id,
                 owner_id,
                 owner_nonce,
+                self.random_amount_range(),
                 block_info,
                 platform_version,
             )

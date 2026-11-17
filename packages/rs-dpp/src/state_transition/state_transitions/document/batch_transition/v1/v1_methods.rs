@@ -63,9 +63,11 @@ use crate::state_transition::batch_transition::token_freeze_transition::TokenFre
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 #[cfg(feature = "state-transition-signing")]
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 #[cfg(feature = "state-transition-signing")]
 use crate::shielded::OrchardBundleParams;
 #[cfg(feature = "state-transition-signing")]
@@ -125,6 +127,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             amount,
             public_note,
         });
+        // A random amount builds the mint in format version 1 (protocol version 15)
+        mint_transition
+            .set_random_minimum_amount(options.and_then(|options| options.random_minimum_amount));
 
         if let Some(using_group_info_status) = using_group_info {
             match using_group_info_status {
@@ -279,7 +284,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         // Create the transfer transition for batch version 1
-        let transfer_transition = TokenTransferTransition::V0(TokenTransferTransitionV0 {
+        let mut transfer_transition = TokenTransferTransition::V0(TokenTransferTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce,
                 token_contract_position,
@@ -293,6 +298,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             shared_encrypted_note,
             private_encrypted_note,
         });
+        // A random amount builds the transfer in format version 1 (protocol version 15)
+        transfer_transition
+            .set_random_minimum_amount(options.and_then(|options| options.random_minimum_amount));
 
         // Wrap in a batch transition
         let documents_batch_transition: BatchTransition = BatchTransitionV1 {

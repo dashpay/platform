@@ -14,6 +14,7 @@ use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::TokenMintTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_MINT_OPTIONS_TS: &str = r#"
@@ -22,6 +23,12 @@ export interface TokenMintTransitionOptions {
     amount: bigint;
     issuedToIdentityId?: IdentifierLike;
     publicNote?: string;
+    /**
+     * The least the mint issues when its amount is random (protocol version 15): the
+     * recipient receives an amount drawn from it to `amount`. Setting it makes a version 1
+     * mint, which no protocol version before 15 accepts.
+     */
+    randomMinimumAmount?: bigint;
 }
 "#;
 
@@ -65,14 +72,20 @@ impl TokenMintTransitionWasm {
                 try_to_string(v, "publicNote")
             })?;
 
-        Ok(TokenMintTransitionWasm(TokenMintTransition::V0(
-            TokenMintTransitionV0 {
-                base: base.into(),
-                issued_to_identity_id: issued_to_identity_id.map(Into::into),
-                amount,
-                public_note,
-            },
-        )))
+        let random_minimum_amount: Option<u64> =
+            try_from_options_optional_with(&options, "randomMinimumAmount", |v| {
+                try_to_u64(v, "randomMinimumAmount")
+            })?;
+
+        let mut transition = TokenMintTransition::V0(TokenMintTransitionV0 {
+            base: base.into(),
+            issued_to_identity_id: issued_to_identity_id.map(Into::into),
+            amount,
+            public_note,
+        });
+        // A random amount takes the version 1 format
+        transition.set_random_minimum_amount(random_minimum_amount);
+        Ok(TokenMintTransitionWasm(transition))
     }
 
     #[wasm_bindgen(getter = issuedToIdentityId)]
@@ -83,6 +96,11 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(getter = amount)]
     pub fn amount(&self) -> u64 {
         self.0.amount()
+    }
+
+    #[wasm_bindgen(getter = randomMinimumAmount)]
+    pub fn random_minimum_amount(&self) -> Option<u64> {
+        self.0.random_minimum_amount()
     }
 
     #[wasm_bindgen(getter = base)]
@@ -113,6 +131,21 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(setter = amount)]
     pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
         self.0.set_amount(try_to_u64(amount, "amount")?);
+        Ok(())
+    }
+
+    #[wasm_bindgen(setter = randomMinimumAmount)]
+    pub fn set_random_minimum_amount(
+        &mut self,
+        #[wasm_bindgen(js_name = "randomMinimumAmount")] random_minimum_amount: JsValue,
+    ) -> WasmDppResult<()> {
+        let random_minimum_amount =
+            if random_minimum_amount.is_undefined() || random_minimum_amount.is_null() {
+                None
+            } else {
+                Some(try_to_u64(&random_minimum_amount, "randomMinimumAmount")?)
+            };
+        self.0.set_random_minimum_amount(random_minimum_amount);
         Ok(())
     }
 

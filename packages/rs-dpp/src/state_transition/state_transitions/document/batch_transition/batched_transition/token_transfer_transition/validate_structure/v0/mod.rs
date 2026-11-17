@@ -30,6 +30,19 @@ impl TokenTransferTransitionActionStructureValidationV0 for TokenTransferTransit
             ));
         }
 
+        // Only a version 1 transfer carries a random minimum amount, and no protocol version
+        // before 15 decodes one (`StateTransition::active_version_range`), so this check is
+        // inert at every earlier version that selects this generation.
+        if let Some(minimum) = self.random_minimum_amount() {
+            if minimum == 0 || minimum >= self.amount() {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
+                        InvalidTokenAmountError::new(self.amount().saturating_sub(1), minimum),
+                    )),
+                ));
+            }
+        }
+
         if self.recipient_id() == owner_id {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(BasicError::TokenTransferToOurselfError(
@@ -89,7 +102,9 @@ mod tests {
     use super::*;
     use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-    use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
+    use crate::state_transition::batch_transition::token_transfer_transition::{
+        TokenTransferTransitionV0, TokenTransferTransitionV1,
+    };
 
     fn make_base() -> TokenBaseTransition {
         TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -267,5 +282,66 @@ mod tests {
             &result.errors[0],
             ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_))
         ));
+    }
+
+    fn random_transfer(amount: u64, random_minimum_amount: Option<u64>) -> TokenTransferTransition {
+        TokenTransferTransition::V1(TokenTransferTransitionV1 {
+            base: make_base(),
+            amount,
+            recipient_id: Identifier::new([2u8; 32]),
+            public_note: None,
+            shared_encrypted_note: None,
+            private_encrypted_note: None,
+            random_minimum_amount,
+        })
+    }
+
+    fn assert_invalid_random_minimum(result: SimpleConsensusValidationResult, minimum: u64) {
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(e))
+                if e.token_amount() == minimum
+        ));
+    }
+
+    #[test]
+    fn should_accept_a_random_amount_from_one_to_below_the_amount() {
+        let owner_id = Identifier::new([3u8; 32]);
+        for minimum in [1, 500, 999] {
+            let result = random_transfer(1000, Some(minimum))
+                .validate_structure_v0(owner_id)
+                .unwrap();
+            assert!(result.is_valid(), "{minimum}: {:?}", result.errors);
+        }
+        let result = random_transfer(1000, None)
+            .validate_structure_v0(owner_id)
+            .unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn should_refuse_a_random_minimum_amount_of_zero() {
+        let owner_id = Identifier::new([3u8; 32]);
+        let result = random_transfer(1000, Some(0))
+            .validate_structure_v0(owner_id)
+            .unwrap();
+        assert_invalid_random_minimum(result, 0);
+    }
+
+    #[test]
+    fn should_refuse_a_random_minimum_amount_not_below_the_amount() {
+        let owner_id = Identifier::new([3u8; 32]);
+        for minimum in [1000, 1001] {
+            let result = random_transfer(1000, Some(minimum))
+                .validate_structure_v0(owner_id)
+                .unwrap();
+            assert_invalid_random_minimum(result, minimum);
+        }
+        // An amount of 1 leaves no minimum to draw from
+        let result = random_transfer(1, Some(1))
+            .validate_structure_v0(owner_id)
+            .unwrap();
+        assert_invalid_random_minimum(result, 1);
     }
 }
