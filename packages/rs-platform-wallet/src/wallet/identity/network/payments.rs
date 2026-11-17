@@ -2767,7 +2767,8 @@ mod tests {
             account_xpub,
             is_watch_only: true,
         };
-        let managed = ManagedCoreFundsAccount::from_account(&account);
+        let managed =
+            ManagedCoreFundsAccount::from_account(&account).expect("managed external account");
 
         wallet
             .add_account(account_type, Some(account_xpub))
@@ -8783,6 +8784,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
 
         // The payment handler must NOT write a sent-payment verdict: it runs
@@ -8903,6 +8905,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
         crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &matured_event)
             .await;
@@ -9060,6 +9063,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
         crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &event).await;
 

@@ -896,7 +896,6 @@ pub struct IdentitySyncConfigFFI {
 pub struct CoreWalletStateFFI {
     pub synced_height: u32,
     pub last_processed_height: u32,
-    pub monitor_revision: u64,
 }
 
 /// Per-wallet identity scan state.
@@ -950,7 +949,6 @@ pub struct TrackedAssetLockEntryFFI {
 pub struct AccountMetadataFFI {
     pub total_transactions: u64,
     pub total_utxos: u64,
-    pub monitor_revision: u64,
 }
 
 /// One address row inside [`AccountAddressPoolEntryFFI`]. The pool's

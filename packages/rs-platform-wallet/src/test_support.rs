@@ -328,6 +328,7 @@ pub(crate) fn observed_spend_event(
         balance: key_wallet::WalletCoreBalance::default(),
         account_balances: std::collections::BTreeMap::new(),
         addresses_derived: Vec::new(),
+        locked_outpoints: Vec::new(),
     }
 }
 
@@ -453,7 +454,8 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         network: Network::Testnet,
         account_xpub,
         is_watch_only: false,
-    });
+    })
+    .expect("managed contact account");
     // DashPay accounts are non-standard: one external pool via
     // `next_address_with_info`, not the standard receive/change split.
     let contact_address = managed

@@ -8077,7 +8077,10 @@ mod receiving_restore_tests {
                 };
                 info.core_wallet
                     .accounts
-                    .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&account))
+                    .insert_funds_bearing_account(
+                        ManagedCoreFundsAccount::from_account(&account)
+                            .expect("build managed external account"),
+                    )
                     .expect("managed external account");
             }
             info.core_wallet.update_synced_height(1000);

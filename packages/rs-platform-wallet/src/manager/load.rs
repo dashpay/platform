@@ -1939,7 +1939,7 @@ mod tests {
             is_watch_only: true,
         };
         let (current, previous) = (account(1), account(2));
-        let managed = ManagedCoreFundsAccount::from_account(&current);
+        let managed = ManagedCoreFundsAccount::from_account(&current).expect("managed account");
         let pool = managed.managed_account_type().address_pools()[0].clone();
         assert_eq!(pool.pool_type, AddressPoolType::Absent);
         assert!(super::pool_derives_from(&pool, &current));
