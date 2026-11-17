@@ -9654,6 +9654,7 @@ mod utxo_credit_verdict_tests {
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),
                 addresses_derived: vec![],
+                locked_outpoints: vec![],
             };
             let durable = DurableCursors::default();
             let mut batch = BTreeMap::new();
@@ -10019,6 +10020,7 @@ mod no_change_asset_lock_block_projection_tests {
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),
                 addresses_derived: vec![],
+                locked_outpoints: vec![],
             },
         )
         .await;
