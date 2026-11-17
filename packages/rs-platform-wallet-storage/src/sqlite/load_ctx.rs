@@ -62,8 +62,11 @@ pub enum LoadSite {
     RehydrationGapLimit,
     /// Rehydration could not maintain an address pool's gap limit.
     RehydrationMaintainGapLimit,
-    /// A restored UTXO or used address names an account this wallet lacks.
-    /// Counted per address, though one record covers a whole account's.
+    /// A restored UTXO or used address names an owner that is not a funds
+    /// account of this wallet: a funds account it lacks, or a DashPay
+    /// contact, identity, provider-key, asset-lock or Platform payment
+    /// account. Counted per address, though one record covers a whole
+    /// account's.
     OrphanedUtxoOwner,
     /// A restored address did not resolve against its account's xpub.
     /// Counted per address, though one record covers a whole account's.
@@ -165,7 +168,7 @@ impl LoadSite {
             // describes an accepted-as-is degradation rather than a
             // tolerated inconsistency.
             Self::OrphanedUtxoOwner => {
-                "load degraded: routing addresses from an unavailable owner to the first funds account"
+                "load degraded: owners that aren't this wallet's funds accounts (one it lacks, or a non-funds kind); coins go to the funds account deriving them, else the DashPay contact account holding them, off-balance, else the first; contacts' are the only non-funds used addresses sought"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
@@ -678,7 +681,7 @@ mod tests {
             "ambiguous owner",
         );
         assert!(logs_contain(
-            "load degraded: routing addresses from an unavailable owner to the first funds account"
+            "load degraded: owners that aren't this wallet's funds accounts (one it lacks, or a non-funds kind); coins go to the funds account deriving them, else the DashPay contact account holding them, off-balance, else the first; contacts' are the only non-funds used addresses sought"
         ));
     }
 
