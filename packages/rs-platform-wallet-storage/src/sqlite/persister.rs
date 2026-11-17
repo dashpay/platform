@@ -394,7 +394,7 @@ impl SqlitePersister {
             )?;
         }
 
-        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn, config.load_policy)?;
 
         // The open succeeded, so the claim passes to the persister, whose
         // `Drop` releases it.
@@ -1687,6 +1687,21 @@ fn load_one_wallet(
     wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    tx.commit()
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    Ok(state)
+}
+
+fn load_wallet_snapshot(
+    conn: &Connection,
+    wallet_id: WalletId,
+    ctx: &LoadCtx,
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
     let (network_str, birth_height) = schema::wallets::fetch(conn, &wallet_id)
         .map_err(PersistenceError::from)?
         .ok_or_else(|| {
@@ -2409,18 +2424,21 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "dpns_name_states",      // get_dpns_name_state
-            "meta_contact",          // the kv object store
-            "meta_data_versions",    // schema::versions
-            "meta_global",           // the kv object store
-            "meta_identity",         // the kv object store
-            "meta_platform_address", // the kv object store
-            "meta_store_generation", // schema::versions
-            "meta_token",            // the kv object store
-            "meta_wallet",           // the kv object store
-            "tracked_masternodes",   // load_tracked_masternodes
+            "core_transaction_inputs", // core_history::apply
+            "dpns_name_states",        // get_dpns_name_state
+            "meta_contact",            // the kv object store
+            "meta_data_versions",      // schema::versions
+            "meta_global",             // the kv object store
+            "meta_identity",           // the kv object store
+            "meta_platform_address",   // the kv object store
+            "meta_store_generation",   // schema::versions
+            "meta_token",              // the kv object store
+            "meta_wallet",             // the kv object store
+            "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // First pre-repair bytes, retained for recovery.
+        const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.
         #[cfg(feature = "shielded")]
@@ -2462,6 +2480,7 @@ mod tests {
                     && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
                     && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
                     && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !RETAINED_FOR_RECOVERY.contains(&table.as_str())
                     && !FEATURE_GATED.contains(&table.as_str())
                     && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
             })
