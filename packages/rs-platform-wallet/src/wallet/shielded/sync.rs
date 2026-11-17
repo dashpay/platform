@@ -216,7 +216,10 @@ impl MultiSyncNotesResult {
 /// the last completed watermark; the appended leaves make that re-walk
 /// skip every append and checkpoint it already made, so what a stop
 /// costs is the download and decryption of the chunks it had consumed.
-/// It is a clean early stop, not an error.
+/// It is a clean early stop, not an error, unless the consumed prefix
+/// already proves the local tree holds excess leaves: the pass then
+/// returns [`PlatformWalletError::ShieldedTreeInconsistent`] before any
+/// checkpoint, as a completed pass would.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,

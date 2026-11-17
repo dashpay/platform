@@ -348,8 +348,9 @@ impl ShieldedSyncManager {
     /// A pass already inside `coordinator.sync()` observes the
     /// cancellation at its next batch or network boundary: a scan cut
     /// short keeps the commitments it appended to the local tree and
-    /// publishes nothing else, a scan that had completed still flushes
-    /// its result, then the pass releases `is_syncing`. So this is
+    /// publishes nothing else (unless its prefix proves the tree
+    /// inconsistent, which is reported), a scan that had completed still
+    /// flushes its result, then the pass releases `is_syncing`. So this is
     /// **not** a barrier: for a real "nothing is running and nothing
     /// more will be persisted" guarantee — required by Clear,
     /// unregister, and rebind — use [`quiesce`](Self::quiesce), which
@@ -565,7 +566,7 @@ impl ShieldedSyncManager {
         // slipped in between would rotate the parent first and hand this
         // pass a fresh, uncancelled child. Losing the CAS just drops the
         // token. It is also before the gate check: `drain_pass` takes its
-        // hold (closing the gate) and only then calls `stop()`, so a pass
+        // hold (closing the gate) and only then calls `cancel_loop()`, so a pass
         // that took its token before the rotation is on the cancelled
         // lineage, and one that took it after sees the closed gate below.
         // Either way no pass runs past a drain.
@@ -621,7 +622,9 @@ impl ShieldedSyncManager {
         // The coordinator returns the empty summary for exactly that case;
         // a pass stopped only after its scan completed has flushed the
         // scan to the persisters, so it is reported like any other pass
-        // and the host applies the deltas.
+        // and the host applies the deltas. A cut-short scan whose prefix
+        // proved the tree inconsistent carries per-wallet `TreeInconsistent`
+        // outcomes and is reported too.
         if pass_cancel.is_cancelled() && summary.is_empty() {
             return summary;
         }
@@ -666,7 +669,8 @@ impl ShieldedSyncManager {
     /// or the wallet has never called `bind_shielded`), if
     /// another sync pass was already in flight, or if the pass's scan
     /// was cut short by [`stop`](Self::stop) (the coordinator then
-    /// reports no wallets).
+    /// reports no wallets). A cut-short scan whose prefix proved the tree
+    /// inconsistent returns `Err(ShieldedTreeInconsistent)` instead.
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,

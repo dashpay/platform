@@ -6,7 +6,8 @@
 //! batches, then a tail future that cancels the token and pends forever
 //! — exactly the moment a stop would land between two chunk fetches.
 //! A cut-short pass keeps the tree progress it made and publishes
-//! nothing else; the next pass re-walks from the completed watermark.
+//! nothing else, unless its prefix proves the tree inconsistent; the next
+//! pass re-walks from the completed watermark.
 
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::{sync_notes_from_stream, MultiSyncNotesResult};
+use crate::error::PlatformWalletError;
 use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -409,4 +411,42 @@ async fn should_report_the_height_a_completed_scan_covers() {
         assert_eq!(result.covered_height, covered, "{case}");
         let _ = std::fs::remove_file(&path);
     }
+}
+
+#[tokio::test]
+async fn should_report_an_inconsistent_tree_proved_by_a_cancelled_prefix() {
+    let path = temp_tree_path("inconsistent");
+    let mut seeded = FileBackedShieldedStore::open_path(&path, 100).expect("open store");
+    // Five local leaves recorded at the height the first batch is proved at.
+    seeded.set_tree_sync_height(1_000).unwrap();
+    for note in batch(0, 5, 5).notes {
+        let cmx: [u8; 32] = note.cmx.as_slice().try_into().unwrap();
+        seeded.append_commitment(&cmx, true).unwrap();
+    }
+    seeded.checkpoint_tree(5).unwrap();
+    let store = Arc::new(RwLock::new(seeded));
+    let subwallets = one_subwallet();
+    let cancel = CancellationToken::new();
+
+    let stream = batches_then_cancel(vec![batch(0, 4, 4)], cancel.clone());
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        sync_notes_from_stream(&store, &subwallets, None, &cancel, move |_, _| stream),
+    )
+    .await
+    .expect("a cancelled pass must return promptly");
+
+    assert!(cancel.is_cancelled());
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedTreeInconsistent {
+                local_leaf_count: 5,
+                chain_leaf_count: 4,
+            })
+        ),
+        "the consumed prefix proves excess leaves, got {result:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
 }

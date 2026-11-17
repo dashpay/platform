@@ -1420,7 +1420,10 @@ impl NetworkShieldedCoordinator {
     /// appended to the local tree and publishes nothing else (see
     /// [`sync_notes_across`]): the pass then returns the empty summary,
     /// so the manager reports no completion and the host sees no
-    /// partial ledger. A stop that lands after the scan completed skips
+    /// partial ledger. The exception is a consumed prefix that proves the
+    /// local tree inconsistent: that pass fails every wallet with
+    /// `TreeInconsistent` ([`Self::try_sync`] returns the error), as a
+    /// completed pass would. A stop that lands after the scan completed skips
     /// the remaining network work (spend re-drives, stranded releases,
     /// identity-shield re-drives) but still runs the store-only steps
     /// and flushes the completed scan to the host persisters. The
