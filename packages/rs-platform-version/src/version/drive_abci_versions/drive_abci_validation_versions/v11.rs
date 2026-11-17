@@ -80,6 +80,12 @@ use super::{
 ///   `document_erase_transition_state_validation` are `Some(0)`: an erase must name an
 ///   erasable type and a deleted document, with its owner's authorization to begin.
 ///
+/// - document create `state_validation` 3 and document replace `state_validation` 2 (1 before)
+///   hold a write to the total its type keeps of its summed property (`documentsSummable` or
+///   `documentsAverageable`): a create outside a contest, or a replace raising the property,
+///   that would take the total past the most the type's sums hold is refused
+///   (`DocumentSumOverflowError`, 40154).
+///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -110,7 +116,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .masternode_vote_state_transition
             },
             contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
-                transform_into_action: 1, // a moderator's field change reads who holds the document's storage
+                transform_into_action: 1, // a moderator's field change reads who holds the document's storage; a restore is held to the total its type keeps of its summed property
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .contract_user_moderation_state_transition
@@ -129,7 +135,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
-                document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide
+                document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide, nor raise the total its type keeps of its summed property past what the type's sums hold
+                document_replace_transition_state_validation: 2, // a replace cannot raise the total its type keeps of its summed property past what the type's sums hold
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); also lists the token market order rejects, unreachable before that contract exists (protocol version 16)
                     triggers: DriveAbciValidationDataTriggerVersions {

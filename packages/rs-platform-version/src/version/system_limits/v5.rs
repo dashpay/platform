@@ -26,7 +26,13 @@ use crate::version::system_limits::SystemLimits;
 ///   (`max_enum_violation_listed_values`, `None` before), whose JSON takes at most 256 bytes
 ///   together (`max_enum_violation_listed_bytes`, `None` before), and counts the others, so
 ///   the error stays small, and readable by a client, whatever the schema's enum holds.
+/// * Summed values: a summed property admits values past ±2^27
+///   (`max_summed_value_magnitude_without_type_total`, `None` before) only when it declares a
+///   `minimum` of at least 0 on a type that keeps the total of the property over all its
+///   documents. Registration and update refuse any other; document create state validation 3
+///   and replace state validation 2 hold that total in the range the type's sums hold.
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
+    max_summed_value_magnitude_without_type_total: Some(1 << 27), // changed: larger summed values need a minimum of 0 and the type's total
     max_document_revisions_erased_per_transition: Some(100), // one bounded lifecycle erasure chunk (note 41)
     max_enum_violation_listed_values: Some(16), // changed: an enum violation lists at most 16 allowed values
     max_enum_violation_listed_bytes: Some(256), // changed: whose JSON takes at most 256 bytes together

@@ -22,6 +22,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
             fetch_document_lifecycle: None,
+            fetch_document_type_sum: None,
 
             query_documents: 0,
             query_chained_documents: 0,

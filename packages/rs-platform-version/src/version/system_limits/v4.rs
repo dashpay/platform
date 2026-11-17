@@ -217,6 +217,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
+    max_summed_value_magnitude_without_type_total: None,       // read from protocol version 15
     max_indexed_array_items: Some(16), // typed array element indexes (new in v14): an indexed typed array holds at most 16 elements
     max_windowed_indexed_array_items: Some(4), // typed array element indexes (new in v14): at most 4 when the index also has a timeRange or integerRange window
     max_index_entries_per_document: Some(256), // typed array element indexes (new in v14): one document of a type with an indexed array writes at most 256 index entries
