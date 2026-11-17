@@ -70,7 +70,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         mark_once_per_identity_release_as_distributed: 0,
         evonode_participation_rewards: 0,
     },
-    // The token marketplace's escrow is active from protocol version 15
+    // The token marketplace's escrow is active from protocol version 16
     // (`DRIVE_TOKEN_METHOD_VERSIONS_V3`).
     order_escrow: DriveTokenOrderEscrowMethodVersions {
         add_tokens: None,

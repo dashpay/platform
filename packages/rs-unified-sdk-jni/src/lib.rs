@@ -22,6 +22,7 @@ mod events;
 mod funding;
 mod identity;
 mod mnemonic;
+mod multiple_choice_proposals;
 mod parse_state_transition;
 mod persistence;
 mod pubkey_rows;
