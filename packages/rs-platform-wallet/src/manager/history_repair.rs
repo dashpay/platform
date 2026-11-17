@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use dashcore::Txid;
+use dashcore::{OutPoint, Txid};
 use key_wallet::transaction_checking::TransactionContext;
 
 use super::history_claims::{
@@ -102,45 +102,46 @@ pub fn repair_wallet_history(
             outcome.resendable(std::mem::take(&mut state.unconfirmed_outgoing_txs));
         remaining = Some(replay);
     }
+    let restored = restorable_claims(&state, remaining.as_ref().unwrap_or(&outcome), &claims);
+    state.wallet_info.restore_spent_outpoints(&restored);
+    Ok(Some((state, outcome)))
+}
+
+/// The stored claims to restore after `replay` settled `state`.
+///
+/// A claim is left out only when the replay guards its coin in a way a fork
+/// releases: the coin's funding and its claimant were both replayed, the
+/// claimant in a plain block above the restored chain lock and without an
+/// InstantSend lock, and the claim was not stamped at or below the chain lock.
+/// The claimant's account then records the spend of the coin, and a fork
+/// dropping the claimant gives the coin back; a claim would keep it spent.
+/// Without the funding the spend is only an observed spend, which finality
+/// prunes, so the claim stays.
+fn restorable_claims(
+    state: &ClientWalletStartState,
+    replay: &HistoryReplay,
+    claims: &[StoredReplayClaim],
+) -> Vec<(OutPoint, Option<Txid>)> {
     let chain_locked = state
         .wallet_info
         .metadata
         .last_applied_chain_lock
         .as_ref()
         .map(|lock| lock.block_height);
-    let reversible =
-        reversible_spends(&state, remaining.as_ref().unwrap_or(&outcome), chain_locked);
-    // TODO(restore-observed-spends): a claim stamped above the chain lock whose
-    // spend the history lacks stays a claim, which no fork releases; making it
-    // an observed spend needs upstream `ManagedWalletInfo::restore_observed_spends`.
-    let irreversible: Vec<_> = claims
-        .iter()
-        .filter(|claim| {
-            !claim.claimant.is_some_and(|id| reversible.contains(&id))
-                || claim
-                    .mined_height
-                    .is_some_and(|height| chain_locked.is_some_and(|locked| height <= locked))
-        })
-        .map(|claim| (claim.outpoint, claim.claimant))
-        .collect();
-    state.wallet_info.restore_spent_outpoints(&irreversible);
-    Ok(Some((state, outcome)))
-}
-
-/// Replayed spends in a plain block above the restored chain lock without an InstantSend lock.
-///
-/// The replay recorded each of their inputs as an observed spend at the
-/// block's height, which a fork below that height drops. A claim on such an
-/// input would outlive the fork and keep the wallet from crediting the coin
-/// again, so it is not restored.
-fn reversible_spends(
-    state: &ClientWalletStartState,
-    replay: &HistoryReplay,
-    chain_locked: Option<u32>,
-) -> BTreeSet<Txid> {
-    state
+    let replayed: Vec<_> = state
         .recorded_history
         .transactions
+        .iter()
+        .filter(|stored| {
+            let body = stored.transaction.txid();
+            !replay.retired.contains(&stored.txid) && !replay.retired.contains(&body)
+        })
+        .collect();
+    let funded: BTreeSet<Txid> = replayed
+        .iter()
+        .map(|stored| stored.transaction.txid())
+        .collect();
+    let reversible: BTreeSet<Txid> = replayed
         .iter()
         .filter(|stored| match &stored.context {
             TransactionContext::InBlock(block) => {
@@ -148,11 +149,24 @@ fn reversible_spends(
             }
             _ => false,
         })
-        .filter(|stored| !replay.retired.contains(&stored.txid))
         .map(|stored| stored.transaction.txid())
-        .filter(|txid| {
-            !replay.retired.contains(txid) && !state.wallet_info.instant_send_locks().contains(txid)
+        .filter(|txid| !state.wallet_info.instant_send_locks().contains(txid))
+        .collect();
+    // TODO(restore-observed-spends): a claim on a coin whose funding the history
+    // lacks stays a claim even when its spend is reversible, which no fork
+    // releases; making it an observed spend that survives finality needs an
+    // upstream API such as `ManagedWalletInfo::restore_observed_spends`.
+    claims
+        .iter()
+        .filter(|claim| {
+            let released_by_fork = funded.contains(&claim.outpoint.txid)
+                && claim.claimant.is_some_and(|id| reversible.contains(&id))
+                && !claim
+                    .mined_height
+                    .is_some_and(|height| chain_locked.is_some_and(|locked| height <= locked));
+            !released_by_fork
         })
+        .map(|claim| (claim.outpoint, claim.claimant))
         .collect()
 }
 
@@ -163,10 +177,10 @@ mod tests {
     use crate::manager::history_replay::tests::{checked_instant_lock, confirmed_spend_fixture};
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::{BlockHash, OutPoint, Transaction};
+    use dashcore::{BlockHash, Transaction};
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-    use key_wallet::wallet::Wallet;
+    use key_wallet::wallet::{ManagedWalletInfo, Wallet};
 
     /// One wallet held in memory; a second snapshot read means effects were written.
     struct MemoryStore {
@@ -211,31 +225,34 @@ mod tests {
         }
     }
 
-    /// The fixture's spend of `spent` at height 101, its funding at 100, and
-    /// the stored claim naming that spend.
+    /// The fixture's spend of `spent` at height 101 and its funding at 100,
+    /// both as stored rows without recorded owned inputs.
     struct ClaimedSpend {
         wallet: Wallet,
-        info: key_wallet::wallet::ManagedWalletInfo,
+        info: ManagedWalletInfo,
         funding: Transaction,
+        funding_row: StoredTransaction,
         spender: StoredTransaction,
         spent: OutPoint,
     }
 
     async fn claimed_spend() -> ClaimedSpend {
         let (wallet, info, funding, records, spent) = confirmed_spend_fixture().await;
-        let spender = records
+        let (funding_rows, spenders): (Vec<_>, Vec<_>) = records
             .into_iter()
-            .find(|record| record.txid != funding.txid())
             .map(|record| StoredTransaction {
                 owned_inputs: Vec::new(),
                 ..StoredTransaction::from(record)
             })
-            .unwrap();
+            .partition(|stored| stored.txid == funding.txid());
+        let [funding_row] = <[_; 1]>::try_from(funding_rows).unwrap();
+        let [spender] = <[_; 1]>::try_from(spenders).unwrap();
         assert_eq!(spender.context, block(101));
         ClaimedSpend {
             wallet,
             info,
             funding,
+            funding_row,
             spender,
             spent,
         }
@@ -244,7 +261,7 @@ mod tests {
     /// Load `history` with one stored claim on `spent`, as a backend would.
     fn load(
         fixture: &ClaimedSpend,
-        info: key_wallet::wallet::ManagedWalletInfo,
+        info: ManagedWalletInfo,
         history: Vec<StoredTransaction>,
         claim: StoredReplayClaim,
         evidence: &ReplayEvidence,
@@ -281,9 +298,46 @@ mod tests {
     }
 
     /// A stored claim named after a spend in a plain block above the restored
-    /// chain lock must not outlive a fork that drops that spend.
+    /// chain lock must not outlive a fork that drops that spend, while the
+    /// replayed spend keeps guarding the coin once it is final.
     #[tokio::test]
     async fn should_credit_funding_after_a_fork_drops_a_claimed_reversible_spend() {
+        for fork in [true, false] {
+            let fixture = claimed_spend().await;
+            let mut info = fixture.info.clone();
+            info.metadata.last_applied_chain_lock = Some(chain_lock(100));
+            let claim = StoredReplayClaim {
+                outpoint: fixture.spent,
+                claimant: Some(fixture.spender.txid),
+                mined_height: None,
+            };
+            let mut state = load(
+                &fixture,
+                info,
+                vec![fixture.funding_row.clone(), fixture.spender.clone()],
+                claim,
+                &ReplayEvidence::default(),
+            );
+
+            if fork {
+                state.wallet_info.truncate_above(100).unwrap();
+            } else {
+                state.wallet_info.apply_chain_lock(chain_lock(300));
+                state.wallet_info.update_synced_height(300);
+            }
+
+            assert_eq!(
+                credits_funding(&mut state, &fixture.funding).await,
+                fork,
+                "fork: {fork}: only a fork dropping the claimed spend frees its coin"
+            );
+        }
+    }
+
+    /// Without its funding in the history, the replayed spend guards the coin
+    /// only by an observed spend, which finality prunes: the claim must stay.
+    #[tokio::test]
+    async fn should_not_credit_funding_after_the_dropped_claims_spend_becomes_final() {
         let fixture = claimed_spend().await;
         let mut info = fixture.info.clone();
         info.metadata.last_applied_chain_lock = Some(chain_lock(100));
@@ -300,11 +354,12 @@ mod tests {
             &ReplayEvidence::default(),
         );
 
-        state.wallet_info.truncate_above(100).unwrap();
+        state.wallet_info.apply_chain_lock(chain_lock(300));
+        state.wallet_info.update_synced_height(300);
 
         assert!(
-            credits_funding(&mut state, &fixture.funding).await,
-            "the fork dropped the claimed spend, so its coin is unspent again"
+            !credits_funding(&mut state, &fixture.funding).await,
+            "the spend is final, so its coin must never be credited again"
         );
     }
 
