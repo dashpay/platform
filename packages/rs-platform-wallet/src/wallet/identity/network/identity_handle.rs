@@ -536,6 +536,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// the source rendered after process restart.
     pub(crate) dpns_sync_progress:
         Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
+    /// The platform wallet's shielded viewing keys and seed-proven identity accounts,
+    /// from which the address a contact request carries is derived
+    /// ([`Self::contact_shielded_address`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) contact_shielded_addresses: crate::wallet::shielded::ContactShieldedAddresses,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -565,6 +570,8 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             document_erase_gate: Arc::clone(&self.document_erase_gate),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: self.contact_shielded_addresses.clone(),
         }
     }
 }
@@ -582,6 +589,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         wm: &'w mut WalletManager<PlatformWalletInfo>,
     ) -> Result<&'w mut PlatformWalletInfo, PlatformWalletError> {
         wm.get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// [`Self::current_wallet_info_mut`], for a read: under the manager's
+    /// read lock.
+    pub(crate) fn current_wallet_info<'w>(
+        &self,
+        wm: &'w WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info(&self.wallet_id)
             .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
     }

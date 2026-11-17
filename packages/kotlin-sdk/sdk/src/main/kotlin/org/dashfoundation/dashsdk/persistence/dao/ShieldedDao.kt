@@ -53,6 +53,12 @@ interface ShieldedDao {
     @Query("SELECT * FROM shielded_notes WHERE walletId = :walletId AND isSpent = 0")
     fun observeUnspentNotesByWallet(walletId: ByteArray): Flow<List<ShieldedNoteEntity>>
 
+    @Query("SELECT * FROM shielded_notes WHERE walletId = :walletId AND accountIndex = :accountIndex AND isSpent = 0")
+    fun observeUnspentNotesByWalletAccount(
+        walletId: ByteArray,
+        accountIndex: Int,
+    ): Flow<List<ShieldedNoteEntity>>
+
     @Upsert
     suspend fun upsertNote(note: ShieldedNoteEntity)
 

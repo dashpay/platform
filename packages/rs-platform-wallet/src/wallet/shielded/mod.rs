@@ -40,6 +40,9 @@ pub mod balance;
 mod balance_tests;
 #[cfg(test)]
 mod cancelled_scan_tests;
+pub(crate) mod contact_address;
+#[cfg(test)]
+mod contact_address_tests;
 pub mod coordinator;
 pub mod file_store;
 #[cfg(test)]
@@ -52,6 +55,10 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+pub mod tips;
+pub use tips::{
+    is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
+};
 #[cfg(test)]
 mod viewing_key_bind_tests;
 #[cfg(test)]
@@ -66,6 +73,7 @@ pub use balance::{
     ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
     ShieldedLocalBalanceState,
 };
+pub(crate) use contact_address::ContactShieldedAddresses;
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};

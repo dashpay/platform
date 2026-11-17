@@ -3946,6 +3946,8 @@ mod tests {
             document_erase_gate: Default::default(),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: Default::default(),
         }
     }
 

@@ -35,6 +35,41 @@ fn next_contact_request_attempt() -> u64 {
     NEXT_CONTACT_REQUEST_ATTEMPT.fetch_add(1, Ordering::Relaxed)
 }
 
+/// What became of a request handed to
+/// [`ManagedIdentity::track_sent_contact_request`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SentContactRequestOutcome {
+    /// Recorded: it is the request tracked for its recipient now.
+    Recorded,
+    /// Already the request tracked for its recipient, by its account
+    /// reference: nothing was written.
+    AlreadyTracked,
+    /// Older than the request tracked for its recipient ([`predates`]),
+    /// which stays the one tracked: nothing was written.
+    Superseded,
+}
+
+/// Whether `candidate` is older than `tracked`, a request between the same
+/// pair: by its account reference's version, which a rotation bumps, then by
+/// its creation time. A replay of an older request appended again later has a
+/// newer time but an older version.
+pub(crate) fn predates(candidate: &ContactRequest, tracked: &ContactRequest) -> bool {
+    freshness(candidate) < freshness(tracked)
+}
+
+/// How fresh a request between one pair is, for collapsing a sweep's requests
+/// and for passing over older ones alike: by its account reference's version,
+/// which a rotation bumps, then by its creation time, then by the reference
+/// itself so that equal times order deterministically. A replay of an older
+/// request appended again later has a newer time but an older version.
+pub(crate) fn freshness(request: &ContactRequest) -> (u32, u64, u32) {
+    (
+        account_reference_version(request.account_reference),
+        request.created_at,
+        request.account_reference,
+    )
+}
+
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
     /// to `recipient`, or `None` if we've never sent one.
@@ -60,6 +95,40 @@ impl ManagedIdentity {
                     .get(recipient)
                     .map(|c| c.outgoing_request.account_reference)
             })
+    }
+
+    /// The contact requests this identity has sent to contacts other than
+    /// `recipient`, as `(recipient, account reference)`.
+    ///
+    /// Both maps, as for [`Self::prior_sent_account_reference`]: a request
+    /// leaves `sent_contact_requests` for
+    /// `established_contacts[..].outgoing_request` once its contact
+    /// establishes, and what it issued stays issued. A request whose
+    /// broadcast is not settled yet counts too: it may already be on
+    /// Platform.
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) fn other_sent_account_references(
+        &self,
+        recipient: &Identifier,
+    ) -> Vec<(Identifier, u32)> {
+        self.dashpay
+            .sent_contact_requests
+            .values()
+            .chain(
+                self.dashpay
+                    .established_contacts
+                    .values()
+                    .map(|contact| &contact.outgoing_request),
+            )
+            .map(|request| (request.recipient_id, request.account_reference))
+            .chain(
+                self.dashpay
+                    .unconfirmed_public_requests
+                    .iter()
+                    .map(|(to, request)| (*to, request.account_reference)),
+            )
+            .filter(|(to, _)| to != recipient)
+            .collect()
     }
 
     /// Add a sent contact request.
@@ -97,8 +166,38 @@ impl ManagedIdentity {
         request: ContactRequest,
         persister: &WalletPersister,
     ) -> Result<(), crate::changeset::PersistenceError> {
+        self.track_sent_contact_request(request, persister)
+            .map(|_| ())
+    }
+
+    /// [`Self::add_sent_contact_request`], answering what became of the
+    /// request.
+    ///
+    /// **Freshness.** The order of a pair's sent requests is kept here, for
+    /// every caller: a request older than the one tracked for its recipient
+    /// ([`predates`]) is no rotation, whoever hands it in (a sweep replaying
+    /// an old document, a send that looked its request up before a newer one
+    /// was read in, a settle of a held request). It is passed over and the
+    /// tracked request stays: superseding with it would re-derive the next
+    /// rotation from a retired reference.
+    pub(crate) fn track_sent_contact_request(
+        &mut self,
+        request: ContactRequest,
+        persister: &WalletPersister,
+    ) -> Result<SentContactRequestOutcome, crate::changeset::PersistenceError> {
         let owner_id = self.id();
         let recipient_id = request.recipient_id;
+
+        if self
+            .dashpay
+            .outgoing_request(&recipient_id)
+            .is_some_and(|tracked| {
+                tracked.account_reference != request.account_reference
+                    && predates(&request, tracked)
+            })
+        {
+            return Ok(SentContactRequestOutcome::Superseded);
+        }
 
         // Sent-side guard / rotation supersede: already established.
         if let Some(existing) = self.dashpay.established_contacts.get(&recipient_id) {
@@ -106,7 +205,7 @@ impl ManagedIdentity {
             // track carries no new information; re-establishing would wipe
             // user metadata, so it's a no-op.
             if existing.outgoing_request.account_reference == request.account_reference {
-                return Ok(());
+                return Ok(SentContactRequestOutcome::AlreadyTracked);
             }
             // Different outgoing reference → a rotation re-send. Advance
             // `outgoing_request` so the next rotation reads the fresh
@@ -135,7 +234,7 @@ impl ManagedIdentity {
             // guard. Incoming-side changes never touch the guard: the contact
             // must not be able to force rescans of our receiving account.
             self.dashpay.rescan_triggered.remove(&recipient_id);
-            return Ok(());
+            return Ok(SentContactRequestOutcome::Recorded);
         }
         // Already tracked as a pending sent request. Same outgoing
         // reference → no-op (no phantom row, no redundant changeset
@@ -151,7 +250,7 @@ impl ManagedIdentity {
         // the established branch and for the same retry reason.
         if let Some(existing) = self.dashpay.sent_contact_requests.get(&recipient_id) {
             if existing.account_reference == request.account_reference {
-                return Ok(());
+                return Ok(SentContactRequestOutcome::AlreadyTracked);
             }
             let mut cs = ContactChangeSet::default();
             cs.sent_requests.insert(
@@ -168,7 +267,7 @@ impl ManagedIdentity {
                 .sent_contact_requests
                 .insert(recipient_id, request);
             self.dashpay.rescan_triggered.remove(&recipient_id);
-            return Ok(());
+            return Ok(SentContactRequestOutcome::Recorded);
         }
 
         let mut cs = ContactChangeSet::default();
@@ -233,7 +332,7 @@ impl ManagedIdentity {
                 .sent_contact_requests
                 .insert(recipient_id, request);
         }
-        Ok(())
+        Ok(SentContactRequestOutcome::Recorded)
     }
 
     /// Ignore `sender_id` (per-sender mute, = block, reversible).
@@ -1096,32 +1195,37 @@ impl ManagedIdentity {
         Some(self.insert_private_reply(recipient, None))
     }
 
-    /// Claim the pair with `recipient` for a public request about to be
-    /// sent, under a new attempt it returns: until that attempt releases it
+    /// Claim the pair with `recipient` for the one public request that may
+    /// be being sent to it, under a new attempt it returns; `None` when
+    /// another send holds the claim. Until that attempt releases it
     /// ([`Self::release_public_contact_request`]), no private request to the
-    /// recipient is reserved. Concurrent public sends each hold their own.
-    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> u64 {
+    /// recipient is reserved and no other public one is signed: two sends
+    /// built from the same tracked requests would each sign one.
+    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> Option<u64> {
+        if self
+            .dashpay
+            .public_contact_request_claims
+            .contains_key(&recipient)
+        {
+            return None;
+        }
         let attempt = next_contact_request_attempt();
         self.dashpay
             .public_contact_request_claims
-            .entry(recipient)
-            .or_default()
-            .insert(attempt);
-        attempt
+            .insert(recipient, attempt);
+        Some(attempt)
     }
 
     /// Release the claim `attempt` took ([`Self::claim_public_contact_request`]);
-    /// another attempt's claim on the pair stays.
+    /// a claim another attempt took on the pair since stays.
     pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier, attempt: u64) {
-        if let Some(claims) = self
+        if self
             .dashpay
             .public_contact_request_claims
-            .get_mut(recipient)
+            .get(recipient)
+            .is_some_and(|claimed| *claimed == attempt)
         {
-            claims.remove(&attempt);
-            if claims.is_empty() {
-                self.dashpay.public_contact_request_claims.remove(recipient);
-            }
+            self.dashpay.public_contact_request_claims.remove(recipient);
         }
     }
 
@@ -1601,6 +1705,68 @@ mod tests {
             .contains_key(&sender_id));
         assert_eq!(managed.dashpay.sent_contact_requests.len(), 0);
         assert_eq!(managed.dashpay.established_contacts.len(), 0);
+    }
+
+    /// A request's account reference stays issued once its contact
+    /// establishes, when the request moves out of the pending map.
+    #[test]
+    fn should_list_the_references_sent_to_pending_and_established_contacts() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let pending_id = Identifier::from([2u8; 32]);
+        let established_id = Identifier::from([3u8; 32]);
+        let p = noop_persister();
+        for contact in [pending_id, established_id] {
+            managed
+                .add_sent_contact_request(create_contact_request(our_id, contact, 1), &p)
+                .expect("setup persists");
+        }
+        managed
+            .add_incoming_contact_request(create_contact_request(established_id, our_id, 2), &p)
+            .expect("setup persists");
+        assert!(managed
+            .dashpay
+            .established_contacts
+            .contains_key(&established_id));
+
+        let mut others = managed.other_sent_account_references(&Identifier::from([9u8; 32]));
+        others.sort();
+        assert_eq!(others, vec![(pending_id, 0), (established_id, 0)]);
+        assert_eq!(
+            managed.other_sent_account_references(&established_id),
+            vec![(pending_id, 0)]
+        );
+        assert_eq!(
+            managed.other_sent_account_references(&pending_id),
+            vec![(established_id, 0)]
+        );
+    }
+
+    /// A request held after its broadcast, with no proof of the outcome yet,
+    /// may already be on Platform: its account reference counts as issued.
+    #[test]
+    fn should_list_the_reference_of_a_request_whose_broadcast_is_not_settled() {
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use key_wallet::bip32::ExtendedPrivKey;
+        use key_wallet::Network;
+        let mut managed = create_test_identity([1u8; 32]);
+        let unsettled_id = Identifier::from([4u8; 32]);
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &[42u8; 32]).expect("a key");
+        managed.hold_unconfirmed_public_request(
+            unsettled_id,
+            StateTransition::Batch(BatchTransition::V0(Default::default())),
+            7,
+            0,
+            ExtendedPubKey::from_priv(&master),
+        );
+
+        assert_eq!(
+            managed.other_sent_account_references(&Identifier::from([9u8; 32])),
+            vec![(unsettled_id, 7)]
+        );
+        assert!(managed
+            .other_sent_account_references(&unsettled_id)
+            .is_empty());
     }
 
     #[test]
@@ -2193,6 +2359,75 @@ mod tests {
             managed.dashpay.rescan_triggered.contains(&contact_id),
             "duplicate ingestion must preserve the completed-rescan guard"
         );
+    }
+
+    /// The identity keeps the order of a pair's sent requests itself: a
+    /// request older than the one tracked for its recipient is passed over,
+    /// whoever hands it in, while the recipient is pending and once the
+    /// contact is established alike. The tracked request stays, nothing is
+    /// written, and the answer says so. A newer one is recorded, and the one
+    /// tracked answers as already tracked.
+    #[test]
+    fn should_pass_over_a_sent_request_older_than_the_one_tracked() {
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+        let request = |timestamp: u64, reference: u32| {
+            let mut request = create_contact_request(our_id, contact_id, timestamp);
+            request.account_reference = reference;
+            request
+        };
+
+        for established in [false, true] {
+            let mut managed = create_test_identity([1u8; 32]);
+            if established {
+                managed
+                    .add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p)
+                    .expect("setup persists");
+            }
+            assert_eq!(
+                managed
+                    .track_sent_contact_request(request(5, 101), &p)
+                    .expect("no store fails"),
+                SentContactRequestOutcome::Recorded,
+                "established: {established}"
+            );
+
+            // Older by its creation time, under the same reference version.
+            assert_eq!(
+                managed
+                    .track_sent_contact_request(request(4, 100), &p)
+                    .expect("no store fails"),
+                SentContactRequestOutcome::Superseded,
+                "established: {established}"
+            );
+            assert_eq!(
+                managed.prior_sent_account_reference(&contact_id),
+                Some(101),
+                "the newer request stays tracked, established: {established}"
+            );
+            // The public entry point keeps the same order.
+            managed
+                .add_sent_contact_request(request(4, 100), &p)
+                .expect("passed over");
+            assert_eq!(managed.prior_sent_account_reference(&contact_id), Some(101));
+
+            assert_eq!(
+                managed
+                    .track_sent_contact_request(request(5, 101), &p)
+                    .expect("no store fails"),
+                SentContactRequestOutcome::AlreadyTracked,
+                "established: {established}"
+            );
+            assert_eq!(
+                managed
+                    .track_sent_contact_request(request(6, 102), &p)
+                    .expect("no store fails"),
+                SentContactRequestOutcome::Recorded,
+                "established: {established}"
+            );
+            assert_eq!(managed.prior_sent_account_reference(&contact_id), Some(102));
+        }
     }
 
     /// Pending-branch rotation supersede: re-sending to a recipient who
