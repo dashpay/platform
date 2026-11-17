@@ -315,7 +315,7 @@ Expressions:
 
 ## Limits
 
-The first three limits come from the meta-schema, the rest from protocol version 14's `SystemLimits`. A contract over a limit is refused at registration.
+The first three limits come from the meta-schema, the rest from `SystemLimits`: protocol version 14's, unless the row names a later version. A contract over a limit is refused at registration.
 
 | Limit | Value | Applies to |
 |---|---|---|
