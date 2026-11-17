@@ -1219,8 +1219,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let statusRaw: Int
         public let proofBytes: Data?
         public var operationId: Data? = nil
-                operationRevision: UInt64(record.operationRevision ?? 0),
-                shieldedRecipientRaw43: record.shieldedRecipientRaw43
+        public var operationRevision: UInt64 = 0
+        public var expectedOperationRevision: UInt64? = nil
+        /// Raw 43-byte Orchard recipient of a shielded funding; see
+        /// `PersistentAssetLock.shieldedRecipientRaw43`.
+        public var shieldedRecipientRaw43: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
