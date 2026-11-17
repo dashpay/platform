@@ -423,7 +423,7 @@ class DashSdkErrorTest {
      */
     @Test
     fun shouldReportAShieldedSpendOfTooManyNotesByItsOwnCode() {
-        val detail = "Shielded spend needs 17 notes, more than the 16 one transition can spend"
+        val detail = "Shielded spend needs 7 notes, more than the 6 one transition can spend"
         val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 78, detail)
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedSpendTooManyNotes)

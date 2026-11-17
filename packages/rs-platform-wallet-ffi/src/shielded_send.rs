@@ -353,6 +353,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_plan_spend(
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(out_plan);
+    // Zero the out-param before any fallible work so a reused struct never
+    // keeps a stale digest or fee after an error.
+    *out_plan = ShieldedSpendPlanFFI::default();
 
     let Some(kind) = shielded_spend_kind(kind, core_fee_per_byte) else {
         return PlatformWalletFFIResult::err(
@@ -3228,6 +3231,35 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorInvalidHandle
             );
             assert_eq!(out, ShieldedSpendPlanFFI::default(), "nothing written");
+        }
+    }
+
+    #[test]
+    fn should_zero_a_reused_spend_plan_when_planning_fails() {
+        unsafe {
+            let wallet_id = [0u8; 32];
+            let stale = ShieldedSpendPlanFFI {
+                fee: 5,
+                note_count: 2,
+                digest: [7u8; 32],
+                ..Default::default()
+            };
+            // An unknown kind, then an unknown handle.
+            for kind in [5, 0] {
+                let mut out = stale;
+                let result = platform_wallet_manager_shielded_plan_spend(
+                    0,
+                    wallet_id.as_ptr(),
+                    0,
+                    kind,
+                    1,
+                    false,
+                    1,
+                    &mut out,
+                );
+                assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+                assert_eq!(out, ShieldedSpendPlanFFI::default(), "kind {kind}");
+            }
         }
     }
 

@@ -114,7 +114,7 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 79**: 27–78 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 80**: 27–79 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
