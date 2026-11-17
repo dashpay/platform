@@ -108,6 +108,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let lock = TrackedAssetLock {
                 operation_id: None,
+                operation_revision: 0,
                 shielded_recipient: None,
                 out_point,
                 transaction: tx,
@@ -985,9 +986,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // exact-outpoint resume behind "Finish now", a readiness-deferred
             // retry), so the admission policy applies here, before any
             // dispatch or lifecycle write. Untagged legacy locks are unaffected.
-            if lock.operation_id.is_some() {
-                self.require_wallet_drain_persistence()?;
-            }
+            self.ensure_operation_evidence(lock)?;
             // Only the two proof-less statuses are candidates. A lock
             // carrying an IS/Chain proof, a `RecoveredFromChain` entry
             // (reconstructed from a record the chain itself accepted), and
@@ -1003,7 +1002,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
                 | AssetLockStatus::Consumed
-                | AssetLockStatus::DrainCompleted => None,
+                | AssetLockStatus::DrainCompleted
+                | AssetLockStatus::Conflicted => None,
             };
             // Claim the dispatch window for the two statuses that can still
             // send, while the read guard that produced this snapshot is
@@ -1083,7 +1083,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             | AssetLockStatus::ChainLocked
             | AssetLockStatus::RecoveredFromChain
             | AssetLockStatus::Consumed
-            | AssetLockStatus::DrainCompleted => None,
+            | AssetLockStatus::DrainCompleted
+            | AssetLockStatus::Conflicted => None,
         };
         if status == AssetLockStatus::Built && local_finality.is_some() {
             dispatch_claim
@@ -1112,7 +1113,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
                 | AssetLockStatus::Consumed
-                | AssetLockStatus::DrainCompleted => None,
+                | AssetLockStatus::DrainCompleted
+                | AssetLockStatus::Conflicted => None,
             } {
                 tracing::warn!(
                     outpoint = %out_point,
@@ -1795,6 +1797,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
+            (AssetLockStatus::Conflicted, _) => {
+                return Err(PlatformWalletError::AssetLockConflicted(*out_point));
+            }
             (AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted, _) => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
@@ -2225,6 +2230,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction: transaction.clone(),
@@ -2362,6 +2368,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        operation_revision: 0,
                         shielded_recipient: None,
                         out_point,
                         transaction,
@@ -2588,6 +2595,7 @@ mod tests {
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
             operation_id: None,
+            operation_revision: 0,
             shielded_recipient: None,
             out_point,
             transaction: tx,
@@ -2866,6 +2874,7 @@ mod tests {
                 self.out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
@@ -4378,6 +4387,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        operation_revision: 0,
                         shielded_recipient: None,
                         out_point,
                         transaction,
@@ -4893,6 +4903,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,
@@ -5018,6 +5029,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,
@@ -5522,6 +5534,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,
@@ -5628,6 +5641,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,
@@ -5908,6 +5922,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,
@@ -6054,6 +6069,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        operation_revision: 0,
                         shielded_recipient: None,
                         out_point,
                         transaction,
@@ -6249,6 +6265,7 @@ mod tests {
                         out_point,
                         TrackedAssetLock {
                             operation_id: None,
+                            operation_revision: 0,
                             out_point,
                             transaction: transaction.clone(),
                             account_index: 0,
