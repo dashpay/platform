@@ -11,7 +11,12 @@ mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "spv-context")]
+mod spv_quorums;
+#[cfg(feature = "spv-context")]
+pub use spv_quorums::claim_spv_quorum_lease;
 pub mod startup;
+pub mod txo_reconcile;
 mod wallet_lifecycle;
 
 pub(crate) use persistence_load::run_blocking_load;
@@ -42,11 +47,14 @@ use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
+use crate::manager::txo_reconcile::TxoReconcileSchedule;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+#[cfg(feature = "shielded")]
+use crate::wallet::shielded::NetworkShieldedCoordinator;
 use crate::wallet::PlatformWallet;
 
 /// Registry key identifying each background worker the manager joins at
@@ -515,6 +523,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+    /// The SDK provider slot this manager serves SPV quorum keys into, held
+    /// from [`Self::serve_spv_quorums`] until [`Self::shutdown`].
+    #[cfg(feature = "spv-context")]
+    pub(super) spv_quorum_lease: std::sync::Mutex<Option<dash_context_provider::SpvSourceLease>>,
+    /// The host TXO-store reconcile's steady-state edge, runs in flight and
+    /// per-wallet cadence — see [`txo_reconcile`]. A `std::sync::Mutex`,
+    /// never held across an await.
+    pub(super) txo_reconcile_schedule: Arc<std::sync::Mutex<TxoReconcileSchedule>>,
 }
 
 /// Keep `record`'s coverage only for the DashPay receival accounts `core`
@@ -695,6 +711,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sync_fault,
             durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            #[cfg(feature = "spv-context")]
+            spv_quorum_lease: std::sync::Mutex::new(None),
+            txo_reconcile_schedule: Arc::default(),
         }
     }
 
@@ -900,6 +919,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// per-wallet bind looks up the coordinator from the manager
     /// and errors out if it hasn't been configured.
     ///
+    /// Once the store is open, restores the reservations of the unconfirmed
+    /// private contact request payments of every wallet the manager holds
+    /// whose public contact requests a load or a re-creation held for them,
+    /// or whose id the store's journal keeps payments of, with no keys
+    /// ([`Self::restore_private_contact_payment_holds`]). Call it right after
+    /// [`Self::load_from_persistor`] for a wallet that bound a shielded
+    /// account before: until then, its public contact requests are refused
+    /// with [`PlatformWalletError::PrivateContactPaymentsNotRestored`].
+    ///
     /// Subsequent calls with the **same** `db_path` are a no-op
     /// (configuration is idempotent at the path level). A second
     /// call with a **different** path returns
@@ -918,6 +946,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut slot = self.shielded_coordinator.write().await;
         if let Some(existing) = slot.as_ref() {
             if existing.db_path() == db_path.as_path() {
+                let existing = Arc::clone(existing);
+                drop(slot);
+                // A repeat call, on the main thread of a host binding again:
+                // a scan may hold the store, so nothing waits on it.
+                self.restore_private_payments_without_waiting(&existing, false)
+                    .await;
                 return Ok(());
             }
             return Err(crate::error::PlatformWalletError::ShieldedStoreError(
@@ -969,8 +1003,113 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .on_shielded_tree_progress(leaves_committed, total_target);
             },
         )));
-        *slot = Some(coordinator);
+        *slot = Some(Arc::clone(&coordinator));
+        drop(slot);
+        self.restore_private_contact_payment_holds(&coordinator)
+            .await;
         Ok(())
+    }
+
+    /// Restore from `coordinator`'s store, just opened, with no keys, the
+    /// reservations of the unconfirmed private contact request payments of
+    /// every wallet this manager holds whose contact requests wait for them,
+    /// or whose id the store's journal keeps payments of
+    /// ([`PlatformWallet::restore_private_contact_payments`]): a wallet
+    /// published before the store was configured with a persister that keeps
+    /// the private scan state, one loaded after binding a shielded account in
+    /// an earlier process, one with an identity marking a private payment that
+    /// may be unresolved ([`PlatformWallet::private_payments_held`]), or one
+    /// whose id another process journaled payments under. Nothing else holds a
+    /// store just opened, so this waits for nothing long. A wallet whose
+    /// restoration fails stays held, until a bind, a contact request's own
+    /// retry or a later call restores it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_contact_payment_holds(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            if !wallet.private_payments_held().await
+                && !coordinator.may_journal_private_payments_of(wallet.wallet_id())
+            {
+                continue;
+            }
+            if let Err(error) = wallet.restore_private_contact_payments(coordinator).await {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet.wallet_id()),
+                    %error,
+                    "unconfirmed private contact request payments not restored; the wallet's \
+                     contact requests stay held until a restoration succeeds"
+                );
+            }
+        }
+    }
+
+    /// [`Self::restore_private_contact_payment_holds`] for a store configured
+    /// before, which a shielded scan may hold for minutes: none waits on the
+    /// store ([`PlatformWallet::restore_private_payments_or_defer`]), a busy
+    /// store deferring it to a task, the wallet held until it runs. The
+    /// wallets still held are restored, and with `journaled_too` those whose
+    /// id the journal may keep payments of
+    /// (`NetworkShieldedCoordinator::may_journal_private_payments_of`, a busy
+    /// store counting as may): a load passes it, a repeat configure does not,
+    /// so a configure during a scan holds no wallet that was not held.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_without_waiting(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        journaled_too: bool,
+    ) {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            if wallet.private_payments_held().await
+                || (journaled_too
+                    && coordinator.may_journal_private_payments_of(wallet.wallet_id()))
+            {
+                wallet.restore_private_payments_or_defer(coordinator).await;
+            }
+        }
+    }
+
+    /// Before `wallet` is published: hold its contact requests until its
+    /// private payments are restored, or restore them now. The shielded
+    /// store's journal outlives a wallet's removal and a process's end, so a
+    /// wallet created or loaded under an id may have payments that may still
+    /// execute, which no marker shows and only the journal does. With a store
+    /// configured, the journal is read now, without waiting on the store
+    /// ([`PlatformWallet::restore_private_payments_or_defer`]): restored, the
+    /// pairs are held through the wallet's journal mirror whether or not their
+    /// senders are loaded yet; a busy store or a read that fails holds the
+    /// wallet until a restoration succeeds. With none, a wallet whose persister
+    /// keeps the private scan state is held until `configure_shielded` or a
+    /// bind reads the journal: only such a persister lets a private payment be
+    /// paid, so only its wallet can have journal records no marker shows. One
+    /// that does not is never held for want of a store.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn hold_or_restore_private_payments(&self, wallet: &PlatformWallet) {
+        match self.shielded_coordinator().await {
+            Some(coordinator) => {
+                wallet.restore_private_payments_or_defer(&coordinator).await;
+            }
+            None if wallet.persister().persists_private_contact_scan_state() => {
+                wallet.persister().hold_until_private_payments_restored();
+            }
+            None => {}
+        }
+    }
+
+    /// After `wallet` is published: a store configured since
+    /// [`Self::hold_or_restore_private_payments`] found none restored the
+    /// wallets published then, which this one was not yet, so it is restored
+    /// here, without waiting on the store, while it is still held.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_configured_since(&self, wallet: &PlatformWallet) {
+        if let Some(coordinator) = self.shielded_coordinator().await {
+            if wallet.private_payments_held().await {
+                wallet.restore_private_payments_or_defer(&coordinator).await;
+            }
+        }
     }
 
     /// Snapshot of the currently-installed shielded coordinator,
@@ -1131,7 +1270,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
-    ///    DashPay payment-hook work is joined.
+    ///    DashPay payment-hook work is joined. TXO-reconcile engine guards a
+    ///    host still holds are force-released only after SPV stopped
+    ///    cleanly, never before, so no fork can land between a host's read
+    ///    and its in-flight store write; a failed stop leaves them held.
     /// 2. `quiesce()` each coordinator. Cancel-only `stop()` would
     ///    let a pass already inside `sync_now` keep running and call
     ///    `persister.store(...)` / fire a host completion callback after
@@ -1159,6 +1301,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// (its live handle is re-parked on timeout so a retry re-joins it).
     /// Past those SPV lock waits, a wedged await therefore surfaces as a
     /// non-clean report instead of hanging the FFI's `destroy` forever.
+    /// A host still writing a TXO-reconcile page holds its engine guard
+    /// through SPV stop, so SPV teardown (and anything queued on the engine
+    /// behind it) waits for that write; a write that never ends turns into a
+    /// timed-out SPV stop, not a hang.
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
@@ -1170,11 +1316,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // Stop serving SPV quorum keys before SPV stops, whether or not the
+        // stop is clean: a stopping client must not answer proof lookups.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
+
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the
         // report — a failed stop must not hide behind a clean coordinator join.
-        let spv_status = match self.spv_manager.stop().await {
+        //
+        // A TXO reconcile's engine guard is held across one host store write
+        // and released by the host, which may still be writing when this
+        // runs. It is released here only AFTER SPV stopped cleanly — SPV is
+        // what applies forks, and a fork landing under a revoked guard
+        // before the host's write lands is exactly what the guard prevents.
+        // Until then an SPV writer simply waits for the host's write, under
+        // the stop's own deadline. A failed or timed-out stop releases
+        // nothing (fail closed): the guard stays with the host's handle.
+        let spv_status = match self.stop_spv_then_release_txo_reconcile_holds().await {
             Ok(()) => WorkerStatus::Ok,
             Err(error) => {
                 tracing::warn!(?error, "SPV shutdown failed");
@@ -1323,6 +1483,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// fields can no longer be moved out.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
+        // As in `shutdown`: stop serving SPV quorum keys first. Until the lease
+        // goes, the SDK's slot keeps this manager's SPV runtime alive.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
         // Cancel and detach, never `abort`: the task observes the token at its
         // next `recv` and exits after committing whatever its drain claimed the
         // persister for. Aborting stops it at whatever await it is parked on,

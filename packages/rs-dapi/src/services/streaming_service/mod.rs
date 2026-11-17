@@ -375,15 +375,6 @@ pub(crate) fn txid_hex_from_bytes(bytes: &[u8]) -> Option<String> {
         .map(|tx| tx.txid().to_string())
 }
 
-/// Decode transaction bytes and return the txid in raw byte form.
-pub(crate) fn txid_bytes_from_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
-    use dashcore_rpc::dashcore::Transaction as CoreTx;
-    use dashcore_rpc::dashcore::consensus::encode::deserialize;
-
-    deserialize::<CoreTx>(bytes)
-        .ok()
-        .map(|tx| tx.txid().to_byte_array().to_vec())
-}
 /// Decode block bytes and return the block hash in hex and as printable string.
 pub(crate) fn block_hash_from_block_bytes(bytes: &[u8]) -> Option<([u8; 32], String)> {
     deserialize::<CoreBlock>(bytes)

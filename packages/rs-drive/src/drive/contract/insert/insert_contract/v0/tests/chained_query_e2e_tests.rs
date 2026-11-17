@@ -40,7 +40,7 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use grovedb::{GroveDb, PathQuery};
-use grovedb_version::version::{v4::GROVE_V4, GroveVersion};
+use grovedb_version::version::v4::GROVE_V4;
 use std::collections::BTreeMap;
 
 const POST_A: [u8; 32] = [0xA1; 32];
@@ -1322,12 +1322,8 @@ fn chained_posts_tipped_by<'a>(
     )
 }
 
-/// For a page with rows, the merged query the proof covers is the one the
-/// merge built when the inner half still carried its limit as a global
-/// one: before grove version 5, grovedb's merge lifted a global limit into
-/// the same per-instance cap, so such a page proves to the same bytes. From
-/// version 5 that merge refuses a global limit over subqueries, so the old
-/// form is only built at version 4.
+/// Production components preserve the merged query bytes of the earlier global
+/// limit lift. The current merge refuses that descending global-limit input.
 fn assert_merged_query_matches_the_lifted_global_limit(
     chained: &DriveDocumentQuery,
     join_values: &[Identifier],
@@ -1344,14 +1340,21 @@ fn assert_merged_query_matches_the_lifted_global_limit(
         lifted[0].query.limit.is_some(),
         "the plain lowering carries the limit as a global one"
     );
-    let merge = |path_queries: &[PathQuery], grove_version: &GroveVersion| {
-        PathQuery::merge(path_queries.iter().collect(), grove_version)
-            .expect("the components merge")
-    };
+    let merged = PathQuery::merge(components.iter().collect(), &pv.drive.grove_version)
+        .expect("the production components merge");
+    let previous = PathQuery::merge(lifted.iter().collect(), &GROVE_V4)
+        .expect("the previous merge lifts the global limit");
+    assert_eq!(merged, previous);
+    let config = bincode::config::standard().with_big_endian();
     assert_eq!(
-        merge(&components, &pv.drive.grove_version),
-        merge(&lifted, &GROVE_V4)
+        bincode::encode_to_vec(&merged, config).expect("current query bytes"),
+        bincode::encode_to_vec(&previous, config).expect("previous query bytes"),
     );
+    assert!(matches!(
+        PathQuery::merge(lifted.iter().collect(), &pv.drive.grove_version),
+        Err(grovedb::Error::NotSupported(message))
+            if message == "can not merge a path query with a global limit whose body has subqueries: a branch cap would not charge its empty subtrees; set Query::limit on the query instead"
+    ));
 }
 
 /// Reads `chained` without and with a proof, verifies the proof, checks

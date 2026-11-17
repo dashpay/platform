@@ -1481,11 +1481,12 @@ mod dashpay_v3_tests {
         ConstraintExpression, PropertyConstraint,
     };
     use crate::data_contract::document_type::{
-        DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
-        EncryptedFor, EncryptedForRecipient, EncryptionScheme,
+        ByteArrayPropertySizes, DistinctFrom, DocumentPropertyReferenceTarget,
+        DocumentPropertyType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient,
+        EncryptionScheme,
     };
     use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use crate::document::DocumentV0;
+    use crate::document::{Document, DocumentV0, DocumentV0Getters};
     use platform_value::{Identifier, Value};
     use std::collections::BTreeMap;
 
@@ -1625,7 +1626,7 @@ mod dashpay_v3_tests {
     }
 
     /// The two checks of the contact request data trigger, as declarations: the
-    /// recipient is an identity, and not the writer. The two ECDH fields name their
+    /// recipient is an identity, and not the writer. The three ECDH fields name their
     /// encryption, so their lengths must be an IV plus whole AES blocks.
     #[test]
     fn should_declare_the_contact_request_checks_and_encryption() {
@@ -1660,9 +1661,118 @@ mod dashpay_v3_tests {
             encrypted,
             vec![
                 ("encryptedAccountLabel", recipe.clone()),
-                ("encryptedPublicKey", recipe),
+                ("encryptedPublicKey", recipe.clone()),
+                ("encryptedShieldedAddress", recipe),
             ]
         );
+    }
+
+    /// A contact request may carry the sender's shielded payment address for this
+    /// contact: 43 bytes encrypted as `encryptedPublicKey` is, so an IV and three AES
+    /// blocks (64 bytes), with the 80-byte length kept for a later encoding. The
+    /// property is optional and the last in position.
+    #[test]
+    fn should_let_a_contact_request_carry_an_encrypted_shielded_address() {
+        let contract = dashpay();
+        let contact_request = document_type(&contract, "contactRequest");
+
+        let (last_name, last_property) = contact_request
+            .properties()
+            .last()
+            .expect("contactRequest has properties");
+        assert_eq!(last_name, "encryptedShieldedAddress");
+        assert!(!last_property.required);
+        assert_eq!(
+            last_property.property_type,
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(64),
+                max_size: Some(80),
+            })
+        );
+
+        // The private request carries the same address in the clear, inside its
+        // encrypted entry, so it has no encrypted form of it.
+        assert!(document_type(&contract, "privateContactRequest")
+            .flattened_properties()
+            .get("encryptedShieldedAddress")
+            .is_none());
+    }
+
+    /// A contact request stored under DashPay v2 ends before the property v3 adds.
+    /// Read under v3 it is the same document, without a shielded address.
+    #[test]
+    fn should_read_a_contact_request_stored_before_the_shielded_address_existed() {
+        let v3 = dashpay();
+        let protocol_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        let v2 = load_system_data_contract(SystemDataContract::Dashpay, protocol_version_14)
+            .expect("DashPay v2");
+        assert!(document_type(&v2, "contactRequest")
+            .flattened_properties()
+            .get("encryptedShieldedAddress")
+            .is_none());
+
+        let stored_under_v2 = DocumentV0 {
+            id: Identifier::from([4; 32]),
+            owner_id: Identifier::from([5; 32]),
+            properties: BTreeMap::from([
+                ("toUserId".to_string(), Value::Identifier([6; 32])),
+                ("encryptedPublicKey".to_string(), Value::Bytes(vec![7; 96])),
+                ("senderKeyIndex".to_string(), Value::I64(2)),
+                ("recipientKeyIndex".to_string(), Value::I64(3)),
+                ("accountReference".to_string(), Value::I64(0x0123_4567)),
+                (
+                    "encryptedAccountLabel".to_string(),
+                    Value::Bytes(vec![8; 48]),
+                ),
+                ("autoAcceptProof".to_string(), Value::Bytes(vec![9; 38])),
+            ]),
+            created_at: Some(1_700_000_000_000),
+            created_at_core_block_height: Some(2_000_000),
+            ..Default::default()
+        };
+        let bytes = stored_under_v2
+            .serialize(
+                document_type(&v2, "contactRequest"),
+                &v2,
+                protocol_version_14,
+            )
+            .expect("the contact request serializes under v2");
+
+        let read = Document::from_bytes(
+            &bytes,
+            document_type(&v3, "contactRequest"),
+            PlatformVersion::latest(),
+        )
+        .expect("a v2 contact request reads under v3");
+        assert_eq!(read.properties(), &stored_under_v2.properties);
+        assert_eq!(read.id(), stored_under_v2.id);
+        assert_eq!(read.owner_id(), stored_under_v2.owner_id);
+        assert_eq!(read.created_at(), stored_under_v2.created_at);
+        assert_eq!(
+            read.created_at_core_block_height(),
+            stored_under_v2.created_at_core_block_height
+        );
+
+        // With the address, the stored form grows by the property and nothing else moves.
+        let mut with_address = stored_under_v2.clone();
+        with_address.properties.insert(
+            "encryptedShieldedAddress".to_string(),
+            Value::Bytes(vec![10; 64]),
+        );
+        let bytes = with_address
+            .serialize(
+                document_type(&v3, "contactRequest"),
+                &v3,
+                PlatformVersion::latest(),
+            )
+            .expect("the contact request serializes under v3");
+        let read = Document::from_bytes(
+            &bytes,
+            document_type(&v3, "contactRequest"),
+            PlatformVersion::latest(),
+        )
+        .expect("a v3 contact request reads back");
+        assert_eq!(read.properties(), &with_address.properties);
     }
 
     /// The check of the profile data trigger, as two rules: each DIP-33 payment

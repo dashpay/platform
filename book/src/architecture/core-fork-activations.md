@@ -151,10 +151,15 @@ and `perform_events_on_first_block_of_protocol_change`, run before
 `update_core_info`, so they cannot rely on the record for a fork that the same
 upgrade starts tracking.
 
-Closing the window would mean asking Core in the first block of the new protocol
-version whatever its `c`. That would put Core on the upgrade block's critical
-path: a node whose Core failed could not execute the upgrade block, and the
-upgrade would wait for every Core that was down.
+Closing the window would mean asking Core about the fork in the first block of
+the new protocol version whatever its `c`. That would put Core on the upgrade
+block's critical path: a node whose Core failed could not execute the upgrade
+block, and the upgrade would wait for every Core that was down. The upgrade to
+protocol version 15 pays that cost once for another reason: it reconciles the
+operator payouts Platform holds with Core's full masternode list (see
+[Syncing with Dash Core](component-pipeline.md#syncing-with-dash-core)), which
+nothing short of that list can do. The fork record does not need it: its window
+is short, and every consumer must be safe in it anyway.
 
 ## V24's signal
 
@@ -199,11 +204,13 @@ it failed, which is safe only for version 1. Pooling runs after
 records V24 is already version 2. In the window before the record, withdrawals
 stay at version 1, which Core always accepts. Pooling never asks Core about V24.
 
-One piece of code still asks Core about V24 directly: the masternode list
-update's `drop_unchanged_operator_keys`, which keeps a masternode's operator key
-when Core re-encodes it after V24. It runs under every protocol version, and
-from protocol version 15 it runs after the record is updated, in blocks that
-move `c`, so it gets the same answer as the record.
+The masternode list update keeps a masternode's operator key when Core
+re-encodes it after V24. From protocol version 15, `update_masternode_list` 2
+reads V24 from the record. It runs inside `update_core_info` v1, after the
+record step at the same `c` and only in blocks that move `c`, so `None` there
+means Core reported V24 inactive at this very `c`. `update_masternode_list` 0
+and 1, up to protocol version 14, still ask Core directly
+(`drop_unchanged_operator_keys`), as the blocks they executed did.
 
 ## Adding a fork
 

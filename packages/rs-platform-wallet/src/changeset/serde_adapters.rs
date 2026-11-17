@@ -11,6 +11,44 @@ use dpp::prelude::AddressNonce;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// Adapter for the private shielded addresses of a contact changeset:
+/// serde derives no 43-byte array, so each `(owner, contact)` address rides
+/// as an `(owner, contact, bytes)` row, its length checked on the way back.
+pub mod private_shielded_addresses {
+    use super::*;
+    use dpp::prelude::Identifier;
+    use serde::de::Error as _;
+    use std::collections::BTreeMap;
+
+    type Addresses = BTreeMap<(Identifier, Identifier), [u8; 43]>;
+
+    pub fn serialize<S: Serializer>(
+        addresses: &Addresses,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            addresses
+                .iter()
+                .map(|((owner, contact), address)| (owner, contact, address.as_slice())),
+        )
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Addresses, D::Error> {
+        Vec::<(Identifier, Identifier, Vec<u8>)>::deserialize(deserializer)?
+            .into_iter()
+            .map(|(owner, contact, address)| {
+                let address: [u8; 43] = address.as_slice().try_into().map_err(|_| {
+                    D::Error::custom(format!(
+                        "a private shielded address is 43 bytes, not {}",
+                        address.len()
+                    ))
+                })?;
+                Ok(((owner, contact), address))
+            })
+            .collect()
+    }
+}
+
 /// Adapter for `AssetLockFundingType` (upstream has no serde derive).
 ///
 /// Encodes each variant as a stable u8 tag — same tag space the

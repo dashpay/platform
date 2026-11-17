@@ -37,3 +37,23 @@ pub struct IdentityManagerStartState {
     /// forces a rescan. See [`IdentityScanStateEntry`].
     pub scan_states: BTreeMap<WalletId, IdentityScanStateEntry>,
 }
+
+impl IdentityManagerStartState {
+    /// Drop the private contact request scan state every restored identity
+    /// carries (its read position and its contacts' shielded addresses), as a
+    /// load does for a backend that does not attest
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE):
+    /// nothing keeps such a backend's copy current, so the store is read from
+    /// its start. A restored hold on an unresolved private payment is kept
+    /// (`ManagedIdentity::forget_private_contact_scan_state`).
+    pub(crate) fn forget_private_contact_scan_state(&mut self) {
+        for managed in self
+            .wallet_identities
+            .values_mut()
+            .flat_map(BTreeMap::values_mut)
+            .chain(self.out_of_wallet_identities.values_mut())
+        {
+            managed.forget_private_contact_scan_state();
+        }
+    }
+}

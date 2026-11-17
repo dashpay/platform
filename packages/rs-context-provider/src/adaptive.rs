@@ -1,0 +1,963 @@
+//! [`AdaptiveContextProvider`] routes each quorum lookup to an SPV client or
+//! to a trusted provider, by a [`ContextProviderMode`] that can change while
+//! the SDK runs. Its SPV route reads the same kind of [`SpvSourceSlot`] as
+//! [`SpvContextProvider`](crate::SpvContextProvider).
+
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+
+use dpp::dashcore::Network;
+use dpp::data_contract::TokenConfiguration;
+use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::version::PlatformVersion;
+
+use crate::{
+    is_platform_quorum_type, platform_activation_height, ContextProvider, ContextProviderError,
+    ContextProviderMode, ContractSource, QuorumKeyFuture, QuorumKeySource, SpvSourceSlot,
+};
+
+/// Routes each quorum lookup to an SPV client or a trusted provider by
+/// [`ContextProviderMode`]; contracts and tokens come from a
+/// [`ContractSource`].
+///
+/// In [`ContextProviderMode::Auto`] it asks the SPV client first and the
+/// trusted provider for any key SPV cannot serve:
+///
+/// - While the SPV client is not ready (before it has synced, and again
+///   whenever it loses its peers or its sync fails), every lookup is the
+///   trusted provider's, as in [`ContextProviderMode::Trusted`].
+/// - While it is ready, a key SPV serves is final, so a response whose
+///   signature fails with it is the responding node's fault. A lookup SPV
+///   cannot serve (a quorum it has not seen or verified yet, a client that
+///   stopped) goes to the trusted provider, except for a quorum type other
+///   than the network's Platform type. The trusted provider can only turn
+///   that failure into a key: when it fails too, the lookup, and a later
+///   [`fetch_quorum_public_key`](ContextProvider::fetch_quorum_public_key),
+///   report what SPV said, so the node is blamed as SPV alone would blame it.
+///
+/// Every key Auto verifies with therefore comes from the SPV client or the
+/// trusted provider, and Auto is only as strong as the trusted provider:
+/// someone who controls the trusted quorum service and a node can have a
+/// proof accepted that names a quorum SPV does not hold, and someone who can
+/// cut the client off from its SPV peers can move every lookup onto the
+/// trusted provider. Clients that must never verify proofs with the trusted
+/// provider's keys use [`ContextProviderMode::Spv`], which fails closed
+/// instead.
+///
+/// It does not pass on [`ContextProvider::core_height_verified`]: it does not
+/// record which source supplied a quorum's key, and a verified height vouches
+/// only for that source.
+pub struct AdaptiveContextProvider {
+    trusted: Arc<dyn ContextProvider>,
+    spv: Arc<SpvSourceSlot>,
+    contracts: Arc<dyn ContractSource>,
+    mode: AtomicU8,
+    network: Network,
+}
+
+impl AdaptiveContextProvider {
+    /// A provider in [`ContextProviderMode::Auto`] that answers from `trusted`
+    /// until an SPV client is published into its slot and synced, and for
+    /// any key that client cannot serve.
+    ///
+    /// Fails with [`ContextProviderError::Config`] when `trusted` declares a
+    /// network other than `network`: the SDK checks only the network this
+    /// provider reports, and would verify proofs with the other network's
+    /// quorum keys whenever it routes to `trusted`.
+    pub fn new(
+        trusted: Arc<dyn ContextProvider>,
+        contracts: Arc<dyn ContractSource>,
+        network: Network,
+    ) -> Result<Self, ContextProviderError> {
+        if let Some(trusted_network) = trusted.network() {
+            if trusted_network != network {
+                return Err(ContextProviderError::Config(format!(
+                    "the trusted provider serves {trusted_network:?} quorums, but the adaptive provider routes {network:?} lookups"
+                )));
+            }
+        }
+        Ok(Self {
+            trusted,
+            spv: Arc::default(),
+            contracts,
+            mode: AtomicU8::new(ContextProviderMode::Auto as u8),
+            network,
+        })
+    }
+
+    /// Where lookups go.
+    pub fn mode(&self) -> ContextProviderMode {
+        ContextProviderMode::try_from(self.mode.load(Ordering::Acquire))
+            .expect("context-provider mode is only written from validated values")
+    }
+
+    /// Whether a key SPV cannot serve may be asked of the trusted provider:
+    /// only a Platform quorum's. SPV refuses every other quorum type, and the
+    /// trusted provider looks quorums up by hash alone, while quorum types
+    /// that share a DKG interval share quorum hashes: handing it a lookup SPV
+    /// refused for its type would let a lower-threshold quorum vouch for
+    /// Platform state.
+    fn may_fall_back(&self, quorum_type: u32) -> bool {
+        is_platform_quorum_type(self.network, quorum_type)
+    }
+}
+
+impl ContextProvider for AdaptiveContextProvider {
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        match self.mode() {
+            ContextProviderMode::Trusted => self.trusted.get_quorum_public_key(
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ),
+            ContextProviderMode::Spv => self
+                .spv
+                .ready_source(self.network)?
+                .provider
+                .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height),
+            ContextProviderMode::Auto => {
+                let Ok(source) = self.spv.ready_source(self.network) else {
+                    return self.trusted.get_quorum_public_key(
+                        quorum_type,
+                        quorum_hash,
+                        core_chain_locked_height,
+                    );
+                };
+                let spv_error = match source.provider.get_quorum_public_key(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                ) {
+                    Ok(key) => return Ok(key),
+                    Err(error) => error,
+                };
+                if !self.may_fall_back(quorum_type) {
+                    return Err(spv_error);
+                }
+                match self.trusted.get_quorum_public_key(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                ) {
+                    Ok(key) => {
+                        tracing::info!(
+                            quorum_type,
+                            quorum_hash = %hex::encode(quorum_hash),
+                            core_chain_locked_height,
+                            %spv_error,
+                            "SPV could not serve the quorum key; the trusted provider served it"
+                        );
+                        Ok(key)
+                    }
+                    Err(trusted_error) => {
+                        tracing::warn!(
+                            quorum_type,
+                            quorum_hash = %hex::encode(quorum_hash),
+                            core_chain_locked_height,
+                            %spv_error,
+                            %trusted_error,
+                            "neither SPV nor the trusted provider could serve the quorum key"
+                        );
+                        Err(spv_error)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Only the trusted provider fetches, so SPV mode never does and never
+    /// falls back to trusted keys.
+    ///
+    /// In [`ContextProviderMode::Auto`] with SPV ready, the SDK fetches only
+    /// after SPV and the trusted provider both failed a lookup. The trusted
+    /// provider fetches, and when it cannot help, SPV, asked again, decides
+    /// what the failure says about the node that named the quorum: a quorum
+    /// it does not hold resolves to `Ok(None)`, which blames the node, and
+    /// one it cannot judge to its error, which does not. A quorum SPV has
+    /// caught up with meanwhile resolves to SPV's key. A client that stopped
+    /// being ready meanwhile has no say, and the trusted answer stands.
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        let trusted_fetch = || {
+            self.trusted
+                .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+        };
+        match self.mode() {
+            ContextProviderMode::Trusted => trusted_fetch(),
+            ContextProviderMode::Spv => None,
+            ContextProviderMode::Auto if !self.spv.is_ready(self.network) => trusted_fetch(),
+            ContextProviderMode::Auto if !self.may_fall_back(quorum_type) => None,
+            ContextProviderMode::Auto => {
+                let fetch = trusted_fetch()?;
+                let spv = Arc::clone(&self.spv);
+                let network = self.network;
+                Some(Box::pin(async move {
+                    let fetched = fetch.await;
+                    if let Ok(Some(key)) = fetched {
+                        return Ok(Some(key));
+                    }
+                    let Ok(source) = spv.ready_source(network) else {
+                        return fetched;
+                    };
+                    let spv_error = match source.provider.get_quorum_public_key(
+                        quorum_type,
+                        quorum_hash,
+                        core_chain_locked_height,
+                    ) {
+                        Ok(key) => return Ok(Some(key)),
+                        Err(error) => error,
+                    };
+                    let trusted_error = match &fetched {
+                        Ok(_) => "the trusted service does not list the quorum".to_string(),
+                        Err(error) => error.to_string(),
+                    };
+                    match spv_error {
+                        ContextProviderError::Generic(_)
+                        | ContextProviderError::InvalidQuorum(_) => {
+                            tracing::warn!(
+                                quorum_type,
+                                quorum_hash = %hex::encode(quorum_hash),
+                                core_chain_locked_height,
+                                %spv_error,
+                                %trusted_error,
+                                "SPV does not hold the quorum and the trusted provider did not serve it"
+                            );
+                            Ok(None)
+                        }
+                        spv_error => {
+                            tracing::warn!(
+                                quorum_type,
+                                quorum_hash = %hex::encode(quorum_hash),
+                                core_chain_locked_height,
+                                %spv_error,
+                                %trusted_error,
+                                "SPV cannot judge the quorum and the trusted provider did not serve it"
+                            );
+                            Err(spv_error)
+                        }
+                    }
+                }))
+            }
+        }
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(platform_activation_height(self.network))
+    }
+
+    fn network(&self) -> Option<Network> {
+        Some(self.network)
+    }
+
+    /// The trusted provider's requirement. It is the only source known when
+    /// the SDK is given this provider, and the route Auto falls back to.
+    fn requires_proofs(&self) -> bool {
+        self.trusted.requires_proofs()
+    }
+
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        self.contracts.get_data_contract(id, platform_version)
+    }
+
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        self.contracts.register_data_contract(contract)
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        self.contracts.get_token_configuration(token_id)
+    }
+
+    /// The source a lookup asks first. In [`ContextProviderMode::Auto`], SPV
+    /// while the client published into the slot says it is ready and
+    /// declares no network other than this provider's; a client that cannot
+    /// say, or that declares another network, counts as not ready, as it
+    /// does for lookups. A lookup SPV cannot serve still goes on to the
+    /// trusted provider.
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        Some(match self.mode() {
+            ContextProviderMode::Trusted => QuorumKeySource::Trusted,
+            ContextProviderMode::Spv => QuorumKeySource::Spv,
+            ContextProviderMode::Auto if self.spv.is_ready(self.network) => QuorumKeySource::Spv,
+            ContextProviderMode::Auto => QuorumKeySource::Trusted,
+        })
+    }
+
+    fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
+        self.mode.store(mode as u8, Ordering::Release);
+        Ok(())
+    }
+
+    fn spv_source_slot(&self) -> Option<Arc<SpvSourceSlot>> {
+        Some(Arc::clone(&self.spv))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use dpp::dashcore::Network;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+
+    use super::AdaptiveContextProvider;
+    use crate::test_support::{
+        is_unavailable, network_quorums, platform_quorum_type, publish, quorum_key, quorums,
+        slot_of, spv_misconfigured, spv_miss, spv_unverified, spv_wrong_type, SpvAnswer,
+        TestContracts, TestSpv, TestTrusted, TrustedFetch,
+    };
+    use crate::QuorumKeyFuture;
+    use crate::{ContextProvider, ContextProviderError, ContextProviderMode, QuorumKeySource};
+    use crate::{SpvContextProvider, SpvSourceLease, SpvSourceSlot};
+
+    fn adaptive() -> AdaptiveContextProvider {
+        AdaptiveContextProvider::new(
+            quorums("trusted", 0x11),
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .expect("a trusted provider without a network")
+    }
+
+    /// An adaptive provider in Auto over `trusted`, with `spv` published
+    /// into its slot and ready while `ready` holds.
+    fn auto_over(
+        trusted: &Arc<TestTrusted>,
+        spv: &Arc<TestSpv>,
+        ready: &Arc<AtomicBool>,
+    ) -> (AdaptiveContextProvider, SpvSourceLease) {
+        let adaptive = AdaptiveContextProvider::new(
+            Arc::clone(trusted) as Arc<dyn ContextProvider>,
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .expect("a trusted provider without a network");
+        let lease = slot_of(&adaptive).claim().expect("empty slot");
+        let ready = Arc::clone(ready);
+        lease.publish(
+            Arc::clone(spv) as Arc<dyn ContextProvider>,
+            Arc::new(move || Ok(ready.load(Ordering::Acquire))),
+        );
+        (adaptive, lease)
+    }
+
+    /// LLMQ_50_60: a real quorum type that is not Platform's on testnet, and
+    /// needs fewer signers than Platform's.
+    const LLMQ_50_60: u32 = 1;
+
+    fn fetch(adaptive: &AdaptiveContextProvider) -> Option<QuorumKeyFuture> {
+        adaptive.fetch_quorum_public_key(platform_quorum_type(), [2; 32], 3)
+    }
+
+    #[test]
+    fn should_route_quorum_lookups_by_mode_and_readiness() {
+        let adaptive = adaptive();
+        let slot = slot_of(&adaptive);
+
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
+
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert!(is_unavailable(quorum_key(&adaptive)));
+
+        let ready = Arc::new(AtomicBool::new(false));
+        let ready_for_callback = Arc::clone(&ready);
+        let lease = slot.claim().unwrap();
+        lease.publish(
+            quorums("spv", 0x22),
+            Arc::new(move || Ok(ready_for_callback.load(Ordering::Acquire))),
+        );
+        assert!(
+            is_unavailable(quorum_key(&adaptive)),
+            "unready SPV must fail closed"
+        );
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Spv));
+
+        ready.store(true, Ordering::Release);
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
+
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
+
+        adaptive.set_quorum_mode(ContextProviderMode::Auto).unwrap();
+        ready.store(false, Ordering::Release);
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
+        ready.store(true, Ordering::Release);
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Spv));
+    }
+
+    /// The SDK keeps its provider behind wrappers, and the FFI asks the
+    /// provider it reaches through them for its source, changes its mode and
+    /// takes its SPV slot. A wrapper answering with the defaults would report
+    /// a custom provider, refuse a mode change the provider supports, and
+    /// hand out no slot, so no wallet manager could serve it SPV keys.
+    #[test]
+    fn should_answer_for_its_quorum_source_through_every_wrapper() {
+        let inner: Arc<dyn ContextProvider> = Arc::new(adaptive());
+        let boxed: Arc<Box<dyn ContextProvider>> =
+            Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
+        let mutex = Mutex::new(Arc::clone(&inner));
+        let wrappers: [&dyn ContextProvider; 3] = [&inner, &boxed, &mutex];
+        let slot = slot_of(&inner);
+
+        for provider in wrappers {
+            provider
+                .set_quorum_mode(ContextProviderMode::Spv)
+                .expect("the adaptive provider has a mode");
+            assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Spv));
+            provider
+                .set_quorum_mode(ContextProviderMode::Trusted)
+                .expect("the adaptive provider has a mode");
+            assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Trusted));
+            assert!(Arc::ptr_eq(
+                &provider.spv_source_slot().expect("an SPV slot"),
+                &slot
+            ));
+        }
+    }
+
+    #[test]
+    fn should_read_contracts_and_tokens_from_the_contract_source_in_every_mode() {
+        let adaptive = adaptive();
+        let _lease = publish(&slot_of(&adaptive), quorums("spv", 0x22), true);
+        let id = Identifier::new([7; 32]);
+
+        for mode in [
+            ContextProviderMode::Auto,
+            ContextProviderMode::Spv,
+            ContextProviderMode::Trusted,
+        ] {
+            adaptive.set_quorum_mode(mode).unwrap();
+            let contract_error = adaptive
+                .get_data_contract(&id, PlatformVersion::latest())
+                .unwrap_err()
+                .to_string();
+            let token_error = adaptive
+                .get_token_configuration(&id)
+                .unwrap_err()
+                .to_string();
+            assert!(contract_error.contains("local contract route"));
+            assert!(token_error.contains("local token route"));
+        }
+    }
+
+    /// Auto takes SPV's keys while SPV is synced, and the trusted provider
+    /// backs it up: a quorum SPV has not seen yet, or holds but has not
+    /// verified, is served from the trusted provider instead of failing the
+    /// request or blaming the node that named it. SPV is still the source
+    /// Auto asks first.
+    #[test]
+    fn should_answer_from_trusted_when_a_ready_spv_source_cannot_serve_the_key() {
+        let spv_errors: [fn() -> ContextProviderError; 3] =
+            [spv_miss, spv_unverified, spv_misconfigured];
+        for spv_error in spv_errors {
+            let trusted = TestTrusted::new(true, TrustedFetch::Cannot);
+            let spv = TestSpv::new(SpvAnswer::Fails(spv_error));
+            let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+
+            assert_eq!(
+                quorum_key(&adaptive).map_err(|error| error.to_string()),
+                Ok([0x11; 48]),
+                "SPV: {}",
+                spv_error()
+            );
+            assert_eq!(trusted.lookups(), 1);
+            assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Spv));
+        }
+    }
+
+    /// The trusted provider can turn an SPV failure into a key, never into
+    /// another verdict. When it fails too, the lookup reports SPV's error,
+    /// so the node is blamed exactly as SPV alone would blame it: one that
+    /// named a quorum SPV does not hold is still banned while the trusted
+    /// service is down, and one SPV cannot judge is still spared.
+    #[test]
+    fn should_report_spvs_error_when_trusted_cannot_serve_the_key_either() {
+        let spv_errors: [fn() -> ContextProviderError; 3] =
+            [spv_miss, spv_unverified, spv_misconfigured];
+        for spv_error in spv_errors {
+            let trusted = TestTrusted::new(false, TrustedFetch::Cannot);
+            let spv = TestSpv::new(SpvAnswer::Fails(spv_error));
+            let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+
+            let error = quorum_key(&adaptive).unwrap_err();
+            assert_eq!(
+                std::mem::discriminant(&error),
+                std::mem::discriminant(&spv_error()),
+                "{error:?}"
+            );
+            assert_eq!(trusted.lookups(), 1, "the trusted provider was asked");
+        }
+    }
+
+    /// While SPV is synced, its key is final. A response whose signature
+    /// fails with SPV's key is the node's to answer for; it is never tried
+    /// again with whatever key the trusted service holds for that quorum.
+    #[test]
+    fn should_take_a_ready_spv_key_without_asking_trusted() {
+        let trusted = TestTrusted::new(true, TrustedFetch::Key);
+        let spv = TestSpv::new(SpvAnswer::Key);
+        let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
+        assert_eq!(trusted.lookups(), 0);
+    }
+
+    /// SPV refuses every quorum type but the network's Platform type, so a
+    /// lower-threshold quorum such as LLMQ_50_60 can never vouch for
+    /// Platform state. The trusted service looks quorums up by hash alone,
+    /// and quorum types that share a DKG interval share quorum hashes:
+    /// asking it would undo SPV's refusal.
+    #[test]
+    fn should_not_fall_back_for_a_quorum_type_other_than_platforms() {
+        let trusted = TestTrusted::new(true, TrustedFetch::Key);
+        let spv = TestSpv::new(SpvAnswer::Fails(spv_wrong_type));
+        let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+        let other_type = LLMQ_50_60;
+
+        let lookup = adaptive.get_quorum_public_key(other_type, [2; 32], 3);
+        assert!(
+            matches!(lookup, Err(ContextProviderError::InvalidQuorum(_))),
+            "{lookup:?}"
+        );
+        assert!(adaptive
+            .fetch_quorum_public_key(other_type, [2; 32], 3)
+            .is_none());
+        assert_eq!(trusted.lookups(), 0);
+    }
+
+    /// The quorum type decides only whether a lookup SPV refused may go on
+    /// to the trusted provider. While SPV is not synced, Auto is the trusted
+    /// provider alone, for every quorum type, as Trusted mode is.
+    #[tokio::test]
+    async fn should_leave_every_quorum_type_to_trusted_while_spv_is_not_ready() {
+        let trusted = TestTrusted::new(false, TrustedFetch::Key);
+        let spv = TestSpv::new(SpvAnswer::Fails(spv_wrong_type));
+        let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(false)));
+
+        let fetched = adaptive
+            .fetch_quorum_public_key(LLMQ_50_60, [2; 32], 3)
+            .expect("Auto without SPV fetches from trusted")
+            .await;
+        assert_eq!(
+            fetched.map_err(|error| error.to_string()),
+            Ok(Some([0x11; 48]))
+        );
+        assert_eq!(
+            adaptive
+                .get_quorum_public_key(LLMQ_50_60, [2; 32], 3)
+                .map_err(|error| error.to_string()),
+            Ok([0x11; 48])
+        );
+    }
+
+    /// Strict SPV never falls back: a key SPV cannot serve fails with SPV's
+    /// own error, and nothing is asked of, or fetched from, the trusted
+    /// service.
+    #[test]
+    fn should_not_ask_trusted_in_spv_mode_when_spv_cannot_serve_the_key() {
+        let trusted = TestTrusted::new(true, TrustedFetch::Key);
+        let spv = TestSpv::new(SpvAnswer::Fails(spv_miss));
+        let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+
+        let lookup = quorum_key(&adaptive);
+        assert!(
+            matches!(lookup, Err(ContextProviderError::Generic(_))),
+            "{lookup:?}"
+        );
+        assert!(fetch(&adaptive).is_none());
+        assert_eq!(trusted.lookups(), 0);
+    }
+
+    /// The SDK fetches a quorum key no lookup could serve through
+    /// `fetch_quorum_public_key`, then verifies the response again. That
+    /// fetch must follow the lookup's route: Trusted and Auto fetch from the
+    /// trusted service, Spv never does, or SPV mode would accept a trusted
+    /// key after an SPV miss.
+    #[tokio::test]
+    async fn should_fetch_missing_quorum_keys_from_trusted_except_in_spv_mode() {
+        let adaptive = adaptive();
+
+        let fetched = fetch(&adaptive).expect("Auto without SPV fetches from trusted");
+        assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
+
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert!(
+            fetch(&adaptive).is_none(),
+            "SPV without a source must not fetch"
+        );
+
+        let _lease = publish(&slot_of(&adaptive), quorums("spv", 0x22), true);
+        assert!(fetch(&adaptive).is_none(), "SPV must not fetch");
+
+        adaptive.set_quorum_mode(ContextProviderMode::Auto).unwrap();
+        let fetched = fetch(&adaptive).expect("Auto on ready SPV fetches from trusted");
+        assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
+
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
+        let fetched = fetch(&adaptive).expect("Trusted fetches");
+        assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
+    }
+
+    /// In Auto with SPV synced, the fetch asks the trusted service. When the
+    /// service cannot help, SPV, asked again once the fetch settles,
+    /// decides what the failure says about the node: a quorum it does not
+    /// hold blames the node (`Ok(None)`), one it cannot judge does not
+    /// (an error), and one it has caught up with meanwhile is served.
+    #[tokio::test]
+    async fn should_let_spv_decide_the_verdict_when_the_trusted_fetch_cannot_help() {
+        type Verdict = fn(&Result<Option<[u8; 48]>, ContextProviderError>) -> bool;
+        let cases: [(TrustedFetch, SpvAnswer, Verdict); 8] = [
+            (
+                TrustedFetch::Key,
+                SpvAnswer::Fails(spv_miss),
+                |fetched| matches!(fetched, Ok(Some(key)) if *key == [0x11; 48]),
+            ),
+            (
+                TrustedFetch::Unlisted,
+                SpvAnswer::Fails(spv_miss),
+                |fetched| matches!(fetched, Ok(None)),
+            ),
+            (
+                TrustedFetch::Unreachable,
+                SpvAnswer::Fails(spv_miss),
+                |fetched| matches!(fetched, Ok(None)),
+            ),
+            (
+                TrustedFetch::Unlisted,
+                SpvAnswer::Fails(spv_wrong_type),
+                |fetched| matches!(fetched, Ok(None)),
+            ),
+            (
+                TrustedFetch::Unlisted,
+                SpvAnswer::Fails(spv_unverified),
+                |fetched| {
+                    matches!(
+                        fetched,
+                        Err(ContextProviderError::QuorumSourceUnavailable(_))
+                    )
+                },
+            ),
+            (
+                TrustedFetch::Unreachable,
+                SpvAnswer::Fails(spv_unverified),
+                |fetched| {
+                    matches!(
+                        fetched,
+                        Err(ContextProviderError::QuorumSourceUnavailable(_))
+                    )
+                },
+            ),
+            (
+                TrustedFetch::Unreachable,
+                SpvAnswer::Fails(spv_misconfigured),
+                |fetched| matches!(fetched, Err(ContextProviderError::Config(_))),
+            ),
+            (
+                TrustedFetch::Unlisted,
+                SpvAnswer::Key,
+                |fetched| matches!(fetched, Ok(Some(key)) if *key == [0x22; 48]),
+            ),
+        ];
+        for (trusted_fetch, spv_answer, expected) in cases {
+            let trusted = TestTrusted::new(false, trusted_fetch);
+            let spv = TestSpv::new(SpvAnswer::Fails(spv_miss));
+            let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+
+            let pending = fetch(&adaptive).expect("Auto on ready SPV fetches from trusted");
+            spv.answer(spv_answer);
+            let fetched = pending.await;
+
+            assert!(expected(&fetched), "{trusted_fetch:?}: {fetched:?}");
+        }
+    }
+
+    /// A trusted provider that cannot fetch gives the SDK nothing to fetch in
+    /// Auto either, so the failed lookup's error, SPV's, decides the verdict.
+    #[test]
+    fn should_not_fetch_in_auto_when_trusted_cannot_fetch() {
+        let trusted = TestTrusted::new(false, TrustedFetch::Cannot);
+        let spv = TestSpv::new(SpvAnswer::Fails(spv_miss));
+        let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
+
+        assert!(fetch(&adaptive).is_none());
+    }
+
+    /// SPV that stops being synced while a fetch is pending no longer has a
+    /// say: Auto is then the trusted provider alone, and its answer stands.
+    #[tokio::test]
+    async fn should_keep_the_trusted_verdict_when_spv_stops_being_ready_during_a_fetch() {
+        for trusted_fetch in [TrustedFetch::Unlisted, TrustedFetch::Unreachable] {
+            let trusted = TestTrusted::new(false, trusted_fetch);
+            let spv = TestSpv::new(SpvAnswer::Fails(spv_unverified));
+            let ready = Arc::new(AtomicBool::new(true));
+            let (adaptive, _lease) = auto_over(&trusted, &spv, &ready);
+
+            let pending = fetch(&adaptive).expect("Auto on ready SPV fetches from trusted");
+            ready.store(false, Ordering::Release);
+            let fetched = pending.await;
+
+            match trusted_fetch {
+                TrustedFetch::Unlisted => assert!(matches!(fetched, Ok(None)), "{fetched:?}"),
+                _ => assert!(
+                    matches!(
+                        fetched,
+                        Err(ContextProviderError::QuorumSourceUnavailable(_))
+                    ),
+                    "{fetched:?}"
+                ),
+            }
+        }
+    }
+
+    /// While the SPV source is missing, unready, or cannot say whether it is
+    /// ready, the failure is this side's, so it must be
+    /// `QuorumSourceUnavailable`: the SDK bans nodes for any other quorum-key
+    /// error.
+    #[test]
+    fn should_report_an_unusable_spv_source_without_blaming_the_node() {
+        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+        let adaptive = adaptive();
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+
+        assert!(is_unavailable(quorum_key(&fixed)));
+        assert!(is_unavailable(quorum_key(&adaptive)));
+
+        let unready = publish(&slot_of(&fixed), quorums("spv", 0x22), false);
+        let adaptive_unready = publish(&slot_of(&adaptive), quorums("spv", 0x22), false);
+        assert!(is_unavailable(quorum_key(&fixed)));
+        assert!(is_unavailable(quorum_key(&adaptive)));
+        drop((unready, adaptive_unready));
+
+        let failing_readiness = |slot: &Arc<SpvSourceSlot>| {
+            let lease = slot.claim().unwrap();
+            lease.publish(
+                quorums("spv", 0x22),
+                Arc::new(|| Err(ContextProviderError::Generic("no runtime".to_string()))),
+            );
+            lease
+        };
+        let _fixed_lease = failing_readiness(&slot_of(&fixed));
+        let _adaptive_lease = failing_readiness(&slot_of(&adaptive));
+        assert!(is_unavailable(quorum_key(&fixed)));
+        assert!(is_unavailable(quorum_key(&adaptive)));
+    }
+
+    /// The SPV client published into a provider's slot must serve that
+    /// provider's network. One serving another network would have its
+    /// Platform quorums vouch for this network's proofs, so strict SPV fails
+    /// closed without blaming the node, and Auto treats it as not ready and
+    /// answers from the trusted provider. A client that serves the same
+    /// network, or does not say, is used.
+    #[test]
+    fn should_not_use_a_published_spv_client_of_another_network() {
+        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+        let adaptive = adaptive();
+        let _fixed_lease = publish(
+            &slot_of(&fixed),
+            network_quorums("mainnet spv", 0x33, Network::Mainnet),
+            true,
+        );
+        let _adaptive_lease = publish(
+            &slot_of(&adaptive),
+            network_quorums("mainnet spv", 0x33, Network::Mainnet),
+            true,
+        );
+
+        assert!(is_unavailable(quorum_key(&fixed)));
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Spv)
+            .expect("the adaptive provider has a mode");
+        assert!(is_unavailable(quorum_key(&adaptive)));
+
+        for source in [
+            network_quorums("testnet spv", 0x22, Network::Testnet),
+            quorums("spv", 0x22),
+        ] {
+            let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+            let _lease = publish(&slot_of(&fixed), source, true);
+            assert_eq!(quorum_key(&fixed).unwrap(), [0x22; 48]);
+        }
+    }
+
+    /// A quorum source that states requirements and records the verified
+    /// heights it is told about.
+    #[derive(Default)]
+    struct Requiring {
+        proofs: bool,
+        network: Option<Network>,
+        verified: Mutex<Vec<(u32, [u8; 32], u32)>>,
+    }
+
+    impl ContextProvider for Requiring {
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok([0x44; 48])
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(999)
+        }
+
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn requires_proofs(&self) -> bool {
+            self.proofs
+        }
+
+        fn network(&self) -> Option<Network> {
+            self.network
+        }
+
+        fn core_height_verified(&self, quorum_type: u32, quorum_hash: [u8; 32], height: u32) {
+            self.verified
+                .lock()
+                .expect("test state lock")
+                .push((quorum_type, quorum_hash, height));
+        }
+    }
+
+    /// The SDK refuses a provider for another network, or one that requires
+    /// proofs while proofs are off, by asking the provider it is built or set with.
+    /// A routing provider that answered with the defaults would let the SDK
+    /// accept one it must refuse.
+    #[test]
+    fn should_forward_provider_requirements_through_every_wrapper() {
+        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+        assert_eq!(fixed.network(), Some(Network::Testnet));
+        assert!(!fixed.requires_proofs());
+
+        for proofs in [false, true] {
+            let trusted = Arc::new(Requiring {
+                proofs,
+                ..Default::default()
+            });
+            let adaptive =
+                AdaptiveContextProvider::new(trusted, Arc::new(TestContracts), Network::Testnet)
+                    .expect("a trusted provider without a network");
+            assert_eq!(adaptive.network(), Some(Network::Testnet));
+            assert_eq!(adaptive.requires_proofs(), proofs);
+        }
+    }
+
+    /// The SDK checks the network of the provider it is built or set with, and the
+    /// adaptive provider reports its own. Over a trusted provider for another
+    /// network it would pass that check, then verify proofs with that
+    /// network's quorum keys whenever it routes to the trusted provider, so
+    /// it refuses one. A trusted provider that declares no network, or the
+    /// same one, is accepted.
+    #[test]
+    fn should_refuse_a_trusted_provider_for_another_network() {
+        let trusted = |network| {
+            Arc::new(Requiring {
+                network,
+                ..Default::default()
+            }) as Arc<dyn ContextProvider>
+        };
+
+        let refusal = AdaptiveContextProvider::new(
+            trusted(Some(Network::Testnet)),
+            Arc::new(TestContracts),
+            Network::Mainnet,
+        )
+        .err();
+        assert!(
+            matches!(
+                &refusal,
+                Some(ContextProviderError::Config(message))
+                    if message.contains("Testnet") && message.contains("Mainnet")
+            ),
+            "{refusal:?}"
+        );
+
+        for network in [None, Some(Network::Mainnet)] {
+            let adaptive = AdaptiveContextProvider::new(
+                trusted(network),
+                Arc::new(TestContracts),
+                Network::Mainnet,
+            )
+            .expect("a trusted provider for no other network");
+            assert_eq!(adaptive.network(), Some(Network::Mainnet));
+        }
+    }
+
+    /// A verified height vouches only for the source whose key verified the
+    /// response. The adaptive provider does not record which source supplied
+    /// a key, and its route can change between the lookup and the call, so
+    /// it tells neither: the trusted provider must not hear of a response an
+    /// SPV key verified.
+    #[test]
+    fn should_not_report_a_verified_height_to_a_source_that_may_not_have_supplied_the_key() {
+        let trusted = Arc::new(Requiring::default());
+        let adaptive = AdaptiveContextProvider::new(
+            Arc::clone(&trusted) as Arc<dyn ContextProvider>,
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .expect("a trusted provider without a network");
+        let _lease = publish(&slot_of(&adaptive), quorums("spv", 0x22), true);
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
+
+        adaptive.core_height_verified(1, [2; 32], 3);
+        assert!(trusted.verified.lock().expect("test state lock").is_empty());
+    }
+
+    /// Auto mode treats an SPV client that cannot say whether it is synced as
+    /// not ready, and answers from the trusted provider.
+    #[test]
+    fn should_fall_back_to_trusted_in_auto_mode_when_readiness_is_unknown() {
+        let adaptive = adaptive();
+        let lease = slot_of(&adaptive).claim().expect("empty slot");
+        lease.publish(
+            quorums("spv", 0x22),
+            Arc::new(|| Err(ContextProviderError::Generic("no runtime".to_string()))),
+        );
+
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
+        assert_eq!(quorum_key(&adaptive).expect("trusted key"), [0x11; 48]);
+    }
+}

@@ -285,6 +285,20 @@
         "minItems": 38,
         "maxItems": 102,
         "position": 6
+      },
+      "encryptedShieldedAddress": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 64,
+        "maxItems": 80,
+        "encryptedFor": {
+          "recipient": "toUserId",
+          "recipientKey": "recipientKeyIndex",
+          "senderKey": "senderKeyIndex",
+          "scheme": "ecdh-secp256k1-aes256-cbc"
+        },
+        "position": 7,
+        "description": "Sender's per-contact shielded payment address (43 bytes), encrypted to the contact with the DIP-15 shared key"
       }
     },
     "required": [

@@ -92,8 +92,14 @@ pub enum TransitionOutcome {
     /// For a shielded spend every nullifier is spent; for a transition that takes nonces every
     /// nonce is used.
     ///
-    /// Never retry or release anything on this answer: it may be this very transition.
-    ExecutedOrSuperseded,
+    /// Never retry or release anything on this answer alone: it may be this very transition.
+    /// What it would have written, proved absent by a read at or above `consumed_by_height`,
+    /// shows it did not execute, or failed with a paid error.
+    ExecutedOrSuperseded {
+        /// The lowest height of a read that showed one of its inputs consumed: it cannot
+        /// execute after this height.
+        consumed_by_height: u64,
+    },
     /// It did not execute and never will, for the given reason.
     CannotExecute(CannotExecuteReason),
     /// It had not executed when last read, and it may still execute.
@@ -323,7 +329,11 @@ struct Reads {
 /// The answer the reads of one transition give.
 fn outcome_from(reads: Reads) -> Result<TransitionOutcome, Error> {
     Ok(match reads.verdict {
-        InputsVerdict::ConsumedUnattributed => TransitionOutcome::ExecutedOrSuperseded,
+        InputsVerdict::ConsumedUnattributed { consumed_by } => {
+            TransitionOutcome::ExecutedOrSuperseded {
+                consumed_by_height: consumed_by,
+            }
+        }
         InputsVerdict::InputUsed => {
             TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
         }
@@ -776,7 +786,10 @@ mod sdk_tests {
             .state_transition_outcome(&shielded_transfer(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
-        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
+        assert!(
+            matches!(outcome, TransitionOutcome::ExecutedOrSuperseded { .. }),
+            "{outcome:?}"
+        );
         assert!(outcome.is_final());
         assert!(!outcome.proves_not_executed());
     }
@@ -937,7 +950,10 @@ mod sdk_tests {
             .state_transition_outcome(&credit_transfer(5), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
-        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
+        assert!(
+            matches!(outcome, TransitionOutcome::ExecutedOrSuperseded { .. }),
+            "{outcome:?}"
+        );
         assert!(outcome.is_final());
         assert!(!outcome.proves_not_executed());
     }
@@ -1037,7 +1053,10 @@ mod sdk_tests {
             .state_transition_outcome(&address_transfer(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
-        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
+        assert!(
+            matches!(outcome, TransitionOutcome::ExecutedOrSuperseded { .. }),
+            "{outcome:?}"
+        );
     }
 
     #[tokio::test]
@@ -1133,16 +1152,24 @@ mod sdk_tests {
         );
     }
 
+    /// The answer carries the height of the read that showed the nonce used, so a read of the
+    /// document at or above it can tell whether this batch wrote it.
     #[tokio::test]
     async fn should_not_attribute_a_document_batch_whose_contract_nonce_is_used() {
         let mut sdk = mock_sdk();
         expect_contract_nonce(&mut sdk, 17).await;
+        sdk.mock().set_response_height(42);
 
         let outcome = sdk
             .state_transition_outcome(&document_batch(), OutcomeEvidence::default())
             .await
             .expect("expected an outcome");
-        assert_eq!(outcome, TransitionOutcome::ExecutedOrSuperseded);
+        assert_eq!(
+            outcome,
+            TransitionOutcome::ExecutedOrSuperseded {
+                consumed_by_height: 42
+            }
+        );
     }
 }
 

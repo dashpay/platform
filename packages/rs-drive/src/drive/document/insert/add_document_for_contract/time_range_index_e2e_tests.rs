@@ -501,6 +501,7 @@ fn assert_ttl_document_batch(case: TtlBatchCase, ttl: bool) {
             .map(|i| {
                 DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
                     document_id: docs[i].id(),
+                    deleter_id: None,
                     contract_info: DataContractInfo::BorrowedDataContract(&contract),
                     document_type_info: DocumentTypeInfo::DocumentTypeRef(dt),
                 })
@@ -673,10 +674,15 @@ fn should_apply_time_range_batches_through_raw_conversion_without_ttl() {
 /// without the caller's transaction. Neither refusal may leave a trace.
 #[test]
 fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
+    for pv in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+        assert_raw_conversion_refusals(pv);
+    }
+}
+
+fn assert_raw_conversion_refusals(pv: &PlatformVersion) {
     use crate::error::drive::DriveError;
     use crate::util::batch::drive_op_batch::{DocumentOperationType, DriveOperation};
     use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
-    let pv = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(pv));
     let contract = build_ttl_contract_with_index_keys(230, vec![]);
     drive
@@ -731,6 +737,7 @@ fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
         vec![DriveOperation::DocumentOperation(
             DocumentOperationType::DeleteDocument {
                 document_id: doc.id(),
+                deleter_id: None,
                 contract_info: DataContractInfo::BorrowedDataContract(&contract),
                 document_type_info: DocumentTypeInfo::DocumentTypeRef(dt),
             },
@@ -3817,9 +3824,10 @@ fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
             document.id(),
             &contract,
             document_type,
+            &BlockInfo::default_with_time(after_expiry_ms),
+            None,
             None,
             &mut None,
-            after_expiry_ms,
             None,
             platform_version,
         )
@@ -4873,6 +4881,7 @@ fn apply_drive_operations_rolls_back_ttl_preparation_when_conversion_fails_witho
             vec![DriveOperation::DocumentOperation(
                 DocumentOperationType::DeleteDocument {
                     document_id: missing,
+                    deleter_id: None,
                     contract_info: DataContractInfo::BorrowedDataContract(&contract),
                     document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
                 },

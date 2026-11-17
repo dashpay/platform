@@ -310,7 +310,7 @@ fn ensure_entropy_matches_document_id(
 
 /// Construct and sign once; dispatch is chosen by the calling API.
 #[allow(clippy::too_many_arguments)]
-async fn prepare_document_state_transition<S: Signer<IdentityPublicKey>>(
+pub(crate) async fn prepare_document_state_transition<S: Signer<IdentityPublicKey>>(
     document: &Document,
     sdk: &Sdk,
     document_type: DocumentType,

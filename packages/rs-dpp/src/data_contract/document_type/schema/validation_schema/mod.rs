@@ -280,9 +280,10 @@ pub struct StringConstraints {
     /// as a property, and on the items of one, the elements of a typed array.
     pub max_bytes: Option<u64>,
     /// `pattern`, as written. The validator rewrites the ECMA escapes `\d`, `\w`, `\s`, their
-    /// negations and `\cX` before compiling it with the `regex` crate under that crate's
-    /// default size limit; the builder refuses a pattern that does not compile so, since the
-    /// validator then refuses every value reaching it.
+    /// negations and `\cX`, and compiles the result with the `regex` crate under that crate's
+    /// default size limit the first time a value reaches it. The builder refuses a pattern
+    /// that does not parse, which the crate never compiles; registration also refuses one
+    /// that parses but does not compile.
     pub pattern: Option<String>,
 }
 
@@ -339,11 +340,12 @@ impl ValidationSchema {
     /// ignores or an entry a repeated key shadows included; a keyword value of the wrong
     /// shape; a key the JSON Schema validator compiles there that is not a [`SchemaKeyword`];
     /// at the root, the shapes the validator's check of
-    /// the document schema against its meta-schema refuses; a `format`, `pattern` or
-    /// `dependentRequired` it does not compile; `byteArray: false`; `maxBytes`, `encryptedFor`
-    /// or `byteArray` where consensus does not check it (see the module documentation); a
-    /// property, or `required`, repeated where the document type parser reads another entry
-    /// than the validator; a document schema `$id`, and any other `$id` that is not a plain
+    /// the document schema against its meta-schema refuses; a `pattern` that does not parse;
+    /// a `format` or `dependentRequired` it does not compile; `byteArray: false`; `maxBytes`,
+    /// `encryptedFor` or `byteArray` where consensus does not check it (see the module
+    /// documentation); a property, or `required`, repeated where the document type parser
+    /// reads another entry than the validator; a document schema `$id`, and any other `$id`
+    /// that is not a plain
     /// name (see [`ResolutionKeyword::Id`]); a `$ref` that is not a JSON pointer into the document
     /// schema, or that does not resolve there; and a property's `$ref` the document type
     /// parser does not resolve, or resolves to another schema.
@@ -351,17 +353,17 @@ impl ValidationSchema {
     /// This is generation 0 of the builder ([`Self::try_from_root_v0`]), with no version
     /// check: consensus builds through [`Self::build`].
     pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
-        Self::try_from_root_v0(root).map(|(schema, _)| schema)
+        Self::try_from_root_v0(root)
     }
 
-    /// The validation schema of `root` and the patterns it compiled, built by the generation
-    /// of the builder `platform_version` selects (`validation_schema`). Refuses a protocol
-    /// version that selects none, whose document validation reads no validation schema, and
-    /// a generation this module does not know.
+    /// The validation schema of `root`, built by the generation of the builder
+    /// `platform_version` selects (`validation_schema`). Refuses a protocol version that
+    /// selects none, whose document validation reads no validation schema, and a generation
+    /// this module does not know.
     pub(crate) fn build(
         root: &Value,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, BTreeMap<String, regex::Regex>), ProtocolError> {
+    ) -> Result<Self, ProtocolError> {
         match builder_generation(platform_version)? {
             0 => Ok(Self::try_from_root_v0(root)?),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -402,8 +404,7 @@ impl DataContract {
         {
             let root =
                 validated_schema(document_type.schema(), self.schema_defs(), platform_version)?;
-            let (schema, _) = ValidationSchema::build(&root, platform_version)?;
-            Ok(schema)
+            ValidationSchema::build(&root, platform_version)
         }
     }
 }
@@ -445,11 +446,9 @@ pub(crate) fn native_validator_of<'v>(
         return Ok(built.as_ref());
     }
     let built = match stored {
-        Some(encoded) => DocumentSchemaValidator::with_patterns(
-            Arc::new(encoded.decode()?),
-            BTreeMap::new(),
-            generation,
-        ),
+        Some(encoded) => {
+            DocumentSchemaValidator::with_patterns(Arc::new(encoded.decode()?), generation)
+        }
         None => DocumentSchemaValidator::try_from_root(
             &validated_schema(schema, schema_defs, platform_version)?,
             platform_version,
@@ -504,12 +503,8 @@ impl DocumentSchemaValidator {
         root: &Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let (schema, patterns) = ValidationSchema::build(root, platform_version)?;
-        Self::with_patterns(
-            Arc::new(schema),
-            patterns,
-            builder_generation(platform_version)?,
-        )
+        let schema = ValidationSchema::build(root, platform_version)?;
+        Self::with_patterns(Arc::new(schema), builder_generation(platform_version)?)
     }
 }
 
@@ -732,15 +727,15 @@ const VALIDATOR_KEYWORDS: [&str; 40] = [
 static CONTROL_ESCAPE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\\c[A-Za-z]").expect("a literal pattern compiles"));
 
-/// `pattern` compiled as the JSON Schema validator compiles it, `None` when it does not
-/// compile. The pinned fork's `convert_regex` replaces each ECMA control escape `\cX` with its
-/// control character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit
-/// ones, and compiles the result with the `regex` crate, which refuses look-around and
-/// backreferences. The size limit is the crate's default: the document validator compiles
-/// a contract it loaded from state with default `regex` options, and every node validates
-/// documents against a contract so loaded. Registration compiles the schema under a smaller
-/// limit, so every pattern the document schema reaches directly also compiles here; one a
-/// `$ref` target holds is compiled only when a document reaches it, under the default.
+/// `pattern` compiled as the JSON Schema validator compiles it, and as the native validator
+/// compiles it the first time a value reaches it, `None` when it does not compile. The pinned
+/// fork's `convert_regex` replaces each ECMA control escape `\cX` with its control character,
+/// rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit ones, and compiles
+/// the result with the `regex` crate, which refuses look-around and backreferences. The size
+/// limit is the crate's default: the document validator compiles a contract it loaded from
+/// state with default `regex` options, and every node validates documents against a contract
+/// so loaded.
+#[cfg(test)]
 fn validator_regex(pattern: &str) -> Option<regex::Regex> {
     validator_regex_within(pattern, None)
 }
@@ -752,6 +747,39 @@ pub(crate) fn validator_regex_within(
     pattern: &str,
     size_limit: Option<usize>,
 ) -> Option<regex::Regex> {
+    let mut builder = regex::RegexBuilder::new(&converted_regex(pattern));
+    if let Some(size_limit) = size_limit {
+        builder.size_limit(size_limit);
+    }
+    builder.build().ok()
+}
+
+/// Whether `value` parses as the JSON Schema validator's regex dialect: its syntax alone,
+/// read without compiling it. [`converted_regex`] applies the fork's `convert_regex`
+/// rewrites, then `regex-syntax`, the parser the `regex` crate uses, parses the result to
+/// an abstract syntax tree, configured as the `regex` crate configures it by default: a nest
+/// limit of 250, no octal escapes, whitespace read as written, and no empty `{,n}` minimum.
+/// Every pattern the crate compiles parses so, since compiling starts with this parse.
+/// Reading the syntax alone, without the compiler's later translation of the tree, accepts a
+/// few values the compiler does not, such as an unknown Unicode property name (`\p{Foobar}`):
+/// a well-formed pattern the engine holds no character class for.
+pub(crate) fn validator_regex_parses(value: &str) -> bool {
+    regex_syntax::ast::parse::ParserBuilder::new()
+        .nest_limit(250)
+        .octal(false)
+        .ignore_whitespace(false)
+        .empty_min_range(false)
+        .build()
+        .parse(&converted_regex(value))
+        .is_ok()
+}
+
+/// `pattern` with the JSON Schema validator's `convert_regex` rewrites applied, ready for
+/// the `regex` crate to compile or its parser to read: each ECMA control escape `\cX`
+/// replaced with its control character, and the classes `\d`, `\D`, `\w`, `\W`, `\s` and
+/// `\S` rewritten as explicit ones. The `regex` crate refuses look-around and
+/// backreferences in what it reads.
+fn converted_regex(pattern: &str) -> String {
     let controlled = CONTROL_ESCAPE.replace_all(pattern, |captures: &regex::Captures| {
         // The escape's letter, an ASCII one, uppercased is at least `A` (65)
         captures
@@ -786,9 +814,5 @@ pub(crate) fn validator_regex_within(
             None => converted.push(current),
         }
     }
-    let mut builder = regex::RegexBuilder::new(&converted);
-    if let Some(size_limit) = size_limit {
-        builder.size_limit(size_limit);
-    }
-    builder.build().ok()
+    converted
 }

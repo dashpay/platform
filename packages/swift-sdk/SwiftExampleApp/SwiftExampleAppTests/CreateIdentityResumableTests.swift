@@ -419,7 +419,7 @@ final class CreateIdentityResumableTests: XCTestCase {
             identityIndex: 1,
             fundingKind: .shieldedPool
         ) {
-            throw PlatformWalletError.shieldedBroadcastFailed("rejected on merits")
+            throw PlatformWalletError.shieldedBroadcastFailed("no node address to send to")
         }
         for _ in 0..<200 {
             if case .failed = failing.phase { break }

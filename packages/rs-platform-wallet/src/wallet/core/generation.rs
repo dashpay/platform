@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dashcore::{OutPoint, Transaction};
-use tokio::sync::{OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
+use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 use super::balance::WalletBalance;
 
@@ -425,6 +425,15 @@ impl WalletGeneration {
     /// total, so the two locks cannot deadlock.
     pub async fn payment_guard(&self) -> RwLockReadGuard<'_, ()> {
         self.lifecycle.read().await
+    }
+
+    /// [`Self::payment_guard`], owned: for an operation that takes the gate in
+    /// a callback and holds it past the call, as a contact request send takes
+    /// it once the host's signature returns and holds it through the
+    /// broadcast and its bookkeeping. The same lock ordering and reentrancy
+    /// rules apply.
+    pub(crate) async fn payment_guard_owned(&self) -> OwnedRwLockReadGuard<()> {
+        Arc::clone(&self.lifecycle).read_owned().await
     }
 
     /// Enter this generation's lifecycle gate as a *teardown*.
