@@ -7548,7 +7548,6 @@ dependencies = [
  "dpp",
  "drive",
  "grovedb-bincode",
- "hex",
  "platform-version",
  "rand 0.8.6",
  "simple-signer",
