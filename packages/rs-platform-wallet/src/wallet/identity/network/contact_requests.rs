@@ -1190,7 +1190,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 account_reference,
                 account_label,
                 auto_accept_proof,
-                shielded_address,
+                shielded_address: shielded_address.as_ref().map(|derived| derived.address),
                 shared_secret,
                 expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,
@@ -1218,6 +1218,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let SignedContactRequest {
             state_transition, ..
         } = signed;
+        // The last step before the request leaves the wallet, under the gate the
+        // signature took: its shielded address was derived from the key the account
+        // is still bound to, or nothing is broadcast and the send can be made again. A check,
+        // not a fence: a re-key that completes before it is caught; one that completes
+        // between it and the node accepting the request is not, as that window is the
+        // broadcast itself.
+        if let Some(shielded_address) = &shielded_address {
+            self.check_contact_shielded_address(shielded_address)
+                .await?;
+        }
         let delivery = Box::pin(broadcast_tracking_delivery(&self.sdk, &state_transition)).await;
         let confirmed = match delivery {
             BroadcastDelivery::NeverDelivered(error) => {

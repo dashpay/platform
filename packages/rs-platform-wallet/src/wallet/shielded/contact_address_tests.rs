@@ -158,6 +158,7 @@ async fn address_for<C: ContactCryptoProvider + Sync>(
         .contact_shielded_address(owner, &Identifier::from(to), account_reference, crypto)
         .await
         .expect("the address is derived or left out")
+        .map(|derived| derived.address)
 }
 
 /// A wallet's bound shielded viewing keys, by account.
@@ -535,7 +536,8 @@ async fn should_send_without_an_address_when_the_provider_cannot_derive_the_key(
     let derived = wallet
         .identity()
         .contact_shielded_address(&id, &Identifier::from(BOB), ACCOUNT_REFERENCE, &failing)
-        .await;
+        .await
+        .map(|derived| derived.map(|derived| derived.address));
     assert!(
         matches!(derived, Ok(None)),
         "the send goes on without an address: {derived:?}"

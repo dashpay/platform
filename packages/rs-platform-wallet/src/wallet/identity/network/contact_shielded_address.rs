@@ -50,6 +50,29 @@ struct IdentityShieldedAccount {
     account: u32,
 }
 
+/// The shielded address a contact request carries, with the viewing key it was derived
+/// from, which the send checks is still the account's bound key right before the
+/// request leaves the wallet ([`IdentityWallet::check_contact_shielded_address`]).
+pub(crate) struct ContactShieldedAddress {
+    /// The raw 43-byte Orchard payment address.
+    pub(crate) address: [u8; 43],
+    /// The account and key the address was derived from. `None` for an address the
+    /// wallet did not derive (a test's own), which the check lets through.
+    #[cfg(feature = "shielded")]
+    derived_from: Option<ContactAddressKey>,
+}
+
+/// The shielded account a contact request's address was derived from and that
+/// account's full viewing key, in its 96-byte encoding. The address is a function of
+/// that key alone, so comparing the encoding tells exactly whether the key bound now
+/// derives the same address; the encoding is a copy of bytes the key already holds,
+/// so taking it costs no derivation.
+#[cfg(feature = "shielded")]
+struct ContactAddressKey {
+    account: u32,
+    full_viewing_key: [u8; 96],
+}
+
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The shielded payment address `owner_id` gives `to_user_id` in the contact request
     /// it sends under `account_reference`, or `None` when the request goes without one.
@@ -84,7 +107,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The address is derived from the account's keys as they are bound when it is
     /// derived, never from keys read before the provider was asked. A coordinator Clear
     /// leaves those keys in memory, so an address is still given from them after one,
-    /// until the wallet is bound again.
+    /// until the wallet is bound again. The address comes back with the key it was
+    /// derived from, and the send checks, right before the request leaves the wallet,
+    /// that the account is still bound to that key
+    /// ([`Self::check_contact_shielded_address`]): a Clear and a bind with another seed
+    /// while the request is signed refuse the send rather than publish an address the
+    /// wallet no longer scans.
     ///
     /// The key is derived for the slot the identity holds when this is called, and the
     /// slot is checked again with the key as the address is derived: an identity
@@ -103,13 +131,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         to_user_id: &Identifier,
         account_reference: u32,
         crypto: &C,
-    ) -> Result<Option<[u8; 43]>, PlatformWalletError>
+    ) -> Result<Option<ContactShieldedAddress>, PlatformWalletError>
     where
         C: ContactCryptoProvider + Sync,
     {
         #[cfg(test)]
         if let Some(address) = test_hooks::given() {
-            return Ok(Some(address));
+            return Ok(Some(ContactShieldedAddress {
+                address,
+                #[cfg(feature = "shielded")]
+                derived_from: None,
+            }));
         }
         #[cfg(not(feature = "shielded"))]
         {
@@ -171,14 +203,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // taken cannot deadlock: no path takes the key map while it holds the
             // wallet manager. What this does not cover is a change after the address
             // is derived. The paragraph on the pair claim above says what keeps the
-            // identity in place from here. The keys are not held past this call: a
-            // bind with the same seed derives the same keys, and other keys reach an
-            // account only through a Clear and a bind with another seed, which leaves
-            // behind every address the wallet has given out, not this one alone.
-            // Holding the key guard through the send would also hold it across the
+            // identity in place from here. The keys are not held past this call:
+            // holding the key guard through the send would hold it across the
             // private send's payment, which reads the key map again
-            // (`derive_spend_keyset`): with a bind waiting to write in between, that
-            // second read would never be granted.
+            // (`derive_spend_keyset`), and with a bind waiting to write in between
+            // that second read would never be granted. Instead the key the address
+            // is derived from goes back with it, and the send checks it is still the
+            // account's bound key right before the request leaves
+            // (`Self::check_contact_shielded_address`).
             let Some(keys) = self
                 .contact_shielded_addresses
                 .account_keys(held.account)
@@ -218,10 +250,57 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         .to_string(),
                 ));
             }
-            Ok(Some(
-                keys.contact_address(owner, to_user_id.as_bytes(), reference)
+            Ok(Some(ContactShieldedAddress {
+                address: keys
+                    .contact_address(owner, to_user_id.as_bytes(), reference)
                     .to_raw_address_bytes(),
-            ))
+                derived_from: Some(ContactAddressKey {
+                    account: held.account,
+                    full_viewing_key: keys.to_fvk_bytes(),
+                }),
+            }))
+        }
+    }
+
+    /// `Ok(())` while the shielded account `address` was derived from is still bound to
+    /// the key it was derived from, or when the wallet did not derive it. Otherwise the
+    /// contact request is refused: nothing was sent, and it can be sent again, with the
+    /// address of the keys bound then.
+    ///
+    /// The sends call this right before the request leaves the wallet. It is a check,
+    /// not a fence: the account can be bound to other keys after it returns, while the
+    /// request is broadcast or paid for. That takes a Clear and a bind with another
+    /// seed in that window, and no lock can be held across it, as the private send's
+    /// payment reads the key map itself.
+    pub(crate) async fn check_contact_shielded_address(
+        &self,
+        address: &ContactShieldedAddress,
+    ) -> Result<(), PlatformWalletError> {
+        #[cfg(not(feature = "shielded"))]
+        {
+            let _ = address;
+            Ok(())
+        }
+        #[cfg(feature = "shielded")]
+        {
+            let Some(derived_from) = &address.derived_from else {
+                return Ok(());
+            };
+            let still_bound = self
+                .contact_shielded_addresses
+                .account_keys(derived_from.account)
+                .await
+                .is_some_and(|keys| keys.to_fvk_bytes() == derived_from.full_viewing_key);
+            if still_bound {
+                Ok(())
+            } else {
+                Err(PlatformWalletError::InvalidIdentityData(
+                    "The shielded account the contact request's address was derived from is \
+                     no longer bound to that key; nothing was sent, send the contact request \
+                     again"
+                        .to_string(),
+                ))
+            }
         }
     }
 
