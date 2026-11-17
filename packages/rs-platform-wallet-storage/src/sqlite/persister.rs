@@ -9,8 +9,8 @@ use rusqlite::{Connection, OptionalExtension};
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::recorded_history::ReplayEvidence;
 use platform_wallet::changeset::{
-    ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, ClientWalletStartState, IdentityChangeSet, PersistenceCapabilities,
+    PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence, RecordedHistory,
 };
 use platform_wallet::manager::history_replay::{
     repair_wallet_history, HistoryRepairError, HistoryRepairStore, HistoryReplay,
@@ -1803,15 +1803,13 @@ struct SqliteRepairStore<'a, 'conn> {
 }
 
 impl HistoryRepairStore for SqliteRepairStore<'_, '_> {
-    fn read_wallet(
-        &mut self,
-    ) -> Result<Option<platform_wallet::changeset::ClientWalletStartState>, PersistenceError> {
+    fn read_wallet(&mut self) -> Result<Option<ClientWalletStartState>, PersistenceError> {
         load_wallet_snapshot(self.tx, self.wallet_id, self.ctx).map(Some)
     }
 
     fn read_claims(
         &mut self,
-        _history: &mut platform_wallet::changeset::RecordedHistory,
+        _history: &mut RecordedHistory,
     ) -> Result<Vec<StoredReplayClaim>, PersistenceError> {
         history_replay::load_spent_claims(self.tx, &self.wallet_id).map_err(PersistenceError::from)
     }
