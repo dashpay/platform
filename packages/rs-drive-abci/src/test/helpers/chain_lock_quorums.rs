@@ -14,6 +14,7 @@ use dpp::bls::SecretKey;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::{BlockHash, ChainLock, QuorumHash, QuorumSigningRequestId};
 use dpp::dashcore_rpc::json::QuorumType;
+use std::num::{NonZeroU16, NonZeroU32};
 
 /// The chain lock quorum type of local networks (llmq_test): a 24 block DKG interval whose
 /// commitment is mined at offsets 10 to 18, with two quorums active.
@@ -21,8 +22,8 @@ pub fn llmq_test_chain_lock_config() -> ChainLockConfig {
     ChainLockConfig {
         quorum_type: QuorumType::LlmqTest,
         quorum_size: 3,
-        quorum_window: 24,
-        quorum_active_signers: 2,
+        quorum_window: NonZeroU32::new(24).unwrap(),
+        quorum_active_signers: NonZeroU16::new(2).unwrap(),
         quorum_rotation: false,
     }
 }
@@ -67,11 +68,11 @@ pub fn quorums(members: &[&TestQuorum]) -> Quorums<VerificationQuorum> {
 
 /// The DIP8 request id of a chain lock at `height`
 pub fn chain_lock_request_id(height: u32) -> QuorumSigningRequestId {
-    let mut engine = QuorumSigningRequestId::engine();
+    let mut engine = sha256d::Hash::engine();
     engine.input(&[5u8]);
     engine.input(b"clsig");
     engine.input(height.to_le_bytes().as_slice());
-    QuorumSigningRequestId::from_engine(engine)
+    QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine))
 }
 
 /// The member of `active_at_signing_height` that Dash Core signs a llmq_test chain lock at

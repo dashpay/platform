@@ -135,7 +135,11 @@ is removed normally, so a not-yet-drained expired bucket never carries
 dangling references. Every check is deterministic — it reads consensus
 state plus the carried `$createdAt` and block time. Writes never target
 expired windows, so an update of a fully expired document simply leaves
-it without entries under the TTL'd index.
+it without entries under the TTL'd index. The same holds for an insert
+from protocol version 15: a created document's timestamp is the block's,
+but the winner of a contest is inserted when the contest ends with the
+`$createdAt` it was submitted with, and gets no entry in a window that
+has expired by then (under protocol version 14 it is written into it).
 An index-only window declaring `outlivesDelete` is not touched by a user
 delete at all: its entries stay until this cleanup drops their bucket, and
 the delete carries no `$createdAt` when only such windows involve it (see
@@ -186,8 +190,8 @@ indexOnly contract must retain a timestamp-independent proof index, which
 still has to prove the row's membership after all its TTL entries drain.
 
 The flat-drop path-reuse contract (never re-create a dropped path before
-its record drains) holds by construction: bucket paths embed their
-window start, and writes never target expired windows. The host side:
+its record drains) holds because bucket paths embed their window start,
+and writes never target expired windows. The host side:
 drive-abci calls `flush_pending_prefix_drops` after committing each
 block's transaction and once at startup, completing reclamation a crash
 may have interrupted.

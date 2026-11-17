@@ -1,4 +1,7 @@
+use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
@@ -21,7 +24,12 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 }
 
 impl TokenConfigUpdateTransitionActionStructureValidationV0 for TokenConfigUpdateTransitionAction {
-    /// The marketplace rules of the trade mode the update proposes (protocol version 15): a
+    /// First, the contract may not be read-only (`DataContractIsReadonlyError`, 40001): a token's
+    /// configuration is part of its contract, so performing the update stores the contract again,
+    /// which Drive refuses for a read-only one. An update that is not performed yet, a group
+    /// member's vote, is refused too, as the group action it opens or joins could never close.
+    ///
+    /// Then the marketplace rules of the trade mode the update proposes (protocol version 15): a
     /// `MarketplaceTradeMode` item can make a token tradeable only if the token is transferable
     /// (`NonTransferableTokenTradeableError`, 10281), the rule contract create and update apply to
     /// the configuration they carry. `transferable` is fixed at creation and no other item changes
@@ -37,6 +45,12 @@ impl TokenConfigUpdateTransitionActionStructureValidationV0 for TokenConfigUpdat
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let contract = &self.base().data_contract_fetch_info_ref().contract;
+        if contract.config().readonly() {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DataContractIsReadonlyError::new(contract.id()).into(),
+            ));
+        }
         if let TokenConfigurationChangeItem::MarketplaceTradeMode(trade_mode) =
             self.update_token_configuration_item()
         {
@@ -65,10 +79,13 @@ impl TokenConfigUpdateTransitionActionStructureValidationV0 for TokenConfigUpdat
 mod tests {
     use super::*;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::identifier::Identifier;
     use drive::drive::contract::DataContractFetchInfo;
     use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
@@ -80,9 +97,19 @@ mod tests {
 
     /// A max supply update of a token added to the DPNS contract, performed or not.
     fn max_supply_update(perform_action: bool) -> TokenConfigUpdateTransitionAction {
+        max_supply_update_on_contract(perform_action, false)
+    }
+
+    /// A max supply update of a token added to the DPNS contract, performed or not, with the
+    /// contract read-only or not.
+    fn max_supply_update_on_contract(
+        perform_action: bool,
+        readonly: bool,
+    ) -> TokenConfigUpdateTransitionAction {
         let mut fetch_info = DataContractFetchInfo::dpns_contract_fixture(
             PlatformVersion::latest().protocol_version,
         );
+        fetch_info.contract.config_mut().set_readonly(readonly);
         fetch_info.contract.add_token(
             0,
             TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
@@ -138,6 +165,29 @@ mod tests {
                 BasicError::DataContractCompiledMaxSizeExceededError(error)
             )] if error.max_compiled_size() == 100
         ));
+    }
+
+    #[test]
+    fn should_refuse_an_update_on_a_readonly_contract_performed_or_not() {
+        for perform_action in [true, false] {
+            let action = max_supply_update_on_contract(perform_action, true);
+            let contract_id = action.base().data_contract_id();
+            let result = action
+                .validate_structure_v0(
+                    &mut execution_context(PlatformVersion::latest()),
+                    PlatformVersion::latest(),
+                )
+                .expect("expected the check to run");
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::StateError(StateError::DataContractIsReadonlyError(error))]
+                        if *error.data_contract_id() == contract_id
+                ),
+                "perform_action={perform_action}: {:?}",
+                result.errors
+            );
+        }
     }
 
     #[test]

@@ -9,6 +9,7 @@ use crate::data_contract::document_type::action_fees::agreement::DocumentActionF
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::TokenContractPosition;
+use crate::decision_proposal::is_decision_proposal;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
 use crate::fee::Credits;
@@ -69,7 +70,8 @@ pub struct StateTransitionCreationOptions {
     /// fees, but nothing into the contest. The identity must hold what it states, because the
     /// balance check made before the contest is counted is against it. `None` keeps the fund
     /// the create is built with, the contest's fund, what joining a contest holding fewer than
-    /// 250 contenders costs. A create that joins no contest ignores it.
+    /// 250 contenders costs. A create that joins no contest ignores it, a decision proposal's
+    /// included: its fund is fixed.
     pub contest_fund: Option<Credits>,
 }
 
@@ -121,11 +123,19 @@ impl StateTransitionCreationOptions {
     }
 
     /// `transition` stating the options' contest fund as the most it pays into its contest, if
-    /// they name one and it is a contested create.
+    /// they name one and it is a contested create. A decision proposal's create also states a
+    /// fund, the decision proposal fund, which consensus requires exactly: it keeps it.
     pub fn apply_contest_fund(&self, mut transition: DocumentTransition) -> DocumentTransition {
-        if let (Some(contest_fund), DocumentTransition::Create(create)) =
-            (self.contest_fund, &mut transition)
-        {
+        let Some(contest_fund) = self.contest_fund else {
+            return transition;
+        };
+        if is_decision_proposal(
+            &transition.data_contract_id(),
+            transition.document_type_name(),
+        ) {
+            return transition;
+        }
+        if let DocumentTransition::Create(create) = &mut transition {
             if let Some((_, stated)) = create.prefunded_voting_balances_mut() {
                 *stated = contest_fund;
             }
@@ -283,6 +293,62 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_document_erase_transition_from_document<S: Signer<IdentityPublicKey>>(
+        document: Document,
+        document_type: DocumentTypeRef<'_>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            0 => Ok(
+                BatchTransitionV0::new_document_erase_transition_from_document(
+                    document,
+                    document_type,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            1 => Ok(
+                BatchTransitionV1::new_document_erase_transition_from_document(
+                    document,
+                    document_type,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_document_erase_transition_from_document"
+                    .to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     async fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef<'_>,
@@ -1628,6 +1694,11 @@ mod action_fee_agreement_option_tests {
 #[cfg(test)]
 mod contest_fund_option_tests {
     use super::*;
+    use crate::decision_proposal::{
+        DECISION_PROPOSALS_CONTRACT_ID, DECISION_PROPOSAL_FUND_NAME, PROPOSAL_DOCUMENT_TYPE_NAME,
+    };
+    use crate::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+    use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
     use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
 
     fn create(prefunded_voting_balance: Option<(String, Credits)>) -> DocumentTransition {
@@ -1670,5 +1741,27 @@ mod contest_fund_option_tests {
             None,
             "a create that joins no contest ignores it"
         );
+    }
+
+    /// A decision proposal's create states the decision proposal fund, which consensus
+    /// requires exactly: a contest fund in the options leaves it as it is.
+    #[test]
+    fn should_keep_the_fund_of_a_decision_proposal_create() {
+        let options = StateTransitionCreationOptions {
+            contest_fund: Some(7),
+            ..Default::default()
+        };
+        let mut proposal = create(Some((DECISION_PROPOSAL_FUND_NAME.to_string(), 50)));
+        let DocumentTransition::Create(create_transition) = &mut proposal else {
+            unreachable!("built as a create");
+        };
+        create_transition
+            .base_mut()
+            .set_data_contract_id(DECISION_PROPOSALS_CONTRACT_ID);
+        create_transition
+            .base_mut()
+            .set_document_type_name(PROPOSAL_DOCUMENT_TYPE_NAME.to_string());
+
+        assert_eq!(stated(&options.apply_contest_fund(proposal)), Some(50));
     }
 }

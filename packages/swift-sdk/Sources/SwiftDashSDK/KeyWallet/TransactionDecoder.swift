@@ -53,39 +53,32 @@ public struct DecodedTransaction: Sendable, Equatable {
     }
 }
 
-/// Pure utility — decodes raw transaction bytes via `transaction_decode`
-/// (key-wallet-ffi). No wallet handle or state involved.
+/// Pure utility — decodes raw transaction bytes via
+/// `platform_wallet_transaction_decode`. No wallet handle or state involved.
 public enum TransactionDecoder {
     /// Consensus-decode raw transaction bytes.
     /// - Parameters:
     ///   - txData: Serialized transaction bytes (e.g. from persisted rows).
     ///   - network: Network used to render addresses (base58 version bytes).
     /// - Returns: The decoded transaction.
-    /// - Throws: `KeyWalletError.invalidInput` for malformed or empty bytes
+    /// - Throws: `PlatformWalletError` for malformed or empty bytes
     ///   (including trailing garbage).
     public static func decode(_ txData: Data, network: Network) throws -> DecodedTransaction {
-        var error = FFIError()
-        var outDecoded: UnsafeMutablePointer<DecodedTransactionFFI>? = nil
-        let success = txData.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Bool in
-            transaction_decode(
+        var outDecoded: UnsafeMutablePointer<PlatformWalletDecodedTransactionFFI>? = nil
+        try txData.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            try platform_wallet_transaction_decode(
                 raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                txData.count,
+                UInt(txData.count),
                 network.ffiValue,
-                &outDecoded,
-                &error
+                &outDecoded
+            ).check()
+        }
+        guard let decoded = outDecoded else {
+            throw PlatformWalletError.nullPointer(
+                "platform_wallet_transaction_decode returned a NULL result pointer"
             )
         }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard success, let decoded = outDecoded else {
-            throw KeyWalletError(ffiError: error)
-        }
-        defer { decoded_transaction_free(decoded) }
+        defer { platform_wallet_decoded_transaction_free(decoded) }
 
         var entry = decoded.pointee
         let txid = withUnsafeBytes(of: &entry.txid) { Data($0) }

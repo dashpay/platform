@@ -809,15 +809,17 @@ fn build_asset_lock_transaction(
             "faucet wallet has insufficient spendable funds: need {target} duffs, have {selected}"
         ));
     }
-    // Platform rejects an asset-lock proof whose transaction has more than
-    // `max_asset_lock_transaction_inputs` inputs. Core would still sign, mine,
-    // and chainlock such a tx, but every Platform use of its proof would be
-    // invalid — the locked output permanently unusable. Refuse before signing.
+    // Dash Core treats an asset lock with more than
+    // `max_asset_lock_transaction_inputs` inputs as non-standard
+    // (`assetlocktx-too-many-inputs`): peers do not relay it, and
+    // `sendrawtransaction` refuses it where standard transactions are required.
+    // Before protocol 15 Platform also refuses every proof of one, chain proofs
+    // included. Refuse before signing.
     if inputs.len() > max_inputs as usize {
         return Err(format!(
-            "funding this amount needs {} inputs, but Platform's asset-lock cap is {} \
-             (max_asset_lock_transaction_inputs); the lock would be unusable. Consolidate the \
-             faucet wallet into fewer, larger UTXOs or lock a smaller amount",
+            "funding this amount needs {} inputs, but the asset-lock input cap is {} \
+             (max_asset_lock_transaction_inputs; Dash Core does not relay a larger asset lock). \
+             Consolidate the faucet wallet into fewer, larger UTXOs or lock a smaller amount",
             inputs.len(),
             max_inputs
         ));

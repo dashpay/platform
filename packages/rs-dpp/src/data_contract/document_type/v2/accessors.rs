@@ -8,6 +8,7 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::{
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -225,6 +226,9 @@ impl DocumentTypeV1Getters for DocumentTypeV2 {
 }
 
 impl DocumentTypeV2Getters for DocumentTypeV2 {
+    fn documents_can_be_erased(&self) -> bool {
+        self.documents_can_be_erased
+    }
     fn documents_countable(&self) -> bool {
         self.documents_countable || self.range_countable
     }
@@ -284,6 +288,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn documents_ttl_seconds(&self) -> Option<u32> {
         self.documents_ttl_seconds
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        self.private_document
     }
 
     fn documents_can_disappear(&self) -> bool {

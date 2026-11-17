@@ -25,6 +25,7 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
+use dpp::document::Document;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
@@ -40,6 +41,8 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+
+mod document_history;
 
 /// A verifier double that exposes the table supplied by the SDK without
 /// interpreting proof bytes. Signature acceptance is tested separately using
@@ -107,7 +110,7 @@ fn recorded_response(signed: u32) -> (GetEpochsInfoRequest, GetEpochsInfoRespons
     (request, response)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum ProofPath {
     Network,
     Mock,
@@ -166,6 +169,33 @@ async fn observed_table(
 }
 
 struct NoKeys;
+
+#[tokio::test]
+async fn should_start_an_unpinned_devnet_at_14_and_learn_15_from_a_response() {
+    let sdk = SdkBuilder::new_mock()
+        .with_network(Network::Devnet)
+        .with_context_provider(NoKeys)
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(2)
+        .build()
+        .expect("devnet SDK");
+    assert_eq!(sdk.protocol_version_number(), 14);
+    assert!(!sdk.version_pinned);
+    for (signed, expected) in [(14, 14), (15, 15), (14, 15)] {
+        let (request, response) = recorded_response(signed);
+        let (observed, _, _) = sdk
+            .parse_proof_with_metadata_and_proof::<GetEpochsInfoRequest, ObservedTable>(
+                request,
+                response,
+                "get_epochs_info",
+            )
+            .await
+            .expect("verifier double");
+        assert_eq!(observed.expect("observed table").0, expected);
+        assert_eq!(sdk.protocol_version_number(), expected);
+    }
+}
 
 impl ContextProvider for NoKeys {
     fn get_data_contract(
@@ -933,6 +963,14 @@ fn signed_document_answer() -> GetDocumentsResponse {
         .unwrap()
 }
 
+/// [`signed_document_answer`] over a state holding two documents.
+fn signed_two_document_answer() -> GetDocumentsResponse {
+    GetDocumentsResponse::decode(
+        document_outcome_vector("pv14-two-documents-response.bin").as_slice(),
+    )
+    .unwrap()
+}
+
 /// A time tolerance that keeps both the recorded [`signed_document_answer`] and a current
 /// answer fresh.
 fn tolerance_admitting_the_signed_answer() -> u64 {
@@ -946,10 +984,23 @@ async fn verify_document_answer(
     path: ProofPath,
     response: GetDocumentsResponse,
 ) -> Result<Option<Documents>, Error> {
+    verify_document_answer_as::<Documents>(sdk, path, response).await
+}
+
+/// Ask `sdk` to verify `response` to [`preorder_query`] on `path`, as the result view `O`.
+async fn verify_document_answer_as<O>(
+    sdk: &Sdk,
+    path: ProofPath,
+    response: GetDocumentsResponse,
+) -> Result<Option<O>, Error>
+where
+    O: FromProof<DocumentQuery, Request = DocumentQuery, Response = GetDocumentsResponse>
+        + MockResponse,
+{
     let query = preorder_query();
     match path {
         ProofPath::Network => {
-            sdk.verify_fetching_quorum_key::<DocumentQuery, Documents>(
+            sdk.verify_fetching_quorum_key::<DocumentQuery, O>(
                 query,
                 response,
                 &DocumentOutcomeProvider::new(14),
@@ -958,7 +1009,7 @@ async fn verify_document_answer(
             .await
         }
         ProofPath::Mock => {
-            sdk.parse_proof_with_metadata_and_proof::<DocumentQuery, Documents>(
+            sdk.parse_proof_with_metadata_and_proof::<DocumentQuery, O>(
                 query,
                 response,
                 "get_documents",
@@ -989,6 +1040,20 @@ async fn fetch_documents_from(
     path: ProofPath,
     answers: Vec<GetDocumentsResponse>,
 ) -> (Result<Option<Documents>, Error>, Vec<usize>, Vec<usize>) {
+    fetch_documents_as_from::<Documents>(sdk, path, answers).await
+}
+
+/// [`fetch_documents_from`], fetching the result view `O`.
+async fn fetch_documents_as_from<O>(
+    sdk: &mut Sdk,
+    path: ProofPath,
+    answers: Vec<GetDocumentsResponse>,
+) -> (Result<Option<O>, Error>, Vec<usize>, Vec<usize>)
+where
+    O: FromProof<DocumentQuery, Request = DocumentQuery, Response = GetDocumentsResponse>
+        + MockResponse
+        + Send,
+{
     let nodes: Vec<Address> = (0..answers.len())
         .map(|node| format!("http://127.0.0.1:{}", 3000 + node).parse().unwrap())
         .collect();
@@ -1020,7 +1085,7 @@ async fn fetch_documents_from(
         asked.lock().unwrap().push(node);
         let answer = answers[node].clone();
         async move {
-            verify_document_answer(sdk, path, answer)
+            verify_document_answer_as::<O>(sdk, path, answer)
                 .await
                 .map(|documents| ExecutionResponse {
                     inner: documents,
@@ -1028,6 +1093,7 @@ async fn fetch_documents_from(
                     retries: 0,
                 })
                 .map_err(|inner| ExecutionError {
+                    possibly_accepted: false,
                     inner,
                     address: Some(address),
                     retries: 0,
@@ -1091,6 +1157,69 @@ async fn should_retry_document_answers_signed_below_a_version_the_network_has_sh
             Error::Proof(ProofError::ProofProtocolVersionMismatch { .. })
         ));
         assert_eq!(learned_state(&sdk), learned);
+    }
+}
+
+/// A single-document fetch whose query matches several documents gets the same verified
+/// answer from every honest node. It fails at once as the caller's request to change,
+/// instead of moving to the next node and banning each one for an answer no node can give.
+#[tokio::test]
+async fn should_fail_a_single_document_fetch_matching_several_without_banning_its_node() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        let mut sdk = document_sdk(14, false, Some(tolerance_admitting_the_signed_answer()));
+        let (result, asked, bans) = fetch_documents_as_from::<Document>(
+            &mut sdk,
+            path,
+            vec![signed_two_document_answer(), signed_two_document_answer()],
+        )
+        .await;
+        let error = result.expect_err("two documents are not one");
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("matched 2")),
+            "{path:?}: {error:?}"
+        );
+        assert_eq!(asked, [0], "{path:?}: no other node is asked");
+        assert_eq!(bans, [0, 0], "{path:?}: no node is banned");
+
+        let mut sdk = document_sdk(14, false, Some(tolerance_admitting_the_signed_answer()));
+        let (result, asked, bans) = fetch_documents_as_from::<Document>(
+            &mut sdk,
+            path,
+            vec![signed_document_answer(), signed_document_answer()],
+        )
+        .await;
+        assert!(
+            result.expect("one document is a document").is_some(),
+            "{path:?}"
+        );
+        assert_eq!((asked, bans), (vec![0], vec![0, 0]), "{path:?}");
+    }
+}
+
+/// A verified result no node can return as the requested type ends the request only when
+/// its answer is fresh. A node far behind the network, or one replaying an old signed
+/// answer, may prove a state that has changed since: its answer fails as stale, so the
+/// request moves to another node and this one is banned.
+#[tokio::test]
+async fn should_fail_a_stale_verified_answer_as_stale_even_when_its_result_is_unusable() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        let sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(DocumentOutcomeProvider::new(14))
+            .with_time_tolerance(Some(tolerance_admitting_the_signed_answer()))
+            .with_height_tolerance(Some(1))
+            .with_trusted_initial_height(100)
+            .with_initial_version(PlatformVersion::get(14).unwrap())
+            .build()
+            .unwrap();
+        let error = verify_document_answer_as::<Document>(&sdk, path, signed_two_document_answer())
+            .await
+            .expect_err("the answer is from far below the SDK's height");
+        assert!(
+            matches!(error, Error::StaleNode(StaleNodeError::Height { .. })),
+            "{path:?}: {error:?}"
+        );
+        assert!(error.can_retry(), "{path:?}");
     }
 }
 

@@ -1,6 +1,5 @@
 //! Pooled Core-to-shielded Max with a stable, per-operation recovery identity.
 
-use dashcore::hashes::Hash;
 use dpp::address_funds::OrchardAddress;
 use platform_wallet::wallet::asset_lock::{
     AssetLockFunding, AssetLockOperationContext, AssetLockOperationSnapshot,
@@ -14,12 +13,10 @@ use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
-use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::Handle;
 use crate::runtime::block_on_worker;
-use crate::shielded_send::{
-    catch_funding_panic, catch_panic_to_code, resolve_wallet_and_coordinator,
-};
+use crate::shielded_send::{catch_funding_panic, resolve_wallet_and_coordinator};
 
 use std::sync::Arc;
 
@@ -240,6 +237,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                         None,
                         0,
                         None,
+                        None,
+                        // No built-lock observer: the caller persisted the
+                        // operation UUID before this call, the lock's row
+                        // carries it, and `out_outcome` reports the outpoint.
                         None,
                     )
                     .await

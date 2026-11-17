@@ -202,7 +202,6 @@ fn insert_like(
             apply,
             None,
             platform_version(),
-            None,
         )
         .expect("expected to insert the like")
 }
@@ -224,7 +223,6 @@ fn delete_like(
             apply,
             None,
             platform_version(),
-            None,
         )
         .expect("expected to delete the like")
 }
@@ -462,7 +460,6 @@ pub(super) fn insert_document(
         apply,
         None,
         platform_version,
-        None,
     )
 }
 
@@ -486,7 +483,6 @@ pub(super) fn replace_document(
         StorageFlags::optional_default_as_cow(),
         None,
         platform_version,
-        None,
     )
 }
 
@@ -549,7 +545,6 @@ pub(super) fn delete_document(drive: &Drive, contract: &DataContract, doctype: &
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("expected to delete the document");
 }

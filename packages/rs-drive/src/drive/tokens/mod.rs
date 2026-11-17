@@ -55,6 +55,11 @@ pub mod unfreeze;
 #[cfg(feature = "server")]
 pub mod calculate_total_tokens_balance;
 
+/// The escrow of the token marketplace (protocol version 15): the tokens open listings hold and
+/// the credits open offers hold.
+#[cfg(feature = "server")]
+pub mod order_escrow;
+
 mod contract_info;
 mod direct_purchase;
 /// Distribution module

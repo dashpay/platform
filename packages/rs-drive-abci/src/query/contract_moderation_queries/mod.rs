@@ -540,7 +540,6 @@ pub(super) mod tests {
                 &BlockInfo::default(),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected to record the proposal");
     }

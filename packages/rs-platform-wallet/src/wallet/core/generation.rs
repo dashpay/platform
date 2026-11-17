@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dashcore::{OutPoint, Transaction};
-use tokio::sync::{OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
+use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 use super::balance::WalletBalance;
 
@@ -427,6 +427,15 @@ impl WalletGeneration {
         self.lifecycle.read().await
     }
 
+    /// [`Self::payment_guard`], owned: for an operation that takes the gate in
+    /// a callback and holds it past the call, as a contact request send takes
+    /// it once the host's signature returns and holds it through the
+    /// broadcast and its bookkeeping. The same lock ordering and reentrancy
+    /// rules apply.
+    pub(crate) async fn payment_guard_owned(&self) -> OwnedRwLockReadGuard<()> {
+        Arc::clone(&self.lifecycle).read_owned().await
+    }
+
     /// Enter this generation's lifecycle gate as a *teardown*.
     ///
     /// Exclusive against every payment operation on this generation. Removal
@@ -833,6 +842,14 @@ pub(crate) struct InBroadcastPin {
 }
 
 impl InBroadcastPin {
+    /// Whether this pin was taken on `generation`. A cleanup that re-acquires
+    /// the manager guard after the build's own guard ended checks it before
+    /// touching wallet state: the wallet may since have been removed and
+    /// re-created from the same seed as a new generation.
+    pub(crate) fn is_on(&self, generation: &Arc<WalletGeneration>) -> bool {
+        Arc::ptr_eq(&self.generation, generation)
+    }
+
     /// End the dispatching phase and open the pending-spend fence, which then
     /// waits for [`WalletGeneration::observe_spent`] and for nothing else — it
     /// carries no deadline.

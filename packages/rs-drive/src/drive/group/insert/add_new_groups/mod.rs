@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
@@ -9,9 +10,8 @@ use dpp::version::PlatformVersion;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::prelude::Identifier;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::{BTreeMap, HashMap};
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 mod v0;
 
@@ -75,9 +75,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         groups: &BTreeMap<GroupContractPosition, Group>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

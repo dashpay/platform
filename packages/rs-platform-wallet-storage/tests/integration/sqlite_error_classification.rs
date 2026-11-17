@@ -11,7 +11,6 @@
 
 use std::path::PathBuf;
 
-use dashcore::hashes::Hash;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
@@ -213,6 +212,19 @@ fn samples() -> Vec<WalletStorageError> {
             blob_txid: "22".repeat(32),
             typed_height: Some(100),
             blob_height: Some(101),
+        },
+        WalletStorageError::TransactionBodyConflict {
+            wallet_id: [0x33; 32],
+            txid: dashcore::Txid::from_byte_array([0x44; 32]),
+        },
+        WalletStorageError::UnknownWalletNetwork {
+            wallet_id: [0x33; 32],
+            label: "moonnet".into(),
+        },
+        WalletStorageError::NetAmountOverflow {
+            wallet_id: [0x33; 32],
+            txid: dashcore::Txid::from_byte_array([0x44; 32]),
+            value: i128::from(u64::MAX) * 2,
         },
         WalletStorageError::BlobTooLarge {
             len_bytes: 32 * 1024 * 1024,
@@ -437,6 +449,11 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::CoreTransactionEntryMismatch { .. } => {
                 (false, "core_transaction_entry_mismatch")
             }
+            WalletStorageError::TransactionBodyConflict { .. } => {
+                (false, "transaction_body_conflict")
+            }
+            WalletStorageError::UnknownWalletNetwork { .. } => (false, "unknown_wallet_network"),
+            WalletStorageError::NetAmountOverflow { .. } => (false, "net_amount_overflow"),
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),

@@ -13,6 +13,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
@@ -95,6 +96,8 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?
     pub(in crate::data_contract) documents_can_be_deleted: bool,
+    /// Whether a deleted document's retained revisions may be erased.
+    pub(in crate::data_contract) documents_can_be_erased: bool,
     /// Whether the documents of this type leave state only when a `refersTo` with
     /// `consume` deletes them (`canBeDeleted: "onlyWhenConsumed"`, protocol version 14).
     /// Only ever `true` beside a `false` `documents_can_be_deleted`: the owner can not
@@ -264,6 +267,13 @@ pub struct DocumentTypeV2 {
     /// it writes or removes index entries. Empty on document types that declare
     /// none and on those that predate them.
     pub(in crate::data_contract) derived_index_properties: BTreeMap<String, DerivedIndexProperty>,
+    /// What the `private` keyword (protocol version 15) declares: the type's documents are
+    /// fixed-size encrypted entries an anonymous shielded transition appends, and the chain
+    /// never reads one. The parser (`apply_private_document`) holds such a type to the
+    /// keywords a private type may declare: no index, no history, no transfer or trade, no
+    /// cost, rule or reference, and documents neither mutable nor deletable. `None` on every
+    /// other type and on every contract that predates the keyword.
+    pub(in crate::data_contract) private_document: Option<PrivateDocumentConfig>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {
@@ -356,6 +366,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_can_be_erased: false,
             documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
@@ -388,6 +399,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
+            private_document: None,
         }
     }
 }
@@ -419,6 +431,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_can_be_erased: false,
             documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
@@ -451,6 +464,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
+            private_document: None,
         }
     }
 }

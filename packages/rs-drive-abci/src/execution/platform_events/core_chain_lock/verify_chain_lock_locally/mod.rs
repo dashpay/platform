@@ -33,11 +33,11 @@ where
     ///   Platform holds exactly the quorums active at the signing height; version 0 also returns
     ///   it when Platform might not hold the quorum the chain lock was signed with
     /// * `Ok(None)` - Platform cannot tell on its own, so Core has to decide. Nothing about the
-    ///   signature is known yet: `verify_chain_lock_through_core` has to check it
+    ///   signature is known yet: `verify_chain_lock_through_core` has to check it. This is also
+    ///   the answer when Platform holds no quorum to verify against
     /// * `Err(Error::BLSError)` - The signature could not be deserialized
-    /// * `Err(Error::Execution)` - An unknown method version, no quorums to verify against, or
-    ///   from version 1 a platform version without DKG mining schedules or with a schedule whose
-    ///   interval is 0
+    /// * `Err(Error::Execution)` - An unknown method version, or from version 1 a platform
+    ///   version without DKG mining schedules or with a schedule whose interval is 0
     pub fn verify_chain_lock_locally(
         &self,
         round: u32,
@@ -359,5 +359,54 @@ mod tests {
             rejected_by_v1 > 0,
             "the histories must reach version 1's local rejections"
         );
+    }
+
+    #[test]
+    fn should_leave_chain_lock_to_core_without_overflowing_when_quorum_window_ends_past_largest_core_height(
+    ) {
+        let platform = chain_lock_test_platform();
+        let a = TestQuorum::new(1, 0);
+        let b = TestQuorum::new(2, 0);
+        let base = platform.platform.state.load();
+        let verify = |core_height: u32, height: u32, platform_version: &PlatformVersion| {
+            let state = state_with_chain_lock_quorums(
+                &base,
+                llmq_test_chain_lock_config(),
+                core_height,
+                quorums(&[&a, &b]),
+                vec![],
+            );
+            let chain_lock = sign_chain_lock(core_signer(&[&a, &b], height), height);
+            platform
+                .platform
+                .verify_chain_lock_locally(0, &state, &chain_lock, platform_version)
+                .expect("verification runs")
+        };
+
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol version 13 exists"),
+            PlatformVersion::get(14).expect("protocol version 14 exists"),
+            PlatformVersion::latest(),
+        ] {
+            let protocol_version = platform_version.protocol_version;
+
+            // The quorums verify their chain locks locally while their window ends below u32::MAX
+            assert_eq!(
+                verify(1106, 1110, platform_version),
+                Some(true),
+                "protocol version {protocol_version}"
+            );
+
+            // The 24 block window holding core height u32::MAX - 5 would end past u32::MAX.
+            // Release builds have always wrapped its last block to 7, below any verification
+            // height near the core height, so the chain lock is left to Core; that must stay so,
+            // and must not overflow in builds that check arithmetic.
+            let core_height = u32::MAX - 5;
+            assert_eq!(
+                verify(core_height, core_height + 3, platform_version),
+                None,
+                "protocol version {protocol_version}"
+            );
+        }
     }
 }

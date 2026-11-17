@@ -2473,7 +2473,6 @@ mod tests {
     fn rehydration_utxos_without_funds_account_errors() {
         use dashcore::address::Payload;
         use dashcore::blockdata::transaction::txout::TxOut;
-        use dashcore::hashes::Hash;
         use dashcore::{OutPoint, PubkeyHash, Txid};
         use key_wallet::account::AccountType;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2591,7 +2590,6 @@ mod tests {
     #[test]
     fn rehydration_restores_last_applied_chain_lock() {
         use dashcore::ephemerealdata::chain_lock::ChainLock;
-        use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 

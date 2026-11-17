@@ -11,8 +11,6 @@ use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 #[cfg(feature = "core-types-serialization")]
 use bincode::Encode;
-#[cfg(feature = "core-types-serialization")]
-use dashcore::hashes::Hash;
 
 /// A validator in the context of a quorum
 #[derive(Clone, Eq, PartialEq)]

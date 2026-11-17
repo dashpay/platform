@@ -18,6 +18,7 @@ mod index;
 mod nested;
 mod property;
 mod rules;
+mod storage;
 mod validation_schema;
 
 use crate::data_contract::config::moderation::SettledDeletionRule;
@@ -41,6 +42,7 @@ use property::{properties_from_stored, stored_properties, StoredProperties};
 use rules::StoredRule;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use storage::StoredDocumentStorage;
 use validation_schema::StoredValidation;
 
 #[cfg(feature = "validation")]
@@ -58,6 +60,36 @@ use crate::data_contract::errors::DataContractError;
 /// The error of a stored document type that does not read back.
 fn stored_error(message: String) -> ProtocolError {
     ProtocolError::CorruptedSerialization(format!("stored document type: {message}"))
+}
+
+/// Deletion policy encoded where earlier compiled types stored a boolean. The first two
+/// variants preserve the boolean's bytes; only erasable history uses the third variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+enum StoredDeletion {
+    NotDeletable,
+    Deletable,
+    DeletableAndErasable,
+}
+
+impl StoredDeletion {
+    fn of(deletable: bool, erasable: bool) -> Result<Self, ProtocolError> {
+        match (deletable, erasable) {
+            (false, false) => Ok(Self::NotDeletable),
+            (true, false) => Ok(Self::Deletable),
+            (true, true) => Ok(Self::DeletableAndErasable),
+            (false, true) => Err(stored_error("erasable type cannot be deleted".to_string())),
+        }
+    }
+    fn into_parts(self, keeps_history: bool) -> Result<(bool, bool), ProtocolError> {
+        match self {
+            Self::NotDeletable => Ok((false, false)),
+            Self::Deletable => Ok((true, false)),
+            Self::DeletableAndErasable if keeps_history => Ok((true, true)),
+            Self::DeletableAndErasable => {
+                Err(stored_error("erasable type keeps no history".to_string()))
+            }
+        }
+    }
 }
 
 /// A document type compiled, generation 0.
@@ -83,7 +115,7 @@ pub struct DocumentTypeInSerializationFormatV0 {
     documents_keep_purchase_history: bool,
     documents_keep_pricing_history: bool,
     documents_mutable: bool,
-    documents_can_be_deleted: bool,
+    documents_can_be_deleted: StoredDeletion,
     documents_deleted_only_when_consumed: bool,
     documents_transferable: StoredTransferable,
     trade_mode: StoredTradeMode,
@@ -96,7 +128,7 @@ pub struct DocumentTypeInSerializationFormatV0 {
     range_countable: bool,
     documents_summable: Option<String>,
     range_summable: bool,
-    index_only: bool,
+    storage: StoredDocumentStorage,
     action_fees: Option<StoredActionFees>,
     documents_can_be_deleted_by_moderators: bool,
     documents_can_be_deleted_by_moderators_for: Option<u32>,
@@ -175,6 +207,7 @@ impl DocumentTypeInSerializationFormatV0 {
             documents_keep_pricing_history,
             documents_mutable,
             documents_can_be_deleted,
+            documents_can_be_erased,
             documents_deleted_only_when_consumed,
             documents_transferable,
             trade_mode,
@@ -205,6 +238,7 @@ impl DocumentTypeInSerializationFormatV0 {
             delete_constraints,
             documents_ttl_seconds,
             derived_index_properties,
+            private_document,
         } = document_type.as_ref();
         Ok(DocumentTypeInSerializationFormatV0 {
             properties: stored_properties(properties),
@@ -227,7 +261,10 @@ impl DocumentTypeInSerializationFormatV0 {
             documents_keep_purchase_history: *documents_keep_purchase_history,
             documents_keep_pricing_history: *documents_keep_pricing_history,
             documents_mutable: *documents_mutable,
-            documents_can_be_deleted: *documents_can_be_deleted,
+            documents_can_be_deleted: StoredDeletion::of(
+                *documents_can_be_deleted,
+                *documents_can_be_erased,
+            )?,
             documents_deleted_only_when_consumed: *documents_deleted_only_when_consumed,
             documents_transferable: (*documents_transferable).into(),
             trade_mode: (*trade_mode).into(),
@@ -240,7 +277,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable: *range_countable,
             documents_summable: documents_summable.clone(),
             range_summable: *range_summable,
-            index_only: *index_only,
+            storage: StoredDocumentStorage::of(*index_only, *private_document)?,
             action_fees: action_fees.as_ref().map(StoredActionFees::from),
             documents_can_be_deleted_by_moderators: *documents_can_be_deleted_by_moderators,
             documents_can_be_deleted_by_moderators_for: *documents_can_be_deleted_by_moderators_for,
@@ -342,7 +379,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable,
             documents_summable,
             range_summable,
-            index_only,
+            storage,
             action_fees,
             documents_can_be_deleted_by_moderators,
             documents_can_be_deleted_by_moderators_for,
@@ -360,12 +397,16 @@ impl DocumentTypeInSerializationFormatV0 {
             validation,
         } = self;
 
+        let (index_only, private_document) = storage.into_parts()?;
+        let (documents_can_be_deleted, documents_can_be_erased) =
+            documents_can_be_deleted.into_parts(documents_keep_history)?;
+
         let properties = properties_from_stored(properties)?;
         let flattened_properties = properties_from_stored(flattened_properties)?;
         let indices: BTreeMap<String, Index> = indices
             .into_iter()
-            .map(|(name, index)| Ok((name, Index::try_from(index)?)))
-            .collect::<Result<_, ProtocolError>>()?;
+            .map(|(name, index)| (name, Index::from(index)))
+            .collect();
         let mut index_structure = IndexLevel::try_from_indices_v0(indices.values(), name)?;
         // The levels named after a typed array fan the document out over its elements, as the
         // parse stamped them when the type was stored
@@ -431,6 +472,7 @@ impl DocumentTypeInSerializationFormatV0 {
             documents_keep_pricing_history,
             documents_mutable,
             documents_can_be_deleted,
+            documents_can_be_erased,
             documents_deleted_only_when_consumed,
             documents_transferable: documents_transferable.into(),
             trade_mode: trade_mode.into(),
@@ -464,6 +506,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .into_iter()
                 .map(|(name, derived)| Ok((name, derived.try_into()?)))
                 .collect::<Result<_, ProtocolError>>()?,
+            private_document,
         }))
     }
 }

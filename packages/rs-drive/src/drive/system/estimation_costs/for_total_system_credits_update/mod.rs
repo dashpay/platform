@@ -1,21 +1,20 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for total system credits update.
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for the total system credits update.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing the `KeyInfoPath` and `EstimatedLayerInformation`.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing the `KeyInfoPath` and `EstimatedLayerInformation`.
     ///
     /// # Returns
     /// - `Ok(())` if successful.
@@ -24,7 +23,7 @@ impl Drive {
     /// # Errors
     /// This function will return an error if the method version doesn't match any known versions.
     pub(crate) fn add_estimation_costs_for_total_system_credits_update(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version
@@ -39,9 +38,16 @@ impl Drive {
                 );
                 Ok(())
             }
+            // v1 (protocol version 15): `Misc` described with its subtrees.
+            1 => {
+                Self::add_estimation_costs_for_total_system_credits_update_v1(
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_total_system_credits_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

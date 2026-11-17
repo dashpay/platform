@@ -21,11 +21,11 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
     }
   }
 
-  emit(event, data) {
+  emit(event, ...args) {
     if (event === 'error') {
       this.errored = true;
     }
-    super.emit(event, data);
+    super.emit(event, ...args);
   }
 
   /**

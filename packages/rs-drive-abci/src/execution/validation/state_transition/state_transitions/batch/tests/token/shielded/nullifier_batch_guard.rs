@@ -24,7 +24,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -39,7 +38,7 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tests::json_document::json_document_to_json_value;
-use dpp::system_data_contracts::dashpay_contract;
+use dpp::system_data_contracts::dpns_contract;
 use dpp::validation::ConsensusValidationResult;
 use dpp::util::hash::hash_single;
 use dpp::version::DefaultForPlatformVersion;
@@ -128,7 +127,6 @@ impl FundedPool {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         if !shielded {
@@ -614,7 +612,6 @@ impl FundedPool {
                 &transaction,
                 &mut 0,
                 version,
-                &CachedEpochIndexFeeVersions::new(),
             )
             .expect("execute and charge real event");
         self.platform
@@ -734,7 +731,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "0ed48425e10d0aa37b68f4f1e52c773a667304f9b510a4151b1dbc323f350076"
+        "9401d37544da815c64abeff4aba2c939cddf246f6e56af99e220b78c98514e46"
     );
     assert_eq!(
         pool.platform
@@ -1589,16 +1586,29 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
     let mut json = json_document_to_json_value(
         "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency-burn-tokens.json").unwrap();
     json.as_object_mut().unwrap().remove("tokens");
-    json["documentSchemas"] = serde_json::json!({ "contactRequest": {
+    // A `domain` under the DPNS contract's id, so the DPNS domain create trigger runs on it.
+    // From protocol version 15 that trigger is the one left that reads state before it fails
+    // a create: it looks the parent up, and a parent that does not exist refuses the name.
+    json["documentSchemas"] = serde_json::json!({ "domain": {
         "type": "object", "documentsMutable": false, "canBeDeleted": false,
-        "properties": { "toUserId": { "type": "identifier", "position": 0 } },
-        "required": ["toUserId"], "additionalProperties": false,
+        "indices": [{ "name": "parentNameAndLabel", "properties": [
+            { "normalizedParentDomainName": "asc" }, { "normalizedLabel": "asc" }
+        ] }],
+        "properties": {
+            "normalizedLabel": { "type": "string", "maxLength": 63, "position": 0 },
+            "normalizedParentDomainName": { "type": "string", "maxLength": 63, "position": 1 },
+            "subdomainRules": { "type": "object", "position": 2,
+                "properties": { "allowSubdomains": { "type": "boolean", "position": 0 } },
+                "required": ["allowSubdomains"], "additionalProperties": false }
+        },
+        "required": ["normalizedLabel", "normalizedParentDomainName", "subdomainRules"],
+        "additionalProperties": false,
         "tokenCost": { "create": { "contractId": pool.contract.id().to_buffer(),
             "tokenPosition": 0, "amount": 10, "effect": 0 } }
     } });
     let mut contract =
         DataContract::from_json(json, true, version).expect("valid trigger/payment contract");
-    contract.set_id(dashpay_contract::ID.into());
+    contract.set_id(dpns_contract::ID.into());
     contract.set_owner_id(pool.identity.id());
     contract.set_created_at_epoch(Some(0));
     contract.set_created_at(Some(0));
@@ -1614,7 +1624,7 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    let document_type = contract.document_type_for_name("contactRequest").unwrap();
+    let document_type = contract.document_type_for_name("domain").unwrap();
     let mut rng = StdRng::seed_from_u64(70_505);
     let entropy = Bytes32::random_with_rng(&mut rng);
     let mut document = document_type
@@ -1627,7 +1637,19 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    document.set("toUserId", Value::Identifier([96; 32]));
+    // a name under a parent no domain holds, so the lookup finds nothing
+    document.set("normalizedLabel", Value::Text("alice".to_string()));
+    document.set(
+        "normalizedParentDomainName",
+        Value::Text("nowhere".to_string()),
+    );
+    document.set(
+        "subdomainRules",
+        Value::Map(vec![(
+            Value::Text("allowSubdomains".to_string()),
+            Value::Bool(false),
+        )]),
+    );
     document
         .set_id_for_creation(document_type, &entropy.0, 1, version)
         .unwrap();
@@ -1709,7 +1731,7 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
     assert_eq!(
         natural_context.operations_slice().len(),
         disabled_natural_context.operations_slice().len() + 1,
-        "the failing recipient trigger must actually perform and bill its identity lookup"
+        "the failing parent domain trigger must actually perform and bill its parent lookup"
     );
     assert_eq!(
         format!("{:?}", duplicate_context.operations_slice()),
@@ -1867,11 +1889,13 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
         );
+        // Both estimates are apply_drive_operations 2's (protocol version 15), which resolves
+        // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_217_600, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
             } else {
-                (138_024_000, 117_541_680, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2120,10 +2144,13 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
+        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
+        // incidental Debug output; keep actions, charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
-        );
+        )
+        .replace(", documents_can_be_erased: false", "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2158,39 +2185,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "5ec2378c4d9015a2b5ad8552797497e7c53f3a80b31b6491db88e43e27972060",
+                "6eec6da9023f5143a81f4ee42f3549b31ea8d7f035cf664b5ec429cc5da4d81a",
             ),
             "valid-payment" => (
-                "a1308c6fe05b0a60cfee4fa0d43f7bda5856b02f7d11f3499fd1acd866328aa3",
-                "90439b1b17e8d5a003958e2cb256f4bc47c7d08afaf3d18f0e36b668c00ac9df",
+                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
+                "0c3d3f5692aa6b658389d5b6c477f081dba505f350f65f8c3ee1f28dde3a68f2",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "cbccba78463e46aaab22351f696d704651d76095d8d09cb820d7d3d901d0b0da",
+                "53c5a1d1399e154096559ec2a9a3ba560db72f08c1f6b0cd316e87131af5d657",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "fa77338960e55ad5ce67a338127a0ae77fcae262f1a23bc237b1d9a15dcc61fa",
+                "5766cf0e494a1cae19e034a4336196c62184c699a646d71f0de5e382b6b61fc1",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "575b104c33a9a4425b3fbb58a6a6d5b3d5790ba04c84ac11f4bb432e8c58f3fd",
+                "653f494271acdedb71dc0b9e7a224cc47c84e188a6c5aeb315ff7da2f66627ec",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "8f312783271abade3cd47d38981225a72477cb7b1cd3812028d514119eca1517",
+                "c4f5e4054bfa4e85548d713765c6da605f38559e871a2824c38bc8209f3b5a17",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "5dac51fdee8bb00560d035496286d8ca5703bdffbf444d3fb82af5f2d050803c",
+                "16e25a2c4139c7b5294599a63461d1ecbba5109fcbf16e61a3578fb152ea72b2",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "45d313dd0b30e5875b4c207c272d08b23241cd8d22df976ef3abe5fab00a04d5",
+                "f49e470f2f1b5a9ca68245783952dac60d26d7b8b89c20766cc1a3ba43c5e0f5",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "a89f568a0068341804b030000219994a544a48ef5f2591085ee98820c75923cb",
+                "3d5beeb201a0a33daacce4469c0a4aec845a82e6b74d31678dfe6aec24481830",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

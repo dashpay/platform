@@ -114,6 +114,75 @@ section that lists each edited generation, the protocol versions that select
 it, and the reason consensus cannot change there. Reviewers read that section
 first.
 
+### A new input changes the signature, not the method count
+
+When the new generation of a method needs something its callers do not pass
+yet (the block, the signer, a mode), add the parameter to the method and
+update the callers. Do not add a second method beside it (`*_with_lifecycle`,
+`*_with_block`), a second operation variant beside the existing one
+(`DeleteDocumentWithLifecycle` next to `DeleteDocument`), or a wrapper that
+fabricates the missing value on the way in. One method per directory means
+one signature, the one the current generation needs.
+
+The shipped generation keeps its own signature. The dispatcher hands it the
+part of the new input it always had and drops the rest:
+
+```rust
+pub fn delete_document_for_contract_operations(
+    &self,
+    document_id: Identifier,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    block_info: &BlockInfo,          // was `block_time_ms: u64`
+    deleter_id: Option<Identifier>,  // new: whom the lifecycle record credits
+    previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+    estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    match platform_version.drive.methods.document.delete.delete_document_for_contract_operations {
+        // The shipped generation never knew a deleter; it reads the time off
+        // the block exactly as it read `block_time_ms` before.
+        0 => self.delete_document_for_contract_operations_v0(
+            document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+        1 => self.delete_document_for_contract_operations_v1(
+            document_id,
+            contract,
+            document_type,
+            block_info,
+            deleter_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        ),
+        version => Err(Error::Drive(DriveError::UnknownVersionMismatch { .. })),
+    }
+}
+```
+
+Why: a twin method is a second name for the same behaviour with the version
+decision split across two dispatchers, and callers that reach the old name
+silently get the old capability at the new protocol version, or a value
+somebody made up to satisfy the old signature. Changing the signature makes
+the compiler find every caller, and each one then states what it passes.
+
+How: change the dispatcher's signature, re-point the callers, and let
+generation 0 keep receiving what it received before. If a wrapper's new
+generation would only forward the new parameter to the method that has the
+behaviour, it is not a new generation: forward it from the wrapper's existing
+body and leave the wrapper's version slot alone. The one exception is a
+public client-facing API that must stay source-compatible across a release;
+there, the SDK's builder pattern absorbs the new input.
+
 ### Table versions follow protocol-version boundaries, not PRs
 
 Version-table constants (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`,
@@ -174,11 +243,14 @@ already owns a new schedule, amend that schedule instead of creating another
 generation nobody references.
 
 `fee_version_number` is a separate concept from the schedule generation: it
-keys persisted fee history and storage-refund behaviour, and it is stored in
-platform state. Inspect its consumers before changing it. `FEE_VERSION1` and
-`FEE_VERSION2` both carry `fee_version_number: 1` because storage rates did not
-change between them, only a fee group did. See the
-[Fee System Overview](../fees/overview.md).
+keys the fee history saved in platform state. Inspect its consumers before
+changing it. `FEE_VERSION1` and `FEE_VERSION2` both carry
+`fee_version_number: 1` because storage rates did not change between them, only
+a fee group did.
+
+A schedule can change the storage rate without breaking refunds: from protocol
+version 15 a refund is priced at the rate of the protocol version that ran the
+epoch that stored the bytes. See the [Fee System Overview](../fees/overview.md).
 
 ### Consensus code reads the version from state
 
@@ -192,6 +264,17 @@ Serde-based conversions of `DataContract` read a process-wide current version
 set through `PlatformVersionCurrentVersion::set_current`. Tests that build
 platforms at different protocol versions race on it. Prefer the explicit
 `to_value(platform_version)` style API wherever a version is in hand.
+
+### Consensus code reads Core at the chain-locked height
+
+Every validator asks its own Dash Core, so a read is deterministic only when it
+asks about the block's chain-locked core height (`block_info.core_height`),
+never Core's tip, and a Core error is never read as a default such as "not
+active". [Syncing with Dash
+Core](../architecture/component-pipeline.md#syncing-with-dash-core) explains why
+and lists the rules for a new read, and [Core Fork
+Activations](../architecture/core-fork-activations.md) describes the record that
+code depending on a Core fork reads.
 
 ### Dispatcher shape
 
@@ -214,8 +297,7 @@ The observed order in `drive` and `drive-abci` is: `&self`, domain inputs,
 `block_info`, mode flags (`apply`, `stateful`), the estimation map,
 `transaction`, the operations accumulator, `platform_version`. A new parameter
 goes up with the context items, never after `platform_version`. The same holds
-for fields on context structs such as parse contexts. The known exception is
-`previous_fee_versions`, which trails it on fee-returning methods.
+for fields on context structs such as parse contexts.
 
 Why: readers of a few hundred versioned signatures expect the closing
 parameter to be the version. Appending after it breaks that scan.
@@ -244,7 +326,7 @@ chapter walks the stages in order; this table is the placement guide.
 | Pure-data invariants | `rs-dpp` (`validate_basic_structure`, document type and contract self-validation) | The value itself and `PlatformVersion` | `BasicError` |
 | Basic structure | `drive-abci` `<transition>/basic_structure/vN/` | `Network` and `PlatformVersion` only | `BasicError` |
 | Signature and nonces | `drive-abci` processor traits | The signing identity, nonces | `SignatureError`, unpaid rejection |
-| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid |
+| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid, except a failed proof of possession the signer did not sign, refused unpaid (`IdentityUpdate` from protocol version 15) |
 | Advanced structure with state | `drive-abci` `batch/advanced_structure/vN/` and the per-action validators under `batch/action_validation/*/advanced_structure_vN/` (`validate_advanced_structure_from_state`) | The action produced by `transform_into_action`, including the contracts it fetched, plus block, network, and identity context; no further Drive reads in the validator | `ConsensusError`, paid |
 | State | `drive-abci` `<transition>/state/vN/` | Drive through `PlatformRef` and the transaction | `StateError`, paid |
 | Execution | `drive` operations | GroveDB | Internal `Error` only |
@@ -349,6 +431,22 @@ or `ExecutionError` means the build is wrong, data is corrupt, or an API was
 misused. Never return a consensus error for an internal failure or an internal
 error for a user mistake; the block loop treats the two classes differently.
 
+### Error enums stay exhaustive
+
+Do not mark the workspace's own error enums `#[non_exhaustive]`. A `match`
+that decides something per variant (transient or not, an FFI error code, a
+user-facing message) lists every variant instead of ending in `_`. A new
+variant must break the build at each such `match`, so the author of the
+variant sees every caller in the compiler output and handles it in the same
+PR. With
+`#[non_exhaustive]`, callers outside the defining crate need a wildcard arm,
+and that arm silently absorbs every later variant: the code still compiles and
+the new failure takes whatever path the wildcard picked, typically a generic
+error or a test panic, without anyone being told. The workspace crates ship
+together, so the compile break costs nothing for a consumer outside the crate.
+A wildcard is correct only over enums from other repositories that are
+`#[non_exhaustive]` upstream (for example `rusqlite::ErrorCode`).
+
 ## Module layout and style
 
 - **One method, one directory.** `method_name/mod.rs` holds the public
@@ -442,7 +540,7 @@ and the [WASM](../wasm/binding-patterns.md) chapters.
 
 ### FFI and mobile SDKs hold no business logic
 
-The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`, `key-wallet-ffi`) and
+The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`) and
 the Swift and Kotlin SDKs do three things: persist Rust-emitted state, load it
 for views, and call a function that already exists in a Rust library. If the
 wrapper is deciding anything (an index, a derivation path, which key, how

@@ -1,16 +1,16 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::document_type::DocumentTypeRef;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Removes the document from primary storage.
@@ -33,9 +33,7 @@ impl Drive {
         document_id: Identifier,
         document_type: DocumentTypeRef,
         contract_documents_primary_key_path: [&[u8]; 5],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -56,9 +54,18 @@ impl Drive {
                 batch_operations,
                 platform_version,
             ),
+            1 => self.remove_document_from_primary_storage_v1(
+                document_id,
+                document_type,
+                contract_documents_primary_key_path,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_document_from_primary_storage".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

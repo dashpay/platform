@@ -1007,6 +1007,37 @@ public final class PlatformGrpc {
     return getWaitForStateTransitionResultMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getGetRecentStateTransitionStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getRecentStateTransitionStatus",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getGetRecentStateTransitionStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getGetRecentStateTransitionStatusMethod;
+    if ((getGetRecentStateTransitionStatusMethod = PlatformGrpc.getGetRecentStateTransitionStatusMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetRecentStateTransitionStatusMethod = PlatformGrpc.getGetRecentStateTransitionStatusMethod) == null) {
+          PlatformGrpc.getGetRecentStateTransitionStatusMethod = getGetRecentStateTransitionStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getRecentStateTransitionStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getRecentStateTransitionStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetRecentStateTransitionStatusMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse> getGetConsensusParamsMethod;
 
@@ -1315,6 +1346,68 @@ public final class PlatformGrpc {
       }
     }
     return getGetVotePollsByEndDateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getYesNoVotePollState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod;
+    if ((getGetYesNoVotePollStateMethod = PlatformGrpc.getGetYesNoVotePollStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetYesNoVotePollStateMethod = PlatformGrpc.getGetYesNoVotePollStateMethod) == null) {
+          PlatformGrpc.getGetYesNoVotePollStateMethod = getGetYesNoVotePollStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getYesNoVotePollState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getYesNoVotePollState"))
+              .build();
+        }
+      }
+    }
+    return getGetYesNoVotePollStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getMasternodeYesNoVote",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod;
+    if ((getGetMasternodeYesNoVoteMethod = PlatformGrpc.getGetMasternodeYesNoVoteMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetMasternodeYesNoVoteMethod = PlatformGrpc.getGetMasternodeYesNoVoteMethod) == null) {
+          PlatformGrpc.getGetMasternodeYesNoVoteMethod = getGetMasternodeYesNoVoteMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getMasternodeYesNoVote"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getMasternodeYesNoVote"))
+              .build();
+        }
+      }
+    }
+    return getGetMasternodeYesNoVoteMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
@@ -2278,6 +2371,99 @@ public final class PlatformGrpc {
     return getGetShieldedNullifiersMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getPrivateDocumentEntries",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod;
+    if ((getGetPrivateDocumentEntriesMethod = PlatformGrpc.getGetPrivateDocumentEntriesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetPrivateDocumentEntriesMethod = PlatformGrpc.getGetPrivateDocumentEntriesMethod) == null) {
+          PlatformGrpc.getGetPrivateDocumentEntriesMethod = getGetPrivateDocumentEntriesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getPrivateDocumentEntries"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getPrivateDocumentEntries"))
+              .build();
+        }
+      }
+    }
+    return getGetPrivateDocumentEntriesMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getGetOwnerTransactionsInBlockMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getOwnerTransactionsInBlock",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getGetOwnerTransactionsInBlockMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getGetOwnerTransactionsInBlockMethod;
+    if ((getGetOwnerTransactionsInBlockMethod = PlatformGrpc.getGetOwnerTransactionsInBlockMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetOwnerTransactionsInBlockMethod = PlatformGrpc.getGetOwnerTransactionsInBlockMethod) == null) {
+          PlatformGrpc.getGetOwnerTransactionsInBlockMethod = getGetOwnerTransactionsInBlockMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getOwnerTransactionsInBlock"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getOwnerTransactionsInBlock"))
+              .build();
+        }
+      }
+    }
+    return getGetOwnerTransactionsInBlockMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getGetBlocksMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getBlocks",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getGetBlocksMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getGetBlocksMethod;
+    if ((getGetBlocksMethod = PlatformGrpc.getGetBlocksMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetBlocksMethod = PlatformGrpc.getGetBlocksMethod) == null) {
+          PlatformGrpc.getGetBlocksMethod = getGetBlocksMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getBlocks"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getBlocks"))
+              .build();
+        }
+      }
+    }
+    return getGetBlocksMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -2555,6 +2741,18 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public void getRecentStateTransitionStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetRecentStateTransitionStatusMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -2639,6 +2837,28 @@ public final class PlatformGrpc {
     public void getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetVotePollsByEndDateMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public void getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetYesNoVotePollStateMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public void getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMasternodeYesNoVoteMethod(), responseObserver);
     }
 
     /**
@@ -2856,6 +3076,36 @@ public final class PlatformGrpc {
     public void getShieldedNullifiers(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedNullifiersMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPrivateDocumentEntriesMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public void getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetOwnerTransactionsInBlockMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public void getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBlocksMethod(), responseObserver);
     }
 
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
@@ -3085,6 +3335,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse>(
                   this, METHODID_WAIT_FOR_STATE_TRANSITION_RESULT)))
           .addMethod(
+            getGetRecentStateTransitionStatusMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse>(
+                  this, METHODID_GET_RECENT_STATE_TRANSITION_STATUS)))
+          .addMethod(
             getGetConsensusParamsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
@@ -3154,6 +3411,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>(
                   this, METHODID_GET_VOTE_POLLS_BY_END_DATE)))
+          .addMethod(
+            getGetYesNoVotePollStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>(
+                  this, METHODID_GET_YES_NO_VOTE_POLL_STATE)))
+          .addMethod(
+            getGetMasternodeYesNoVoteMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>(
+                  this, METHODID_GET_MASTERNODE_YES_NO_VOTE)))
           .addMethod(
             getGetPrefundedSpecializedBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3371,6 +3642,27 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>(
                   this, METHODID_GET_SHIELDED_NULLIFIERS)))
+          .addMethod(
+            getGetPrivateDocumentEntriesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>(
+                  this, METHODID_GET_PRIVATE_DOCUMENT_ENTRIES)))
+          .addMethod(
+            getGetOwnerTransactionsInBlockMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse>(
+                  this, METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK)))
+          .addMethod(
+            getGetBlocksMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>(
+                  this, METHODID_GET_BLOCKS)))
           .build();
     }
   }
@@ -3650,6 +3942,19 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public void getRecentStateTransitionStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetRecentStateTransitionStatusMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -3744,6 +4049,30 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetVotePollsByEndDateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public void getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetYesNoVotePollStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public void getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetMasternodeYesNoVoteMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -3993,6 +4322,39 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public void getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetOwnerTransactionsInBlockMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public void getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetBlocksMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -4238,6 +4600,18 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse getRecentStateTransitionStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetRecentStateTransitionStatusMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -4322,6 +4696,28 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetVotePollsByEndDateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetYesNoVotePollStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetMasternodeYesNoVoteMethod(), getCallOptions(), request);
     }
 
     /**
@@ -4539,6 +4935,36 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse getShieldedNullifiers(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetShieldedNullifiersMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetPrivateDocumentEntriesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetOwnerTransactionsInBlockMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetBlocksMethod(), getCallOptions(), request);
     }
   }
 
@@ -4817,6 +5243,19 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getRecentStateTransitionStatus(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetRecentStateTransitionStatusMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -4911,6 +5350,30 @@ public final class PlatformGrpc {
         org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetVotePollsByEndDateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getYesNoVotePollState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetYesNoVotePollStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getMasternodeYesNoVote(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetMasternodeYesNoVoteMethod(), getCallOptions()), request);
     }
 
     /**
@@ -5160,6 +5623,39 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getPrivateDocumentEntries(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getOwnerTransactionsInBlock(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetOwnerTransactionsInBlockMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getBlocks(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetBlocksMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -5194,47 +5690,53 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 29;
   private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 30;
   private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 31;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 32;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 33;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 34;
-  private static final int METHODID_GET_EPOCHS_INFO = 35;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 36;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 37;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 38;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 39;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 40;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 41;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 42;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 43;
-  private static final int METHODID_GET_PATH_ELEMENTS = 44;
-  private static final int METHODID_GET_STATUS = 45;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 46;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 47;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 48;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 49;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 50;
-  private static final int METHODID_GET_TOKEN_STATUSES = 51;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 52;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 53;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 54;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 55;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 56;
-  private static final int METHODID_GET_GROUP_INFO = 57;
-  private static final int METHODID_GET_GROUP_INFOS = 58;
-  private static final int METHODID_GET_GROUP_ACTIONS = 59;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 60;
-  private static final int METHODID_GET_ADDRESS_INFO = 61;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 62;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 63;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 64;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 65;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 66;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 67;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 68;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 69;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 70;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 71;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 72;
+  private static final int METHODID_GET_RECENT_STATE_TRANSITION_STATUS = 32;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 33;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 34;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 35;
+  private static final int METHODID_GET_EPOCHS_INFO = 36;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 37;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 38;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 39;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 40;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 41;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 42;
+  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 43;
+  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 44;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 45;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 46;
+  private static final int METHODID_GET_PATH_ELEMENTS = 47;
+  private static final int METHODID_GET_STATUS = 48;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 49;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 50;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 51;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 52;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 53;
+  private static final int METHODID_GET_TOKEN_STATUSES = 54;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 55;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 56;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 57;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 58;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 59;
+  private static final int METHODID_GET_GROUP_INFO = 60;
+  private static final int METHODID_GET_GROUP_INFOS = 61;
+  private static final int METHODID_GET_GROUP_ACTIONS = 62;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 63;
+  private static final int METHODID_GET_ADDRESS_INFO = 64;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 65;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 66;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 67;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 68;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 69;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 70;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 71;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 72;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 73;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 74;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 75;
+  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 76;
+  private static final int METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK = 77;
+  private static final int METHODID_GET_BLOCKS = 78;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5381,6 +5883,10 @@ public final class PlatformGrpc {
           serviceImpl.waitForStateTransitionResult((org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse>) responseObserver);
           break;
+        case METHODID_GET_RECENT_STATE_TRANSITION_STATUS:
+          serviceImpl.getRecentStateTransitionStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse>) responseObserver);
+          break;
         case METHODID_GET_CONSENSUS_PARAMS:
           serviceImpl.getConsensusParams((org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse>) responseObserver);
@@ -5420,6 +5926,14 @@ public final class PlatformGrpc {
         case METHODID_GET_VOTE_POLLS_BY_END_DATE:
           serviceImpl.getVotePollsByEndDate((org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>) responseObserver);
+          break;
+        case METHODID_GET_YES_NO_VOTE_POLL_STATE:
+          serviceImpl.getYesNoVotePollState((org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_MASTERNODE_YES_NO_VOTE:
+          serviceImpl.getMasternodeYesNoVote((org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>) responseObserver);
           break;
         case METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE:
           serviceImpl.getPrefundedSpecializedBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest) request,
@@ -5545,6 +6059,18 @@ public final class PlatformGrpc {
           serviceImpl.getShieldedNullifiers((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>) responseObserver);
           break;
+        case METHODID_GET_PRIVATE_DOCUMENT_ENTRIES:
+          serviceImpl.getPrivateDocumentEntries((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>) responseObserver);
+          break;
+        case METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK:
+          serviceImpl.getOwnerTransactionsInBlock((org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse>) responseObserver);
+          break;
+        case METHODID_GET_BLOCKS:
+          serviceImpl.getBlocks((org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -5638,6 +6164,7 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityByPublicKeyHashMethod())
               .addMethod(getGetIdentityByNonUniquePublicKeyHashMethod())
               .addMethod(getWaitForStateTransitionResultMethod())
+              .addMethod(getGetRecentStateTransitionStatusMethod())
               .addMethod(getGetConsensusParamsMethod())
               .addMethod(getGetProtocolVersionUpgradeStateMethod())
               .addMethod(getGetProtocolVersionUpgradeVoteStatusMethod())
@@ -5648,6 +6175,8 @@ public final class PlatformGrpc {
               .addMethod(getGetContestedResourceVotersForIdentityMethod())
               .addMethod(getGetContestedResourceIdentityVotesMethod())
               .addMethod(getGetVotePollsByEndDateMethod())
+              .addMethod(getGetYesNoVotePollStateMethod())
+              .addMethod(getGetMasternodeYesNoVoteMethod())
               .addMethod(getGetPrefundedSpecializedBalanceMethod())
               .addMethod(getGetTotalCreditsInPlatformMethod())
               .addMethod(getGetPathElementsMethod())
@@ -5679,6 +6208,9 @@ public final class PlatformGrpc {
               .addMethod(getGetShieldedPoolStateMethod())
               .addMethod(getGetShieldedNotesCountMethod())
               .addMethod(getGetShieldedNullifiersMethod())
+              .addMethod(getGetPrivateDocumentEntriesMethod())
+              .addMethod(getGetOwnerTransactionsInBlockMethod())
+              .addMethod(getGetBlocksMethod())
               .build();
         }
       }

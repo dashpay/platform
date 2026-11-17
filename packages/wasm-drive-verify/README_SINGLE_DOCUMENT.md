@@ -19,7 +19,7 @@ const query = createSingleDocumentQuery(
   'myDocumentType',  // string - The document type name
   false,             // boolean - Whether the document type keeps history
   documentId,        // Uint8Array(32) - The document ID
-  Date.now()         // number (optional) - Block time in milliseconds
+  Date.now()         // number (optional) - Block time in milliseconds, ignored unless the type keeps history
 );
 
 // For a maybe contested document
@@ -69,6 +69,28 @@ Documents in Drive can have different contested statuses:
 - **NotContested (0)**: The document was not contested by the system
 - **MaybeContested (1)**: We don't know if the document was contested, or we're not sure if the contest is over
 - **Contested (2)**: We know that the document was contested and the contest is not over
+
+A `MaybeContested` query looks in both places at once, so its proof has to cover both: a proof
+made for a `NotContested` or a `Contested` query does not verify against it. Such a proof
+verifies from protocol version 15.
+
+## Block Time
+
+In a document type that keeps history, a query with a block time asks for the newest version of
+the document retained at or before that time, clamped to `i64::MAX`. At equal timestamps the
+highest revision wins. It answers with no document before the first retained revision. Without
+a block time the query asks for the latest version. Migrated history contains the last write
+retained at each old timestamp; overwritten revisions cannot be recovered.
+
+This applies to `SingleDocumentDriveQuery` in Drive's Rust API and to this verifier. Documents
+queries (`DriveDocumentQuery`) with a block time still reject keep-history types after
+activation. The SDK and DAPI paths do not build timed single-document queries.
+
+A `NotContested` query with a block time verifies from protocol version 15. A contest's area
+keeps no history: it holds each contender as it was submitted. So a `Contested` query ignores the
+block time, and a `MaybeContested` query with a block time is refused, since a contender
+submitted after that time would be found there. A query in a document type that keeps no
+history ignores the block time in every status.
 
 ## API Reference
 

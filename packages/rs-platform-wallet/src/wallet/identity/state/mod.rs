@@ -11,7 +11,7 @@ pub mod managed_identity;
 pub mod manager;
 
 pub use key_disable::{check_keys_can_be_disabled, KeyDisableRefusal, LastEnabledKeyError};
-pub use managed_identity::{BlockTime, DashPayState, ManagedIdentity};
+pub use managed_identity::{BlockTime, DashPayState, ManagedIdentity, PrivateContact};
 pub use manager::IdentityLocation;
 pub use manager::IdentityManager;
 pub use manager::RegistrationIndex;

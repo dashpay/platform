@@ -111,7 +111,6 @@ fn should_preserve_asset_lock_serde_wire_format_and_reject_missing_payloads() {
 #[test]
 fn should_preserve_foreign_txid_serde_encoding_in_consensus_errors() {
     use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
-    use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Txid;
 
     let value = IdentityAssetLockProofLockedTransactionMismatchError::new(

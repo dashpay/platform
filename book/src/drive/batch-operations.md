@@ -45,9 +45,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -55,7 +53,7 @@ pub trait DriveLowLevelOperationConverter {
 }
 ```
 
-The `estimated_costs_only_with_layer_info` parameter is key. When it is `None`, the converter performs actual operations (stateful mode). When it is `Some(HashMap)`, the converter only estimates costs and fills in layer information for GroveDB's cost estimation (stateless mode).
+The `estimated_costs_only_with_layer_info` parameter is key. When it is `None`, the converter performs actual operations (stateful mode). When it is `Some(EstimatedLayers)`, the converter only estimates costs and fills in layer information for GroveDB's cost estimation (stateless mode).
 
 The `DriveOperation` enum implements this trait by dispatching to each variant:
 
@@ -63,9 +61,7 @@ The `DriveOperation` enum implements this trait by dispatching to each variant:
 impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     fn into_low_level_drive_operations(
         self, drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -105,18 +101,13 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
 
         let mut low_level_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
@@ -155,13 +146,11 @@ impl Drive {
         }
 
         // Calculate total fee from accumulated costs
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 }
@@ -169,7 +158,7 @@ impl Drive {
 
 Let us trace the flow step by step:
 
-1. **Mode selection.** If `apply` is true, `estimated_costs_only_with_layer_info` is `None`, triggering stateful execution. If false, it is `Some(HashMap)`, triggering cost estimation only.
+1. **Mode selection.** If `apply` is true, `estimated_costs_only_with_layer_info` is `None`, triggering stateful execution. If false, it is `Some(EstimatedLayers::new())`, triggering cost estimation only. From protocol version 15 (generation 2), the estimate is resolved once every operation is converted, before the batch is priced, so the order of the operations does not change it (see [State Transition Drive Operations](../state-transitions/drive-operations.md#the-apply-parameter)).
 
 2. **Finalize task collection.** Before converting each operation, we collect any finalize tasks it declares. These are post-commit callbacks (covered in the [Finalize Tasks](finalize-tasks.md) chapter).
 
@@ -189,9 +178,7 @@ Before operations hit GroveDB, they are split into two categories. From `package
 impl Drive {
     pub(crate) fn apply_batch_low_level_drive_operations_v0(
         &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: Vec<LowLevelDriveOperation>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,

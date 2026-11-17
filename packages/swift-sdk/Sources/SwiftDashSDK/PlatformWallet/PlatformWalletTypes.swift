@@ -68,6 +68,26 @@ func identifierFromFFIArray(_ array: IdentifierArray, at index: Int) -> Identifi
     return Data(bytes: row, count: 32)
 }
 
+/// Read the `IdentifierArray` `fetch` fills, then free it with
+/// `platform_wallet_identifier_array_free`. Shared by every FFI call that
+/// returns that shape, so each caller supplies only the call itself.
+func readIdentifierArray(
+    _ fetch: (inout IdentifierArray) -> PlatformWalletFFIResult
+) throws -> [Identifier] {
+    var array = IdentifierArray()
+    try fetch(&array).check()
+    defer { platform_wallet_identifier_array_free(&array) }
+    guard array.items != nil, array.count > 0 else {
+        return []
+    }
+    var ids: [Identifier] = []
+    ids.reserveCapacity(Int(array.count))
+    for i in 0..<Int(array.count) {
+        ids.append(identifierFromFFIArray(array, at: i))
+    }
+    return ids
+}
+
 /// Generate a random identifier via the FFI.
 public func generateRandomIdentifier() throws -> Identifier {
     var buf = [UInt8](repeating: 0, count: 32)

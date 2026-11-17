@@ -79,6 +79,7 @@ mod delete_constraints;
 mod deletion_options;
 mod derived_index_properties;
 mod duplicate_keys;
+mod dynamic_document_reference;
 mod moderated_document_reference;
 mod moderator_fields;
 mod preallocated_through_moderated_reference;

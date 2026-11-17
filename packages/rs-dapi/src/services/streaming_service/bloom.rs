@@ -22,7 +22,6 @@ fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
 
 #[inline]
 fn txid_to_internal_bytes(txid: &Txid) -> Vec<u8> {
-    use dashcore_rpc::dashcore::hashes::Hash;
     txid.to_byte_array().to_vec()
 }
 
@@ -112,7 +111,6 @@ pub(crate) fn bloom_flags_from_int<I: TryInto<u8>>(flags: I) -> BloomFlags {
 mod tests {
     use super::*;
     use dashcore_rpc::dashcore::bloom::BloomFilter as CoreBloomFilter;
-    use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash};
     use std::str::FromStr;
     use std::sync::RwLock;
@@ -423,7 +421,6 @@ mod tests {
     /// This is the correct, consistent path.
     #[test]
     fn test_client_filter_with_consensus_byte_order_matches_server_side() {
-        use dashcore_rpc::dashcore::hashes::Hash as _;
         use dashcore_rpc::dashcore::{ScriptBuf, TxOut};
 
         // 1. A transaction that the server will see on the network.
