@@ -651,15 +651,33 @@ impl FileBackedShieldedStore {
                 // A node that does not read is not known: the create stays
                 // unconfirmed rather than being read from another node.
                 let outcome_endpoint = row.get::<_, Option<String>>(11).ok().flatten();
-                // A record saved before creates were held from their save is
-                // held once it has a node, as that build held it.
-                let identity_outcome = read_identity_outcome(
-                    row.get::<_, Option<i64>>(12).ok().flatten(),
-                    row.get::<_, Option<i64>>(13).ok().flatten(),
-                )
-                .or(outcome_endpoint
-                    .is_some()
-                    .then_some(IdentityCreateOutcome::Awaiting));
+                // An identity create from the pool is held whatever its
+                // outcome column holds: one saved before creates were held
+                // (NULL), or one whose outcome does not read, is held awaiting
+                // its outcome, never left to the scan. A record saved before
+                // creates were held from their save is also held once it has
+                // a node, as that build held it.
+                let identity_create = classifiable_st_bytes.as_deref().is_some_and(|bytes| {
+                    matches!(
+                        StateTransition::deserialize_from_bytes_trusted(bytes),
+                        Ok(StateTransition::IdentityCreateFromShieldedPool(_))
+                    )
+                });
+                let saved_code = row.get::<_, Option<i64>>(12);
+                let identity_outcome = (identity_create || outcome_endpoint.is_some()).then(|| {
+                    saved_code
+                        .as_ref()
+                        .ok()
+                        .and_then(|code| {
+                            read_identity_outcome(
+                                *code,
+                                row.get::<_, Option<i64>>(13).ok().flatten(),
+                            )
+                        })
+                        .unwrap_or(IdentityCreateOutcome::Awaiting)
+                });
+                // Kept durably below, so the row says what was restored.
+                let promoted = identity_create && !matches!(saved_code, Ok(Some(_)));
                 let decoded: rusqlite::Result<_> = (|| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -680,10 +698,12 @@ impl FileBackedShieldedStore {
                     anchor_height,
                     outcome_endpoint,
                     identity_outcome,
+                    promoted,
                     decoded,
                 ))
             })
             .map_err(|e| FileShieldedStoreError::Storage(format!("query rehydrate: {e}")))?;
+        let mut promote = Vec::new();
         for row in rows {
             let (
                 classifiable_st_bytes,
@@ -692,6 +712,7 @@ impl FileBackedShieldedStore {
                 anchor_height,
                 outcome_endpoint,
                 identity_outcome,
+                promoted,
                 decoded,
             ) = row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
                 account_index: None,
@@ -824,7 +845,27 @@ impl FileBackedShieldedStore {
                     redrive.anchor_height,
                 );
             }
+            if promoted {
+                promote.push((id, redrive.activity_id));
+            }
             sw.arm_redrive(redrive);
+        }
+        drop(stmt);
+        for (id, activity_id) in promote {
+            conn.execute(
+                "UPDATE shielded_pending_spends SET identity_outcome = ?4, \
+                 identity_outcome_height = NULL \
+                 WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    activity_id.as_slice(),
+                    identity_outcome_code(Some(IdentityCreateOutcome::Awaiting)),
+                ],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("hold restored identity create: {e}"))
+            })?;
         }
         Ok(())
     }
@@ -2220,6 +2261,10 @@ mod tests {
             assert!(
                 !record.identity_user_abandoned,
                 "legacy guards require explicit recovery"
+            );
+            assert_eq!(
+                record.identity_outcome, None,
+                "only an identity create is held for its outcome"
             );
             record.identity_nonce_finalized = true;
             record.identity_user_abandoned = true;

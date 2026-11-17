@@ -199,8 +199,10 @@ pub struct PendingRedrive {
     /// is held from the moment it is saved, before any dispatch, as
     /// [`IdentityCreateOutcome::Awaiting`]; a proven outcome is kept here
     /// durably until the activity row that reports it is durable too, then
-    /// the record is dropped. `None` for every other spend, and for a create
-    /// saved by a build that did not hold creates.
+    /// the record is dropped. `None` for every other spend. A create saved by
+    /// a build that did not hold creates, or whose saved outcome does not
+    /// read, is restored by the file store as held and
+    /// [`IdentityCreateOutcome::Awaiting`]; a custom store does the same.
     pub identity_outcome: Option<IdentityCreateOutcome>,
 }
 

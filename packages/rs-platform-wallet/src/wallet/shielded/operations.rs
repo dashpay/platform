@@ -5252,7 +5252,16 @@ async fn redrive_one<S: ShieldedStore>(
     // A held identity create no node was kept for goes to one node, kept with its record
     // once the dispatch may have reached it, so its outcome can be read there.
     let unkept_node = match &held_at {
-        None if redrive.held_for_identity_outcome() => sdk.address_list().get_live_address(),
+        None if redrive.held_for_identity_outcome() => {
+            let Some(endpoint) = sdk.address_list().get_live_address() else {
+                // Sent through the shared SDK it would keep no node, and with no node to
+                // send to it would be refused: nothing is sent and no attempt is spent, so
+                // a later pass with a node still sends it and keeps that node.
+                debug!("redrive: no node to send a held identity create to; not re-broadcast");
+                return;
+            };
+            Some(endpoint)
+        }
         _ => None,
     };
     let broadcaster = match held_at.as_ref().or(unkept_node.as_ref()) {
@@ -7704,6 +7713,9 @@ mod redrive_tests {
         let activity_id = [0x7C; 32];
         for spend_path in [SpendPath::Shared, SpendPath::IdentityCreate] {
             let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+            // A node to send to: a held identity create is never sent without one.
+            let mut addresses = sdk.address_list().clone();
+            addresses.add(ENDPOINT.parse().expect("an address"));
             let sdk_handle = Arc::new(sdk.clone());
             let dir = tempfile::tempdir().expect("a directory");
             let path = dir.path().join("tree.sqlite");
@@ -8873,47 +8885,137 @@ mod redrive_tests {
         }
     }
 
-    /// A held identity create whose node was never kept (its process stopped before its first
-    /// dispatch's node was kept) is re-broadcast to one node, kept with its record for its
-    /// outcome read, across a restart too. With no node to send to, nothing is sent and no node
-    /// is kept.
-    #[tokio::test(start_paused = true)]
-    async fn should_keep_the_node_a_redrive_of_a_create_with_no_kept_node_reached() {
-        let wallet_id = [0x77; 32];
+    /// An identity create from the pool saved by a build before creates were held: upgrading its
+    /// database adds the new columns as NULL. Restoring it holds it awaiting its outcome, durably,
+    /// so a scan that sees its notes spent keeps its record, as does one whose outcome column does
+    /// not read.
+    #[tokio::test]
+    async fn should_hold_an_identity_create_restored_from_an_older_database() {
+        let wallet_id = [0x78; 32];
         let id = SubwalletId::new(wallet_id, 0);
-        let activity_id = [0x80; 32];
-        for reachable in [true, false] {
-            let sdk = Arc::new(if reachable {
-                let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
-                let mut addresses = sdk.address_list().clone();
-                addresses.add(ENDPOINT.parse().expect("an address"));
-                sdk
-            } else {
-                sdk_without_addresses()
-            });
+        let activity_id = [0x81; 32];
+        for legacy in [
+            "ALTER TABLE shielded_pending_spends DROP COLUMN identity_outcome_height; \
+             ALTER TABLE shielded_pending_spends DROP COLUMN identity_outcome; \
+             ALTER TABLE shielded_pending_spends DROP COLUMN outcome_endpoint;",
+            "UPDATE shielded_pending_spends SET identity_outcome = 'unreadable', \
+             outcome_endpoint = NULL;",
+        ] {
             let dir = tempfile::tempdir().expect("a directory");
             let path = dir.path().join("tree.sqlite");
             let (store, _) = saved_identity_create(&path, id, activity_id, false).await;
-            let recorded = [SPEND_ANCHOR].into_iter().collect();
-            redrive_pending_spends(&sdk, &store, None, id, &recorded, &CancellationToken::new())
-                .await;
+            drop(store);
+            rusqlite::Connection::open(&path)
+                .unwrap()
+                .execute_batch(legacy)
+                .unwrap();
+
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopened");
+            let records = store.pending_redrives(id).expect("records");
+            assert_eq!(records.len(), 1, "{legacy}");
+            assert_eq!(
+                records[0].identity_outcome,
+                Some(IdentityCreateOutcome::Awaiting),
+                "{legacy}"
+            );
+            let saved: Option<i64> = rusqlite::Connection::open(&path)
+                .unwrap()
+                .query_row(
+                    "SELECT identity_outcome FROM shielded_pending_spends",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(saved, Some(0), "kept durably: {legacy}");
+            // The host's snapshot restores the note; the scan then sees it spent.
+            store.save_note(id, &spend_note()).expect("restored");
+            assert!(store
+                .mark_spent(id, &spend_note().nullifier)
+                .expect("marked"));
             drop(store);
             let records = FileBackedShieldedStore::open_path(&path, 100)
                 .expect("reopened")
                 .pending_redrives(id)
                 .expect("records");
-            assert_eq!(records.len(), 1, "reachable {reachable}");
+            assert_eq!(records.len(), 1, "the scan keeps it: {legacy}");
             assert_eq!(
                 records[0].identity_outcome,
                 Some(IdentityCreateOutcome::Awaiting),
-                "reachable {reachable}"
-            );
-            assert_eq!(
-                records[0].outcome_endpoint.is_some(),
-                reachable,
-                "reachable {reachable}"
+                "{legacy}"
             );
         }
+    }
+
+    /// A held identity create whose node was never kept (its process stopped before its first
+    /// dispatch's node was kept) is re-broadcast to one node, kept with its record for its
+    /// outcome read, across a restart too. With no node to send to, nothing is sent and no
+    /// attempt is spent, for more passes than the re-broadcast budget: once a node is there, the
+    /// next pass sends it and keeps that node.
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_the_node_a_redrive_of_a_create_with_no_kept_node_reached() {
+        let wallet_id = [0x77; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x80; 32];
+        let reachable_sdk = || {
+            let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+            let mut addresses = sdk.address_list().clone();
+            addresses.add(ENDPOINT.parse().expect("an address"));
+            Arc::new(sdk)
+        };
+        let recorded: HashSet<[u8; 32]> = [SPEND_ANCHOR].into_iter().collect();
+        let records_at = |path: &std::path::Path| {
+            FileBackedShieldedStore::open_path(path, 100)
+                .expect("reopened")
+                .pending_redrives(id)
+                .expect("records")
+        };
+
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let (store, _) = saved_identity_create(&path, id, activity_id, false).await;
+        let unreachable = Arc::new(sdk_without_addresses());
+        for _ in 0..=MAX_REDRIVE_ATTEMPTS {
+            redrive_pending_spends(
+                &unreachable,
+                &store,
+                None,
+                id,
+                &recorded,
+                &CancellationToken::new(),
+            )
+            .await;
+        }
+        drop(store);
+        let records = records_at(&path);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].attempts, 0, "nothing was sent");
+        assert_eq!(records[0].outcome_endpoint, None);
+        assert_eq!(
+            records[0].identity_outcome,
+            Some(IdentityCreateOutcome::Awaiting)
+        );
+
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("reopened"),
+        ));
+        redrive_pending_spends(
+            &reachable_sdk(),
+            &store,
+            None,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
+        drop(store);
+        let records = records_at(&path);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].attempts, 1);
+        assert!(records[0].outcome_endpoint.is_some(), "the node is kept");
+        assert_eq!(
+            records[0].identity_outcome,
+            Some(IdentityCreateOutcome::Awaiting)
+        );
     }
 }
 
