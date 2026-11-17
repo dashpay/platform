@@ -15,6 +15,7 @@ use grovedb_commitment_tree::{
 };
 use rusqlite::Connection;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use super::{serialize_note, sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::error::PlatformWalletError;
@@ -134,7 +135,7 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
         .unwrap();
 
     assert!(matches!(
-        coordinator.try_sync(true).await,
+        coordinator.try_sync(true, &CancellationToken::new()).await,
         Err(PlatformWalletError::ShieldedTreeInconsistent {
             local_leaf_count: 3,
             chain_leaf_count: 2,
@@ -159,7 +160,7 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
     ));
     // The background pass reports the same verdict per wallet as a typed
     // outcome, so hosts need not parse the error text to offer a rebuild.
-    let summary = coordinator.sync(false).await;
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
     assert_eq!(summary.error_count(), 1);
     assert_eq!(summary.success_count(), 0);
     assert!(
@@ -191,7 +192,7 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
             .unwrap(),
         0
     );
-    let summary = coordinator.sync(false).await;
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
     assert_eq!(summary.error_count(), 0);
     assert_eq!(
         summary.success_count(),
@@ -224,9 +225,9 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
     let anchors = ShieldedAnchors::fetch_current(&anchors_sdk).await.unwrap();
     assert!(anchors.0.contains(&root));
     // Enter the caught-up cooldown, then prove explicit rebuild bypasses it.
-    coordinator.sync(false).await;
+    coordinator.sync(false, &CancellationToken::new()).await;
     coordinator.rebuild_shielded_tree().await.unwrap();
-    let summary = coordinator.sync(false).await;
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
     assert_eq!(summary.error_count(), 0);
     assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 2);
 }
@@ -249,6 +250,7 @@ async fn should_rescan_empty_tree_despite_restored_watermark() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .unwrap();
@@ -282,6 +284,7 @@ async fn should_preserve_tree_height_across_reopen_and_ignore_one_block_behind_s
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .expect("one-block-behind source must not trigger inconsistency");
@@ -362,6 +365,7 @@ async fn should_record_height_before_appending_commitments() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await;
     assert!(matches!(
@@ -449,7 +453,7 @@ async fn should_leave_tree_and_cursors_untouched_when_rebuild_reset_fails() {
     conn.execute_batch("DROP TRIGGER reject_height_reset;")
         .unwrap();
     // The next pass reports the same verdict, so the host can retry.
-    let summary = coordinator.sync(false).await;
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
     assert!(
         matches!(
             summary.wallet_results.get(&id.wallet_id),
@@ -473,7 +477,7 @@ async fn should_attribute_a_failed_pass_to_the_wallets_it_snapshotted() {
     let store_guard = coordinator.store().read().await;
     let pass = tokio::spawn({
         let coordinator = Arc::clone(&coordinator);
-        async move { coordinator.sync(true).await }
+        async move { coordinator.sync(true, &CancellationToken::new()).await }
     });
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         // Tokio's RwLock is write-preferring: once the pass queues for the

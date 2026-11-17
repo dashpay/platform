@@ -152,16 +152,31 @@ async fn should_reject_duplicated_commitments_after_sync() {
         AccountViewingKeys::from_full_viewing_key(keys.full_viewing_key),
     )];
     let store = seeded_store(4, id);
-    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
-        .await
-        .unwrap();
+    sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(store.read().await.tree_sync_height().unwrap(), Some(0));
     store
         .write()
         .await
         .append_commitment(&[4; 32], true)
         .unwrap();
-    let result = sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None).await;
+    let result = sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await;
     assert!(
         matches!(
             result,
@@ -189,9 +204,16 @@ async fn should_accept_healthy_and_behind_trees() {
     )];
     for initial_size in [0, 2, 4] {
         let store = seeded_store(initial_size, id);
-        sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
-            .await
-            .unwrap();
+        sync_notes_across(
+            &pool_sdk(4).await,
+            &store,
+            &subwallets,
+            None,
+            None,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(store.read().await.tree_size().unwrap(), 4);
     }
 }
@@ -209,6 +231,7 @@ async fn should_accept_tree_behind_streams_maximum_count() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .unwrap();
@@ -228,6 +251,7 @@ async fn should_skip_lower_count_for_legacy_tree_with_unknown_height() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .expect("an older source must not diagnose a healthy tree as corrupt");
@@ -247,12 +271,20 @@ async fn should_not_infer_tree_height_from_speculative_total() {
         &subwallets,
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .unwrap();
     assert_eq!(store.read().await.tree_sync_height().unwrap(), None);
-    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
-        .await
-        .unwrap();
+    sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(store.read().await.last_synced_note_index(id).unwrap(), 5);
 }
