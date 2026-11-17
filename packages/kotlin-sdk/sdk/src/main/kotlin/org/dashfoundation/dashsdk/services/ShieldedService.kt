@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 
@@ -208,9 +209,7 @@ class ShieldedService(private val database: DashDatabase) {
         _state.value = ShieldedSyncState()
         _shieldedBalance.value = database.shieldedDao()
             .observeUnspentNotesByWallet(walletId)
-            // Rust also binds and scans each identity's shielded account. This
-            // balance is the ordinary one: only the accounts the caller bound.
-            .map { notes -> notes.filter { it.accountIndex in sortedAccounts }.sumOf { it.value } }
+            .map { notes -> ordinaryShieldedBalance(notes, sortedAccounts) }
 
         try {
             manager.configureShielded(dbPath)
@@ -529,3 +528,14 @@ class ShieldedService(private val database: DashDatabase) {
         const val POLL_INTERVAL_MS = 1_000L
     }
 }
+
+/**
+ * The ordinary shielded balance: the value of [notes] held by [boundAccounts],
+ * the accounts the caller bound. Rust also binds and scans each identity's
+ * shielded account, whose notes a send from the bound accounts cannot spend,
+ * so they are left out.
+ */
+internal fun ordinaryShieldedBalance(
+    notes: List<ShieldedNoteEntity>,
+    boundAccounts: List<Int>,
+): Long = notes.filter { it.accountIndex in boundAccounts }.sumOf { it.value }

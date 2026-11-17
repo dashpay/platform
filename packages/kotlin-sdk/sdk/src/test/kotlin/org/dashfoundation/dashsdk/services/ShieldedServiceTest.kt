@@ -159,6 +159,19 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun ordinaryBalanceCountsOnlyNotesOfTheBoundAccounts() {
+        val notes = listOf(
+            note(1, 100, spent = false),
+            note(2, 50, spent = false).copy(accountIndex = 1),
+            // An identity's shielded account, which Rust binds on its own.
+            note(3, 900, spent = false).copy(accountIndex = 0x4000_0000),
+        )
+        assertEquals(100L, ordinaryShieldedBalance(notes, listOf(0)))
+        assertEquals(150L, ordinaryShieldedBalance(notes, listOf(0, 1)))
+        assertEquals(0L, ordinaryShieldedBalance(notes, emptyList()))
+    }
+
+    @Test
     fun clearLocalStateDeletesBoundWalletRows() = runTest {
         // Simulate bind by hand (native bind is unavailable under Robolectric):
         // populate rows, drive reduce, then clear.
