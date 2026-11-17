@@ -304,6 +304,9 @@ fn profile_fields(input: ProfileUpdate) -> Result<ProfileFields, PlatformWalletE
         avatar_url: input.avatar_url,
         avatar_hash,
         avatar_fingerprint,
+        // A wallet profile update names no payment address, so the ones the
+        // profile publishes stay as they are.
+        ..ProfileFields::default()
     })
 }
 

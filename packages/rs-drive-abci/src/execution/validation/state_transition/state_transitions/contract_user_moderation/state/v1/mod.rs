@@ -9,6 +9,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::data_contract::validate_document::is_unreadable_byte_array_refusal;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::{
@@ -46,6 +47,14 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
     /// A restore is held to the total its type keeps of its summed property, as a create is:
     /// it puts the document's summed value back in the type's sums, which other writes may
     /// have raised while the document was gone. Version 0 reads no total.
+    ///
+    /// A change writing a byte array or identifier the document serializer cannot read as bytes
+    /// (`is_unreadable_byte_array_refusal`, which document validation gives from protocol
+    /// version 15) is refused unpaid, its result carrying no action, where every other refusal
+    /// bumps the moderator's contract nonce. The mempool transforms too and gives the same
+    /// refusal, so no honest proposer holds such a change: a proposer drops it and validators
+    /// reject a block holding it. Charging for it would pay a proposer to add what the mempool
+    /// refused.
     ///
     /// Every other action transforms through version 0, unchanged.
     fn transform_into_action_v1<C: CoreRPCLike>(
@@ -98,19 +107,27 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
                 document_id,
                 fields,
                 ..
-            } => transform_document_fields_change_v0(
-                self,
-                platform,
-                block_info,
-                &contract_fetch_info,
-                document_type_name,
-                *document_id,
-                fields,
-                true,
-                execution_context,
-                tx,
-                platform_version,
-            ),
+            } => {
+                let result = transform_document_fields_change_v0(
+                    self,
+                    platform,
+                    block_info,
+                    &contract_fetch_info,
+                    document_type_name,
+                    *document_id,
+                    fields,
+                    true,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )?;
+                // Only the refusal alone: beside any other error the change is charged as before
+                if matches!(result.errors.as_slice(), [error] if is_unreadable_byte_array_refusal(error))
+                {
+                    return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+                }
+                Ok(result)
+            }
             ContractUserModerationAction::RestoreDocument {
                 document_type_name,
                 document,

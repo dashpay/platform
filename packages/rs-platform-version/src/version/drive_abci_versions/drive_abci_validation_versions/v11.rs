@@ -32,7 +32,9 @@ use super::{
 ///   exists from protocol version 16, so nothing matches these bindings before it.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
-///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
+///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable. A document
+///   whose byte array the document serializer cannot read (`validate_document` 2) is refused
+///   unpaid, where every other advanced structure failure bumps the signer's nonce.
 /// - the masternode vote `transform_into_action`, 1 rather than 0: a vote on a yes/no poll looks up
 ///   the masternode's previous answer on that poll.
 /// - the contract update `transform_into_action` 1: v0, then in check_tx and recheck, which run no
@@ -60,7 +62,9 @@ use super::{
 ///   change is written in that identity's name and the document's storage stays with whoever
 ///   holds it. v0 writes the change in the name of the document's owner, which from protocol
 ///   version 15 would hand a document a gas sponsor paid for over to its owner at the
-///   moderator's cost. Every other moderation action transforms as v0's does. The state
+///   moderator's cost. A change writing a byte array the document serializer cannot read
+///   (`validate_document` 2) is refused unpaid, where every other refusal bumps the moderator's
+///   contract nonce. Every other moderation action transforms as v0's does. The state
 ///   validation, which is the transformation, runs the same generation.
 ///
 /// - the `PrivateDocumentCreateFromShieldedPool` (type 29) `basic_structure`, `Some(0)` rather

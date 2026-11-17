@@ -14,7 +14,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `validate_document`, 2 rather than 1: a document is checked against its type's native
 ///   validator (the typed validation schema of `document_type::schema::validation_schema`)
 ///   instead of the `jsonschema` crate. A document type whose schema has no validation schema
-///   has its documents refused;
+///   has its documents refused, and so is a byte array written as a list holding a member
+///   that is not a byte, which the document serializer cannot read;
 /// - `check_document_type_schema`, 1 rather than 0: a schema is checked at registration
 ///   natively instead of against the document meta-schema through the `jsonschema` crate, and
 ///   every new document type must have a validation schema;

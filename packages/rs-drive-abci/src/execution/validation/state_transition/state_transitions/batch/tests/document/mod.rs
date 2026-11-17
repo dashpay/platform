@@ -1,5 +1,6 @@
 mod action_fees;
 mod agreement_values;
+mod byte_array_members;
 mod commit_reveal_lookup;
 mod contract_owner_requirement;
 mod creation;
