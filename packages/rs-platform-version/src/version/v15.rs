@@ -168,6 +168,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`SYSTEM_LIMITS_V5`), none an array or an object, and counts the others,
 ///    where protocol v14 lists every allowed value; its keyword, paths and code
 ///    are unchanged, and an `enum` of a few short values reads as before.
+///    Once the schema check passes, a byte array or identifier written as a
+///    list holding a member that is not a byte (`Value::U8`), such as a 64-bit
+///    integer, is refused with a `JsonSchemaError` (`byteArray`) naming the
+///    member: the JSON form the schema check reads does not tell an integer's
+///    type, and the document serializer reads only bytes. Protocol v14 passes
+///    such a document to the serializer, which fails with an internal error.
+///    A batch failing it, or a moderator's field change, is refused unpaid
+///    (batch `advanced_structure` 2, contract user moderation
+///    `transform_into_action` 1), so blocks are as before: a proposer drops the
+///    transition and validators reject a block holding it; what changes is the
+///    error check_tx returns.
 ///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the

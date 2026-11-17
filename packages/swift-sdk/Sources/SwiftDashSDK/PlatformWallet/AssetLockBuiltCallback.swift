@@ -45,10 +45,20 @@ public struct AssetLockBuiltOutPoint: Hashable, Sendable {
 /// for a lock whose broadcast then fails: a thrown
 /// `PlatformWalletError.transactionBroadcastRejected` means the lock was
 /// removed again; any other error leaves it tracked and resumable by its
-/// outpoint (a resume may find it already consumed). Both hold for this
-/// session: the row store and removal behind them are best-effort, so after
-/// a restart a failed store can leave no row for a broadcast lock, or the
-/// row of a removed one.
+/// outpoint (a resume may find it already consumed), with one exception.
+///
+/// A shielded funding whose recipient cannot be stored durably is abandoned
+/// after the handler ran, before the lock is tracked or sent: a resume in
+/// this session throws `PlatformWalletError.assetLockNotTracked`. With the
+/// lock's row removed again the call throws a persistence error. Where that
+/// removal is not known to be on disk it throws
+/// `PlatformWalletError.transactionBroadcastUnconfirmed`: the lock was not
+/// sent, its inputs stay reserved until the wallet restarts, and a restart
+/// may still find the row and resume the lock, so keep the outpoint.
+///
+/// All of this holds for this session: the row store and removal behind it
+/// are best-effort, so after a restart a failed store can leave no row for a
+/// broadcast lock, or the row of a removed one.
 ///
 /// Record the outpoint in thread-safe state before returning — a hop to
 /// another actor would let the row arrive first — and durably if it has to

@@ -240,3 +240,32 @@ fn immediate_after_failed_flush_delete_drains_buffer() {
         "restored buffered changeset must not resurrect the deleted wallet"
     );
 }
+
+/// A wallet's deletion counts as a drop for the wallet though it wrote what
+/// was buffered first: the write went with the wallet's rows, so a changeset
+/// that was buffered when the delete began is on no disk. A store the wallet
+/// makes durable across the delete reads the count and is refused, where its
+/// own flush, over the buffer the delete emptied, would have said nothing.
+#[test]
+fn should_count_a_deletion_that_wrote_the_buffered_changeset_first() {
+    let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xDE);
+    persister.store(w, full_changeset(11)).expect("buffered");
+    let before = persister.buffered_writes_dropped(w);
+
+    persister.delete_wallet(w).expect("delete_wallet");
+
+    assert_eq!(
+        persister.buffered_writes_dropped(w),
+        before.map(|dropped| dropped + 1),
+        "the deletion is a drop of what was buffered for the wallet"
+    );
+    persister
+        .flush(w)
+        .expect("the flush finds the buffer the delete emptied");
+    assert_eq!(
+        persister.buffered_writes_dropped(wid(0xDF)),
+        Some(0),
+        "another wallet's count is its own"
+    );
+}
