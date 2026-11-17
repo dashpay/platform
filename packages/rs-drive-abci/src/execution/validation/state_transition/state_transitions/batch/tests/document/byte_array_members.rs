@@ -2,8 +2,10 @@
 //! bytes (`Value::U64`, as a client converting a JavaScript `Uint8Array` writes them). The
 //! schema check reads the document's JSON form, where such a list passes; the document
 //! serializer reads only a list of bytes. From protocol version 15 document validation
-//! refuses it with a `JsonSchemaError` (`byteArray`) naming the member; protocol version 14
-//! passes it on to the serializer, which fails with an internal error.
+//! refuses it with a `JsonSchemaError` (`byteArray`) naming the member, which check_tx
+//! returns; protocol version 14 passes it on to the serializer, which fails with an internal
+//! error. In a block the create is refused unpaid at 15 and fails internally at 14: either
+//! way a proposer drops it and validators reject a block holding it.
 
 use super::*;
 use crate::error::Error;
@@ -198,14 +200,40 @@ async fn should_refuse_at_check_tx_a_byte_array_of_integers_that_are_not_bytes()
         assert_eq!(byte_array_refusal(&errors), Some(path), "{errors:?}");
         assert_eq!(errors[0].code(), JSON_SCHEMA_ERROR);
 
-        // In a block, the refusal is paid, not an internal error
+        // In a block the refusal is unpaid: nobody is charged, so no proposer gains by
+        // adding what check_tx refused, and a block holding it is rejected
         match fixture.process(raw) {
-            StateTransitionExecutionResult::PaidConsensusError { error, .. } => {
+            StateTransitionExecutionResult::UnpaidConsensusError(error) => {
                 assert_eq!(byte_array_refusal(&[error]), Some(path))
             }
-            other => panic!("expected a paid consensus error for {properties:?}, got {other:?}"),
+            other => panic!("expected an unpaid consensus error for {properties:?}, got {other:?}"),
         }
     }
+}
+
+/// A member out of byte range is a schema violation, paid as every other one is.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_keep_charging_for_a_byte_array_member_out_of_byte_range() {
+    let fixture = Fixture::new(PlatformVersion::latest());
+    let raw = fixture
+        .creation(platform_value!({ "data": [Value::U64(300)] }))
+        .await;
+    let errors = fixture.check_tx(&raw).expect("expected check_tx to run");
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "maximum"
+        ),
+        "{errors:?}"
+    );
+    assert!(
+        matches!(
+            fixture.process(raw),
+            StateTransitionExecutionResult::PaidConsensusError { .. }
+        ),
+        "expected a paid consensus error"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

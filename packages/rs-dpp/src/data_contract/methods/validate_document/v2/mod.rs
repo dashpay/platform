@@ -18,6 +18,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
 mod byte_arrays;
+pub(super) use byte_arrays::is_refusal as is_unreadable_byte_array_refusal;
 #[cfg(test)]
 mod tests;
 

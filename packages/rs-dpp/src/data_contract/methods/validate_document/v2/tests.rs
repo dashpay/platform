@@ -10,7 +10,9 @@ use crate::data_contract::document_type::property_constraints::DocumentSystemVal
 use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::validator::LoadedValidationSchema;
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
+use crate::data_contract::methods::validate_document::{
+    is_unreadable_byte_array_refusal, DataContractDocumentValidationMethodsV0,
+};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::tests::fixtures::get_data_contract_fixture;
@@ -1137,8 +1139,8 @@ fn serializes(contract: &DataContract, properties: &Value) -> bool {
 /// The instance path of a single `byteArray` refusal, or a description of what was reported.
 fn byte_array_refusal(errors: &[ConsensusError]) -> Result<String, String> {
     match errors {
-        [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
-            if error.keyword() == "byteArray" =>
+        [refusal @ ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+            if error.keyword() == "byteArray" && is_unreadable_byte_array_refusal(refusal) =>
         {
             Ok(error.instance_path().to_string())
         }
@@ -1245,6 +1247,8 @@ fn should_refuse_members_out_of_byte_range_by_the_schema_check_at_both_protocol_
                 "{properties:?} at {}: {errors:?}",
                 platform_version.protocol_version
             );
+            // A schema violation, not the refusal a batch is refused unpaid for
+            assert!(!errors.iter().any(is_unreadable_byte_array_refusal));
         }
         assert!(!serializes(&contract, &properties), "{properties:?}");
     }

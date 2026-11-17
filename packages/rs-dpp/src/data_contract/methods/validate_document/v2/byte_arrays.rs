@@ -10,11 +10,25 @@
 //! the document is the client's mistake. Generation 2 refuses it here instead.
 
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::{DocumentProperty, DocumentPropertyType};
 use indexmap::IndexMap;
 use platform_value::{platform_value, Value};
+
+/// The keyword of the refusal. No schema check reports a violation under it.
+const KEYWORD: &str = "byteArray";
+
+/// Whether `error` is the refusal [`unreadable_byte_array`] gives.
+pub(in crate::data_contract::methods::validate_document) fn is_refusal(
+    error: &ConsensusError,
+) -> bool {
+    matches!(
+        error,
+        ConsensusError::BasicError(BasicError::JsonSchemaError(error)) if error.keyword() == KEYWORD
+    )
+}
 
 /// How a byte array or identifier is read where the serializer reads one.
 #[derive(Clone, Copy)]
@@ -147,7 +161,7 @@ fn in_bytes(
     Some(
         JsonSchemaError::new(
             summary,
-            "byteArray".to_string(),
+            KEYWORD.to_string(),
             instance_path,
             String::new(),
             platform_value!({ "byteArray": true }),
