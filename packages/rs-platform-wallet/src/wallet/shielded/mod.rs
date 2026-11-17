@@ -46,6 +46,8 @@ pub mod file_store;
 mod fresh_address_scan_tests;
 pub mod fund_from_asset_lock;
 pub mod keys;
+#[cfg(test)]
+mod lifecycle_boundary_tests;
 pub mod note_selection;
 pub mod operations;
 pub mod prover;
@@ -71,6 +73,14 @@ pub use balance::{
     ShieldedLocalBalanceState,
 };
 pub use coordinator::NetworkShieldedCoordinator;
+
+/// The manager's slot for its network's [`NetworkShieldedCoordinator`]:
+/// `None` until `PlatformWalletManager::configure_shielded` installs one.
+/// The manager creates it and hands the same slot to its sync manager and
+/// to every wallet it builds, so a wallet's shielded operations resolve
+/// the manager's coordinator and no other.
+pub(crate) type ShieldedCoordinatorSlot =
+    std::sync::Arc<tokio::sync::RwLock<Option<std::sync::Arc<NetworkShieldedCoordinator>>>>;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;

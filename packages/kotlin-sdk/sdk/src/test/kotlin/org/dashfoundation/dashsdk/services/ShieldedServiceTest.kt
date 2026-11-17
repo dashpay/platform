@@ -159,14 +159,11 @@ class ShieldedServiceTest {
     }
 
     @Test
-    fun clearLocalStateDeletesBoundWalletRows() = runTest {
-        // Simulate bind by hand (native bind is unavailable under Robolectric):
-        // populate rows, drive reduce, then clear.
+    fun clearLocalStateIsANoOpWhileUnbound() = runTest {
         db.shieldedDao().upsertNote(note(1, 1_000, spent = false))
         db.shieldedDao().upsertNote(note(2, 2_000, spent = false, wallet = otherWallet))
 
-        // Clear is a no-op while unbound (nothing to scope to).
-        service.clearLocalState(db)
+        service.clearLocalState()
         assertEquals(2, db.shieldedDao().getAllNotes().size)
     }
 

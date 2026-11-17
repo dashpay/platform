@@ -26,6 +26,12 @@ private enum AssetLockPersistenceError: Error {
     case requiresChangeset
 }
 
+private enum ShieldedWipeError: Error {
+    /// A wallet with shielded rows has no network yet, so its rows may be
+    /// the wiped network's.
+    case walletNetworkUnknown
+}
+
 struct LiveModelFetcher: ModelFetching {
     func fetch<T: PersistentModel>(
         _ descriptor: FetchDescriptor<T>,
@@ -3384,6 +3390,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+                | PlatformWalletPersistenceCapabilities.shieldedStateWipe
         )
     }
 
@@ -3435,6 +3442,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             loadPrivateContactScanStateWalletsCallback
         extensionCallbacks.on_load_private_contact_scan_state_wallets_free_fn =
             loadPrivateContactScanStateWalletsFreeCallback
+        extensionCallbacks.on_wipe_shielded_state_fn = wipeShieldedStateCallback
         return extensionCallbacks
     }
 
@@ -6274,6 +6282,70 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         let wallets = (try? backgroundContext.fetch(descriptor)) ?? []
         return Set(wallets.map { $0.walletId })
+    }
+
+    /// Native Clear's host half (`on_wipe_shielded_state_fn`): delete the
+    /// shielded rows of every wallet persisted on `network`, loaded or not,
+    /// in one save. Shielded rows carry no wallet relationship, so they are
+    /// enumerated from the shielded models. Rows of a wallet with no wallet
+    /// row belong to no wallet on any network and go too, as a wallet
+    /// deletion would have taken them. Rows of a wallet whose network is not
+    /// yet known throw with nothing deleted: they may be `network`'s. A
+    /// failed read or save rolls the context back and throws, leaving the
+    /// rows in place.
+    func wipeShieldedState(network: Network) throws {
+        try onQueue {
+            let networkRaw = network.rawValue
+            do {
+                var shieldedWalletIds = Set<Data>()
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedNote>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedOutgoingNote>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedSyncState>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedActivity>()).map(\.walletId))
+                shieldedWalletIds.formUnion(try backgroundContext.fetch(
+                    FetchDescriptor<PersistentShieldedViewingKey>()).map(\.walletId))
+                var doomed: [Data] = []
+                for walletId in shieldedWalletIds {
+                    let wallet = try backgroundContext.fetch(FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletId })).first
+                    guard let wallet else {
+                        doomed.append(walletId)
+                        continue
+                    }
+                    guard let walletNetwork = wallet.networkRaw else {
+                        throw ShieldedWipeError.walletNetworkUnknown
+                    }
+                    if walletNetwork == networkRaw {
+                        doomed.append(walletId)
+                    }
+                }
+                for walletId in doomed {
+                    try backgroundContext.delete(
+                        model: PersistentShieldedNote.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedOutgoingNote.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedSyncState.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedActivity.self,
+                        where: #Predicate { $0.walletId == walletId })
+                    try backgroundContext.delete(
+                        model: PersistentShieldedViewingKey.self,
+                        where: #Predicate { $0.walletId == walletId })
+                }
+                try backgroundContext.save()
+            } catch {
+                backgroundContext.rollback()
+                throw error
+            }
+        }
     }
 
     /// Build the host-allocated `ShieldedNoteRestoreFFI` array Rust
@@ -12526,6 +12598,20 @@ private func loadPrivateContactScanStateWalletsFreeCallback(
     let buffer = UnsafeMutablePointer(mutating: walletIds)
     buffer.deinitialize(count: Int(walletIdsCount))
     buffer.deallocate()
+}
+
+/// C shim for `on_wipe_shielded_state_fn`: 0 once the network's shielded
+/// rows are gone, non-zero with them in place.
+private func wipeShieldedStateCallback(
+    context: UnsafeMutableRawPointer?,
+    network: FFINetwork
+) -> Int32 {
+    guard let context else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.wipeShieldedState(network: Network(ffiNetwork: network))
+        return 0
+    } catch { return -1 }
 }
 
 private func loadIdentityBalanceBlockTimeCallback(

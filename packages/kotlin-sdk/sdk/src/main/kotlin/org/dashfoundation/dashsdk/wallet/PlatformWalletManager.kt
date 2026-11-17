@@ -88,6 +88,13 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        /**
+         * The store deletes its shielded rows for a network when native
+         * Clear asks, which [PlatformWalletManager.clearShieldedStorage]
+         * requires. Mirrors `PersistenceCapabilities::SHIELDED_STATE_WIPE`.
+         */
+        const val SHIELDED_STATE_WIPE: Long =
+            NativePersistenceBridge.CAPABILITY_SHIELDED_STATE_WIPE
     }
 }
 
@@ -1628,21 +1635,23 @@ class PlatformWalletManager(
     }
 
     /**
-     * Reset the Rust-side shielded state on this manager — port of Swift's
+     * Reset the shielded state of this manager's network — port of Swift's
      * `PlatformWalletManager.clearShielded()`
      * (`PlatformWalletManagerShieldedSync.swift`). Quiesces the background
      * sync loop, drops every wallet registration from the network-scoped
-     * coordinator, empties the shared commitment tree, and resets the
-     * caught-up cooldown, so the next [bindShielded] + sync cold-rebuilds
-     * from index 0.
+     * coordinator, empties the shared commitment tree, resets the caught-up
+     * cooldown, and has the persistence handler delete this network's
+     * shielded Room rows before returning, with every other shielded
+     * operation held out. The next [bindShielded] + sync cold-rebuilds from
+     * index 0. The caller deletes nothing itself.
      *
-     * The per-network SQLite file stays on disk (its contents are reset);
-     * the host must wipe its own Room rows AFTER this succeeds
-     * ([org.dashfoundation.dashsdk.services.ShieldedService.clearLocalState]
-     * orders the two). Throws on a store-reset failure so the caller can
-     * fail closed and keep its rows rather than orphan a still-populated
-     * tree. Only meaningful on a shielded build ([Sdk.hasShielded]); the
-     * native entry point is absent otherwise and this throws.
+     * Throws when the persistence handler does not declare
+     * [PlatformWalletPersistenceCapabilities.SHIELDED_STATE_WIPE] (nothing is
+     * reset), when the native reset fails, or when the Room wipe fails after
+     * the native reset; in the last case binds are refused until a retried
+     * Clear succeeds. Only meaningful on a shielded build
+     * ([Sdk.hasShielded]); the native entry point is absent otherwise and
+     * this throws.
      */
     suspend fun clearShieldedStorage() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }

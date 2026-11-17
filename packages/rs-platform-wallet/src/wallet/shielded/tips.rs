@@ -8,31 +8,27 @@
 //! reconstructs it even after publication was removed. Address rotation uses
 //! another diversifier in the same account, so all old addresses remain covered.
 
-use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use key_wallet_manager::WalletManager;
-use std::sync::{Arc, PoisonError, Weak};
+use std::sync::PoisonError;
 
 pub(crate) struct PreparedTipAccount {
     account: u32,
-    coordinator: Weak<NetworkShieldedCoordinator>,
-    clear_generation: u64,
+    /// The Clear epoch of the admission the preparation ran under.
+    clear_epoch: u64,
     /// The hash of the MASTER authentication key the seed derives at the
     /// account's slot, which the identity carried when it was prepared.
     master_key_hash: [u8; 20],
 }
 
 impl PreparedTipAccount {
-    /// The prepared account, while the preparation stands: its coordinator is alive
-    /// and has not been cleared since.
-    pub(crate) fn standing_account(&self) -> Option<u32> {
-        self.coordinator
-            .upgrade()
-            .is_some_and(|coordinator| coordinator.clear_generation() == self.clear_generation)
-            .then_some(self.account)
+    /// The prepared account, while the preparation stands: the coordinator,
+    /// now at `clear_epoch`, has not been cleared since.
+    pub(crate) fn standing_account(&self, clear_epoch: u64) -> Option<u32> {
+        (self.clear_epoch == clear_epoch).then_some(self.account)
     }
 
     /// [`Self::standing_account`], while `identity` still carries the key
@@ -40,8 +36,12 @@ impl PreparedTipAccount {
     /// identity removed and added back is another record under the same id:
     /// it is prepared only if it carries that key too, which is what the
     /// seed proof would find for it.
-    pub(crate) fn standing_account_of(&self, identity: &dpp::identity::Identity) -> Option<u32> {
-        self.standing_account()
+    pub(crate) fn standing_account_of(
+        &self,
+        clear_epoch: u64,
+        identity: &dpp::identity::Identity,
+    ) -> Option<u32> {
+        self.standing_account(clear_epoch)
             .filter(|_| carries_master_key(identity, &self.master_key_hash))
     }
 }
@@ -146,21 +146,22 @@ impl PlatformWallet {
     /// callers can publish the returned address. Repeated calls are idempotent.
     /// Requires an existing shielded bind so preparing a tip account cannot
     /// silently replace the host's ordinary account configuration.
+    ///
+    /// Runs on the manager's coordinator under the generation's lifecycle
+    /// gate, `shield_guard` and one admission, from the seed proof through
+    /// the record of the preparation: a Clear or a removal waits for it, and
+    /// a preparation the Clear epoch has since moved past no longer stands.
     pub async fn prepare_shielded_identity_address(
         &self,
         seed: &[u8],
         identity_id: &Identifier,
-        coordinator: &Arc<NetworkShieldedCoordinator>,
     ) -> Result<[u8; 43], PlatformWalletError> {
+        self.ensure_fvk_restart_capability()?;
+        let coordinator = self.shielded_coordinator().await?;
         // The account's keys are derived for this wallet's network. Bound to
         // a coordinator of another network they would scan the wrong chain,
         // while the address was handed out and recorded as prepared.
         coordinator.ensure_network(self.sdk.network)?;
-        // Sampled before the first wait. A Clear that runs while this waits
-        // for admission below has bumped it by the time this is admitted, and
-        // the host wipes its own rows only after that Clear returns: the bind
-        // here would load them and restore the notes the Clear removed.
-        let clear_generation = coordinator.clear_generation();
         // Do not publish a key from a mis-associated mnemonic. A first bind
         // has no persisted FVK against which to detect a wrong seed.
         let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
@@ -184,21 +185,13 @@ impl PlatformWallet {
                 self.wallet_id(),
             )));
         }
-        let _operation = coordinator.operation_guard().await;
-        if coordinator.clear_generation() != clear_generation {
-            return Err(PlatformWalletError::ShieldedNotBound);
-        }
+        let _shield_guard = self.shield_guard.lock().await;
+        let admission = coordinator.admit().await?;
         let (account, master_key_hash) = self.verified_tip_account(seed, identity_id).await?;
         // Read the bound set and bind the augmented copy as one step: a bind
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
-        // The keys this handle holds outlive a Clear, which drops the
-        // registration without touching them. Preparing from them would bind
-        // the wallet again on its own, and restore whatever rows the host has
-        // not wiped yet. The wallet must have been bound on this coordinator
-        // with no Clear since.
-        self.ensure_shielded_bound_on(coordinator)?;
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);
@@ -206,7 +199,7 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
-        self.bind_shielded_locked_unfenced(seed, &accounts, coordinator, clear_generation)
+        self.bind_shielded_locked(seed, &accounts, &coordinator, &admission)
             .await?;
         self.persister()
             .flush()
@@ -215,9 +208,6 @@ impl PlatformWallet {
             .shielded_default_address(account)
             .await
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        if coordinator.clear_generation() != clear_generation {
-            return Err(PlatformWalletError::ShieldedNotBound);
-        }
         // The wallet-manager lock was released after the proof above, so the
         // identity can have been removed and added back at another slot while
         // the account was bound. Prove its slot again and record under that
@@ -239,8 +229,7 @@ impl PlatformWallet {
                 *identity_id,
                 PreparedTipAccount {
                     account,
-                    coordinator: Arc::downgrade(coordinator),
-                    clear_generation,
+                    clear_epoch: admission.epoch(),
                     master_key_hash,
                 },
             );
@@ -250,7 +239,8 @@ impl PlatformWallet {
 
     /// The shielded account prepared for `identity_id` in this session
     /// ([`Self::prepare_shielded_identity_address`]), while the preparation
-    /// stands: its coordinator is alive and has not been cleared since, the
+    /// stands: the coordinator has not been cleared since (and no Clear is
+    /// running or queued), the
     /// wallet has not been removed, and the identity still holds the slot
     /// that selects the account and still carries the key the seed proved
     /// there. `None` otherwise. A recorded identity index alone is not proof
@@ -265,6 +255,7 @@ impl PlatformWallet {
         &self,
         identity_id: &Identifier,
     ) -> Option<u32> {
+        let clear_epoch = self.shielded_coordinator().await.ok()?.settled_epoch()?;
         let wm = self.wallet_manager.read().await;
         let managed = wm
             .get_wallet_info(&self.wallet_id())?
@@ -278,7 +269,7 @@ impl PlatformWallet {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(identity_id)
-            .and_then(|prepared| prepared.standing_account_of(&managed.identity))
+            .and_then(|prepared| prepared.standing_account_of(clear_epoch, &managed.identity))
             .filter(|prepared| *prepared == current)
     }
 

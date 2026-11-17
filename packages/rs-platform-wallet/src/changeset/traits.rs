@@ -420,6 +420,30 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Ok(())
     }
 
+    /// Delete every shielded row this backend keeps for `network`: the
+    /// viewing keys, notes, outgoing notes, sync watermarks and activity of
+    /// every wallet it holds on that network, whether or not the wallet is
+    /// loaded. One atomic deletion: it completes, or it fails with the rows
+    /// in place.
+    ///
+    /// Called only by a shielded Clear, after the native reset and before
+    /// the Clear returns, while every other shielded operation on the
+    /// network is held out (see
+    /// [`PersistenceCapabilities::SHIELDED_STATE_WIPE`], which a backend
+    /// implementing this attests). A host deletes nothing of its own around
+    /// the Clear call.
+    ///
+    /// Default: fails, and the capability is not attested, so a Clear
+    /// refuses before it resets anything. The same reentrancy contract as
+    /// [`Self::store`] applies.
+    #[cfg(feature = "shielded")]
+    fn wipe_shielded_state(&self, network: dashcore::Network) -> Result<(), PersistenceError> {
+        let _ = network;
+        Err(PersistenceError::backend(
+            "this persistence backend cannot wipe shielded state",
+        ))
+    }
+
     /// Load the persisted tracked-masternode set for `network`. Default:
     /// empty (see [`Self::persist_tracked_masternodes`]).
     fn load_tracked_masternodes(

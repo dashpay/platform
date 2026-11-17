@@ -75,6 +75,8 @@ final class InvitationPersistenceTests: XCTestCase {
             // persist/load/free trio onto `PersistentPrivateContactRequestsPosition`
             // and `PersistentPrivateShieldedAddress`.
             | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+            // Shielded state wipe: the handler wires `on_wipe_shielded_state_fn`.
+            | PlatformWalletPersistenceCapabilities.shieldedStateWipe
 
         XCTAssertEqual(
             capabilities.version,

@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use rusqlite::OptionalExtension;
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
@@ -144,6 +145,10 @@ pub struct FileBackedShieldedStore {
     /// The largest commitment tree the store had held when it was opened
     /// ([`ShieldedStore::legacy_anchor_tree_bound`]); `None` for none.
     legacy_anchor_tree_bound: Option<u64>,
+    /// Whether a Clear reset this store but has not yet seen the host wipe
+    /// its rows, as `shielded_store_meta` keeps it
+    /// ([`Self::set_host_wipe_pending`]).
+    host_wipe_pending: bool,
 }
 
 /// The private contact request association a saved record carries.
@@ -520,6 +525,7 @@ impl FileBackedShieldedStore {
             private_payment_journals: BTreeSet::new(),
             unreadable_private_payment_journal: BTreeSet::new(),
             legacy_anchor_tree_bound: None,
+            host_wipe_pending: false,
         };
         // Every record loaded below without an anchor height was saved by an
         // earlier process, from a tree no larger than the largest the store
@@ -528,6 +534,7 @@ impl FileBackedShieldedStore {
         let size = store.tree_size()?;
         let largest = store.raise_largest_tree_size(size)?;
         store.legacy_anchor_tree_bound = (largest > 0).then_some(largest);
+        store.host_wipe_pending = store.read_host_wipe_pending()?;
         store.rehydrate_pending_spends()?;
         store.load_private_payment_journal()?;
         Ok(store)
@@ -560,6 +567,47 @@ impl FileBackedShieldedStore {
             account_index: None,
             reason: format!("a negative largest tree size {largest}"),
         })
+    }
+
+    /// Whether a Clear reset this store and the host wipe that completes it
+    /// has not succeeded since, in this process or an earlier one.
+    pub fn host_wipe_pending(&self) -> bool {
+        self.host_wipe_pending
+    }
+
+    /// Durably record whether a Clear is waiting on its host wipe. Set before
+    /// a Clear resets anything and cleared only once the host has wiped, so a
+    /// process that dies in between reopens with it still set.
+    pub fn set_host_wipe_pending(&mut self, pending: bool) -> Result<(), FileShieldedStoreError> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        conn.execute(
+            "INSERT INTO shielded_store_meta (key, value) VALUES ('host_wipe_pending', ?1) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![i64::from(pending)],
+        )
+        .map_err(|e| FileShieldedStoreError::Storage(format!("write host wipe marker: {e}")))?;
+        drop(conn);
+        self.host_wipe_pending = pending;
+        Ok(())
+    }
+
+    fn read_host_wipe_pending(&self) -> Result<bool, FileShieldedStoreError> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        let value: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM shielded_store_meta WHERE key = 'host_wipe_pending'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read host wipe marker: {e}")))?;
+        Ok(value.is_some_and(|value| value != 0))
     }
 
     /// Reload every persisted [`PendingRedrive`] into the in-memory
@@ -1757,6 +1805,27 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("shielded_tree_test_{tag}_{nanos}.sqlite"))
+    }
+
+    /// The pending host wipe mark survives a reopen, and so does clearing it.
+    #[test]
+    fn should_keep_the_host_wipe_mark_across_a_reopen() {
+        let path = temp_tree_path("host_wipe_mark");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert!(!store.host_wipe_pending(), "a new store has none");
+        store.set_host_wipe_pending(true).unwrap();
+        drop(store);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert!(store.host_wipe_pending());
+        store.reset_commitment_tree().unwrap();
+        store.purge_all_subwallets().unwrap();
+        assert!(store.host_wipe_pending(), "a reset keeps the mark");
+        store.set_host_wipe_pending(false).unwrap();
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert!(!store.host_wipe_pending());
+        drop(store);
+        let _ = std::fs::remove_file(&path);
     }
 
     /// A [`PendingRedrive`] survives a store reopen — record, attempt

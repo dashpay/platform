@@ -126,6 +126,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// only honours the declaration when the extension carries the five
     /// scan-state callbacks.
     public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// The store deletes its shielded rows for a network when native Clear
+    /// asks (`on_wipe_shielded_state_fn`), which `clearShielded()` requires.
+    /// Mirrors `PersistenceCapabilities::SHIELDED_STATE_WIPE`; Rust only
+    /// honours the declaration when the wipe callback is wired.
+    public static let shieldedStateWipe: UInt64 = 1 << 16
 
     public let version: UInt32
     public let bits: UInt64

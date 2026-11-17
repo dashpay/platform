@@ -231,6 +231,52 @@ class FfiSmokeTest {
     }
 
     /**
+     * Native Clear has the persistence bridge wipe its shielded rows, so
+     * `SHIELDED_STATE_WIPE` holds only for a bridge that overrides
+     * `onWipeShieldedState` AND declares the bit: JNI leaves the slot
+     * unwired for an inherited body, and Rust strips an undeclared bit.
+     */
+    @Test
+    fun shieldedStateWipeCapabilityNeedsTheOverrideAndTheDeclaration() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_SHIELDED_STATE_WIPE
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit
+
+        assertFalse(
+            "declared, inherited body",
+            effective(object : NativePersistenceBridge() {
+                override fun persistenceCapabilitiesVersion(): Int = 1
+                override fun persistenceCapabilitiesBits(): Long = bit
+            }),
+        )
+        assertFalse(
+            "overridden, not declared",
+            effective(object : NativePersistenceBridge() {
+                override fun persistenceCapabilitiesVersion(): Int = 1
+                override fun onWipeShieldedState(network: Int): Int = 0
+            }),
+        )
+        assertTrue(
+            "overridden and declared",
+            effective(object : NativePersistenceBridge() {
+                override fun persistenceCapabilitiesVersion(): Int = 1
+                override fun persistenceCapabilitiesBits(): Long = bit
+                override fun onWipeShieldedState(network: Int): Int = 0
+            }),
+        )
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            assertTrue(
+                "the Room handler",
+                effective(PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)),
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a

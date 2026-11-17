@@ -821,6 +821,8 @@ mod tests {
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
+            #[cfg(feature = "shielded")]
+            Default::default(),
         ))
     }
 
