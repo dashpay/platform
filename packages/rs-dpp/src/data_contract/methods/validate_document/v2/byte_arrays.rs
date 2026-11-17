@@ -16,6 +16,7 @@ use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::{DocumentProperty, DocumentPropertyType};
 use indexmap::IndexMap;
 use platform_value::{platform_value, Value};
+use std::collections::BTreeSet;
 
 /// The keyword of the refusal. No schema check reports a violation under it.
 const KEYWORD: &str = "byteArray";
@@ -57,16 +58,23 @@ impl BytesReading {
 /// the serializer writes them: declared properties in declared order, the members of an
 /// object, the elements of a list. `None` when it reads every one. A null value is written
 /// as absent and read as nothing.
+///
+/// A property named in `transient_fields` is not read: a write drops its value, by its
+/// top-level name, before the document is built, so the serializer never reads it and
+/// whatever the schema check passes there is accepted, as before this check.
 pub(super) fn unreadable_byte_array(
     declared: &IndexMap<String, DocumentProperty>,
+    transient_fields: &BTreeSet<String>,
     properties: &Value,
 ) -> Option<ConsensusError> {
     let mut path = Vec::new();
-    in_object(declared, properties, &mut path)
+    in_object(declared, Some(transient_fields), properties, &mut path)
 }
 
+/// `skipped` names the declared properties of this object that are not read.
 fn in_object(
     declared: &IndexMap<String, DocumentProperty>,
+    skipped: Option<&BTreeSet<String>>,
     value: &Value,
     path: &mut Vec<String>,
 ) -> Option<ConsensusError> {
@@ -74,6 +82,9 @@ fn in_object(
         return None;
     };
     declared.iter().find_map(|(name, property)| {
+        if skipped.is_some_and(|skipped| skipped.contains(name)) {
+            return None;
+        }
         let member = entries.iter().find_map(|(key, member)| {
             matches!(key, Value::Text(key) if key == name).then_some(member)
         })?;
@@ -94,7 +105,7 @@ fn in_property(
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
             in_bytes(BytesReading::Identifier, value, path)
         }
-        DocumentPropertyType::Object(declared) => in_object(declared, value, path),
+        DocumentPropertyType::Object(declared) => in_object(declared, None, value, path),
         DocumentPropertyType::TypedArray(typed_array) => {
             in_elements(value, path, |element, path| {
                 in_property(&typed_array.item_type, element, path)

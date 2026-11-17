@@ -30,7 +30,8 @@ impl DataContract {
     /// are one value however long the list. Once the schema check passes, a byte array or
     /// identifier the document serializer cannot read as bytes, a list holding a member that
     /// is not a `Value::U8`, is refused (`byte_arrays`): the JSON form the schema check reads
-    /// does not tell an integer's type. A document type whose schema has no validation
+    /// does not tell an integer's type. A transient property, dropped before the document is
+    /// written, is left to the schema check. A document type whose schema has no validation
     /// schema has its documents refused (`InvalidContractStructure`) before any other check:
     /// the `jsonschema` crate checks no document at this generation.
     #[inline(always)]
@@ -74,8 +75,11 @@ impl DataContract {
             });
 
         // Read before the checks consume the value, reported once the schema check passes
-        let unreadable_byte_array =
-            byte_arrays::unreadable_byte_array(document_type.properties(), &value);
+        let unreadable_byte_array = byte_arrays::unreadable_byte_array(
+            document_type.properties(),
+            document_type.transient_fields(),
+            &value,
+        );
 
         Self::validate_document_properties_v1_checks(
             document_type,

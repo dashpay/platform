@@ -1254,6 +1254,60 @@ fn should_refuse_members_out_of_byte_range_by_the_schema_check_at_both_protocol_
     }
 }
 
+/// A transient property is dropped before a document is written, so the serializer never
+/// reads its value and the byte reading leaves it to the schema check.
+#[test]
+fn should_not_read_the_bytes_of_a_transient_byte_array() {
+    let latest = PlatformVersion::latest();
+    let mut contract =
+        get_data_contract_fixture(None, 0, latest.protocol_version).data_contract_owned();
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "data": { "type": "array", "byteArray": true, "maxItems": 64, "position": 0 },
+                    "pad": { "type": "array", "byteArray": true, "maxItems": 64, "position": 1 },
+                },
+                "transient": ["pad"],
+                "additionalProperties": false,
+            }),
+            true,
+            &mut Vec::new(),
+            latest,
+        )
+        .expect("expected the document type to register");
+
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "data": [Value::U8(1)], "pad": [Value::U64(1), Value::U64(2)] }),
+        latest,
+    );
+    assert!(errors.is_empty(), "{errors:?}");
+
+    // The schema check still holds it, and a stored byte array beside it is still read
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "pad": [Value::U64(300)] }),
+        latest,
+    );
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "maximum"
+        ),
+        "{errors:?}"
+    );
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "data": [Value::U64(1)], "pad": [Value::U64(1)] }),
+        latest,
+    );
+    assert_eq!(byte_array_refusal(&errors), Ok("/data/0".to_string()));
+}
+
 /// The refusal is told from any other error under its keyword by the empty schema path and
 /// property name it is built with, so nothing else is refused unpaid in its place.
 #[test]

@@ -31,7 +31,8 @@ const JSON_SCHEMA_ERROR: u32 = 10101;
 /// The entropy of the `blob` a fixture creates.
 const ENTROPY: [u8; 32] = [3; 32];
 
-/// A `blob` type with a plain byte array `data` and an identifier `target`.
+/// A `blob` type with a plain byte array `data`, an identifier `target` and a transient byte
+/// array `pad`, which a write carries and no document stores.
 fn blob_schema() -> Value {
     platform_value!({
         "type": "object",
@@ -45,7 +46,9 @@ fn blob_schema() -> Value {
                 "contentMediaType": "application/x.dash.dpp.identifier",
                 "position": 1,
             },
+            "pad": { "type": "array", "byteArray": true, "maxItems": 64, "position": 2 },
         },
+        "transient": ["pad"],
         "additionalProperties": false,
     })
 }
@@ -307,6 +310,57 @@ async fn should_refuse_unpaid_a_replace_writing_a_byte_array_of_integers_that_ar
         ),
         "expected the replace to succeed"
     );
+}
+
+/// A transient property is dropped before the document is written, so the serializer never
+/// reads it: a create and a replace carrying such a list in one succeed, as at protocol
+/// version 14.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_accept_a_transient_byte_array_of_integers_that_are_not_bytes() {
+    for version in [
+        PlatformVersion::latest(),
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+    ] {
+        let fixture = Fixture::new(version);
+        let written = platform_value!({
+            "data": Value::Bytes(vec![1, 2, 3]),
+            "pad": u64_members(&[9, 9]),
+        });
+        let blob = fixture.blob(written.clone());
+        let raw = fixture.creation(written).await;
+        let errors = fixture.check_tx(&raw).expect("expected check_tx to run");
+        assert!(errors.is_empty(), "{errors:?}");
+        let execution = fixture.process_keeping(raw, true);
+        assert!(
+            matches!(
+                execution,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ),
+            "expected the create to succeed at {}, got {execution:?}",
+            version.protocol_version
+        );
+
+        let raw = fixture
+            .replacement(
+                &blob,
+                platform_value!({
+                    "data": Value::Bytes(vec![4, 5]),
+                    "pad": u64_members(&[8]),
+                }),
+            )
+            .await;
+        let errors = fixture.check_tx(&raw).expect("expected check_tx to run");
+        assert!(errors.is_empty(), "{errors:?}");
+        let execution = fixture.process(raw);
+        assert!(
+            matches!(
+                execution,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ),
+            "expected the replace to succeed at {}, got {execution:?}",
+            version.protocol_version
+        );
+    }
 }
 
 /// A member out of byte range is a schema violation, paid as every other one is.
