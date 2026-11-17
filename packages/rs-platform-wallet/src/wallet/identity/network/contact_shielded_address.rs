@@ -4,6 +4,10 @@ use super::identity_handle::IdentityWallet;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 #[cfg(feature = "shielded")]
+use crate::wallet::identity::ManagedIdentity;
+#[cfg(feature = "shielded")]
+use crate::wallet::platform_wallet::PlatformWalletInfo;
+#[cfg(feature = "shielded")]
 use crate::wallet::shielded::shielded_identity_account_index;
 #[cfg(feature = "shielded")]
 use dash_sdk::platform::Fetch;
@@ -16,6 +20,8 @@ use dpp::data_contracts::SystemDataContract;
 #[cfg(feature = "shielded")]
 use dpp::prelude::DataContract;
 use dpp::prelude::Identifier;
+#[cfg(feature = "shielded")]
+use key_wallet_manager::WalletManager;
 
 /// The DashPay document type of a contact request.
 #[cfg(feature = "shielded")]
@@ -71,36 +77,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         }
         #[cfg(feature = "shielded")]
         {
-            // The account of the slot the identity holds now, and the requests it has
-            // sent to its other contacts.
-            let (account, others) = {
+            // The account of the slot the identity holds now.
+            let account = {
                 let wm = self.wallet_manager.read().await;
-                let Some(managed) = wm
-                    .get_wallet_info(&self.wallet_id)
-                    .and_then(|info| info.identity_manager.managed_identity(owner_id))
-                    .filter(|identity| identity.wallet_id == Some(self.wallet_id))
-                else {
-                    without_address(owner_id, "the wallet does not hold the identity");
+                let Some((account, _)) = self.prepared_account_of(&wm, owner_id) else {
                     return Ok(None);
                 };
-                let Some(account) = managed
-                    .identity_index
-                    .and_then(|index| shielded_identity_account_index(index).ok())
-                else {
-                    without_address(owner_id, "the identity has no shielded account");
-                    return Ok(None);
-                };
-                if !self
-                    .contact_shielded_addresses
-                    .is_prepared_for(&managed.identity, account)
-                {
-                    without_address(
-                        owner_id,
-                        "the identity's shielded account is not prepared in this session",
-                    );
-                    return Ok(None);
-                }
-                (account, managed.other_sent_account_references(to_user_id))
+                account
             };
             let Some(keys) = self
                 .contact_shielded_addresses
@@ -122,6 +105,24 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 return Ok(None);
             }
 
+            // The waits above released the wallet-manager lock, and the identity can
+            // have been removed and added back meanwhile, at another slot or with
+            // other keys. Ask again and derive the address under the lock, with no
+            // wait in between: the address is the one of the account prepared for
+            // the identity as it is when it is derived.
+            let wm = self.wallet_manager.read().await;
+            let Some((current, managed)) = self.prepared_account_of(&wm, owner_id) else {
+                return Ok(None);
+            };
+            if current != account {
+                without_address(
+                    owner_id,
+                    "the identity moved to another slot while the address was derived",
+                );
+                return Ok(None);
+            }
+            let others = managed.other_sent_account_references(to_user_id);
+
             let owner = owner_id.as_bytes();
             let reference = u64::from(account_reference);
             let index = keys.contact_index(owner, to_user_id.as_bytes(), reference);
@@ -140,6 +141,44 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     .to_raw_address_bytes(),
             ))
         }
+    }
+
+    /// The shielded account of the slot `owner_id` holds, with the identity, when the
+    /// account is prepared for the identity as `wm` holds it: the wallet holds the
+    /// identity, the preparation stands, and the identity carries the key the seed
+    /// proved. `None` otherwise, with the reason logged.
+    #[cfg(feature = "shielded")]
+    fn prepared_account_of<'a>(
+        &self,
+        wm: &'a WalletManager<PlatformWalletInfo>,
+        owner_id: &Identifier,
+    ) -> Option<(u32, &'a ManagedIdentity)> {
+        let Some(managed) = wm
+            .get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity(owner_id))
+            .filter(|identity| identity.wallet_id == Some(self.wallet_id))
+        else {
+            without_address(owner_id, "the wallet does not hold the identity");
+            return None;
+        };
+        let Some(account) = managed
+            .identity_index
+            .and_then(|index| shielded_identity_account_index(index).ok())
+        else {
+            without_address(owner_id, "the identity has no shielded account");
+            return None;
+        };
+        if !self
+            .contact_shielded_addresses
+            .is_prepared_for(&managed.identity, account)
+        {
+            without_address(
+                owner_id,
+                "the identity's shielded account is not prepared in this session",
+            );
+            return None;
+        }
+        Some((account, managed))
     }
 
     /// Whether the connected network's DashPay contract gives contact requests the
