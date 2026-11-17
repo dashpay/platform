@@ -431,6 +431,22 @@ or `ExecutionError` means the build is wrong, data is corrupt, or an API was
 misused. Never return a consensus error for an internal failure or an internal
 error for a user mistake; the block loop treats the two classes differently.
 
+### Error enums stay exhaustive
+
+Do not mark the workspace's own error enums `#[non_exhaustive]`. A `match`
+that decides something per variant (transient or not, an FFI error code, a
+user-facing message) lists every variant instead of ending in `_`. A new
+variant must break the build at each such `match`, so the author of the
+variant sees every caller in the compiler output and handles it in the same
+PR. With
+`#[non_exhaustive]`, callers outside the defining crate need a wildcard arm,
+and that arm silently absorbs every later variant: the code still compiles and
+the new failure takes whatever path the wildcard picked, typically a generic
+error or a test panic, without anyone being told. The workspace crates ship
+together, so the compile break costs nothing for a consumer outside the crate.
+A wildcard is correct only over enums from other repositories that are
+`#[non_exhaustive]` upstream (for example `rusqlite::ErrorCode`).
+
 ## Module layout and style
 
 - **One method, one directory.** `method_name/mod.rs` holds the public

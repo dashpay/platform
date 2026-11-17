@@ -638,3 +638,227 @@ fn should_refuse_a_nested_repeat_beside_a_reference_only_the_expansion_resolves(
         "`properties.note`",
     );
 }
+
+/// A map of `entries` in order, keeping every repeat.
+fn map_of(entries: Vec<(&str, Value)>) -> Value {
+    Value::Map(
+        entries
+            .into_iter()
+            .map(|(key, value)| (text(key), value))
+            .collect(),
+    )
+}
+
+/// Every key the parser reads, repeated in either order, at the root, in a nested object, in
+/// an array's `items`, in an index and in a definition, is refused under full validation,
+/// naming the object repeating it.
+#[test]
+fn should_refuse_a_repeated_key_in_every_object_a_schema_or_its_definitions_hold() {
+    let string_list = |items: Value| {
+        platform_value!({
+            "list": map_of(vec![
+                ("type", text("array")),
+                ("position", Value::U64(0)),
+                ("maxItems", Value::U64(4)),
+                ("items", items),
+            ])
+        })
+    };
+    let note_object = |entries: Vec<(&str, Value)>| {
+        let mut note = vec![
+            ("type", text("object")),
+            ("position", Value::U64(0)),
+            (
+                "properties",
+                platform_value!({ "leaf": { "type": "string", "maxLength": 10, "position": 0 } }),
+            ),
+            ("additionalProperties", Value::Bool(false)),
+        ];
+        note.extend(entries);
+        platform_value!({ "note": map_of(note) })
+    };
+    let index_on_a = |index: Value| {
+        schema_of(vec![
+            ("properties", string_properties()),
+            ("indices", Value::Array(vec![index])),
+        ])
+    };
+    let cases: Vec<(&str, &str, &str, Value)> = vec![
+        (
+            "root properties, the second entry first",
+            "properties",
+            "its root",
+            schema_of(vec![
+                ("properties", integer_properties()),
+                ("properties", string_properties()),
+            ]),
+        ),
+        (
+            "root type",
+            "type",
+            "its root",
+            schema_of(vec![
+                ("type", text("array")),
+                ("properties", string_properties()),
+            ]),
+        ),
+        (
+            "root required",
+            "required",
+            "its root",
+            schema_of(vec![
+                ("properties", string_properties()),
+                ("required", platform_value!(["a"])),
+                ("required", platform_value!([])),
+            ]),
+        ),
+        (
+            "root indices",
+            "indices",
+            "its root",
+            schema_of(vec![
+                ("properties", string_properties()),
+                (
+                    "indices",
+                    platform_value!([{ "name": "byA", "properties": [{ "a": "asc" }], "unique": true }]),
+                ),
+                ("indices", platform_value!([])),
+            ]),
+        ),
+        (
+            "root additionalProperties",
+            "additionalProperties",
+            "its root",
+            Value::Map(vec![
+                (text("type"), text("object")),
+                (text("properties"), string_properties()),
+                (text("additionalProperties"), Value::Bool(true)),
+                (text("additionalProperties"), Value::Bool(false)),
+            ]),
+        ),
+        (
+            "required of a nested object",
+            "required",
+            "`properties.note`",
+            schema_of(vec![(
+                "properties",
+                note_object(vec![
+                    ("required", platform_value!(["leaf"])),
+                    ("required", platform_value!([])),
+                ]),
+            )]),
+        ),
+        (
+            "type of a nested property",
+            "type",
+            "`properties.note.properties.leaf`",
+            schema_of(vec![(
+                "properties",
+                platform_value!({
+                    "note": {
+                        "type": "object",
+                        "position": 0,
+                        "properties": {
+                            "leaf": map_of(vec![
+                                ("type", text("integer")),
+                                ("position", Value::U64(0)),
+                                ("type", text("string")),
+                                ("maxLength", Value::U64(10)),
+                            ])
+                        },
+                        "additionalProperties": false
+                    }
+                }),
+            )]),
+        ),
+        (
+            "a key of an array's items",
+            "maxLength",
+            "`properties.list.items`",
+            schema_of(vec![(
+                "properties",
+                string_list(map_of(vec![
+                    ("type", text("string")),
+                    ("maxLength", Value::U64(5)),
+                    ("maxLength", Value::U64(50)),
+                ])),
+            )]),
+        ),
+        (
+            "an array's items",
+            "items",
+            "`properties.list`",
+            schema_of(vec![(
+                "properties",
+                platform_value!({
+                    "list": map_of(vec![
+                        ("type", text("array")),
+                        ("position", Value::U64(0)),
+                        ("maxItems", Value::U64(4)),
+                        ("items", platform_value!({ "type": "string", "maxLength": 5 })),
+                        ("items", platform_value!({ "type": "integer" })),
+                    ])
+                }),
+            )]),
+        ),
+        (
+            "a property of an index",
+            "a",
+            "`indices[0].properties[0]`",
+            index_on_a(platform_value!({
+                "name": "byA",
+                "properties": [map_of(vec![("a", text("asc")), ("a", text("desc"))])]
+            })),
+        ),
+    ];
+    for (case, key, place, schema) in cases {
+        let error =
+            parse(schema, true).expect_err(&format!("expected the repeat of {case} to be refused"));
+        assert_repeat_refused(error, key, place);
+    }
+
+    let schema = schema_of(vec![(
+        "properties",
+        platform_value!({ "a": { "$ref": "#/$defs/address", "position": 0 } }),
+    )]);
+    let street = |max_length: u64| platform_value!({ "street": { "type": "string", "maxLength": max_length, "position": 0 } });
+    let defs_cases: Vec<(&str, &str, &str, Value)> = vec![
+        (
+            "properties of a definition",
+            "properties",
+            "`$defs.address`",
+            map_of(vec![
+                ("type", text("object")),
+                ("properties", street(10)),
+                (
+                    "properties",
+                    platform_value!({ "street": { "type": "integer", "position": 0 } }),
+                ),
+                ("additionalProperties", Value::Bool(false)),
+            ]),
+        ),
+        (
+            "a key of a definition's property",
+            "maxLength",
+            "`$defs.address.properties.street`",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "street": map_of(vec![
+                        ("type", text("string")),
+                        ("maxLength", Value::U64(10)),
+                        ("position", Value::U64(0)),
+                        ("maxLength", Value::U64(20)),
+                    ])
+                },
+                "additionalProperties": false
+            }),
+        ),
+    ];
+    for (case, key, place, definition) in defs_cases {
+        let defs = BTreeMap::from([("address".to_string(), definition)]);
+        let error = parse_on(schema.clone(), Some(&defs), true, PlatformVersion::latest())
+            .expect_err(&format!("expected the repeat of {case} to be refused"));
+        assert_repeat_refused(error, key, place);
+    }
+}

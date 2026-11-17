@@ -352,9 +352,18 @@ mod tests {
     use dpp::data_contract::v1::DataContractV1;
     use grovedb_costs::OperationCost;
     use std::collections::BTreeMap;
+    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
     use std::sync::Arc;
     use dpp::platform_value::Value;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+    /// A random amount is reserved in the token marketplace escrow, which starts with protocol
+    /// version 16. That version has no tables yet, so random amounts are tested under the test
+    /// version that selects the escrow and their settlement on top of protocol version 15.
+    fn token_marketplace_version() -> &'static PlatformVersion {
+        PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
+            .expect("expected the token marketplace test version")
+    }
 
     const BEACON: [u8; 96] = [7; 96];
     const TOKEN: [u8; 32] = [5; 32];
@@ -368,7 +377,7 @@ mod tests {
     /// A drive holding the token history contract and a token whose whole base supply the
     /// sender holds.
     fn setup() -> Drive {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_history =
             load_system_data_contract(SystemDataContract::TokenHistory, platform_version)
@@ -483,7 +492,7 @@ mod tests {
             perform_action: true,
         });
         let epoch = BlockInfo::default().epoch;
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         match request.kind {
             RandomTokenRequestKind::Transfer { recipient_id } => {
                 TokenTransferTransitionAction::V0(TokenTransferTransitionActionV0 {
@@ -543,7 +552,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 transaction,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected the reservation to apply");
     }
@@ -564,7 +573,7 @@ mod tests {
                 requests,
                 &BlockInfo::default(),
                 transaction,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected the settlement to run")
     }
@@ -584,7 +593,7 @@ mod tests {
                 TOKEN,
                 identity_id,
                 transaction,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected to fetch a token balance")
     }
@@ -596,7 +605,7 @@ mod tests {
     /// [`supply`], inside `transaction`.
     fn supply_in(drive: &Drive, transaction: TransactionArg) -> Option<TokenAmount> {
         drive
-            .fetch_token_total_supply(TOKEN, transaction, PlatformVersion::latest())
+            .fetch_token_total_supply(TOKEN, transaction, token_marketplace_version())
             .expect("expected to fetch the total supply")
     }
 
@@ -617,7 +626,7 @@ mod tests {
                 request.reservation_id(),
                 transaction,
                 &mut vec![],
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected to fetch the reservation")
     }
@@ -630,7 +639,7 @@ mod tests {
     /// [`assert_tokens_balanced`], inside `transaction`.
     fn assert_tokens_balanced_in(drive: &Drive, transaction: TransactionArg) {
         let total = drive
-            .calculate_total_tokens_balance(transaction, PlatformVersion::latest())
+            .calculate_total_tokens_balance(transaction, token_marketplace_version())
             .expect("expected to sum the token balances");
         assert!(
             total.ok().expect("expected the sums to compare"),
@@ -654,7 +663,7 @@ mod tests {
         document_type_name: &str,
         transaction: TransactionArg,
     ) -> Option<TokenAmount> {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let contract = drive
             .cache
             .system_data_contracts
@@ -716,14 +725,14 @@ mod tests {
                 apply,
                 &BlockInfo::default(),
                 None,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected the history write to apply")
     }
 
     #[test]
     fn should_prepay_the_settlement_once_with_the_history_write() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup();
         for request in [transfer(), mint()] {
             let random = random_history_write(&request);
@@ -869,7 +878,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 None,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected the plain transfer");
         assert_eq!(balance(&drive, SENDER), balance(&plain, SENDER));
@@ -913,7 +922,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 None,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected the plain mint");
         assert_eq!(balance(&drive, RECIPIENT), balance(&plain, RECIPIENT));
@@ -958,7 +967,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 None,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected to mint the other sender's balance");
         let first = transfer();
@@ -981,7 +990,7 @@ mod tests {
             true,
             &BlockInfo::default(),
             None,
-            PlatformVersion::latest(),
+            token_marketplace_version(),
         );
         assert!(
             matches!(
@@ -1146,7 +1155,7 @@ mod tests {
             std::slice::from_ref(&request),
             &BlockInfo::default(),
             None,
-            PlatformVersion::latest(),
+            token_marketplace_version(),
         );
         assert!(matches!(
             result,
@@ -1165,7 +1174,7 @@ mod tests {
             }],
             &BlockInfo::default(),
             None,
-            PlatformVersion::latest(),
+            token_marketplace_version(),
         );
         assert!(matches!(
             result,
@@ -1270,7 +1279,7 @@ mod tests {
                 std::slice::from_ref(&mismatch),
                 &BlockInfo::default(),
                 None,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             );
             assert!(
                 matches!(

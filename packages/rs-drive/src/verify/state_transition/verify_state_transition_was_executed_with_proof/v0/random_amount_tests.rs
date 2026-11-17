@@ -35,6 +35,7 @@ use dpp::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV1, TokenMintTransition, TokenTransferTransition,
 };
 use dpp::tokens::token_event::TokenEvent;
+use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
 use std::sync::Arc;
 
 const CONTRACT: [u8; 32] = [3; 32];
@@ -69,10 +70,18 @@ enum Execution {
     Fixed,
 }
 
-/// The latest platform version with random token amounts active, which no protocol version
+/// A random amount is reserved in the token marketplace escrow, which starts with protocol
+/// version 16. That version has no tables yet, so random amounts are tested under the test
+/// version that selects the escrow and their settlement on top of protocol version 15.
+fn token_marketplace_version() -> &'static PlatformVersion {
+    PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
+        .expect("expected the token marketplace test version")
+}
+
+/// [`token_marketplace_version`] with random token amounts active, which no protocol version
 /// is until block execution settles them.
 fn random_platform_version() -> PlatformVersion {
-    let mut platform_version = PlatformVersion::latest().clone();
+    let mut platform_version = token_marketplace_version().clone();
     platform_version
         .dpp
         .state_transition_serialization_versions
@@ -99,7 +108,7 @@ impl Fixture {
     /// a block executed a `kind` of exactly `MINIMUM`, sent by `OWNER` to `RECIPIENT` with
     /// `NOTE` and the same nonce ([`Self::fixed_transition`]).
     fn executing(kind: Kind, execution: Execution) -> Self {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let mut token = TokenConfigurationV0::default_most_restrictive().with_base_supply(0);
         token.keeps_history =
@@ -454,7 +463,7 @@ impl Fixture {
     /// The proof of `transition`'s execution, from the drive's state.
     fn proof_of(&self, transition: &StateTransition) -> Vec<u8> {
         self.drive
-            .prove_state_transition(transition, None, PlatformVersion::latest())
+            .prove_state_transition(transition, None, token_marketplace_version())
             .expect("expected to prove the transition")
             .into_data()
             .expect("expected proof bytes")
@@ -546,7 +555,7 @@ impl Fixture {
             root_hash,
             self.drive
                 .grove
-                .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+                .root_hash(None, &token_marketplace_version().drive.grove_version)
                 .unwrap()
                 .expect("expected the stored root hash")
         );
@@ -717,7 +726,7 @@ fn should_refuse_a_random_group_mint_before_reading_the_proof() {
 
 #[test]
 fn should_refuse_a_random_transfer_or_mint_where_random_amounts_are_inactive() {
-    let mut inactive = PlatformVersion::latest().clone();
+    let mut inactive = token_marketplace_version().clone();
     inactive
         .dpp
         .state_transition_serialization_versions
@@ -739,7 +748,7 @@ fn should_refuse_a_format_version_1_transfer_or_mint_without_a_random_minimum_wh
     // of that format naming no random minimum never executes there, though a fixed one of
     // format version 0 with the same fields leaves the same history: its proof must not stand
     // for it. Where the format is active, the same transition is a fixed amount and verifies.
-    let mut inactive = PlatformVersion::latest().clone();
+    let mut inactive = token_marketplace_version().clone();
     inactive
         .dpp
         .state_transition_serialization_versions
