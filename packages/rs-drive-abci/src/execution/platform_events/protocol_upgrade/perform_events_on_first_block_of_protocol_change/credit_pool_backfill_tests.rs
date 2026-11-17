@@ -1,3 +1,4 @@
+use crate::platform_types::platform_state::PlatformState;
 use crate::test::helpers::setup::TestPlatformBuilder;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
@@ -12,6 +13,7 @@ fn should_backfill_credit_notes_when_skipping_versions_and_leave_pv13_replay_unc
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(previous)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let rho = [7; 32];
         if previous >= 12 {
@@ -38,6 +40,7 @@ fn should_backfill_credit_notes_when_skipping_versions_and_leave_pv13_replay_unc
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform.state.load(),
+                    &mut PlatformState::clone(&platform.state.load()),
                     &BlockInfo::default(),
                     &tx,
                     previous,
@@ -55,6 +58,7 @@ fn should_backfill_credit_notes_when_skipping_versions_and_leave_pv13_replay_unc
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &BlockInfo::default(),
                 &tx,
                 previous,
@@ -83,6 +87,7 @@ fn should_backfill_credit_notes_when_skipping_versions_and_leave_pv13_replay_unc
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &BlockInfo::default(),
                 &tx,
                 latest.protocol_version,
@@ -107,6 +112,7 @@ fn should_keep_fresh_pv14_genesis_empty_when_backfill_is_repeated() {
     let platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(pv.protocol_version)
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let original = platform
         .drive

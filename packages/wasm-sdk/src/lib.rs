@@ -11,6 +11,7 @@ pub mod encrypted_for;
 pub mod error;
 pub mod logging;
 pub mod moderation_charters;
+pub mod private_contact_requests;
 mod protocol_version_store;
 pub mod queries;
 pub mod sdk;

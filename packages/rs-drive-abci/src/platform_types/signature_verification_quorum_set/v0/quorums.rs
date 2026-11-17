@@ -10,7 +10,7 @@ use std::fmt::Debug;
 
 use crate::error::Error;
 use crate::platform_types::signature_verification_quorum_set::QuorumConfig;
-use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 
 /// Quorum per hash
 #[derive(Clone, Deref, DerefMut, From)]

@@ -136,4 +136,10 @@ pub struct ContractDocumentChangeContext {
     /// the document as it will be stored: the stored one with the fields the transition sets,
     /// its revision one higher, everything else as it was
     pub document: Document,
+    /// who holds the stored document's storage, when the validation read it: the owner its
+    /// storage flags name, which is the contract owner for a document a gas sponsor paid for.
+    /// The change is written in that identity's name, so the storage stays with it. `None`
+    /// writes it in the name of the document's owner, as every change before protocol
+    /// version 15 is written, and as one is when the stored flags name nobody
+    pub storage_holder_id: Option<Identifier>,
 }

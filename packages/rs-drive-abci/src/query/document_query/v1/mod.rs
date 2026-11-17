@@ -26,7 +26,6 @@
 //! message-level docstring on `GetDocumentsRequestV1` in
 //! `platform.proto` for the full supported / rejected shape table.
 
-mod compute_aggregate_mode_and_check_limit;
 mod conversions;
 mod dispatch;
 mod routing;

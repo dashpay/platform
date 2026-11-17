@@ -9,7 +9,6 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::consensus::encode::{
     deserialize as deserialize_consensus, serialize as serialize_consensus,
 };
-use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, sleep};

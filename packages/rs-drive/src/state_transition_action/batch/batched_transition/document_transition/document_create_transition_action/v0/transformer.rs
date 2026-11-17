@@ -132,7 +132,7 @@ impl DocumentCreateTransitionActionV0 {
                 })
             });
 
-        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
+        let mut prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
             .as_ref()
             .filter(|_| decision_proposal.is_none())
             .map(|(index_name, credits)| {
@@ -143,9 +143,10 @@ impl DocumentCreateTransitionActionV0 {
                         document_type.name()
                     )),
                 )?;
-                // Identifier values are written one way from protocol version 14, so every
-                // contender of a contest names it with the same poll and prefunds the same
-                // balance; before 14 they are taken as given, as they always were
+                // Every contender of a contest names it with the same poll and prefunds the
+                // same balance: from protocol version 15 every index value is written the one
+                // way its property's type keys it, at protocol version 14 identifier values
+                // alone are written one way, and before 14 the values are taken as given
                 let index_values = index.extract_contested_values(
                     &data,
                     document_type.flattened_properties(),
@@ -170,7 +171,7 @@ impl DocumentCreateTransitionActionV0 {
 
         let (current_store_contest_info, should_store_contest_info) =
             if let Some((contested_document_resource_vote_poll, _)) =
-                &prefunded_voting_balances_by_vote_poll
+                &mut prefunded_voting_balances_by_vote_poll
             {
                 let (fetch_fee_result, maybe_current_store_contest_info) = drive
                     .fetch_contested_document_vote_poll_stored_info(
@@ -183,6 +184,51 @@ impl DocumentCreateTransitionActionV0 {
                 fee_result.checked_add_assign(fetch_fee_result.ok_or(Error::Drive(
                     DriveError::CorruptedCodeExecution("expected fee result"),
                 ))?)?;
+
+                // A contest under way keeps the poll it was opened under: its prefunded balance
+                // and its end date are kept under that poll. A contender joining it under a
+                // later protocol version, which writes index values another way, names that
+                // poll by writing its values as the version the contest was opened at did. The
+                // contest is found at the path of its index keys, which every version writes
+                // alike. Only values this version does not write as they were sent can be
+                // written another way by an earlier one, so nothing is read for the others.
+                // In place: inert before protocol version 15, where
+                // `fetch_contest_opening_protocol_version` is `None` and reads nothing.
+                if let Some(current_store_contest_info) = &maybe_current_store_contest_info {
+                    let index = document_type_indexes
+                        .get(&contested_document_resource_vote_poll.index_name)
+                        .ok_or_else(|| {
+                            ProtocolError::UnknownContestedIndexResolution(format!(
+                                "index {} not found on document type {}",
+                                contested_document_resource_vote_poll.index_name,
+                                document_type.name()
+                            ))
+                        })?;
+                    if contested_document_resource_vote_poll.index_values
+                        != index.extract_values(&data)
+                    {
+                        let (read_fee_result, opening_protocol_version) = drive
+                            .fetch_contest_opening_protocol_version(
+                                current_store_contest_info,
+                                &block_info.epoch,
+                                platform_version,
+                            )?;
+                        fee_result.checked_add_assign(read_fee_result)?;
+                        if let Some(opening_protocol_version) = opening_protocol_version
+                            .filter(|version| *version != platform_version.protocol_version)
+                        {
+                            let opening_platform_version =
+                                PlatformVersion::get(opening_protocol_version)
+                                    .map_err(ProtocolError::from)?;
+                            contested_document_resource_vote_poll.index_values = index
+                                .extract_contested_values(
+                                    &data,
+                                    document_type.flattened_properties(),
+                                    opening_platform_version,
+                                )?;
+                        }
+                    }
+                }
                 let should_store_contest_info = if maybe_current_store_contest_info.is_none() {
                     // We are starting a new contest
                     Some(ContestedDocumentVotePollStoredInfo::new(

@@ -260,7 +260,6 @@ fn insert_at(
         apply,
         transaction,
         platform_version(),
-        None,
     )
 }
 
@@ -284,7 +283,6 @@ fn delete_at(
         apply,
         transaction,
         platform_version(),
-        None,
     )
 }
 

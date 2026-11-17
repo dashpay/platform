@@ -1,5 +1,5 @@
 use dpp::bls::PublicKey as BlsPublicKey;
-use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use std::collections::BTreeMap;

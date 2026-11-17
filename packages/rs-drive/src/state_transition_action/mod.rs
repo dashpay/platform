@@ -34,6 +34,7 @@ use crate::state_transition_action::identity::identity_update::IdentityUpdateTra
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use crate::state_transition_action::shielded::identity_create_from_shielded_pool::IdentityCreateFromShieldedPoolTransitionAction;
 use crate::state_transition_action::shielded::identity_top_up_from_shielded_pool::IdentityTopUpFromShieldedPoolTransitionAction;
+use crate::state_transition_action::shielded::private_document_create_from_shielded_pool::PrivateDocumentCreateFromShieldedPoolTransitionAction;
 use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
 use crate::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
 use crate::state_transition_action::shielded::shield_from_identity::ShieldFromIdentityTransitionAction;
@@ -136,6 +137,10 @@ pub enum StateTransitionAction {
     TokenUnshieldWithShieldedFeeAction(TokenUnshieldWithShieldedFeeTransitionAction),
     /// tokens bought out of the credit pool and minted into the token's shielded pool
     TokenPurchaseFromShieldedPoolAction(TokenPurchaseFromShieldedPoolTransitionAction),
+    /// entries appended to a private document type's store, paid from the credit pool
+    PrivateDocumentCreateFromShieldedPoolAction(
+        PrivateDocumentCreateFromShieldedPoolTransitionAction,
+    ),
 }
 
 impl StateTransitionAction {
@@ -212,6 +217,9 @@ impl StateTransitionAction {
             | StateTransitionAction::TokenUnshieldWithShieldedFeeAction(_)
             | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_) => {
                 UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signatures)
+            }
+            StateTransitionAction::PrivateDocumentCreateFromShieldedPoolAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
             }
         }
     }

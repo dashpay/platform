@@ -94,7 +94,7 @@ class GateCoverageLintTest {
         )
         val GATED_OPENER = Regex(
             """=\s*(\w+\.)?(gate|teardownGate|queryGate)\.""" +
-                """(?:op \{|opWithCleanupOnCancellation\()""",
+                """(?:op \{|opWithCleanupOnCancellation\(|opReturningCompletedResult \{)""",
         )
         val DELEGATION_OPENER = Regex("""=\s*\w+\(""")
 

@@ -1,9 +1,9 @@
 //! System data contracts and activation heights a context provider serves
 //! without asking any source.
 
+pub(crate) use dash_context_provider::platform_activation_height;
 use dash_context_provider::ContextProviderError;
-use dpp::dashcore::Network;
-use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::prelude::{DataContract, Identifier};
 #[cfg(any(
     feature = "dpns-contract",
     feature = "dashpay-contract",
@@ -174,7 +174,7 @@ pub(crate) fn system_data_contract(
 
         #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
         // Below protocol version 14 the app-connect contract is
-        // absent, so the lookup falls through to the fallback provider (or `None`).
+        // absent, so the lookup returns `None`.
         if *id == SystemDataContract::AppConnect.id()
             && platform_version.protocol_version >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
         {
@@ -250,15 +250,6 @@ pub(crate) fn system_data_contract(
     }
 
     Ok(None)
-}
-
-/// The Core height Platform activated at (the L1 locked height) on `network`.
-pub(crate) fn platform_activation_height(network: Network) -> CoreBlockHeight {
-    match network {
-        Network::Mainnet => 2132092,             // Mainnet L1 locked height
-        Network::Testnet => 1090319,             // Testnet L1 locked height
-        Network::Devnet | Network::Regtest => 1, // Devnet/Regtest activation height
-    }
 }
 
 #[cfg(test)]

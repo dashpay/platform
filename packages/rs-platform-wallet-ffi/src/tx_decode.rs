@@ -7,7 +7,6 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::{ptr, slice};
 
-use dashcore::hashes::Hash;
 use platform_wallet::decode_transaction;
 
 use crate::core_wallet_types::vec_to_ptr;

@@ -26,6 +26,8 @@ The command handles the stop sequence appropriately to ensure that interdependen
 
 If the nodes are masternodes participating in DKG (Distributed Key Generation) session, stopping them can cause issues.
 Use the `--safe` flag to wait for any current DKG round to complete before stopping the nodes, or use `--force` to ignore this protection (which may result in masternodes being temporarily banned from quorums).
+See [Stopping a masternode safely](../stop.md#stopping-a-masternode-safely) for what dashmate checks and what `--safe` shows while it waits.
+Nodes are stopped one at a time, and with `--safe` each waits for its own safe moment, so nodes already stopped stay down while the next one waits.
 
 ## Examples
 

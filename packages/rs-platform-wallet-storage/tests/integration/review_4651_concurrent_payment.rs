@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use common::{ensure_wallet_meta, secure_tempdir};
-use dashcore::hashes::Hash;
 use dpp::identity::{Identity, IdentityV0};
 use dpp::prelude::Identifier;
 use key_wallet::account::account_type::StandardAccountType;

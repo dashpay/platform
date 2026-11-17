@@ -85,8 +85,8 @@ use dpp::secp256k1::{PublicKey, SecretKey};
 
 use crate::core::FetchedCoreTransaction;
 use crate::platform::transition::asset_lock_submission::{
-    is_asset_lock_already_consumed, is_instant_lock_proof_invalid, needs_chain_lock_proof,
-    submit_with_cl_height_retry,
+    as_asset_lock_transaction_too_many_inputs, is_asset_lock_already_consumed,
+    is_instant_lock_proof_invalid, needs_chain_lock_proof, submit_with_cl_height_retry,
 };
 use crate::platform::transition::put_identity::PutIdentity;
 use crate::platform::transition::put_settings::PutSettings;
@@ -828,10 +828,12 @@ impl Sdk {
     /// stale with `InvalidInstantAssetLockProofSignatureError` — its own message
     /// asks to "try chain asset lock proof instead". An islock proof over a
     /// funding tx with many inputs can also make the claim larger than
-    /// `max_state_transition_size`. When the funding tx is already
-    /// chain-locked (the usual case by claim time), this resubmits a
-    /// `ChainAssetLockProof` over the SAME credit output — for the size case
-    /// only if the claim fits with it. If the tx is not yet
+    /// `max_state_transition_size`, or carry more inputs than an islock proof
+    /// may (`IdentityAssetLockTransactionTooManyInputsError`). When the funding
+    /// tx is already chain-locked (the usual case by claim time), this
+    /// resubmits a `ChainAssetLockProof` over the SAME credit output — for the
+    /// size case only if the claim fits with it, and for the input cap case
+    /// only if the islock proof's own transaction is over the cap. If the tx is not yet
     /// chain-locked no fallback is possible and the claim returns
     /// [`InvitationError::NotChainLocked`] as a retry signal.
     ///
@@ -896,7 +898,8 @@ impl Sdk {
         });
 
         // Submit the primary proof first and — only when the IS proof is
-        // unusable (a stale islock, or a claim too large to submit with it) —
+        // unusable (a stale islock, a claim too large to submit with it, or a
+        // funding transaction over the input cap) —
         // the ChainLock fallback over the SAME credit output. Each
         // submission is wrapped in the CL-height-too-low retry (Platform's
         // observed Core tip briefly behind the proof's chain-locked height;
@@ -1019,12 +1022,18 @@ where
 ///
 /// `primary` is submitted first. Exactly ONE recovery is attempted, and only
 /// for an InstantSend primary whose rejection indicts the proof kind rather
-/// than the claim (as in `needs_chain_lock_proof`): Platform rejected a stale
-/// islock — its signing quorum rotated out, or it is no longer "recent";
-/// Platform's own message asks us to "try chain asset lock proof instead" —
-/// or the islock proof made the claim too large to submit, and a ChainLock
-/// proof in its place fits. On that rejection the ChainLock
-/// `chain_fallback` over the SAME credit output is submitted —
+/// than the claim (as in `needs_chain_lock_proof`):
+/// - Platform rejected a stale islock — its signing quorum rotated out, or it
+///   is no longer "recent"; Platform's own message asks us to "try chain asset
+///   lock proof instead";
+/// - the islock proof made the claim too large to submit, and a ChainLock
+///   proof in its place fits;
+/// - Platform refused the funding transaction for having more inputs than an
+///   islock proof may carry (from protocol 15; before it the ChainLock proof
+///   is refused the same way).
+///
+/// On that rejection the ChainLock `chain_fallback` over the SAME credit output
+/// is submitted —
 /// or, when the funding tx was not yet chain-locked so no fallback could be
 /// built, [`InvitationError::NotChainLocked`] surfaces a clear retry signal instead of
 /// the raw consensus error. Every other error — from the primary or from the
@@ -1053,6 +1062,9 @@ where
             let Some(chain_proof) = chain_fallback else {
                 let reason = if is_instant_lock_proof_invalid(&e) {
                     "was rejected by Platform (stale — quorum rotated or no longer recent)"
+                } else if as_asset_lock_transaction_too_many_inputs(&e).is_some() {
+                    "was rejected by Platform (the funding transaction has more inputs than \
+                     an islock proof may carry)"
                 } else {
                     "makes the claim too large to submit"
                 };
@@ -1174,8 +1186,10 @@ fn identity_carries_keys(
 /// populated ONLY when `primary` is InstantSend AND the funding tx is already
 /// chain-locked — [`Sdk::claim_invitation`]'s IS → ChainLock fallback
 /// resubmits it if Platform rejects the primary IS proof as stale
-/// (`InvalidInstantAssetLockProofSignatureError`) or the IS proof makes the
-/// claim too large and the ChainLock proof fits. It is `None` when the primary is
+/// (`InvalidInstantAssetLockProofSignatureError`), the IS proof makes the
+/// claim too large and the ChainLock proof fits, or Platform refuses the IS
+/// proof's transaction for its input count
+/// (`IdentityAssetLockTransactionTooManyInputsError`). It is `None` when the primary is
 /// already a ChainLock proof (nothing to fall back to) or when the funding tx is
 /// not yet chain-locked (no ChainLock proof can be built — the claim must be
 /// retried once the block confirms).
@@ -1772,8 +1786,8 @@ mod tests {
 
     /// An islock that locks the funding tx, with the tx already chain-locked,
     /// yields an InstantSend primary (fast path) PLUS a ChainLock fallback over the
-    /// same credit output — what the claim path submits if the IS proof is stale
-    /// or makes the claim too large.
+    /// same credit output — what the claim path submits if the IS proof is stale,
+    /// makes the claim too large, or its transaction is over the input cap.
     #[test]
     fn should_carry_a_chain_fallback_for_a_chain_locked_islock_invitation() {
         let key = voucher();
@@ -2092,7 +2106,6 @@ mod tests {
         use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
-        use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::{OutPoint, Txid};
         use dpp::identity::{Identity, IdentityPublicKey, KeyID};
         use std::collections::BTreeMap;
@@ -2419,16 +2432,19 @@ mod tests {
         use super::super::submit_claim_with_chain_lock_fallback;
         use super::super::{Error, InvitationError};
         use super::{asset_lock_tx_paying_voucher_at, voucher};
-        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+        use dpp::consensus::basic::identity::{
+            IdentityAssetLockTransactionTooManyInputsError,
+            InvalidInstantAssetLockProofSignatureError,
+        };
         use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
         use dpp::consensus::ConsensusError;
-        use dpp::dashcore::InstantLock;
+        use dpp::dashcore::{InstantLock, TxIn};
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
 
-        /// One of the two rejections the seam recovers from (the other is a
-        /// size refusal): Platform's stale-islock consensus error, in the
+        /// One of the rejections the seam recovers from (the others are a size
+        /// refusal and an input cap refusal): Platform's stale-islock consensus error, in the
         /// `Protocol(ConsensusError)` shape `is_instant_lock_proof_invalid`
         /// matches.
         fn stale_islock_rejection() -> Error {
@@ -2442,6 +2458,27 @@ mod tests {
         /// than a ChainLock proof, so the ChainLock fallback fits.
         fn oversized_rejection() -> Error {
             ConsensusError::from(StateTransitionMaxSizeExceededError::new(20_481, 20_480)).into()
+        }
+
+        /// Platform's refusal of a funding transaction with one input more than
+        /// the asset lock input cap (consensus 10534).
+        fn too_many_inputs_rejection() -> Error {
+            ConsensusError::from(IdentityAssetLockTransactionTooManyInputsError::new(
+                101, 100,
+            ))
+            .into()
+        }
+
+        /// An InstantSend primary over a funding tx with one input more than the
+        /// asset lock input cap.
+        fn instant_primary_over_the_input_cap() -> AssetLockProof {
+            let mut transaction = asset_lock_tx_paying_voucher_at(&voucher(), 0);
+            transaction.input = vec![TxIn::default(); 101];
+            AssetLockProof::Instant(InstantAssetLockProof::new(
+                InstantLock::default(),
+                transaction,
+                0,
+            ))
         }
 
         /// Any error the seam must NOT treat as an unusable IS proof.
@@ -2469,14 +2506,21 @@ mod tests {
             chain_fallback: Option<AssetLockProof>,
             script: Vec<Result<u32, Error>>,
         ) -> (Result<u32, InvitationError>, Vec<AssetLockProof>) {
+            run_with_primary(instant_primary(), chain_fallback, script).await
+        }
+
+        /// [`run`] with `primary` in place of the one-input InstantSend primary.
+        async fn run_with_primary(
+            primary: AssetLockProof,
+            chain_fallback: Option<AssetLockProof>,
+            script: Vec<Result<u32, Error>>,
+        ) -> (Result<u32, InvitationError>, Vec<AssetLockProof>) {
             let queue: Arc<Mutex<VecDeque<Result<u32, Error>>>> =
                 Arc::new(Mutex::new(script.into_iter().collect()));
             let submitted: Arc<Mutex<Vec<AssetLockProof>>> = Arc::new(Mutex::new(Vec::new()));
             let (queue_f, submitted_f) = (Arc::clone(&queue), Arc::clone(&submitted));
-            let result = submit_claim_with_chain_lock_fallback(
-                instant_primary(),
-                chain_fallback,
-                move |proof| {
+            let result =
+                submit_claim_with_chain_lock_fallback(primary, chain_fallback, move |proof| {
                     let queue = Arc::clone(&queue_f);
                     let submitted = Arc::clone(&submitted_f);
                     async move {
@@ -2487,9 +2531,8 @@ mod tests {
                             .pop_front()
                             .expect("script exhausted — the seam submitted more than scripted")
                     }
-                },
-            )
-            .await;
+                })
+                .await;
             let recorded = submitted.lock().expect("submitted").clone();
             (result, recorded)
         }
@@ -2567,6 +2610,71 @@ mod tests {
                 1,
                 "no second submission without a fallback"
             );
+        }
+
+        /// From protocol 15 the input cap holds only the transaction an islock
+        /// proof embeds: a claim refused for its funding transaction's inputs
+        /// is submitted again with the ChainLock fallback over the same outpoint.
+        #[tokio::test]
+        async fn should_resubmit_the_chain_fallback_when_the_islock_proofs_transaction_is_over_the_input_cap(
+        ) {
+            let (result, submitted) = run_with_primary(
+                instant_primary_over_the_input_cap(),
+                Some(chain_fallback_proof()),
+                vec![Err(too_many_inputs_rejection()), Ok(9)],
+            )
+            .await;
+            assert_eq!(result.expect("fallback success"), 9);
+            assert_eq!(submitted.len(), 2, "primary then fallback");
+            assert!(
+                matches!(submitted[1], AssetLockProof::Chain(_)),
+                "the resubmission must carry the ChainLock fallback"
+            );
+        }
+
+        /// Without a fallback (funding tx not yet chain-locked) the retry signal
+        /// names the input cap, not the transition's size.
+        #[tokio::test]
+        async fn should_surface_the_retry_signal_for_an_islock_proof_over_the_input_cap_without_fallback(
+        ) {
+            let (result, submitted) = run_with_primary(
+                instant_primary_over_the_input_cap(),
+                None,
+                vec![Err(too_many_inputs_rejection())],
+            )
+            .await;
+
+            match result {
+                Err(InvitationError::NotChainLocked(message)) => {
+                    assert!(
+                        message.contains("more inputs"),
+                        "unexpected message: {message}"
+                    );
+                }
+                other => panic!("expected the not-chain-locked retry signal, got {other:?}"),
+            }
+            assert_eq!(
+                submitted.len(),
+                1,
+                "no second submission without a fallback"
+            );
+        }
+
+        /// A 10534 for an islock primary whose own transaction is within the cap
+        /// is not about that proof: it propagates after one submission even
+        /// though a ChainLock fallback exists.
+        #[tokio::test]
+        async fn should_not_resubmit_a_too_many_inputs_refusal_of_an_islock_proof_within_the_cap() {
+            let (result, submitted) = run(
+                Some(chain_fallback_proof()),
+                vec![Err(too_many_inputs_rejection())],
+            )
+            .await;
+            assert!(
+                matches!(result, Err(InvitationError::Sdk(_))),
+                "expected the refusal to propagate, got {result:?}"
+            );
+            assert_eq!(submitted.len(), 1, "no fallback for an unrelated refusal");
         }
 
         /// A claim too large by more than the IS proof can give back would be

@@ -68,11 +68,11 @@ pub fn quorums(members: &[&TestQuorum]) -> Quorums<VerificationQuorum> {
 
 /// The DIP8 request id of a chain lock at `height`
 pub fn chain_lock_request_id(height: u32) -> QuorumSigningRequestId {
-    let mut engine = QuorumSigningRequestId::engine();
+    let mut engine = sha256d::Hash::engine();
     engine.input(&[5u8]);
     engine.input(b"clsig");
     engine.input(height.to_le_bytes().as_slice());
-    QuorumSigningRequestId::from_engine(engine)
+    QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine))
 }
 
 /// The member of `active_at_signing_height` that Dash Core signs a llmq_test chain lock at
