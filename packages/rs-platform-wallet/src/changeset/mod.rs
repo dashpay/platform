@@ -30,6 +30,7 @@ pub mod shielded_changeset_disabled;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync_start_state;
 pub mod traits;
+mod wallet_accounting;
 
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
@@ -40,9 +41,10 @@ pub use changeset::{
     IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
     KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
     PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
-    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
-    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    PlatformAddressChangeSet, PlatformWalletChangeSet, PrivateContactRequestsPosition,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
+    ReceivedContactRequestKey, SentContactRequestKey, ShieldedRecipientRaw, TokenBalanceChangeSet,
+    WalletMetadataEntry, SHIELDED_RECIPIENT_SIZE,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
@@ -68,3 +70,4 @@ pub use traits::{
     persists_outbound_account_markers, ListedCoreTxid, PersistenceError, PersistenceErrorKind,
     PlatformWalletPersistence,
 };
+pub use wallet_accounting::{is_owned, wallet_accounting, wallet_direction};

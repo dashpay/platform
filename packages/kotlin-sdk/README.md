@@ -20,7 +20,7 @@ kotlin-sdk/
 ```
 
 The native layer is [`packages/rs-unified-sdk-jni`](../rs-unified-sdk-jni), a Rust JNI shim
-over `rs-sdk-ffi`, `platform-wallet-ffi` and `key-wallet-ffi`. There is no C
+over `rs-sdk-ffi` and `platform-wallet-ffi`. There is no C
 glue and no generated headers on Android — the shim calls the FFI crates as
 ordinary Rust dependencies and exposes JNI symbols directly.
 

@@ -22,7 +22,6 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnou
 use dpp::consensus::basic::state_transition::ShieldedImplicitFeeCapExceededError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::consensus::state::state_error::StateError;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::signer;
 use dpp::dashcore::{ ScriptBuf, Txid};
 use dpp::fee::Credits;

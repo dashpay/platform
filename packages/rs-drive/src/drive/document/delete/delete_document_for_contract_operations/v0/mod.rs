@@ -1,14 +1,11 @@
 use crate::drive::document::expiration::pricing::document_expires_at;
 use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, TransactionArg};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
-
-use std::borrow::Cow;
-use std::collections::HashMap;
 
 use crate::drive::document::paths::contract_documents_primary_key_path;
 use crate::util::object_size_info::DocumentInfo;
@@ -50,9 +47,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -84,9 +79,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -197,23 +190,21 @@ impl Drive {
         )
     }
 
-    /// [`Self::force_delete_document_for_contract_operations_v0`] for a document already read
-    /// with its element's `storage_flags`: the same guards, then the operations
-    /// [`Self::delete_read_document_for_contract_operations_v0`] gives, without the read. When
-    /// only estimating costs, the document's type's estimated size stands for it, as it does
-    /// for the by-id delete.
+    /// [`Self::force_delete_document_for_contract_operations_v0`] for a document already read:
+    /// the same guards, then the operations
+    /// [`Self::delete_read_document_for_contract_operations_v0`] gives, without the read. The
+    /// document goes without storage flags, which none of those operations carries: GroveDB
+    /// refunds a removed element by the flags it holds. When only estimating costs, the
+    /// document's type's estimated size stands for it, as it does for the by-id delete.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn force_delete_read_document_for_contract_operations_v0(
         &self,
         document: Document,
-        storage_flags: Option<StorageFlags>,
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -245,7 +236,7 @@ impl Drive {
             )?;
             DocumentEstimatedAverageSize(document_type.estimated_size(platform_version)? as u32)
         } else {
-            DocumentOwnedInfo((document, storage_flags.map(Cow::Owned)))
+            DocumentOwnedInfo((document, None))
         };
 
         self.delete_read_document_for_contract_operations_v0(
@@ -276,9 +267,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         mut batch_operations: Vec<LowLevelDriveOperation>,

@@ -10,7 +10,6 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::signer;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;

@@ -643,7 +643,6 @@ fn should_fail_new_key_allocation_at_exhaustion_but_allow_reuse_and_revocation()
             &BlockInfo::default(),
             Some(&transaction),
             PlatformVersion::latest(),
-            None,
         )
         .expect("add maximum key id");
     let before = fixture.identity(&transaction);

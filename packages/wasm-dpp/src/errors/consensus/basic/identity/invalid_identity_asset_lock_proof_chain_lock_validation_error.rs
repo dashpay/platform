@@ -2,7 +2,6 @@ use dpp::consensus::basic::identity::InvalidIdentityAssetLockProofChainLockValid
 
 use crate::buffer::Buffer;
 
-use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityAssetLockProofChainLockValidationErrorWasm)]

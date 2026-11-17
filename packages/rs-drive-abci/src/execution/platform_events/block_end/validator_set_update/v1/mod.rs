@@ -12,7 +12,6 @@ use crate::rpc::core::CoreRPCLike;
 use itertools::Itertools;
 
 use crate::platform_types::validator_set::ValidatorSetExt;
-use dpp::dashcore::hashes::Hash;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 impl<C> Platform<C>

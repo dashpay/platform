@@ -323,6 +323,20 @@ impl DataContractWasm {
                 tokens_configuration_from_js_value(v)
             })?
             .unwrap_or_default();
+        // A contract of structure version 0 holds no tokens: refuse them rather than drop them.
+        if !tokens.is_empty()
+            && platform_version
+                .dpp
+                .contract_versions
+                .contract_structure_version
+                == 0
+        {
+            return Err(WasmDppError::invalid_argument(format!(
+                "protocol version {} builds data contracts of structure version 0, which hold no \
+                 tokens",
+                platform_version.protocol_version
+            )));
+        }
 
         // Extract primitive fields via serde last (consumes options)
         let opts: DataContractOptions = serde_wasm_bindgen::from_value(options.into())
@@ -377,6 +391,21 @@ impl DataContractWasm {
         contract_value
             .set_value("documentSchemas", schema)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+
+        // A document type's token costs are checked against the contract's tokens when the
+        // contract is validated, so the tokens are part of what is parsed. The contract format
+        // reads token positions as text keys.
+        if !tokens.is_empty() {
+            let tokens_by_position: BTreeMap<String, &TokenConfiguration> = tokens
+                .iter()
+                .map(|(position, token)| (position.to_string(), token))
+                .collect();
+            let tokens_value = dpp::platform_value::to_value(&tokens_by_position)
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+            contract_value
+                .set_value("tokens", tokens_value)
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        }
 
         let data_contract =
             DataContract::from_value(contract_value, opts.full_validation, &platform_version)?;
@@ -664,8 +693,15 @@ impl DataContractWasm {
         #[wasm_bindgen(unchecked_param_type = "Record<number, TokenConfiguration>")]
         tokens: &JsValue,
     ) -> WasmDppResult<()> {
-        self.0
-            .set_tokens(tokens_configuration_from_js_value(tokens)?);
+        let tokens = tokens_configuration_from_js_value(tokens)?;
+        // A contract of structure version 0 holds no tokens: refuse them rather than drop them,
+        // as the constructor does. An empty map leaves such a contract as it is.
+        if !tokens.is_empty() && matches!(self.0, DataContract::V0(_)) {
+            return Err(WasmDppError::invalid_argument(
+                "a data contract of structure version 0 holds no tokens",
+            ));
+        }
+        self.0.set_tokens(tokens);
         Ok(())
     }
 

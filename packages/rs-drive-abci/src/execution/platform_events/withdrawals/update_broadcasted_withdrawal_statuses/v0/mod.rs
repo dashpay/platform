@@ -180,7 +180,6 @@ where
             block_info,
             transaction.into(),
             platform_version,
-            None,
         )?;
 
         Ok(())

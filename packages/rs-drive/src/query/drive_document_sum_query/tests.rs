@@ -614,7 +614,6 @@ mod limit_policy_regression {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert widget");
     }

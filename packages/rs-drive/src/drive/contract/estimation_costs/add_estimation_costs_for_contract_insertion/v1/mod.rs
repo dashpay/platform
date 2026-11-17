@@ -7,6 +7,7 @@ use crate::drive::document::paths::contract_document_type_path;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::error::Error;
@@ -23,7 +24,6 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// v1 of contract-insertion cost estimation. Differs from v0 by computing
@@ -60,7 +60,7 @@ impl Drive {
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_contract_insertion_v1(
         contract: &DataContract,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
@@ -228,6 +228,7 @@ mod tests {
     //! estimation did — they need to move together.
     use super::*;
     use crate::drive::document::paths::contract_document_type_path;
+    use crate::util::estimated_layers::EstimatedLayers;
     use dpp::data_contract::DataContractFactory;
     use dpp::platform_value::{platform_value, Value};
     use dpp::tests::utils::generate_random_identifier_struct;
@@ -284,7 +285,7 @@ mod tests {
     fn non_countable_contract_emits_no_sum_trees_same_as_v0() {
         let pv = PlatformVersion::latest();
         let contract = build_contract(false, false);
-        let mut layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
+        let mut layer_info: EstimatedLayers = EstimatedLayers::new();
         crate::drive::Drive::add_estimation_costs_for_contract_insertion_v1(
             &contract,
             &mut layer_info,
@@ -318,7 +319,7 @@ mod tests {
     fn documents_countable_contract_emits_some_sum_trees_with_count_weight() {
         let pv = PlatformVersion::latest();
         let contract = build_contract(true, false);
-        let mut layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
+        let mut layer_info: EstimatedLayers = EstimatedLayers::new();
         crate::drive::Drive::add_estimation_costs_for_contract_insertion_v1(
             &contract,
             &mut layer_info,
@@ -377,7 +378,7 @@ mod tests {
     fn range_countable_index_contract_counts_both_pk_and_index_as_count_children() {
         let pv = PlatformVersion::latest();
         let contract = build_contract(true, true);
-        let mut layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
+        let mut layer_info: EstimatedLayers = EstimatedLayers::new();
         crate::drive::Drive::add_estimation_costs_for_contract_insertion_v1(
             &contract,
             &mut layer_info,
@@ -426,8 +427,8 @@ mod tests {
 
         // Non-countable: v0 and v1 must agree (byte-identical NoSumTrees).
         let plain = build_contract(false, false);
-        let mut v0_layer: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
-        let mut v1_layer: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
+        let mut v0_layer: EstimatedLayers = EstimatedLayers::new();
+        let mut v1_layer: EstimatedLayers = EstimatedLayers::new();
         crate::drive::Drive::add_estimation_costs_for_contract_insertion_v0(
             &plain,
             &mut v0_layer,
@@ -453,8 +454,8 @@ mod tests {
         // Countable: v0 still says NoSumTrees (the bug); v1 says
         // SomeSumTrees. Diverging on this case is the whole point of v1.
         let countable = build_contract(true, false);
-        let mut v0_layer: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
-        let mut v1_layer: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
+        let mut v0_layer: EstimatedLayers = EstimatedLayers::new();
+        let mut v1_layer: EstimatedLayers = EstimatedLayers::new();
         crate::drive::Drive::add_estimation_costs_for_contract_insertion_v0(
             &countable,
             &mut v0_layer,

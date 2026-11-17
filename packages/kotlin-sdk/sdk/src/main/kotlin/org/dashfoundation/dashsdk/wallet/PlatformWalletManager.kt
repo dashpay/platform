@@ -41,6 +41,8 @@ import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
+import org.dashfoundation.dashsdk.tokens.ContactRequestRef
+import org.dashfoundation.dashsdk.tokens.EstablishedContactRef
 import java.util.concurrent.atomic.AtomicLong
 
 /** Effective native persistence contract exposed for initialization diagnostics. */
@@ -77,6 +79,15 @@ data class PlatformWalletPersistenceCapabilities(
          * is deliberately absent: Android never attests it).
          */
         const val CORE_SWEEP_REMOVAL: Long = NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        /**
+         * The private contact request sync's scan state (each identity's
+         * read position in DashPay's private contact request store, and its
+         * private contacts' shielded addresses) is stored on its round and
+         * restored at load. Mirrors
+         * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`.
+         */
+        const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
+            NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
     }
 }
 
@@ -170,6 +181,14 @@ internal fun initializePlatformWalletNativeManager(
  * [network] is immutable and [require]d to match [sdk]'s network. Network
  * switching means closing this instance and creating a new one — see
  * [WalletManagerStore]; there is no reconfiguration path.
+ *
+ * ## SPV quorum keys
+ *
+ * On an adaptive SDK ([Sdk.ContextProviderKind.ADAPTIVE], the default) the
+ * manager serves the SDK the quorum keys of its own SPV client, which the
+ * SDK uses to verify proofs once that client has synced. Only one manager
+ * serves an SDK: constructing a second on the same SDK while the first is
+ * open throws, so close a manager before constructing another on its SDK.
  *
  * ## Lifecycle
  *
@@ -841,6 +860,15 @@ class PlatformWalletManager(
      */
     val voteCasting: org.dashfoundation.dashsdk.voting.VoteCasting =
         org.dashfoundation.dashsdk.voting.VoteCasting()
+
+    /**
+     * Decision proposal create and edit (protocol version 15): the decision proposal
+     * slice of `ManagedPlatformWallet` (`ManagedPlatformWalletDecisionProposals.swift`).
+     * Stateless; callers thread the wallet handle and [signerHandle] into each call. Reads
+     * and the masternode vote are on `Sdk.decisionProposals`.
+     */
+    val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposalTransactions =
+        org.dashfoundation.dashsdk.voting.DecisionProposalTransactions(teardownGate)
 
     // ── Native manager bundle ─────────────────────────────────────────
 
@@ -1765,7 +1793,7 @@ class PlatformWalletManager(
      * Shield from Platform balance (Type 15) — port of Swift's
      * `shieldedShield`. Spends [amount] credits from the wallet's
      * [paymentAccount] Platform-Payment addresses (auto-selected in
-     * ascending derivation order) into its own bound shielded pool
+     * lexicographic Platform-address order) into its own bound shielded pool
      * ([shieldedAccount]). Signed by the Keystore address signer
      * ([signerHandle]); self-shield only (Rust always targets this wallet's
      * own default Orchard address, so there is no recipient parameter).
@@ -1795,6 +1823,89 @@ class PlatformWalletManager(
                 shieldedAccount,
                 paymentAccount,
                 amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Platform → EXTERNAL shielded (Type 15) — port of Swift's
+     * `PlatformWalletManager.shieldedShieldToRecipient(walletId:shieldedAccount:paymentAccount:recipientRaw43:amount:memo:addressSigner:)`
+     * in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift.
+     *
+     * This is the same Type 15 shield as [shieldedShield], with the same
+     * input selection (the [paymentAccount] Platform-Payment addresses,
+     * lexicographic Platform-address order), the same fees, the same error
+     * shapes and the same Keystore address signer ([signerHandle]). The only
+     * difference is that the note is assigned to [recipientRaw43], a third
+     * party's raw 43-byte Orchard payment address, instead of this wallet's
+     * own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShield].
+     *
+     * A bound shielded account ([shieldedAccount]) is still required: the
+     * send is OVK-encrypted to that account and recorded there, which is how
+     * the wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules (and the 36-byte
+     * on-chain encoding), so an over-long memo surfaces as a native error,
+     * not a Kotlin precondition.
+     *
+     * Throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
+     * when the broadcast was accepted but its execution result couldn't be
+     * confirmed. The shield may already be on chain, so the caller must NOT
+     * retry: a retry rebuilds the bundle and could double-pay. The next sync
+     * reconciles the outcome. A shield spends no notes, so nothing is
+     * reserved wallet-side.
+     *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, this still returns normally (see
+     * [opReturningCompletedResult]), so a completed shield is never hidden.
+     * Handle the return before the next suspension point.
+     *
+     * Blocks for the ~30s Halo 2 proof.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11). Negative values are
+     *   rejected here; Rust rejects zero.
+     * @param memo optional UTF-8 memo for the recipient's note.
+     */
+    suspend fun shieldedShieldToRecipient(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        paymentAccount: Int = 0,
+        memo: String? = null,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        // Sign check only, before the native unsigned cast; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        require(paymentAccount >= 0) {
+            "paymentAccount must be non-negative, got $paymentAccount"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                paymentAccount,
+                recipientRaw43,
+                amount,
+                memo,
                 signerHandle,
             )
         }
@@ -2020,10 +2131,11 @@ class PlatformWalletManager(
     // (cached by [bindShielded]), so no signer or resolver handle crosses
     // JNI — matching the Swift counterparts, which take no signer either.
     // Each blocks for the ~30s Halo 2 proof on Dispatchers.IO. On the
-    // AMBIGUOUS outcome (broadcast accepted, execution unconfirmed) they
-    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
-    // — the caller must NOT retry (the spent notes stay reserved Rust-side;
-    // the next shielded sync reconciles the outcome).
+    // AMBIGUOUS outcome (the spend may have reached a node and its result is
+    // not proved, a node's refusal or verdict included) they
+    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
+    // the caller must NOT retry (the spent notes stay reserved Rust-side
+    // until a later shielded sync resolves them).
 
     /**
      * Shielded → shielded transfer (Type 16) — port of Swift's
@@ -2137,6 +2249,153 @@ class PlatformWalletManager(
                 amount,
             )
         }
+    }
+
+    /**
+     * Send a DashPay private contact request (protocol version 15) from
+     * [senderIdentityId] to [recipientIdentityId], paying for it from
+     * [account]'s shielded notes on [walletId], so nothing on chain names
+     * either identity. Port of Swift's
+     * `PlatformWalletManager.sendPrivateContactRequest`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * The request is signed by this manager's identity signer
+     * ([signerHandle], the handle the public `Dashpay.sendContactRequest`
+     * is given) and sealed with DashPay keys derived through this manager's
+     * resolver, which also supplies the Orchard spend authority.
+     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
+     * pay us at privately. Blocks for the Halo 2 proof.
+     *
+     * Before anything is paid the wallet reads DashPay's private store for
+     * the sender to its end. Throws
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when the payment
+     * may already be on chain,
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] when the
+     * SDK could not confirm a transition it may have accepted, and
+     * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the
+     * pair is held for a private request: in each case do not send again.
+     * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] sent nothing;
+     * calling again continues the read.
+     * [DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored] and
+     * [DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported] refuse
+     * before the read.
+     *
+     * @return the created request; close it (or `use {}`) when done.
+     */
+    suspend fun sendPrivateContactRequest(
+        walletId: ByteArray,
+        senderIdentityId: ByteArray,
+        recipientIdentityId: ByteArray,
+        accountLabel: String? = null,
+        autoAcceptProof: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): ContactRequestRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.sendPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                senderIdentityId,
+                recipientIdentityId,
+                accountLabel,
+                autoAcceptProof,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        ContactRequestRef(handle)
+    }
+
+    /**
+     * Accept a DashPay contact request that came privately, replying
+     * privately and paying for the reply from [account]'s shielded notes on
+     * [walletId]. Port of Swift's
+     * `PlatformWalletManager.acceptPrivateContactRequest`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * A host accepts with [acceptContactRequestReplyingInKind], which
+     * picks this reply itself; this explicit accept stays for a host that
+     * wants a private reply. The reply is signed by this manager's identity
+     * signer ([signerHandle]).
+     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
+     * pay us at privately. Blocks for the Halo 2 proof.
+     *
+     * @return the established contact; close it (or `use {}`) when done.
+     */
+    suspend fun acceptPrivateContactRequest(
+        walletId: ByteArray,
+        request: ContactRequestRef,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): EstablishedContactRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.acceptPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                request.value,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        EstablishedContactRef(handle)
+    }
+
+    /**
+     * Accept a DashPay contact request replying the way it came: privately,
+     * paid from [account]'s shielded notes on [walletId], when it came
+     * privately and no reply exists yet; otherwise with a `contactRequest`
+     * document, or by adopting the reply already sent. Which reply a request
+     * takes is the wallet's decision, so this is the accept a host calls.
+     * Port of Swift's `PlatformWalletManager.acceptContactRequestReplyingInKind`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * [request] is the incoming request (`Dashpay.incomingContactRequest`).
+     * The reply is signed by this manager's identity signer ([signerHandle]);
+     * the Orchard spend authority comes from this manager's resolver and is
+     * derived only for a private reply. [shieldedAddress] is the 43-byte raw
+     * Orchard address the contact may pay us at privately; a public reply
+     * ignores it.
+     *
+     * A public or adopted reply needs neither shielded support nor a
+     * mnemonic read for the payment. Throws
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] (or
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]) when a
+     * private reply may already be on chain, or
+     * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the pair
+     * is held for one: do not accept again;
+     * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] when the
+     * private store read every accept runs first did not finish (nothing
+     * sent; calling again continues it); and
+     * [DashSdkError.PlatformWallet.ShieldedBuildRequired] when the request
+     * needs a private reply and the native library has no shielded support.
+     *
+     * @return the established contact; close it (or `use {}`) when done.
+     */
+    suspend fun acceptContactRequestReplyingInKind(
+        walletId: ByteArray,
+        request: ContactRequestRef,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): EstablishedContactRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.acceptContactRequestReplyingInKind(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                request.value,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        EstablishedContactRef(handle)
     }
 
     /**

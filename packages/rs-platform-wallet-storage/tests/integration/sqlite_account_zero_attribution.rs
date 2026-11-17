@@ -65,7 +65,6 @@ fn wallet_and_gap_limit_edge_address(seed_byte: u8) -> (Wallet, AddressInfo) {
 }
 
 fn utxo_at(addr: &dashcore::Address, vout: u32, value: u64) -> key_wallet::Utxo {
-    use dashcore::hashes::Hash;
     key_wallet::Utxo {
         outpoint: dashcore::OutPoint {
             txid: dashcore::Txid::from_byte_array([0x7E; 32]),

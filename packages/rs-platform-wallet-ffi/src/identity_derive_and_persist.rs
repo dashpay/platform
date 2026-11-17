@@ -92,7 +92,6 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use crate::types::{FFINetwork, Network};
-use dashcore::hashes::Hash;
 use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -101,11 +100,10 @@ use crate::derive_and_persist_callbacks::{
 };
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
-use crate::identity_keys_from_mnemonic::{
-    identity_auth_derivation_path, parse_mnemonic_any_language,
-};
+use crate::identity_keys_from_mnemonic::identity_auth_derivation_path;
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
 use crate::{check_ptr, unwrap_result_or_return};
+use platform_wallet::parse_mnemonic_any_language;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
@@ -252,7 +250,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     // ---- Derive seed + master xpriv ------------------------------------------
     // Empty passphrase to mirror the rest of the SDK (no caller
     // surface for a BIP-39 passphrase yet).
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+    let seed: Zeroizing<[u8; 64]> = mnemonic.to_seed("");
     // Mnemonic is no longer needed; explicit drop releases its
     // (non-zeroized) `String` storage early.
     drop(mnemonic);

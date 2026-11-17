@@ -1,7 +1,8 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenMethodVersions {
@@ -10,6 +11,26 @@ pub struct DriveTokenMethodVersions {
     pub update: DriveTokenUpdateMethodVersions,
     pub calculate_total_tokens_balance: FeatureVersion,
     pub distribution: DriveTokenDistributionMethodVersions,
+    /// The escrow of the token marketplace (protocol version 15): the tokens open listings hold
+    /// and the credits open offers hold.
+    pub order_escrow: DriveTokenOrderEscrowMethodVersions,
+}
+
+/// The escrow methods of the token marketplace: `None` in every table before protocol version
+/// 15, whose transitions are refused there, so a call before 15 is an error rather than a
+/// silent write.
+#[derive(Clone, Debug, Default)]
+pub struct DriveTokenOrderEscrowMethodVersions {
+    pub add_tokens: OptionalFeatureVersion,
+    pub set_tokens: OptionalFeatureVersion,
+    pub remove_tokens: OptionalFeatureVersion,
+    pub fetch_tokens: OptionalFeatureVersion,
+    pub add_credits: OptionalFeatureVersion,
+    pub set_credits: OptionalFeatureVersion,
+    pub remove_credits: OptionalFeatureVersion,
+    pub fetch_credits: OptionalFeatureVersion,
+    pub estimated_costs_for_tokens: OptionalFeatureVersion,
+    pub estimated_costs_for_credits: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

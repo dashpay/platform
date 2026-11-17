@@ -17,7 +17,6 @@ use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
@@ -45,7 +44,6 @@ where
         transaction: &Transaction,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
             let credit_mints = DriveOperation::credit_mints(&operations);
@@ -58,7 +56,6 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
-                    Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
 
@@ -122,7 +119,6 @@ where
         mut address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
             let credit_mints = DriveOperation::credit_mints(&operations);
@@ -135,7 +131,6 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
-                    Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
 
@@ -380,7 +375,6 @@ where
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         let maybe_fee_validation_result = match event {
             ExecutionEvent::PaidFromAssetLock { .. }
@@ -393,7 +387,6 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
-                    previous_fee_versions,
                 )?)
             }
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
@@ -424,7 +417,6 @@ where
                     transaction,
                     block_credit_mints,
                     platform_version,
-                    previous_fee_versions,
                 )
             }
             ExecutionEvent::Paid {
@@ -450,7 +442,6 @@ where
                     transaction,
                     block_credit_mints,
                     platform_version,
-                    previous_fee_versions,
                 )?;
 
                 // Track address outputs if provided (e.g., for IdentityCreditTransferToAddresses).
@@ -491,7 +482,6 @@ where
                     address_balances_in_update,
                     block_credit_mints,
                     platform_version,
-                    previous_fee_versions,
                 )
             }
             // This is for Partially used Asset Locks
@@ -508,7 +498,6 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -540,7 +529,6 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
-                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
 
@@ -594,7 +582,6 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -656,7 +643,6 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
-                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
 
@@ -723,7 +709,6 @@ where
                     transaction,
                     block_credit_mints,
                     platform_version,
-                    previous_fee_versions,
                 )
             }
             ExecutionEvent::Free { operations } => {
@@ -735,7 +720,6 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
                 *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
@@ -750,7 +734,6 @@ mod tests {
     use super::*;
     use crate::platform_types::event_execution_result::EventExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
     /// Regression for the recent-address-balance-changes gap: a `PaidFromShieldedPool` carrying an
     /// Unshield's output credit must fold that credit into the `address_balances_in_update` map (the
@@ -766,7 +749,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
         let transaction = platform.drive.grove.start_transaction();
-        let fee_versions = CachedEpochIndexFeeVersions::new();
 
         let output_address = PlatformAddress::P2pkh([0xBB; 20]);
         let event = ExecutionEvent::PaidFromShieldedPool {
@@ -787,7 +769,6 @@ mod tests {
                 Some(&mut address_balances),
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
             .expect("execute_event_v0 should not error");
 
@@ -813,7 +794,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
         let transaction = platform.drive.grove.start_transaction();
-        let fee_versions = CachedEpochIndexFeeVersions::new();
 
         let event = ExecutionEvent::PaidFromShieldedPool {
             operations: vec![],
@@ -833,7 +813,6 @@ mod tests {
                 Some(&mut address_balances),
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
             .expect("execute_event_v0 should not error");
 
@@ -855,7 +834,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let transaction = platform.drive.grove.start_transaction();
-        let fee_versions = CachedEpochIndexFeeVersions::new();
 
         let surplus_address = PlatformAddress::P2pkh([0x42; 20]);
         let event = ExecutionEvent::PaidFromAssetLockToPool {
@@ -876,7 +854,6 @@ mod tests {
                 Some(&mut address_balances),
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
             .expect("execute_event_v0 should not error");
 

@@ -45,7 +45,7 @@ struct SwiftExampleAppApp: App {
     private let modelContainer: ModelContainer
 
     // Platform identity / document / contract state.
-    @StateObject private var platformState = AppState()
+    @StateObject private var platformState: AppState
 
     // Per-network wallet managers. The Rust `PlatformWalletManager`
     // is network-locked at `configure(...)` time, so swapping
@@ -109,14 +109,20 @@ struct SwiftExampleAppApp: App {
             fatalError("Failed to create ModelContainer: \(error)")
         }
         self.modelContainer = container
-        // Build the store eagerly so the autoclosure for
-        // `@StateObject` can capture the local `container`
-        // directly — referencing `self.modelContainer` here would
-        // make the autoclosure capture `self` mutating, which the
-        // compiler rejects. Same `container` is handed to every
-        // per-network manager the store lazy-creates.
+        // Build the state and the store eagerly so the autoclosures for
+        // `@StateObject` can capture the locals `container` and
+        // `platformState` directly — referencing `self.modelContainer`
+        // here would make the autoclosure capture `self` mutating, which
+        // the compiler rejects. Same `container` is handed to every
+        // per-network manager the store lazy-creates, and the store builds
+        // its background SDKs with `platformState`'s builder.
+        let platformState = AppState()
+        _platformState = StateObject(wrappedValue: platformState)
         _walletManagerStore = StateObject(
-            wrappedValue: WalletManagerStore(modelContainer: container)
+            wrappedValue: WalletManagerStore(
+                modelContainer: container,
+                makeSdk: { network in try platformState.makeSdk(for: network) }
+            )
         )
     }
 
@@ -155,7 +161,7 @@ struct SwiftExampleAppApp: App {
                     appUIState.pendingInviteURL = url.absoluteString
                 }
                 .task {
-                    await bootstrap()
+                    await bootstrapOnce()
                 }
                 // Rebind wallet-scoped services whenever the set of
                 // managed wallets changes — wallet creation, restore
@@ -170,66 +176,24 @@ struct SwiftExampleAppApp: App {
                 })) { _, _ in
                     rebindWalletScopedServices()
                 }
-                // Network switch: activate the per-network manager
-                // first (the store lazy-creates one configured with
-                // a fresh SDK if this is the first time we see this
-                // network), then rebind the wallet-scoped services
-                // against it. Order matters — `rebindWalletScopedServices`
-                // reads `walletManager.firstWallet`, which has to
-                // resolve to the new network's manager before it
-                // runs.
-                .onChange(of: platformState.currentNetwork) { _, newNetwork in
-                    activateManager(for: newNetwork)
-                    rebindWalletScopedServices()
-                }
-                // Devnet→devnet rebuild from OptionsView: when the user
-                // edits the quorum URL / devnet name the SDK is rebuilt
-                // and `WalletManagerStore.activate` swaps the cached
-                // `PlatformWalletManager`, but neither of the two
-                // observers above fires (network stays `.devnet`;
-                // wallet ID set stays identical after persistor reload).
-                // PlatformBalanceSyncService and ShieldedService would
-                // keep retaining the old manager. Listen for the explicit
-                // tick OptionsView publishes after the activate completes.
+                // SDK rebuilds from OptionsView: a network switch, the
+                // Docker toggle or a devnet edit. `AppState.rebuildSdk`
+                // builds the SDK, moves the wallet manager onto it,
+                // publishes the SDK and its network, then bumps this tick,
+                // so the services rebind against the new manager. A
+                // same-network rebuild changes neither the network nor the
+                // wallet ID set, so only this tick covers it.
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
-        }
-    }
-
-    /// Lazy-create + cache a `PlatformWalletManager` for `network`,
-    /// configured against `platformState.sdk`. No-ops on the
-    /// already-active network. Called from bootstrap and from
-    /// `currentNetwork.onChange`.
-    @MainActor
-    private func activateManager(for network: Network) {
-        guard let sdk = platformState.sdk else {
-            SDKLogger.event(
-                "manager_activation_skipped",
-                category: .lifecycle,
-                severity: .warning,
-                fields: [
-                    "network": .publicText(network.displayName),
-                    "reason": .publicText("sdk_unavailable"),
-                ]
-            )
-            return
-        }
-        do {
-            try walletManagerStore.activate(network: network, sdk: sdk)
-            SDKLogger.event(
-                "manager_activated",
-                category: .lifecycle,
-                fields: ["network": .publicText(network.displayName)]
-            )
-        } catch {
-            SDKLogger.event(
-                "manager_activation_failed",
-                category: .lifecycle,
-                severity: .error,
-                fields: ["network": .publicText(network.displayName)],
-                error: error
-            )
+                // Refresh the active-source indicator as SPV readiness
+                // changes.
+                .background {
+                    QuorumSourceRefresh(
+                        walletManager: walletManager,
+                        platformState: platformState
+                    )
+                }
         }
     }
 
@@ -453,10 +417,11 @@ struct SwiftExampleAppApp: App {
                 // (filtered to the launch network's wallets via
                 // the network-aware persistence handler), so no
                 // separate restore pass is needed here.
-                try walletManagerStore.activate(
+                try await walletManagerStore.activate(
                     network: platformState.currentNetwork,
                     sdk: sdk
                 )
+                platformState.refreshQuorumSource()
                 let restoredCount = walletManager.wallets.count
                 if restoredCount > 0 {
                     SDKLogger.log(
@@ -478,7 +443,7 @@ struct SwiftExampleAppApp: App {
                 // main context at launch and the recovered
                 // wallet appears in its correct tab on the same
                 // run instead of only after a relaunch.
-                preWarmOrphanNetworkManagers()
+                await preWarmOrphanNetworkManagers()
 
                 rebindWalletScopedServices()
             }
@@ -516,6 +481,19 @@ struct SwiftExampleAppApp: App {
         }
     }
 
+    /// Run `bootstrap()` once per process. Every window's content runs this
+    /// task; a window opened later waits for, or finds finished, the first
+    /// one's bootstrap instead of building and publishing an SDK and
+    /// activating a manager of its own, which could interleave with an SDK
+    /// rebuild another window runs. `retryBootstrap` replaces the task.
+    @MainActor
+    private func bootstrapOnce() async {
+        if bootstrapTask == nil {
+            bootstrapTask = Task { await bootstrap() }
+        }
+        await bootstrapTask?.value
+    }
+
     @MainActor
     private func retryBootstrap() {
         bootstrapError = nil
@@ -543,7 +521,7 @@ struct SwiftExampleAppApp: App {
     /// background `ModelContext` doesn't propagate writes back to
     /// the launch-time main context's `@Query` observers.
     @MainActor
-    private func preWarmOrphanNetworkManagers() {
+    private func preWarmOrphanNetworkManagers() async {
         let storage = WalletStorage()
         let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
         guard !keychainIds.isEmpty else { return }
@@ -559,7 +537,7 @@ struct SwiftExampleAppApp: App {
         let active = platformState.currentNetwork
         for network in orphanNetworks where network != active {
             do {
-                _ = try walletManagerStore.backgroundManager(for: network)
+                _ = try await walletManagerStore.backgroundManager(for: network)
                 SDKLogger.log(
                     "🔥 Pre-warmed wallet manager for \(network.displayName) "
                         + "(orphan recovery target)",
@@ -572,5 +550,30 @@ struct SwiftExampleAppApp: App {
                 )
             }
         }
+    }
+}
+
+/// Leaf that refreshes the active-source indicator whenever SPV readiness may
+/// have changed. The adaptive provider follows readiness by itself; only the
+/// indicator has to be read again. Readiness needs SPV running as well as
+/// synced, and a failed sync loop stops SPV without changing its progress, so
+/// both are observed.
+///
+/// The scene does not observe the wallet manager, so an `.onChange` on its
+/// content would re-read these values only when one of the scene's own
+/// objects publishes. This view observes the manager instead, and as a leaf
+/// it is the only view that re-renders on every progress tick.
+private struct QuorumSourceRefresh: View {
+    @ObservedObject var walletManager: PlatformWalletManager
+    let platformState: AppState
+
+    var body: some View {
+        Color.clear
+            .onChange(of: walletManager.spvProgress) { _, _ in
+                platformState.refreshQuorumSource()
+            }
+            .onChange(of: walletManager.spvIsRunning) { _, _ in
+                platformState.refreshQuorumSource()
+            }
     }
 }
