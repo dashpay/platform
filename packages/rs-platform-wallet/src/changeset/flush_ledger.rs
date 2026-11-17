@@ -16,8 +16,12 @@ use crate::wallet::platform_wallet::WalletId;
 /// counted: one ledger per backend instance and wallet id, shared by every
 /// manager made over the backend and by every handle of a wallet under that
 /// id, a removed wallet's handles and its same-id successor's alike
-/// ([`FlushLedgers::of_backend`]). Every flush of the wallet's records goes
-/// through [`Self::flush`].
+/// ([`FlushLedgers::of_backend`]). Every flush of the wallet's records the
+/// wallet makes goes through [`Self::flush`]. A drain of the backend made
+/// any other way, such as a commit its host calls on it, is not counted
+/// here: the backend reports what it dropped
+/// ([`PlatformWalletPersistence::buffered_writes_dropped`]), and a wallet's
+/// handle adds that to the losses it compares.
 #[derive(Debug, Default)]
 pub(crate) struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
@@ -26,6 +30,11 @@ pub(crate) struct FlushLedger {
     /// panicked is recorded too, as failed for good, before it stops being
     /// counted.
     in_flight: AtomicUsize,
+    /// How many flushes have returned, whatever their outcome: each is
+    /// counted here before it stops being counted in `in_flight`. So a flush
+    /// that was in progress and no longer is shows here, one that succeeded
+    /// included, which `failed` and `lost` say nothing of.
+    returned: AtomicU64,
     /// How many flushes failed, for good or not: none wrote what it had taken
     /// from the buffer, which the backend dropped or put back.
     failed: AtomicU64,
@@ -77,6 +86,10 @@ impl Drop for InFlight<'_> {
         if !self.recorded {
             self.ledger.record_failure(self.buffers);
         }
+        // Counted as returned before it stops being counted as in progress:
+        // a reader that finds no flush in progress, and then the same count
+        // of returned ones as before, knows none returned in between.
+        self.ledger.returned.fetch_add(1, Ordering::SeqCst);
         self.ledger.in_flight.fetch_sub(1, Ordering::SeqCst);
     }
 }
@@ -114,6 +127,13 @@ impl FlushLedger {
     /// How many flushes are in progress.
     pub(crate) fn in_flight(&self) -> usize {
         self.in_flight.load(Ordering::SeqCst)
+    }
+
+    /// How many flushes have returned so far, whatever their outcome. Read
+    /// after [`Self::in_flight`] found none in progress, and equal to what it
+    /// was at an earlier read, it says no flush returned since that read.
+    pub(crate) fn returned(&self) -> u64 {
+        self.returned.load(Ordering::SeqCst)
     }
 
     /// How many flushes failed so far, for good or not.
@@ -350,5 +370,56 @@ mod tests {
         assert_eq!(ledger.in_flight(), 0, "no longer in progress");
         assert_eq!(ledger.lost(), 1, "counted as failed for good");
         assert_eq!(ledger.failed(), 1, "counted as failed");
+    }
+
+    /// A backend whose flush succeeds, and notes from inside it what the
+    /// ledger counts as in progress and as returned.
+    struct Observing {
+        ledger: Arc<FlushLedger>,
+        seen_inside: Mutex<Option<(usize, u64)>>,
+    }
+
+    impl PlatformWalletPersistence for Observing {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            *self.seen_inside.lock().expect("seen inside") =
+                Some((self.ledger.in_flight(), self.ledger.returned()));
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Every flush that returns is counted as returned, one that succeeded
+    /// included, which the counts of failed flushes say nothing of. None is
+    /// before it returns: inside the backend it is counted as in progress
+    /// only.
+    #[test]
+    fn should_count_a_flush_as_returned_once_it_has_whatever_its_outcome() {
+        let ledger = Arc::new(FlushLedger::default());
+        let backend = Observing {
+            ledger: Arc::clone(&ledger),
+            seen_inside: Mutex::new(None),
+        };
+
+        assert!(ledger.flush(&backend, [0; 32]).is_ok());
+
+        assert_eq!(
+            *backend.seen_inside.lock().expect("seen inside"),
+            Some((1, 0)),
+            "in progress and not yet returned inside the backend"
+        );
+        assert_eq!((ledger.in_flight(), ledger.returned()), (0, 1));
+        assert_eq!(ledger.failed(), 0, "a flush that succeeded");
+
+        assert!(ledger.flush(&Failing { inline: false }, [0; 32]).is_err());
+        assert_eq!(ledger.returned(), 2, "one that failed is counted too");
     }
 }

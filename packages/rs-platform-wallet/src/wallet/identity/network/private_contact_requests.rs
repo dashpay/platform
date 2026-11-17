@@ -680,6 +680,16 @@ pub(crate) async fn restore_journaled_private_payments(
 /// journal being open by then and showing the payment resolved. Never the
 /// other way round.
 ///
+/// A record dropped after it was stored, by a flush that failed for good or
+/// by a drain of the backend the wallet did not make, goes the same way. This
+/// is never the store that first marks a payment as unresolved: that one is
+/// made durable before anything is paid
+/// (`store_private_payment_marker_before_paying`). So what is dropped here
+/// either repeats a marker the disk already has or clears one, and the note
+/// that it was stored is forgotten once the loss is counted
+/// (`WalletPersister::store_private_marker_record`), so the next comparison
+/// stores it again.
+///
 /// Only while the wallet is still `generation`: a replacement under the id
 /// stores its own records.
 fn store_private_payment_marker(
