@@ -613,6 +613,40 @@ mod sum_overflow_tests {
         assert_eq!(fixture.total(TIP), i64::MAX - 3);
     }
 
+    /// What a replace of a tip of 10 by one of `amount` charges its writer.
+    async fn charge_of_replacing_a_tip_of_ten_by(amount: i64) -> Credits {
+        let mut fixture = SumFixture::latest();
+        let (outcome, tip) = fixture.create(0, TIP, 10).await;
+        SumFixture::expect_success(&outcome, "the create of 10");
+        let (outcome, _) = fixture.replace(0, TIP, &tip, amount).await;
+        SumFixture::expect_success(&outcome, "the replace of 10");
+        assert_eq!(fixture.total(TIP), amount);
+        outcome.charged()
+    }
+
+    /// Only a replace that raises the summed property reads the total, and pays for the
+    /// read: one that leaves the property as it was, or lowers it, is charged the same as the
+    /// other, and less than one raising it. The three store the same bytes.
+    #[tokio::test]
+    async fn should_read_the_total_only_for_a_replace_raising_the_summed_property() {
+        let unchanged = charge_of_replacing_a_tip_of_ten_by(10).await;
+        let lowered = charge_of_replacing_a_tip_of_ten_by(9).await;
+        let raised = charge_of_replacing_a_tip_of_ten_by(11).await;
+        assert_eq!(unchanged, lowered);
+        assert!(
+            raised > unchanged,
+            "a raising replace pays for the read of the total: {raised} against {unchanged}"
+        );
+
+        // At a full total a replace that leaves the property as it was is applied.
+        let mut fixture = SumFixture::latest();
+        let (outcome, tip) = fixture.create(0, TIP, i64::MAX).await;
+        SumFixture::expect_success(&outcome, "the create of i64::MAX");
+        let (outcome, _) = fixture.replace(0, TIP, &tip, i64::MAX).await;
+        SumFixture::expect_success(&outcome, "the replace of i64::MAX by itself");
+        assert_eq!(fixture.total(TIP), i64::MAX);
+    }
+
     /// A transfer and a delete leave the total as it is or lower it, and with values that are
     /// never negative no sum of the type holds more than the total: at a full total an owner's
     /// sum takes the whole of it.

@@ -55,7 +55,20 @@ impl Drive {
         {
             element = inner;
         }
-        let total = element.sum_value_or_default();
+        // The tree types `primary_key_tree_type` gives a type that sums its documents. Any
+        // other element holds no total, and reading it as 0 would admit a write the type's
+        // sums may not hold.
+        let total =
+            match element {
+                Element::SumTree(_, total, _)
+                | Element::ProvableSumTree(_, total, _)
+                | Element::CountSumTree(_, _, total, _)
+                | Element::ProvableCountSumTree(_, _, total, _)
+                | Element::ProvableCountProvableSumTree(_, _, total, _) => *total,
+                _ => return Err(Error::Drive(DriveError::CorruptedElementType(
+                    "the primary tree of a document type that sums its documents is not a sum tree",
+                ))),
+            };
         let fee = match epoch {
             Some(epoch) => self.calculate_fee(None, Some(operations), epoch, platform_version)?,
             None => FeeResult::default(),

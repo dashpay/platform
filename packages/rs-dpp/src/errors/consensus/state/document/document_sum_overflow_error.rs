@@ -8,10 +8,11 @@ use platform_serialization_derive::{
 use platform_value::Identifier;
 use thiserror::Error;
 
-/// A document create or replace would take the total its document type keeps of its summed
-/// property (`documentsSummable` or `documentsAverageable`) past what the type's sums can hold.
-/// Every other sum of the type is a sum over some of the same documents, so holding the total
-/// in range holds them all. Refused by state validation from protocol version 15.
+/// A document create or replace, or a moderator's restore of a removed document, would take
+/// the total its document type keeps of its summed property (`documentsSummable` or
+/// `documentsAverageable`) past what the type's sums can hold. Every other sum of the type is
+/// a sum over some of the same documents, so holding the total in range holds them all.
+/// Refused by state validation from protocol version 15.
 #[derive(
     Error,
     Debug,

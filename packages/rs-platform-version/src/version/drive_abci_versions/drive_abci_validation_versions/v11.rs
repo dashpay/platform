@@ -112,7 +112,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .masternode_vote_state_transition
             },
             contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
-                transform_into_action: 1, // a moderator's field change reads who holds the document's storage
+                transform_into_action: 1, // a moderator's field change reads who holds the document's storage; a restore is held to the total its type keeps of its summed property
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .contract_user_moderation_state_transition
