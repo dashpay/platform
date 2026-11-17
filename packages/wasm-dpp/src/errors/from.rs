@@ -1,5 +1,5 @@
 use dpp::DashPlatformProtocolInitError;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsError, JsValue};
 
 use dpp::errors::ProtocolError;
 
@@ -31,6 +31,7 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
             DataContractNotPresentNotConsensusErrorWasm::new(err.data_contract_id()).into()
         }
         ProtocolError::ValueError(value_error) => PlatformValueErrorWasm::from(value_error).into(),
+        ProtocolError::LastAuthenticationKey(e) => JsError::new(&e.to_string()).into(),
         _ => JsValue::from_str(&format!("Error conversion not implemented: {pe:#}",)),
     }
 }
