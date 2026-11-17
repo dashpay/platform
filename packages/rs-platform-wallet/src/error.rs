@@ -8,7 +8,7 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
@@ -185,6 +185,15 @@ pub enum PlatformWalletError {
         contact: Identifier,
         network: Network,
         account_index: u32,
+    },
+
+    /// key-wallet could not build the address pools of a DashPay account
+    /// from its xpub.
+    #[error("Failed to build DashPay account {account_type:?}: {source}")]
+    DashpayAccountBuild {
+        account_type: AccountType,
+        #[source]
+        source: key_wallet::Error,
     },
 
     #[error("Asset lock transaction failed: {0}")]
