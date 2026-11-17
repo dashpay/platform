@@ -326,3 +326,70 @@ fn shielded_wipe_drops_viewing_keys_of_wallets_with_no_row_or_metadata() {
     assert_eq!(viewing_key_count(&path, &stored_orphan), 0);
     assert_eq!(viewing_key_count(&path, &mainnet_wallet), 1);
 }
+
+struct NoEvents;
+impl platform_wallet::events::EventHandler for NoEvents {}
+impl platform_wallet::PlatformEventHandler for NoEvents {}
+
+/// A recovery-mode persister cannot write, so it cannot wipe either: it does
+/// not attest `SHIELDED_STATE_WIPE`, and a shielded Clear over it fails at
+/// its capability check, before the native reset, leaving the tree, the
+/// notes and the watermark as they were.
+#[tokio::test]
+async fn recovery_persister_attests_no_shielded_wipe_and_clear_resets_nothing() {
+    use platform_wallet::wallet::shielded::{ShieldedNote, ShieldedStore};
+
+    let (persister, tmp, _path) = common::fresh_recovery_persister(|_| {});
+    assert!(!persister
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::SHIELDED_STATE_WIPE));
+    assert!(persister
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS));
+
+    let manager = platform_wallet::PlatformWalletManager::new(
+        std::sync::Arc::new(dash_sdk::Sdk::new_mock()),
+        std::sync::Arc::new(persister),
+        std::sync::Arc::new(NoEvents),
+    );
+    manager
+        .configure_shielded(tmp.path().join("tree.sqlite"))
+        .await
+        .expect("the shielded store is configured");
+    let coordinator = manager
+        .shielded_coordinator()
+        .await
+        .expect("the manager's coordinator");
+    let id = SubwalletId::new(wid(0x61), 0);
+    let note = ShieldedNote {
+        position: 0,
+        cmx: [0x2A; 32],
+        nullifier: [0xE0; 32],
+        block_height: 100,
+        is_spent: false,
+        value: 1_000,
+        note_data: vec![0u8; 115],
+    };
+    {
+        let mut store = coordinator.store().write().await;
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.save_note(id, &note).unwrap();
+        store.set_last_synced_note_index(id, 1).unwrap();
+    }
+    let epoch = coordinator.clear_epoch().await;
+
+    let error = manager
+        .clear_shielded()
+        .await
+        .expect_err("Clear refuses a backend that cannot wipe");
+    assert!(error.to_string().contains("nothing was reset"), "{error}");
+
+    let store = coordinator.store().read().await;
+    assert_eq!(store.tree_size().unwrap(), 1, "the tree is intact");
+    let notes = store.get_all_notes(id).unwrap();
+    assert_eq!(notes.len(), 1, "the note is intact");
+    assert_eq!(notes[0].nullifier, note.nullifier);
+    assert_eq!(store.last_synced_note_index(id).unwrap(), 1);
+    drop(store);
+    assert_eq!(coordinator.clear_epoch().await, epoch);
+}

@@ -277,6 +277,8 @@ pub struct NetworkShieldedCoordinator {
     /// account add, a spend from its note selection to its last store and
     /// host write, a sync pass, an identity-debit abandonment, a private
     /// payment restoration from its journal read to its last write.
+    /// Shared, never refused ([`admit_removal`](Self::admit_removal)): a
+    /// wallet removal, across its detach and unregister.
     /// Exclusive: Clear, across the Rust reset, the host wipe and the epoch
     /// bump. So a Clear cannot land inside any of those spans, and none can
     /// start until Clear, host wipe included, has finished: no snapshot
@@ -286,12 +288,15 @@ pub struct NetworkShieldedCoordinator {
     /// The guarded value is the Clear state: how many Clears completed (the
     /// epoch) and whether the last one reset Rust but could not wipe the host.
     ///
-    /// Lock order: wallet `shield_guard` → `admission` → `lifecycle` →
-    /// `store`. `shield_guard` comes first so an operation queued behind a
-    /// long shield-class operation (a funding's ChainLock wait) holds no
-    /// admission that would stall a Clear. tokio's `RwLock` is
-    /// write-preferring, so a holder must never take it again (a queued
-    /// Clear would deadlock the nested read).
+    /// Lock order: the wallet generation's lifecycle gate → wallet
+    /// `shield_guard` → `admission` → wallet `shielded_config_lock` →
+    /// `lifecycle` → `store`. Wallet removal takes the first three in that
+    /// order too. `shield_guard` comes before the admission so an operation
+    /// queued behind a long shield-class operation (a funding's ChainLock
+    /// wait) holds no admission that would stall a Clear. tokio's `RwLock`
+    /// is write-preferring, so a holder must never take it again (a queued
+    /// Clear would deadlock the nested read); an operation that dropped its
+    /// admission re-admits with [`admit_since`](Self::admit_since).
     admission: RwLock<ClearState>,
 }
 
@@ -338,7 +343,8 @@ impl ShieldedAdmission<'_> {
 
     /// The Clear epoch this admission was granted under. No Clear completes
     /// while the admission is held, so it stays current until it drops; an
-    /// operation records it with state that must not outlive a Clear.
+    /// operation that drops it and writes again later re-admits with
+    /// [`admit_since`](NetworkShieldedCoordinator::admit_since).
     pub(crate) fn epoch(&self) -> u64 {
         self._state.epoch
     }
@@ -369,6 +375,12 @@ impl ShieldedAdmission<'_> {
             _lifecycle: self.coordinator.lifecycle.lock().await,
         }
     }
+}
+
+/// Shared admission for a wallet removal, from
+/// [`NetworkShieldedCoordinator::admit_removal`].
+pub(crate) struct ShieldedRemovalAdmission<'a> {
+    _state: tokio::sync::RwLockReadGuard<'a, ClearState>,
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -536,11 +548,38 @@ impl NetworkShieldedCoordinator {
         }
     }
 
+    /// [`admit`](Self::admit) for the later half of an operation that held an
+    /// admission granted under `epoch` and dropped it (a funding, across its
+    /// broadcast and ChainLock wait): `Ok(None)` once a Clear has run since,
+    /// so nothing the first half derived is written into post-Clear state.
+    ///
+    /// The one way to re-admit within a logical operation. Never call it
+    /// while holding an admission.
+    pub(crate) async fn admit_since(
+        &self,
+        epoch: u64,
+    ) -> Result<Option<ShieldedAdmission<'_>>, PlatformWalletError> {
+        let admission = self.admit().await?;
+        Ok((admission.epoch() == epoch).then_some(admission))
+    }
+
     /// The current Clear epoch without waiting, or `None` while a Clear holds
     /// the admission or is queued for it. For a synchronous check of state
     /// recorded under an earlier admission's [`epoch`](ShieldedAdmission::epoch).
     pub(crate) fn settled_epoch(&self) -> Option<u64> {
         self.admission.try_read().ok().map(|state| state.epoch)
+    }
+
+    /// The admission held shared for wallet removal, granted even while a
+    /// host wipe is pending: removal deletes the wallet's state rather than
+    /// restoring or writing it, which is what a pending wipe refuses, and a
+    /// user must be able to delete a wallet while a failed Clear awaits its
+    /// retry. It still excludes a Clear for its span. The lock order and
+    /// non-reentrancy of [`admit`](Self::admit) apply.
+    pub(crate) async fn admit_removal(&self) -> ShieldedRemovalAdmission<'_> {
+        ShieldedRemovalAdmission {
+            _state: self.admission.read().await,
+        }
     }
 
     fn admission_from<'a>(

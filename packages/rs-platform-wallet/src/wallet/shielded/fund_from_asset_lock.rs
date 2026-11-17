@@ -273,9 +273,10 @@ impl PlatformWallet {
         // Nothing is broadcast without a shielded store to receive the
         // funding, or while a Clear's host wipe is pending, which refuses the
         // activity write a funding ends with. Not held: the broadcast and
-        // ChainLock wait below must not hold a Clear back.
+        // ChainLock wait below must not hold a Clear back. Its epoch fences
+        // that write against a Clear completing in between.
         let coordinator = self.shielded_coordinator().await?;
-        drop(coordinator.admit().await?);
+        let funding_epoch = coordinator.admit().await?.epoch();
         let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // A resume pays the recipient its lock was built for. The row recorded
@@ -615,7 +616,7 @@ impl PlatformWallet {
         // by construction). Recorded Confirmed directly — `broadcast_and_
         // _wait` already proved inclusion. Best-effort: a recording miss
         // (no bound keyset, no recoverable output) just omits the row.
-        self.record_shield_from_asset_lock_activity(&landed.actions, shield_amount)
+        self.record_shield_from_asset_lock_activity(&landed.actions, shield_amount, funding_epoch)
             .await;
 
         // Step 5: finalize the tracked asset lock. The shielded note itself
@@ -743,16 +744,19 @@ impl PlatformWallet {
     /// recognizes the funded note's recipient (the row then lands under
     /// that account), falling back to the lowest bound account — mirrors
     /// the `sender_ovk` selection above.
+    ///
+    /// `funding_epoch` is the Clear epoch the funding was admitted under
+    /// before its broadcast. A Clear completing since then dropped the state
+    /// this entry belongs to, so the entry is not written.
     #[cfg(feature = "shielded")]
     pub(super) async fn record_shield_from_asset_lock_activity(
         &self,
         actions: &[dpp::shielded::SerializedAction],
         shield_amount: Credits,
+        funding_epoch: u64,
     ) {
-        use crate::wallet::shielded::activity::{
-            ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
-        };
-        use crate::wallet::shielded::activity_recorder::{build_pending_entry, with_status};
+        use crate::wallet::shielded::activity::{ShieldedActivityKind, ShieldedDirection};
+        use crate::wallet::shielded::activity_recorder::build_pending_entry;
 
         let (account, pending) = {
             let guard = self.shielded_keys.read().await;
@@ -797,21 +801,51 @@ impl PlatformWallet {
             (account, pending)
         };
 
-        // The only shielded write of a funding, admitted on its own: the
-        // asset lock's broadcast and ChainLock wait before it, which can take
-        // indefinitely long, write no shielded state and hold no Clear back.
-        // `shield_guard` is held here, which the lock order allows: it comes
-        // before admission everywhere.
+        self.record_funding_activity_since(funding_epoch, account, pending)
+            .await;
+    }
+
+    /// Write a funding's confirmed activity `pending` under `account`, unless
+    /// a Clear has completed since the funding was admitted under
+    /// `funding_epoch`. The only shielded write of a funding, admitted on its
+    /// own: the asset lock's broadcast and ChainLock wait before it, which can
+    /// take indefinitely long, write no shielded state and hold no Clear back.
+    /// `shield_guard` is held here, which the lock order allows: it comes
+    /// before admission everywhere. Nothing is written for a wallet removed
+    /// since.
+    #[cfg(feature = "shielded")]
+    pub(super) async fn record_funding_activity_since(
+        &self,
+        funding_epoch: u64,
+        account: u32,
+        pending: crate::wallet::shielded::activity::ShieldedActivityEntry,
+    ) {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+        use crate::wallet::shielded::activity_recorder::with_status;
+
         let Ok(coordinator) = self.shielded_coordinator().await else {
             return;
         };
-        let _admission = match coordinator.admit().await {
-            Ok(admission) => admission,
+        let _admission = match coordinator.admit_since(funding_epoch).await {
+            Ok(Some(admission)) => admission,
+            Ok(None) => {
+                tracing::warn!(
+                    "shield-from-asset-lock activity not recorded: a shielded Clear completed \
+                     after the funding was broadcast; the next sync rediscovers the note"
+                );
+                return;
+            }
             Err(error) => {
                 tracing::warn!(%error, "shield-from-asset-lock activity not recorded");
                 return;
             }
         };
+        // Under `shield_guard` and the admission, as the removal sets it: a
+        // wallet removed while the funding waited keeps no activity row.
+        if let Err(error) = self.ensure_shielded_attached() {
+            tracing::warn!(%error, "shield-from-asset-lock activity not recorded");
+            return;
+        }
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
         let id = crate::wallet::shielded::SubwalletId::new(self.wallet_id(), account);
         crate::wallet::shielded::operations::queue_shielded_activity(

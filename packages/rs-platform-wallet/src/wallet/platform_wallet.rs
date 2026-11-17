@@ -1546,7 +1546,7 @@ impl PlatformWallet {
     /// the gate's exclusive side and the other two, so it cannot complete in
     /// between.
     #[cfg(feature = "shielded")]
-    fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+    pub(crate) fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
             .shielded_detached
             .load(std::sync::atomic::Ordering::Acquire)

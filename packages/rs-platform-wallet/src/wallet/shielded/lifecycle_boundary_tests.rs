@@ -42,6 +42,8 @@ struct BoundaryHost {
     viewing_keys: Mutex<BTreeMap<SubwalletId, Vec<u8>>>,
     subwallets: Mutex<BTreeMap<SubwalletId, ShieldedSubwalletStartState>>,
     events: Mutex<Vec<&'static str>>,
+    /// Shielded activity rows stored.
+    activity_rows: AtomicUsize,
     wipes: AtomicUsize,
     wiped_exclusively: AtomicBool,
     fail_wipe: AtomicBool,
@@ -69,6 +71,7 @@ impl BoundaryHost {
             viewing_keys: Mutex::default(),
             subwallets: Mutex::default(),
             events: Mutex::default(),
+            activity_rows: AtomicUsize::new(0),
             wipes: AtomicUsize::new(0),
             wiped_exclusively: AtomicBool::new(true),
             fail_wipe: AtomicBool::new(false),
@@ -130,6 +133,10 @@ impl PlatformWalletPersistence for BoundaryHost {
         let Some(shielded) = changeset.shielded else {
             return Ok(());
         };
+        self.activity_rows.fetch_add(
+            shielded.activity_entries.values().map(Vec::len).sum(),
+            Ordering::SeqCst,
+        );
         if shielded.viewing_keys.is_empty() {
             return Ok(());
         }
@@ -973,4 +980,208 @@ async fn should_restore_a_binds_private_payments_under_its_admission_while_clear
     assert!(!wallet.private_payments_held().await);
     clear.await.unwrap().expect("then Clear runs");
     assert_eq!(host.events(), BIND_THEN_CLEAR);
+}
+
+/// A funding's confirmed activity row, as the recorder builds it.
+fn funding_activity() -> crate::wallet::shielded::activity::ShieldedActivityEntry {
+    use crate::wallet::shielded::activity::{
+        ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+    };
+    ShieldedActivityEntry {
+        id: [0x5A; 32],
+        kind: ShieldedActivityKind::ShieldFromAssetLock,
+        direction: ShieldedDirection::In,
+        amount: 1_000,
+        fee: None,
+        counterparty: None,
+        memo: None,
+        block_height: None,
+        status: ShieldedActivityStatus::Pending,
+        created_at_ms: 1,
+        min_note_position: None,
+        note_cmxs: vec![[0x2A; 32]],
+        spent_nullifiers: Vec::new(),
+    }
+}
+
+/// A funding drops its admission across the broadcast and the ChainLock
+/// wait, and is admitted again for its activity write. A Clear completing
+/// in between has reset the state that row belongs to, so the write is
+/// skipped: no activity row reaches the store or the host. Without a Clear
+/// the same write lands.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_record_no_funding_activity_after_a_clear_that_followed_its_broadcast() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+    let entry = funding_activity();
+
+    // Admitted before the broadcast, then released, as a funding does.
+    let funding_epoch = coordinator.admit().await.unwrap().epoch();
+    manager.clear_shielded().await.expect("Clear succeeds");
+    wallet
+        .record_funding_activity_since(funding_epoch, 0, entry.clone())
+        .await;
+    wallet.persister().flush().unwrap();
+
+    assert!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &entry.id)
+            .unwrap()
+            .is_none(),
+        "a pre-Clear funding's activity must not land in the post-Clear store"
+    );
+    assert_eq!(host.activity_rows.load(Ordering::SeqCst), 0);
+
+    // A funding admitted after the Clear records as usual.
+    let funding_epoch = coordinator.admit().await.unwrap().epoch();
+    wallet
+        .record_funding_activity_since(funding_epoch, 0, entry.clone())
+        .await;
+    wallet.persister().flush().unwrap();
+    assert!(coordinator
+        .store()
+        .read()
+        .await
+        .get_activity_by_entry_id(id, &entry.id)
+        .unwrap()
+        .is_some());
+    assert_eq!(host.activity_rows.load(Ordering::SeqCst), 1);
+}
+
+/// Wallet removal runs inside the admission protocol. A shield-class
+/// operation holds the wallet's `shield_guard` across a wait that holds no
+/// admission (a funding waiting on its ChainLock); the removal waits for
+/// it, so that operation's last write lands before the removal returns and
+/// the host's deletion of the wallet's rows removes it. A retained handle's
+/// write after the removal is refused, so no row outlives it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_leave_no_funding_activity_row_after_a_removal_returns() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+    let entry = funding_activity();
+
+    // A funding admitted before its broadcast, now waiting on its ChainLock.
+    let funding_epoch = coordinator.admit().await.unwrap().epoch();
+    let funding = Arc::clone(&wallet.shield_guard).lock_owned().await;
+    let removal = {
+        let manager = Arc::clone(&manager);
+        let wallet_id = wallet.wallet_id();
+        tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(drop) })
+    };
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !removal.is_finished(),
+        "the removal waits for the shield-class operation in flight"
+    );
+    wallet
+        .record_funding_activity_since(funding_epoch, 0, entry.clone())
+        .await;
+    wallet.persister().flush().unwrap();
+    assert_eq!(host.activity_rows.load(Ordering::SeqCst), 1);
+    drop(funding);
+    removal.await.unwrap().expect("the removal completes");
+
+    // The host deletes the wallet's rows now. A funding on a retained
+    // handle that settles afterwards writes nothing, native or host.
+    let rows_at_removal = host.activity_rows.load(Ordering::SeqCst);
+    let late_epoch = coordinator.admit().await.unwrap().epoch();
+    let late = Arc::clone(&wallet.shield_guard).lock_owned().await;
+    let mut late_entry = funding_activity();
+    late_entry.id = [0x5B; 32];
+    wallet
+        .record_funding_activity_since(late_epoch, 0, late_entry.clone())
+        .await;
+    drop(late);
+    let _ = wallet.persister().flush();
+    assert_eq!(
+        host.activity_rows.load(Ordering::SeqCst),
+        rows_at_removal,
+        "no activity row reaches the host after the removal returned"
+    );
+    assert!(coordinator
+        .store()
+        .read()
+        .await
+        .get_activity_by_entry_id(id, &late_entry.id)
+        .unwrap()
+        .is_none());
+}
+
+/// A bind parked in its viewing-key write holds a removal of its wallet
+/// off, through the generation gate, `shield_guard` and the admission the
+/// two take in the same order; released, both complete, and a bind on the
+/// retained handle afterwards writes nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_order_a_bind_and_a_removal_of_its_wallet() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+
+    let release = BoundaryHost::gate(&host.store_gate);
+    let bind = {
+        let wallet = Arc::clone(&wallet);
+        tokio::spawn(async move { wallet.bind_shielded(&SEED, &[0]).await })
+    };
+    host.reached("store viewing keys").await;
+    let removal = {
+        let manager = Arc::clone(&manager);
+        let wallet_id = wallet.wallet_id();
+        tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(drop) })
+    };
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!removal.is_finished(), "the removal waits for the bind");
+
+    release.send(()).unwrap();
+    bind.await.unwrap().expect("the bind finishes first");
+    removal.await.unwrap().expect("then the removal");
+    assert!(coordinator.registered_subwallets().await.is_empty());
+
+    let rows = host.viewing_key_rows();
+    let refused = wallet.bind_shielded(&SEED, &[0]).await;
+    assert!(
+        matches!(refused, Err(PlatformWalletError::WalletNotFound(_))),
+        "{refused:?}"
+    );
+    let refused = wallet.shielded_add_account(&SEED, 1).await;
+    assert!(
+        matches!(refused, Err(PlatformWalletError::WalletNotFound(_))),
+        "{refused:?}"
+    );
+    assert_eq!(
+        host.viewing_key_rows(),
+        rows,
+        "nothing written after removal"
+    );
+}
+
+/// A pending host wipe refuses shielded writes, not a wallet's removal,
+/// which only deletes: a user can still delete a wallet while a failed
+/// Clear waits for its retry.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_remove_a_wallet_while_a_host_wipe_is_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    host.fail_wipe.store(true, Ordering::SeqCst);
+    manager
+        .clear_shielded()
+        .await
+        .expect_err("the host wipe fails");
+    assert!(coordinator.admit().await.is_err(), "the wipe is pending");
+
+    manager
+        .remove_wallet(&wallet.wallet_id())
+        .await
+        .expect("the removal is not refused");
+    assert!(manager.get_wallet(&wallet.wallet_id()).await.is_none());
 }

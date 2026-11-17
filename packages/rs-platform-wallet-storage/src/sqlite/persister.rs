@@ -1328,9 +1328,15 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         #[cfg(feature = "shielded")]
         {
-            capabilities
-                .union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
-                .union(PersistenceCapabilities::SHIELDED_STATE_WIPE)
+            let capabilities = capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS);
+            // A read-only (recovery) instance would refuse the wipe only
+            // after the caller's native reset; not attesting it lets
+            // `clear_shielded` refuse before anything is reset.
+            if self.ensure_writable("wipe_shielded_state").is_ok() {
+                capabilities.union(PersistenceCapabilities::SHIELDED_STATE_WIPE)
+            } else {
+                capabilities
+            }
         }
         #[cfg(not(feature = "shielded"))]
         {

@@ -992,10 +992,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Unconditional: a removal with no coordinator yet has nothing
         // to unregister, but the handle must still be barred from
         // binding onto one a later `configure_shielded` installs.
+        //
+        // Inside the shielded admission protocol, in its lock order after
+        // the generation gate: the wallet's `shield_guard`, then a shared
+        // admission, both held to the end of the removal. Every shielded
+        // persist path of the handle checks the detached flag under those
+        // same locks before it writes, so each write either lands before
+        // this returns (and the host's deletion after it removes it) or is
+        // refused. The admission is the removal one, granted while a host
+        // wipe is pending: deleting a wallet is not what a pending wipe
+        // guards against.
+        #[cfg(feature = "shielded")]
+        let _shield_guard = Arc::clone(&removed.shield_guard).lock_owned().await;
+        #[cfg(feature = "shielded")]
+        let coordinator = self.shielded_coordinator().await;
+        #[cfg(feature = "shielded")]
+        let _admission = match coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.admit_removal().await),
+            None => None,
+        };
         #[cfg(feature = "shielded")]
         removed.mark_shielded_detached();
         #[cfg(feature = "shielded")]
-        if let Some(coordinator) = self.shielded_coordinator().await {
+        if let Some(coordinator) = coordinator.as_ref() {
             coordinator.unregister_wallet(*wallet_id).await;
         }
 
