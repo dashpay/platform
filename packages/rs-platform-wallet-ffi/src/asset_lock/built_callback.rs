@@ -22,7 +22,14 @@ use crate::asset_lock_persistence::outpoint_to_bytes;
 /// result then tells what happened to the lock:
 /// `ErrorTransactionBroadcastRejected` (26) means it was removed again; any
 /// other failure leaves it tracked and resumable by this outpoint (a resume
-/// may find it already consumed). Both hold for this session; the row store
+/// may find it already consumed). One exception: a shielded funding on a
+/// persister that records shielded recipients stores its row durably before
+/// the send, and when that store fails the lock is removed again before it
+/// is sent: a persistence error with the inputs released (a resume then
+/// answers `ErrorAssetLockNotTracked` (23)), or, when the removal itself
+/// could not be made durable, `ErrorTransactionBroadcastUnconfirmed` (20)
+/// with the inputs still reserved and a row that may come back after a
+/// restart, resumable by this outpoint. Both hold for this session; the row store
 /// and removal behind them are best-effort, so after a restart a failed
 /// store can leave no row for a broadcast lock, or the row of a removed one.
 /// That holds for the exports that take this callback today: shielded

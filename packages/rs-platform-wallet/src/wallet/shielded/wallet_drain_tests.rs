@@ -1173,15 +1173,16 @@ async fn fund_typed_amount(
 
 /// A typed-amount funding whose recipient cannot be made durable stops before
 /// the broadcaster: a rejected store and a rejected flush of a buffered store
-/// both fail the call with a persistence error and leave the lock untracked
-/// and uncommitted. The abandoned row's removal must be durable before the
-/// inputs are released, and on this buffered backend neither case can make it
-/// so: a refused store refuses the removal too, and a failed flush leaves the
-/// removal only buffered, while another flush may already have committed the
-/// row, so a crash would bring the lock back resumable after the inputs
-/// funded a retry. The inputs therefore stay reserved in both cases. After
-/// the failed flush the removal is still stored behind the row, so the next
-/// successful flush does not commit the abandoned row.
+/// both fail the call and leave the lock untracked and uncommitted. The
+/// abandoned row's removal must be durable before the inputs are released,
+/// and on this buffered backend neither case can make it so: a refused store
+/// refuses the removal too, and a failed flush leaves the removal only
+/// buffered, while another flush may already have committed the row, so a
+/// crash would bring the lock back resumable after the inputs funded a retry.
+/// The inputs therefore stay reserved in both cases, and the call reports the
+/// unknown outcome (do not retry) rather than a retry-safe persistence error.
+/// After the failed flush the removal is still stored behind the row, so the
+/// next successful flush does not commit the abandoned row.
 #[tokio::test]
 async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
     for fail_flush in [false, true] {
@@ -1201,7 +1202,7 @@ async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_dur
         switch.store(true, Ordering::SeqCst);
         let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
         assert!(
-            matches!(&error, PlatformWalletError::Persistence(message)
+            matches!(&error, PlatformWalletError::TransactionBroadcastUnconfirmed(message)
                 if message.contains("shielded recipient was not made durable")
                     && message.contains("inputs stay reserved")),
             "fail_flush={fail_flush}: {error}"

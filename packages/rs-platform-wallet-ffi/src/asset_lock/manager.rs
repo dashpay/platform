@@ -45,11 +45,20 @@ pub struct TrackedAssetLockFFI {
     /// The identity a resume of this lock pays, valid only when
     /// `has_identity_recipient` is true (all zero otherwise).
     pub identity_recipient_32: [u8; 32],
-    /// An unbound identity top-up, not consumed, that records no identity
-    /// (rebuilt from the chain, for example after a restore from the seed):
-    /// no resume pays it until the user assigns it a recipient with
-    /// `platform_wallet_assign_identity_top_up_recipient`. Hosts list it
-    /// for the user rather than resuming it into one of their identities.
+    /// An unbound identity top-up that records no identity and that the
+    /// wallet knows is not consumed (a live status: Built, Broadcast,
+    /// InstantSendLocked or ChainLocked): no resume pays it until the user
+    /// assigns it a recipient with
+    /// `platform_wallet_assign_identity_top_up_recipient`. Hosts list it for
+    /// the user rather than resuming it into one of their identities.
+    ///
+    /// False for a recipient-less lock with status `RecoveredFromChain`
+    /// (status 5), which every past top-up rebuilt from the chain after a
+    /// restore from the seed carries: Platform may have consumed it long ago,
+    /// and no query tells the wallet whether it did, so hosts must not
+    /// present it as recoverable. Assigning one is refused with
+    /// `ErrorAssetLockAlreadyConsumed` (24) and nothing is assigned; its key
+    /// stays with the wallet until a consumption check exists.
     pub identity_recipient_unassigned: bool,
 }
 

@@ -65,6 +65,7 @@ struct AssetLockRecoveryRow {
     shielded_recipient: Option<Vec<u8>>,
     identity_recipient: Option<Vec<u8>>,
     lifecycle_blob: Vec<u8>,
+    status: String,
 }
 
 /// Encode an [`AssetLockEntry`] to its on-disk `lifecycle_blob` form via the
@@ -168,13 +169,14 @@ pub fn apply(
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
             let existing: Option<AssetLockRecoveryRow> = tx.query_row(
-                "SELECT operation_id, shielded_recipient, identity_recipient, lifecycle_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                "SELECT operation_id, shielded_recipient, identity_recipient, lifecycle_blob, status FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![wallet_id.as_slice(), &op_bytes[..]],
                 |row| Ok(AssetLockRecoveryRow {
                     operation_id: row.get(0)?,
                     shielded_recipient: row.get(1)?,
                     identity_recipient: row.get(2)?,
                     lifecycle_blob: row.get(3)?,
+                    status: row.get(4)?,
                 }),
             ).optional()?;
             // The operation UUID and the recorded recipients are immutable once
@@ -213,6 +215,17 @@ pub fn apply(
                     .and_then(|row| row.identity_recipient.as_deref()),
             ) {
                 if incoming.as_slice() != stored {
+                    // A consumed row is terminal: nothing can pay from it
+                    // again, so a snapshot naming another identity is stale,
+                    // not a redirect. Drop it for this row, as the in-memory
+                    // apply drops it, rather than failing the whole changeset
+                    // (and, on a fatal error, the wallet's buffered changes).
+                    if existing
+                        .as_ref()
+                        .is_some_and(|row| row.status == "consumed")
+                    {
+                        continue;
+                    }
                     return Err(WalletStorageError::blob_decode(
                         "asset lock identity recipient cannot change",
                     ));
@@ -474,9 +487,15 @@ pub fn load_state(
 }
 
 /// Status-filtered rehydration feed: every asset lock **except** terminal
-/// `Consumed` rows without an operation ID, bucketed by account index.
+/// `Consumed` rows that carry neither an operation ID nor an identity
+/// recipient, bucketed by account index.
 /// Consumed wallet-drain locks are non-actionable recovery tombstones: retaining
 /// their ID prevents a restart from mistaking a completed operation for a new one.
+/// Consumed unbound identity top-ups that record their recipient are kept for
+/// the same reason: without the tombstone, a later sighting of the funding
+/// transaction (a top-up completed on its InstantSend proof before it was
+/// mined) would be rebuilt from the chain with no recipient and offered as an
+/// unassigned, recoverable lock.
 /// Legacy consumed locks remain excluded; full history is available via
 /// [`load_state`]. Malformed rows remain fatal. Recovery keeps consumption
 /// sticky when the typed column and blob disagree.
@@ -487,7 +506,7 @@ pub fn load_unconsumed(
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient, identity_recipient \
-         FROM asset_locks WHERE wallet_id = ?1 AND (status != 'consumed' OR operation_id IS NOT NULL)",
+         FROM asset_locks WHERE wallet_id = ?1 AND (status != 'consumed' OR operation_id IS NOT NULL OR identity_recipient IS NOT NULL)",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out: AssetLocksByAccount = BTreeMap::new();
@@ -507,7 +526,10 @@ pub fn load_unconsumed(
             recovery,
             ctx,
         )?;
-        if tracked.status.is_consumed() && tracked.operation_id.is_none() {
+        if tracked.status.is_consumed()
+            && tracked.operation_id.is_none()
+            && tracked.identity_recipient.is_none()
+        {
             continue;
         }
         out.entry(acct).or_default().insert(outpoint, tracked);

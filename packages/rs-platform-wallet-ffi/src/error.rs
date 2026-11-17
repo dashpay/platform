@@ -225,6 +225,11 @@ pub enum PlatformWalletFFIResultCode {
     ErrorAssetLockNotTracked = 23,
     /// Asset-lock funding cannot reuse this one-shot output; Platform
     /// completion for the requested operation is unconfirmed.
+    ///
+    /// Also `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
+    /// identity top-up lock that records no recipient and whose Platform
+    /// consumption is unknown (rebuilt from the chain after a restore) cannot
+    /// be assigned a recipient. Nothing was assigned; the lock stays tracked.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -778,9 +783,12 @@ pub enum PlatformWalletFFIResultCode {
     /// the chain, for example after a restore from the seed, and its credit
     /// output names none), so no resume pays it: it may have been meant for
     /// someone else's identity. Nothing was submitted or paid. Not retryable
-    /// as is: the funds stay recoverable once the user assigns the lock a
-    /// recipient (`platform_wallet_assign_identity_top_up_recipient`),
-    /// after which a resume to that identity proceeds.
+    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
+    /// is recoverable once the user assigns it a recipient
+    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
+    /// resume to that identity proceeds. One whose Platform consumption is
+    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
+    /// is refused with [`Self::ErrorAssetLockAlreadyConsumed`] (24).
     ErrorAssetLockRecipientUnknown = 81,
 
     /// The named thing does not exist.
@@ -1204,7 +1212,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvitationNetworkMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidNetwork
             }
-            PlatformWalletError::AssetLockAlreadyConsumed(..) => {
+            // An assignment refused because Platform may already have
+            // consumed the lock: this lock cannot be used here either.
+            PlatformWalletError::AssetLockAlreadyConsumed(..)
+            | PlatformWalletError::AssetLockConsumptionUnknown(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
@@ -1848,6 +1859,10 @@ mod tests {
             ),
             (
                 PlatformWalletError::AssetLockAlreadyConsumed(out_point),
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+            ),
+            (
+                PlatformWalletError::AssetLockConsumptionUnknown(out_point),
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
             ),
             (

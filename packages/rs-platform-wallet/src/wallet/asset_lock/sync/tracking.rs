@@ -156,15 +156,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// that Platform knows the identity.
     ///
     /// Refused on a backend that cannot keep the assignment
-    /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]). The
-    /// identity is recorded in memory first and then stored and flushed, so
-    /// memory always holds what a failed flush leaves queued for the next
-    /// one: a later assignment of another identity is
-    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`] rather than
-    /// a change the store would drop. If the store fails, the error is
-    /// returned and the assignment holds for this session; assigning the
-    /// same identity again stores it again, so a retry makes it durable.
-    /// Only an unbound top-up lock that is not consumed can be assigned.
+    /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]). Only an
+    /// unbound top-up lock that is not consumed can be assigned
+    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`] otherwise), and one
+    /// that records no recipient only while its Platform consumption is known
+    /// ([`PlatformWalletError::AssetLockConsumptionUnknown`] for a
+    /// [`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain) lock).
+    ///
+    /// The identity is recorded in memory first and then stored and flushed.
+    /// What a failure leaves in memory follows what it may have left in the
+    /// backend, as for
+    /// [`mark_asset_lock_consumption_unknown`](Self::mark_asset_lock_consumption_unknown):
+    ///
+    /// - A transient failure, or a failed flush on a backend whose store
+    ///   commits inline, may leave the assignment queued or already
+    ///   committed. It holds in memory for this session, so a later
+    ///   assignment of another identity is
+    ///   [`PlatformWalletError::AssetLockIdentityRecipientMismatch`] rather
+    ///   than a change the store would drop; assigning the same identity
+    ///   again stores it again, so a retry makes it durable.
+    /// - Any other failure (a refused store, or a flush the backend failed
+    ///   for good, such as a stored row already recording another identity)
+    ///   left nothing to commit. The assignment is rolled back, so a refused
+    ///   value does not stay in memory to fail every later snapshot of the
+    ///   row.
     ///
     /// `generation` is the caller's handle's wallet generation. A wallet
     /// removed, or re-created under its id, since the handle was taken is
@@ -185,7 +200,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // the store, taken before the manager lock as teardown takes them, so
         // a removal cannot land between them.
         let _lifecycle = generation.payment_guard().await;
-        let entry = {
+        let (entry, newly_assigned) = {
             let mut wm = self.wallet_manager.write().await;
             let lock = wm
                 .get_wallet_info_mut(&self.wallet_id)
@@ -197,23 +212,46 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .get_mut(out_point)
                 .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
             check_identity_recipient_assignable(lock, identity)?;
+            let newly_assigned = lock.identity_recipient.is_none();
             lock.identity_recipient = Some(identity);
-            AssetLockEntry::from(&*lock)
+            (AssetLockEntry::from(&*lock), newly_assigned)
         };
-        self.persister
-            .store(PlatformWalletChangeSet {
-                asset_locks: Some(AssetLockChangeSet {
-                    asset_locks: [(*out_point, entry)].into(),
-                    ..Default::default()
-                }),
+        let store_commits_inline = self.persister.store_commits_inline();
+        let persist_failure = match self.persister.store(PlatformWalletChangeSet {
+            asset_locks: Some(AssetLockChangeSet {
+                asset_locks: [(*out_point, entry)].into(),
                 ..Default::default()
-            })
-            .and_then(|()| self.persister.flush())
-            .map_err(|error| {
-                PlatformWalletError::Persistence(format!(
-                    "asset-lock identity recipient was not made durable: {error}"
-                ))
-            })
+            }),
+            ..Default::default()
+        }) {
+            Err(error) => Some((error, true)),
+            Ok(()) => self
+                .persister
+                .flush()
+                .err()
+                .map(|error| (error, !store_commits_inline)),
+        };
+        let Some((error, may_roll_back)) = persist_failure else {
+            return Ok(());
+        };
+        if newly_assigned && may_roll_back && !error.is_transient() {
+            // Still under the lifecycle gate, so the generation checked above
+            // is still the wallet's; an assignment is never changed by
+            // another writer, so the identity set above is still this one.
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(lock) = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, generation))
+                .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
+            {
+                if lock.identity_recipient == Some(identity) {
+                    lock.identity_recipient = None;
+                }
+            }
+        }
+        Err(PlatformWalletError::Persistence(format!(
+            "asset-lock identity recipient was not made durable: {error}"
+        )))
     }
 
     /// Track a new asset lock in memory, returning a changeset describing
@@ -817,6 +855,14 @@ fn check_identity_recipient_assignable(
     }
     if lock.status.is_consumed() {
         return Err(PlatformWalletError::AssetLockAlreadyConsumed(
+            lock.out_point,
+        ));
+    }
+    // A lock that already records this identity may be assigned it again (a
+    // retry of a failed store); a recipient-less one only while the wallet
+    // knows Platform has not consumed it.
+    if lock.identity_recipient.is_none() && lock.status == AssetLockStatus::RecoveredFromChain {
+        return Err(PlatformWalletError::AssetLockConsumptionUnknown(
             lock.out_point,
         ));
     }

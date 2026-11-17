@@ -474,14 +474,18 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
 /// (7) and nothing is assigned; a failed lookup is the SDK's error.
 ///
 /// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint,
-/// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock,
+/// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock and for a
+/// recipient-less lock whose Platform consumption is unknown (status
+/// `RecoveredFromChain`, not flagged `identity_recipient_unassigned`),
 /// `ErrorAssetLockRecipientMismatch` (61) when the lock already records a
 /// different identity (assigning the recorded one again is a no-op), and a
 /// persistence error when the host's persister does not keep identity
 /// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS`) or the store fails. After a
-/// failed store the assignment still holds for this session and another
-/// identity is refused (61); calling again with the same identity retries
-/// the store. A lock
+/// transient store failure (or a failed flush on a persister that commits
+/// each store inline) the assignment still holds for this session and
+/// another identity is refused (61); calling again with the same identity
+/// retries the store. After any other store failure the assignment is rolled
+/// back and the lock is unassigned again. A lock
 /// that is not an unbound identity top-up is refused. A wallet removed or
 /// re-created under its id during the lookup is `NotFound`, with nothing
 /// assigned.

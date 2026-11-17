@@ -29,6 +29,7 @@
 
 use std::collections::BTreeMap;
 use std::slice;
+use std::sync::{Arc, Mutex};
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -37,6 +38,7 @@ use platform_wallet::AssetLockFunding;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
+use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration::IdentityFundingInputFFI;
@@ -268,17 +270,36 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
 /// duffs today), `ErrorIdentityNotFound` (7) for an identity
 /// Platform does not know, and a persistence error when the host's persister
 /// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
-/// reported as the SDK error for now; it becomes `ErrorIdentityLookupFailed`
-/// (80) with dashpay/platform#5860.
+/// reported as the SDK error for now. In every one of these
+/// `out_asset_lock_outpoint` is all zero: nothing was built, nothing was
+/// paid, and a new call is safe.
 ///
-/// Once the lock is built, a failure may leave it tracked: it then appears on
-/// the tracked-lock lists recording `identity_id`. Do not build a new lock to
-/// retry; resume that one with
-/// [`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
-/// or the identity may be paid twice.
+/// `out_asset_lock_outpoint` receives the outpoint of the lock this call
+/// built, on success and on failure alike (a panic included), and is all zero
+/// when nothing was built. The error code alone does not tell a failure
+/// before the build from one after it (a failed lookup and a failed Platform
+/// submit can share a code); the outpoint does. Once it is non-zero:
+///
+/// - Do not build a new lock to retry, or the identity may be paid twice.
+///   Resume this one with
+///   [`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
+///   which pays the identity its row records.
+/// - `ErrorTransactionBroadcastRejected` (26) means Core definitively
+///   rejected the lock and it was removed, with its inputs released: a new
+///   call is safe.
+/// - `ErrorTransactionBroadcastUnconfirmed` (20) means the lock may be on the
+///   network, or its row may come back after a restart while its inputs stay
+///   reserved: do not retry; resume this outpoint (after the next launch if
+///   it is not tracked now).
+/// - Any other failure: resume this outpoint. A resume answering
+///   `ErrorAssetLockNotTracked` (23) means the lock was removed before it was
+///   sent (its row could not be made durable, and its removal was), so
+///   nothing was paid and a new call is safe.
 ///
 /// # Safety
-/// Same contract as [`platform_wallet_top_up_identity_with_funding_signer`].
+/// Same contract as [`platform_wallet_top_up_identity_with_funding_signer`],
+/// and `out_asset_lock_outpoint` must be writable for the duration of the
+/// call.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_signer(
@@ -288,21 +309,53 @@ pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_s
     account_index: u32,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_new_balance: *mut u64,
+    out_asset_lock_outpoint: *mut OutPointFFI,
 ) -> PlatformWalletFFIResult {
+    check_ptr!(out_asset_lock_outpoint);
     // The whole body runs under `catch_unwind`: a panic (most concretely
     // `block_on_worker`'s `.expect` on a panicking top-up task) must not reach
     // this `extern "C"` frame. It can strike after the lock was broadcast, so
     // the ambiguous broadcast-unconfirmed contract applies.
-    catch_top_up_panic("external identity top-up", || {
-        top_up_external_identity_with_funding_signer_inner(
-            wallet_handle,
-            identity_id,
-            amount_duffs,
-            account_index,
-            core_signer_handle,
-            out_new_balance,
-        )
+    report_built_outpoint(out_asset_lock_outpoint, |built| {
+        catch_top_up_panic("external identity top-up", || {
+            top_up_external_identity_with_funding_signer_inner(
+                wallet_handle,
+                identity_id,
+                amount_duffs,
+                account_index,
+                core_signer_handle,
+                out_new_balance,
+                built,
+            )
+        })
     })
+}
+
+/// The outpoint a funding call's `on_built` observer reported, shared with
+/// the export that writes it out once the call returns.
+type BuiltOutPoint = Arc<Mutex<Option<dashcore::OutPoint>>>;
+
+/// Zero `out`, run `body` with a slot its `on_built` observer fills, then
+/// write the reported outpoint to `out` whatever `body` returned. `body`
+/// catches its own panics, so the outpoint of a lock built before one is
+/// still written.
+///
+/// # Safety
+/// `out` must be non-null and writable for the duration of the call.
+unsafe fn report_built_outpoint(
+    out: *mut OutPointFFI,
+    body: impl FnOnce(BuiltOutPoint) -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    *out = OutPointFFI {
+        txid: [0; 32],
+        vout: 0,
+    };
+    let built = BuiltOutPoint::default();
+    let result = body(Arc::clone(&built));
+    if let Some(out_point) = *built.lock().unwrap_or_else(|e| e.into_inner()) {
+        *out = OutPointFFI::from(&out_point);
+    }
+    result
 }
 
 /// Body of [`platform_wallet_top_up_external_identity_with_funding_signer`],
@@ -318,6 +371,7 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
     account_index: u32,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_new_balance: *mut u64,
+    built: BuiltOutPoint,
 ) -> PlatformWalletFFIResult {
     check_ptr!(identity_id);
     check_ptr!(core_signer_handle);
@@ -346,6 +400,11 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
                 network,
             )
         };
+        // Runs before the lock's row is stored or the lock is broadcast, so
+        // the outpoint is recorded for every failure after the build.
+        let on_built = move |out_point: dashcore::OutPoint| {
+            *built.lock().unwrap_or_else(|e| e.into_inner()) = Some(out_point);
+        };
         identity_wallet
             .top_up_external_identity_with_funding(
                 &identity_id,
@@ -355,6 +414,7 @@ unsafe fn top_up_external_identity_with_funding_signer_inner(
                 },
                 &asset_lock_signer,
                 None,
+                Some(&on_built),
             )
             .await
     });
@@ -488,9 +548,15 @@ mod top_up_with_funding_guard_tests {
     fn should_refuse_an_external_top_up_with_a_null_pointer_or_an_unknown_wallet() {
         let id = [0u8; 32];
         let mut balance = 7u64;
+        let mut outpoint = OutPointFFI {
+            txid: [0xab; 32],
+            vout: 9,
+        };
+        let outpoint_ptr: *mut OutPointFFI = &mut outpoint;
         let call = |identity: *const [u8; 32],
                     signer: *mut MnemonicResolverHandle,
-                    out: *mut u64| unsafe {
+                    out: *mut u64,
+                    out_outpoint: *mut OutPointFFI| unsafe {
             platform_wallet_top_up_external_identity_with_funding_signer(
                 u64::MAX,
                 identity,
@@ -498,22 +564,104 @@ mod top_up_with_funding_guard_tests {
                 0,
                 signer,
                 out,
+                out_outpoint,
             )
         };
         for code in [
-            call(std::ptr::null(), dangling_core_signer(), &mut balance).code,
-            call(&id, std::ptr::null_mut(), &mut balance).code,
-            call(&id, dangling_core_signer(), std::ptr::null_mut()).code,
+            call(
+                std::ptr::null(),
+                dangling_core_signer(),
+                &mut balance,
+                outpoint_ptr,
+            )
+            .code,
+            call(&id, std::ptr::null_mut(), &mut balance, outpoint_ptr).code,
+            call(
+                &id,
+                dangling_core_signer(),
+                std::ptr::null_mut(),
+                outpoint_ptr,
+            )
+            .code,
+            call(
+                &id,
+                dangling_core_signer(),
+                &mut balance,
+                std::ptr::null_mut(),
+            )
+            .code,
         ] {
             assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
         }
         assert_eq!(
-            call(&id, dangling_core_signer(), &mut balance).code,
+            call(&id, dangling_core_signer(), &mut balance, outpoint_ptr).code,
             PlatformWalletFFIResultCode::NotFound
         );
         assert_eq!(
             balance, 0,
             "the out-param is reset before any fallible work"
         );
+        assert_eq!(
+            (outpoint.txid, outpoint.vout),
+            ([0; 32], 0),
+            "nothing was built, so the outpoint is all zero"
+        );
+    }
+
+    /// The built lock's outpoint reaches the host whatever the call returns:
+    /// on a failure after the build, and after a panic the body caught. It
+    /// stays all zero when nothing was built.
+    #[test]
+    fn should_write_the_built_outpoint_on_failure_and_panic_and_zero_otherwise() {
+        let built_at = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([0x42; 32]), 3);
+        let mut out = OutPointFFI {
+            txid: [0xab; 32],
+            vout: 9,
+        };
+
+        let result = unsafe {
+            report_built_outpoint(&mut out, |_| {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorIdentityNotFound,
+                    "nothing built",
+                )
+            })
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert_eq!((out.txid, out.vout), ([0; 32], 0));
+
+        let result = unsafe {
+            report_built_outpoint(&mut out, |built| {
+                *built.lock().unwrap() = Some(built_at);
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUnknown,
+                    "the Platform submit failed after the broadcast",
+                )
+            })
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(dashcore::OutPoint::from(&out), built_at);
+
+        out = OutPointFFI {
+            txid: [0; 32],
+            vout: 0,
+        };
+        let mut result = unsafe {
+            report_built_outpoint(&mut out, |built| {
+                catch_top_up_panic("external identity top-up", || {
+                    *built.lock().unwrap() = Some(built_at);
+                    panic!("tokio worker panicked");
+                })
+            })
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        assert_eq!(dashcore::OutPoint::from(&out), built_at);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 }

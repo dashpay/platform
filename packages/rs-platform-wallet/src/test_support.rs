@@ -972,6 +972,23 @@ pub(crate) async fn platform_wallet_with_sdk(
     wallet_id: WalletId,
     sdk: dash_sdk::Sdk,
 ) -> PlatformWallet {
+    platform_wallet_with_sdk_and_persister(
+        wallet_manager,
+        wallet_id,
+        sdk,
+        Arc::new(NoopTestPersister),
+    )
+    .await
+}
+
+/// [`platform_wallet_with_sdk`] over a caller-chosen persister.
+#[cfg(test)]
+pub(crate) async fn platform_wallet_with_sdk_and_persister(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+    sdk: dash_sdk::Sdk,
+    persister: Arc<dyn PlatformWalletPersistence>,
+) -> PlatformWallet {
     let generation = {
         let manager = wallet_manager.read().await;
         let (_, info) = manager
@@ -989,7 +1006,7 @@ pub(crate) async fn platform_wallet_with_sdk(
         wallet_manager,
         generation,
         Arc::new(Notify::new()),
-        Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
+        persister,
         Arc::new(SpvBroadcaster::new(spv)),
         Arc::new(AtomicBool::new(false)),
         DurableCursors::default(),

@@ -86,7 +86,7 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::sync::tracking::not_an_unbound_top_up;
-use crate::wallet::asset_lock::AssetLockFunding;
+use crate::wallet::asset_lock::{AssetLockBuiltObserver, AssetLockFunding};
 use crate::BlockTime;
 
 use super::*;
@@ -429,6 +429,7 @@ impl IdentityWallet {
                 identity_index,
                 asset_lock_signer,
                 settings,
+                None,
             )
             .await?;
 
@@ -461,12 +462,22 @@ impl IdentityWallet {
     ///
     /// `funding` may also be an existing unbound lock that recorded this
     /// identity; a lock recording another identity is refused.
+    ///
+    /// `on_built` receives the outpoint of a newly built lock before its row
+    /// is stored or the lock is broadcast (see [`AssetLockBuiltObserver`]).
+    /// Once it ran, a failed call may have left that lock tracked and
+    /// resumable to `identity_id`: resume it by that outpoint rather than
+    /// building another, or the identity may be paid twice. It does not run
+    /// when the call fails before anything is built (an unknown identity, a
+    /// failed lookup, a persister that cannot record the recipient) or for an
+    /// existing lock.
     pub async fn top_up_external_identity_with_funding<AS>(
         &self,
         identity_id: &Identifier,
         funding: AssetLockFunding,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<u64, PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -482,6 +493,7 @@ impl IdentityWallet {
                 0,
                 asset_lock_signer,
                 settings,
+                on_built,
             )
             .await?;
         // The caller may name an identity this wallet holds after all; its
@@ -503,11 +515,16 @@ impl IdentityWallet {
     ///
     /// Also refused on a backend that cannot keep the assignment
     /// (`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`), for a lock
-    /// that is not an unassigned unbound top-up, and for a lock recording
-    /// another identity
+    /// that is not an unbound top-up, for a consumed lock
+    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`]), for a
+    /// recipient-less lock whose Platform consumption is unknown
+    /// ([`PlatformWalletError::AssetLockConsumptionUnknown`]), and for a lock
+    /// recording another identity
     /// ([`PlatformWalletError::AssetLockIdentityRecipientMismatch`]). If the
-    /// store fails, the error is returned and the assignment holds for this
-    /// session; assigning the same identity again retries the store. A wallet
+    /// store fails transiently, or its flush fails after an inline commit,
+    /// the error is returned and the assignment holds for this session;
+    /// assigning the same identity again retries the store. Any other store
+    /// failure rolls the assignment back, leaving the lock unassigned. A wallet
     /// removed or re-created under its id while the identity was looked up is
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// assigned.
@@ -626,11 +643,13 @@ impl IdentityWallet {
             self.top_up_identity_with_funding(&identity_id, funding, asset_lock_signer, settings)
                 .await?
         } else {
+            // An existing lock: nothing is built, so nothing to observe.
             self.top_up_external_identity_with_funding(
                 &identity_id,
                 funding,
                 asset_lock_signer,
                 settings,
+                None,
             )
             .await?
         };
@@ -681,6 +700,7 @@ impl IdentityWallet {
     /// lock must have recorded it. Once Platform has accepted the top-up the
     /// tracked lock is consumed (best-effort: a cleanup failure is logged, not
     /// reported). Returns the proved new balance and the response metadata.
+    /// `on_built` receives the outpoint of a newly built lock.
     #[allow(clippy::too_many_arguments)]
     async fn submit_top_up_with_funding<AS>(
         &self,
@@ -690,6 +710,7 @@ impl IdentityWallet {
         identity_index: u32,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(u64, ResponseMetadata), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -709,7 +730,7 @@ impl IdentityWallet {
                 identity_index,
                 Some(AssetLockRecipient::Identity(identity.id())),
                 asset_lock_signer,
-                None,
+                on_built,
             )
             .await?
         {
@@ -947,6 +968,8 @@ mod tests {
     async fn should_refuse_an_external_top_up_of_an_identity_platform_does_not_know() {
         let unknown = Identifier::from([0x62u8; 32]);
         let (wallet, signer) = wallet_where_platform_answers(unknown, None).await;
+        let built = std::sync::Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| built.lock().unwrap().push(out_point);
 
         let result = wallet
             .identity()
@@ -958,6 +981,7 @@ mod tests {
                 },
                 &signer,
                 None,
+                Some(&observer),
             )
             .await;
 
@@ -966,6 +990,10 @@ mod tests {
             "{result:?}"
         );
         assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
+        assert!(
+            built.lock().unwrap().is_empty(),
+            "nothing was built, so no outpoint is reported"
+        );
     }
 
     /// A known identity is still refused before any lock is built when the
@@ -991,6 +1019,7 @@ mod tests {
                 },
                 &signer,
                 None,
+                None,
             )
             .await;
 
@@ -999,6 +1028,103 @@ mod tests {
                 if message.contains("asset_lock_identity_recipients")),
             "{result:?}"
         );
+        assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
+    }
+
+    /// Records nothing, but declares that it keeps an unbound top-up's
+    /// identity recipient, so an external top-up builds its lock.
+    struct RecipientRecordingPersister;
+
+    impl crate::changeset::PlatformWalletPersistence for RecipientRecordingPersister {
+        fn store(
+            &self,
+            _wallet_id: key_wallet_manager::WalletId,
+            _changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(
+            &self,
+            _wallet_id: key_wallet_manager::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            crate::changeset::PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS
+        }
+    }
+
+    /// The external top-up hands the built lock's outpoint to `on_built`, so
+    /// a caller can tell "nothing was built" from "this lock was built" and
+    /// resume that lock instead of paying the identity again. Here the
+    /// unstarted SPV client rejects the broadcast: the observer saw the lock,
+    /// and the definite rejection removed it again.
+    #[tokio::test]
+    async fn should_report_the_built_lock_of_an_external_top_up_to_on_built() {
+        let known = Identifier::from([0x67u8; 32]);
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let network = {
+            let wm = wallet_manager.read().await;
+            wm.get_wallet_and_info(&wallet_id).unwrap().0.network
+        };
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(network)
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        sdk.mock()
+            .expect_fetch(
+                known,
+                Some(Identity::V0(IdentityV0 {
+                    id: known,
+                    public_keys: BTreeMap::new(),
+                    balance: 5,
+                    revision: 0,
+                })),
+            )
+            .await
+            .expect("identity expectation");
+        let wallet = crate::test_support::platform_wallet_with_sdk_and_persister(
+            wallet_manager,
+            wallet_id,
+            sdk,
+            std::sync::Arc::new(RecipientRecordingPersister),
+        )
+        .await;
+        let built = std::sync::Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| built.lock().unwrap().push(out_point);
+
+        let result = wallet
+            .identity()
+            .top_up_external_identity_with_funding(
+                &known,
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "{result:?}"
+        );
+        let built = built.into_inner().unwrap();
+        assert_eq!(built.len(), 1, "the built lock is reported once");
+        assert_ne!(built[0], OutPoint::null());
         assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
     }
 
@@ -1022,7 +1148,7 @@ mod tests {
                 .top_up_identity_with_funding(&id, funding(), &signer, None)
                 .await,
             identity
-                .top_up_external_identity_with_funding(&id, funding(), &signer, None)
+                .top_up_external_identity_with_funding(&id, funding(), &signer, None, None)
                 .await,
         ] {
             assert!(

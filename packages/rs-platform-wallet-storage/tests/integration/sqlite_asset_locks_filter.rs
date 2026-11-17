@@ -503,6 +503,115 @@ fn should_preserve_identity_recipient_when_later_snapshot_lacks_it_and_reject_a_
         .is_err());
 }
 
+/// A completed external top-up stays a consumed tombstone across a restart,
+/// with its recipient: otherwise a later sighting of its funding transaction
+/// (completed on the InstantSend proof, mined after the restart) would be
+/// rebuilt from the chain with no recipient and listed as an unassigned,
+/// recoverable lock. A legacy consumed row with no recipient stays excluded.
+#[test]
+fn should_restore_consumed_identity_top_ups_that_record_their_recipient() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xAE);
+    ensure_wallet_meta(&persister, &w);
+    let paid = op(0x39);
+    let legacy = op(0x3A);
+    let recipient = Identifier::from([0x24; 32]);
+    let unbound = |outpoint, status| AssetLockEntry {
+        funding_type: AssetLockFundingType::IdentityTopUpNotBound,
+        ..entry(outpoint, status)
+    };
+    for status in [AssetLockStatus::Built, AssetLockStatus::Consumed] {
+        let mut recorded = unbound(paid, status.clone());
+        recorded.identity_recipient = Some(recipient);
+        persister
+            .store(
+                w,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: [(paid, recorded), (legacy, unbound(legacy, status))]
+                            .into_iter()
+                            .collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        persister.flush(w).unwrap();
+    }
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&paid];
+    assert_eq!(restored.status, AssetLockStatus::Consumed);
+    assert_eq!(restored.identity_recipient, Some(recipient));
+    assert!(
+        !locks[&0].contains_key(&legacy),
+        "a consumed row without a recipient stays out of the feed"
+    );
+}
+
+/// A consumed row is terminal, so a snapshot naming another identity for it
+/// is stale rather than a redirect: it is skipped without failing the
+/// changeset, the row keeps its recipient, and the changeset's other rows
+/// are still written.
+#[test]
+fn should_skip_a_conflicting_recipient_for_a_consumed_row_without_failing_the_store() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xAF);
+    ensure_wallet_meta(&persister, &w);
+    let paid = op(0x3B);
+    let other = op(0x3C);
+    let recipient = Identifier::from([0x25; 32]);
+    let unbound = |outpoint, status| AssetLockEntry {
+        funding_type: AssetLockFundingType::IdentityTopUpNotBound,
+        ..entry(outpoint, status)
+    };
+    let store = |rows: Vec<(OutPoint, AssetLockEntry)>| {
+        persister
+            .store(
+                w,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: rows.into_iter().collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .and_then(|()| persister.flush(w))
+    };
+    let mut consumed = unbound(paid, AssetLockStatus::Consumed);
+    consumed.identity_recipient = Some(recipient);
+    store(vec![(paid, consumed)]).unwrap();
+
+    for status in [
+        AssetLockStatus::RecoveredFromChain,
+        AssetLockStatus::Consumed,
+    ] {
+        let mut conflicting = unbound(paid, status);
+        conflicting.identity_recipient = Some(Identifier::from([0x26; 32]));
+        store(vec![
+            (paid, conflicting),
+            (other, unbound(other, AssetLockStatus::Broadcast)),
+        ])
+        .expect("a stale snapshot of a consumed row does not fail the store");
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&paid];
+    assert_eq!(restored.identity_recipient, Some(recipient));
+    assert_eq!(restored.status, AssetLockStatus::Consumed);
+    assert_eq!(locks[&0][&other].status, AssetLockStatus::Broadcast);
+}
+
 #[test]
 fn should_fail_the_load_when_a_stored_identity_recipient_has_the_wrong_length() {
     let (persister, _tmp, _) = fresh_persister();
@@ -543,7 +652,7 @@ fn should_fail_the_load_when_a_stored_identity_recipient_has_the_wrong_length() 
 }
 
 #[test]
-fn sqlite_advertises_asset_lock_identity_recipients() {
+fn should_advertise_asset_lock_identity_recipients() {
     let (persister, _tmp, _) = fresh_persister();
     assert!(persister.persistence_capabilities().contains(
         platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS

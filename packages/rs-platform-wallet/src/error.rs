@@ -473,6 +473,22 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
+    /// An unbound identity top-up lock that records no recipient cannot be
+    /// assigned one, because whether Platform already consumed it is unknown
+    /// ([`AssetLockStatus::RecoveredFromChain`](crate::wallet::asset_lock::tracked::AssetLockStatus::RecoveredFromChain)):
+    /// a lock rebuilt from a finalized transaction after a restore, which may
+    /// have topped up an identity long ago. Assigning is permanent, and no
+    /// query tells the wallet whether Platform has used an asset-lock
+    /// outpoint, so binding it could ask the user to pay an identity from a
+    /// lock that is already spent. Nothing was assigned. The FFI reports it
+    /// with the same code as [`Self::AssetLockAlreadyConsumed`]: this lock
+    /// cannot be used here.
+    #[error(
+        "Asset lock {0} may already have been consumed on Platform; it records no identity \
+         and cannot be assigned one"
+    )]
+    AssetLockConsumptionUnknown(dashcore::OutPoint),
+
     /// A tracked outpoint belongs to another funding family or identity
     /// index. Resuming it for the requested destination would spend the
     /// one-shot output on the wrong operation.
@@ -694,7 +710,9 @@ pub enum PlatformWalletError {
     /// credit output names no identity), so no resume pays it: it may have
     /// been meant for someone else's identity. Nothing was submitted or paid.
     /// The funds stay recoverable: assign the lock a recipient the user
-    /// chooses, then resume it.
+    /// chooses, then resume it. That holds while the wallet knows the lock is
+    /// unconsumed; one whose Platform consumption is unknown cannot be
+    /// assigned ([`Self::AssetLockConsumptionUnknown`]).
     #[error("Asset lock {0} records no identity to top up; assign a recipient before resuming it")]
     AssetLockRecipientUnknown(dashcore::OutPoint),
 
