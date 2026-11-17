@@ -9430,7 +9430,6 @@ class PlatformWalletPersistenceHandlerTest {
                 for (k in RUST_REQUIRED_QUERY_KEYS) {
                     requireNotNull(q[k]) { "missing field `$k` in classification query $q" }
                 }
-                requireNotNull(q["scriptHex"]) { "classification query carries no script" }
                 val k = key(q["txid"]!!.jsonPrimitive.content, q["vout"]!!.jsonPrimitive.int)
                 verdicts[i] = when {
                     // A contact's watch-only chain gets no verdict at all
@@ -9479,11 +9478,11 @@ class PlatformWalletPersistenceHandlerTest {
 
         companion object {
             /** The rs-unified-sdk-jni `OutpointQuery` keys with no serde
-             *  default (its flattened `UtxoAccountTuple` plus the outpoint):
-             *  omitting any one fails the whole classification batch with
-             *  `malformed outpoint queries: missing field …`. */
+             *  default (its flattened `UtxoAccountTuple`, the outpoint and
+             *  the script): omitting any one fails the whole classification
+             *  batch with `malformed outpoint queries: missing field …`. */
             val RUST_REQUIRED_QUERY_KEYS = listOf(
-                "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout",
+                "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout", "scriptHex",
             )
         }
     }
