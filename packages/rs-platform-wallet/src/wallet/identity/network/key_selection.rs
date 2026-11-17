@@ -237,10 +237,10 @@ fn usable_signing_key_at<'a>(
 ///
 /// Each refusal is the consensus signature error Platform itself returns for it, checked in
 /// Drive's order: a key type outside `key_types`, a purpose outside `purposes`, a security
-/// level outside `security_levels`, a disabled key, a key with limits where `scope` refuses one
-/// (identity-signed validation); then contract
-/// bounds that do not cover `scope` (structure validation); then an expired key (fee
-/// validation). A key bound to
+/// level outside `security_levels`, a disabled key, contract bounds that do not cover `scope`
+/// (identity-signed validation for non-batches, structure validation for batches), then a key
+/// with limits where `scope` refuses one (identity-signed validation v2, after v1's checks),
+/// then an expired key (fee validation). A key bound to
 /// a contract group is accepted: only Platform can read the group's memberships. A key
 /// `signer` cannot sign with is refused with the signer-unavailable error. A key with an
 /// expiry is refused with [`dash_sdk::Error::Config`] when the system clock reads before the
@@ -276,7 +276,7 @@ fn check_signing_key_at(
     now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
     // Drive's identity-signed validation checks in this order: key type, purpose, security
-    // level, disabled, limits.
+    // level, disabled, non-batch contract bounds, limits.
     if !key_types.contains(&key.key_type()) {
         return Err(signature_refusal(
             SignatureError::InvalidIdentityPublicKeyTypeError(
@@ -306,13 +306,6 @@ fn check_signing_key_at(
             PublicKeyIsDisabledError::new(key.id()),
         )));
     }
-    if scope.refuses_keys_with_limits() && key.has_limits() {
-        return Err(signature_refusal(
-            SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(
-                PublicKeyWithLimitsCannotSignDataContractTransitionError::new(key.id()),
-            ),
-        ));
-    }
     match scope.bounds_check(key) {
         BatchedTransitionBoundsCheck::Allowed
         | BatchedTransitionBoundsCheck::RequiresContractGroupMembership { .. } => {}
@@ -335,6 +328,13 @@ fn check_signing_key_at(
                 ),
             ));
         }
+    }
+    if scope.refuses_keys_with_limits() && key.has_limits() {
+        return Err(signature_refusal(
+            SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(
+                PublicKeyWithLimitsCannotSignDataContractTransitionError::new(key.id()),
+            ),
+        ));
     }
     if let Some(expires_at) = key.expires_at() {
         let Some(now) = now else {
@@ -984,6 +984,27 @@ pub(super) mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn should_report_contract_bounds_before_limits_as_drive_does() {
+        let limited_bound = bound_key(
+            1,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(CONTRACT),
+            }),
+        )
+        .with_limits(Some(1_000), None);
+        assert_eq!(
+            signature_error(check(
+                &limited_bound,
+                contract_scope(PlatformVersion::latest())
+            )),
+            SignatureError::ContractBoundedKeyNonBatchError(ContractBoundedKeyNonBatchError::new(
+                limited_bound.id()
+            ))
+        );
     }
 
     #[test]
