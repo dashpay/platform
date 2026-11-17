@@ -1607,9 +1607,8 @@ impl NetworkShieldedCoordinator {
 
         // Identity creates held for their outcome read: the scan kept their
         // records and did not confirm their rows, as their notes spent do not
-        // show whether the identity was created. Each whose notes this scan
-        // (or an earlier one) saw spent is read at the node it was delivered
-        // to, and each proven outcome is written onto this pass's changeset
+        // show whether the identity was created. Each with a kept node is
+        // read at that node until its outcome is proven, and each proven outcome is written onto this pass's changeset
         // after the scan's rows, so the host keeps it.
         let settled_identity_creates = if cancelled {
             Vec::new()
@@ -3708,14 +3707,29 @@ mod tests {
         coordinator: &NetworkShieldedCoordinator,
         id: SubwalletId,
     ) {
+        arm_identity_create_input(coordinator, id).await;
+        arm_identity_create_row(coordinator, id).await;
+    }
+
+    /// The create's input note, unspent.
+    async fn arm_identity_create_input(coordinator: &NetworkShieldedCoordinator, id: SubwalletId) {
+        let mut input = test_note(CREATE_INPUT, 0, false);
+        input.cmx = [0x56; 32];
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_note(id, &input)
+            .unwrap();
+    }
+
+    /// The create's pending activity row.
+    async fn arm_identity_create_row(coordinator: &NetworkShieldedCoordinator, id: SubwalletId) {
         use crate::wallet::shielded::activity::{
             ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
         };
 
         let mut store = coordinator.store().write().await;
-        let mut input = test_note(CREATE_INPUT, 0, false);
-        input.cmx = [0x56; 32];
-        store.save_note(id, &input).unwrap();
         store
             .save_activity(
                 id,
@@ -4705,6 +4719,86 @@ mod tests {
         assert_eq!(
             create_row(&coordinator, id).await,
             (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create whose input the store does not hold spent, as after a
+    /// restart whose host never kept the spent flag, is read all the same:
+    /// the read proves its notes spent and settles it.
+    #[tokio::test]
+    async fn should_read_a_held_identity_create_whose_input_is_not_seen_spent() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_input_unspent");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap()
+                .is_empty(),
+            "settled and retired"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create whose outcome is proven but whose input note the store
+    /// does not hold keeps its record: a spent-note delta cannot create the
+    /// note on the host. Once the note is back, the next pass settles it
+    /// from the kept outcome and drops the record.
+    #[tokio::test]
+    async fn should_keep_a_settled_identity_create_whose_input_note_is_missing() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_input_missing");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+        drop(coordinator);
+
+        // After a restart the row is back but not the input note.
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        arm_identity_create_row(&coordinator, id).await;
+        post_scan_steps(&coordinator, id).await;
+
+        let records = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap();
+        assert_eq!(records.len(), 1, "kept without its input note");
+        assert!(records[0]
+            .identity_outcome
+            .is_some_and(IdentityCreateOutcome::is_proven));
+
+        arm_identity_create_input(&coordinator, id).await;
+        post_scan_steps(&coordinator, id).await;
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
+        );
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap()
+                .is_empty(),
+            "settled once its note is held"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

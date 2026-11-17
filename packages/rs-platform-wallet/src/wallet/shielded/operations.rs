@@ -34,7 +34,7 @@ use super::store::{
 };
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_tracking_endpoint, broadcast_was_refused,
-    carries_consensus_rejection, refused_before_sending, BroadcastDelivery,
+    carries_consensus_rejection, BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -3558,30 +3558,36 @@ async fn keep_identity_outcome<S: ShieldedStore>(
     }
 }
 
-/// Keep `endpoint`, the node a dispatch of identity create `activity_id` reached, with its
-/// recovery record, so the sync pass reads its outcome from that node only. A failure is
-/// logged: the create then stays unconfirmed after a restart rather than being read elsewhere.
+/// Keep `endpoint`, the node a dispatch of identity create `activity_id` reached or is about to
+/// reach, with its recovery record, so the sync pass reads its outcome from that node only. True
+/// when it is kept; a failure is logged and returns false.
 async fn keep_outcome_endpoint<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     activity_id: &[u8; 32],
     endpoint: &dash_sdk::sdk::Address,
-) {
+) -> bool {
     match store
         .write()
         .await
         .set_redrive_outcome_endpoint(id, activity_id, &endpoint.to_string())
     {
-        Ok(true) => {}
-        Ok(false) => warn!(
-            activity_id = %hex::encode(activity_id),
-            "an identity create's node was not kept: its record is gone"
-        ),
-        Err(e) => warn!(
-            activity_id = %hex::encode(activity_id),
-            error = %e,
-            "an identity create's node was not kept with its record"
-        ),
+        Ok(true) => true,
+        Ok(false) => {
+            warn!(
+                activity_id = %hex::encode(activity_id),
+                "an identity create's node was not kept: its record is gone"
+            );
+            false
+        }
+        Err(e) => {
+            warn!(
+                activity_id = %hex::encode(activity_id),
+                error = %e,
+                "an identity create's node was not kept with its record"
+            );
+            false
+        }
     }
 }
 
@@ -3704,13 +3710,14 @@ pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
 /// ([`PendingRedrive::held_for_identity_outcome`]). Runs after the scan's activity rows are on
 /// `changeset`, so what it writes there comes last:
 ///
-/// - a create whose outcome is not proven yet, whose node is known and whose notes the scan saw
-///   spent is read at that node ([`classify_held_identity_create`]), on every pass until its
-///   outcome is proven and kept. Reads are not counted against [`MAX_REDRIVE_ATTEMPTS`], which
-///   bounds re-broadcasts only: a node that answers nothing for a while, or an outcome that was
-///   proven but not kept, is read again on a later pass, after a restart included. Until then its
-///   record stays held and its row is never confirmed from its outputs alone: it stays
-///   unconfirmed. So does a create with no known node, which is never read;
+/// - a create whose outcome is not proven yet and whose node is known is read at that node
+///   ([`classify_held_identity_create`]), on every pass until its outcome is proven and kept,
+///   whatever the store's notes say: the read itself proves whether its notes are spent. Reads
+///   are not counted against [`MAX_REDRIVE_ATTEMPTS`], which bounds re-broadcasts only: a node
+///   that answers nothing for a while, or an outcome that was proven but not kept, is read again
+///   on a later pass, after a restart included. Until then its record stays held and its row is
+///   never confirmed from its outputs alone: it stays unconfirmed. So does a create with no known
+///   node, which is never read;
 /// - a create whose outcome is proven, now or by an earlier pass or result wait, gets its
 ///   activity row written with that outcome (Confirmed, or Failed at `consumed_by_height`) in
 ///   place of any row `changeset` already carries for it, and every note it consumed put on
@@ -3743,25 +3750,12 @@ pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
         {
             return Vec::new();
         }
-        let spent: HashSet<[u8; 32]> = match store.get_all_notes(id) {
-            Ok(notes) => notes
-                .into_iter()
-                .filter(|note| note.is_spent)
-                .map(|note| note.nullifier)
-                .collect(),
-            Err(e) => {
-                warn!(error = %e, "held identity creates: get_all_notes failed; skipped");
-                return Vec::new();
-            }
-        };
         redrives
             .into_iter()
             .filter(|redrive| match redrive.identity_outcome {
                 Some(outcome) if outcome.is_proven() => true,
                 Some(IdentityCreateOutcome::Awaiting) => {
-                    redrive.outcome_endpoint.is_some()
-                        && !redrive.nullifiers.is_empty()
-                        && redrive.nullifiers.iter().all(|n| spent.contains(n))
+                    redrive.outcome_endpoint.is_some() && !redrive.nullifiers.is_empty()
                 }
                 _ => false,
             })
@@ -3856,7 +3850,9 @@ async fn write_proven_identity_create_row<S: ShieldedStore>(
 /// each onto `changeset` as spent whether or not the store already had it so. A spent-note delta
 /// queued earlier, by its result wait or its outcome read, may never have reached the host, and
 /// a scan that finds a note already spent emits none: the pass that settles the create's row is
-/// the last chance to write them. False, logged, when a note did not mark.
+/// the last chance to write them. False, logged, when a note did not mark, or the store does not
+/// hold one of them: a spent-note delta only updates a note the host holds, so the record stays
+/// until the store holds every note it consumed.
 async fn replay_identity_create_spends<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -3865,6 +3861,24 @@ async fn replay_identity_create_spends<S: ShieldedStore>(
 ) -> bool {
     {
         let mut store = store.write().await;
+        let held: HashSet<[u8; 32]> = match store.get_all_notes(id) {
+            Ok(notes) => notes.into_iter().map(|note| note.nullifier).collect(),
+            Err(e) => {
+                warn!(
+                    activity_id = %hex::encode(redrive.activity_id),
+                    error = %e,
+                    "held identity create: its notes did not read; settled next pass"
+                );
+                return false;
+            }
+        };
+        if !redrive.nullifiers.iter().all(|n| held.contains(n)) {
+            warn!(
+                activity_id = %hex::encode(redrive.activity_id),
+                "held identity create: a note it consumed is not in the store; its record stays"
+            );
+            return false;
+        }
         for nullifier in &redrive.nullifiers {
             if let Err(e) = store.mark_spent(id, nullifier) {
                 warn!(
@@ -5120,7 +5134,7 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 ///
 /// A held identity create is re-broadcast only to the node it was
 /// delivered to, through an SDK scoped to it; one no node was kept for goes
-/// to one node, kept with its record once the dispatch may have reached it;
+/// to one node, kept with its record before anything is sent;
 /// and none is re-broadcast once the scan
 /// saw its notes spent or its outcome is proven:
 /// [`settle_held_identity_creates`] settles it then.
@@ -5250,21 +5264,24 @@ async fn redrive_one<S: ShieldedStore>(
         return;
     }
     // A held identity create no node was kept for goes to one node, kept with its record
-    // once the dispatch may have reached it, so its outcome can be read there.
-    let unkept_node = match &held_at {
+    // before anything is sent or an attempt spent, so its outcome can be read there. With no
+    // node to send to, or a node that could not be kept, nothing is sent and no attempt is
+    // spent: a later pass sends it and keeps its node.
+    let held_at = match held_at {
         None if redrive.held_for_identity_outcome() => {
             let Some(endpoint) = sdk.address_list().get_live_address() else {
-                // Sent through the shared SDK it would keep no node, and with no node to
-                // send to it would be refused: nothing is sent and no attempt is spent, so
-                // a later pass with a node still sends it and keeps that node.
                 debug!("redrive: no node to send a held identity create to; not re-broadcast");
                 return;
             };
+            if !keep_outcome_endpoint(store, id, &redrive.activity_id, &endpoint).await {
+                return;
+            }
+            redrive.outcome_endpoint = Some(endpoint.to_string());
             Some(endpoint)
         }
-        _ => None,
+        held_at => held_at,
     };
-    let broadcaster = match held_at.as_ref().or(unkept_node.as_ref()) {
+    let broadcaster = match held_at.as_ref() {
         Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
         None => Arc::clone(sdk),
     };
@@ -5272,14 +5289,6 @@ async fn redrive_one<S: ShieldedStore>(
         return;
     };
     let broadcast_result = st.broadcast(&broadcaster, None).await;
-    let held_at = match unkept_node {
-        Some(endpoint) if !matches!(&broadcast_result, Err(e) if refused_before_sending(e)) => {
-            keep_outcome_endpoint(store, id, &redrive.activity_id, &endpoint).await;
-            redrive.outcome_endpoint = Some(endpoint.to_string());
-            Some(endpoint)
-        }
-        _ => held_at,
-    };
     let err_display = broadcast_result
         .as_ref()
         .err()
@@ -7714,6 +7723,7 @@ mod redrive_tests {
         for spend_path in [SpendPath::Shared, SpendPath::IdentityCreate] {
             let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
             // A node to send to: a held identity create is never sent without one.
+            // The clone shares the SDK's list (`AddressList` holds it behind an `Arc`).
             let mut addresses = sdk.address_list().clone();
             addresses.add(ENDPOINT.parse().expect("an address"));
             let sdk_handle = Arc::new(sdk.clone());
@@ -8476,6 +8486,7 @@ mod redrive_tests {
             .with_version(PlatformVersion::latest())
             .build()
             .expect("mock sdk");
+        // The clone shares the SDK's list (`AddressList` holds it behind an `Arc`).
         let mut addresses = sdk.address_list().clone();
         addresses.add(ENDPOINT.parse().expect("an address"));
         sdk.mock()
@@ -8958,6 +8969,7 @@ mod redrive_tests {
         let activity_id = [0x80; 32];
         let reachable_sdk = || {
             let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+            // The clone shares the SDK's list (`AddressList` holds it behind an `Arc`).
             let mut addresses = sdk.address_list().clone();
             addresses.add(ENDPOINT.parse().expect("an address"));
             Arc::new(sdk)
@@ -8994,6 +9006,40 @@ mod redrive_tests {
             records[0].identity_outcome,
             Some(IdentityCreateOutcome::Awaiting)
         );
+
+        // A node that cannot be kept with the record: nothing is sent, no attempt is spent.
+        let sqlite = rusqlite::Connection::open(&path).expect("the database");
+        sqlite
+            .execute_batch(
+                "CREATE TRIGGER refuse_endpoint BEFORE UPDATE OF outcome_endpoint \
+                 ON shielded_pending_spends BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END;",
+            )
+            .expect("trigger");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("reopened"),
+        ));
+        for _ in 0..=MAX_REDRIVE_ATTEMPTS {
+            redrive_pending_spends(
+                &reachable_sdk(),
+                &store,
+                None,
+                id,
+                &recorded,
+                &CancellationToken::new(),
+            )
+            .await;
+        }
+        drop(store);
+        let records = records_at(&path);
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].attempts, 0,
+            "nothing was sent without its node kept"
+        );
+        assert_eq!(records[0].outcome_endpoint, None);
+        sqlite
+            .execute_batch("DROP TRIGGER refuse_endpoint;")
+            .expect("dropped");
 
         let store = Arc::new(RwLock::new(
             FileBackedShieldedStore::open_path(&path, 100).expect("reopened"),
