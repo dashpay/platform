@@ -2049,8 +2049,8 @@ impl PlatformWallet {
     /// Send a DashPay private contact request (protocol version 15) from
     /// `sender_identity_id` to `recipient_identity_id`, paying for it from
     /// `account`'s shielded notes: nothing on chain names either identity. The
-    /// request carries `account_label`, `auto_accept_proof` and our
-    /// `shielded_address` for the contact, is signed by `signer` as the
+    /// request carries `account_label`, `auto_accept_proof` and the shielded
+    /// address the wallet derives for the contact, is signed by `signer` as the
     /// sender's transitions are, and is sealed by `crypto`, which keeps the
     /// encryption key. `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)). See
@@ -2066,7 +2066,6 @@ impl PlatformWallet {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         prover: P,
@@ -2084,7 +2083,6 @@ impl PlatformWallet {
                 recipient_identity_id,
                 account_label,
                 auto_accept_proof,
-                shielded_address,
                 signer,
                 crypto,
                 |entry, started| {
@@ -2106,8 +2104,8 @@ impl PlatformWallet {
     /// Accept a DashPay contact request that came privately, replying
     /// privately and paying for the reply from `account`'s shielded notes, as
     /// [`send_private_contact_request`](Self::send_private_contact_request)
-    /// pays and signing it with `signer`. `shielded_address` is the address
-    /// the contact may pay us at privately. See
+    /// pays and signing it with `signer`. The reply carries the shielded
+    /// address the wallet derives for the contact. See
     /// [`DashPayView::accept_private_contact_request`](crate::DashPayView::accept_private_contact_request).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
@@ -2117,7 +2115,6 @@ impl PlatformWallet {
         seed: &[u8],
         account: u32,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         prover: P,
@@ -2130,24 +2127,18 @@ impl PlatformWallet {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         self.identity
             .dashpay()
-            .accept_private_contact_request(
-                request,
-                shielded_address,
-                signer,
-                crypto,
-                |entry, started| {
-                    self.pay_private_contact_request(
-                        coordinator,
-                        keyset,
-                        account,
-                        &request.recipient_id,
-                        &request.sender_id,
-                        entry,
-                        started,
-                        prover,
-                    )
-                },
-            )
+            .accept_private_contact_request(request, signer, crypto, |entry, started| {
+                self.pay_private_contact_request(
+                    coordinator,
+                    keyset,
+                    account,
+                    &request.recipient_id,
+                    &request.sender_id,
+                    entry,
+                    started,
+                    prover,
+                )
+            })
             .await
     }
 
@@ -2163,7 +2154,6 @@ impl PlatformWallet {
     pub async fn accept_contact_request_replying_in_kind<S, C, P, Seed, R, RFut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         payment: R,
@@ -2181,7 +2171,6 @@ impl PlatformWallet {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 request,
-                shielded_address,
                 signer,
                 crypto,
                 |entry, started| async move {

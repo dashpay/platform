@@ -893,7 +893,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Send a private contact request from `sender_identity_id` to
     /// `recipient_identity_id`: the request a `contactRequest` document would
     /// carry (our receiving xpub for the pair, the masked account reference,
-    /// the label and the auto-accept proof) plus our `shielded_address`,
+    /// the label and the auto-accept proof) plus the shielded address the
+    /// wallet derives for the recipient
+    /// (`IdentityWallet::contact_shielded_address`),
     /// signed by `signer` with one of the sender's signing keys, sealed in the
     /// crypto provider to the recipient's DashPay key, then appended by `pay`,
     /// which pays for it from the shielded pool and returns the metadata of
@@ -944,7 +946,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -960,7 +961,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             recipient_identity_id,
             account_label,
             auto_accept_proof,
-            shielded_address,
             signer,
             crypto,
             false,
@@ -982,7 +982,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub(super) async fn send_private_reply<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -1000,7 +999,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &request.sender_id,
                     None,
                     AutoAcceptProofSource::None,
-                    shielded_address,
                     signer,
                     crypto,
                     true,
@@ -1025,7 +1023,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         adopt_reply: bool,
@@ -1118,7 +1115,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 recipient_identity_id,
                 account_label,
                 auto_accept_proof,
-                shielded_address,
                 signer,
                 crypto,
                 &mut reservation,
@@ -1629,7 +1625,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         reservation: &mut PrivateReplyReservation,
@@ -1660,6 +1655,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 auto_accept_proof,
                 crypto,
             )
+            .await?;
+        // Our shielded payment address for this contact, derived as a public
+        // request's is (`IdentityWallet::contact_shielded_address`): the address
+        // the sender's shielded account gives this request alone, or none.
+        let shielded_address = self
+            .contact_shielded_address(sender_identity_id, recipient_identity_id, account_reference)
             .await?;
         let extended_public_key: [u8; COMPACT_XPUB_LEN] =
             xpub_bytes.as_slice().try_into().map_err(|_| {
@@ -1852,9 +1853,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Accept a contact request that came privately, replying privately: as
     /// [`Self::accept_contact_request_with_external_signer`], with the reply
-    /// sent by [`Self::send_private_contact_request`], signed by `signer`,
-    /// `pay` paying for it and `shielded_address` the address the contact may
-    /// pay us at privately.
+    /// sent by [`Self::send_private_contact_request`], signed by `signer`
+    /// and paid for by `pay`. The address the contact may pay us at
+    /// privately is the one the wallet derives for this contact, as for any
+    /// request it sends.
     ///
     /// As for the send, refused first for a persister that cannot keep a
     /// private payment's recovery marker
@@ -1871,7 +1873,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn accept_private_contact_request<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -1894,7 +1895,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Box::pin(self.read_private_store_and_keys(&request.recipient_id, crypto)).await?;
         Box::pin(
             self.accept_contact_request_replying_with(request, crypto, || {
-                self.send_private_reply(request, shielded_address, signer, crypto, pay)
+                self.send_private_reply(request, signer, crypto, pay)
             }),
         )
         .await
@@ -1917,7 +1918,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn accept_contact_request_replying_in_kind<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -1931,14 +1931,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Box::pin(self.read_private_store_before_deciding(&request.recipient_id, crypto)).await?;
         // Boxed: each accept's future holds a store read and a payment.
         if self.needs_private_reply(request).await {
-            Box::pin(self.accept_private_contact_request(
-                request,
-                shielded_address,
-                signer,
-                crypto,
-                pay,
-            ))
-            .await
+            Box::pin(self.accept_private_contact_request(request, signer, crypto, pay)).await
         } else {
             Box::pin(self.accept_contact_request_with_external_signer(request, signer, crypto))
                 .await
@@ -2742,6 +2735,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 #[cfg(test)]
 mod tests {
     use super::super::contact_requests::sent_contact_request_query;
+    use super::super::contact_shielded_address::test_hooks::give_every_contact;
     use super::*;
     use crate::changeset::{
         ClientStartState, ClientWalletStartState, IdentityManagerStartState,
@@ -2750,8 +2744,12 @@ mod tests {
     };
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::network::contacts::RegisterExternalError;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::identity::network::MASTER_KEY_INDEX;
     #[cfg(feature = "shielded")]
     use crate::wallet::persister::NotDurable;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
@@ -2766,8 +2764,9 @@ mod tests {
     };
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
-        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
-        PrivatePaymentRecord, ShieldedNote, ShieldedStore, SubwalletId,
+        shielded_identity_account_index, FileBackedShieldedStore, NetworkShieldedCoordinator,
+        OrchardKeySet, PrivateContactPayment, PrivatePaymentRecord, ShieldedNote, ShieldedStore,
+        SubwalletId,
     };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
@@ -3419,7 +3418,6 @@ mod tests {
                 .dashpay()
                 .accept_contact_request_replying_in_kind(
                     &incoming,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     no_payment,
@@ -3442,7 +3440,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     no_payment,
@@ -4707,7 +4704,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 pay,
@@ -4753,7 +4749,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 failing,
@@ -4869,7 +4864,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -4916,7 +4910,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -4968,7 +4961,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -5017,7 +5009,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 unconfirmed,
@@ -5110,7 +5101,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 delivered,
@@ -5193,7 +5183,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -5315,7 +5304,7 @@ mod tests {
             let paid = before
                 .identity()
                 .dashpay()
-                .accept_private_contact_request(&incoming, None, &bob_signer, &bob_crypto, pay)
+                .accept_private_contact_request(&incoming, &bob_signer, &bob_crypto, pay)
                 .await;
             assert!(
                 matches!(
@@ -5390,7 +5379,6 @@ mod tests {
                             &alice.id(),
                             None,
                             AutoAcceptProofSource::None,
-                            None,
                             &bob_signer,
                             &bob_crypto,
                             no_payment,
@@ -5561,6 +5549,7 @@ mod tests {
         let (_alice_manager, alice_wallet) =
             wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
+        let given = give_every_contact(shielded_address);
         let sent = alice_wallet
             .identity()
             .dashpay()
@@ -5569,13 +5558,13 @@ mod tests {
                 &bob.id(),
                 Some("Alice".to_string()),
                 AutoAcceptProofSource::None,
-                Some(shielded_address),
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
             )
             .await
             .expect("Alice sends the request, read back from the store");
+        drop(given);
         let entry = kept.lock().expect("kept entries").remove(0);
         assert_eq!(entry.len(), 589, "the entry takes DashPay's entry size");
         assert_eq!(sent.sender_key_index, ENCRYPTION_KEY_ID);
@@ -5699,7 +5688,6 @@ mod tests {
         let established = bob_view
             .accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 append_entry(&bob_wallet, 1, vec![], &reply),
@@ -5826,7 +5814,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&paid),
@@ -5845,7 +5832,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&paid),
@@ -5869,7 +5855,6 @@ mod tests {
                 .dashpay()
                 .accept_contact_request_replying_in_kind(
                     &unknown,
-                    None,
                     &bob_signer,
                     &bob_crypto,
                     keep_entry(&paid),
@@ -5899,7 +5884,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -5947,7 +5931,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -6026,7 +6009,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     $pay,
@@ -6085,7 +6067,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |_, started: PaymentStarted| {
@@ -7206,7 +7187,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 replacing,
@@ -7853,7 +7833,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&paid),
@@ -7965,7 +7944,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &pausing,
                 keep_entry(&paid),
@@ -8347,7 +8325,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &stalled,
                 &alice_crypto,
                 keep_entry(&paid),
@@ -8369,7 +8346,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &signer(ALICE_PHRASE, &alice),
                 &alice_crypto,
                 keep_entry(&kept),
@@ -8403,7 +8379,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -8466,7 +8441,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -8525,7 +8499,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -8552,7 +8525,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&paid),
@@ -8621,7 +8593,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -8641,7 +8612,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |entry: BinaryData, started: PaymentStarted| {
@@ -8706,7 +8676,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&before, 0, vec![], &kept),
@@ -8736,7 +8705,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 unconfirmed,
@@ -8784,7 +8752,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -8814,7 +8781,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |entry: BinaryData, started: PaymentStarted| {
@@ -8949,7 +8915,6 @@ mod tests {
                     &recipient,
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     append_entry(&alice_wallet, start, vec![], &kept),
@@ -8967,7 +8932,6 @@ mod tests {
                 &alice.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 append_entry(&bob_wallet, 1, vec![], &kept),
@@ -9041,6 +9005,7 @@ mod tests {
         let (_alice_manager, alice_wallet) =
             wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
+        let given = give_every_contact(shielded_address);
         alice_wallet
             .identity()
             .dashpay()
@@ -9049,13 +9014,13 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                Some(shielded_address),
                 &signer(ALICE_PHRASE, &alice),
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
             )
             .await
             .expect("Alice sends");
+        drop(given);
         let entry = kept.lock().expect("kept").remove(0).to_vec();
         let (_bob_manager, bob_wallet) =
             wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry.clone()]).await;
@@ -9071,6 +9036,112 @@ mod tests {
         .await
         .expect("Bob holds Alice's request");
         (entry, received)
+    }
+
+    /// A private request sent with no address handed to it carries the one the
+    /// sender's wallet derives. Alice's identity shielded account is prepared
+    /// against her seed, and Bob reads from the store the address that account
+    /// derives for this request: its sender, its recipient and its account
+    /// reference.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_carry_the_derived_shielded_address_in_a_private_contact_request() {
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        // The key the seed derives for identity index 0, as the identity's
+        // MASTER key: what preparing the identity's shielded account proves.
+        let master =
+            key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
+                .expect("master key");
+        let derived = derive_ecdsa_identity_auth_keypair_from_master(
+            &master,
+            Network::Testnet,
+            0,
+            MASTER_KEY_INDEX,
+        )
+        .expect("the identity's master key");
+        alice.add_public_key(IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(derived.public_key.to_vec()),
+            disabled_at: None,
+        }));
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+
+        // A backend that keeps the viewing key, so the wallet binds.
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::SHIELDED_FVK_RESTART
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+        );
+        let (_alice_manager, alice_wallet) =
+            wallet_on(persistence, ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let db_path = dir.path().join("tree.sqlite");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::clone(&alice_wallet.identity().sdk),
+            Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
+        ));
+        alice_wallet
+            .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+            .await
+            .expect("bound");
+        alice_wallet
+            .prepare_shielded_identity_address(&seed(ALICE_PHRASE), &alice.id(), &coordinator)
+            .await
+            .expect("the identity's shielded account is prepared");
+
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends");
+        let entry = kept.lock().expect("kept").remove(0).to_vec();
+
+        let (_bob_manager, bob_wallet) =
+            wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        let received = managed(&bob_wallet, BOB, |managed| {
+            managed
+                .dashpay()
+                .private_contact(&alice.id())
+                .expect("noted")
+                .shielded_address
+        })
+        .await;
+
+        let account = shielded_identity_account_index(0).expect("identity account");
+        let derived = OrchardKeySet::from_seed(&seed(ALICE_PHRASE), Network::Testnet, account)
+            .expect("Alice's identity account keys")
+            .viewing_keys()
+            .contact_address(
+                alice.id().as_bytes(),
+                bob.id().as_bytes(),
+                u64::from(sent.account_reference),
+            )
+            .to_raw_address_bytes();
+        assert_eq!(received, Some(derived));
     }
 
     /// For a backend attesting the scan state, a sync stores the private
@@ -9356,7 +9427,6 @@ mod tests {
                 &alice.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -9658,7 +9728,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     keep_entry(&paid),
@@ -9696,7 +9765,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -10406,13 +10474,7 @@ mod tests {
         let replied = other
             .identity()
             .dashpay()
-            .accept_private_contact_request(
-                &received,
-                None,
-                &bob_signer,
-                &bob_crypto,
-                keep_entry(&reply),
-            )
+            .accept_private_contact_request(&received, &bob_signer, &bob_crypto, keep_entry(&reply))
             .await;
         assert!(
             matches!(
@@ -10441,7 +10503,7 @@ mod tests {
         .await;
 
         let adopted = view
-            .accept_private_contact_request(&received, None, &bob_signer, &bob_crypto, no_payment)
+            .accept_private_contact_request(&received, &bob_signer, &bob_crypto, no_payment)
             .await
             .expect("the reply is adopted");
         assert_eq!(adopted.contact_identity_id, alice.id());
@@ -10705,7 +10767,6 @@ mod tests {
             Duration::from_millis(200),
             bob_wallet.accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 || {
@@ -10723,13 +10784,7 @@ mod tests {
         let retried = bob_wallet
             .identity()
             .dashpay()
-            .accept_private_contact_request(
-                &received,
-                None,
-                &bob_signer,
-                &bob_crypto,
-                keep_entry(&reply),
-            )
+            .accept_private_contact_request(&received, &bob_signer, &bob_crypto, keep_entry(&reply))
             .await;
         assert!(
             matches!(
@@ -10799,7 +10854,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 pay,
@@ -10845,7 +10899,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -10924,7 +10977,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 pay,
@@ -10986,7 +11038,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&retry),
@@ -11138,7 +11189,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -11333,7 +11383,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     pay,
@@ -11411,7 +11460,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     pay,
@@ -11897,7 +11945,6 @@ mod tests {
                                 &bob_id,
                                 None,
                                 AutoAcceptProofSource::None,
-                                None,
                                 &signer,
                                 &crypto,
                                 |_: BinaryData, _: PaymentStarted| {
@@ -12041,7 +12088,6 @@ mod tests {
                     &bob_id,
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     signer,
                     crypto,
                     keep_entry(&kept),
@@ -13515,7 +13561,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     failing,
@@ -13625,7 +13670,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     pay,
@@ -13691,7 +13735,7 @@ mod tests {
             let (received, bob_signer, bob_crypto) = (&received, &bob_signer, &bob_crypto);
             async move {
                 first_done.notified().await;
-                view.send_private_reply(received, None, bob_signer, bob_crypto, no_payment)
+                view.send_private_reply(received, bob_signer, bob_crypto, no_payment)
                     .await
             }
         });
@@ -13699,7 +13743,6 @@ mod tests {
             let accepted = view
                 .accept_private_contact_request(
                     &received,
-                    None,
                     &bob_signer,
                     &bob_crypto,
                     append_entry(&bob_wallet, 1, vec![], &reply),
@@ -13757,7 +13800,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -13790,7 +13832,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&reply),
@@ -13830,7 +13871,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -13881,13 +13921,7 @@ mod tests {
         let paid = before
             .identity()
             .dashpay()
-            .accept_private_contact_request(
-                &incoming,
-                None,
-                &bob_signer,
-                &bob_crypto,
-                keep_entry(&reply),
-            )
+            .accept_private_contact_request(&incoming, &bob_signer, &bob_crypto, keep_entry(&reply))
             .await;
         assert!(
             matches!(
@@ -13932,7 +13966,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -13982,7 +14015,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -14002,7 +14034,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &public,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&reply),
@@ -14097,7 +14128,7 @@ mod tests {
         let paid = before
             .identity()
             .dashpay()
-            .accept_private_contact_request(&incoming, None, &bob_signer, &bob_crypto, pay)
+            .accept_private_contact_request(&incoming, &bob_signer, &bob_crypto, pay)
             .await;
         assert!(
             matches!(
@@ -14132,7 +14163,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -14201,7 +14231,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -14611,7 +14640,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -14630,7 +14658,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     $pay,
@@ -14712,7 +14739,6 @@ mod tests {
                     &$recipient,
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     keep_entry($kept),
@@ -14727,7 +14753,6 @@ mod tests {
             &bob.id(),
             None,
             AutoAcceptProofSource::None,
-            None,
             &alice_signer,
             &alice_crypto,
             |_: BinaryData, started: PaymentStarted| {
@@ -14791,7 +14816,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -14821,7 +14845,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |_: BinaryData, _: PaymentStarted| -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {
