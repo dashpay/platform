@@ -457,6 +457,36 @@ impl IndexLevel {
         self.created_at_indexed_only_by_outliving
     }
 
+    /// The most entries one document adds to a summed index of this level tree, at least 1:
+    /// each window of a bucketed first property and each element of a typed array level on
+    /// the way to the index's last property is one entry carrying the document's summed
+    /// value. With values that are never negative, no sum the type keeps exceeds the total of
+    /// the property over the type's documents times this.
+    pub fn max_summed_entries_per_document(&self) -> u64 {
+        fn below(level: &IndexLevel, entries_above: u64) -> u64 {
+            let entries = entries_above
+                .saturating_mul(
+                    level
+                        .bucketing()
+                        .map_or(1, |bucketing| bucketing.overlap_factor().max(1)),
+                )
+                .saturating_mul(level.indexed_array_max_items().map_or(1, u64::from).max(1));
+            let ended_here = level
+                .has_index_with_type()
+                .filter(|index_type| index_type.summable.is_some())
+                .map_or(1, |_| entries);
+            level
+                .sub_levels()
+                .values()
+                .map(|sub_level| below(sub_level, entries))
+                .fold(ended_here, u64::max)
+        }
+        self.sub_levels()
+            .values()
+            .map(|sub_level| below(sub_level, 1))
+            .fold(1, u64::max)
+    }
+
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
         // Was `Option<IndexLevelTypeInfo>` (Copy) before the v3 sum-tree
         // expansion added `summable: Option<String>` to the struct, which

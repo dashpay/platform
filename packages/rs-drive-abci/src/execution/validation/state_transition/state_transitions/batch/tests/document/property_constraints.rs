@@ -2445,7 +2445,7 @@ mod property_constraints_tests {
             "transferable": 1,
             "tradeMode": 1,
             "properties": {
-                "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 0 },
+                "price": { "type": "integer", "minimum": 0, "maximum": 100000000, "position": 0 },
                 "fee": { "type": "integer", "minimum": 0, "position": 1 },
                 "quantity": { "type": "integer", "minimum": 0, "position": 2 },
                 "deposit": { "type": "integer", "minimum": 0, "position": 3 },
@@ -2868,7 +2868,7 @@ mod property_constraints_tests {
                         "amount": {
                             "type": "integer",
                             "minimum": 0,
-                            "maximum": 1000000000,
+                            "maximum": 100000000,
                             "position": 1
                         }
                     },

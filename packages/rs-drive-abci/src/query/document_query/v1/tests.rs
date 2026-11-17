@@ -4938,7 +4938,7 @@ mod time_range_proof_verification {
                 "type": "object",
                 "properties": {
                     "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
-                    "likes": { "type": "integer", "position": 1 },
+                    "likes": { "type": "integer", "minimum": 0, "maximum": 1000000, "position": 1 },
                 },
                 "indices": [
                     {

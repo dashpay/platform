@@ -66,6 +66,9 @@ pub struct DriveDocumentExpirationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub fetch_document_lifecycle: OptionalFeatureVersion,
+    /// Reads the total a document type keeps of its summed property, which document create
+    /// and replace state validation hold in range from protocol version 15.
+    pub fetch_document_type_sum: OptionalFeatureVersion,
 
     pub query_documents: FeatureVersion,
     /// Chained document queries (provable semi-join): the version slot

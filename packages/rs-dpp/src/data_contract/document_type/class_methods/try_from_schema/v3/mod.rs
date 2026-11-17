@@ -46,6 +46,8 @@ use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::{
     owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
 };
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -751,6 +753,9 @@ fn parse_generation_3(
         validate_typed_array_max_items(&v2, name, platform_version)?;
         validate_contested_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
         validate_expiring_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
+        // Inert before protocol version 15: the limit it reads is `None` in every earlier
+        // limits table, and it returns on that before reading anything else.
+        validate_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
@@ -1621,6 +1626,87 @@ fn validate_expiring_summed_value_bounds(
     Ok(())
 }
 
+/// A summed property whose values may pass `SystemLimits::max_summed_value_magnitude_without_type_total`
+/// is never negative and sits on a type that keeps its total: unless the property's schema
+/// declares a `maximum` of at most the limit and a `minimum` of at least its negation, it
+/// declares a `minimum` of at least 0 and the type declares `documentsSummable` or
+/// `documentsAverageable`. Each node of a sum tree holds the sum of its own branch, so with
+/// values of both signs a branch can leave `i64` while the totals stay in it, and nothing read
+/// before a write tells; values this small keep every sum in `i64` short of 2^36 documents.
+/// With values that are never negative no sum of the type exceeds the type's total times the
+/// entries one document adds to an index, and state validation reads that total before a
+/// create or a replace (`DocumentSumOverflowError`).
+///
+/// The bounds are compared as numbers, as `validate_expiring_summed_value_bounds` compares
+/// them. An indexOnly type keeps no total (it has no primary tree), so its summed values stay
+/// within the limit. A type whose `creationRestrictionMode` allows no creation is left alone:
+/// only the protocol writes its documents (the system contracts' history and order types).
+///
+/// Full validation only, like the contested bounds: a contract stored before the rule was
+/// checked when it was registered, and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_summed_value_bounds(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_summed_value_magnitude_without_type_total
+    else {
+        return Ok(());
+    };
+    // A type no transition creates documents of is written by the protocol alone, with
+    // values it computes: nothing a registration rule holds a writer to.
+    if document_type.creation_restriction_mode == CreationRestrictionMode::NoCreationAllowed {
+        return Ok(());
+    }
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
+    else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let minimum = bound(property_names::MINIMUM);
+    let maximum = bound(property_names::MAXIMUM);
+    if matches!(
+        (minimum, maximum),
+        (Some(minimum), Some(maximum)) if minimum >= -limit_value && maximum <= limit_value
+    ) {
+        return Ok(());
+    }
+    let never_negative = minimum.is_some_and(|minimum| minimum >= 0.0);
+    if never_negative && document_type.documents_summable.is_some() {
+        return Ok(());
+    }
+    let remedy = if never_negative {
+        format!(
+            "so the type must declare `documentsSummable` or `documentsAverageable` on it, \
+             or the property a maximum of at most {limit}"
+        )
+    } else {
+        format!(
+            "so the property must declare a minimum of at least -{limit} and a maximum of \
+             at most {limit}, or a minimum of at least 0 on a type that declares \
+             `documentsSummable` or `documentsAverageable` on it"
+        )
+    };
+    Err(consensus_or_protocol_data_contract_error(
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{name}\" sums \"{summed_property}\", whose values may pass \
+             {limit}: a write is held to what the type's sums can hold through the total of \
+             a property that is never negative, {remedy}",
+        )),
+    ))
+}
+
 /// The property a document type sums and its schema, `None` when the type sums nothing. The
 /// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
 /// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
@@ -2139,6 +2225,8 @@ mod outlives_delete_tests;
 mod refusal_test_support;
 #[cfg(all(test, feature = "validation"))]
 mod summable_off_count_index_tests;
+#[cfg(all(test, feature = "validation"))]
+mod summed_value_bounds_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod dynamic_reference_tests;
