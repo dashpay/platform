@@ -31,6 +31,9 @@ use platform_encryption::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// The DashPay document type of a contact request.
+const CONTACT_REQUEST: &str = "contactRequest";
+
 /// The `contactRequest` property that carries the sender's shielded payment address.
 const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 
@@ -117,27 +120,53 @@ pub struct ContactRequestInput {
     pub shielded_address: Option<[u8; SHIELDED_ADDRESS_LEN]>,
 }
 
+/// Whether the contact requests of `dashpay`, a DashPay contract, have the property that
+/// carries a shielded address. They gain it with DashPay v3 at protocol version 15.
+///
+/// The schema is asked here alone. The SDK refuses an address against a contract without
+/// the property, and a wallet that reads the network's contract asks here whether to send
+/// one, so the two cannot come to differ on what the property is.
+pub fn dashpay_contact_requests_carry_shielded_address(dashpay: &DataContract) -> bool {
+    dashpay
+        .document_type_for_name(CONTACT_REQUEST)
+        .is_ok_and(carries_shielded_address)
+}
+
+/// Whether `contact_request_document_type` has a property for a shielded address.
+fn carries_shielded_address(contact_request_document_type: DocumentTypeRef) -> bool {
+    contact_request_document_type
+        .properties()
+        .contains_key(ENCRYPTED_SHIELDED_ADDRESS)
+}
+
+/// Fails unless the network's `contactRequest` type has a property for a shielded address.
+///
+/// It gains it with DashPay v3 at protocol version 15, and consensus refuses a request that
+/// carries it before then, so there the caller sends the request without an address.
+fn ensure_carries_shielded_address(
+    contact_request_document_type: DocumentTypeRef,
+) -> Result<(), Error> {
+    if carries_shielded_address(contact_request_document_type) {
+        return Ok(());
+    }
+    Err(Error::Generic(format!(
+        "the DashPay contract of this network has no {ENCRYPTED_SHIELDED_ADDRESS} on contact \
+         requests; it is added at protocol version 15"
+    )))
+}
+
 /// A contact request's `encryptedShieldedAddress`: `address` under the request's shared key
 /// and an IV drawn for this field alone.
 ///
-/// Refused when the network's `contactRequest` type has no such property. It gains it with
-/// DashPay v3 at protocol version 15, and consensus refuses a request that carries it before
-/// then, so there the caller sends the request without an address.
+/// Refused when the network's `contactRequest` type has no such property
+/// ([`ensure_carries_shielded_address`]).
 fn encrypted_shielded_address(
     contact_request_document_type: DocumentTypeRef,
     shared_key: &[u8; 32],
     address: &[u8; SHIELDED_ADDRESS_LEN],
     rng: &mut impl RngCore,
 ) -> Result<Vec<u8>, Error> {
-    if !contact_request_document_type
-        .properties()
-        .contains_key(ENCRYPTED_SHIELDED_ADDRESS)
-    {
-        return Err(Error::Generic(format!(
-            "the DashPay contract of this network has no {ENCRYPTED_SHIELDED_ADDRESS} on \
-             contact requests; it is added at protocol version 15"
-        )));
-    }
+    ensure_carries_shielded_address(contact_request_document_type)?;
     let mut iv = [0u8; 16];
     rng.fill_bytes(&mut iv);
     Ok(encrypt_shielded_address(shared_key, &iv, address).to_vec())
@@ -390,6 +419,22 @@ impl Sdk {
         let recipient_public_key = PublicKey::from_slice(recipient_public_key_data.as_slice())
             .map_err(|e| Error::Generic(format!("Invalid recipient public key: {}", e)))?;
 
+        // The contract is resolved, and a shielded address refused where contact requests
+        // carry none, before the host is asked for a secret or a key: a hardware or keychain
+        // prompt is not spent on a request the network refuses, and a callback that fails
+        // does not hide that refusal.
+        let dashpay_contract = self
+            .dashpay_contract_for_contact_request(input.shielded_address.is_some())
+            .await?;
+        let contact_request_document_type = dashpay_contract
+            .document_type_for_name(CONTACT_REQUEST)
+            .map_err(|_| {
+                Error::Generic("DashPay contactRequest document type not found".to_string())
+            })?;
+        if input.shielded_address.is_some() {
+            ensure_carries_shielded_address(contact_request_document_type)?;
+        }
+
         // Derive shared secret using ECDH (either client-side or SDK-side)
         let shared_key = match ecdh_provider {
             EcdhProvider::ClientSide { get_shared_secret } => {
@@ -453,18 +498,6 @@ impl Sdk {
         } else {
             None
         };
-
-        // Fetch DashPay contract
-        let dashpay_contract = self
-            .dashpay_contract_for_contact_request(input.shielded_address.is_some())
-            .await?;
-
-        // Get contactRequest document type
-        let contact_request_document_type = dashpay_contract
-            .document_type_for_name("contactRequest")
-            .map_err(|_| {
-                Error::Generic("DashPay contactRequest document type not found".to_string())
-            })?;
 
         // Generate entropy for document ID
         let mut rng = StdRng::from_os_rng();
@@ -754,6 +787,15 @@ mod tests {
     }
 
     #[test]
+    fn should_tell_whether_a_dashpay_contract_gives_contact_requests_a_shielded_address() {
+        let before = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
+        assert!(!dashpay_contact_requests_carry_shielded_address(&before));
+        assert!(dashpay_contact_requests_carry_shielded_address(&dashpay(
+            PlatformVersion::latest()
+        )));
+    }
+
+    #[test]
     fn should_refuse_a_shielded_address_where_contact_requests_have_no_such_property() {
         let contract = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
         let contact_request = contract
@@ -1040,5 +1082,213 @@ mod tests {
 
         let (_, carries_address) = resolved_schema(&sdk, false).await;
         assert!(!carries_address, "the contract resolved is the one held");
+    }
+
+    /// The SDK-side ECDH branch, never taken: the tests hand the shared key over.
+    #[cfg(feature = "mocks")]
+    type NoPrivateKey = fn(&IdentityPublicKey, u32) -> std::future::Ready<Result<SecretKey, Error>>;
+
+    /// The shared key the tests' ECDH callback answers with.
+    #[cfg(feature = "mocks")]
+    const SHARED_KEY: [u8; 32] = [7; 32];
+
+    /// A request from an identity with ENCRYPTION key 1 to one with DECRYPTION key 2,
+    /// carrying `shielded_address`.
+    #[cfg(feature = "mocks")]
+    fn contact_request_input(
+        shielded_address: Option<[u8; SHIELDED_ADDRESS_LEN]>,
+    ) -> ContactRequestInput {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{KeyType, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+
+        let identity = |id: u8, key_id: u32, purpose: Purpose| {
+            let secret = SecretKey::from_secret_bytes([id; 32]).expect("a valid secret key");
+            let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: key_id,
+                purpose,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(PublicKey::from_secret_key(&secret).serialize().to_vec()),
+                disabled_at: None,
+            });
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([id; 32]),
+                public_keys: BTreeMap::from([(key_id, key)]),
+                balance: 0,
+                revision: 0,
+            })
+        };
+        ContactRequestInput {
+            sender_identity: identity(1, 1, Purpose::ENCRYPTION),
+            recipient: RecipientIdentity::Identity(identity(2, 2, Purpose::DECRYPTION)),
+            sender_key_index: 1,
+            recipient_key_index: 2,
+            account_reference: 5,
+            account_label: None,
+            auto_accept_proof: None,
+            shielded_address,
+        }
+    }
+
+    /// `create_contact_request` for `input`, and whether it asked the host for the shared
+    /// secret and for the extended public key.
+    #[cfg(feature = "mocks")]
+    async fn created_contact_request(
+        sdk: &Sdk,
+        input: ContactRequestInput,
+    ) -> (Result<ContactRequestResult, Error>, bool, bool) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (asked_secret, asked_xpub) = (AtomicBool::new(false), AtomicBool::new(false));
+        let created = sdk
+            .create_contact_request(
+                input,
+                EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
+                    get_shared_secret: |_: &PublicKey| {
+                        asked_secret.store(true, Ordering::SeqCst);
+                        std::future::ready(Ok(SHARED_KEY))
+                    },
+                },
+                |_| {
+                    asked_xpub.store(true, Ordering::SeqCst);
+                    std::future::ready(Ok(vec![4u8; COMPACT_XPUB_LEN]))
+                },
+            )
+            .await;
+        (
+            created,
+            asked_secret.load(Ordering::SeqCst),
+            asked_xpub.load(Ordering::SeqCst),
+        )
+    }
+
+    /// A mock SDK seeded at protocol version 14 that holds `contract` as the DashPay it
+    /// resolves, with its dump directory.
+    #[cfg(feature = "mocks")]
+    async fn sdk_at_14_resolving(contract: &DataContract) -> (Sdk, tempfile::TempDir) {
+        sdk_resolving(
+            PlatformVersion::get(14).expect("protocol version 14"),
+            contract,
+        )
+        .await
+    }
+
+    /// A mock SDK seeded at `version` that holds `contract` as the DashPay it resolves,
+    /// with its dump directory.
+    #[cfg(feature = "mocks")]
+    async fn sdk_resolving(
+        version: &'static PlatformVersion,
+        contract: &DataContract,
+    ) -> (Sdk, tempfile::TempDir) {
+        let directory = tempfile::tempdir().expect("a mock dump directory");
+        let mut sdk: Sdk = crate::SdkBuilder::new_mock()
+            .with_initial_version(version)
+            .with_dump_dir(directory.path())
+            .build()
+            .expect("a mock sdk");
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+        (sdk, directory)
+    }
+
+    /// The public creation path puts the address on the request. On a network that carries
+    /// one, the document's `encryptedShieldedAddress` decrypts under the request's shared
+    /// key to the address given, and its IV is not the extended public key's.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_put_the_encrypted_shielded_address_on_a_created_contact_request() {
+        let (mut sdk, _directory) = sdk_at_14_resolving(&dashpay(PlatformVersion::latest())).await;
+        crate::sdk::test::expect_epoch_refresh(&mut sdk).await;
+        let address = [3u8; SHIELDED_ADDRESS_LEN];
+
+        let (created, asked_secret, asked_xpub) =
+            created_contact_request(&sdk, contact_request_input(Some(address))).await;
+        let created = created.expect("the request is created");
+
+        assert!(
+            asked_secret && asked_xpub,
+            "the host answered for the request"
+        );
+        let bytes = |name: &str| {
+            created
+                .properties
+                .get(name)
+                .unwrap_or_else(|| panic!("the request carries {name}"))
+                .to_binary_bytes()
+                .expect("bytes")
+        };
+        let encrypted = bytes(ENCRYPTED_SHIELDED_ADDRESS);
+        assert_eq!(
+            decrypt_shielded_address(&SHARED_KEY, &encrypted).expect("the field decrypts"),
+            address
+        );
+        assert_ne!(encrypted[..16], bytes("encryptedPublicKey")[..16]);
+    }
+
+    /// A request with an address on a network whose version the SDK cannot raise to 15 (no
+    /// answer to the version lookup is staged) is refused before the host is asked for the
+    /// shared secret or the extended public key.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_shielded_address_before_asking_the_host_for_keys() {
+        let seeded = PlatformVersion::get(14).expect("protocol version 14");
+        let (sdk, _directory) = sdk_at_14_resolving(&dashpay(seeded)).await;
+
+        let (created, asked_secret, asked_xpub) = created_contact_request(
+            &sdk,
+            contact_request_input(Some([3u8; SHIELDED_ADDRESS_LEN])),
+        )
+        .await;
+
+        assert!(created.is_err(), "the request is refused");
+        assert!(!asked_secret, "the shared secret was not asked for");
+        assert!(!asked_xpub, "the extended public key was not asked for");
+    }
+
+    /// An SDK at a protocol version that carries the address, resolving a DashPay contract
+    /// whose contact requests have no property for it: the version gate passes, and the
+    /// schema refuses the address before the host is asked for the shared secret or the
+    /// extended public key.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_an_address_the_schema_lacks_before_asking_the_host_for_keys() {
+        let without_property = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
+        let (sdk, _directory) = sdk_resolving(PlatformVersion::latest(), &without_property).await;
+
+        let (created, asked_secret, asked_xpub) = created_contact_request(
+            &sdk,
+            contact_request_input(Some([3u8; SHIELDED_ADDRESS_LEN])),
+        )
+        .await;
+
+        let refusal = created.expect_err("the request is refused").to_string();
+        assert!(refusal.contains(ENCRYPTED_SHIELDED_ADDRESS), "{refusal}");
+        assert!(!asked_secret, "the shared secret was not asked for");
+        assert!(!asked_xpub, "the extended public key was not asked for");
+    }
+
+    /// The same SDK creates a request without an address, as before: the host answers for
+    /// it and the document has no `encryptedShieldedAddress`.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_create_a_contact_request_without_an_address_below_protocol_version_15() {
+        let seeded = PlatformVersion::get(14).expect("protocol version 14");
+        let (sdk, _directory) = sdk_at_14_resolving(&dashpay(seeded)).await;
+
+        let (created, asked_secret, asked_xpub) =
+            created_contact_request(&sdk, contact_request_input(None)).await;
+        let created = created.expect("the request is created");
+
+        assert!(
+            asked_secret && asked_xpub,
+            "the host answered for the request"
+        );
+        assert!(!created.properties.contains_key(ENCRYPTED_SHIELDED_ADDRESS));
     }
 }

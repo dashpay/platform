@@ -240,6 +240,52 @@ async fn should_send_no_address_for_an_identity_added_back_without_the_proved_ke
     }
 }
 
+/// The derivation waits for the viewing keys and for the network's contract, with the
+/// wallet-manager lock released. An identity removed and added back without the proved
+/// key during such a wait gets no address: the check is made again as the address is
+/// derived.
+#[tokio::test]
+async fn should_send_no_address_for_an_identity_replaced_while_the_address_is_derived() {
+    let (wallet, seed, id, coordinator) = fixture("contact_address_replaced", 15).await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+
+    // A writer of the key slot parks the derivation at its read of the keys, after it
+    // found the identity prepared.
+    let key_slot = wallet.shielded_keys.write().await;
+    let mut deriving = Box::pin(address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE));
+    assert!(
+        futures::poll!(deriving.as_mut()).is_pending(),
+        "the derivation waits for the viewing keys"
+    );
+    {
+        let mut wm = wallet.wallet_manager.write().await;
+        let manager = &mut wm
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager;
+        manager.remove_identity(&id, wallet.persister()).unwrap();
+        manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id,
+                    public_keys: seed_master_key(&seed[..], IDENTITY_INDEX + 3),
+                    balance: 0,
+                    revision: 0,
+                }),
+                IDENTITY_INDEX,
+                wallet.wallet_id(),
+                wallet.persister(),
+            )
+            .unwrap();
+    }
+    drop(key_slot);
+
+    assert_eq!(deriving.await, None);
+}
+
 #[tokio::test]
 async fn should_send_no_address_where_contact_requests_cannot_carry_one() {
     // Up to protocol version 14 the network's DashPay contract has no property for it.
