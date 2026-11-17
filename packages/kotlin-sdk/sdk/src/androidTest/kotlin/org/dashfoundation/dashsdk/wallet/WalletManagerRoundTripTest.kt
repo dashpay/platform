@@ -7,7 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
-import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.ffi.VerdictRoundTestHook
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.security.WalletStorage
@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.AssumptionViolatedException
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -268,13 +269,16 @@ class WalletManagerRoundTripTest {
      * The JVM `PlatformWalletPersistenceHandlerTest` restart tests hand the
      * handler its verdicts directly, so they stay green if the native side
      * drops or mis-packs one. This round goes through
-     * `nativeTestDeliverUtxoCreditVerdictRound`: Rust builds the verdicts
-     * out of a `CoreChangeSet`, `FFIPersister::store` fires the verdict slot
-     * before the changeset, the JNI trampolines pack the 36-byte outpoints,
-     * codes and heights and the round's `utxos_added`, and the Kotlin
-     * handler stages and commits the rows. A fresh manager then restores
-     * from Room, and the engine's balance must count the credited coin
-     * only.
+     * [VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound]: Rust
+     * builds the verdicts out of a `CoreChangeSet`, `FFIPersister::store`
+     * fires the verdict slot before the changeset, the JNI trampolines pack
+     * the 36-byte outpoints, codes and heights and the round's
+     * `utxos_added`, and the Kotlin handler stages and commits the rows. A
+     * fresh manager then restores from Room, and the engine's balance must
+     * count the credited coin only. Skipped when the native library was
+     * built without the `test-hooks` cargo feature
+     * (`./build_android.sh --test-hooks`), which is the only build with
+     * that hook.
      *
      * Fixture, all paying the wallet's own BIP44 receive addresses:
      *  - tx 1 vout 0, [CREDITED]: no verdict, so it is restored.
@@ -400,24 +404,34 @@ class WalletManagerRoundTripTest {
         }
 
         PlatformWalletPersistenceHandler(db, network = Network.TESTNET).use { handler ->
-            // Round 1: tx 2 alone, credited, so the HELD row exists.
-            WalletManagerNative.nativeTestDeliverUtxoCreditVerdictRound(
-                handler,
-                walletId,
-                txTags = intArrayOf(2),
-                addresses = arrayOf(receive[3]),
-                amounts = longArrayOf(HELD),
-                verdicts = byteArrayOf(CODE_CREDITED),
-                spentAtHeights = intArrayOf(0),
-                blockHeight = BLOCK_HEIGHT,
-            )
+            // Round 1: tx 2 alone, credited, so the HELD row exists. The
+            // hook is only in a library built with the `test-hooks` cargo
+            // feature: without it this first call is an UnsatisfiedLinkError,
+            // which skips the test. Any other error still fails it.
+            try {
+                VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound(
+                    handler,
+                    walletId,
+                    txTags = intArrayOf(2),
+                    addresses = arrayOf(receive[3]),
+                    amounts = longArrayOf(HELD),
+                    verdicts = byteArrayOf(CODE_CREDITED),
+                    spentAtHeights = intArrayOf(0),
+                    blockHeight = BLOCK_HEIGHT,
+                )
+            } catch (e: UnsatisfiedLinkError) {
+                throw AssumptionViolatedException(
+                    "library built without the test-hooks feature; run ./build_android.sh --test-hooks",
+                    e,
+                )
+            }
             val held = db.txoDao().observeByWallet(walletId).first().single { it.amount == HELD }
             assertEquals(false, held.isSpent)
             // A sweep hold: spent, no spender link.
             assertEquals(1, db.txoDao().markSpentByOutpoint(held.outpoint, java.util.Date()))
 
             // Round 2: tx 1 (three outputs) plus tx 2 again, with the verdicts.
-            WalletManagerNative.nativeTestDeliverUtxoCreditVerdictRound(
+            VerdictRoundTestHook.nativeDeliverUtxoCreditVerdictRound(
                 handler,
                 walletId,
                 txTags = intArrayOf(1, 1, 1, 2),
