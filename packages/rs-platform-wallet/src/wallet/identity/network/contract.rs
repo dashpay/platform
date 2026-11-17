@@ -28,7 +28,8 @@
 
 use super::key_selection::WALLET_SIGNING_KEY_TYPES;
 use super::signing_key::{
-    contract_signing_key, CONTRACT_CREATE_SIGNING_LEVELS, CONTRACT_UPDATE_SIGNING_LEVELS,
+    contract_signing_key, contract_transition, CONTRACT_CREATE_SIGNING_LEVELS,
+    CONTRACT_UPDATE_SIGNING_LEVELS,
 };
 use async_trait::async_trait;
 
@@ -178,7 +179,7 @@ impl IdentityWallet {
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: CONTRACT_CREATE_SIGNING_LEVELS.to_vec(),
                 key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
-                transition: "a contract-create state transition".to_string(),
+                transition: contract_transition("create", self.sdk.version()),
             })?
             .clone()
         };
@@ -399,7 +400,7 @@ impl IdentityWallet {
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: CONTRACT_UPDATE_SIGNING_LEVELS.to_vec(),
                 key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
-                transition: "a contract-update state transition".to_string(),
+                transition: contract_transition("update", self.sdk.version()),
             })?
             .clone()
         };
