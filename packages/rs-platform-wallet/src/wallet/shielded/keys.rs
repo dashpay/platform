@@ -230,12 +230,12 @@ impl AccountViewingKeys {
     ///
     /// Returns an error when the OS CSPRNG fails.
     pub fn fresh_address(&self) -> Result<PaymentAddress, PlatformWalletError> {
-        self.fresh_address_from(&mut dpp::secp256k1::rand::rngs::OsRng)
+        self.fresh_address_from(&mut dpp::dashcore::key::rand::rngs::OsRng)
     }
 
     /// [`Self::fresh_address`] with the index drawn from `rng`, so tests can
     /// script the redraws and a randomness failure.
-    fn fresh_address_from<R: dpp::secp256k1::rand::TryRngCore>(
+    fn fresh_address_from<R: dpp::dashcore::key::rand::TryRngCore>(
         &self,
         rng: &mut R,
     ) -> Result<PaymentAddress, PlatformWalletError> {
@@ -534,7 +534,7 @@ mod tests {
     /// A randomness source that hands out scripted 11-byte draws, then fails.
     struct ScriptedRng(Vec<[u8; 11]>);
 
-    impl dpp::secp256k1::rand::TryRngCore for ScriptedRng {
+    impl dpp::dashcore::key::rand::TryRngCore for ScriptedRng {
         type Error = &'static str;
 
         fn try_next_u32(&mut self) -> Result<u32, Self::Error> {

@@ -3360,7 +3360,7 @@ mod tests {
             .as_slice()
             .to_vec();
         let s: [u8; 32] = high_s[33..].try_into().expect("a 65-byte signature");
-        let negated = crate::secp256k1::SecretKey::from_secret_bytes(s)
+        let negated = secp256k1::SecretKey::from_secret_bytes(s)
             .expect("S is a valid scalar")
             .negate();
         high_s[33..].copy_from_slice(&negated.to_secret_bytes());

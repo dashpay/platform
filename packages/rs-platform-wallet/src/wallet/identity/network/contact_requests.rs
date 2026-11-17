@@ -502,12 +502,12 @@ impl SeedCryptoProvider {
     fn secret_key_at(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<secp256k1::SecretKey, PlatformWalletError> {
         let xprv = self
             .wallet
             .derive_extended_private_key(path)
             .map_err(|e| PlatformWalletError::InvalidIdentityData(format!("test derive: {e}")))?;
-        dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+        secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
             .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))
     }
 }
@@ -712,7 +712,7 @@ pub(super) struct PreparedContactRequest {
     pub(super) sender_enc_path: key_wallet::bip32::DerivationPath,
     pub(super) recipient_identity: Identity,
     pub(super) recipient_key_index: u32,
-    pub(super) recipient_enc_pubkey: dpp::secp256k1::PublicKey,
+    pub(super) recipient_enc_pubkey: secp256k1::PublicKey,
     pub(super) account_index: u32,
     /// Our receiving (friendship) xpub for the pair.
     pub(super) contact_xpub_ext: key_wallet::bip32::ExtendedPubKey,

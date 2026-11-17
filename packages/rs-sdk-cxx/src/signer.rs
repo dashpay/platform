@@ -16,9 +16,9 @@ use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType};
 use dash_sdk::dpp::key_wallet::bip32::DerivationPath;
 use dash_sdk::dpp::key_wallet::signer::{Signer as KeyWalletSigner, SignerMethod};
 use dash_sdk::dpp::platform_value::BinaryData;
-use dash_sdk::dpp::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use dash_sdk::dpp::secp256k1::Message;
 use dash_sdk::dpp::ProtocolError;
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+use secp256k1::Message;
 
 use crate::ffi;
 use crate::runtime::blocking;
@@ -165,7 +165,7 @@ fn compressed_key_signature(signature: &[u8; 65]) -> Result<RecoverableSignature
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
+    use secp256k1::{PublicKey, SecretKey};
 
     #[test]
     fn an_asset_lock_signature_recovers_its_compressed_key() {

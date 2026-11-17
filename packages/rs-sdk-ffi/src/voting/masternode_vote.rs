@@ -52,10 +52,10 @@
 
 use crate::types::{FFINetwork, Network};
 use crate::FFIError;
+use dash_sdk::dpp::dashcore::ecdsa::EcdsaSecretKey;
 use dash_sdk::dpp::dashcore::hashes::hash160;
 use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::masternode_vote_keys::{
     put_masternode_vote, MasternodeVoteFailure, VotingKeyProblem,
@@ -99,10 +99,10 @@ impl MasternodeVoter {
 
         let signer = SingleKeySigner::new_from_slice(key.as_slice(), network)
             .map_err(|e| invalid(&format!("Invalid voting private key: {}", e)))?;
-        let secret_key = SecretKey::from_secret_bytes(*key)
+        let secret_key = EcdsaSecretKey::from_bytes(&key)
             .map_err(|e| invalid(&format!("Invalid voting private key: {}", e)))?;
-        let public_key = PublicKey::from_secret_key(&secret_key);
-        let voting_address = hash160::Hash::hash(&public_key.serialize()).to_byte_array();
+        let public_key = secret_key.public_key();
+        let voting_address = hash160::Hash::hash(&public_key.to_compressed()).to_byte_array();
 
         Ok(MasternodeVoter {
             pro_tx_hash,
