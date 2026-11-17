@@ -2,6 +2,7 @@
 //! from the sending identity's shielded account once the send has proved the
 //! identity's slot through its crypto provider.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use dashcore::Network;
@@ -26,7 +27,7 @@ use crate::wallet::identity::network::{
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo, WalletId};
 use crate::wallet::shielded::keys::OrchardKeySet;
-use crate::wallet::shielded::shielded_identity_account_index;
+use crate::wallet::shielded::{shielded_identity_account_index, AccountViewingKeys};
 
 /// The slot the fixture's identity holds.
 const IDENTITY_INDEX: u32 = 2;
@@ -159,6 +160,9 @@ async fn address_for<C: ContactCryptoProvider + Sync>(
         .expect("the address is derived or left out")
 }
 
+/// A wallet's bound shielded viewing keys, by account.
+type BoundKeys = Arc<RwLock<Option<BTreeMap<u32, AccountViewingKeys>>>>;
+
 /// What [`SlotProvider`] does when it is asked for a public key, before it answers.
 enum OnDerive {
     /// Answers as the seed provider does.
@@ -175,6 +179,14 @@ enum OnDerive {
         seed: [u8; 64],
         slot: u32,
         key_slot: u32,
+    },
+    /// Binds `with` as the keys of `account`, or unbinds the account when `with` is
+    /// `None`, before it answers, once: what a Clear and a bind again with other keys
+    /// leave in the key map.
+    ReplaceKeys {
+        keys: BoundKeys,
+        account: u32,
+        with: Option<AccountViewingKeys>,
     },
 }
 
@@ -228,6 +240,22 @@ impl ContactCryptoProvider for SlotProvider {
                     key_slot,
                 )
                 .await;
+            }
+            Some(OnDerive::ReplaceKeys {
+                keys,
+                account,
+                with,
+            }) => {
+                let mut bound = keys.write().await;
+                let bound = bound.as_mut().expect("the wallet is bound");
+                match with {
+                    Some(with) => {
+                        bound.insert(account, with);
+                    }
+                    None => {
+                        bound.remove(&account);
+                    }
+                }
             }
         }
         self.inner.receiving_xpub(path).await
@@ -543,4 +571,64 @@ async fn should_prove_a_slot_with_the_key_hash_the_seed_derives_there() {
         .unwrap();
         assert_eq!(from_provider, from_seed, "slot {slot}");
     }
+}
+
+/// The keys of the identity's account are replaced while the provider is asked for the
+/// identity's key, as a Clear and a bind again with other keys would replace them. The
+/// address is the one of the keys bound when it is derived, or none when the account is
+/// no longer bound: never the one of the keys bound before the provider was asked.
+#[tokio::test]
+async fn should_derive_the_address_from_the_keys_bound_when_it_is_derived() {
+    let (wallet, seed, id) = fixture("contact_address_keys_replaced", 15, true).await;
+    let account = shielded_identity_account_index(IDENTITY_INDEX).unwrap();
+    let before = address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE, &own_provider(&seed))
+        .await
+        .expect("an address from the keys bound first");
+    let other_keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, account)
+        .unwrap()
+        .viewing_keys();
+    let other_address = other_keys
+        .contact_address(id.as_bytes(), &BOB, u64::from(ACCOUNT_REFERENCE))
+        .to_raw_address_bytes();
+    assert_ne!(other_address, before);
+
+    for (with, expected) in [(Some(other_keys), Some(other_address)), (None, None)] {
+        let replacing = SlotProvider::new(
+            &seed,
+            OnDerive::ReplaceKeys {
+                keys: Arc::clone(&wallet.shielded_keys),
+                account,
+                with,
+            },
+        );
+        assert_eq!(
+            address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE, &replacing).await,
+            expected
+        );
+    }
+}
+
+/// A coordinator Clear drops the wallet's registration and its notes, and leaves the
+/// viewing keys the wallet holds in memory: the address is still given from them, the
+/// same as before, until the wallet is bound again.
+#[tokio::test]
+async fn should_still_give_the_address_after_a_clear_from_the_keys_held_in_memory() {
+    let (wallet, seed, id) = fixture("contact_address_cleared", 15, false).await;
+    let coordinator = coordinator_at(&temp_dir("contact_address_cleared"));
+    wallet
+        .bind_shielded(&seed[..], &[0], &coordinator)
+        .await
+        .unwrap();
+    let crypto = own_provider(&seed);
+    let before = address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE, &crypto)
+        .await
+        .expect("an address while bound");
+
+    coordinator.clear().await.unwrap();
+    assert!(coordinator.registered_subwallets().await.is_empty());
+    assert!(wallet.is_shielded_bound().await, "the keys stay in memory");
+    assert_eq!(
+        address_for(&wallet, &id, BOB, ACCOUNT_REFERENCE, &crypto).await,
+        Some(before)
+    );
 }

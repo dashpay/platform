@@ -41,6 +41,15 @@ fn without_address(owner_id: &Identifier, reason: &str) {
     );
 }
 
+/// The slot (identity index) an identity is recorded at and the shielded account that
+/// slot selects (`shielded_identity_account_index`), named so the two are not swapped.
+#[cfg(feature = "shielded")]
+#[derive(Clone, Copy)]
+struct IdentityShieldedAccount {
+    slot: u32,
+    account: u32,
+}
+
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// The shielded payment address `owner_id` gives `to_user_id` in the contact request
     /// it sends under `account_reference`, or `None` when the request goes without one.
@@ -68,7 +77,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// address rather than failing. The network is asked only once the slot is proved.
     ///
     /// The send is refused when the address would be one this identity has given
-    /// another contact. That takes a collision in 87 bits of a keyed hash.
+    /// another contact. That takes a collision in 87 bits of a keyed hash. The check
+    /// runs only once the network is found to carry the address, so a send that goes
+    /// without one is never refused for it.
+    ///
+    /// The address is derived from the account's keys as they are bound when it is
+    /// derived, never from keys read before the provider was asked. A coordinator Clear
+    /// leaves those keys in memory, so an address is still given from them after one,
+    /// until the wallet is bound again.
     ///
     /// The key is derived for the slot the identity holds when this is called, and the
     /// slot is checked again with the key as the address is derived: an identity
@@ -103,64 +119,40 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         #[cfg(feature = "shielded")]
         {
             // The slot the identity holds now, and the account it selects.
-            let (slot, account) = {
+            let held = {
                 let wm = self.wallet_manager.read().await;
-                let Some((slot, account, _)) = self.held_identity_account(&wm, owner_id) else {
+                let Some((held, _)) = self.held_identity_account(&wm, owner_id) else {
                     return Ok(None);
                 };
-                (slot, account)
+                held
             };
-            let Some(keys) = self.contact_shielded_addresses.account_keys(account).await else {
+            // Only whether the account is bound, so an unbound wallet asks the provider
+            // for nothing. The keys are read again where the address is derived.
+            if self
+                .contact_shielded_addresses
+                .account_keys(held.account)
+                .await
+                .is_none()
+            {
                 without_address(owner_id, "the identity's shielded account is not bound");
                 return Ok(None);
-            };
-            let Some(master_key_hash) = self.seed_master_key_hash(owner_id, slot, crypto).await
+            }
+            let Some(master_key_hash) =
+                self.seed_master_key_hash(owner_id, held.slot, crypto).await
             else {
                 return Ok(None);
             };
-            // The waits above released the wallet-manager lock, and the identity can
-            // have been removed and added back meanwhile, at another slot or with
-            // other keys. Ask again and derive the address under the lock, with no
-            // wait in between: the address is the one of the account of the slot the
-            // identity proves as it is when the address is derived.
-            let derived = {
+            // Checked before the network is asked, so a send whose identity does not
+            // prove its slot reads nothing from it.
+            {
                 let wm = self.wallet_manager.read().await;
-                let Some(managed) = self.proved_identity(&wm, owner_id, account, &master_key_hash)
-                else {
+                if self
+                    .proved_identity(&wm, owner_id, held.account, &master_key_hash)
+                    .is_none()
+                {
                     return Ok(None);
-                };
-                // Compared with the requests sent or held so far. A send to another
-                // contact in flight at this moment is not among them: for the two to
-                // share an address takes the same 87-bit collision between two requests
-                // signed at once, and a payment to it would still reach this identity's
-                // account.
-                let others = managed.other_sent_account_references(to_user_id);
-
-                let owner = owner_id.as_bytes();
-                let reference = u64::from(account_reference);
-                let index = keys.contact_index(owner, to_user_id.as_bytes(), reference);
-                let taken = others.iter().any(|(other, other_reference)| {
-                    keys.contact_index(owner, other.as_bytes(), u64::from(*other_reference))
-                        == index
-                });
-                if taken {
-                    Err(PlatformWalletError::InvalidIdentityData(
-                        "The shielded address of this contact request is one already given \
-                         to another contact; send the request under another account \
-                         reference"
-                            .to_string(),
-                    ))
-                } else {
-                    Ok(keys
-                        .contact_address(owner, to_user_id.as_bytes(), reference)
-                        .to_raw_address_bytes())
                 }
-            };
-
-            // Asked last, once the identity has proved its slot, so a send that cannot
-            // carry an address reads nothing from the network for it. The guard above
-            // is released before this wait; the address stays the one derived for the
-            // identity as it was under that guard.
+            }
             if !self.contact_requests_carry_shielded_address().await? {
                 without_address(
                     owner_id,
@@ -168,19 +160,70 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 );
                 return Ok(None);
             }
-            derived.map(Some)
+
+            // The waits above released both locks, and meanwhile the identity can have
+            // been removed and added back, at another slot or with other keys, and the
+            // wallet can have been bound again with other keys for the account. The
+            // keys are read again here and held until the address is derived: no bind
+            // replaces them in between, as a bind takes the key map for writing. The
+            // identity is proved again under the wallet-manager lock, with no wait
+            // between it and the derivation. Holding the key guard while that lock is
+            // taken cannot deadlock: no path takes the key map while it holds the
+            // wallet manager. What this does not cover is a change after the address
+            // is derived; the paragraph on the pair claim above says what keeps the
+            // identity in place from here, and keys bound again after this return are
+            // the concern of the bind.
+            let Some(keys) = self
+                .contact_shielded_addresses
+                .account_keys(held.account)
+                .await
+            else {
+                without_address(
+                    owner_id,
+                    "the identity's shielded account is no longer bound",
+                );
+                return Ok(None);
+            };
+            let wm = self.wallet_manager.read().await;
+            let Some(managed) = self.proved_identity(&wm, owner_id, held.account, &master_key_hash)
+            else {
+                return Ok(None);
+            };
+            // Compared with the requests sent or held so far. A send to another contact
+            // in flight at this moment is not among them: for the two to share an
+            // address takes the same 87-bit collision between two requests signed at
+            // once, and a payment to it would still reach this identity's account.
+            let others = managed.other_sent_account_references(to_user_id);
+
+            let owner = owner_id.as_bytes();
+            let reference = u64::from(account_reference);
+            let index = keys.contact_index(owner, to_user_id.as_bytes(), reference);
+            let taken = others.iter().any(|(other, other_reference)| {
+                keys.contact_index(owner, other.as_bytes(), u64::from(*other_reference)) == index
+            });
+            if taken {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "The shielded address of this contact request is one already given to \
+                     another contact; send the request under another account reference"
+                        .to_string(),
+                ));
+            }
+            Ok(Some(
+                keys.contact_address(owner, to_user_id.as_bytes(), reference)
+                    .to_raw_address_bytes(),
+            ))
         }
     }
 
-    /// The slot `owner_id` holds, the shielded account it selects, and the identity, when
-    /// `wm` holds the identity for this wallet with a slot recorded. `None` otherwise,
-    /// with the reason logged. The slot is not proved here.
+    /// The slot `owner_id` holds and the shielded account it selects, with the identity,
+    /// when `wm` holds the identity for this wallet with a slot recorded. `None`
+    /// otherwise, with the reason logged. The slot is not proved here.
     #[cfg(feature = "shielded")]
     fn held_identity_account<'a>(
         &self,
         wm: &'a WalletManager<PlatformWalletInfo>,
         owner_id: &Identifier,
-    ) -> Option<(u32, u32, &'a ManagedIdentity)> {
+    ) -> Option<(IdentityShieldedAccount, &'a ManagedIdentity)> {
         let Some(managed) = wm
             .get_wallet_info(&self.wallet_id)
             .and_then(|info| info.identity_manager.managed_identity(owner_id))
@@ -189,15 +232,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             without_address(owner_id, "the wallet does not hold the identity");
             return None;
         };
-        let Some((slot, account)) = managed.identity_index.and_then(|slot| {
+        let Some(held) = managed.identity_index.and_then(|slot| {
             shielded_identity_account_index(slot)
                 .ok()
-                .map(|account| (slot, account))
+                .map(|account| IdentityShieldedAccount { slot, account })
         }) else {
             without_address(owner_id, "the identity has no shielded account");
             return None;
         };
-        Some((slot, account, managed))
+        Some((held, managed))
     }
 
     /// The identity `owner_id` as `wm` holds it, when its slot still selects `account`
@@ -212,8 +255,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         account: u32,
         master_key_hash: &[u8; 20],
     ) -> Option<&'a ManagedIdentity> {
-        let (_, current, managed) = self.held_identity_account(wm, owner_id)?;
-        if current != account {
+        let (held, managed) = self.held_identity_account(wm, owner_id)?;
+        if held.account != account {
             without_address(
                 owner_id,
                 "the identity moved to another slot while the address was derived",

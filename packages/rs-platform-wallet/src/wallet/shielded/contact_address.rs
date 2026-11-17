@@ -8,7 +8,7 @@
 use super::AccountViewingKeys;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 /// The bound shielded viewing keys of a wallet. Cloning shares them; the default holds
 /// no keys.
@@ -26,16 +26,18 @@ impl ContactShieldedAddresses {
     }
 
     /// The viewing keys of `account`, or `None` when the wallet is not bound or the
-    /// account is not among the bound ones.
+    /// account is not among the bound ones. The keys are read under the guard returned,
+    /// so no bind replaces them while it lives: a bind takes the key map for writing.
     ///
     /// Having the keys of an account proves nothing about which identity it belongs to:
     /// the caller proves that before it gives away an address derived from them.
-    pub(crate) async fn account_keys(&self, account: u32) -> Option<AccountViewingKeys> {
-        self.viewing_keys
-            .read()
-            .await
-            .as_ref()?
-            .get(&account)
-            .cloned()
+    pub(crate) async fn account_keys(
+        &self,
+        account: u32,
+    ) -> Option<RwLockReadGuard<'_, AccountViewingKeys>> {
+        RwLockReadGuard::try_map(self.viewing_keys.read().await, |keys| {
+            keys.as_ref()?.get(&account)
+        })
+        .ok()
     }
 }
