@@ -862,3 +862,56 @@ fn should_migrate_conflict_sidecar_without_changing_existing_lifecycle_blobs() {
         Some([0xC1; 16])
     );
 }
+
+/// A compare-and-set re-delivered over a row that stores a shielded recipient
+/// is accepted when it is the exact committed snapshot, and refused when it
+/// names a different recipient; the stored recipient never changes.
+#[test]
+fn should_accept_exact_cas_redelivery_and_refuse_a_changed_recipient() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet_id = wid(0xC2);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let outpoint = op(0xC2);
+    let recipient = recipient_bytes(0x21);
+    let mut lock = entry(outpoint, AssetLockStatus::Broadcast);
+    lock.operation_id = Some([0xC2; 16]);
+    lock.shielded_recipient = Some(recipient);
+    let upsert = |entry: AssetLockEntry| AssetLockChangeSet {
+        asset_locks: [(entry.out_point, entry)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut conflict = lock.clone();
+    conflict.status = AssetLockStatus::Conflicted;
+    conflict.advance_operation_revision();
+
+    let mut conn = persister.lock_conn_for_test();
+    for (row, accepted) in [
+        (lock, true),
+        (conflict.clone(), true),
+        // Lost commit acknowledgement: the identical CAS is re-delivered.
+        (conflict.clone(), true),
+        (
+            AssetLockEntry {
+                shielded_recipient: Some(recipient_bytes(0x22)),
+                ..conflict.clone()
+            },
+            false,
+        ),
+    ] {
+        let tx = conn.transaction().unwrap();
+        let result = asset_locks::apply(&tx, &wallet_id, &upsert(row));
+        assert_eq!(result.is_ok(), accepted, "{result:?}");
+        if accepted {
+            tx.commit().unwrap();
+        }
+    }
+    let (stored_recipient, revision): (Vec<u8>, i64) = conn
+        .query_row(
+            "SELECT shielded_recipient, operation_revision FROM asset_locks WHERE wallet_id = ?1",
+            [wallet_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(stored_recipient, recipient.to_vec());
+    assert_eq!(revision, 1);
+}
