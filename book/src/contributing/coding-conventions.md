@@ -192,9 +192,12 @@ version already introduced a new table version, a second feature landing in
 the same protocol version amends that table in place. Adding another table
 version would leave one referenced by no `PLATFORM_V*` at all.
 
-Leaf implementation modules are different: each feature still gets its own new
-`vN` implementation module under the method directory. The rule is about the
-tables.
+Leaf implementation modules follow the same boundary. A feature that changes a
+generation a released protocol version selects gets a new `vN` module under the
+method directory. A generation that only the unreleased protocol version
+selects has never run on a chain, so a later feature in the same protocol
+version edits it in place: a new `vN` there would leave the previous one
+selected by no `PLATFORM_V*`, as with tables.
 
 ### Shared helpers get a versioned method, not a capability flag
 
