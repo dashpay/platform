@@ -73,20 +73,40 @@ public final class PersistentShieldedNote {
 }
 
 public extension PersistentShieldedNote {
-    /// Predicate for one wallet's unspent (spendable) notes — the
-    /// rows whose `value` sum IS that wallet's shielded balance.
-    /// Single home for the filter so every balance surface agrees on
-    /// what "unspent" means.
+    /// Predicate for one wallet's unspent notes in every account,
+    /// identity accounts included. Their `value` sum is therefore not
+    /// the wallet's shielded balance: pass the fetched rows to
+    /// [`ordinaryBalance(_:)`] for that. Single home for the filter so
+    /// every balance surface agrees on what "unspent" means.
     static func unspentPredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
         #Predicate<PersistentShieldedNote> {
             $0.walletId == walletId && $0.isSpent == false
         }
     }
 
-    /// Predicate for ALL wallets' unspent notes; callers scope by
-    /// walletId in memory (multi-wallet surfaces like the identity
-    /// funding picker).
+    /// Predicate for ALL wallets' unspent notes, in every account;
+    /// callers scope by walletId in memory (multi-wallet surfaces like
+    /// the identity funding picker).
     static var unspentPredicate: Predicate<PersistentShieldedNote> {
         #Predicate<PersistentShieldedNote> { $0.isSpent == false }
+    }
+
+    /// The ordinary shielded balance of `notes`: the sum of the values
+    /// of the notes whose account is not an identity account, by the
+    /// wallet's rule (`PlatformWalletManager.isShieldedIdentityAccount`).
+    /// This is the number the sync result reports as a wallet's
+    /// `balance`. Pass one wallet's unspent notes, for example those
+    /// [`unspentPredicate(walletId:)`] fetches. A SwiftData predicate
+    /// cannot call the native rule, so the filter runs here, after the
+    /// fetch. A sum past `UInt64.max` stays at `UInt64.max` rather than
+    /// trapping.
+    static func ordinaryBalance(_ notes: some Sequence<PersistentShieldedNote>) -> UInt64 {
+        notes.reduce(UInt64(0)) { total, note in
+            guard !PlatformWalletManager.isShieldedIdentityAccount(note.accountIndex) else {
+                return total
+            }
+            let (sum, overflow) = total.addingReportingOverflow(note.value)
+            return overflow ? UInt64.max : sum
+        }
     }
 }

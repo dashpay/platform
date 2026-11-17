@@ -1073,8 +1073,8 @@ struct WalletRowView: View {
     @Query private var addressBalances: [PersistentPlatformAddress]
 
     /// Per-wallet unspent shielded notes. Same persisted-truth
-    /// source as the Sync Status diagnostic — sum of `value` over
-    /// unspent rows for this wallet, in credits. Without this the
+    /// source as the Sync Status diagnostic; the balance is their
+    /// ordinary balance, in credits. Without this the
     /// wallet row's combined DASH total under-reported the wallet's
     /// real value by every shielded note: a wallet with funds in
     /// the shielded pool would show Core + Platform on the list but
@@ -1149,11 +1149,12 @@ struct WalletRowView: View {
         totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
     }
 
-    /// Sum of unspent shielded note values in credits. Same scale
+    /// The wallet's ordinary shielded balance in credits: its unspent
+    /// notes outside identity accounts, by the wallet's rule. Same scale
     /// as `platformBalance` (1e11 credits/DASH), so it folds into
     /// the same divisor in [`combinedDashAmount(coreTotal:)`].
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(UInt64(0)) { $0 + $1.value }
+        PersistentShieldedNote.ordinaryBalance(shieldedNotes)
     }
 
     /// Combined wallet balance expressed in DASH for a precomputed
@@ -1511,8 +1512,9 @@ extension CoreContentView {
 /// per-bound-wallet from sync events, so they survive restart and
 /// reflect the whole on-network pool:
 ///
-///   * **Total Shielded Balance** — sum of `value` over every unspent
-///     `PersistentShieldedNote` whose wallet is on this network.
+///   * **Total Shielded Balance**: the ordinary balance of every unspent
+///     `PersistentShieldedNote` whose wallet is on this network
+///     (identity accounts left out by the wallet's rule).
 ///
 ///   * **Notes Synced** — the highest `lastSyncedIndex` across this
 ///     network's `PersistentShieldedSyncState` rows. The Orchard
@@ -1532,11 +1534,13 @@ private struct ShieldedNetworkSummaryRows: View {
     @Query private var allNotes: [PersistentShieldedNote]
     @Query private var syncStates: [PersistentShieldedSyncState]
 
-    /// Sum of `value` over this network's unspent notes, in credits.
+    /// Ordinary shielded balance over this network's unspent notes, in
+    /// credits: identity accounts are left out by the wallet's rule, as
+    /// in every wallet's own balance.
     private var totalUnspentCredits: UInt64 {
-        allNotes.lazy
-            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
-            .reduce(UInt64(0)) { $0 &+ $1.value }
+        PersistentShieldedNote.ordinaryBalance(
+            allNotes.lazy.filter { !$0.isSpent && walletIds.contains($0.walletId) }
+        )
     }
 
     /// Furthest-scanned commitment-tree index across this network's subwallets.

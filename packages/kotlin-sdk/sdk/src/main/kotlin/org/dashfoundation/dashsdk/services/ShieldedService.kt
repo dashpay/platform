@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -119,14 +120,30 @@ class ShieldedService(private val database: DashDatabase) {
 
     /**
      * Live unspent shielded balance (credits) of the bound wallet's ordinary
-     * accounts, summed from `shielded_notes` where `isSpent = 0` and the
-     * account is not an identity account by Rust's rule
-     * ([ordinaryShieldedBalance]). Empty until [bind].
+     * accounts ([ordinaryBalance] of the bound wallet). Empty until [bind].
      */
     val shieldedBalance: StateFlow<Flow<Long>> = _shieldedBalance.asStateFlow()
 
     /** Whether shielded support is compiled into the native library. */
     val isAvailable: Boolean get() = Sdk.hasShielded()
+
+    /**
+     * Live unspent shielded balance (credits) of [walletId]'s ordinary
+     * accounts: the sum of its unspent `shielded_notes` rows whose account is
+     * not an identity account by Rust's rule ([ordinaryShieldedBalance] with
+     * [FundingNative.isShieldedIdentityAccount]). This is the number the sync
+     * result reports, for any wallet, bound or not; a screen that shows a
+     * wallet's shielded balance reads it here instead of summing notes. A
+     * build without shielded support has no shielded balance and emits 0.
+     */
+    fun ordinaryBalance(walletId: ByteArray): Flow<Long> {
+        if (!isAvailable) return flowOf(0L)
+        return database.shieldedDao()
+            .observeUnspentNotesByWallet(walletId)
+            .map { notes ->
+                ordinaryShieldedBalance(notes, FundingNative::isShieldedIdentityAccount)
+            }
+    }
 
     private val _isBound = MutableStateFlow(false)
 
@@ -211,11 +228,7 @@ class ShieldedService(private val database: DashDatabase) {
         _canResume.value = true
         _isBound.value = false
         _state.value = ShieldedSyncState()
-        _shieldedBalance.value = database.shieldedDao()
-            .observeUnspentNotesByWallet(walletId)
-            .map { notes ->
-                ordinaryShieldedBalance(notes, FundingNative::isShieldedIdentityAccount)
-            }
+        _shieldedBalance.value = ordinaryBalance(walletId)
 
         try {
             manager.configureShielded(dbPath)
@@ -541,7 +554,7 @@ class ShieldedService(private val database: DashDatabase) {
  * account, whose notes a send from the ordinary accounts cannot spend, and
  * leaves them out of the sync result's balance; [isIdentityAccount] is Rust's
  * rule for which accounts those are ([FundingNative.isShieldedIdentityAccount]
- * in the service), so both balances agree. Taken as a parameter so a test can
+ * in [ShieldedService.ordinaryBalance]), so both balances agree. Taken as a parameter so a test can
  * pass a plain predicate without loading native code.
  */
 internal fun ordinaryShieldedBalance(
