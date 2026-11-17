@@ -69,7 +69,7 @@ impl<C> Platform<C> {
 
         let maybe_contract_fetch_info = self.drive.get_contract_with_fetch_info(
             contract_id.to_buffer(),
-            false,
+            true,
             None,
             platform_version,
         )?;

@@ -44,7 +44,8 @@ mod tests {
     use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetV0Methods;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::fixture::platform_state::{
-        PLATFORM_STATE_V3_TESTNET, PLATFORM_STATE_V8_DEVNET,
+        PLATFORM_STATE_V3_TESTNET, PLATFORM_STATE_V3_TESTNET_SUPPORTED, PLATFORM_STATE_V8_DEVNET,
+        PLATFORM_STATE_V8_DEVNET_SUPPORTED,
     };
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::dashcore_rpc::json::QuorumType;
@@ -56,19 +57,56 @@ mod tests {
     /// A saved quorum config: its type, active signers, rotation and window
     type SavedQuorumConfig = (QuorumType, u16, bool, u32);
 
-    /// A testnet state in the first saved format and a devnet state in the second, each with
-    /// the chain lock quorum config it was saved with
+    /// A testnet and a devnet state in the supported saved format, each with the chain lock
+    /// quorum config it was saved with
     fn fixtures() -> [(&'static str, SavedQuorumConfig); 2] {
         [
             (
-                PLATFORM_STATE_V3_TESTNET.deref(),
+                PLATFORM_STATE_V3_TESTNET_SUPPORTED.deref(),
                 (QuorumType::Llmq50_60, 24, false, 24),
             ),
             (
-                PLATFORM_STATE_V8_DEVNET.deref(),
+                PLATFORM_STATE_V8_DEVNET_SUPPORTED.deref(),
                 (QuorumType::LlmqDevnet, 4, false, 24),
             ),
         ]
+    }
+
+    #[test]
+    fn should_refuse_to_restore_saved_state_in_a_retired_legacy_bls_format() {
+        let platform = TestPlatformBuilder::new().build_with_mock_rpc();
+
+        // Protocol version 13 reads the saved state with fetch_platform_state v0, 14 with v1
+        for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
+            for fixture in [
+                PLATFORM_STATE_V3_TESTNET.deref(),
+                PLATFORM_STATE_V8_DEVNET.deref(),
+            ] {
+                let transaction = platform.drive.grove.start_transaction();
+                platform
+                    .drive
+                    .store_platform_state_bytes(
+                        &hex::decode(fixture).unwrap(),
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .unwrap();
+                let result = Platform::<MockCoreRPCLike>::fetch_platform_state(
+                    &platform.drive,
+                    Some(&transaction),
+                    platform_version,
+                );
+                assert!(
+                    matches!(
+                        &result,
+                        Err(Error::Protocol(ProtocolError::PlatformDeserializationError(message)))
+                            if message.contains("Unsupported legacy BLS state format")
+                    ),
+                    "protocol version {}: got {result:?}",
+                    platform_version.protocol_version
+                );
+            }
+        }
     }
 
     /// The bytes of `fixture` with its chain lock quorum config, saved as `saved`, holding

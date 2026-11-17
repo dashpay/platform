@@ -96,6 +96,11 @@ tracing = { version = "0.1.41" }
 grovedb-commitment-tree = { workspace = true, optional = true }
 
 [dev-dependencies]
+# The test platform versions: the token marketplace is tested under one until protocol version
+# 16 has tables.
+platform-version = { path = "../rs-platform-version", features = [
+  "mock-versions",
+] }
 tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = [

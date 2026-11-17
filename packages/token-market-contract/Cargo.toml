@@ -13,3 +13,8 @@ serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }
 [dev-dependencies]
 base58 = "0.2.0"
+# The test platform versions: the token marketplace is tested under one until protocol version
+# 16 has tables.
+platform-version = { path = "../rs-platform-version", features = [
+  "mock-versions",
+] }
