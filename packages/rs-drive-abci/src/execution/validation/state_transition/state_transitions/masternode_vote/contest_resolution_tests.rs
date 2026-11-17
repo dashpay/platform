@@ -1,8 +1,10 @@
-//! The end of a contest whose contenders' stored documents do not decode, or whose winner's
-//! document the state refuses. From protocol version 15 (`check_for_ended_vote_polls` 2) such a
-//! contender cannot win and such a contest ends with no winner; protocol version 14
-//! (`check_for_ended_vote_polls` 1) returns the error. Contract and document checks keep these
-//! states from being reached through transitions, so the tests write them to the state directly.
+//! The end of a contest whose winner cannot be awarded its document: a contender with the
+//! highest tally holds a document that does not decode, or the state would refuse the winner's
+//! document. From protocol version 15 (`check_for_ended_vote_polls` 2) such a contest is left
+//! open: no one is awarded, nothing of it is recorded or removed, and it is listed under the
+//! end date no block reaches. Protocol version 14 (`check_for_ended_vote_polls` 1) returns the
+//! error. Contract and document checks keep these states from being reached through
+//! transitions, so the tests write them to the state directly.
 
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::tests::{
@@ -24,6 +26,7 @@ use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
 use dpp::data_contract::DataContract;
+use dpp::fee::Credits;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::SecurityLevel;
@@ -43,7 +46,9 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
 };
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-use drive::drive::votes::paths::vote_contested_resource_contract_documents_storage_path;
+use drive::drive::votes::paths::{
+    vote_contested_resource_contract_documents_storage_path, VOTE_POLLS_LEFT_OPEN_END_DATE,
+};
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::error::drive::DriveError;
 use drive::error::Error as DriveCrateError;
@@ -54,6 +59,7 @@ use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::test_helpers::{setup_contract, vote_poll_end_dates};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A contest on `normalizedLabel` and `rank`, where `domain` sums `rank`
 const SUMMED_RANK_CONTRACT: &str =
@@ -188,17 +194,131 @@ fn stored_poll_status(
     )
 }
 
-/// The contest ended in the block at height 900 with no winner: its record is back to not
-/// started, so a new contest may open on its values
-fn assert_ended_with_no_winner(
+/// What a contest holds in the state: its record's status and the height of its last
+/// finalization, its prefunded balance, and what is stored for each of the given contenders'
+/// documents
+#[derive(Debug, PartialEq)]
+struct ContestState {
+    status: (ContestedDocumentVotePollStatus, Option<u64>),
+    prefunded_balance: Credits,
+    contender_documents: Vec<Option<Element>>,
+}
+
+fn contest_state(
     platform: &TempPlatform<MockCoreRPCLike>,
     vote_poll: &ContestedDocumentResourceVotePoll,
+    document_ids: &[Identifier],
+    platform_version: &PlatformVersion,
+) -> ContestState {
+    let path = vote_contested_resource_contract_documents_storage_path(
+        vote_poll.contract_id.as_slice(),
+        &vote_poll.document_type_name,
+    );
+    let balance_id = vote_poll
+        .specialized_balance_id()
+        .expect("expected the prefunded balance id");
+    ContestState {
+        status: stored_poll_status(platform, vote_poll, platform_version),
+        prefunded_balance: platform
+            .drive
+            .fetch_prefunded_specialized_balance(balance_id.to_buffer(), None, platform_version)
+            .expect("expected to read the prefunded balance")
+            .unwrap_or_default(),
+        contender_documents: document_ids
+            .iter()
+            .map(|document_id| {
+                platform
+                    .drive
+                    .grove
+                    .get_raw_optional(
+                        path.as_ref().into(),
+                        document_id.as_slice(),
+                        None,
+                        &platform_version.drive.grove_version,
+                    )
+                    .unwrap()
+                    .expect("expected to read the contender's document")
+            })
+            .collect(),
+    }
+}
+
+/// The contest holds what it held `before` its end, which is all an open contest holds: a
+/// record that is started and never finalized, its prefunded balance and its contenders'
+/// documents
+fn assert_holds_what_it_held(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    vote_poll: &ContestedDocumentResourceVotePoll,
+    document_ids: &[Identifier],
+    before: &ContestState,
     platform_version: &PlatformVersion,
 ) {
-    assert_eq!(
-        stored_poll_status(platform, vote_poll, platform_version),
-        (ContestedDocumentVotePollStatus::NotStarted, Some(900))
+    assert_matches!(
+        before.status,
+        (ContestedDocumentVotePollStatus::Started(_), None)
     );
+    assert!(before.prefunded_balance > 0);
+    assert!(before.contender_documents.iter().all(Option::is_some));
+    assert_eq!(
+        &contest_state(platform, vote_poll, document_ids, platform_version),
+        before,
+        "a contest left open must hold what it held before its end"
+    );
+}
+
+/// The end dates list nothing but `vote_polls`, under the left open end date
+fn assert_only_left_open_listed(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    vote_polls: &[&ContestedDocumentResourceVotePoll],
+    platform_version: &PlatformVersion,
+) {
+    let unique_ids: BTreeSet<Identifier> = vote_polls
+        .iter()
+        .map(|vote_poll| vote_poll.unique_id().expect("expected the vote poll's id"))
+        .collect();
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(VOTE_POLLS_LEFT_OPEN_END_DATE, unique_ids)])
+    );
+}
+
+/// Ends the DPNS name contest on "quantum" and checks that the block goes through and leaves
+/// the contest open: it holds what it held, only the left open end date lists it, and neither
+/// contender is awarded the name
+fn assert_ending_leaves_the_quantum_contest_open(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    dpns_contract: &DataContract,
+    document_ids: &[Identifier],
+    contenders: [Identifier; 2],
+    platform_version: &PlatformVersion,
+) {
+    let vote_poll = dpns_name_vote_poll(dpns_contract, "quantum");
+    let before = contest_state(platform, &vote_poll, document_ids, platform_version);
+
+    end_first_due_vote_polls(platform, platform_version).expect("expected the block to go through");
+
+    assert_holds_what_it_held(
+        platform,
+        &vote_poll,
+        document_ids,
+        &before,
+        platform_version,
+    );
+    assert_only_left_open_listed(platform, &[&vote_poll], platform_version);
+    for contender in contenders {
+        assert!(
+            awarded_domains(platform, dpns_contract, contender, platform_version).is_empty(),
+            "no contender may be awarded a contest left open"
+        );
+    }
+}
+
+/// The ids of `documents`
+fn document_ids(documents: &[(Identifier, Document)]) -> Vec<Identifier> {
+    documents
+        .iter()
+        .map(|(_, document)| document.id())
+        .collect()
 }
 
 /// Cuts the stored bytes of a contender's document short, keeping its storage flags, so they
@@ -387,7 +507,7 @@ fn awarded_domains(
 }
 
 #[tokio::test]
-async fn should_award_the_next_earliest_contender_when_the_earliest_does_not_decode() {
+async fn should_leave_a_contest_open_when_the_earliest_of_the_top_contenders_does_not_decode() {
     let platform_version = PlatformVersion::latest();
     let (platform, contender_1, contender_2, dpns_contract) =
         quantum_contest(platform_version).await;
@@ -404,31 +524,22 @@ async fn should_award_the_next_earliest_contender_when_the_earliest_does_not_dec
         platform_version,
     );
 
-    end_first_due_vote_polls(&platform, platform_version)
-        .expect("expected the contest to end with the block");
-
-    let finished = finished_vote_info(&platform, &dpns_contract, "quantum", platform_version)
-        .expect("expected the contest to be finished");
-    assert_eq!(
-        finished.finished_vote_outcome,
-        FinishedVoteOutcome::TowardsIdentity as i32
+    assert_ending_leaves_the_quantum_contest_open(
+        &platform,
+        &dpns_contract,
+        &document_ids(&documents),
+        [contender_1, contender_2],
+        platform_version,
     );
-    assert_eq!(finished.won_by_identity_id, Some(contender_1.to_vec()));
-    assert_eq!(
-        awarded_domains(&platform, &dpns_contract, contender_1, platform_version).len(),
-        1,
-        "the contender whose document decodes must be awarded it"
-    );
-    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
 }
 
 #[tokio::test]
-async fn should_end_a_contest_with_no_winner_when_no_contender_decodes() {
+async fn should_leave_a_contest_open_when_no_contender_decodes() {
     let platform_version = PlatformVersion::latest();
     let (platform, contender_1, contender_2, dpns_contract) =
         quantum_contest(platform_version).await;
-    for (_, document) in contender_documents(&platform, &dpns_contract, "quantum", platform_version)
-    {
+    let documents = contender_documents(&platform, &dpns_contract, "quantum", platform_version);
+    for (_, document) in &documents {
         truncate_contender_document(
             &platform,
             dpns_contract.id(),
@@ -437,22 +548,18 @@ async fn should_end_a_contest_with_no_winner_when_no_contender_decodes() {
         );
     }
 
-    end_first_due_vote_polls(&platform, platform_version)
-        .expect("expected the contest to end with the block");
-
-    assert_ended_with_no_winner(
+    assert_ending_leaves_the_quantum_contest_open(
         &platform,
-        &dpns_name_vote_poll(&dpns_contract, "quantum"),
+        &dpns_contract,
+        &document_ids(&documents),
+        [contender_1, contender_2],
         platform_version,
     );
-    for contender in [contender_1, contender_2] {
-        assert!(awarded_domains(&platform, &dpns_contract, contender, platform_version).is_empty());
-    }
-    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
 }
 
 #[tokio::test]
-async fn should_award_the_contender_with_the_most_votes_among_those_that_decode() {
+async fn should_leave_a_contest_open_with_its_votes_when_the_contender_with_the_most_votes_does_not_decode(
+) {
     let platform_version = PlatformVersion::latest();
     let (mut platform, contender_1, contender_2, dpns_contract) =
         quantum_contest(platform_version).await;
@@ -482,21 +589,42 @@ async fn should_award_the_contender_with_the_most_votes_among_those_that_decode(
         platform_version,
     );
 
-    end_first_due_vote_polls(&platform, platform_version)
-        .expect("expected the contest to end with the block");
-
-    let finished = finished_vote_info(&platform, &dpns_contract, "quantum", platform_version)
-        .expect("expected the contest to be finished");
-    assert_eq!(finished.won_by_identity_id, Some(contender_2.to_vec()));
-    assert_eq!(
-        awarded_domains(&platform, &dpns_contract, contender_2, platform_version).len(),
-        1
+    // The contender with fewer votes, whose document decodes, is not awarded in its place
+    assert_ending_leaves_the_quantum_contest_open(
+        &platform,
+        &dpns_contract,
+        &document_ids(&documents),
+        [contender_1, contender_2],
+        platform_version,
     );
-    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
+
+    let platform_state = platform.state.load();
+    let (contenders, _, lock_tally, finished) = get_vote_states(
+        &platform,
+        &platform_state,
+        &dpns_contract,
+        "quantum",
+        None,
+        true,
+        None,
+        ResultType::VoteTally,
+        platform_version,
+    );
+    let tallies: BTreeMap<Identifier, Option<u32>> = contenders
+        .iter()
+        .map(|contender| (contender.identity_id(), contender.vote_tally()))
+        .collect();
+    assert_eq!(
+        tallies,
+        BTreeMap::from([(contender_1, Some(3)), (contender_2, Some(2))]),
+        "the votes must stay"
+    );
+    assert_eq!(lock_tally, Some(1));
+    assert_eq!(finished, None);
 }
 
 #[tokio::test]
-async fn should_lock_when_the_lock_beats_every_contender_that_decodes() {
+async fn should_award_the_contender_with_the_most_votes_when_one_with_fewer_does_not_decode() {
     let platform_version = PlatformVersion::latest();
     let (mut platform, contender_1, contender_2, dpns_contract) =
         quantum_contest(platform_version).await;
@@ -505,7 +633,54 @@ async fn should_lock_when_the_lock_beats_every_contender_that_decodes() {
         &dpns_contract,
         vec![
             (ResourceVoteChoice::TowardsIdentity(contender_1), 3),
-            (ResourceVoteChoice::Lock, 2),
+            (ResourceVoteChoice::TowardsIdentity(contender_2), 2),
+        ],
+        "quantum",
+        10,
+        None,
+        platform_version,
+    )
+    .await;
+    let documents = contender_documents(&platform, &dpns_contract, "quantum", platform_version);
+    let (_, trailing_document) = documents
+        .iter()
+        .find(|(contender, _)| *contender == contender_2)
+        .expect("expected contender 2");
+    truncate_contender_document(
+        &platform,
+        dpns_contract.id(),
+        trailing_document.id(),
+        platform_version,
+    );
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the contest to end with the block");
+
+    let finished = finished_vote_info(&platform, &dpns_contract, "quantum", platform_version)
+        .expect("expected the contest to be finished");
+    assert_eq!(
+        finished.finished_vote_outcome,
+        FinishedVoteOutcome::TowardsIdentity as i32
+    );
+    assert_eq!(finished.won_by_identity_id, Some(contender_1.to_vec()));
+    assert_eq!(
+        awarded_domains(&platform, &dpns_contract, contender_1, platform_version).len(),
+        1
+    );
+    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
+}
+
+#[tokio::test]
+async fn should_lock_when_the_lock_beats_a_top_contender_that_does_not_decode() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contender_1, contender_2, dpns_contract) =
+        quantum_contest(platform_version).await;
+    perform_votes_multi(
+        &mut platform,
+        &dpns_contract,
+        vec![
+            (ResourceVoteChoice::Lock, 3),
+            (ResourceVoteChoice::TowardsIdentity(contender_1), 2),
             (ResourceVoteChoice::TowardsIdentity(contender_2), 1),
         ],
         "quantum",
@@ -558,26 +733,21 @@ async fn should_fail_on_a_contender_that_does_not_decode_at_protocol_version_14(
 }
 
 #[tokio::test]
-async fn should_end_a_contest_with_no_winner_when_its_unique_index_entry_is_taken() {
+async fn should_leave_a_contest_open_when_its_unique_index_entry_is_taken() {
     let platform_version = PlatformVersion::latest();
     let (platform, contender_1, contender_2, dpns_contract) =
         quantum_contest(platform_version).await;
-    let (_, template) =
-        contender_documents(&platform, &dpns_contract, "quantum", platform_version).remove(0);
-    let holder = other_domain_like(&template, 0x51);
+    let documents = contender_documents(&platform, &dpns_contract, "quantum", platform_version);
+    let holder = other_domain_like(&documents[0].1, 0x51);
     insert_domain_directly(&platform, &dpns_contract, &holder, platform_version);
 
-    end_first_due_vote_polls(&platform, platform_version)
-        .expect("expected the contest to end with the block");
-
-    assert_ended_with_no_winner(
+    assert_ending_leaves_the_quantum_contest_open(
         &platform,
-        &dpns_name_vote_poll(&dpns_contract, "quantum"),
+        &dpns_contract,
+        &document_ids(&documents),
+        [contender_1, contender_2],
         platform_version,
     );
-    for contender in [contender_1, contender_2] {
-        assert!(awarded_domains(&platform, &dpns_contract, contender, platform_version).is_empty());
-    }
     assert_eq!(
         awarded_domains(
             &platform,
@@ -588,7 +758,6 @@ async fn should_end_a_contest_with_no_winner_when_its_unique_index_entry_is_take
         vec![holder],
         "the document holding the entry must stay as it was"
     );
-    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
 }
 
 #[tokio::test]
@@ -636,23 +805,20 @@ fn take_contender_document_ids(
 }
 
 #[tokio::test]
-async fn should_end_a_contest_with_no_winner_when_the_awarded_document_id_is_taken() {
+async fn should_leave_a_contest_open_when_the_awarded_document_id_is_taken() {
     let platform_version = PlatformVersion::latest();
     let (platform, contender_1, contender_2, dpns_contract) =
         quantum_contest(platform_version).await;
+    let documents = contender_documents(&platform, &dpns_contract, "quantum", platform_version);
     let holders = take_contender_document_ids(&platform, &dpns_contract, platform_version);
 
-    end_first_due_vote_polls(&platform, platform_version)
-        .expect("expected the contest to end with the block");
-
-    assert_ended_with_no_winner(
+    assert_ending_leaves_the_quantum_contest_open(
         &platform,
-        &dpns_name_vote_poll(&dpns_contract, "quantum"),
+        &dpns_contract,
+        &document_ids(&documents),
+        [contender_1, contender_2],
         platform_version,
     );
-    for contender in [contender_1, contender_2] {
-        assert!(awarded_domains(&platform, &dpns_contract, contender, platform_version).is_empty());
-    }
     for holder in holders {
         assert_eq!(
             awarded_domains(
@@ -665,7 +831,6 @@ async fn should_end_a_contest_with_no_winner_when_the_awarded_document_id_is_tak
             "the document holding the id must stay as it was"
         );
     }
-    assert_contest_cleaned_up(&platform, &dpns_contract, "quantum", platform_version);
 }
 
 #[tokio::test]
@@ -721,7 +886,7 @@ fn platform_over_a_full_sum(
 }
 
 /// A new identity joins a contest on `label` with `rank` in [`SUMMED_RANK_CONTRACT`] in a block
-/// at `time_ms`, opening it; returns the identity's id
+/// at `time_ms`, opening it; returns the identity's id and its document's
 async fn join_summed_rank_contest(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     contract: &DataContract,
@@ -730,7 +895,7 @@ async fn join_summed_rank_contest(
     rank: i64,
     time_ms: TimestampMillis,
     platform_version: &PlatformVersion,
-) -> Identifier {
+) -> (Identifier, Identifier) {
     let (identity, signer, key) = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
     let domain = contract
         .document_type_for_name("domain")
@@ -819,7 +984,7 @@ async fn join_summed_rank_contest(
         StateTransitionExecutionResult::SuccessfulExecution { .. },
         "the contender must join the contest"
     );
-    identity.id()
+    (identity.id(), document.id())
 }
 
 /// The contest on `label` with `rank` in [`SUMMED_RANK_CONTRACT`]
@@ -841,17 +1006,17 @@ fn summed_rank_vote_poll(
 }
 
 /// Opens a contest on `quantum` with `rank` 1 over a full sum (see
-/// [`platform_over_a_full_sum`]), then ends it at `platform_version`
-async fn end_contest_over_a_full_sum(
+/// [`platform_over_a_full_sum`]); returns its contender's id and its document's
+async fn contest_over_a_full_sum(
     platform_version: &PlatformVersion,
 ) -> (
     TempPlatform<MockCoreRPCLike>,
     DataContract,
     Identifier,
-    Result<(), Error>,
+    Identifier,
 ) {
     let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
-    let contender = join_summed_rank_contest(
+    let (contender, document_id) = join_summed_rank_contest(
         &mut platform,
         &contract,
         &mut rng,
@@ -861,52 +1026,61 @@ async fn end_contest_over_a_full_sum(
         platform_version,
     )
     .await;
-    let result = end_first_due_vote_polls(&platform, platform_version);
-    (platform, contract, contender, result)
+    (platform, contract, contender, document_id)
 }
 
 #[tokio::test]
-async fn should_end_a_contest_with_no_winner_when_the_award_takes_a_sum_past_its_range() {
+async fn should_leave_a_contest_open_when_the_award_takes_its_types_total_past_its_range() {
     let platform_version = PlatformVersion::latest();
-    let (platform, contract, contender, result) =
-        end_contest_over_a_full_sum(platform_version).await;
-    result.expect("expected the contest to end with the block");
+    let (platform, contract, contender, document_id) =
+        contest_over_a_full_sum(platform_version).await;
+    let vote_poll = summed_rank_vote_poll(&contract, "quantum", 1);
+    let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
 
-    assert!(
-        awarded_domains(&platform, &contract, contender, platform_version).is_empty(),
-        "nothing of the refused award may stay in the state"
-    );
-    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
-    assert_ended_with_no_winner(
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the block to go through");
+
+    assert_holds_what_it_held(
         &platform,
-        &summed_rank_vote_poll(&contract, "quantum", 1),
+        &vote_poll,
+        &[document_id],
+        &before,
         platform_version,
     );
+    assert_only_left_open_listed(&platform, &[&vote_poll], platform_version);
+    assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
 }
 
 #[tokio::test]
 async fn should_fail_on_an_award_taking_a_sum_past_its_range_at_protocol_version_14() {
-    let (_, _, _, result) = end_contest_over_a_full_sum(protocol_version_14()).await;
-    assert_matches!(result, Err(Error::Drive(DriveCrateError::GroveDB(_))));
+    let platform_version = protocol_version_14();
+    let (platform, ..) = contest_over_a_full_sum(platform_version).await;
+    assert_matches!(
+        end_first_due_vote_polls(&platform, platform_version),
+        Err(Error::Drive(DriveCrateError::GroveDB(_)))
+    );
 }
 
-/// Opens a contest whose award takes the sum past its range (`quantum`, `rank` 1) and one
-/// awarded as usual (`zebra`, `rank` 0), the one at `refused` (0 or 1) ending first, and ends
-/// both in one block at the latest protocol version. The refused award goes through the award
-/// itself, not the uniqueness check before it, and the other contest's award must be kept
-/// whichever of the two the block ends first.
-async fn end_two_contests_in_one_block_with_one_award_refused(refused: usize) {
+/// Opens a contest whose award would take the type's total past its range (`quantum`, `rank`
+/// 1) and one awarded as usual (`zebra`, `rank` 0), the one at `left_open` (0 or 1) opening
+/// first, at `times`, and ends both in one block at the latest protocol version. The first is
+/// left open and the other is awarded and cleaned up, whichever of the two the block ends
+/// first and whether or not they share an end date.
+async fn end_two_contests_in_one_block_with_one_left_open(
+    left_open: usize,
+    times: [TimestampMillis; 2],
+) {
     let platform_version = PlatformVersion::latest();
     let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
-    let refused_contest = ("quantum", 1);
+    let left_open_contest = ("quantum", 1);
     let awarded_contest = ("zebra", 0);
-    let contests = if refused == 0 {
-        [refused_contest, awarded_contest]
+    let contests = if left_open == 0 {
+        [left_open_contest, awarded_contest]
     } else {
-        [awarded_contest, refused_contest]
+        [awarded_contest, left_open_contest]
     };
     let mut contenders = vec![];
-    for ((label, rank), time_ms) in contests.into_iter().zip([5000, 500_000]) {
+    for ((label, rank), time_ms) in contests.into_iter().zip(times) {
         contenders.push(
             join_summed_rank_contest(
                 &mut platform,
@@ -923,63 +1097,130 @@ async fn end_two_contests_in_one_block_with_one_award_refused(refused: usize) {
     let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert_eq!(
         end_dates.len(),
-        2,
-        "expected the contests to end at two dates"
+        BTreeSet::from(times).len(),
+        "expected the contests to end at as many dates as they opened at"
     );
     let last_end_date = *end_dates
         .keys()
         .next_back()
         .expect("expected a vote poll end date");
+    let (label, rank) = left_open_contest;
+    let left_open_vote_poll = summed_rank_vote_poll(&contract, label, rank);
+    let (_, left_open_document_id) = contenders[left_open];
+    let before = contest_state(
+        &platform,
+        &left_open_vote_poll,
+        &[left_open_document_id],
+        platform_version,
+    );
 
     end_vote_polls_due_at(&platform, last_end_date, platform_version)
-        .expect("expected both contests to end with the block");
+        .expect("expected the block to go through");
 
-    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
-    for (index, ((label, rank), contender)) in contests.into_iter().zip(contenders).enumerate() {
+    assert_only_left_open_listed(&platform, &[&left_open_vote_poll], platform_version);
+    for (index, ((label, rank), (contender, document_id))) in
+        contests.into_iter().zip(contenders).enumerate()
+    {
         let vote_poll = summed_rank_vote_poll(&contract, label, rank);
-        if index == refused {
-            assert_ended_with_no_winner(&platform, &vote_poll, platform_version);
-            assert!(
-                awarded_domains(&platform, &contract, contender, platform_version).is_empty(),
-                "nothing of the refused award may stay in the state"
+        if index == left_open {
+            assert_holds_what_it_held(
+                &platform,
+                &vote_poll,
+                &[document_id],
+                &before,
+                platform_version,
             );
+            assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
         } else {
             assert_eq!(
-                stored_poll_status(&platform, &vote_poll, platform_version),
-                (
-                    ContestedDocumentVotePollStatus::Awarded(contender),
-                    Some(900)
-                )
+                contest_state(&platform, &vote_poll, &[document_id], platform_version),
+                ContestState {
+                    status: (
+                        ContestedDocumentVotePollStatus::Awarded(contender),
+                        Some(900)
+                    ),
+                    prefunded_balance: 0,
+                    contender_documents: vec![None],
+                },
+                "the other contest must be awarded and cleaned up"
             );
             assert_eq!(
                 awarded_domains(&platform, &contract, contender, platform_version).len(),
-                1,
-                "the other contest's winner must keep its award"
+                1
             );
         }
-        let balance_id = vote_poll
-            .specialized_balance_id()
-            .expect("expected the prefunded balance id");
-        let balance = platform
-            .drive
-            .fetch_prefunded_specialized_balance(balance_id.to_buffer(), None, platform_version)
-            .expect("expected to read the prefunded balance");
-        assert_eq!(
-            balance.unwrap_or_default(),
-            0,
-            "the contest's prefunded balance must be emptied"
-        );
     }
 }
 
 #[tokio::test]
-async fn should_keep_an_earlier_award_of_the_block_when_a_later_award_is_refused() {
-    end_two_contests_in_one_block_with_one_award_refused(1).await;
+async fn should_award_an_earlier_contest_of_the_block_when_a_later_one_is_left_open() {
+    end_two_contests_in_one_block_with_one_left_open(1, [5000, 500_000]).await;
 }
 
 #[tokio::test]
-async fn should_keep_a_later_award_of_the_block_when_an_earlier_award_is_refused() {
-    end_two_contests_in_one_block_with_one_award_refused(0).await;
+async fn should_award_a_later_contest_of_the_block_when_an_earlier_one_is_left_open() {
+    end_two_contests_in_one_block_with_one_left_open(0, [5000, 500_000]).await;
+}
+
+#[tokio::test]
+async fn should_award_a_contest_and_leave_open_another_sharing_its_end_date() {
+    end_two_contests_in_one_block_with_one_left_open(0, [5000, 5000]).await;
+}
+
+#[tokio::test]
+async fn should_list_contests_left_open_under_one_end_date_and_not_end_them_again() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_over_a_full_sum(platform_version);
+    let mut contests = vec![];
+    for ((label, rank), time_ms) in [("quantum", 1), ("zebra", 2)]
+        .into_iter()
+        .zip([5000, 500_000])
+    {
+        let (_, document_id) = join_summed_rank_contest(
+            &mut platform,
+            &contract,
+            &mut rng,
+            label,
+            rank,
+            time_ms,
+            platform_version,
+        )
+        .await;
+        contests.push((summed_rank_vote_poll(&contract, label, rank), document_id));
+    }
+    let before: Vec<ContestState> = contests
+        .iter()
+        .map(|(vote_poll, document_id)| {
+            contest_state(&platform, vote_poll, &[*document_id], platform_version)
+        })
+        .collect();
+    let end_dates: Vec<TimestampMillis> = vote_poll_end_dates(&platform.drive, platform_version)
+        .into_keys()
+        .collect();
+    assert_eq!(
+        end_dates.len(),
+        2,
+        "expected the contests to end at two dates"
+    );
+
+    // Each contest is left open in a block of its own, then a later block finds nothing due
+    for time_ms in [end_dates[0], end_dates[1], end_dates[1] + 500_000] {
+        end_vote_polls_due_at(&platform, time_ms, platform_version)
+            .expect("expected the block to go through");
+    }
+
+    let vote_polls: Vec<&ContestedDocumentResourceVotePoll> =
+        contests.iter().map(|(vote_poll, _)| vote_poll).collect();
+    assert_only_left_open_listed(&platform, &vote_polls, platform_version);
+    for ((vote_poll, document_id), before) in contests.iter().zip(&before) {
+        assert_holds_what_it_held(
+            &platform,
+            vote_poll,
+            &[*document_id],
+            before,
+            platform_version,
+        );
+    }
 }
 
 /// Ends the same contest, with votes for both contenders and the lock, at the latest protocol

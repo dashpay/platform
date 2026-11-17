@@ -49,6 +49,7 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Generation 1 leaves no contest open: its step below always returns an outcome
         self.end_due_vote_polls_v1(
             last_committed_platform_state,
             block_platform_state,
@@ -57,6 +58,7 @@ where
             transaction,
             platform_version,
         )
+        .map(|_| ())
     }
 
     /// Picks the winner of an ended contest and awards it the document: the earliest of the
@@ -65,14 +67,14 @@ where
     ///
     /// Moved here unchanged from the body of generation 1, which protocol version 14 selects,
     /// so that generation 2 shares the rest of the body: a pure refactor, reading, writing and
-    /// failing as before, in the same order.
+    /// failing as before, in the same order. It always returns an outcome.
     pub(super) fn award_contest_winner_v1(
         &self,
         block_info: &BlockInfo,
         contest: EndedContest,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ContestedDocumentVotePollWinnerInfo, Error> {
+    ) -> Result<Option<ContestedDocumentVotePollWinnerInfo>, Error> {
         let EndedContest {
             sorted_contenders,
             locked_vote_tally,
@@ -122,11 +124,15 @@ where
         } else {
             ContestedDocumentVotePollWinnerInfo::NoWinner
         };
-        Ok(winner_info)
+        Ok(Some(winner_info))
     }
 
     /// The body of generation 1, with the step picking and awarding a contest's winner given:
     /// [`Self::award_contest_winner_v1`] in generation 1, and its successor in generation 2.
+    ///
+    /// A contest the step returns no outcome for is neither recorded nor cleaned up: it is
+    /// returned with its end date, and is still listed under it. Generation 1's step returns
+    /// an outcome for every contest, so generation 1 returns none.
     pub(super) fn end_due_vote_polls_v1(
         &self,
         _last_committed_platform_state: &PlatformState,
@@ -135,7 +141,7 @@ where
         award_contest_winner: AwardContestWinner<C>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ContestLeftOpen>, Error> {
         // let's start by getting the vote polls that have finished. Version 0 carried two
         // testnet clean-ups of protocol versions 1 and 2; this version only runs from
         // protocol version 14, so it reads only what is due by the block time
@@ -214,6 +220,7 @@ where
             }
         }
 
+        let mut contests_left_open: Vec<ContestLeftOpen> = vec![];
         // Check if awarding is disabled
         let vote_polls_with_info = contested_vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
                 let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
@@ -275,7 +282,7 @@ where
                             identifiers_voting_for_contenders.append(&mut other_contenders);
 
                             // We pick the winner and award the document to it
-                            let winner_info = award_contest_winner(
+                            let Some(winner_info) = award_contest_winner(
                                 self,
                                 block_info,
                                 EndedContest {
@@ -287,7 +294,14 @@ where
                                 },
                                 transaction,
                                 platform_version,
-                            )?;
+                            )?
+                            else {
+                                contests_left_open.push((
+                                    end_date,
+                                    resolved_contested_document_resource_vote_poll,
+                                ));
+                                return Ok(None);
+                            };
                             // We want to keep a record of how everyone voted
                             self.keep_record_of_finished_contested_resource_vote_poll(
                                 block_platform_state,
@@ -298,10 +312,10 @@ where
                                 transaction,
                                 platform_version,
                             )?;
-                            Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
+                            Ok(Some(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders)))
                         }
                     }
-                }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
+                }).collect::<Result<Vec<Option<ResolvedVotePollWithVotes>>, Error>>()?.into_iter().flatten().collect::<Vec<ResolvedVotePollWithVotes>>();
                 Ok((end_date, vote_polls_with_votes))
             }).collect::<Result<BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>, Error>>()
 ?;
@@ -330,7 +344,7 @@ where
             )?;
         }
 
-        Ok(())
+        Ok(contests_left_open)
     }
 
     /// Closes one yes/no poll whose time has come: tallies it, records the result in its
@@ -421,14 +435,21 @@ pub(super) struct EndedContest<'a> {
 }
 
 /// The step of ending a contest that picks its winner, awards it the document and returns the
-/// outcome to record
-pub(super) type AwardContestWinner<C> = fn(
-    &Platform<C>,
-    &BlockInfo,
-    EndedContest,
-    TransactionArg,
-    &PlatformVersion,
-) -> Result<ContestedDocumentVotePollWinnerInfo, Error>;
+/// outcome to record, or `None` to leave the contest as it is
+pub(super) type AwardContestWinner<C> =
+    fn(
+        &Platform<C>,
+        &BlockInfo,
+        EndedContest,
+        TransactionArg,
+        &PlatformVersion,
+    ) -> Result<Option<ContestedDocumentVotePollWinnerInfo>, Error>;
+
+/// A contest its end left as it was, and the end date it is listed under
+pub(super) type ContestLeftOpen = (
+    TimestampMillis,
+    ContestedDocumentResourceVotePollWithContractInfo,
+);
 
 /// The earliest of tied contenders: by creation time, then block height, then core height,
 /// then id. Version 0 awarded the latest.

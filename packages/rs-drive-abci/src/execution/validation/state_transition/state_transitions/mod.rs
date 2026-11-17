@@ -3900,7 +3900,7 @@ pub(in crate::execution) mod tests {
         /// tests). This test deliberately writes the corrupt state directly to
         /// grovedb (bypassing validation) to reproduce the consequence the
         /// validation fix prevents. Protocol version 14 (`check_for_ended_vote_polls`
-        /// 1); from protocol version 15 the contest ends with no winner instead.
+        /// 1); from protocol version 15 the contest is left open instead.
         #[tokio::test]
         async fn widening_byte_array_max_items_halts_vote_poll_resolver() {
             let result = run_contest_then_resolve(
@@ -3945,15 +3945,16 @@ pub(in crate::execution) mod tests {
             );
         }
 
-        /// From protocol version 15 a contender whose document does not decode cannot
-        /// win: with no contender left the contest ends with no winner.
+        /// From protocol version 15 a contest whose top contenders hold documents that do
+        /// not decode is left open, and the block goes through.
         #[tokio::test]
-        async fn should_end_the_contest_when_no_contender_decodes_at_the_latest_protocol_version() {
+        async fn should_leave_the_contest_open_when_no_contender_decodes_at_the_latest_protocol_version(
+        ) {
             let result = run_contest_then_resolve(true, PlatformVersion::latest()).await;
 
             assert!(
                 result.is_ok(),
-                "the contest must end with the block; got {:?}",
+                "the block must go through; got {:?}",
                 result
             );
         }

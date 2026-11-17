@@ -2495,7 +2495,6 @@ dependencies = [
  "file-rotate",
  "grovedb-bincode",
  "grovedb-commitment-tree",
- "grovedb-merk",
  "grovedb-path",
  "grovedb-storage",
  "hex",
