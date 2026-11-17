@@ -6,6 +6,13 @@
 //! endpoints, quorum keys ([`context`]) and wallet ([`signer`]). Each entry
 //! point ([`client`]) forwards to `dash-sdk` and returns a [`ffi::Status`].
 //! No panic reaches C++: every entry point runs under [`guarded`].
+//!
+//! The shared structs of [`ffi`] are laid out in the generated header
+//! (`dash/sdk/ffi.h`), which each build stages next to its static archive.
+//! The two go together. A struct that gains a member changes its layout, so
+//! an embedder that takes a new archive rebuilds every caller against the
+//! header of the same build: an old header passes and reads these structs at
+//! the old offsets.
 
 #[cfg(panic = "abort")]
 compile_error!("dash-sdk-cxx requires panic = \"unwind\"; its FFI guards rely on catch_unwind");
