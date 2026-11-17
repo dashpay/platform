@@ -1121,12 +1121,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ),
         }
 
-        // 4e. The sender's shielded payment address for this contact, when the
-        //     identity's shielded account was proven against the seed in this
-        //     session and the network's contact requests carry one; the request
-        //     goes without it otherwise.
+        // 4e. The sender's shielded payment address for this contact, when
+        //     `crypto` proves the identity's slot (the identity carries the master
+        //     key the seed derives there), the slot's shielded account is bound
+        //     and the network's contact requests carry one; the request goes
+        //     without it otherwise.
         let shielded_address = self
-            .contact_shielded_address(sender_identity_id, recipient_identity_id, account_reference)
+            .contact_shielded_address(
+                sender_identity_id,
+                recipient_identity_id,
+                account_reference,
+                crypto,
+            )
             .await?;
 
         // 5. Build the signing key reference for document signing.

@@ -1660,7 +1660,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // request's is (`IdentityWallet::contact_shielded_address`): the address
         // the sender's shielded account gives this request alone, or none.
         let shielded_address = self
-            .contact_shielded_address(sender_identity_id, recipient_identity_id, account_reference)
+            .contact_shielded_address(
+                sender_identity_id,
+                recipient_identity_id,
+                account_reference,
+                crypto,
+            )
             .await?;
         let extended_public_key: [u8; COMPACT_XPUB_LEN] =
             xpub_bytes.as_slice().try_into().map_err(|_| {
@@ -9039,16 +9044,16 @@ mod tests {
     }
 
     /// A private request sent with no address handed to it carries the one the
-    /// sender's wallet derives. Alice's identity shielded account is prepared
-    /// against her seed, and Bob reads from the store the address that account
-    /// derives for this request: its sender, its recipient and its account
-    /// reference.
+    /// sender's wallet derives, with nothing prepared beforehand: the send
+    /// proves Alice's slot through her crypto provider, and Bob reads from the
+    /// store the address her identity shielded account derives for this
+    /// request: its sender, its recipient and its account reference.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_carry_the_derived_shielded_address_in_a_private_contact_request() {
         let mut alice = identity(ALICE_PHRASE, ALICE);
         // The key the seed derives for identity index 0, as the identity's
-        // MASTER key: what preparing the identity's shielded account proves.
+        // MASTER key: what the send proves through Alice's crypto provider.
         let master =
             key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
                 .expect("master key");
@@ -9092,10 +9097,6 @@ mod tests {
             .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
             .await
             .expect("bound");
-        alice_wallet
-            .prepare_shielded_identity_address(&seed(ALICE_PHRASE), &alice.id(), &coordinator)
-            .await
-            .expect("the identity's shielded account is prepared");
 
         let kept = Arc::new(Mutex::new(Vec::new()));
         let sent = alice_wallet

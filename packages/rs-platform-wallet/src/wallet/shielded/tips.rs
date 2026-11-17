@@ -52,7 +52,7 @@ impl PreparedTipAccount {
 /// master key is another wallet's or another index's. A disabled key still
 /// counts: rotating the master key does not change the index the identity
 /// was created at.
-fn carries_master_key(identity: &dpp::identity::Identity, key_hash: &[u8; 20]) -> bool {
+pub(crate) fn carries_master_key(identity: &dpp::identity::Identity, key_hash: &[u8; 20]) -> bool {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};

@@ -876,10 +876,9 @@ impl PlatformWallet {
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
-            contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(
-                Arc::clone(&shielded_keys),
-                Arc::clone(&prepared_tip_accounts),
-            ),
+            contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(Arc::clone(
+                &shielded_keys,
+            )),
         };
 
         let platform = PlatformAddressWallet::new(
