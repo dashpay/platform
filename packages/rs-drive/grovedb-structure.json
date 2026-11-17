@@ -157,6 +157,12 @@
       "is_tree": false,
       "is_opaque": false,
       "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
     }
   ],
   "flag_kinds": [
