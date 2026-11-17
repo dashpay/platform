@@ -74,6 +74,16 @@ class AssetLockResumableDaoTest {
             .map { it.outPointHex }
             .sorted()
 
+    @Test
+    fun `conflicted output does not prove finality or hide another finalized output`() = runTest {
+        val txid = "ab".repeat(32)
+        insert("$txid:0", 7)
+        assertEquals(null, db.assetLockDao().maxStatusForTxid(txid))
+        assertEquals(emptyList<String>(), resumableAddressOutpoints())
+        insert("$txid:1", 2)
+        assertEquals(2, db.assetLockDao().maxStatusForTxid(txid))
+    }
+
     // ── observeResumableAddressTopUps ─────────────────────────────────
 
     /**

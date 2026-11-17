@@ -45,6 +45,7 @@ where
 pub use provider::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
 };
+pub use transfer::{FeeStrategyByAddress, FeeStrategyResolveError, FeeStrategyStepByAddress};
 #[cfg(feature = "shielded")]
 pub(crate) use wallet::merge_platform_payment_candidate_addresses;
 pub use wallet::PlatformAddressWallet;

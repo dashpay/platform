@@ -58,6 +58,7 @@
 
 use std::collections::BTreeMap;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
@@ -270,8 +271,6 @@ impl IdentityWallet {
         // rejection. A missed local add self-heals on the next identity
         // re-sync. This mirrors `register_from_addresses` Step 3.
         {
-            use dpp::identity::accessors::IdentityGettersV0;
-
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => match info.identity_manager.add_identity(

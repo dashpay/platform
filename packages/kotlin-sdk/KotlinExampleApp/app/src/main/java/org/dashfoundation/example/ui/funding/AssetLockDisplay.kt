@@ -71,6 +71,8 @@ val AssetLockEntity.statusLabel: String
         // Core finality proven, Platform-side consumption unknown.
         // Rendered as "Unknown(5)" before this branch existed.
         5 -> "RecoveredFromChain"
+        6 -> "DrainCompleted"
+        7 -> "Funding conflicted"
         else -> "Unknown($statusRaw)"
     }
 

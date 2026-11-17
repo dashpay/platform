@@ -394,6 +394,12 @@ impl ShieldedInstall<'_> {
     }
 }
 
+/// A failed sync pass, with the subwallet snapshot it ran for.
+struct PassFailure {
+    subwallets: Vec<(SubwalletId, AccountViewingKeys)>,
+    error: PlatformWalletError,
+}
+
 impl NetworkShieldedCoordinator {
     /// Build a new coordinator. Called by
     /// `PlatformWalletManager::configure_shielded` (Phase 1) on
@@ -1220,7 +1226,10 @@ impl NetworkShieldedCoordinator {
     /// SwiftData rows) after `clear()` succeeds. If a reset fails
     /// silently the host could drop its rows while the shared tree
     /// stays populated, and the next cold resync would gate-skip every
-    /// re-downloaded position against the stale `tree_size`.
+    /// re-downloaded position against the stale `tree_size`. An error does not
+    /// prove the tree is unchanged: a reset whose post-commit durability
+    /// checkpoint failed or was busy has taken effect and the tree is empty.
+    /// Keep the rows and retry; a retry just resets again.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that
@@ -1255,9 +1264,9 @@ impl NetworkShieldedCoordinator {
             }
             // Verify the reset actually landed to 0 leaves under the SAME
             // write guard. `reset_commitment_tree` can theoretically report
-            // Ok while leaving the on-disk tree populated (e.g. a checkpoint
-            // that didn't take, or a shardtree reopen that re-materialized a
-            // cached frontier). Without this check `clear()` would return Ok,
+            // Ok while leaving the on-disk tree populated (e.g. a shardtree
+            // reopen that re-materialized a cached frontier). Without this
+            // check `clear()` would return Ok,
             // the host would wipe its own Room/SwiftData rows, and the next
             // cold resync would gate-skip every re-downloaded position against
             // the still-full tree — the exact "Clear did nothing, tree frozen
@@ -1325,6 +1334,42 @@ impl NetworkShieldedCoordinator {
         Ok(())
     }
 
+    /// Empty only the commitment tree and rewind all subwallet scan cursors.
+    /// Notes, nullifiers, spent status, pending spends, and registrations survive.
+    /// The next sync performs a full rescan from zero, costing bandwidth and
+    /// trial decryption proportional to the entire pool. Never called automatically.
+    /// The reset itself is atomic: if it rolls back, the tree stays as it was,
+    /// and so do the cursors unless the tree was already empty, when they are
+    /// rewound. A durability checkpoint that fails or is busy after COMMIT also
+    /// returns an error, but the reset has then taken effect and the cursors
+    /// are rewound; a retry just resets again.
+    pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let mut store = self.store.write().await;
+        // The reset is atomic, so the cursors follow the live tree: rewound
+        // whenever it is empty (including a committed reset whose durability
+        // checkpoint failed, and a rollback on a tree that was already empty,
+        // which is harmless), untouched when a rollback leaves leaves behind,
+        // so the next pass reports the same inconsistency again.
+        let reset = store.reset_commitment_tree();
+        let remaining = store.tree_size();
+        if matches!(remaining, Ok(0)) {
+            store.rewind_scan_watermarks();
+        }
+        // Either way the next pass runs at once: a rescan, or a fresh verdict.
+        if let Ok(mut caught_up) = self.last_caught_up_at.lock() {
+            *caught_up = None;
+        }
+        reset?;
+        let remaining = remaining?;
+        if remaining != 0 {
+            return Err(PlatformWalletError::ShieldedTreeUpdateFailed(format!(
+                "commitment tree still has {remaining} leaves after rebuild reset"
+            )));
+        }
+        Ok(())
+    }
+
     /// Discharge the private payment journal records of the private contact
     /// requests each registered wallet's private sync read back and recorded
     /// durably (`WalletPersister::note_read_back_private_entries`).
@@ -1375,7 +1420,10 @@ impl NetworkShieldedCoordinator {
     /// appended to the local tree and publishes nothing else (see
     /// [`sync_notes_across`]): the pass then returns the empty summary,
     /// so the manager reports no completion and the host sees no
-    /// partial ledger. A stop that lands after the scan completed skips
+    /// partial ledger. The exception is a consumed prefix that proves the
+    /// local tree inconsistent: that pass fails every wallet with
+    /// `TreeInconsistent` ([`Self::try_sync`] returns the error), as a
+    /// completed pass would. A stop that lands after the scan completed skips
     /// the remaining network work (spend re-drives, stranded releases,
     /// identity-shield re-drives) but still runs the store-only steps
     /// and flushes the completed scan to the host persisters. The
@@ -1385,6 +1433,33 @@ impl NetworkShieldedCoordinator {
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
     pub async fn sync(&self, force: bool, cancel: &CancellationToken) -> ShieldedSyncPassSummary {
+        match self.run_pass(force, cancel).await {
+            Ok(summary) => summary,
+            // Attribute the failure to the wallets the pass ran for, not to
+            // whatever the registry holds after a concurrent (un)register.
+            Err(PassFailure { subwallets, error }) => self.fail_all_wallets(&subwallets, &error),
+        }
+    }
+
+    /// Run the same pass as [`Self::sync`], preserving typed failures for callers
+    /// that need to distinguish an inconsistent tree from a transient sync error.
+    pub async fn try_sync(
+        &self,
+        force: bool,
+        cancel: &CancellationToken,
+    ) -> Result<ShieldedSyncPassSummary, PlatformWalletError> {
+        self.run_pass(force, cancel)
+            .await
+            .map_err(|failure| failure.error)
+    }
+
+    /// Body of [`Self::sync`] / [`Self::try_sync`]; a failure carries the
+    /// pass's own subwallet snapshot.
+    async fn run_pass(
+        &self,
+        force: bool,
+        cancel: &CancellationToken,
+    ) -> Result<ShieldedSyncPassSummary, PassFailure> {
         // A stop that landed before any work: nothing to finalize, so
         // return the empty summary without touching Platform or the
         // store (the manager then skips the completion event). Checked
@@ -1392,7 +1467,7 @@ impl NetworkShieldedCoordinator {
         // report one caught-up wallet each for a pass that never ran.
         if cancel.is_cancelled() {
             tracing::debug!("Coordinator sync cancelled before it started");
-            return ShieldedSyncPassSummary::default();
+            return Ok(ShieldedSyncPassSummary::default());
         }
 
         // Every pass, cooldown or not: the private requests a private sync read
@@ -1420,7 +1495,7 @@ impl NetworkShieldedCoordinator {
                 cooldown_total_secs = CAUGHT_UP_COOLDOWN.as_secs(),
                 "Coordinator sync skipped — within caught-up cooldown"
             );
-            return Self::cooldown_skip_summary(self).await;
+            return Ok(Self::cooldown_skip_summary(self).await);
         }
 
         // Snapshot the flat subwallet registry. This Vec is both
@@ -1431,12 +1506,24 @@ impl NetworkShieldedCoordinator {
             accounts.iter().map(|(id, v)| (*id, v.clone())).collect()
         };
 
-        let mut summary = ShieldedSyncPassSummary::default();
         if subwallets.is_empty() {
-            summary.sync_unix_seconds = Self::now_unix();
-            return summary;
+            return Ok(ShieldedSyncPassSummary {
+                sync_unix_seconds: Self::now_unix(),
+                ..Default::default()
+            });
         }
+        self.sync_subwallets(&subwallets, cancel)
+            .await
+            .map_err(|error| PassFailure { subwallets, error })
+    }
 
+    /// Scan, reconcile, and persist one pass over a non-empty `subwallets`
+    /// snapshot.
+    async fn sync_subwallets(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        cancel: &CancellationToken,
+    ) -> Result<ShieldedSyncPassSummary, PlatformWalletError> {
         // Snapshot armed reservations and prefetch Platform's recorded
         // anchor set BEFORE the note scan. The release pass after the scan
         // may only act on this pre-scan pair: an anchor already absent from
@@ -1454,7 +1541,7 @@ impl NetworkShieldedCoordinator {
         // in flight simply drops it: the release pass is skipped on a
         // cancelled pass anyway, and the scan below bails before locking.
         let stranded_release = cancel
-            .run_until_cancelled(self.prefetch_stranded_release(&subwallets))
+            .run_until_cancelled(self.prefetch_stranded_release(subwallets))
             .await
             .flatten();
 
@@ -1468,19 +1555,15 @@ impl NetworkShieldedCoordinator {
         // Second, distinct signal: commitments committed to the local
         // tree as the interleaved consumer drains the SDK stream.
         let on_tree_progress = self.tree_progress_handler();
-        let notes = match super::sync::sync_notes_across(
+        let notes = super::sync::sync_notes_across(
             &self.sdk,
             &self.store,
-            &subwallets,
+            subwallets,
             on_progress.as_ref(),
             on_tree_progress.as_ref(),
             cancel,
         )
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => return self.fail_all_wallets(&subwallets, &e),
-        };
+        .await?;
         // Everything below that talks to the network is skipped once the
         // pass is cancelled; the store-only steps and the host flush of a
         // COMPLETED scan still run (see the method docs).
@@ -1504,7 +1587,7 @@ impl NetworkShieldedCoordinator {
                 *guard = None;
             }
             tracing::debug!("Coordinator sync cancelled; the scan published nothing");
-            return summary;
+            return Ok(ShieldedSyncPassSummary::default());
         }
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
@@ -1539,7 +1622,7 @@ impl NetworkShieldedCoordinator {
             heightless,
         }) = stranded_release.filter(|_| !cancelled)
         {
-            for (id, _) in &subwallets {
+            for (id, _) in subwallets {
                 // Network broadcasts: a stop that lands after the scan's
                 // snapshot above stops the loop here, and the helper
                 // checks the token before each request it starts.
@@ -1568,10 +1651,7 @@ impl NetworkShieldedCoordinator {
             }
         }
 
-        let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
-            Ok(r) => r,
-            Err(e) => return self.fail_all_wallets(&subwallets, &e),
-        };
+        let balances_per_sub = super::sync::balances_across(&self.store, subwallets).await?;
 
         // Restore-path activity derivation: reconstruct per-operation
         // activity entries best-effort from the notes / outgoing notes
@@ -1590,7 +1670,7 @@ impl NetworkShieldedCoordinator {
         // confirm, never extend.
         let mut notes = notes;
         if let Err(e) = self
-            .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
+            .derive_activity_into_changeset(subwallets, &mut notes.changeset)
             .await
         {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
@@ -1674,16 +1754,16 @@ impl NetworkShieldedCoordinator {
         // `ShieldedSyncSummary` shape that
         // `PlatformEventManager::on_shielded_sync_completed`
         // already speaks. Same emission shape as Phase 2a.
-        summary =
-            build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
+        let mut summary =
+            build_per_wallet_summary(subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
-        summary
+        Ok(summary)
     }
 
     /// Build a `ShieldedSyncPassSummary` where every registered
-    /// wallet's outcome is the supplied error string. Used when
-    /// the network-wide SDK note scan (sync_notes_across) errors
-    /// before any per-wallet result can be produced.
+    /// wallet's outcome is the supplied error: typed for an
+    /// inconsistent tree, its message otherwise. Used when the
+    /// network-wide pass errors before any per-wallet result exists.
     fn fail_all_wallets(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
@@ -1699,9 +1779,17 @@ impl NetworkShieldedCoordinator {
                 error = %e,
                 "Network-wide shielded sync failed"
             );
-            summary
-                .wallet_results
-                .insert(wallet_id, WalletShieldedOutcome::Err(e.to_string()));
+            let outcome = match *e {
+                PlatformWalletError::ShieldedTreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                } => WalletShieldedOutcome::TreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                },
+                _ => WalletShieldedOutcome::Err(e.to_string()),
+            };
+            summary.wallet_results.insert(wallet_id, outcome);
         }
         summary.sync_unix_seconds = Self::now_unix();
         summary

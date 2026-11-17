@@ -9,9 +9,10 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
-    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
-    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
-    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockOperationRevisionFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
+    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockOperationsFn,
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
@@ -407,6 +408,14 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
+        persist_asset_lock_operations: slot!(
+            on_persist_asset_lock_operations_fn,
+            PersistAssetLockOperationsFn
+        ),
+        load_asset_lock_operation_revision: slot!(
+            on_load_asset_lock_operation_revision_fn,
+            LoadAssetLockOperationRevisionFn
         ),
     }
 }
@@ -989,6 +998,7 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset_lock_operation_persistence::AssetLockOperationEntryFFI;
     use crate::contact_persistence::{
         ContactRequestRemovalFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
     };
@@ -1865,6 +1875,45 @@ mod tests {
         assert!(parsed.persist_private_contact_scan_state.is_none());
         assert!(parsed.load_private_contact_scan_state.is_none());
         assert!(parsed.load_private_contact_scan_state_free.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_ordered_asset_lock_callbacks() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AssetLockOperationEntryFFI,
+            _: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(_: *mut c_void, _: *const u8, _: *const u8, _: *mut u64) -> i32 {
+            0
+        }
+        let mut extension = PersistenceCallbacksExtension {
+            on_persist_asset_lock_operations_fn: Some(persist),
+            on_load_asset_lock_operation_revision_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&extension) };
+        assert!(parsed.persist_asset_lock_operations.is_some());
+        assert!(parsed.load_asset_lock_operation_revision.is_some());
+        extension.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_asset_lock_operation_revision_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&extension) };
+        assert!(parsed.persist_asset_lock_operations.is_some());
+        assert!(parsed.load_asset_lock_operation_revision.is_none());
+        extension.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_asset_lock_operations_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&extension) };
+        assert!(parsed.persist_asset_lock_operations.is_none());
+        assert!(parsed.load_asset_lock_operation_revision.is_none());
     }
 
     #[test]

@@ -75,6 +75,8 @@ public struct WalletDrainOutcome: Sendable {
         case notSent = 0
         case pending = 1
         case completed = 2
+        /// Original funding conflicted. This UUID cannot fund a replacement transaction.
+        case conflicted = 3
     }
 
     public let state: State

@@ -501,6 +501,7 @@ jobs:
             --package rs-sdk-trusted-context-provider \
             --package platform-value \
             --package platform-encryption \
+            --package dash-platform-macros \
             --package rs-dapi \
             --package platform-wallet \
             --package platform-wallet-storage \

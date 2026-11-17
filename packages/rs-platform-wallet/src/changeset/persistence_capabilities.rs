@@ -109,6 +109,10 @@ impl PersistenceCapabilities {
     /// Asset-lock operation UUIDs survive store/load, including consumed tombstones.
     /// Missing or malformed persistence data fails load rather than becoming an
     /// empty result. Required before a wallet drain can treat absence as not sent.
+    /// Operation bindings survive conflict cleanup. Revision-aware stores reject
+    /// stale snapshots/removals and apply explicit same-outpoint recovery CAS.
+    /// A callback backend must attest this only with revision-aware write/read
+    /// carriers; UUID-only legacy callbacks do not satisfy the contract.
     pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
     /// The Orchard recipient of a shielded asset-lock funding survives
@@ -180,14 +184,15 @@ impl PersistenceCapabilities {
     pub const PRIVATE_CONTACT_SCAN_STATE_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::PRIVATE_CONTACT_REQUEST_SCAN_STATE.0);
 
-    /// Capabilities required to durably reconcile an asset-lock status and
-    /// restore that exact row after process restart.
+    /// Capabilities required to atomically persist reconciliation of an
+    /// already-loaded tracked asset lock.
     pub const ASSET_LOCK_RECONCILIATION: Self =
-        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0);
 
     /// Durable correlation and funding-key indices required for wallet drain.
     pub const WALLET_DRAIN: Self = Self(
         Self::ASSET_LOCK_RECONCILIATION.0
+            | Self::WALLET_RESTORE.0
             | Self::ASSET_LOCK_FUNDING_INDICES.0
             | Self::ASSET_LOCK_OPERATION_IDS.0,
     );
@@ -338,8 +343,24 @@ mod tests {
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
-            0x281
+            0x201
         );
+    }
+
+    #[test]
+    fn reconciliation_requires_atomic_tracked_asset_lock_persistence() {
+        let required = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+        assert!(required.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
+        assert_eq!(required, PersistenceCapabilities::ASSET_LOCK_RECONCILIATION);
+        for incomplete in [
+            PersistenceCapabilities::NONE,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+            PersistenceCapabilities::TRACKED_ASSET_LOCKS,
+            PersistenceCapabilities::WALLET_RESTORE,
+        ] {
+            assert!(!incomplete.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
+        }
     }
 
     #[test]
