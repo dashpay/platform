@@ -336,6 +336,13 @@ impl ShieldedAdmission<'_> {
         std::ptr::eq(self.coordinator, coordinator)
     }
 
+    /// The Clear epoch this admission was granted under. No Clear completes
+    /// while the admission is held, so it stays current until it drops; an
+    /// operation records it with state that must not outlive a Clear.
+    pub(crate) fn epoch(&self) -> u64 {
+        self._state.epoch
+    }
+
     /// Open an install transaction for `wallet_id`, taking the coordinator's
     /// lifecycle mutex for the returned guard's lifetime.
     ///
@@ -529,6 +536,13 @@ impl NetworkShieldedCoordinator {
         }
     }
 
+    /// The current Clear epoch without waiting, or `None` while a Clear holds
+    /// the admission or is queued for it. For a synchronous check of state
+    /// recorded under an earlier admission's [`epoch`](ShieldedAdmission::epoch).
+    pub(crate) fn settled_epoch(&self) -> Option<u64> {
+        self.admission.try_read().ok().map(|state| state.epoch)
+    }
+
     fn admission_from<'a>(
         &'a self,
         state: tokio::sync::RwLockReadGuard<'a, ClearState>,
@@ -560,6 +574,27 @@ impl NetworkShieldedCoordinator {
     /// coordinator agree on the network.
     pub fn network(&self) -> dashcore::Network {
         self.network
+    }
+
+    /// Refuse a wallet of another network. A bind derives the wallet's
+    /// viewing keys for the wallet's network: registered on this coordinator
+    /// they would be scanned for on another network's chain, so the bind
+    /// would succeed and the wallet would never see a note.
+    ///
+    /// Both the network this coordinator is labelled with and the network of
+    /// the SDK it scans through must be the wallet's. `new` takes the two
+    /// separately, so a label alone does not say which chain is scanned.
+    pub(crate) fn ensure_network(
+        &self,
+        wallet_network: dashcore::Network,
+    ) -> Result<(), PlatformWalletError> {
+        if self.network != wallet_network || self.sdk.network != wallet_network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?} (its SDK for {:?}), this wallet for {:?}",
+                self.network, self.sdk.network, wallet_network
+            )));
+        }
+        Ok(())
     }
 
     /// Install (or replace) the per-chunk progress handler. The

@@ -56,6 +56,7 @@ use {
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
     },
+    super::shielded::tips::PreparedTipAccount,
     super::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet,
         ShieldedCoordinatorSlot, ShieldedStore,
@@ -435,6 +436,25 @@ pub struct PlatformWallet {
     /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes changes to the bound shielded account set. A bind
+    /// replaces the registration with the accounts it was given, so a
+    /// caller that reads the current set and binds an augmented copy (tip
+    /// preparation) must not interleave with another bind, or the other
+    /// bind's ordinary accounts are dropped and their live state purged.
+    /// Taken by every bind entry point, tip preparation and
+    /// `shielded_add_account`, after the generation's lifecycle gate,
+    /// `shield_guard` and the coordinator's admission.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
+    /// The tip account each identity's address was last prepared for in
+    /// this session, after its slot was proved with the seed. Publication
+    /// of a wallet tip address requires it, so an address is published only
+    /// for the identity and slot it was prepared for, and invalidated by a
+    /// coordinator Clear and by the wallet's removal. `Arc` so cloned wallet
+    /// handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) prepared_tip_accounts:
+        Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -459,6 +479,38 @@ pub struct PlatformWallet {
     /// ([`Self::shielded_coordinator`]).
     #[cfg(feature = "shielded")]
     shielded_coordinator: ShieldedCoordinatorSlot,
+}
+
+/// Refuse an account number of the range reserved for identity accounts in
+/// a caller's list of ordinary accounts.
+///
+/// Account `0x40000000 + i` is the account of the identity at slot `i`. Bound
+/// as an ordinary account it would be that same account, with the same
+/// address, viewing key and stored rows, so funds meant for one would be the
+/// other's. The wallet binds an identity account itself: for an identity it
+/// holds, for a persisted viewing key, and in a preparation.
+#[cfg(feature = "shielded")]
+fn ensure_ordinary_shielded_accounts(accounts: &[u32]) -> Result<(), PlatformWalletError> {
+    match accounts
+        .iter()
+        .find(|account| super::shielded::is_shielded_identity_account(**account))
+    {
+        Some(account) => Err(PlatformWalletError::InvalidParameter(format!(
+            "shielded account {account} is in the range reserved for identity accounts; an \
+             identity's account is bound from the identity, not by its number"
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// What [`PlatformWallet::lock_for_shielded_bind`] holds for a bind: the
+/// manager's coordinator, and the wallet locks taken before its admission.
+/// Fields drop in declaration order, the reverse of the lock order.
+#[cfg(feature = "shielded")]
+struct ShieldedBindLocks<'a> {
+    coordinator: Arc<NetworkShieldedCoordinator>,
+    _shield_guard: tokio::sync::MutexGuard<'a, ()>,
+    _lifecycle: tokio::sync::RwLockReadGuard<'a, ()>,
 }
 
 impl PlatformWallet {
@@ -841,6 +893,10 @@ impl PlatformWallet {
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
+            shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]
             private_payment_restores: Arc::default(),
@@ -867,11 +923,35 @@ impl PlatformWallet {
     /// can rebind via [`bind_shielded_from_persisted`] without
     /// resolving the mnemonic at all.
     ///
-    /// Idempotent: a second call replaces the previously-bound
-    /// shielded wallet (e.g. after a network switch).
+    /// Idempotent: a second call replaces the previously-bound shielded
+    /// wallet.
     ///
     /// `accounts` must be non-empty; pass `&[0]` for the
-    /// single-account default.
+    /// single-account default. They are the ordinary accounts to bind,
+    /// not the whole bound set. The bind adds to them:
+    ///
+    /// - the identity account (`shielded_identity_account_index`) of
+    ///   every identity this wallet holds with a recorded index;
+    /// - every identity account with a persisted viewing key, so the
+    ///   account of an identity removed since keeps scanning.
+    ///
+    /// The bound set can therefore be larger than the request, and each
+    /// added account is one more to scan. Pass the ordinary accounts
+    /// again on the next bind, never the bound set: it can hold more
+    /// accounts than the host bindings accept in one request.
+    ///
+    /// Fails, before anything is derived, stored or registered, when the
+    /// manager's coordinator is of another network than this wallet's, and
+    /// for an account number of the range reserved for identity accounts
+    /// (`is_shielded_identity_account`): such an account is bound from its
+    /// identity or its persisted viewing key, never by its number, so an
+    /// ordinary account cannot be the account of an identity.
+    ///
+    /// Holds the wallet generation's lifecycle gate, `shield_guard` and the
+    /// coordinator's admission from the attachment check until the keys are
+    /// stored and installed, so neither a removal of the wallet nor a Clear
+    /// lands in between, and a bind admitted after either stores nothing
+    /// stale. A caller must hold none of them.
     ///
     /// [`bind_shielded_from_persisted`]: Self::bind_shielded_from_persisted
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
@@ -881,7 +961,45 @@ impl PlatformWallet {
         seed: &[u8],
         accounts: &[u32],
     ) -> Result<(), PlatformWalletError> {
-        use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
+        let locks = self.lock_for_shielded_bind(accounts).await?;
+        let admission = locks.coordinator.admit().await?;
+        let _config = self.shielded_config_lock.lock().await;
+        self.bind_shielded_locked(seed, accounts, &locks.coordinator, &admission)
+            .await
+    }
+
+    /// The locks every bind entry point takes before its admission, in the
+    /// lock order: the generation's lifecycle gate, then `shield_guard`.
+    /// Registration is serialized with identity-shield proof construction,
+    /// and a bind queued behind a long shield holds no admission that would
+    /// stall a Clear. Checks the request and resolves the manager's
+    /// coordinator first, so a refused bind waits for nothing.
+    #[cfg(feature = "shielded")]
+    async fn lock_for_shielded_bind(
+        &self,
+        accounts: &[u32],
+    ) -> Result<ShieldedBindLocks<'_>, PlatformWalletError> {
+        self.ensure_fvk_restart_capability()?;
+        if accounts.is_empty() {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(
+                "shielded wallet requires at least one account".to_string(),
+            ));
+        }
+        ensure_ordinary_shielded_accounts(accounts)?;
+        let coordinator = self.shielded_coordinator().await?;
+        coordinator.ensure_network(self.sdk.network)?;
+        let lifecycle = self.core().generation_payment_guard().await;
+        let shield_guard = self.shield_guard.lock().await;
+        Ok(ShieldedBindLocks {
+            coordinator,
+            _shield_guard: shield_guard,
+            _lifecycle: lifecycle,
+        })
+    }
+
+    /// Refuse a bind on a persister that cannot rebind seedlessly on restart.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn ensure_fvk_restart_capability(&self) -> Result<(), PlatformWalletError> {
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -893,31 +1011,49 @@ impl PlatformWallet {
                 missing.bits(),
             )));
         }
-        if accounts.is_empty() {
-            return Err(PlatformWalletError::ShieldedKeyDerivation(
-                "shielded wallet requires at least one account".to_string(),
-            ));
-        }
-        // Before anything is read or written: a wallet the manager has
-        // dropped must not persist viewing keys the host can no longer
-        // delete (see `ensure_shielded_attached`).
+        Ok(())
+    }
+
+    /// [`Self::bind_shielded`] for a caller that holds the generation's
+    /// lifecycle gate, `shield_guard`, `admission` (from `coordinator`) and
+    /// `shielded_config_lock`.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn bind_shielded_locked(
+        &self,
+        seed: &[u8],
+        accounts: &[u32],
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        admission: &ShieldedAdmission<'_>,
+    ) -> Result<(), PlatformWalletError> {
+        use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
+        // Under the bind's locks, before anything is read or written: a
+        // wallet the manager has dropped must not persist viewing keys the
+        // host can no longer delete (see `ensure_shielded_attached`).
         self.ensure_shielded_attached()?;
-        // Admitted before the host snapshot is read and held through the
-        // viewing-key write and the install: a Clear either finished, host
-        // wipe included, before the load, or waits until this bind is done.
-        // `shield_guard` first (the lock order): registration is serialized
-        // with identity-shield proof construction, and a bind queued behind
-        // a long shield holds no admission that would stall a Clear.
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
-        let admission = coordinator.admit().await?;
         let network = self.sdk.network;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        accounts.extend(self.discovered_tip_accounts().await?);
+        // Keep retired tip accounts scanning, including identities removed from
+        // the local manager after their address was published.
+        let start = self
+            .persister
+            .load()
+            .map_err(PlatformWalletError::from_load_failure)?;
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_identity_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
-            // `accounts` may contain duplicates; the BTreeMap
-            // dedups by definition. The full keyset (with its
-            // `SpendAuthorizingKey`) is dropped at the end of
+        for &account in &accounts {
+            // The full keyset (with its `SpendAuthorizingKey`) is dropped at the end of
             // this iteration — only the viewing half survives.
             let ks = OrchardKeySet::from_seed(seed, network, account)?;
             account_views.insert(account, ks.viewing_keys());
@@ -935,11 +1071,6 @@ impl PlatformWallet {
         // treat it like the malformed-row case below: surface it rather
         // than silently mixing two keys' state. The recovery is a
         // shielded Clear, which drops both sides at once.
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while binding shielded viewing keys: {e}"
-            ))
-        })?;
         for (account, views) in &account_views {
             let id = SubwalletId::new(self.wallet_id, *account);
             if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
@@ -980,7 +1111,7 @@ impl PlatformWallet {
         // because the loop above proved the derived keys equal the
         // persisted ones: the rows the restore filters on are unchanged
         // by that write.
-        self.install_shielded_views(&coordinator, &admission, account_views, start)
+        self.install_shielded_views(coordinator, admission, account_views, start)
             .await
     }
 
@@ -997,42 +1128,49 @@ impl PlatformWallet {
     /// rows); the caller then falls back to the seed path. A persisted
     /// row that fails to decode is an error, not a fallback — silent
     /// re-resolution would mask persistence corruption.
+    ///
+    /// `accounts` are the ordinary accounts, as for
+    /// [`bind_shielded`](Self::bind_shielded): the same identity accounts
+    /// are added to them, so the bound set can be larger than the
+    /// request. One of those without a persisted viewing key (an identity
+    /// found since the last seed-backed bind) also returns `Ok(false)`.
+    /// A coordinator of another network than this wallet's and an account
+    /// number of the identity range are refused the same way, and the same
+    /// locks are held the same way: a caller must hold none of them.
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded_from_persisted(
         &self,
         accounts: &[u32],
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
-        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
-        let capabilities = self.persister.persistence_capabilities();
-        if !capabilities.contains(required) {
-            let missing = capabilities.missing(required);
-            return Err(PlatformWalletError::Persistence(format!(
-                "shielded seedless restart requires persistence capabilities {:?} \
-                 (missing mask 0x{:x})",
-                missing.names(),
-                missing.bits(),
-            )));
-        }
-        if accounts.is_empty() {
-            return Err(PlatformWalletError::ShieldedKeyDerivation(
-                "shielded wallet requires at least one account".to_string(),
-            ));
-        }
-        self.ensure_shielded_attached()?;
-        // Guarded and admitted before the host snapshot is read, as
-        // `bind_shielded` is.
-        let _shield_guard = self.shield_guard.lock().await;
-        let coordinator = self.shielded_coordinator().await?;
+        let locks = self.lock_for_shielded_bind(accounts).await?;
+        let coordinator = &locks.coordinator;
         let admission = coordinator.admit().await?;
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while rebinding shielded viewing keys: {e}"
-            ))
-        })?;
+        let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_attached()?;
+        let start = self
+            .persister
+            .load()
+            .map_err(PlatformWalletError::from_load_failure)?;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        // Newly discovered identities require their tip accounts too. Missing
+        // FVKs must trigger seed-backed binding: skipping them would report a
+        // successful restart while silently omitting recoverable tip history.
+        accounts.extend(self.discovered_tip_accounts().await?);
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_identity_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
+        for &account in &accounts {
             let id = SubwalletId::new(self.wallet_id, account);
             let Some(fvk_bytes) = start.shielded.viewing_keys.get(&id) else {
                 return Ok(false);
@@ -1047,7 +1185,7 @@ impl PlatformWallet {
         }
         // Hand the already-loaded snapshot to the install step so the
         // restore doesn't pay a second full persister load.
-        self.install_shielded_views(&coordinator, &admission, account_views, start)
+        self.install_shielded_views(coordinator, &admission, account_views, start)
             .await?;
         Ok(true)
     }
@@ -1271,6 +1409,13 @@ impl PlatformWallet {
     /// historical funds for a freshly-added account should drop
     /// the commitment-tree DB and call [`bind_shielded`] again
     /// with the full account list.
+    ///
+    /// Holds the same locks as [`bind_shielded`](Self::bind_shielded), so a
+    /// removal or a Clear waits for an add in flight: a caller must hold
+    /// none of them.
+    ///
+    /// An account number of the range reserved for identity accounts is
+    /// refused, as in a bind.
     #[cfg(feature = "shielded")]
     pub async fn shielded_add_account(
         &self,
@@ -1278,6 +1423,7 @@ impl PlatformWallet {
         account: u32,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{OrchardKeySet, SubwalletId};
+        ensure_ordinary_shielded_accounts(&[account])?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -1289,15 +1435,18 @@ impl PlatformWallet {
                 missing.bits(),
             )));
         }
-        self.ensure_shielded_attached()?;
         // Guarded and admitted for the whole read-check-write-install span,
-        // as a bind is: no Clear lands between the snapshot read and the
-        // key's installation, none completes with this key's row still to be
-        // written, and no bind replaces the key slot between this add's
-        // check and its insert.
+        // as a bind is, in the same lock order: no removal or Clear lands
+        // between the snapshot read and the key's installation, none
+        // completes with this key's row still to be written, and no bind or
+        // tip preparation replaces the account set between this add's check
+        // and its insert.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _shield_guard = self.shield_guard.lock().await;
         let coordinator = self.shielded_coordinator().await?;
         let _admission = coordinator.admit().await?;
+        let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_attached()?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -1322,11 +1471,10 @@ impl PlatformWallet {
         // notes and their watermark attributed to a key that did not
         // produce them, undetectably (a later seedless bind derives its
         // keys FROM this row, so nothing downstream can see the swap).
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while adding shielded account {account}: {e}"
-            ))
-        })?;
+        let start = self
+            .persister
+            .load()
+            .map_err(PlatformWalletError::from_load_failure)?;
         let id = SubwalletId::new(self.wallet_id, account);
         if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
             if persisted.as_slice() != views.to_fvk_bytes().as_slice() {
@@ -1390,6 +1538,13 @@ impl PlatformWallet {
     /// user deleted, with the mnemonic already gone. An FVK discloses
     /// every incoming and outgoing note of its account, so the bind
     /// paths check here first, before writing anything.
+    ///
+    /// On its own this is a point-in-time observation. The bind paths, tip
+    /// preparation and `shielded_add_account` check it under the
+    /// generation's lifecycle gate, `shield_guard` and the admission, and
+    /// hold them through their host write; the removal sets the flag under
+    /// the gate's exclusive side and the other two, so it cannot complete in
+    /// between.
     #[cfg(feature = "shielded")]
     fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
@@ -1414,10 +1569,21 @@ impl PlatformWallet {
     /// bind either commit fully before the unregister purges it, or see
     /// the flag and refuse. Setting it afterwards would leave the
     /// window this closes.
+    ///
+    /// Also drops the identity accounts prepared in this session. A removed
+    /// wallet is no longer registered or persisted, so a handle that
+    /// outlives the removal must not report an account as prepared. The
+    /// removal runs under the lifecycle gate's exclusive side and a
+    /// preparation records under its shared side, so none is recorded
+    /// afterwards.
     #[cfg(feature = "shielded")]
     pub(crate) fn mark_shielded_detached(&self) {
         self.shielded_detached
             .store(true, std::sync::atomic::Ordering::Release);
+        self.prepared_tip_accounts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     /// The manager's shielded coordinator, the only one this wallet's
@@ -2144,17 +2310,17 @@ impl PlatformWallet {
     where
         P: OrchardProver,
     {
-        // Admitted for the spend, before the generation's gate (the shielded
-        // admission is the outermost lock), but only once the host has
-        // signed: a signing prompt never holds a Clear back.
-        let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
         // The generation's lifecycle gate, held across the liveness check,
         // the restore and the spend, before the wallet manager lock as the
         // teardown takes them: a removal cannot complete in between, so a
         // removed wallet's spend never records activity, recreating its
         // shielded state, or reaches the network.
         let _lifecycle = self.core().generation_payment_guard().await;
+        // Admitted for the spend, after the gate (the lock order), but only
+        // once the host has signed: a signing prompt never holds a Clear
+        // back.
+        let coordinator = self.shielded_coordinator().await?;
+        let _admission = coordinator.admit().await?;
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
                 self.wallet_id,
@@ -2971,6 +3137,10 @@ impl Clone for PlatformWallet {
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
             #[cfg(feature = "shielded")]
+            shielded_config_lock: self.shielded_config_lock.clone(),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
@@ -3158,6 +3328,12 @@ impl Drop for DeferredFinish {
 struct PrivatePaymentRestores {
     /// The store a restoration last succeeded from.
     restored_from: std::sync::Weak<RwLock<FileBackedShieldedStore>>,
+    /// How many restorations succeeded. A restoration that found the store
+    /// busy, or failed, reads it when it learns that and raises the wallet's
+    /// hold only if it is unchanged by the time the raise may go ahead: one
+    /// that succeeded from the same store meanwhile is the newer answer
+    /// ([`PrivatePaymentRestore::raise_hold`]).
+    restorations: u64,
     /// The store a deferred restoration is queued for.
     queued_for: std::sync::Weak<RwLock<FileBackedShieldedStore>>,
     /// How many deferred restorations were queued, for tests.
@@ -3198,36 +3374,69 @@ impl PrivatePaymentRestore {
         };
         match &restored {
             Ok(Some(_)) => {
-                self.restores_lock().restored_from = Arc::downgrade(self.coordinator.store());
                 self.persister.note_private_payment_restore(None);
+                // Released with the restorations locked, as a raise is made
+                // (`Self::raise_hold`): a raise that waited its turn either
+                // sees this restoration or comes wholly before it.
+                let mut restores = self.restores_lock();
+                restores.restored_from = Arc::downgrade(self.coordinator.store());
+                restores.restorations += 1;
                 self.persister.private_payments_restored();
             }
             Ok(None) if self.restored_from_this_store() => {}
-            Ok(None) => self.persister.hold_until_private_payments_restored(),
+            Ok(None) => self.raise_hold().await,
             Err(error) => {
                 self.persister
                     .note_private_payment_restore(Some(error.to_string()));
-                self.persister.hold_until_private_payments_restored();
+                self.raise_hold().await;
             }
         }
         restored
     }
 
-    /// Whether the requests the wallet tracks are durable now: at once for a
-    /// backend that commits inline, as each was stored before it was
-    /// tracked; after a flush that succeeds otherwise.
+    /// Raise the wallet's hold for a restoration that just found the store
+    /// busy or failed, unless one from this store succeeds before the raise
+    /// may go ahead.
+    ///
+    /// Raising waits for a held request's repeat broadcast in flight
+    /// (`WalletPersister::hold_until_private_payments_restored`), and another
+    /// restoration may succeed and release the hold during that wait. What
+    /// this one learned is then the older answer: raising the hold after the
+    /// release would leave a restored wallet held until some later
+    /// restoration. So the count of restorations is read now, and the hold
+    /// is raised only if it is unchanged, or the one that succeeded since
+    /// was from another store, checked with the restorations locked as the
+    /// release is made.
+    async fn raise_hold(&self) {
+        let restorations = self.restores_lock().restorations;
+        self.persister
+            .hold_until_private_payments_restored_while(|| {
+                let restores = self.restores_lock();
+                let overtaken = restores.restorations != restorations
+                    && restores
+                        .restored_from
+                        .upgrade()
+                        .is_some_and(|store| Arc::ptr_eq(&store, self.coordinator.store()));
+                (!overtaken).then_some(restores)
+            })
+            .await;
+    }
+
+    /// Whether the requests the wallet tracks are durable now
+    /// (`WalletPersister::flush_durably`): at once for a backend that commits
+    /// inline, as each was stored before it was tracked; after a flush that
+    /// succeeds otherwise, with no other flush in progress and none that
+    /// failed for good in this process. A flush that succeeds right after
+    /// one that failed for good wrote nothing of what that one dropped.
     fn settled_requests_durable(&self) -> bool {
-        if self.persister.store_commits_inline() {
-            return true;
-        }
-        match self.persister.flush() {
+        match self.persister.flush_durably() {
             Ok(()) => true,
-            Err(error) => {
+            Err(reason) => {
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
-                    %error,
-                    "the requests settling private payments are not flushed; their journal \
-                     records stay for a later restoration"
+                    ?reason,
+                    "the requests settling private payments are not known to be durable; \
+                     their journal records stay for a later restoration"
                 );
                 false
             }
@@ -3360,10 +3569,7 @@ impl PrivatePaymentRestore {
             .into_iter()
             .filter(|commitment| !self.persister.read_back_awaiting_flush(commitment))
             .collect();
-        if !settled.is_empty()
-            && !self.persister.buffered_writes_lost()
-            && self.settled_requests_durable()
-        {
+        if !settled.is_empty() && self.settled_requests_durable() {
             let store = if wait {
                 Some(self.coordinator.store().write().await)
             } else {
@@ -3939,6 +4145,49 @@ mod private_contact_request_payment_tests {
         );
         assert_eq!(queued(), 2);
         drop(store);
+    }
+
+    /// A restoration that found the store busy, and waits its turn to raise
+    /// the wallet's hold behind a held request's repeat broadcast, does not
+    /// raise it once another restoration from the store has succeeded
+    /// meanwhile: the newer answer stands, and the wallet is not left held.
+    #[tokio::test]
+    async fn should_not_raise_the_hold_over_a_restoration_that_succeeded_meanwhile() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet) = manager_with_wallet().await;
+        let coordinator = coordinator_on(dir.path(), wallet.sdk.network);
+        wallet
+            .attach_shielded_coordinator_for_test(&coordinator)
+            .await;
+        wallet.persister.private_payments_restored();
+
+        // As a held request's repeat broadcast, mid-dispatch.
+        let dispatching = wallet.persister.held_request_dispatch().await;
+        let store = coordinator.store().write().await;
+        let mut busy = Box::pin(wallet.restore_private_payments_or_defer(&coordinator, None));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut busy)
+                .await
+                .is_err(),
+            "the raise waits for the dispatch in flight"
+        );
+        drop(store);
+
+        wallet
+            .restore_private_contact_payments()
+            .await
+            .expect("restored meanwhile");
+        drop(dispatching);
+        assert!(
+            busy.await.is_none(),
+            "restored from this store, so nothing is queued"
+        );
+
+        assert!(
+            !wallet.persister.private_payments_unrestored(),
+            "the restoration that succeeded meanwhile stands"
+        );
+        assert!(!wallet.private_payments_held().await);
     }
 
     /// A bind while the shielded store is busy defers the restoration of
