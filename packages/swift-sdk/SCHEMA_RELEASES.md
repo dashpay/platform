@@ -24,7 +24,8 @@ schema. The former live V2 is accepted only when its complete graph matches
 frozen V3 exactly, entity hashes and checksum alike. The alias remains supported
 when the live graph changes; other stores labelled `2.0.0` fail closed.
 
-V5 adds the `PersistentTransactionAccounting` and `PersistentCoreInstantLock`
+V5 adds the `PersistentTransactionAccounting`, `PersistentCoreInstantLock`,
+`PersistentPrivateContactRequestsPosition` and `PersistentPrivateShieldedAddress`
 entities, the `PersistentWallet.transactionAccountingBackfilled` attribute
 (default `false`) and the optional `PersistentAssetLock.shieldedRecipientRaw43`
 attribute (default `nil`) through a lightweight migration. All of them belong to

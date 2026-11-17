@@ -232,10 +232,8 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
-/// - **InstantSend locks**: every `instant_locks_for_non_final_records`
-///   entry is replayed through `mark_instant_send_utxos` after the UTXO
-///   restore, so instant-locked funds come back instant-locked instead of
-///   waiting for the next sync to re-learn them.
+/// - **InstantSend locks**: not applied here; stored lock rows mark no coin
+///   until the shared history replay verifies them against SPV evidence.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
