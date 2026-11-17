@@ -5,7 +5,7 @@
 use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
 use crate::sdk::WasmSdk;
-use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
+use dash_sdk::dpp::dashcore::hashes::sha256;
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
 use dash_sdk::dpp::secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};

@@ -7,7 +7,6 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Txid};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -332,7 +331,6 @@ fn b4_empty_core_state_is_ok() {
 #[test]
 fn b5_last_applied_chain_lock_round_trips() {
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::hashes::Hash;
     use dashcore::BlockHash;
 
     let (persister, _tmp, path) = fresh_persister();

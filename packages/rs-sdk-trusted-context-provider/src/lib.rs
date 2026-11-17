@@ -18,6 +18,8 @@
 //! system-contract and HTTP plumbing; the name of the crate predates it.
 
 pub mod error;
+mod known_contracts;
+pub mod local;
 mod proof_fetches;
 mod proof_transport;
 pub mod provider;
@@ -27,6 +29,7 @@ pub mod types;
 pub mod verified_provider;
 
 pub use error::TrustedContextProviderError;
+pub use local::LocalContextResolver;
 pub use provider::TrustedHttpContextProvider;
 pub use verified_provider::{
     Continuation, StartingPoint, VerifiedContextProviderError, VerifiedHttpContextProvider,

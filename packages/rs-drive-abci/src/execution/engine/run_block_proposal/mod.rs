@@ -158,6 +158,7 @@ Your software version: {}, latest supported protocol version: {}."#,
                 // This is for events like adding stuff to the root tree, or making structural changes/fixes
                 self.perform_events_on_first_block_of_protocol_change(
                     platform_state,
+                    &mut block_platform_state,
                     &block_info,
                     transaction,
                     old_protocol_version,

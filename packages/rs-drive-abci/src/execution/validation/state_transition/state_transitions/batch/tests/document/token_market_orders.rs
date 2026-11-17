@@ -160,7 +160,6 @@ mod token_market_orders_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to store the order");
             let before = stored_orders(&platform, &market, name);

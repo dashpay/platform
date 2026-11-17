@@ -16,15 +16,19 @@ use crate::drive::document::index_level_tree_types::{
     zero_contribution_wrapper,
 };
 use crate::drive::document::layout::{index_ending_at, index_paths, indexes_through, LayoutRole};
+use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::uses_current_document_history_layout;
 use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
-    index_only_row_commitment, make_document_reference, make_document_reference_with_sum_item,
+    index_only_row_commitment, make_document_reference, make_document_reference_v1,
+    make_document_reference_with_sum_item, make_document_reference_with_sum_item_v1,
     preallocation_bindings_targeting, read_document_sum_contribution,
     referenced_list_tree_keys_for_referring_property, referenced_tree_key_for_referring_property,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::common::encode::encode_u64;
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U16;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -39,7 +43,9 @@ use dpp::data_contract::DataContract;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
-use grovedb::element::reference_path::ReferencePathType::SiblingReference;
+use grovedb::element::reference_path::ReferencePathType::{
+    SiblingReference, UpstreamRootHeightReference,
+};
 use grovedb::element::IndexAxis;
 use grovedb::Element;
 use grovedb_merk::tree_type::TreeType;
@@ -448,6 +454,78 @@ impl Context<'_> {
                 path: vec![vec![0]],
                 key: id,
                 element,
+                parent: primary_key_tree_type,
+                role: LayoutRole::Document,
+                indexes: vec![],
+                if_absent: false,
+                ephemeral: false,
+                ranking: None,
+                referring_type: None,
+                expiration: false,
+                flagged: document_flags.is_some(),
+            });
+            return Ok(());
+        }
+
+        if uses_current_document_history_layout(self.platform_version)? {
+            self.push(Write {
+                path: vec![vec![DOCUMENT_HISTORY_TREE_KEY]],
+                key: id.clone(),
+                element: empty_tree(TreeType::ProvableCountTree, false, document_flags.as_ref()),
+                parent: TreeType::NormalTree,
+                role: LayoutRole::DocumentHistory,
+                indexes: vec![],
+                if_absent: true,
+                ephemeral: false,
+                ranking: None,
+                referring_type: None,
+                expiration: false,
+                flagged: document_flags.is_some(),
+            });
+            let mut revision_key = encode_u64(0);
+            revision_key.extend(encode_u64(self.document.revision().unwrap_or(1)));
+            self.push(Write {
+                path: vec![vec![DOCUMENT_HISTORY_TREE_KEY], id.clone()],
+                key: revision_key.clone(),
+                element: PricedElement::Serialized {
+                    serialized_len: serialized_len(
+                        &Element::Item(
+                            serialized,
+                            StorageFlags::map_to_some_element_flags(document_flags.as_ref()),
+                        ),
+                        self.platform_version,
+                    )?,
+                },
+                parent: TreeType::ProvableCountTree,
+                role: LayoutRole::RetainedRevision,
+                indexes: vec![],
+                if_absent: false,
+                ephemeral: false,
+                ranking: None,
+                referring_type: None,
+                expiration: false,
+                flagged: document_flags.is_some(),
+            });
+            let reference = UpstreamRootHeightReference(
+                4,
+                vec![vec![DOCUMENT_HISTORY_TREE_KEY], id.clone(), revision_key],
+            );
+            let flags = StorageFlags::map_to_some_element_flags(document_flags.as_ref());
+            let pointer = match sum_property {
+                Some(property) => Element::new_reference_with_sum_item_with_max_hops_and_flags(
+                    reference,
+                    Some(1),
+                    read_document_sum_contribution(self.document, property)?,
+                    flags,
+                ),
+                None => Element::Reference(reference, Some(1), flags),
+            };
+            self.push(Write {
+                path: vec![vec![0]],
+                key: id,
+                element: PricedElement::Serialized {
+                    serialized_len: serialized_len(&pointer, self.platform_version)?,
+                },
                 parent: primary_key_tree_type,
                 role: LayoutRole::Document,
                 indexes: vec![],
@@ -1193,15 +1271,41 @@ impl Context<'_> {
         } else {
             self.document_flags.clone()
         };
-        let reference = match info.summable.as_deref() {
-            Some(property) => make_document_reference_with_sum_item(
-                self.document,
-                self.document_type,
-                read_document_sum_contribution(self.document, property)?,
-                reference_flags.as_ref(),
-            ),
-            None => {
-                make_document_reference(self.document, self.document_type, reference_flags.as_ref())
+        let reference = if self
+            .platform_version
+            .drive
+            .methods
+            .document
+            .insert
+            .add_reference_for_index_level_for_contract_operations
+            == 1
+        {
+            match info.summable.as_deref() {
+                Some(property) => make_document_reference_with_sum_item_v1(
+                    self.document,
+                    self.document_type,
+                    read_document_sum_contribution(self.document, property)?,
+                    reference_flags.as_ref(),
+                ),
+                None => make_document_reference_v1(
+                    self.document,
+                    self.document_type,
+                    reference_flags.as_ref(),
+                ),
+            }
+        } else {
+            match info.summable.as_deref() {
+                Some(property) => make_document_reference_with_sum_item(
+                    self.document,
+                    self.document_type,
+                    read_document_sum_contribution(self.document, property)?,
+                    reference_flags.as_ref(),
+                ),
+                None => make_document_reference(
+                    self.document,
+                    self.document_type,
+                    reference_flags.as_ref(),
+                ),
             }
         };
         let reference = PricedElement::Serialized {

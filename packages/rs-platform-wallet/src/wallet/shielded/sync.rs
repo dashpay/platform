@@ -153,6 +153,15 @@ pub struct MultiSyncNotesResult {
     /// subwallet. The caller decides whether to queue it on the
     /// shared `WalletPersister`.
     pub changeset: ShieldedChangeSet,
+    /// The highest proved height this pass's scan covers: every action
+    /// appended at or below it, and so every nullifier spent there, was
+    /// scanned, by this pass or an earlier one, and replayed against the
+    /// notes. It is the height of a batch in the run scanned without a gap
+    /// from the pass's start whose proof, and every proof read before it,
+    /// shows the commitment tree ending within that run (the batch's
+    /// `total_count` is the highest seen). `None` when no batch shows that:
+    /// a proof of a longer tree than the run reached.
+    pub covered_height: Option<u64>,
 }
 
 impl MultiSyncNotesResult {
@@ -471,6 +480,12 @@ where
     // The stream lives in this block so it — and the up-to-`max_concurrent`
     // network fetches it holds in flight — is dropped before the finalize
     // below runs, whether the loop ran to the end or was cancelled.
+    // What this pass's scan covers (`MultiSyncNotesResult::covered_height`):
+    // the end of the run of positions scanned without a gap from
+    // `aligned_start`, and the highest proved height of a batch in it whose
+    // proof shows the tree ending within it.
+    let mut scanned_to = aligned_start;
+    let mut covered_height: Option<u64> = None;
     let cancelled = {
         let stream = make_stream(aligned_start, tree_size);
         futures::pin_mut!(stream);
@@ -501,6 +516,13 @@ where
             // it. Stays 0 (indeterminate) only if no batch is ever produced.
             total_target = total_target.max(batch.total_count);
             total_notes_scanned += batch.notes.len() as u64;
+            if batch.start_index <= scanned_to {
+                let end = batch.start_index.saturating_add(batch.notes.len() as u64);
+                scanned_to = scanned_to.max(end);
+                if end >= batch.total_count {
+                    covered_height = covered_height.max(Some(batch.block_height));
+                }
+            }
             if !batch.notes.is_empty() {
                 last_nonempty = Some((batch.start_index, batch.is_partial));
             }
@@ -839,6 +861,7 @@ where
         per_subwallet_newly_spent: newly_spent_per_subwallet,
         total_scanned: scanned_volume,
         changeset,
+        covered_height,
     })
 }
 

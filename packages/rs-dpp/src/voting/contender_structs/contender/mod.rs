@@ -21,7 +21,7 @@ use platform_version::version::PlatformVersion;
 
 /// Represents a contender in the contested document vote poll.
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone, From)]
 pub enum Contender {
@@ -32,7 +32,7 @@ pub enum Contender {
 /// Represents a contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),

@@ -56,6 +56,15 @@ impl DriveHighLevelBatchOperationConverter for DocumentTransitionAction {
                     platform_version,
                 )
             }
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
+            DocumentTransitionAction::EraseAction(document_erase_transition) => {
+                document_erase_transition.into_high_level_batch_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
             DocumentTransitionAction::IndexOnlyDeleteAction(
                 document_index_only_delete_transition,
             ) => document_index_only_delete_transition.into_high_level_batch_drive_operations(

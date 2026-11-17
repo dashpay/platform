@@ -11,11 +11,14 @@ use platform_version::version::PlatformVersion;
 
 /// Represents a contender in the contested document vote poll.
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct ContenderV0 {
-    /// The identity ID of the contender.
+    /// The id the contest names the contender by: the contending identity's id, or, in a
+    /// vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the
+    /// contending document's id. There the identity that entered the document is the
+    /// document's `owner_id`, and one identity may have entered several contenders.
     pub identity_id: Identifier,
     /// The document associated with the contender.
     pub document: Option<Document>,
@@ -26,7 +29,7 @@ pub struct ContenderV0 {
 /// Represents a contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
@@ -36,7 +39,10 @@ pub struct ContenderV0 {
     serde(rename_all = "camelCase")
 )]
 pub struct ContenderWithSerializedDocumentV0 {
-    /// The identity ID of the contender.
+    /// The id the contest names the contender by: the contending identity's id, or, in a
+    /// vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the
+    /// contending document's id. There the identity that entered the document is the
+    /// document's `owner_id`, and one identity may have entered several contenders.
     pub identity_id: Identifier,
     /// The serialized document associated with the contender.
     pub serialized_document: Option<Vec<u8>>,

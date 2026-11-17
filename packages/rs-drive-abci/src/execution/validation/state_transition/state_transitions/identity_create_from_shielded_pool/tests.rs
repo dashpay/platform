@@ -473,7 +473,6 @@ fn failure_path_charge_executes_through_execute_event() {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
     use crate::platform_types::event_execution_result::EventExecutionResult;
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::identity::accessors::IdentitySettersV0;
 
     let platform_version = PlatformVersion::latest();
@@ -568,7 +567,6 @@ fn failure_path_charge_executes_through_execute_event() {
         .expect("create execution event");
 
     let transaction = platform.drive.grove.start_transaction();
-    let fee_versions = CachedEpochIndexFeeVersions::new();
     let exec_result = platform
         .platform
         .execute_event(
@@ -579,7 +577,6 @@ fn failure_path_charge_executes_through_execute_event() {
             None,
             &mut 0,
             platform_version,
-            &fee_versions,
         )
         .expect("execute_event should not error");
 
@@ -635,7 +632,6 @@ fn check_tx_fee_estimation_does_not_mutate_committed_state() {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::state_mutation_guard::assert_committed_root_hash_unchanged;
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use drive::util::batch::drive_op_batch::ShieldedPoolOperationType;
     use drive::util::batch::DriveOperation;
 
@@ -711,7 +707,6 @@ fn check_tx_fee_estimation_does_not_mutate_committed_state() {
     // Run the EXACT CheckTx estimation call (transaction = None, apply = false) and assert the
     // committed root hash is byte-identical: a single eager write in any converter arm trips this.
     let platform_state = platform.state.load();
-    let fee_versions = CachedEpochIndexFeeVersions::new();
     let fee_result = assert_committed_root_hash_unchanged(
         &platform.drive,
         platform_version,
@@ -722,7 +717,6 @@ fn check_tx_fee_estimation_does_not_mutate_committed_state() {
                 platform_state.last_block_info(),
                 None,
                 platform_version,
-                &fee_versions,
             )
         },
     )
@@ -802,7 +796,7 @@ fn converter_ops_preserve_sum_tree_credit_conservation() {
         .into_high_level_drive_operations(&Epoch::new(0).unwrap(), platform_version)
         .expect("converter ops");
     drive
-        .apply_drive_operations(ops, true, &block_info, None, platform_version, None)
+        .apply_drive_operations(ops, true, &block_info, None, platform_version)
         .expect("apply converter ops");
 
     // The end-of-block conservation invariant must still hold — this FAILS (off by `denomination`)
@@ -940,7 +934,7 @@ fn failure_path_unshield_converter_ops_preserve_sum_tree_credit_conservation() {
         .into_high_level_drive_operations(&Epoch::new(0).unwrap(), platform_version)
         .expect("converter ops");
     drive
-        .apply_drive_operations(ops, true, &block_info, None, platform_version, None)
+        .apply_drive_operations(ops, true, &block_info, None, platform_version)
         .expect("apply converter ops");
 
     // Book the penalty into the storage fee (Pools) tree — the end-of-block reconciliation the
@@ -985,7 +979,6 @@ fn executed_transition_result_proof_roundtrips() {
     use crate::execution::types::execution_event::ExecutionEvent;
     use crate::platform_types::event_execution_result::EventExecutionResult;
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
@@ -1038,7 +1031,6 @@ fn executed_transition_result_proof_roundtrips() {
     .expect("create execution event");
 
     let transaction = platform.drive.grove.start_transaction();
-    let fee_versions = CachedEpochIndexFeeVersions::new();
     let exec_result = platform
         .platform
         .execute_event(
@@ -1049,7 +1041,6 @@ fn executed_transition_result_proof_roundtrips() {
             None,
             &mut 0,
             platform_version,
-            &fee_versions,
         )
         .expect("execute_event should not error");
     assert_matches!(

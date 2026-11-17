@@ -1,5 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
+import type { DocumentEraseTransitionOptions } from '../../dist/dpp.compressed.js';
 import {
   document, documentTypeName, revision, dataContractId, ownerId, id,
 } from './mocks/Document/index.js';
@@ -69,7 +70,7 @@ describe('DocumentsTransitions', () => {
     it('should have no action fee agreement when none is given', () => {
       const base = createBase();
 
-      expect(base.actionFeeAgreement).to.be.undefined();
+      expect(base.actionFeeAgreement).to.equal(undefined);
     });
 
     it('should set the action fee agreement', () => {
@@ -85,7 +86,7 @@ describe('DocumentsTransitions', () => {
 
       base.actionFeeAgreement = undefined;
 
-      expect(base.actionFeeAgreement).to.be.undefined();
+      expect(base.actionFeeAgreement).to.equal(undefined);
     });
   });
 
@@ -276,7 +277,7 @@ describe('DocumentsTransitions', () => {
           identityContractNonce: BigInt(1),
         });
 
-        expect(createTransition.base.actionFeeAgreement).to.be.undefined();
+        expect(createTransition.base.actionFeeAgreement).to.equal(undefined);
       });
     });
 
@@ -584,6 +585,109 @@ describe('DocumentsTransitions', () => {
         const deserializedDeleteTransition = deserializedTransitions[0].toTransition().deleteTransition;
 
         expect(deserializedDeleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
+      });
+    });
+  });
+
+  describe('DocumentEraseTransition', () => {
+    describe('constructor', () => {
+      it('should never forward token payment when erasing document history', () => {
+        const options: DocumentEraseTransitionOptions = {
+          document: createDocument(),
+          identityContractNonce: BigInt(1),
+          // @ts-expect-error Erasing history cannot pay with tokens.
+          tokenPaymentInfo: new wasm.TokenPaymentInfo({ tokenContractPosition: 0 }),
+        };
+        const eraseTransition = new wasm.DocumentEraseTransition(options);
+
+        expect(eraseTransition.base.tokenPaymentInfo).to.equal(undefined);
+      });
+
+      it('should create instance from document', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(eraseTransition).to.be.an.instanceof(wasm.DocumentEraseTransition);
+      });
+    });
+
+    describe('toDocumentTransition()', () => {
+      it('should create DocumentTransition from EraseTransition', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        const documentTransition = eraseTransition.toDocumentTransition();
+
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+      });
+    });
+
+    describe('base', () => {
+      it('should return base', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        expect(eraseTransition.base.constructor.name).to.equal('DocumentBaseTransition');
+      });
+
+      it('should set base', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        const newBase = new wasm.DocumentBaseTransition({
+          documentId: documentInstance.id,
+          identityContractNonce: BigInt(12350),
+          documentTypeName: 'bbbbb',
+          dataContractId,
+        });
+
+        eraseTransition.base = newBase;
+
+        expect(eraseTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
+      });
+    });
+
+    describe('BatchTransition serialization roundtrip', () => {
+      it('should serialize and deserialize through state transition', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        const documentTransition = eraseTransition.toDocumentTransition();
+
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
+
+        const st = batchTransition.toStateTransition();
+
+        const deserializedBatch = wasm.BatchTransition.fromStateTransition(st);
+
+        const deserializedTransitions = deserializedBatch.transitions;
+
+        expect(deserializedTransitions.length).to.equal(2);
+
+        const deserializedEraseTransition = deserializedTransitions[0].toTransition().eraseTransition;
+
+        expect(deserializedEraseTransition).to.be.an.instanceof(wasm.DocumentEraseTransition);
       });
     });
   });

@@ -1273,6 +1273,7 @@ async fn execute_address_branch_query(
                 Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
                 None => {
                     return Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::Proof(drive_proof_verifier::Error::EmptyVersion),
                         address: Some(address),
                         retries,
@@ -1289,6 +1290,7 @@ async fn execute_address_branch_query(
                 platform_version,
             )
             .map_err(|e| ExecutionError {
+                possibly_accepted: false,
                 inner: e.into(),
                 address: Some(address.clone()),
                 retries,

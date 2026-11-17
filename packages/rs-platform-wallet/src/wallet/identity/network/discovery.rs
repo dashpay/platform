@@ -854,7 +854,7 @@ mod tests {
     fn test_master() -> ExtendedPrivKey {
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("mnemonic");
         let seed = mnemonic.to_seed("");
-        ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xpriv")
+        ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("master xpriv")
     }
 
     fn ecdsa_auth_key(id: KeyID, data: Vec<u8>) -> IdentityPublicKey {

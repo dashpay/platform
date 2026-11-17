@@ -1,6 +1,7 @@
 mod update_state_masternode_list;
 mod v0;
 mod v1;
+mod v2;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -70,9 +71,18 @@ where
                 transaction,
                 platform_version,
             ),
+            2 => self.update_masternode_list_v2(
+                platform_state,
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_masternode_list".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -94,7 +104,7 @@ mod test {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::bls::SecretKey;
     use dpp::core_types::validator_set::v0::ValidatorSetV0;
-    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::hashes::{sha256, Hash};
     use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash, Txid};
     use dpp::dashcore_rpc::json::{
         DMNState, DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
@@ -232,6 +242,163 @@ mod test {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit");
+    }
+
+    /// What `should_store_the_mainnet_masternode_lists_as_shipped_protocol_versions_do` expects:
+    /// the app hash each protocol version it covers leaves, then the stored masternode list they
+    /// share, as [`mainnet_masternode_list_replay`] describes it.
+    const MAINNET_MASTERNODE_LIST_SNAPSHOT_PATH: &str =
+        "tests/supporting_files/mainnet_protx_list_diffs/stored_by_protocol_versions_13_and_14.txt";
+
+    /// Replays the mainnet full list at init chain and the next diff in the first block through
+    /// the dispatcher at `platform_version`, and returns what the platform then holds: the app
+    /// hash, which covers the masternode identities the updates wrote, and the stored full list,
+    /// one line per masternode with the start of its ProTx hash as Core prints it and the start of
+    /// the SHA-256 of its stored entry. Asserts that the evonode list holds exactly the evonodes
+    /// of the full list, as stored there.
+    fn mainnet_masternode_list_replay(platform_version: &PlatformVersion) -> ([u8; 32], String) {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (init_core_height, next_core_height) = (2128896, 2129440);
+        let mut evonodes = BTreeSet::new();
+        let responses = [
+            mainnet_list_diff("1-2128896.json", false, &mut evonodes),
+            mainnet_list_diff("2128896-2129440.json", false, &mut evonodes),
+        ];
+        platform
+            .core_rpc
+            .expect_get_protx_diff_with_masternodes()
+            .returning(move |_base_block, block| {
+                Ok(responses[usize::from(block != init_core_height)].clone())
+            });
+
+        let transaction = platform.drive.grove.start_transaction();
+        let mut init_chain_state = platform.state.load().as_ref().clone();
+        platform
+            .update_masternode_list(
+                None,
+                &mut init_chain_state,
+                init_core_height,
+                true,
+                &BlockInfo {
+                    height: 1,
+                    core_height: init_core_height,
+                    time_ms: 1,
+                    ..Default::default()
+                },
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process the full masternode list");
+        let mut block_state = init_chain_state.clone();
+        platform
+            .update_masternode_list(
+                Some(&init_chain_state),
+                &mut block_state,
+                next_core_height,
+                false,
+                &BlockInfo {
+                    height: 2,
+                    core_height: next_core_height,
+                    time_ms: 2,
+                    ..Default::default()
+                },
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process the masternode list diff");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let full_list = block_state.full_masternode_list();
+        assert!(
+            block_state.hpmn_masternode_list().iter().eq(full_list
+                .iter()
+                .filter(|(_, masternode)| masternode.node_type == MasternodeType::Evo)),
+            "protocol version {}: the evonode list holds the evonodes of the full list",
+            platform_version.protocol_version
+        );
+
+        let app_hash = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected the app hash");
+        let stored_list = full_list
+            .iter()
+            .map(|(pro_tx_hash, masternode)| {
+                let entry = serialize_masternode_entry(masternode, platform_version)
+                    .expect("expected to serialize the masternode entry");
+                let entry_hash = sha256::Hash::hash(&entry).to_byte_array();
+                format!(
+                    "{} {}\n",
+                    &pro_tx_hash.to_string()[..16],
+                    hex::encode(&entry_hash[..8])
+                )
+            })
+            .collect();
+        (app_hash, stored_list)
+    }
+
+    /// Every node replays shipped protocol versions with the binary it runs, so what they store
+    /// from Core's diffs must not change with the binary. Core's diffs reach Platform through the
+    /// Core RPC client's decoding and diff application, which a rust-dashcore update can change
+    /// without any Platform file changing. One such update made the client keep revived heights
+    /// and decode operator payouts in diffs, which would have changed 227 entries of these lists
+    /// had `update_state_masternode_list` v0 and v1 not undone it. Replaying the recorded mainnet
+    /// diffs at protocol versions 13 and 14 must give the masternode list, which both store
+    /// alike, and the app hashes the Platform 5.0.3 release gives.
+    ///
+    /// Regenerate the snapshot only for a deliberate change to what those versions store:
+    /// `UPDATE_MAINNET_MASTERNODE_LIST_SNAPSHOT=1 cargo test -p drive-abci --lib
+    /// should_store_the_mainnet_masternode_lists_as_shipped_protocol_versions_do`
+    #[test]
+    fn should_store_the_mainnet_masternode_lists_as_shipped_protocol_versions_do() {
+        let [(app_hash_13, stored_list_13), (app_hash_14, stored_list_14)] =
+            [13, 14].map(|protocol_version| {
+                mainnet_masternode_list_replay(
+                    PlatformVersion::get(protocol_version).expect("a shipped protocol version"),
+                )
+            });
+        assert!(
+            stored_list_13 == stored_list_14,
+            "protocol versions 13 and 14 store the same masternode list"
+        );
+        let snapshot = format!(
+            "app hash at protocol version 13 {}\napp hash at protocol version 14 {}\n{stored_list_14}",
+            hex::encode(app_hash_13),
+            hex::encode(app_hash_14)
+        );
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(MAINNET_MASTERNODE_LIST_SNAPSHOT_PATH);
+
+        if env::var_os("UPDATE_MAINNET_MASTERNODE_LIST_SNAPSHOT").is_some() {
+            std::fs::write(&path, &snapshot).expect("expected to write the snapshot");
+            return;
+        }
+
+        let committed = std::fs::read_to_string(&path).expect("expected to read the snapshot");
+        let differing: Vec<(&str, &str)> = committed
+            .lines()
+            .zip(snapshot.lines())
+            .filter(|(committed, replayed)| committed != replayed)
+            .take(10)
+            .collect();
+        assert!(
+            committed == snapshot,
+            "replaying the mainnet diffs no longer stores what {MAINNET_MASTERNODE_LIST_SNAPSHOT_PATH} \
+             holds ({} lines committed, {} replayed); first differing lines, committed then \
+             replayed: {differing:?}",
+            committed.lines().count(),
+            snapshot.lines().count()
+        );
     }
 
     /// A `protx listdiff` response from the mainnet fixtures. With
@@ -435,6 +602,7 @@ mod test {
     fn should_build_the_validators_earlier_binaries_built_from_mainnet_masternode_lists() {
         for platform_version in [
             PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::get(14).expect("protocol version 14"),
             PlatformVersion::latest(),
         ] {
             let init_core_height = 2128896;
@@ -488,11 +656,32 @@ mod test {
                     .map(|evonode| (evonode.pro_tx_hash, evonode.clone()))
                     .collect();
 
+                let transaction = platform.drive.grove.start_transaction();
                 let update = |state: &mut PlatformState, core_height, from_scratch| {
-                    if platform_version.protocol_version == 13 {
-                        platform.update_state_masternode_list_v0(state, core_height, from_scratch)
-                    } else {
-                        platform.update_state_masternode_list_v1(state, core_height, from_scratch)
+                    match platform_version
+                        .drive_abci
+                        .methods
+                        .core_based_updates
+                        .update_masternode_list
+                    {
+                        0 => platform.update_state_masternode_list_v0(
+                            state,
+                            core_height,
+                            from_scratch,
+                        ),
+                        1 => platform.update_state_masternode_list_v1(
+                            state,
+                            core_height,
+                            from_scratch,
+                        ),
+                        2 => platform.update_state_masternode_list_v2(
+                            state,
+                            core_height,
+                            from_scratch,
+                            &transaction,
+                            platform_version,
+                        ),
+                        version => panic!("unknown update_masternode_list {version}"),
                     }
                     .expect("expected to apply the masternode list")
                 };
@@ -1119,12 +1308,12 @@ mod test {
 
     /// A Core diff with no field the client decodes set: the fields a test's diff carries are
     /// added on top of this.
-    fn empty_state_diff() -> DMNStateDiff {
+    pub(super) fn empty_state_diff() -> DMNStateDiff {
         serde_json::from_str("{}").expect("an empty Core state diff")
     }
 
     /// A Regular masternode named by `id` with an operator payout and an operator reward.
-    fn masternode_with_operator_payout(id: u8) -> MasternodeListItem {
+    pub(super) fn masternode_with_operator_payout(id: u8) -> MasternodeListItem {
         MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash: ProTxHash::from_byte_array([id; 32]),
@@ -1233,7 +1422,7 @@ mod test {
     }
 
     /// The keys of a masternode's operator identity, with their purpose, data and disabled state.
-    fn operator_identity_keys(
+    pub(super) fn operator_identity_keys(
         platform: &TempPlatform<MockCoreRPCLike>,
         transaction: Option<&Transaction>,
         pro_tx_hash: &ProTxHash,
@@ -1264,16 +1453,16 @@ mod test {
             .collect()
     }
 
-    /// The masternode list generations so far (v0 and v1) processed Core diffs without their
-    /// operator payout: operator payouts reached Platform only in full masternode states, and the
-    /// stored list and the operator identities' keys follow from that. A diff that sets or clears
-    /// an operator payout must leave both as they were, whether the operator key stays or
-    /// changes.
+    /// The masternode list generations v0 and v1 processed Core diffs without their operator
+    /// payout: operator payouts reached Platform only in full masternode states, and the stored
+    /// list and the operator identities' keys follow from that. A diff that sets or clears an
+    /// operator payout must leave both as they were, whether the operator key stays or changes.
+    /// From protocol version 15 the payout applies (`operator_payout_tests`).
     #[test]
     fn should_keep_operator_payouts_and_keys_when_a_diff_carries_an_operator_payout() {
         for platform_version in [
             PlatformVersion::get(13).expect("expected protocol version 13"),
-            PlatformVersion::latest(),
+            PlatformVersion::get(14).expect("expected protocol version 14"),
         ] {
             let context = format!("protocol version {}", platform_version.protocol_version);
             let payout_set = masternode_with_operator_payout(0x61);
@@ -1377,8 +1566,8 @@ mod test {
     }
 
     /// Core prints `PoSeRevivedHeight` only in a diff that spans the revive. The masternode list
-    /// generations so far (v0 and v1) always applied a diff with the revived height replaced by
-    /// the diff's, so a revived masternode's next diff clears it; their stored lists and
+    /// generations v0 and v1 always applied a diff with the revived height replaced by the
+    /// diff's, so a revived masternode's next diff clears it; their stored lists and
     /// validator sets follow from that, and they keep it whatever the Core RPC client's own diff
     /// application does. The payment-only diff of a revived evonode, alone in its block, is what
     /// decides v0's early return and reaches the evonode list as well as the full list.
@@ -1386,7 +1575,7 @@ mod test {
     fn should_clear_a_revived_height_a_diff_does_not_print() {
         for platform_version in [
             PlatformVersion::get(13).expect("expected protocol version 13"),
-            PlatformVersion::latest(),
+            PlatformVersion::get(14).expect("expected protocol version 14"),
         ] {
             let context = format!("protocol version {}", platform_version.protocol_version);
             let pose_heights = |state: &PlatformState, pro_tx_hash: &ProTxHash| {
@@ -1465,5 +1654,7 @@ mod test {
 
 #[cfg(test)]
 mod operator_key_encoding_tests;
+#[cfg(test)]
+mod operator_payout_tests;
 #[cfg(test)]
 mod versioning_tests;

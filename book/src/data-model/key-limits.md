@@ -288,6 +288,19 @@ The second term is `desired_removed_balance` from `FeeResult::into_balance_chang
 
 This mirrors the identity balance so closely on purpose. `BalanceChange::RemoveFromBalance` already carries a `required_removed_balance` (storage) and a `desired_removed_balance` (storage plus processing), and an identity that can cover the first but not the second goes into processing debt. A key budget is the same rule with the debt replaced by "and then the key is done".
 
+## What a Limited Key May Not Sign
+
+The budget rule counts what the transitions *signed with the key* take from the identity, and an expiry ends the key's signing. Two kinds of transition reach past both, and a key with a budget or an expiry is refused on them at signature validation, unpaid:
+
+| Transition | From | Error | Why |
+|---|---|---|---|
+| `IdentityKeyLimitsUpdate` | protocol version 14 | `PublicKeyWithLimitsCannotUpdateKeyLimitsError` 20017 | a limited key must not top itself up |
+| `DataContractCreate`, `DataContractUpdate` | protocol version 15 | `PublicKeyWithLimitsCannotSignDataContractTransitionError` 20018 | a data contract commits its owner beyond the transition that sets it up or changes it |
+
+`validate_state_transition_identity_signed` 2 makes the second refusal. It wraps v1 and adds one question: is this a contract create or update, and does the key that signed carry limits? The rule is about the transition kind and not about what the contract says, so it does not have to follow the contract keywords.
+
+Contract bounds never reached this path: a bound AUTHENTICATION key signs only batches (`ContractBoundedKeyNonBatchError` 20013). So the keys the rule changes anything for are unbound limited keys at CRITICAL or HIGH level, the levels a contract create accepts.
+
 ## Where the Checks Run
 
 Three stages enforce limits at signing time. Which check goes where follows from what each stage knows:
@@ -319,7 +332,7 @@ The diagram shows the order in which the checks happen. In code the last two box
 
 **A spent key is refused first, with the signature.** Signature validation already reads the identity from Drive, so reading what is left of the budget there costs one more lookup, and an application that keeps trying with a spent key is turned away before any real work is done. This is the role the minimum balance pre-check plays for an empty identity. The read is billed as one extra key retrieval.
 
-**Expiry waits for fee validation.** The natural place for it would be next to the `disabled_at` check, but signature validation is not given the block time, and the processor that calls it is a shipped `v0`. Threading a parameter through a shipped generation is exactly what the [versioning rules](../contributing/coding-conventions.md#shipped-generations-are-frozen) forbid, and a new generation of the processor and of check tx would copy some fourteen hundred lines to pass one integer. `validate_fees_of_event` is the first stage that has the block time, runs for every paid transition, and runs in check tx as well as in block execution. The cost of checking late is that an expired key's transition is fully validated before it is refused. An insufficient balance has always had that same profile.
+**Expiry waits for fee validation.** The natural place for it would be next to the `disabled_at` check, but signature validation is not given the block time, and the processor that calls it is a shipped `v0`. Threading a parameter through a shipped generation is exactly what the [versioning rules](../contributing/coding-conventions.md#shipped-generations-are-frozen-unless-the-change-cannot-modify-consensus) forbid, and a new generation of the processor and of check tx would copy some fourteen hundred lines to pass one integer. `validate_fees_of_event` is the first stage that has the block time, runs for every paid transition, and runs in check tx as well as in block execution. The cost of checking late is that an expired key's transition is fully validated before it is refused. An insufficient balance has always had that same profile.
 
 **The budget comparison needs the estimated fee,** so it can only be in fee validation. **The deduction needs the actual fee,** so it can only be in execution.
 
@@ -358,7 +371,7 @@ sequenceDiagram
 
 ```rust
 let ExecutionEvent::Paid { signing_key_limits: Some(signing_key_limits), .. } = event else {
-    return self.validate_fees_of_event_v0(event, block_info, transaction, platform_version, previous_fee_versions);
+    return self.validate_fees_of_event_v0(event, block_info, transaction, platform_version);
 };
 ```
 
@@ -461,7 +474,7 @@ What the query returns is the state as of the last committed block. A transition
 
 ## Versioning Touchpoints
 
-Everything is gated to protocol version 14. Tables that protocol version 14 already owned (it was unreleased at the time) were amended in place; one new table was needed.
+Everything but the last row is gated to protocol version 14. Tables that protocol version 14 already owned (it was unreleased at the time) were amended in place; one new table was needed. The last row is the one change protocol version 15 makes.
 
 | Table | Slot | Change |
 |---|---|---|
@@ -479,8 +492,9 @@ Everything is gated to protocol version 14. Tables that protocol version 14 alre
 | `DRIVE_IDENTITY_METHOD_VERSIONS_V2` | `update.update_identity_key_limits`, `keys.budget.add_to_identity_key_budget` | new, `None` → `Some(0)` |
 | `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1` to `_V4` | `convert_to_high_level_operations.identity_key_limits_update_transition` | new, 0 |
 | `STATE_TRANSITION_SERIALIZATION_VERSIONS_V1` to `_V3` | `identity_key_limits_update_state_transition` | new, 0 |
+| `DRIVE_ABCI_VALIDATION_VERSIONS_V11` (protocol version 15) | `validate_state_transition_identity_signed` | 1 → 2: v1, then a limited key is refused on a contract create or update |
 
-Two of these are worth a second look. Identity signature validation v1 and shielded proof validation v1 were introduced for protocol version 14 by the contract bounds work and had not shipped yet, so they were [extended in place](../contributing/coding-conventions.md#shipped-generations-are-frozen) rather than given a v2. `validate_fees_of_event` and `execute_event` had shipped, so they got new generations, and those generations delegate to v0 for every event they do not handle instead of copying it.
+Two of these are worth a second look. Identity signature validation v1 and shielded proof validation v1 were introduced for protocol version 14 by the contract bounds work and had not shipped yet, so they were [extended in place](../contributing/coding-conventions.md#shipped-generations-are-frozen-unless-the-change-cannot-modify-consensus) rather than given a v2. By the time the contract rule was added, identity signature validation v1 had shipped, so that rule is a v2 that calls v1. `validate_fees_of_event` and `execute_event` had shipped, so they got new generations, and those generations delegate to v0 for every event they do not handle instead of copying it.
 
 ## Fees
 
@@ -502,6 +516,7 @@ This change is the consensus core. Known gaps, all deliberate:
 - **dpp** (`identity_public_key/v1`, `public_key_in_creation/v1`, `validate_identity_public_keys_structure/v1`, `state_transition/mod.rs`): the version 1 round trip; the version 0 encoding unchanged byte for byte; the JSON shape; the expiry boundary; limits surviving the conversions and being signed over; the structure rules; the protocol version 13 and 14 sides of the decode gate; frozen error discriminants.
 - **drive** (`drive/identity/key/budget`): the budget written on key add and on identity create; two budgeted keys in one batch; the deduction stopping at zero and never changing storage; estimated at least actual; protocol version 13 untouched.
 - **drive-abci** (`batch/tests/key_limits.rs`), end to end through `process_raw_state_transitions` and `check_tx`: the exact deduction; the rule pinned one credit either side of the storage fee; the user fee increase counted up front; the expiry boundary; both limits on one key; a paid failure spending from the budget; an invalid transition through an unusable key not being charged; mempool admission.
+- **drive-abci** (`batch/tests/key_limits.rs`, `data_contracts`): a contract create and a contract update signed by a key with a budget, or with only an expiry, refused unpaid with 20018 and kept out of the mempool; a key without limits still creating and updating; protocol version 14 unchanged.
 - **drive-abci** (`identity_key_limits_update/tests.rs`), end to end: a spent key topped up and admitted again; an expired key revived by an extension and refused while it stays expired; each refusal pinned to its code, paid ones bumping the nonce; MASTER and unlimited CRITICAL signers accepted, a limited or HIGH one refused; the mempool; the execution proof; protocol version 13. **drive** (`update_identity_key_limits`): the total and the remaining budget growing by the same amount; the expiry alone; the estimate covering the rewrite; the whole database consistent after the reference refresh; the addition to the remaining budget; protocol version 13.
 - **drive-abci** (`identity_update` `key_limits`, `identity_create_from_shielded_pool/tests.rs`): registration storing a version 1 key with its whole budget left; an already expired key as a paid failure; limits on TRANSFER and MASTER keys and a zero budget as unpaid; the shielded creation refusing a key with either limit and accepting a version 1 key without any. The builder has the same pair of cases in `rs-dpp` (`shielded/builder/identity_create_from_shielded_pool.rs`).
 
@@ -523,6 +538,7 @@ cargo test -p drive-abci --lib -- identity_key_limits_update
 - Give `expires_at` in milliseconds of block time. If an SDK offers a relative TTL, resolve it to an absolute time before signing, since the absolute time is what gets signed.
 - Keep every new cost term on the correct side of the budget rule. If a transition gains a cost that is chosen by the signer or priced up front, it belongs in `required_from_key_budget`.
 - Check any new field on the public key against the shielded sighash preimage, not only against `PlatformSignable`.
+- Ask of every new transition an AUTHENTICATION key can sign whether it commits the identity beyond that one transition. If it does, refuse a key with limits on it in identity signature validation, as contract creates and updates are.
 
 **Do not:**
 - Add a field to `IdentityPublicKeyV0` or `IdentityPublicKeyInCreationV0`. Every key in state is one, and there is no version byte to tell old bytes from new.

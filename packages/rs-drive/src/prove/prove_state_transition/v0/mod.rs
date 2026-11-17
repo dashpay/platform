@@ -619,6 +619,23 @@ impl Drive {
                     grovedb::SizedQuery::new(query, Some(count), None),
                 )
             }
+            // The bundle's spent nullifiers, as a shielded transfer's. The entries are found by
+            // scanning the store: the sender knows them.
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+                let count = nullifier_keys.len() as u16;
+
+                let mut query = grovedb::Query::new();
+                query.insert_keys(nullifier_keys);
+
+                PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(query, Some(count), None),
+                )
+            }
             StateTransition::Shield(st) => {
                 Drive::balances_for_clear_addresses_query(st.inputs().keys())
             }

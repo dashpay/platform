@@ -30,7 +30,12 @@ public class IdentityManager {
         try identity_manager_add_identity(handle, identity.handle).check()
     }
 
-    /// Remove an identity from the manager
+    /// Remove an identity from the manager. Refused while its contact request
+    /// channel is held: `PlatformWalletError.privateContactRequestPending`
+    /// for a request in flight or a private payment that may still execute,
+    /// `.publicContactRequestUnconfirmed` for a public request whose outcome
+    /// is not proved yet, `.privateContactPaymentsNotRestored` for payments
+    /// not restored yet.
     public func removeIdentity(_ identityId: Identifier) throws {
         try identityId.withFFIBytes { idPtr in
             try identity_manager_remove_identity(handle, idPtr).check()

@@ -16,7 +16,7 @@ use crate::query::GroveError;
 use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
-use crate::util::object_size_info::DocumentAndContractInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::ContestedIndexResolution;
@@ -31,6 +31,33 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{MaybeTree, TransactionArg, TreeType};
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn add_contested_document_for_contract_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+        insert_without_check: bool,
+        block_info: &BlockInfo,
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.add_contested_document_for_contract_operations_v1_body(
+            document_and_contract_info,
+            contested_document_resource_vote_poll,
+            insert_without_check,
+            block_info,
+            also_insert_vote_poll_stored_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            false,
+            transaction,
+            platform_version,
+        )
+    }
+
     /// Gathers the operations to add a contested document to a contract.
     ///
     /// Version 1 (protocol version 14) reads the contested index's resolution. A contest
@@ -43,7 +70,7 @@ impl Drive {
     /// the generic windows of the version tables.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_contested_document_for_contract_operations_v1(
+    pub(super) fn add_contested_document_for_contract_operations_v1_body(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
@@ -52,6 +79,7 @@ impl Drive {
         also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        end_date_entries_name_storage_owner: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -94,7 +122,19 @@ impl Drive {
             platform_version,
         )?;
 
-        let owner_id = document_and_contract_info.owned_document_info.owner_id;
+        // A poll's end date entries are paid for with the document, so from generation 2 they
+        // name whoever its storage flags name: a sponsor who paid is refunded when a second
+        // contender's arrival moves the end date.
+        let owner_id = if end_date_entries_name_storage_owner {
+            document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_storage_flags_ref()
+                .and_then(|storage_flags| storage_flags.owner_id().copied())
+                .or(document_and_contract_info.owned_document_info.owner_id)
+        } else {
+            document_and_contract_info.owned_document_info.owner_id
+        };
 
         if !contest_already_existed {
             if let Some(vote_poll_stored_start_info) = also_insert_vote_poll_stored_info {

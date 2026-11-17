@@ -9,7 +9,9 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Fetches the chain locked Core height of the first Platform block that saw `fork` active.
+    /// Fetches the chain locked Core height at which Platform first observed `fork` active, at
+    /// init chain or in a block. It is not Core's activation height and can trail it without
+    /// bound.
     ///
     /// Read in a block after its Core info is updated, `Some` means the fork is active at the
     /// block's chain locked height. `None` means Platform has not seen it active, not that it

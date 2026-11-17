@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use dashcore::blockdata::opcodes::all::*;
 use dashcore::blockdata::script::ScriptBuf;
-use dashcore::hashes::Hash;
 use dashcore::PublicKey;
 use platform_value::BinaryData;
 use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};

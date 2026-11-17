@@ -11,7 +11,6 @@ use dpp::consensus::state::identity::identity_public_key_budget_exceeded_error::
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
@@ -106,16 +105,9 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         Ok(self
-            .settle_fees_of_event_v1(
-                event,
-                block_info,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            )?
+            .settle_fees_of_event_v1(event, block_info, transaction, platform_version)?
             .map(|settled_fees| settled_fees.estimated_fee_result))
     }
 
@@ -155,7 +147,6 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<SettledFees>, Error> {
         let ExecutionEvent::Paid {
             identity,
@@ -171,13 +162,7 @@ where
         } = event
         else {
             return Ok(self
-                .validate_fees_of_event_v0(
-                    event,
-                    block_info,
-                    transaction,
-                    platform_version,
-                    previous_fee_versions,
-                )?
+                .validate_fees_of_event_v0(event, block_info, transaction, platform_version)?
                 .map(SettledFees::paid_by_the_identity));
         };
 
@@ -191,13 +176,7 @@ where
 
         if signing_key_limits.is_none() && gas_sponsor.is_none() && action_fees.is_empty() {
             return Ok(self
-                .validate_fees_of_event_v0(
-                    event,
-                    block_info,
-                    transaction,
-                    platform_version,
-                    previous_fee_versions,
-                )?
+                .validate_fees_of_event_v0(event, block_info, transaction, platform_version)?
                 .map(SettledFees::paid_by_the_identity));
         }
 
@@ -240,7 +219,6 @@ where
                     block_info,
                     transaction,
                     platform_version,
-                    Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
             ValidationOperation::add_many_to_fee_result(

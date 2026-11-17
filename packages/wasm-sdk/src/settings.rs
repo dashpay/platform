@@ -71,6 +71,8 @@ impl From<RequestSettingsInput> for RequestSettings {
             timeout: input.timeout_ms.map(Duration::from_millis),
             connect_timeout: input.connect_timeout_ms.map(Duration::from_millis),
             ban_failed_address: input.ban_failed_address,
+            // Not a setting of the JavaScript SDK: each request keeps its own default.
+            ban_busy_address: None,
             max_decoding_message_size: input.max_decoding_message_size.map(|v| v as usize),
         }
     }

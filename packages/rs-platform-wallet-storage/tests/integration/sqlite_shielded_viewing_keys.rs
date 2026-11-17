@@ -98,6 +98,7 @@ fn should_not_attest_wallet_drain_without_durable_operation_evidence() {
     assert!(capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
     assert!(!capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS));
+    assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS));
 }
 
 #[test]

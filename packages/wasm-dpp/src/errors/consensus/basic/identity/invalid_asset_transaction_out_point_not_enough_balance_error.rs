@@ -3,7 +3,6 @@ use dpp::consensus::ConsensusError;
 
 use crate::buffer::Buffer;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
-use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityAssetLockTransactionOutPointNotEnoughBalanceError)]
