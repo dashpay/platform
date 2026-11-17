@@ -9,6 +9,7 @@ use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::key_disable_rule::check_keys_can_be_disabled;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::Identifier;
@@ -18,6 +19,7 @@ use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -681,6 +683,17 @@ impl WasmSdk {
 
         // Get keys to disable
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
+
+        // DIP-11 refusal before the nonce is reserved: a refused update is never
+        // broadcast, so it must not advance the SDK's nonce cache.
+        check_keys_can_be_disabled(&identity, &keys_to_add, &keys_to_disable, None).map_err(
+            |refusal| {
+                WasmSdkError::with_context(
+                    "Failed to create update transition",
+                    ProtocolError::from(refusal),
+                )
+            },
+        )?;
 
         // Get identity nonce
         let identity_nonce = self

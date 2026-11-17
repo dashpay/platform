@@ -1013,6 +1013,7 @@ mod tests {
     use crate::wallet::identity::LastEnabledKeyError;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWallet;
     use dash_sdk::query_types::IdentityNonceFetcher;
     use dashcore::Network;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -1343,5 +1344,58 @@ mod tests {
             matches!(result, Err(PlatformWalletError::LastEnabledKey(_))),
             "{result:?}"
         );
+    }
+
+    /// A refused update is never broadcast, so it must not reserve a nonce:
+    /// the next fetch still answers Platform's nonce, not one above it.
+    async fn next_nonce_without_bump(wallet: &PlatformWallet) -> u64 {
+        wallet
+            .identity()
+            .sdk
+            .get_identity_nonce(Identifier::from([1; 32]), false, None)
+            .await
+            .expect("nonce")
+    }
+
+    #[tokio::test]
+    async fn should_not_reserve_a_nonce_for_a_refused_update() {
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(identity(), 0, wallet_id, &persister)
+                .expect("add identity");
+        }
+
+        let result = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &Identifier::from([1; 32]),
+                vec![],
+                vec![1],
+                &HoldsEveryKey,
+                None,
+            )
+            .await;
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(next_nonce_without_bump(&wallet).await, 0);
+    }
+
+    #[tokio::test]
+    async fn should_not_reserve_a_nonce_for_a_refused_update_with_a_supplied_identity() {
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        let result = wallet
+            .identity()
+            .update_identity_with_signer(&identity(), &0, vec![], vec![1], &HoldsEveryKey, None)
+            .await;
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(next_nonce_without_bump(&wallet).await, 0);
     }
 }
