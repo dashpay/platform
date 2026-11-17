@@ -4,18 +4,16 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prepares the operations for deleting an **indexOnly** document.
@@ -50,9 +48,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -108,9 +104,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -144,9 +138,6 @@ impl Drive {
     /// values and owner) and applies the operations, returning the fee.
     /// `apply: false` runs the worst-case estimation instead — the same
     /// dry-run contract every other document operation follows.
-    /// `previous_fee_versions` carries the historical fee-version context
-    /// deletion refunds are priced against, exactly as on
-    /// `delete_document_for_contract`.
     ///
     /// # Parameters
     ///
@@ -159,8 +150,6 @@ impl Drive {
     /// * `transaction`: The GroveDB transaction; without one, an applied deletion runs in a
     ///   transaction of its own that is committed at the end.
     /// * `platform_version`: The platform version.
-    /// * `previous_fee_versions`: The fee versions of earlier epochs the refunds are priced
-    ///   against.
     ///
     /// # Returns
     ///
@@ -178,7 +167,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -195,7 +183,6 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_index_only_document_for_contract".to_string(),

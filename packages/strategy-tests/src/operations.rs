@@ -48,12 +48,14 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyCount};
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Value;
+use dpp::prelude::TimestampMillis;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::tokens::token_event::TokenEvent;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
@@ -696,20 +698,56 @@ impl VoteAction {
     /// are proportionally more likely to be chosen. Returns `Abstain`
     /// if no choices are configured.
     pub fn choose_weighted_choice(&self, rng: &mut StdRng) -> ResourceVoteChoice {
-        if self.vote_choices_with_weights.is_empty() {
-            ResourceVoteChoice::Abstain
-        } else if self.vote_choices_with_weights.len() == 1 {
-            self.vote_choices_with_weights[0].0
-        } else {
-            let weights: Vec<u8> = self
-                .vote_choices_with_weights
-                .iter()
-                .map(|(_, weight)| *weight)
-                .collect();
+        choose_weighted(
+            &self.vote_choices_with_weights,
+            ResourceVoteChoice::Abstain,
+            rng,
+        )
+    }
+}
+
+/// One of `choices_with_weights`, picked with probability proportional to its weight, or
+/// `fallback` when there is none.
+fn choose_weighted<Choice: Copy>(
+    choices_with_weights: &[(Choice, u8)],
+    fallback: Choice,
+    rng: &mut StdRng,
+) -> Choice {
+    match choices_with_weights {
+        [] => fallback,
+        [(choice, _)] => *choice,
+        _ => {
+            let weights = choices_with_weights.iter().map(|(_, weight)| *weight);
             let dist = WeightedIndex::new(weights).unwrap();
-            let index = dist.sample(rng);
-            self.vote_choices_with_weights[index].0
+            choices_with_weights[dist.sample(rng)].0
         }
+    }
+}
+
+/// Masternodes answering a yes/no vote poll, such as the one a decision proposal opens.
+///
+/// Each hit picks a random masternode and an answer. A masternode giving the answer it already
+/// gave, or past the votes it is allowed on a poll, is skipped, as the vote would be refused, and
+/// so is one that already answered the poll in the block.
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct YesNoVoteOp {
+    /// The poll answered (`YesNoVotePoll::unique_id`).
+    pub vote_poll_id: Identifier,
+    /// The poll's end date. A poll closes at the start of the first block at or past its end
+    /// date, before the block's transitions, so no vote is cast from that block on.
+    pub end_date: TimestampMillis,
+    /// Pairs of (answer, weight). Higher weights make that answer more likely.
+    pub vote_choices_with_weights: Vec<(YesNoAbstainVoteChoice, u8)>,
+}
+
+impl YesNoVoteOp {
+    /// An answer picked by the weights, or `Abstain` when there are none.
+    pub fn choose_weighted_choice(&self, rng: &mut StdRng) -> YesNoAbstainVoteChoice {
+        choose_weighted(
+            &self.vote_choices_with_weights,
+            YesNoAbstainVoteChoice::Abstain,
+            rng,
+        )
     }
 }
 
@@ -839,6 +877,9 @@ pub enum OperationType {
         KeyCount,
         ExtraKeys,
     ),
+
+    /// Cast masternode votes on a yes/no vote poll.
+    YesNoVote(YesNoVoteOp),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -879,6 +920,7 @@ enum OperationTypeInSerializationFormat {
         KeyCount,
         ExtraKeys,
     ),
+    YesNoVote(YesNoVoteOp),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -984,6 +1026,9 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 key_count,
                 extra_keys,
             ),
+            OperationType::YesNoVote(yes_no_vote_op) => {
+                OperationTypeInSerializationFormat::YesNoVote(yes_no_vote_op)
+            }
         };
         let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(op, config).map_err(|e| {
@@ -1098,6 +1143,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted 
                 key_count,
                 extra_keys,
             ),
+            OperationTypeInSerializationFormat::YesNoVote(yes_no_vote_op) => {
+                OperationType::YesNoVote(yes_no_vote_op)
+            }
         })
     }
 }

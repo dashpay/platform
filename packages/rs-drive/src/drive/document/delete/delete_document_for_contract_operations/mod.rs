@@ -1,20 +1,20 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::storage_flags::StorageFlags;
+use crate::util::estimated_layers::EstimatedLayers;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
@@ -23,25 +23,27 @@ impl Drive {
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type`: The type of the document.
+    /// * `block_info`: The block this delete belongs to.
+    /// * `deleter_id`: The identity credited with the lifecycle record a
+    ///   keep-history delete writes; `None` credits nobody.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
     /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn delete_document_for_contract_operations(
+    pub fn delete_document_for_contract_operations(
         &self,
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        block_time_ms: u64,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -49,7 +51,7 @@ impl Drive {
             self.prepare_document_time_range_ttl(
                 contract,
                 document_type,
-                block_time_ms,
+                block_info.time_ms,
                 transaction,
                 platform_version,
             )?;
@@ -58,9 +60,10 @@ impl Drive {
             document_id,
             contract,
             document_type,
+            block_info,
+            deleter_id,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
-            block_time_ms,
             transaction,
             platform_version,
         )
@@ -74,11 +77,10 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        block_time_ms: u64,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -95,13 +97,24 @@ impl Drive {
                 document_type,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            ),
+            1 => self.delete_document_for_contract_operations_v1(
+                document_id,
+                contract,
+                document_type,
+                block_info,
+                deleter_id,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -114,10 +127,13 @@ impl Drive {
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type`: The type of the document.
+    /// * `block_info`: The block this delete belongs to.
+    /// * `deleter_id`: The identity credited with the lifecycle record a
+    ///   keep-history delete writes; `None` credits nobody.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
     /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
@@ -128,11 +144,10 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        block_time_ms: u64,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -149,35 +164,56 @@ impl Drive {
                 document_type,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            ),
+            1 => self.force_delete_document_for_contract_operations_v1(
+                document_id,
+                contract,
+                document_type,
+                block_info,
+                deleter_id,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "force_delete_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
     }
 
-    /// Deletes `document`, a document a create consumes, which the create's `refersTo` lookup
-    /// read with its element's `storage_flags`, without its type's `canBeDeleted` guard and
-    /// without reading it again: the operations
-    /// [`Self::force_delete_document_for_contract_operations`] gives, less its read. Only the
-    /// create conversion 1 (protocol version 15) deletes through it, with what document
-    /// reference validation 1 read.
+    /// Deletes `document`, a document a create consumes, as the create's `refersTo` lookup
+    /// read it, without its type's `canBeDeleted` guard and without reading it again: the
+    /// operations [`Self::force_delete_document_for_contract_operations`] gives, less its read.
+    /// Only the create conversion 1 (protocol version 15) deletes through it, with what
+    /// document reference validation 1 read.
+    ///
+    /// # Parameters
+    /// * `document`: The document to delete, as read from its primary storage.
+    /// * `contract`: The contract that contains the document.
+    /// * `document_type`: The type of the document.
+    /// * `previous_batch_operations`: Previous batch operations to include.
+    /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
+    /// * `block_time_ms`: The time of the block the delete is in.
+    /// * `transaction`: The transaction argument.
+    /// * `platform_version`: The platform version to select the correct function version to run.
+    ///
+    /// # Returns
+    /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
+    /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn force_delete_read_document_for_contract_operations(
         &self,
         document: Document,
-        storage_flags: Option<StorageFlags>,
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -189,9 +225,8 @@ impl Drive {
             .delete
             .delete_document_for_contract_operations
         {
-            0 => self.force_delete_read_document_for_contract_operations_v0(
+            0 | 1 => self.force_delete_read_document_for_contract_operations_v0(
                 document,
-                storage_flags,
                 contract,
                 document_type,
                 previous_batch_operations,
@@ -202,7 +237,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "force_delete_read_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -215,6 +250,7 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -229,21 +265,16 @@ mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::version::PlatformVersion;
-    use grovedb::batch::KeyInfoPath;
-    use grovedb::EstimatedLayerInformation;
+
     use std::borrow::Cow;
-    use std::collections::HashMap;
 
     /// What a delete gives: its operations and, when it only estimates costs, the layer
     /// information it estimated
-    type DeleteOutcome = (
-        Vec<LowLevelDriveOperation>,
-        Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
-    );
+    type DeleteOutcome = (Vec<LowLevelDriveOperation>, Option<EstimatedLayers>);
 
     /// Deleting a stored `person` under `platform_version`: by its id, as the force delete
-    /// does, and from the document and storage flags already read, each with a layer
-    /// information map of its own when `estimate` is set. Gives the drive holding it too.
+    /// does, and from the document already read, each with a layer information map of its own
+    /// when `estimate` is set. Gives the drive holding it too.
     fn force_delete_by_id_and_from_read(
         platform_version: &PlatformVersion,
         estimate: bool,
@@ -288,28 +319,27 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to store the document");
 
-        let mut by_id_estimates = estimate.then(HashMap::new);
+        let mut by_id_estimates = estimate.then(EstimatedLayers::new);
         let by_id = drive
             .force_delete_document_for_contract_operations(
                 document.id(),
                 &contract,
                 document_type,
+                &BlockInfo::default(),
+                None,
                 None,
                 &mut by_id_estimates,
-                0,
                 None,
                 platform_version,
             )
             .expect("expected the force delete operations");
-        let mut from_read_estimates = estimate.then(HashMap::new);
+        let mut from_read_estimates = estimate.then(EstimatedLayers::new);
         let from_read = drive
             .force_delete_read_document_for_contract_operations(
                 document.clone(),
-                Some(storage_flags),
                 &contract,
                 document_type,
                 None,
@@ -327,8 +357,8 @@ mod tests {
     }
 
     /// How many layers `estimates` describes
-    fn layer_count(estimates: &Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>) -> usize {
-        estimates.as_ref().map_or(0, HashMap::len)
+    fn layer_count(estimates: &Option<EstimatedLayers>) -> usize {
+        estimates.as_ref().map_or(0, EstimatedLayers::len)
     }
 
     /// The fee of `operations`, costs estimated from `estimates` when it is set, as an
@@ -336,7 +366,7 @@ mod tests {
     fn fee_of(
         drive: &Drive,
         operations: Vec<LowLevelDriveOperation>,
-        estimates: Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimates: Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> FeeResult {
         let mut drive_operations = vec![];
@@ -349,15 +379,14 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to cost the operations");
-        Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &Epoch::new(0).expect("expected epoch 0"),
-            drive.config.epochs_per_era,
-            platform_version,
-            None,
-        )
-        .expect("expected the fee")
+        drive
+            .calculate_fee(
+                None,
+                Some(drive_operations),
+                &Epoch::new(0).expect("expected epoch 0"),
+                platform_version,
+            )
+            .expect("expected the fee")
     }
 
     /// A consumed document is deleted from what its lookup read
@@ -366,7 +395,9 @@ mod tests {
         let (_, (by_id, _), (from_read, _)) =
             force_delete_by_id_and_from_read(PlatformVersion::latest(), false);
         // The force delete reads the document first; every operation after that read is
-        // the same, the storage removed and refunded included
+        // the same, the storage removed and refunded included. The by-id delete goes on with
+        // the storage flags of the element it read, the read delete with none: no operation
+        // carries them, as GroveDB refunds a removed element by the flags it holds
         assert_eq!(by_id.len(), from_read.len() + 1);
         assert_eq!(&by_id[1..], from_read.as_slice());
     }
@@ -414,11 +445,10 @@ mod tests {
             .expect("expected the document type");
         drive.force_delete_read_document_for_contract_operations(
             Document::V0(DocumentV0::default()),
-            None,
             &contract,
             document_type,
             None,
-            &mut estimate.then(HashMap::new),
+            &mut estimate.then(EstimatedLayers::new),
             0,
             None,
             platform_version,

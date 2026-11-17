@@ -43,6 +43,7 @@ use platform_wallet_storage::sqlite::schema::{identity_keys, identity_scan_state
 use platform_wallet_storage::{
     LoadCtx, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
 };
+use zeroize::Zeroizing;
 
 const MNEMONIC_A: &str = "abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon about";
@@ -207,12 +208,12 @@ struct Noop;
 impl platform_wallet::events::EventHandler for Noop {}
 impl PlatformEventHandler for Noop {}
 
-fn seed(phrase: &str) -> [u8; 64] {
+fn seed(phrase: &str) -> Zeroizing<[u8; 64]> {
     Mnemonic::from_phrase(phrase).unwrap().to_seed("")
 }
 
 fn master(phrase: &str) -> ExtendedPrivKey {
-    ExtendedPrivKey::new_master(NET, &seed(phrase)).unwrap()
+    ExtendedPrivKey::new_master(NET, &*seed(phrase)).unwrap()
 }
 
 /// The DIP-9 ECDSA auth key a wallet derives at `(identity_index, key_index)`.

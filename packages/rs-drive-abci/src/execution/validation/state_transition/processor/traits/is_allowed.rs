@@ -22,6 +22,7 @@ use dpp::version::feature_initial_protocol_versions::{
     CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
     IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
     TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
@@ -54,6 +55,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::TokenShieldedTransferWithShieldedFee(_)
             | StateTransition::TokenUnshieldWithShieldedFee(_)
             | StateTransition::TokenPurchaseFromShieldedPool(_)
+            | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -254,6 +256,22 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             self.state_transition_type().to_string(),
                             platform_version.protocol_version,
                             IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+                if platform_version.protocol_version
+                    >= PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
                         )
                         .into(),
                     ]))
@@ -612,7 +630,8 @@ mod tests {
                     | StateTransition::ContractFeeClaim(_)
                     | StateTransition::TokenShieldedTransferWithShieldedFee(_)
                     | StateTransition::TokenUnshieldWithShieldedFee(_)
-                    | StateTransition::TokenPurchaseFromShieldedPool(_) => Some(true),
+                    | StateTransition::TokenPurchaseFromShieldedPool(_)
+                    | StateTransition::PrivateDocumentCreateFromShieldedPool(_) => Some(true),
                     StateTransition::IdentityCreate(_)
                     | StateTransition::IdentityTopUp(_)
                     | StateTransition::IdentityCreditWithdrawal(_)

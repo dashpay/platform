@@ -1,7 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{PubkeyHash, ScriptBuf};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
 use dpp::identity::accessors::IdentityGettersV0;

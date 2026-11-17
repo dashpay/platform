@@ -453,6 +453,28 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .private_document_create_from_shielded_pool_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "private document create from shielded pool transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "private document create from shielded pool transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
             StateTransition::ShieldFromAssetLock(st) => {
                 match platform_version
                     .drive_abci
@@ -631,6 +653,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 .token_purchase_from_shielded_pool_state_transition
                 .basic_structure
                 .is_some(),
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .private_document_create_from_shielded_pool_state_transition
+                .basic_structure
+                .is_some(),
             StateTransition::ShieldFromAssetLock(_) => platform_version
                 .drive_abci
                 .validation_and_processing
@@ -705,6 +734,10 @@ mod tests {
                 (
                     StateTransition::IdentityCreate(IdentityCreateTransition::V0(
                         IdentityCreateTransitionV0 {
+                            // The identity id the asset lock derives, which basic structure
+                            // checks from protocol version 15. A proof without the output
+                            // derives none, and basic structure refuses it before that check.
+                            identity_id: proof.create_identifier().unwrap_or_default(),
                             asset_lock_proof: proof.clone(),
                             ..Default::default()
                         },
@@ -1020,6 +1053,7 @@ mod tests {
                 | StateTransition::TokenShieldedTransferWithShieldedFee(_)
                 | StateTransition::TokenUnshieldWithShieldedFee(_)
                 | StateTransition::TokenPurchaseFromShieldedPool(_)
+                | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_) => false,

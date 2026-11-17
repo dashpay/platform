@@ -32,6 +32,7 @@
 mod document_token_payment;
 mod identity_create_from_shielded_pool;
 mod identity_top_up_from_shielded_pool;
+mod private_document_create_from_shielded_pool;
 mod shield;
 mod shield_from_asset_lock;
 mod shield_from_identity;
@@ -53,6 +54,7 @@ pub use identity_create_from_shielded_pool::{
     build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
 };
 pub use identity_top_up_from_shielded_pool::build_identity_top_up_from_shielded_pool_transition;
+pub use private_document_create_from_shielded_pool::build_private_document_create_from_shielded_pool_transition;
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;

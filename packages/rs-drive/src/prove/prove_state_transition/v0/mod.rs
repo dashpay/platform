@@ -193,17 +193,9 @@ impl Drive {
                                 )?
                             } else {
                                 let contested_status =
-                                    if let DocumentTransition::Create(create_transition) =
-                                        document_transition
-                                    {
-                                        if create_transition.prefunded_voting_balance().is_some() {
-                                            SingleDocumentDriveQueryContestedStatus::Contested
-                                        } else {
-                                            SingleDocumentDriveQueryContestedStatus::NotContested
-                                        }
-                                    } else {
-                                        SingleDocumentDriveQueryContestedStatus::NotContested
-                                    };
+                                    SingleDocumentDriveQueryContestedStatus::of_document_transition(
+                                        document_transition,
+                                    );
 
                                 let query = SingleDocumentDriveQuery {
                                     contract_id: document_transition
@@ -615,6 +607,23 @@ impl Drive {
             StateTransition::ShieldedTransfer(st) => {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+                let count = nullifier_keys.len() as u16;
+
+                let mut query = grovedb::Query::new();
+                query.insert_keys(nullifier_keys);
+
+                PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(query, Some(count), None),
+                )
+            }
+            // The bundle's spent nullifiers, as a shielded transfer's. The entries are found by
+            // scanning the store: the sender knows them.
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
 
                 let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
                 let count = nullifier_keys.len() as u16;

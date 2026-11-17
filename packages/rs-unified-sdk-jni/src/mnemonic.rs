@@ -6,16 +6,21 @@
 //! the `NativeMnemonicBridge` implementation (`MnemonicResolverAndPersister`),
 //! which decrypts the Keystore-wrapped mnemonic on demand.
 
-use crate::support::{guard, JVM};
+use crate::support::{guard, take_pwffi_error, JVM};
 use jni::objects::{GlobalRef, JClass, JObject};
-use jni::sys::jlong;
+use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
+use platform_wallet_ffi::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use platform_wallet_ffi::mnemonic_words::{
+    platform_wallet_mnemonic_free, platform_wallet_mnemonic_generate,
+};
 use rs_sdk_ffi::{
     dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy, MnemonicResolverHandle,
 };
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ptr;
 
 /// Result codes from `rs-sdk-ffi::mnemonic_resolver_result`.
 const RESULT_OK: i32 = 0;
@@ -170,64 +175,49 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MnemonicNative_destro
     });
 }
 
-/// Generate a fresh BIP-39 mnemonic via key-wallet-ffi — the same
-/// `mnemonic_generate_with_language` call `Mnemonic.generate()` uses in
+/// Generate a fresh BIP-39 mnemonic via platform-wallet-ffi — the same
+/// `platform_wallet_mnemonic_generate` call `Mnemonic.generate()` uses in
 /// `SwiftDashSDK/KeyWallet/Mnemonic.swift`. `wordCount` ∈ {12,15,18,21,24};
-/// `language` is the FFILanguage ordinal (0 = English). Throws on failure.
+/// `language` is the `FFIMnemonicLanguage` ordinal (0 = English). Throws on
+/// failure, including for an unknown ordinal.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MnemonicNative_generateMnemonic(
     mut env: JNIEnv,
     _class: JClass,
-    word_count: jni::sys::jint,
-    language: jni::sys::jint,
-) -> jni::sys::jstring {
-    guard(&mut env, std::ptr::null_mut(), |env| {
-        let language = match language {
-            1 => key_wallet_ffi::mnemonic::FFILanguage::ChineseSimplified,
-            2 => key_wallet_ffi::mnemonic::FFILanguage::ChineseTraditional,
-            3 => key_wallet_ffi::mnemonic::FFILanguage::Czech,
-            4 => key_wallet_ffi::mnemonic::FFILanguage::French,
-            5 => key_wallet_ffi::mnemonic::FFILanguage::Italian,
-            _ if language > 5 => key_wallet_ffi::mnemonic::FFILanguage::English,
-            _ => key_wallet_ffi::mnemonic::FFILanguage::English,
-        };
-        // Out-param error slot; the FFI writes code+message into it.
-        let mut error = key_wallet_ffi::FFIError {
-            code: key_wallet_ffi::FFIErrorCode::Success,
-            message: std::ptr::null_mut(),
-        };
-        let phrase_ptr = unsafe {
-            key_wallet_ffi::mnemonic::mnemonic_generate_with_language(
-                word_count.max(0) as std::os::raw::c_uint,
-                language,
-                &mut error,
+    word_count: jint,
+    language: jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut phrase_ptr: *mut c_char = ptr::null_mut();
+        // A negative ordinal wraps to a value Rust refuses as unknown.
+        let result = unsafe {
+            platform_wallet_mnemonic_generate(
+                word_count.max(0) as u32,
+                language as u32,
+                &mut phrase_ptr,
             )
         };
-        if phrase_ptr.is_null() {
-            let message = if error.message.is_null() {
-                String::from("mnemonic generation failed")
-            } else {
-                unsafe { std::ffi::CStr::from_ptr(error.message) }
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            // Capture the code BEFORE clean(): FFIError::clean() resets
-            // `code` to Success while freeing the message, so reading it
-            // afterwards reports every failure as 0 / InternalError
-            // (e.g. an invalid word count loses its InvalidParameter).
-            let code = error.code as i32;
-            unsafe { error.clean() };
-            crate::support::throw_sdk_exception(env, code, &message);
-            return std::ptr::null_mut();
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
         }
-        let mut phrase = unsafe { std::ffi::CStr::from_ptr(phrase_ptr) }
+        if phrase_ptr.is_null() {
+            take_pwffi_error(
+                env,
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    "platform_wallet_mnemonic_generate returned a NULL phrase pointer",
+                ),
+            );
+            return ptr::null_mut();
+        }
+        let mut phrase = unsafe { CStr::from_ptr(phrase_ptr) }
             .to_string_lossy()
             .into_owned();
-        unsafe { key_wallet_ffi::mnemonic::mnemonic_free(phrase_ptr) };
+        unsafe { platform_wallet_mnemonic_free(phrase_ptr) };
         let jstr = env
             .new_string(&phrase)
             .map(|s| s.into_raw())
-            .unwrap_or(std::ptr::null_mut());
+            .unwrap_or(ptr::null_mut());
         // Zero the intermediate copy of the phrase.
         unsafe { phrase.as_bytes_mut().iter_mut().for_each(|b| *b = 0) };
         jstr

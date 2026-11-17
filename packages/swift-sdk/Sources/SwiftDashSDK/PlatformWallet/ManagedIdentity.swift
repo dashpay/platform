@@ -117,60 +117,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var outPtr: UnsafeMutablePointer<IdentityPublicKeyFFI>? = nil
         var outCount: UInt = 0
         try managed_identity_get_public_keys(handle, &outPtr, &outCount).check()
-
-        // Empty-identity branch. Rust sets ptr=null / count=0.
-        guard let ptr = outPtr, outCount > 0 else {
-            return []
-        }
-
-        defer {
-            managed_identity_free_public_keys(ptr, outCount)
-        }
-
-        var keys: [IdentityPublicKeyInfo] = []
-        keys.reserveCapacity(Int(outCount))
-        for i in 0..<Int(outCount) {
-            let ffi = ptr[i]
-
-            guard let purpose = KeyPurpose(rawValue: ffi.purpose),
-                  let securityLevel = SecurityLevel(rawValue: ffi.security_level),
-                  let keyType = KeyType(rawValue: ffi.key_type)
-            else {
-                // Rust emitted a discriminant Swift doesn't know
-                // about. Keep the deallocation (defer) and surface
-                // a typed error so callers can recover.
-                throw PlatformWalletError.deserialization(
-                    "Unknown public-key enum discriminant at index \(i)"
-                )
-            }
-
-            let data: Data
-            if let blob = ffi.data_ptr, ffi.data_len > 0 {
-                data = Data(bytes: blob, count: Int(ffi.data_len))
-            } else {
-                data = Data()
-            }
-
-            keys.append(
-                IdentityPublicKeyInfo(
-                    keyId: Int32(bitPattern: ffi.key_id),
-                    purpose: purpose,
-                    securityLevel: securityLevel,
-                    keyType: keyType,
-                    readOnly: ffi.read_only,
-                    disabledAt: ffi.disabled_at_is_some
-                        ? Int64(bitPattern: ffi.disabled_at)
-                        : nil,
-                    data: data,
-                    totalBudget: ffi.total_budget_is_some ? ffi.total_budget : nil,
-                    expiresAt: ffi.expires_at_is_some
-                        ? Int64(bitPattern: ffi.expires_at)
-                        : nil
-                )
-            )
-        }
-
-        return keys
+        return try IdentityPublicKeyInfo.keys(from: outPtr, count: outCount)
     }
 
     /// Get the identity label.
@@ -534,5 +481,83 @@ public final class ManagedIdentity: @unchecked Sendable {
             payments.append(DashPayPayment(ffi: items[i]))
         }
         return payments
+    }
+}
+
+/// Take ownership of an array an FFI call returned: decode it, then release
+/// it with `free` on every path (success or throw). A null `ptr` or zero
+/// `count` is the FFI's empty sentinel: `[]`, nothing to free.
+func consumeFFIArray<Element, Value>(
+    _ ptr: UnsafeMutablePointer<Element>?,
+    count: UInt,
+    free: (UnsafeMutablePointer<Element>, UInt) -> Void,
+    decode: (UnsafeBufferPointer<Element>) throws -> [Value]
+) rethrows -> [Value] {
+    guard let ptr, count > 0 else {
+        return []
+    }
+    defer {
+        free(ptr, count)
+    }
+    return try decode(UnsafeBufferPointer(start: ptr, count: Int(count)))
+}
+
+extension ManagedIdentity.IdentityPublicKeyInfo {
+    /// Decode a key array returned by `managed_identity_get_public_keys`
+    /// into Swift values, releasing the FFI buffer on every path.
+    static func keys(
+        from ptr: UnsafeMutablePointer<IdentityPublicKeyFFI>?,
+        count: UInt
+    ) throws -> [Self] {
+        try consumeFFIArray(
+            ptr,
+            count: count,
+            free: { managed_identity_free_public_keys($0, $1) },
+            decode: decode
+        )
+    }
+
+    /// Copy each FFI entry into a Swift value. Reads `entries` only; the
+    /// caller keeps ownership of the buffer.
+    static func decode(_ entries: UnsafeBufferPointer<IdentityPublicKeyFFI>) throws -> [Self] {
+        try entries.enumerated().map { i, ffi in try Self(ffi: ffi, index: i) }
+    }
+
+    /// Copy one FFI entry. `index` names the entry in the error thrown for
+    /// a purpose, security level or key type this SDK does not know.
+    init(ffi: IdentityPublicKeyFFI, index: Int) throws {
+        guard let purpose = KeyPurpose(rawValue: ffi.purpose),
+              let securityLevel = SecurityLevel(rawValue: ffi.security_level),
+              let keyType = KeyType(rawValue: ffi.key_type)
+        else {
+            // Rust emitted a discriminant Swift doesn't know
+            // about. Surface a typed error so callers can recover.
+            throw PlatformWalletError.deserialization(
+                "Unknown public-key enum discriminant at index \(index)"
+            )
+        }
+
+        let data: Data
+        if let blob = ffi.data_ptr, ffi.data_len > 0 {
+            data = Data(bytes: blob, count: Int(ffi.data_len))
+        } else {
+            data = Data()
+        }
+
+        self.init(
+            keyId: Int32(bitPattern: ffi.key_id),
+            purpose: purpose,
+            securityLevel: securityLevel,
+            keyType: keyType,
+            readOnly: ffi.read_only,
+            disabledAt: ffi.disabled_at_is_some
+                ? Int64(bitPattern: ffi.disabled_at)
+                : nil,
+            data: data,
+            totalBudget: ffi.total_budget_is_some ? ffi.total_budget : nil,
+            expiresAt: ffi.expires_at_is_some
+                ? Int64(bitPattern: ffi.expires_at)
+                : nil
+        )
     }
 }

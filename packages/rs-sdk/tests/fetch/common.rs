@@ -73,6 +73,57 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     .expect("expected to create a document type")
 }
 
+/// A mock document type whose documents are counted ([`mock_document_type`] counts nothing):
+/// the type counts its documents, and its index on `a` counts them per value and over a range
+/// of values, so every count a mock test fetches is one a node serves and the SDK verifies.
+pub fn mock_countable_document_type() -> dpp::data_contract::document_type::DocumentType {
+    use dpp::{
+        data_contract::document_type::DocumentType, platform_value::platform_value,
+        version::PlatformVersion,
+    };
+
+    let platform_version = PlatformVersion::latest();
+
+    let schema = platform_value!({
+        "type": "object",
+        "documentsCountable": true,
+        "properties": {
+            "a": {
+                "type": "string",
+                "maxLength": 10,
+                "position": 0
+            }
+        },
+        "indices": [
+            {
+                "name": "byA",
+                "properties": [{"a": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true
+            }
+        ],
+        "additionalProperties": false,
+    });
+
+    let config =
+        DataContractConfig::default_for_version(platform_version).expect("create a default config");
+
+    DocumentType::try_from_schema(
+        Identifier::random(),
+        1,
+        config.version(),
+        "document_type_name",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("expected to create a document type")
+}
+
 /// Create a mock data contract for testing of mock API
 pub fn mock_data_contract(
     document_type: Option<&dpp::data_contract::document_type::DocumentType>,

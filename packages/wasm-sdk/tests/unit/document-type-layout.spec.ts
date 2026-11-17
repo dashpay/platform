@@ -6,6 +6,7 @@
  */
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import type { DocumentTypeLayoutNode } from '../../dist/sdk.js';
 
 const ownerId = '11111111111111111111111111111111';
 
@@ -23,6 +24,14 @@ type LayoutNode = {
 };
 
 const schemas = {
+  note: {
+    type: 'object',
+    documentsKeepHistory: true,
+    canBeDeleted: false,
+    properties: { text: { type: 'string', maxLength: 40, position: 0 } },
+    required: ['text'],
+    additionalProperties: false,
+  },
   /** Plain, countable, unique, compound and ranked indexes over one type. */
   review: {
     type: 'object',
@@ -85,12 +94,24 @@ describe('documentTypeLayout()', () => {
     });
   });
 
-  function layout(name: string) {
-    return sdk.documentTypeLayout(contract, name, new sdk.PlatformVersion(14)) as unknown as {
+  function layout(name: string, version = 14) {
+    return sdk.documentTypeLayout(contract, name, new sdk.PlatformVersion(version)) as unknown as {
       documentType: string;
       root: LayoutNode;
     };
   }
+
+  it('should describe current pointers and retained composite revisions at protocol 15', () => {
+    const roles: Array<DocumentTypeLayoutNode['role']> = ['history', 'documentHistory', 'retainedRevision'];
+    const revisionKey: DocumentTypeLayoutNode['key'] = { kind: 'revisionTimeAndRevision' };
+    const { root } = layout('note', 15);
+    expect(child(root, 'PrimaryKey').children[0]).to.include({ role: 'document', element: 'Reference' });
+    const history = child(root, 'History');
+    expect(history.role).to.equal(roles[0]);
+    expect(history.children[0]).to.include({ role: roles[1], element: 'ProvableCountTree' });
+    expect(history.children[0].children[0]).to.include({ role: roles[2], element: 'Item' });
+    expect(history.children[0].children[0].key).to.deep.equal(revisionKey);
+  });
 
   it('should describe the document type tree, the documents and one tree per first index property', () => {
     const { documentType, root } = layout('review');

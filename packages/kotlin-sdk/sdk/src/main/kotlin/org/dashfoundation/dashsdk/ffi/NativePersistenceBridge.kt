@@ -99,6 +99,33 @@ abstract class NativePersistenceBridge {
          * it, so the declaration and the mirror can never drift apart.
          */
         const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
+
+        /**
+         * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
+         * (bit 15, `0x8000`; bit 14 is `ASSET_LOCK_SHIELDED_RECIPIENTS`): the
+         * private contact request sync's scan state is stored on its round
+         * and restored at load. A store declaring it keeps a position record
+         * marked unresolved through its wallet's removal, until a record
+         * stored cleared for the same wallet and identity replaces it, and
+         * lists that wallet ([onLoadPrivateContactScanStateWallets]). The
+         * one Kotlin home of this bit, aliased by the public diagnostic
+         * mirror.
+         */
+        const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
+
+        /**
+         * Packed row widths of [onPersistPrivateContactScanState] and
+         * [onLoadPrivateContactScanState]: a read position is the identity
+         * id (32), the position (u64, little-endian), the key fingerprint
+         * (32) and the unresolved private payment marker (1: 0 or 1); a
+         * shielded address the owner id (32), the contact id (32) and the
+         * address (43); an address removal the owner and contact ids; a
+         * cleared identity its id.
+         */
+        const val PRIVATE_POSITION_ENTRY_SIZE: Int = 32 + 8 + 32 + 1
+        const val PRIVATE_ADDRESS_ENTRY_SIZE: Int = 32 + 32 + 43
+        const val PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE: Int = 32 + 32
+        const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32
     }
 
     /**
@@ -469,6 +496,30 @@ abstract class NativePersistenceBridge {
         rewoundFrom: Int,
         covered: ByteArray,
         coveredCount: Int,
+    ): Int = 0
+
+    /**
+     * The private contact request sync's scan state a round writes, inside
+     * the round after its contacts. Descriptor `([B[B[B[B[B)I`. Each array
+     * packs whole rows (see [PRIVATE_POSITION_ENTRY_SIZE] and its siblings):
+     *
+     * - [positions]: replace the identity's stored read position.
+     * - [addresses]: replace the stored address for `(owner, contact)`.
+     * - [removedAddresses]: delete the stored address for `(owner, contact)`.
+     * - [clearedIdentities]: identities the round removed from the wallet;
+     *   delete each one's position and every address it owns.
+     *
+     * Delivered only to a bridge that overrides both this and
+     * [onLoadPrivateContactScanState]: an inherited no-op would acknowledge
+     * a read position it never kept. Without them each launch reads the
+     * private store from its start.
+     */
+    open fun onPersistPrivateContactScanState(
+        walletId: ByteArray,
+        positions: ByteArray,
+        addresses: ByteArray,
+        removedAddresses: ByteArray,
+        clearedIdentities: ByteArray,
     ): Int = 0
 
     // ── Identities ────────────────────────────────────────────────────
@@ -908,6 +959,27 @@ abstract class NativePersistenceBridge {
     open fun onLoadShieldedViewingKeys(): Array<ShieldedViewingKeyData> = emptyArray()
 
     /**
+     * `on_load_private_contact_scan_state_fn`: the stored scan state of
+     * [walletId] as two packed arrays, `[positions, addresses]`, in the
+     * layout [onPersistPrivateContactScanState] stores. Descriptor
+     * `([B)[[B`. Throw on a store that cannot be read: an empty answer
+     * would read the store from its start without saying why.
+     */
+    open fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+        arrayOf(ByteArray(0), ByteArray(0))
+
+    /**
+     * `on_load_private_contact_scan_state_wallets_fn`: the ids of every
+     * wallet the store keeps scan state for, 32 bytes each, packed back to
+     * back, a removed wallet whose position records were kept marked
+     * included. Rust reads each one its wallet-list load does not return
+     * through [onLoadPrivateContactScanState] and hands its marked records to
+     * the wallet as retained. Descriptor `()[B`. Throw on a store that cannot
+     * be read.
+     */
+    open fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+
+    /**
      * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`
      * if no row exists. Descriptor
      * `([B[B)Lorg/dashfoundation/dashsdk/ffi/CoreTxRecordData;`.
@@ -1117,7 +1189,9 @@ class ProviderSpecialTxRestoreData(
  * `onWalletChangesetUtxoAdded`); [scriptPubKey] is the output script —
  * the Rust side reconstructs the address from `(script, network)`, so
  * no address string crosses the FFI. `isTrusted` is runtime-only and
- * recomputed on the next SPV pass (not carried).
+ * recomputed on the next SPV pass (not carried). [parentContext] /
+ * [parentBlockHeight] carry the creating transaction's row so the loader
+ * can raise a coin that lags its own transaction's confirmation.
  */
 class UtxoRestoreData(
     @JvmField val typeTag: Byte,
@@ -1136,6 +1210,14 @@ class UtxoRestoreData(
     @JvmField val isConfirmed: Boolean,
     @JvmField val isInstantLocked: Boolean,
     @JvmField val isLocked: Boolean,
+    /**
+     * The stored context of the coin's creating transaction, copied as-is
+     * (0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock; 0 when
+     * there is no row). The Rust loader decides what it means for the coin.
+     */
+    @JvmField val parentContext: Int,
+    /** The stored block height of the coin's creating transaction; 0 when none. */
+    @JvmField val parentBlockHeight: Int,
 )
 
 /**

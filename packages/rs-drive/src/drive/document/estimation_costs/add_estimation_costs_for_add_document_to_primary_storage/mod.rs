@@ -1,13 +1,12 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Adds estimated storage costs for adding a document to primary storage based on platform version.
@@ -21,7 +20,7 @@ impl Drive {
     /// # Arguments
     /// * `document_and_contract_info`: Information about the document and its associated contract.
     /// * `primary_key_path`: Key path where the document should be stored in primary storage.
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the estimated layer
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the estimated layer
     ///   information will be stored for the given key path.
     /// * `platform_version`: Version of the platform being used, which determines the estimation method.
     ///
@@ -38,7 +37,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_add_document_to_primary_storage(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
@@ -54,10 +53,16 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
+            1 => Self::add_estimation_costs_for_add_document_to_primary_storage_v1(
+                document_and_contract_info,
+                primary_key_path,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::add_estimation_costs_for_add_document_to_primary_storage"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -218,6 +218,10 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 `MasternodeVote` skips basic structure validation entirely. `DataContractCreate` and
 `DataContractUpdate` conditionally enable it based on the platform version.
 
+From protocol version 15, `IdentityCreate` basic structure also checks that the identity id is
+the one the asset lock's outpoint derives. The check reads only the transition, so a wrong
+identity id is refused, without a fee, before the asset lock proof is verified in Stage 9.
+
 ## Stage 7: Balance Pre-Check
 
 Before doing expensive state validation, the platform checks that the identity has
@@ -274,9 +278,10 @@ verify (a key whose public key data does not decode fails it too) is refused wit
 without using the nonce, as a failed identity signature is, and no key is added; a revision
 mismatch is still charged. A block holding such a transition is refused, as for any unpaid
 result. `check_tx` verifies the proofs of possession of the added keys at every protocol version,
-after the identity signature, so such a transition does not reach a block; it leaves the revision
-to the block, as an update queued behind another of the same identity does not match the stored
-revision yet.
+after the identity signature, so such a transition does not enter an honest node's mempool; it
+leaves the revision to the block, as an update queued behind another of the same identity does not
+match the stored revision yet. Below protocol version 15 a proposer can still put such a
+transition in a block, which charges it.
 
 ## Stage 9: Transform Into Action + Advanced Structure (with State)
 
@@ -323,15 +328,15 @@ version 14 a failure is therefore refused without a fee, like a failed witness, 
 charging the inputs a penalty; check_tx runs this stage for the transition too, so such a
 transition does not reach a block.
 
-For `IdentityCreate` this stage checks that the identity id is the one the asset lock's outpoint
-derives, the structure of the keys, and the proof of possession of each key. The asset lock
-signature covers the keys but neither the identity id nor the key signatures, which are left
-out of the signable bytes. From protocol version 14 an identity id or proof of possession
+For `IdentityCreate` this stage checks the structure of the keys and the proof of possession
+of each key, and, up to protocol version 14, that the identity id is the one the asset lock's
+outpoint derives (from protocol version 15 basic structure checks it, see Stage 6). The asset
+lock signature covers the keys but neither the identity id nor the key signatures, which are
+left out of the signable bytes. From protocol version 14 an identity id or proof of possession
 failure is therefore refused without a fee instead of charging the asset lock a penalty, and
 the asset lock is left as it was; a key structure failure is still charged. A block holding
 such a transition is refused, as for any unpaid result. `check_tx` runs this stage for
-`IdentityCreate` too, at every protocol version, so such a transition does not reach a block; it
-checks the identity id first, before verifying the asset lock proof.
+`IdentityCreate` too, at every protocol version, so such a transition does not reach a block.
 
 ## Stage 10: State Validation
 
@@ -414,7 +419,9 @@ But when the pipeline returns early after the nonce has been validated -- for ex
 during advanced structure validation or state validation -- it returns a
 **nonce-bump action** so the identity still pays a small fee. This prevents a different
 attack: submitting thousands of structurally invalid transitions to waste validator
-resources for free.
+resources for free. From protocol version 15 an `IdentityUpdate` whose added key's proof of
+possession fails is the exception: the identity did not sign that proof, so the update is
+refused unpaid, like a failed signature (see Stage 8).
 
 ## Rules and Guidelines
 
@@ -423,9 +430,10 @@ resources for free.
   can lead to consensus divergence.
 - Return early on signature/nonce failures without charging the user.
 - Bump the nonce (and charge) when structure or state validation fails after the nonce
-  check has passed. The exception is a failure in a field the signer did not sign, such as
-  an added key's proof of possession on an `IdentityUpdate` from protocol version 15: it is
-  refused unpaid, like a failed signature.
+  check has passed. The exception is a failed proof of possession the signer did not sign,
+  such as an added key's on an `IdentityUpdate` from protocol version 15, where key data that
+  does not decode fails the proof too although the signer signed it: it is refused unpaid,
+  like a failed signature.
 - Use `ConsensusValidationResult` everywhere -- do not use `Result<(), Error>` for
   validation outcomes, because a validation failure is not a system error.
 

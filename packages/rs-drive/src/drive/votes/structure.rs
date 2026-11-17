@@ -301,23 +301,30 @@ fn index_value() -> StructureNode {
         .lazy()
         .describe("Votes to lock the value so nobody gets it.")
         .child(voting_storage()),
-        StructureNode::identifier("contender", "identity_id", "The contending identity's id")
-            .kind(ElementKind::Tree)
-            .flags(&OWNED, CONTENDER_FLAGS)
-            .describe(
-                "One contender, below the last value of the \
+        StructureNode::identifier(
+            "contender",
+            "contender_id",
+            "The contending identity's id, or the contending document's id in a vote \
+             among documents (contested index resolution 2, protocol version 15)",
+        )
+        .kind(ElementKind::Tree)
+        .flags(&OWNED, CONTENDER_FLAGS)
+        .describe(
+            "One contender, below the last value of the \
                  index. A 32 byte key is an index value at the \
                  levels before that, so what is below the key \
-                 tells the two apart.",
-            )
-            .children(vec![
-                StructureNode::fixed("document", &[0], "Document", "")
-                    .kind(ElementKind::Reference)
-                    .flags(&OWNED, CONTENDER_FLAGS)
-                    .reference(CONTESTED_DOCUMENT)
-                    .describe("The contender's document."),
-                voting_storage(),
-            ]),
+                 tells the two apart. A contest keeps one contender \
+                 for each identity, except a vote among documents, \
+                 which keeps one for each document entered.",
+        )
+        .children(vec![
+            StructureNode::fixed("document", &[0], "Document", "")
+                .kind(ElementKind::Reference)
+                .flags(&OWNED, CONTENDER_FLAGS)
+                .reference(CONTESTED_DOCUMENT)
+                .describe("The contender's document."),
+            voting_storage(),
+        ]),
         StructureNode::dynamic(
             "next_value",
             "index_value",

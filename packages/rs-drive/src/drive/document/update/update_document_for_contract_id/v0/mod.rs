@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -10,13 +11,10 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 impl Drive {
     /// Updates a serialized document given a contract id and returns the associated fee.
@@ -33,14 +31,9 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -77,13 +70,11 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )?;
 
         Ok(fees)

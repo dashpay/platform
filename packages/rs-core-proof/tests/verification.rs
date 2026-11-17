@@ -214,3 +214,69 @@ fn should_verify_a_proof_signed_by_the_checkpoint_quorum_itself() {
     let verified = bootstrap::verify(&f.bootstrap, &f.checkpoint, f.target.height).unwrap();
     assert_eq!(verified.state(), &f.target);
 }
+
+/// Verify one link at a time, as an async caller does between yields.
+fn verify_stepwise<'a>(
+    bytes: &'a [u8],
+    trusted: &State,
+    minimum_height: u32,
+) -> dash_core_proof::Result<bootstrap::VerifiedBootstrap<'a>> {
+    let mut verification = bootstrap::start(bytes, trusted, minimum_height)?;
+    while verification.links_left() > 0 {
+        let left = verification.links_left();
+        verification.verify_link()?;
+        assert_eq!(verification.links_left(), left - 1);
+    }
+    verification.finish()
+}
+
+#[test]
+fn should_verify_link_by_link_exactly_as_in_one_call() {
+    for (f, links) in [(mainnet(), 2), (testnet(), 4)] {
+        let started = bootstrap::start(&f.bootstrap, &f.checkpoint, 0).unwrap();
+        assert_eq!(started.links_left(), links);
+        let whole = bootstrap::verify(&f.bootstrap, &f.checkpoint, 0).unwrap();
+        let stepwise = verify_stepwise(&f.bootstrap, &f.checkpoint, 0).unwrap();
+        assert_eq!(stepwise.state(), whole.state());
+        assert_eq!(stepwise.records(), whole.records());
+        // `finish` verifies whatever links are left.
+        let finished = bootstrap::start(&f.bootstrap, &f.checkpoint, 0)
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(finished.state(), whole.state());
+    }
+}
+
+#[test]
+fn should_reject_link_by_link_whatever_one_call_rejects() {
+    let f = testnet();
+    let stale = verify_stepwise(&f.bootstrap, &f.checkpoint, f.target.height + 1).unwrap_err();
+    assert_eq!(
+        stale.kind(),
+        bootstrap::verify(&f.bootstrap, &f.checkpoint, f.target.height + 1)
+            .unwrap_err()
+            .kind()
+    );
+    for i in (0..f.bootstrap.len()).step_by(61) {
+        let mut corrupt = f.bootstrap.clone();
+        corrupt[i] ^= 0x01;
+        assert_eq!(
+            format!(
+                "{:?}",
+                verify_stepwise(&corrupt, &f.checkpoint, 0).map(|v| v.state().clone())
+            ),
+            format!(
+                "{:?}",
+                bootstrap::verify(&corrupt, &f.checkpoint, 0).map(|v| v.state().clone())
+            ),
+            "flip at {i}"
+        );
+    }
+    for n in (0..f.bootstrap.len()).step_by(97) {
+        assert!(
+            verify_stepwise(&f.bootstrap[..n], &f.checkpoint, 0).is_err(),
+            "cut at {n}"
+        );
+    }
+}

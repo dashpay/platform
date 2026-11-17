@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -15,12 +16,36 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    /// `uses_current_document_history_layout`: selects legacy revision subtrees (0)
+    /// or current-document pointers into retained history (1) for derived reads,
+    /// cost estimation, layout descriptions and primary-key query lowering.
+    pub document_history_storage_layout: FeatureVersion,
     pub expiration: DriveDocumentExpirationMethodVersions,
     /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
     /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable
     /// from protocol version 14 only, the first version whose parser reads a rule; the slot
     /// is 0 in every table.
     pub fetch_property_constraint_aggregate: FeatureVersion,
+    /// `insert_empty_private_document_store_operation`: the operation creating the store of a
+    /// private document type at the type's key `[0]` when a contract registers the type or an
+    /// update adds it, sized from the protocol version's private document store limits
+    /// (`SystemLimits::private_document_store_target_chunk_bytes` and the two chunk power
+    /// bounds). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15),
+    /// `None` in every earlier table, which admit no private document type.
+    pub insert_empty_private_document_store_operation: OptionalFeatureVersion,
+    /// `fetch_private_document_entries`: a page of the entries of a private document type's
+    /// store, in append order, each split into Drive's header and the client's entry.
+    /// `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub fetch_private_document_entries: OptionalFeatureVersion,
+    /// `prove_private_document_entries`: the proof of such a page, which
+    /// `verify_private_document_entries` checks. `Some(0)` from
+    /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub prove_private_document_entries: OptionalFeatureVersion,
+    /// `append_private_document_entries_operations`: the operations a
+    /// `PrivateDocumentCreateFromShieldedPool` appends its entries with, each after Drive's
+    /// header (the block's height and time). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+    /// (protocol version 15), `None` before.
+    pub append_private_document_entries_operations: OptionalFeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
@@ -40,6 +65,8 @@ pub struct DriveDocumentExpirationMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
+    pub fetch_document_lifecycle: OptionalFeatureVersion,
+
     pub query_documents: FeatureVersion,
     /// Chained document queries (provable semi-join): the version slot
     /// shared by the no-proof and the two-proof execution paths.
@@ -105,6 +132,10 @@ pub struct DriveDocumentQueryMethodVersions {
     /// checks; v1 (protocol version 14) groups multiple `In` clauses
     /// structurally and reports duplicate-field and overlap errors
     /// instead. Flips together with `non_primary_key_path_query`.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves a
+    /// documents query with several `In` clauses
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub where_clause_grouping: FeatureVersion,
     /// Reading a query's `startAt`/`startAfter` cursor document from the
     /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
@@ -112,7 +143,19 @@ pub struct DriveDocumentQueryMethodVersions {
     /// `documentsSummable` type, whose documents are stored as
     /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
     /// decodes any item element, as the proof verifier always has.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves a cursor
+    /// on such a type (`DocumentQuery::required_protocol_version` in
+    /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
+    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, shared by prover and
+    /// verifier. 0 preserves released producers' queries and reads the current pointer when
+    /// verifying a newer producer's composite-layout execution proof. 1 (protocol version 15)
+    /// also supports time-bounded reads: the newest retained revision at or before the time,
+    /// highest revision first at equal times, or absence before the first retained entry.
+    /// It states both caps of a maybe-contested query for merge generation 2, and refuses
+    /// history documents in that status at a block time because contests keep no history.
+    pub single_document_path_query: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -165,6 +208,12 @@ pub struct DriveDocumentUpdateMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentDeleteMethodVersions {
+    /// Prices the third-party balance updates caused by an erase; inactive before protocol 15.
+    pub erase_refund_recipient_cost: OptionalFeatureVersion,
+    pub erase_document_for_contract_operations: OptionalFeatureVersion,
+    pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
+    pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,
+
     pub add_estimation_costs_for_remove_document_to_primary_storage: FeatureVersion,
     pub delete_document_for_contract: FeatureVersion,
     pub delete_document_for_contract_id: FeatureVersion,

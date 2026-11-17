@@ -1,13 +1,17 @@
 use crate::drive::document::derived_index_values::set_derived_index_values;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
     DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0,
     DocumentFromCreateTransitionAction,
 };
-use crate::util::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
+use crate::util::batch::drive_op_batch::{
+    PrefundedSpecializedBalanceOperationType, VotePollOperationType,
+};
 use crate::util::batch::DriveOperation::{
     DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation,
+    VotePollOperation,
 };
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
@@ -15,6 +19,7 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentTypeInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
+use dpp::decision_proposal::DecisionProposalVotePoll;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
@@ -24,6 +29,11 @@ use std::borrow::Cow;
 /// document the create consumes is deleted from what document reference validation 1 read of
 /// it (`ForceDeleteReadDocument`, `AddDocumentAndDeleteReadConsumed`), without reading it
 /// again, where generation 0 deletes it by its id and reads it once more.
+///
+/// A decision proposal (its contract exists from protocol version 15) also opens the yes/no
+/// poll it states: the owner's stated fund moves to the poll's prefunded balance, as a
+/// contest's does, and the poll is opened after the document. The poll is read from the
+/// proposal here, as check_tx's fee estimate converts a create no state validation has seen.
 pub(super) fn into_high_level_batch_drive_operations_v1<'b>(
     mut action: DocumentCreateTransitionAction,
     epoch: &Epoch,
@@ -55,6 +65,30 @@ pub(super) fn into_high_level_batch_drive_operations_v1<'b>(
     // create of an earlier version.
     let derived_index_values = action.derived_index_values().cloned();
 
+    // The poll a decision proposal opens, and the fund it pays in: structure validation 2 held
+    // the fund to the decision proposal fund and the rule to the system limits.
+    let decision_proposal_opening = action
+        .decision_proposal()
+        .map(|decision_proposal| {
+            let Some((_, fund)) = decision_proposal.stated_fund else {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a decision proposal reaches its conversion with the fund it states",
+                )));
+            };
+            let vote_poll = DecisionProposalVotePoll::from_proposal(
+                action.base().id(),
+                action.data(),
+                platform_version,
+            )?;
+            if !vote_poll.is_valid() {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a decision proposal reaches its conversion with a rule structure validation accepted",
+                )));
+            }
+            Ok((vote_poll.into_data()?, fund))
+        })
+        .transpose()?;
+
     let mut document =
         Document::try_from_owned_create_transition_action(action, owner_id, platform_version)?;
     if let Some(values) = derived_index_values {
@@ -72,6 +106,25 @@ pub(super) fn into_high_level_batch_drive_operations_v1<'b>(
     )];
 
     ops.extend(document_creation_token_cost_operations);
+
+    if let Some((decision_proposal_vote_poll, fund)) = &decision_proposal_opening {
+        // The poll's votes are paid from its prefunded balance, under its id
+        ops.push(PrefundedSpecializedBalanceOperation(
+            PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                prefunded_specialized_balance_id: decision_proposal_vote_poll
+                    .vote_poll
+                    .specialized_balance_id(platform_version)?,
+                add_balance: *fund,
+            },
+        ));
+        // which the proposer pays
+        ops.push(IdentityOperation(
+            IdentityOperationType::RemoveFromIdentityBalance {
+                identity_id: owner_id.into_buffer(),
+                balance_to_remove: *fund,
+            },
+        ));
+    }
 
     if let Some((contested_document_resource_vote_poll, credits)) = maybe_prefunded_voting_balance {
         let prefunded_specialized_balance_id =
@@ -149,6 +202,16 @@ pub(super) fn into_high_level_batch_drive_operations_v1<'b>(
                 contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
                 document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                 consumed_documents,
+            },
+        ));
+    }
+
+    if let Some((decision_proposal_vote_poll, _)) = decision_proposal_opening {
+        // The poll, with its stored info, its vote trees and its end date entry
+        ops.push(VotePollOperation(
+            VotePollOperationType::OpenYesNoVotePoll {
+                vote_poll: decision_proposal_vote_poll.vote_poll,
+                end_date: decision_proposal_vote_poll.end_date,
             },
         ));
     }

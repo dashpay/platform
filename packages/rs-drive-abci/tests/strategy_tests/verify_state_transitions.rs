@@ -649,6 +649,14 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     // we expect no document
                                     assert!(document.is_none());
                                 }
+                                DocumentTransitionAction::EraseAction(_) => {
+                                    // An erase acts on a document that was
+                                    // already deleted, so the by-id query this
+                                    // harness proves against returns nothing
+                                    // whether or not the erase executed;
+                                    // strategies do not generate erases today.
+                                    assert!(document.is_none());
+                                }
                                 DocumentTransitionAction::IndexOnlyDeleteAction(_) => {
                                     // indexOnly documents never have a
                                     // primary-storage row, so the by-id query
@@ -1379,7 +1387,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 | StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_)
                 | StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(_)
                 | StateTransitionAction::TokenUnshieldWithShieldedFeeAction(_)
-                | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_) => {
+                | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_)
+                | StateTransitionAction::PrivateDocumentCreateFromShieldedPoolAction(_) => {
                     // The strategy harness does not generate shielded transitions (no shielded
                     // `OperationType`), so their proof-verification roundtrip isn't exercised here.
                     // IdentityCreateFromShieldedPool's strict prove/verify is covered by the unit

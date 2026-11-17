@@ -96,7 +96,7 @@ impl Drive {
     /// - `voter_pro_tx_hash`: A 32-byte array representing the ProRegTx hash of the voter.
     /// - `vote`: The vote to be registered, detailing the decision made.
     /// - `block_info`: Reference to current block information.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional HashMap that, if provided,
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `EstimatedLayers` that, if provided,
     ///   will be filled with estimated cost and layer information required for processing the vote.
     /// - `transaction`: Contextual transaction arguments that may influence the generation of operations.
     /// - `platform_version`: Reference to the platform version to ensure compatibility of the operation generation method.

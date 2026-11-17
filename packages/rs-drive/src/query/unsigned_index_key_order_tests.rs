@@ -136,7 +136,6 @@ pub(crate) fn insert_document(
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to insert the document");
 }

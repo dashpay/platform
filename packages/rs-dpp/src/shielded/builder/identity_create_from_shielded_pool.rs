@@ -7,7 +7,9 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::serialization::Signable;
-use crate::shielded::compute_shielded_identity_create_fee;
+use crate::shielded::{
+    compute_shielded_identity_create_fee, is_allowed_identity_create_denomination,
+};
 use crate::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
@@ -125,14 +127,11 @@ where
     // Reject a non-member denomination before any (expensive) proving — Type 20 exits are a
     // protocol-versioned fixed set, so an unsupported value would be rejected at `validate_structure`
     // after the Orchard proof anyway. Fail fast.
-    let allowed_denominations = platform_version
-        .drive_abci
-        .validation_and_processing
-        .event_constants
-        .shielded_identity_create_denominations;
-    if !allowed_denominations.contains(&denomination) {
+    if !is_allowed_identity_create_denomination(denomination, platform_version) {
         return Err(ProtocolError::ShieldedBuildError(format!(
-            "denomination {denomination} is not a member of the allowed exit-denomination set {allowed_denominations:?}"
+            "denomination {denomination} is not a member of the allowed exit-denomination set \
+             of protocol version {}",
+            platform_version.protocol_version
         )));
     }
 

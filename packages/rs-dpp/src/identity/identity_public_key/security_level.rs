@@ -111,12 +111,21 @@ impl SecurityLevel {
     /// This is the rule consensus applies to a batch (`combined_security_level_requirement`),
     /// usable before a transition is built.
     pub fn accepted_for_requirement(requirement: SecurityLevel) -> Vec<SecurityLevel> {
-        if requirement == Self::MASTER {
+        requirement.document_signing_levels()
+    }
+
+    /// The security levels a key may sign a document at when the document's type requires
+    /// `self` (its `security_level_requirement`): `MASTER` alone when the requirement is
+    /// `MASTER`, otherwise every level from `CRITICAL` to the requirement, strongest first. A
+    /// batch takes the levels of the strongest requirement among its documents
+    /// (`DocumentsBatchTransitionMethodsV0::combined_security_level_requirement`).
+    pub fn document_signing_levels(self) -> Vec<SecurityLevel> {
+        if self == Self::MASTER {
             return vec![Self::MASTER];
         }
-        [Self::CRITICAL, Self::HIGH, Self::MEDIUM]
+        Self::full_range()
             .into_iter()
-            .filter(|level| level.stronger_or_equal_security_than(requirement))
+            .filter(|level| *level != Self::MASTER && (*level as u8) <= (self as u8))
             .collect()
     }
 }
@@ -130,6 +139,34 @@ impl std::fmt::Display for SecurityLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each requirement admits `MASTER` alone, or `CRITICAL` to itself, as a document batch
+    /// has always computed it.
+    #[test]
+    fn should_give_the_levels_each_document_requirement_admits() {
+        use SecurityLevel::*;
+        assert_eq!(MASTER.document_signing_levels(), vec![MASTER]);
+        assert_eq!(CRITICAL.document_signing_levels(), vec![CRITICAL]);
+        assert_eq!(HIGH.document_signing_levels(), vec![CRITICAL, HIGH]);
+        assert_eq!(
+            MEDIUM.document_signing_levels(),
+            vec![CRITICAL, HIGH, MEDIUM]
+        );
+        for requirement in SecurityLevel::full_range() {
+            let range: Vec<SecurityLevel> = if requirement == MASTER {
+                vec![MASTER]
+            } else {
+                (CRITICAL as u8..=requirement as u8)
+                    .map(|level| SecurityLevel::try_from(level).expect("a security level"))
+                    .collect()
+            };
+            assert_eq!(
+                requirement.document_signing_levels(),
+                range,
+                "{requirement}"
+            );
+        }
+    }
 
     // -- TryFrom<u8> valid --
     #[test]

@@ -1,5 +1,6 @@
 use super::*;
 use crate::context_provider::WasmTrustedContext;
+use crate::contract_store::Slot;
 use crate::error::WasmSdkErrorKind;
 use dapi_grpc::platform::v0::{
     get_data_contract_response, get_identity_contract_nonce_response,
@@ -639,7 +640,7 @@ async fn should_preserve_promoted_contract_when_a_stale_query_observes_its_versi
         2
     );
     assert_eq!(
-        crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest())
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
             .iter()
             .find(|contract| contract.id() == Identifier::from(CONTRACT_ID))
             .expect("retained persisted contract")
@@ -660,8 +661,12 @@ async fn should_not_promote_update_with_invalid_quorum_signature() {
         .update_contract(contract(2), identity_key(), &signer, None)
         .await
         .expect_err("invalid signature must fail");
-    assert_eq!(error.kind(), WasmSdkErrorKind::Proof);
-    assert!(error.is_retriable());
+    assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+    assert!(!error.is_retriable());
+    assert!(error
+        .message()
+        .contains("state transition result is unconfirmed"));
+    assert!(error.message().contains("Proof verification error:"));
     assert_eq!(
         sdk.get_cached_contract(&CONTRACT_ID.into())
             .expect("old contract")
@@ -691,7 +696,12 @@ async fn should_not_promote_update_with_corrupt_grovedb_proof() {
         .update_contract(contract(2), identity_key(), &signer, None)
         .await
         .expect_err("corrupt proof must fail");
-    assert_eq!(error.kind(), WasmSdkErrorKind::Proof);
+    assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+    assert!(!error.is_retriable());
+    assert!(error
+        .message()
+        .contains("state transition result is unconfirmed"));
+    assert!(error.message().contains("Proof verification error:"));
     assert_eq!(
         sdk.get_cached_contract(&CONTRACT_ID.into())
             .expect("old contract")
@@ -819,7 +829,12 @@ async fn should_reject_a_signed_contract_proof_differing_from_the_submitted_upda
         .update_contract(contract(3), identity_key(), &signer, None)
         .await
         .expect_err("different proved contract body");
-    assert_eq!(error.kind(), WasmSdkErrorKind::Proof);
+    assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+    assert!(!error.is_retriable());
+    assert!(error
+        .message()
+        .contains("state transition result is unconfirmed"));
+    assert!(error.message().contains("Proof verification error:"));
     assert!(
         error.to_string().contains("exact expected contract"),
         "{error}"
@@ -900,7 +915,7 @@ async fn should_return_fetched_snapshot_without_regressing_promoted_cache() {
         2
     );
     assert_eq!(
-        crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest())
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
             .iter()
             .find(|c| c.id() == Identifier::from(CONTRACT_ID))
             .expect("durable contract")
@@ -914,8 +929,10 @@ async fn should_use_updated_schema_when_an_older_shared_fetch_finishes_late() {
     let (sdk, update_request, write_request) = fixture(|_| {}).await;
     let fetch_request = add_older_contract_fetch(&sdk);
     sdk.remove_cached_contract(&CONTRACT_ID.into());
-    let fetch_sdk =
-        WasmSdk::new_for_testing(sdk.inner_sdk().clone(), sdk.trusted_context().cloned());
+    let fetch_sdk = WasmSdk::new_for_testing_with_context(
+        sdk.inner_sdk().clone(),
+        sdk.quorum_context().cloned(),
+    );
     let (release, gate) = futures::channel::oneshot::channel::<()>();
     let mut producer = Box::pin(sdk.join_or_start_contract_fetch(
         CONTRACT_ID.into(),
@@ -1005,7 +1022,7 @@ async fn should_use_updated_schema_when_an_older_shared_fetch_finishes_late() {
         2
     );
     assert_eq!(
-        crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest())
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
             .iter()
             .find(|c| c.id() == Identifier::from(CONTRACT_ID))
             .expect("durable newer contract")
@@ -1098,7 +1115,8 @@ fn should_keep_newer_contract_in_shared_memory_and_persistence_after_old_complet
             .version(),
         2
     );
-    let persisted = crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest());
+    let persisted =
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest());
     assert_eq!(
         persisted
             .iter()
@@ -1139,10 +1157,11 @@ fn should_preserve_explicit_manual_replacement_with_older_and_equal_versions() {
             .expect("manual body"),
         equal
     );
-    assert!(
-        crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest())
-            .contains(&equal)
-    );
+    assert!(crate::contract_store::load_all(
+        Slot::trusted(Network::Testnet),
+        PlatformVersion::latest()
+    )
+    .contains(&equal));
     assert!(sdk.remove_cached_contract_js(&CONTRACT_ID.into()));
     assert!(sdk.get_cached_contract(&CONTRACT_ID.into()).is_none());
 }
@@ -1151,7 +1170,11 @@ fn should_preserve_explicit_manual_replacement_with_older_and_equal_versions() {
 fn should_hydrate_shared_context_without_downgrading_newer_contract() {
     let context = WasmTrustedContext::for_testing(vec![]);
     context.add_known_contract(contract(3));
-    crate::contract_store::store(Network::Testnet, &contract(1), PlatformVersion::latest());
+    crate::contract_store::store(
+        Slot::trusted(Network::Testnet),
+        &contract(1),
+        PlatformVersion::latest(),
+    );
     let sdk = crate::sdk::WasmSdkBuilder::new_testnet()
         .with_trusted_context(&context)
         .build()
@@ -1181,7 +1204,8 @@ fn should_preserve_durable_authority_when_an_independent_stale_context_inserts()
     let mut equal = existing.clone();
     equal.set_owner_id([0x49; 32].into());
     stale.cache_contract(equal);
-    let persisted = crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest());
+    let persisted =
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest());
     assert!(
         persisted.contains(&existing),
         "lower and equal internal writes preserve the durable body"

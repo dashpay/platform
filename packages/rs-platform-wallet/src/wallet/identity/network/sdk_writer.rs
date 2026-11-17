@@ -1,9 +1,9 @@
 //! Concrete helper over the SDK's DashPay write/broadcast surface.
 //!
 //! The two operations `IdentityWallet` performs over the SDK —
-//! [`Sdk::send_contact_request`](dash_sdk::Sdk::send_contact_request)
+//! [`Sdk::sign_prepared_contact_request`](dash_sdk::Sdk::sign_prepared_contact_request)
 //! and a document put — cannot be expressed as plain method calls at
-//! the call sites: `send_contact_request` is generic over **seven**
+//! the call sites: `sign_prepared_contact_request` is generic over **seven**
 //! type parameters (the signer plus three ECDH/xpub closure pairs) and
 //! the document put rides on the signer-generic
 //! [`PutDocument`](dash_sdk::platform::transition::put_document::PutDocument)
@@ -28,7 +28,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, PreparedContactRequest, RecipientIdentity,
-    SendContactRequestInput, SendContactRequestResult,
+    SendContactRequestInput, SignedContactRequest,
 };
 
 use crate::error::PlatformWalletError;
@@ -153,7 +153,7 @@ pub(crate) struct PutDocumentParams<'a> {
 ///
 /// Held as a field on [`IdentityWallet`](super::IdentityWallet),
 /// forwarding to the real SDK. Its two methods erase the SDK's
-/// generic write signatures (`send_contact_request`'s seven type
+/// generic write signatures (`sign_prepared_contact_request`'s seven type
 /// params, the signer-generic `PutDocument`) behind concrete, by-value
 /// inputs so the call sites in `contact_requests.rs` /
 /// `contact_info.rs` stay simple.
@@ -182,11 +182,13 @@ impl SdkWriter {
     }
 
     /// Build the ECDH provider + xpub closure from the pre-derived
-    /// inputs and broadcast the contact-request document.
-    pub(crate) async fn send_contact_request(
+    /// inputs and sign the contact-request document's create transition,
+    /// which the caller broadcasts: it keeps the signed bytes, so a retry
+    /// broadcasts the same transition rather than signing a second request.
+    pub(crate) async fn sign_contact_request(
         &self,
         params: SendContactRequestParams<'_>,
-    ) -> Result<SendContactRequestResult, PlatformWalletError> {
+    ) -> Result<SignedContactRequest, PlatformWalletError> {
         let SendContactRequestParams {
             prepared,
             sender_identity,
@@ -251,7 +253,7 @@ impl SdkWriter {
 
         let xpub_bytes_clone = xpub_bytes.clone();
         self.sdk
-            .submit_contact_request(
+            .sign_prepared_contact_request(
                 prepared,
                 send_input,
                 ecdh_provider,

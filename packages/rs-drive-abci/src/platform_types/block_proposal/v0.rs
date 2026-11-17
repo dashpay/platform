@@ -1,7 +1,6 @@
 use crate::abci::AbciError;
 use crate::error::Error;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{BlockHash, ChainLock};
 use dpp::platform_value::Bytes32;
 use std::fmt;

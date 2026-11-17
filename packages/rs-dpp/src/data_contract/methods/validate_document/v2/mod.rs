@@ -55,16 +55,19 @@ impl DataContract {
             }
         };
 
+        let max_value_depth = platform_version
+            .system_limits
+            .max_document_value_depth
+            .map(|depth| depth as usize);
+
         Self::validate_document_properties_v1_checks(
             document_type,
             value,
             system,
             platform_version,
             |json_value| {
-                Ok(match validator.validate(json_value)? {
-                    Some(violation) => SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::BasicError(BasicError::JsonSchemaError(violation)),
-                    ),
+                Ok(match validator.validate(json_value, max_value_depth)? {
+                    Some(error) => SimpleConsensusValidationResult::new_with_error(error),
                     None => SimpleConsensusValidationResult::new(),
                 })
             },

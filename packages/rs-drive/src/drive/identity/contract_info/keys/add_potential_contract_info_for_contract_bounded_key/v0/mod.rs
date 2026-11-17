@@ -11,6 +11,7 @@ use crate::error::contract::DataContractError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
@@ -22,12 +23,10 @@ use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKey
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg, TreeType};
 use grovedb_costs::OperationCost;
 use integer_encoding::VarInt;
-use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
@@ -37,9 +36,7 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -76,9 +73,7 @@ impl Drive {
         identity_id: [u8; 32],
         epoch: &Epoch,
         contract_infos: Vec<IdentityDataContractKeyApplyInfo>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

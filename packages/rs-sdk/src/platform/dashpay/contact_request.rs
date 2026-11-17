@@ -2,7 +2,9 @@
 //!
 //! Implements DIP-15 DashPay contact request functionality
 
-use crate::platform::transition::put_document::PutDocument;
+use crate::platform::transition::broadcast::{wait_after_broadcast, BroadcastStateTransition};
+use crate::platform::transition::put_document::prepare_document_state_transition;
+use crate::platform::transition::waitable::Waitable;
 use crate::platform::Document;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -19,6 +21,7 @@ use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::state_transition::StateTransition;
 use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN,
 };
@@ -185,13 +188,27 @@ pub struct SendContactRequestResult {
     pub account_reference: u32,
 }
 
+/// A contact request signed and not yet broadcast
+/// ([`Sdk::sign_contact_request`]).
+#[derive(Debug, Clone)]
+pub struct SignedContactRequest {
+    /// The signed `contactRequest` create transition. Broadcasting these same
+    /// bytes again is a retry of this request, never a second one: the
+    /// transition carries its identity contract nonce.
+    pub state_transition: StateTransition,
+    /// The recipient's identity ID
+    pub recipient_id: Identifier,
+    /// The account reference
+    pub account_reference: u32,
+}
+
 /// Whether `purpose` is acceptable for the `senderKeyIndex` key of a contact
 /// request **we are about to mint**. The sender always references its own
 /// ENCRYPTION key.
 ///
 /// Mint-side only — see [`sender_key_purpose_is_acceptable_on_receive`] for
 /// what we accept from documents already on chain.
-fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
+pub(crate) fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
     purpose == Purpose::ENCRYPTION
 }
 
@@ -593,6 +610,83 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        let SignedContactRequest {
+            state_transition,
+            recipient_id,
+            account_reference,
+        } = self
+            .sign_prepared_contact_request(prepared, input, ecdh_provider, get_extended_public_key)
+            .await?;
+
+        // Submit the document to the platform, and wait for the proof of the
+        // same signed transition.
+        let broadcast = state_transition.broadcast(self, None).await;
+        let platform_document = wait_after_broadcast(
+            broadcast,
+            <Document as Waitable>::wait_for_response(self, state_transition, None),
+        )
+        .await?;
+
+        // Return the result with recipient ID and account reference we saved earlier
+        Ok(SendContactRequestResult {
+            document: platform_document,
+            recipient_id,
+            account_reference,
+        })
+    }
+
+    /// Sign a contact request without broadcasting it: what
+    /// [`Self::send_contact_request`] submits, for a caller that keeps the
+    /// signed transition so that a retry broadcasts the same bytes again
+    /// rather than signing a second request.
+    ///
+    /// The transition takes the sender's next identity contract nonce for
+    /// DashPay, as a send does.
+    pub async fn sign_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
+        &self,
+        input: SendContactRequestInput<S>,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<SignedContactRequest, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
+        let prepared = self.prepare_contact_request().await?;
+        self.sign_prepared_contact_request(prepared, input, ecdh_provider, get_extended_public_key)
+            .await
+    }
+
+    /// Sign a contact request like [`Sdk::sign_contact_request`], building the document as
+    /// the `contactRequest` type of `prepared`, the snapshot the caller chose `input`'s
+    /// signing key by.
+    pub async fn sign_prepared_contact_request<
+        S: Signer<IdentityPublicKey>,
+        F,
+        Fut,
+        G,
+        Gut,
+        H,
+        Hut,
+    >(
+        &self,
+        prepared: PreparedContactRequest,
+        input: SendContactRequestInput<S>,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<SignedContactRequest, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
         // Save values we need before moving contact_request
         let recipient_id = input.contact_request.recipient.id();
         let account_reference = input.contact_request.account_reference;
@@ -634,22 +728,20 @@ impl Sdk {
             moderated_by: None,
         });
 
-        // Submit the document to the platform
-        let platform_document = document
-            .put_to_platform_and_wait_for_response(
-                self,
-                prepared.contact_request_document_type,
-                Some(entropy.0),
-                input.identity_public_key,
-                None, // token payment info
-                &input.signer,
-                None, // settings
-            )
-            .await?;
+        let state_transition = prepare_document_state_transition(
+            &document,
+            self,
+            prepared.contact_request_document_type,
+            Some(entropy.0),
+            input.identity_public_key,
+            None, // token payment info
+            &input.signer,
+            None, // settings
+        )
+        .await?;
 
-        // Return the result with recipient ID and account reference we saved earlier
-        Ok(SendContactRequestResult {
-            document: platform_document,
+        Ok(SignedContactRequest {
+            state_transition,
             recipient_id,
             account_reference,
         })

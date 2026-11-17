@@ -4,11 +4,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Generates a vector of operations for creating a new identity key query tree with the given keys.
@@ -16,7 +14,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `identity_id` - An array of bytes representing the identity id.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` for estimated layer information.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
     /// * `drive_version` - The version of the drive.
     ///
@@ -30,9 +28,7 @@ impl Drive {
     pub fn create_new_identity_key_query_trees_operations(
         &self,
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

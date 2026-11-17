@@ -4,7 +4,6 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::identifier::Identifier;

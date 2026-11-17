@@ -3,16 +3,15 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractModerationReason, ContractWarning,
 };
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 /// Operations on a moderated contract's banlist, suspension list, warning list, document
 /// removal records and, for an elected contract, its team's moderation action counts and the
@@ -157,9 +156,7 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

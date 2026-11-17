@@ -181,7 +181,9 @@ pub(super) fn attach_property_constraint_reads(
                 action.set_stored_system_values(values);
             }
         }
-        DocumentTransitionAction::DeleteAction(_)
+        // The bounds gate rejects erases through protocol 14; erases write no document.
+        DocumentTransitionAction::EraseAction(_)
+        | DocumentTransitionAction::DeleteAction(_)
         | DocumentTransitionAction::IndexOnlyDeleteAction(_) => {}
     }
     Ok(())
@@ -468,13 +470,11 @@ fn read_aggregates(
         aggregates.insert(read.clone(), total);
     }
 
-    let fee = Drive::calculate_fee(
+    let fee = drive.calculate_fee(
         None,
         Some(drive_operations),
         &block_info.epoch,
-        drive.config.epochs_per_era,
         platform_version,
-        None,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
     Ok(aggregates)
