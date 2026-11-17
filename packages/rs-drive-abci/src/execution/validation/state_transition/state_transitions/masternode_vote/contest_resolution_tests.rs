@@ -1586,12 +1586,21 @@ async fn should_list_contests_left_open_under_one_end_date_and_not_end_them_agai
 
 /// Ends the same contest, with votes for both contenders and the lock, at the latest protocol
 /// version with `check_for_ended_vote_polls` and
-/// `remove_contested_resource_vote_poll_documents_operations` at the given generations, and
-/// returns the state's root hash, the outcome and the awarded domains of the winner
+/// `remove_contested_resource_vote_poll_documents_operations` at the given generations, the
+/// tally reading at most `contenders_considered` contenders when given, and returns the state's
+/// root hash, the outcome and the awarded domains of both contenders
 async fn end_an_ordinary_contest_with_generations(
     (end_generation, clean_up_generation): (u16, u16),
-) -> ([u8; 32], Option<FinishedVoteInfo>, Vec<Document>) {
+    contenders_considered: Option<u16>,
+) -> ([u8; 32], Option<FinishedVoteInfo>, [Vec<Document>; 2]) {
     let mut platform_version = PlatformVersion::latest().clone();
+    if let Some(contenders_considered) = contenders_considered {
+        platform_version
+            .drive_abci
+            .validation_and_processing
+            .event_constants
+            .maximum_contenders_to_consider = contenders_considered;
+    }
     platform_version
         .drive_abci
         .methods
@@ -1630,14 +1639,16 @@ async fn end_an_ordinary_contest_with_generations(
     (
         root_hash,
         finished_vote_info(&platform, &dpns_contract, "quantum", &platform_version),
-        awarded_domains(&platform, &dpns_contract, contender_2, &platform_version),
+        [contender_1, contender_2].map(|contender| {
+            awarded_domains(&platform, &dpns_contract, contender, &platform_version)
+        }),
     )
 }
 
-/// An ordinary contest ends with the same winner, records and state with the latest
-/// generations as with the previous ones
-#[tokio::test]
-async fn should_end_an_ordinary_contest_as_the_previous_generation_does() {
+/// The generations of `check_for_ended_vote_polls` and
+/// `remove_contested_resource_vote_poll_documents_operations` the latest protocol version
+/// selects
+fn latest_end_of_contest_generations() -> (u16, u16) {
     let latest_version = PlatformVersion::latest();
     let latest_generations = (
         latest_version
@@ -1653,8 +1664,16 @@ async fn should_end_an_ordinary_contest_as_the_previous_generation_does() {
             .remove_contested_resource_vote_poll_documents_operations,
     );
     assert_eq!(latest_generations, (2, 2));
-    let previous = end_an_ordinary_contest_with_generations((1, 1)).await;
-    let latest = end_an_ordinary_contest_with_generations(latest_generations).await;
+    latest_generations
+}
+
+/// An ordinary contest ends with the same winner, records and state with the latest
+/// generations as with the previous ones
+#[tokio::test]
+async fn should_end_an_ordinary_contest_as_the_previous_generation_does() {
+    let previous = end_an_ordinary_contest_with_generations((1, 1), None).await;
+    let latest =
+        end_an_ordinary_contest_with_generations(latest_end_of_contest_generations(), None).await;
     assert_eq!(
         latest
             .1
@@ -1662,6 +1681,78 @@ async fn should_end_an_ordinary_contest_as_the_previous_generation_does() {
             .map(|finished| finished.finished_vote_outcome),
         Some(FinishedVoteOutcome::TowardsIdentity as i32)
     );
-    assert_eq!(latest.2.len(), 1, "the winner must be awarded its domain");
+    assert_eq!(
+        latest.2[1].len(),
+        1,
+        "the winner must be awarded its domain"
+    );
     assert_eq!(latest, previous);
+}
+
+/// A contest opened before protocol version 14 may hold more contenders than the tally reads.
+/// Its end leaves a contender the tally did not read whole, its document with its reference,
+/// so the contest's vote state stays readable (`end_an_ordinary_contest_with_generations`
+/// reads it). The previous generation removes that contender's document and keeps the
+/// reference to it.
+#[tokio::test]
+async fn should_keep_whole_a_contender_the_tally_did_not_read() {
+    let platform_version = PlatformVersion::latest();
+    let (_, finished, awarded) =
+        end_an_ordinary_contest_with_generations(latest_end_of_contest_generations(), Some(1))
+            .await;
+    assert_eq!(
+        finished.map(|finished| finished.finished_vote_outcome),
+        Some(FinishedVoteOutcome::TowardsIdentity as i32)
+    );
+    assert_eq!(
+        awarded.iter().map(Vec::len).sum::<usize>(),
+        1,
+        "the contender the tally read must be awarded its domain"
+    );
+    // The same contest again, to read what it holds after its end
+    let mut capped_version = platform_version.clone();
+    capped_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .maximum_contenders_to_consider = 1;
+    let (platform, _, _, dpns_contract) = quantum_contest(&capped_version).await;
+    let documents = contender_documents(&platform, &dpns_contract, "quantum", &capped_version);
+    end_first_due_vote_polls(&platform, &capped_version)
+        .expect("expected the contest to end with the block");
+    let after = contest_state(
+        &platform,
+        &dpns_name_vote_poll(&dpns_contract, "quantum"),
+        &document_ids(&documents),
+        &capped_version,
+    );
+    assert_eq!(
+        after
+            .contender_documents
+            .iter()
+            .filter(|document| document.is_some())
+            .count(),
+        1,
+        "the document of the contender the tally did not read must stay"
+    );
+    let platform_state = platform.state.load();
+    let (contenders, ..) = get_vote_states(
+        &platform,
+        &platform_state,
+        &dpns_contract,
+        "quantum",
+        None,
+        true,
+        None,
+        ResultType::DocumentsAndVoteTally,
+        &capped_version,
+    );
+    assert_eq!(
+        contenders
+            .iter()
+            .filter(|contender| contender.document().is_some())
+            .count(),
+        1,
+        "the contender the tally did not read must stay readable with its document"
+    );
 }
