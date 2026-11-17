@@ -26,9 +26,11 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 hex = "0.4"
 zeroize = "1"
-# The test-only credit-verdict round hook (`verdict_round_test_hook.rs`)
-# builds a `CoreChangeSet` and drives it through `FFIPersister::store`.
-# All three are already in the graph through platform-wallet-ffi.
+# The test-only credit-verdict round hook (`verdict_round_test_hook.rs`,
+# `test-hooks` feature) builds a `CoreChangeSet` and drives it through
+# `FFIPersister::store`; the unit tests in `persistence.rs` and
+# `tx_decode.rs` also use `dashcore`. All three are already in the graph
+# through platform-wallet-ffi.
 dashcore = { workspace = true }
 key-wallet = { workspace = true }
 platform-wallet = { path = "../rs-platform-wallet" }
@@ -46,6 +48,9 @@ default = ["shielded"]
 # Forwards to `platform-wallet-ffi/shielded`. Pulls Orchard / ZK shielded
 # sync support into the Android library, matching the iOS framework.
 shielded = ["platform-wallet-ffi/shielded"]
+# Test-only JNI entry points for the instrumented Android suite
+# (`./build_android.sh --test-hooks`). Never enable for a published build.
+test-hooks = []
 tokio-metrics = [
     "platform-wallet-ffi/tokio-metrics",
     "rs-sdk-ffi/tokio-metrics",

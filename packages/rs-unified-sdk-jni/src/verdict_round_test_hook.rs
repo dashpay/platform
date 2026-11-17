@@ -13,11 +13,11 @@
 //! the verdicts and the `utxos_added` entries, and the Kotlin handler that
 //! stages and commits the rows. JVM/Robolectric tests reach none of that.
 //!
-//! Like `nativeVerifyPersistenceBridgeDescriptors`, it ships in the library
-//! (the instrumented suite runs against the normal build) and is reachable
-//! only through the `internal` Kotlin `WalletManagerNative` object. It
-//! writes only into the bridge the caller passes, which already owns its
-//! database, so it grants no access the caller lacks.
+//! It is compiled only with the `test-hooks` feature
+//! (`./build_android.sh --test-hooks`) and declared only in the androidTest
+//! source set (`VerdictRoundTestHook`), so release libraries neither export
+//! nor declare it. It writes only into the bridge the caller passes, which
+//! already owns its database, so it grants no access the caller lacks.
 
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
@@ -212,7 +212,7 @@ fn read_outputs(
 /// the fixture is malformed or the round fails.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeTestDeliverUtxoCreditVerdictRound(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_VerdictRoundTestHook_nativeDeliverUtxoCreditVerdictRound(
     mut env: JNIEnv,
     _class: JClass,
     bridge: JObject,
