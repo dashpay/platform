@@ -13,6 +13,8 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
 
+use crate::changeset::PersistenceError;
+
 pub use dash_sdk::platform::transition::asset_lock_submission::{
     as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
     is_asset_lock_already_consumed, is_instant_lock_proof_invalid,
@@ -1283,6 +1285,19 @@ impl PlatformWalletError {
             }
             _ => source,
         };
+        Self::PersisterStore(source)
+    }
+
+    /// A persister's `store_and_commit` refused a changeset before it was
+    /// staged (`StoreAndCommitError::NotStaged`). Unlike
+    /// [`from_store_failure`](Self::from_store_failure) the classification is
+    /// kept as the backend reported it. A `Transient` store failure tells
+    /// the caller that nothing was committed and nothing was kept, so the
+    /// changeset may be issued again, and that is exactly what this answer
+    /// states, for the changeset it was given: the backend attested it with
+    /// the step itself. The reissue attestation speaks for a plain `store`,
+    /// which this was not, so it is not asked.
+    pub fn from_unstaged_store_failure(source: PersistenceError) -> Self {
         Self::PersisterStore(source)
     }
 

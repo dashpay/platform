@@ -3495,10 +3495,11 @@ impl PrivatePaymentRestore {
 
     /// Whether the requests the wallet tracks are durable now
     /// (`WalletPersister::flush_durably`): at once for a backend that commits
-    /// inline, as each was stored before it was tracked; after a flush that
-    /// succeeds otherwise, with no other flush in progress and none that
-    /// failed for good in this process. A flush that succeeds right after
-    /// one that failed for good wrote nothing of what that one dropped.
+    /// inline and keeps no buffer, as each was stored before it was tracked;
+    /// after a flush that succeeds otherwise, with no other flush in progress
+    /// and none that failed for good in this process. A flush that succeeds
+    /// right after one that failed for good wrote nothing of what that one
+    /// dropped.
     fn settled_requests_durable(&self) -> bool {
         match self.persister.flush_durably() {
             Ok(()) => true,

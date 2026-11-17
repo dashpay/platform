@@ -14,6 +14,7 @@ use std::fs;
 use common::{fresh_recovery_persister, wid, LoadPolicy, SqlitePersister, SqlitePersisterConfig};
 use platform_wallet::changeset::{
     CoreChangeSet, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    StoreAndCommitError,
 };
 use platform_wallet::masternode::{TrackedMasternode, TrackedMasternodeSnapshot};
 use platform_wallet_storage::{KvError, KvStore, ObjectId, RetentionPolicy, WalletStorageError};
@@ -72,6 +73,25 @@ fn store_in_recovery_leaves_buffer_empty() {
     assert!(
         !persister.buffer_has_changeset_for_test(&wallet),
         "a refused store must not stage a changeset that a later write could drain"
+    );
+}
+
+/// The one-step store is a write path like `store`: refused at the door,
+/// before the changeset is staged, so nothing waits in the buffer for a
+/// later write to drain.
+#[test]
+fn should_refuse_a_store_and_commit_in_recovery_before_it_stages_anything() {
+    let wallet = wid(0x12);
+    let (persister, _tmp, _path) =
+        fresh_recovery_persister(|strict| common::ensure_wallet_meta(strict, &wallet));
+    let refused = persister.store_and_commit(wallet, core_changeset());
+    let Err(StoreAndCommitError::NotStaged(err)) = refused else {
+        panic!("a recovery-mode changeset is refused before it is staged: {refused:?}");
+    };
+    assert_blocked(err, "store_and_commit");
+    assert!(
+        !persister.buffer_has_changeset_for_test(&wallet),
+        "a refused step must not stage a changeset that a later write could drain"
     );
 }
 
