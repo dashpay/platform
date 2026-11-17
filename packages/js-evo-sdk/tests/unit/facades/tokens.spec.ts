@@ -364,6 +364,21 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
       expect(result.balance).to.equal(BigInt(100000000));
     });
+
+    it('should pass a random amount range through to the mint', async () => {
+      const options = {
+        tokenId,
+        amount: BigInt(1000),
+        randomMinimumAmount: BigInt(100),
+        recipientId,
+        identityKey,
+        signer,
+      };
+
+      await client.tokens.mint(options);
+
+      expect(tokenMintStub).to.be.calledOnceWithExactly(options);
+    });
   });
 
   describe('burn()', () => {
@@ -401,6 +416,21 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
       expect(result.senderBalance).to.equal(BigInt(40000000));
       expect(result.recipientBalance).to.equal(BigInt(60000000));
+    });
+
+    it('should pass a random amount range through to the transfer', async () => {
+      const options = {
+        tokenId,
+        amount: BigInt(500),
+        randomMinimumAmount: BigInt(10),
+        recipientId,
+        identityKey,
+        signer,
+      };
+
+      await client.tokens.transfer(options);
+
+      expect(tokenTransferStub).to.be.calledOnceWithExactly(options);
     });
   });
 

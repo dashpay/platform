@@ -184,9 +184,18 @@ export interface TokenMintOptions {
   tokenPosition: number;
 
   /**
-   * The amount of tokens to mint.
+   * The amount of tokens to mint, or with `randomMinimumAmount` the most a random mint
+   * can mint (what it reserves).
    */
   amount: bigint;
+
+  /**
+   * Optional smallest amount of a random mint (protocol version 15). When set, the amount
+   * minted is drawn from `randomMinimumAmount` to `amount`, both included, from the random
+   * beacon of the block that accepts the mint. A random mint must name `recipientId` and
+   * cannot be a group action.
+   */
+  randomMinimumAmount?: bigint;
 
   /**
    * The identity ID of the minter.
@@ -243,6 +252,8 @@ extern "C" {
 struct TokenMintOptionsInput {
     token_position: u16,
     amount: u64,
+    #[serde(default)]
+    random_minimum_amount: Option<u64>,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -374,6 +385,11 @@ impl WasmSdk {
         // Add optional recipient
         if let Some(recipient_id) = recipient_id {
             builder = builder.issued_to_identity_id(recipient_id);
+        }
+
+        // Add an optional random amount
+        if let Some(random_minimum_amount) = parsed.random_minimum_amount {
+            builder = builder.with_random_minimum_amount(random_minimum_amount as TokenAmount);
         }
 
         // Add optional public note
@@ -657,9 +673,17 @@ export interface TokenTransferOptions {
   tokenPosition: number;
 
   /**
-   * The amount of tokens to transfer.
+   * The amount of tokens to transfer, or with `randomMinimumAmount` the most a random
+   * transfer can move (what it reserves from the sender).
    */
   amount: bigint;
+
+  /**
+   * Optional smallest amount of a random transfer (protocol version 15). When set, the amount
+   * transferred is drawn from `randomMinimumAmount` to `amount`, both included, from the
+   * random beacon of the block that accepts the transfer; the rest stays with the sender.
+   */
+  randomMinimumAmount?: bigint;
 
   /**
    * The sender's identity ID.
@@ -707,6 +731,8 @@ extern "C" {
 struct TokenTransferOptionsInput {
     token_position: u16,
     amount: u64,
+    #[serde(default)]
+    random_minimum_amount: Option<u64>,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -852,6 +878,11 @@ impl WasmSdk {
         // Add optional public note
         if let Some(note) = parsed.public_note {
             builder = builder.with_public_note(note);
+        }
+
+        // Add an optional random amount
+        if let Some(random_minimum_amount) = parsed.random_minimum_amount {
+            builder = builder.with_random_minimum_amount(random_minimum_amount as TokenAmount);
         }
 
         // Add settings and user fee increase
@@ -2723,6 +2754,39 @@ mod tests {
     use super::*;
     use dash_sdk::dpp::document::DocumentV0;
     use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+
+    /// `randomMinimumAmount` reaches the options a random transfer or mint is built from, and
+    /// its absence leaves the amount fixed: a name mismatch would silently make the operation a
+    /// fixed one.
+    #[test]
+    fn should_read_the_random_minimum_amount_of_a_transfer_and_a_mint() {
+        let transfer: TokenTransferOptionsInput = serde_json::from_value(serde_json::json!({
+            "tokenPosition": 0,
+            "amount": 500,
+            "randomMinimumAmount": 10
+        }))
+        .expect("transfer options parse");
+        assert_eq!(transfer.amount, 500);
+        assert_eq!(transfer.random_minimum_amount, Some(10));
+
+        let mint: TokenMintOptionsInput = serde_json::from_value(serde_json::json!({
+            "tokenPosition": 1,
+            "amount": 1000,
+            "randomMinimumAmount": 100
+        }))
+        .expect("mint options parse");
+        assert_eq!(mint.amount, 1000);
+        assert_eq!(mint.random_minimum_amount, Some(100));
+
+        let fixed: TokenTransferOptionsInput =
+            serde_json::from_value(serde_json::json!({ "tokenPosition": 0, "amount": 500 }))
+                .expect("fixed transfer options parse");
+        assert_eq!(fixed.random_minimum_amount, None);
+        let fixed: TokenMintOptionsInput =
+            serde_json::from_value(serde_json::json!({ "tokenPosition": 0, "amount": 500 }))
+                .expect("fixed mint options parse");
+        assert_eq!(fixed.random_minimum_amount, None);
+    }
 
     #[test]
     fn should_preserve_closed_group_burn_without_remaining_balance() {
