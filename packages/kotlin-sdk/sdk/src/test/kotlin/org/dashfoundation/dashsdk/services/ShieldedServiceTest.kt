@@ -159,16 +159,21 @@ class ShieldedServiceTest {
     }
 
     @Test
-    fun ordinaryBalanceCountsOnlyNotesOfTheBoundAccounts() {
+    fun ordinaryBalanceLeavesOutOnlyIdentityAccounts() {
         val notes = listOf(
+            // The account the caller bound.
             note(1, 100, spent = false),
-            note(2, 50, spent = false).copy(accountIndex = 1),
+            // An ordinary account added after the bind: ordinary too.
+            note(2, 50, spent = false).copy(accountIndex = 7),
             // An identity's shielded account, which Rust binds on its own.
             note(3, 900, spent = false).copy(accountIndex = 0x4000_0000),
         )
-        assertEquals(100L, ordinaryShieldedBalance(notes, listOf(0)))
-        assertEquals(150L, ordinaryShieldedBalance(notes, listOf(0, 1)))
-        assertEquals(0L, ordinaryShieldedBalance(notes, emptyList()))
+        // Stands in for Rust's rule, which the service passes natively.
+        val isIdentityAccount = { account: Int -> account >= 0x4000_0000 }
+        assertEquals(150L, ordinaryShieldedBalance(notes, isIdentityAccount))
+        assertEquals(1_050L, ordinaryShieldedBalance(notes) { false })
+        assertEquals(0L, ordinaryShieldedBalance(notes) { true })
+        assertEquals(0L, ordinaryShieldedBalance(emptyList(), isIdentityAccount))
     }
 
     @Test

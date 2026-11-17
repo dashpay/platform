@@ -30,6 +30,14 @@ internal object FundingNative {
         acknowledgePossibleExecution: Boolean,
     )
 
+    /**
+     * Whether [account] is an identity shielded account, by the wallet's rule
+     * (bridges `platform_wallet_is_shielded_identity_account`). The wallet
+     * binds and scans those accounts, but a send from its ordinary accounts
+     * cannot spend their notes.
+     */
+    external fun isShieldedIdentityAccount(account: Int): Boolean
+
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */
     external fun warmUpProver()
 
