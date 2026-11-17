@@ -1370,7 +1370,6 @@ mod tests {
     /// that pays an empty script.
     #[test]
     fn should_never_take_an_empty_script_as_the_owner_payout() {
-        use dashcore::hashes::Hash;
         use dashcore::{PubkeyHash, ScriptBuf};
 
         let empty = ScriptBuf::new();

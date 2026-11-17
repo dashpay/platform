@@ -700,7 +700,9 @@ pub struct DocumentSystemValues {
     /// the code building the write, which the judging reports as an error
     /// rather than skip the rule ([`PropertyConstraint::unread_aggregate`],
     /// [`PropertyConstraint::unread_stored_version`]). `false` for a client,
-    /// which skips a rule reading what it does not know.
+    /// which skips a rule reading what it does not know, a property generated
+    /// from state that the document leaves out among them
+    /// (`DocumentTypeBasicMethods::validate_property_constraints`).
     pub consensus: bool,
     /// Whether the data the rules are judged against holds, under
     /// [`REFERENCED_DOCUMENT_KEY`], the values they read of the documents the
@@ -2192,6 +2194,13 @@ impl PropertyConstraint {
                 referenced_read(path).map(|(reference, field)| (reference, field, read))
             })
             .collect()
+    }
+
+    /// Whether the rule reads the property at the dotted `path` of the
+    /// document it judges (not through `$old.`, which reads the stored
+    /// version), the walk stopping at the first such read.
+    pub fn reads_property_at(&self, path: &str) -> bool {
+        self.reads_property(&|read| read == path)
     }
 
     /// Whether the rule reads a value of a document one of the type's

@@ -10,6 +10,7 @@ pub mod accounts;
 pub mod asset_locks;
 pub mod blob;
 pub mod contacts;
+pub(crate) mod core_history;
 pub mod core_pool;
 pub mod core_state;
 pub mod dashpay;

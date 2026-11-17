@@ -457,3 +457,158 @@ pub(super) fn generated_schema(
     }
     serde_json::Value::Object(schema)
 }
+
+/// Every pattern a validation schema holds, at its root and in every schema a `$ref` reaches.
+#[cfg(feature = "validation")]
+fn held_patterns(schema: &ValidationSchema) -> BTreeSet<String> {
+    let mut patterns = BTreeSet::new();
+    let mut nodes: Vec<&SchemaNode> = vec![&schema.root];
+    nodes.extend(schema.references.values().map(|node| node.as_ref()));
+    while let Some(node) = nodes.pop() {
+        if let Some(pattern) = node.string.as_deref().and_then(|s| s.pattern.as_ref()) {
+            patterns.insert(pattern.clone());
+        }
+        if let Some(object) = node.object.as_deref() {
+            nodes.extend(object.properties.iter().flatten().map(|(_, node)| node));
+        }
+        if let Some(array) = node.array.as_deref() {
+            nodes.extend(array.items.as_deref());
+            nodes.extend(array.contains.as_deref());
+        }
+    }
+    patterns
+}
+
+/// Every pattern the `regex` crate compiles also passes the syntax check a native validator
+/// is built with, so a type whose patterns registration compiled is built alike by a node
+/// reading it back. Checked over every pattern of every contract corpus document type, each of
+/// which compiles under the crate's default size limit, and over generated patterns.
+#[cfg(feature = "validation")]
+#[test]
+fn should_parse_every_pattern_that_compiles() {
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
+    use platform_value::string_encoding::{decode, Encoding};
+
+    let platform_version = PlatformVersion::latest();
+    let mut corpus_patterns = 0;
+    for line in include_str!("../../../../../tests/fixtures/contract_corpus/mainnet.jsonl")
+        .lines()
+        .chain(include_str!("../../../../../tests/fixtures/contract_corpus/testnet.jsonl").lines())
+    {
+        let line: serde_json::Value =
+            serde_json::from_str(line).expect("expected a JSON corpus line");
+        let bytes = decode(
+            line["data"].as_str().expect("expected contract bytes"),
+            Encoding::Base64,
+        )
+        .expect("expected base64 contract bytes");
+        let contract = DataContract::versioned_deserialize_trusted(&bytes, false, platform_version)
+            .expect("expected a corpus contract to load");
+        for name in contract.document_types().keys() {
+            let schema = contract
+                .document_type_validation_schema(name, platform_version)
+                .expect("expected the validation schema");
+            for pattern in held_patterns(&schema) {
+                assert!(
+                    validator_regex(&pattern).is_some(),
+                    "{} {name}: `{pattern}` does not compile",
+                    line["id"]
+                );
+                assert!(
+                    validator_regex_parses(&pattern),
+                    "{} {name}: `{pattern}` does not parse",
+                    line["id"]
+                );
+                corpus_patterns += 1;
+            }
+        }
+    }
+    assert!(corpus_patterns > 0, "expected the corpus to hold patterns");
+
+    let fragments = [
+        "a",
+        "b",
+        ".",
+        "^",
+        "$",
+        "|",
+        "*",
+        "+",
+        "?",
+        "{2}",
+        "{2,}",
+        "{2,1}",
+        "{,3}",
+        "{",
+        "}",
+        "(",
+        ")",
+        "(?:",
+        "(?i)",
+        "(?-u)",
+        "(?-u:\\xFF)",
+        "(?-u:.)",
+        "(?<n>x)",
+        "(?P<n>x)",
+        "[",
+        "]",
+        "[a-z]",
+        "[^0-9]",
+        "[\\d-z]",
+        "[[:alpha:]]",
+        "[a&&b]",
+        "[a--b]",
+        "-",
+        "\\",
+        "\\d",
+        "\\D",
+        "\\w",
+        "\\W",
+        "\\s",
+        "\\S",
+        "\\cA",
+        "\\cz",
+        "\\c1",
+        "\\c",
+        "\\b",
+        "\\B",
+        "\\A",
+        "\\z",
+        "\\Q",
+        "\\k<n>",
+        "\\1",
+        "\\101",
+        "\\x41",
+        "\\x{263A}",
+        "\\u0041",
+        "\\p{L}",
+        "\\pN",
+        "\\P{Lu}",
+        "\\p{Greek}",
+        "\\p{Foobar}",
+        "(?=a)",
+        "(?!a)",
+        "(?<=a)",
+    ];
+    let mut cases = Cases(0x5eed_0f9a_77e2_a5c3);
+    let (mut compiled, mut parsed_only, mut refused) = (0, 0, 0);
+    for _ in 0..5_000 {
+        let pattern: String = (0..=cases.below(6))
+            .map(|_| fragments[cases.below(fragments.len())])
+            .collect();
+        let parses = validator_regex_parses(&pattern);
+        if validator_regex(&pattern).is_some() {
+            assert!(parses, "`{pattern}` compiles but does not parse");
+            compiled += 1;
+        } else if parses {
+            parsed_only += 1;
+        } else {
+            refused += 1;
+        }
+    }
+    assert!(
+        compiled > 0 && parsed_only > 0 && refused > 0,
+        "expected every outcome: {compiled} compiled, {parsed_only} only parsed, {refused} \
+         neither"
+    );
+}

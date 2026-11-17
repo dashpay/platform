@@ -1,5 +1,6 @@
 //! Votes on yes/no vote polls: the poll's life from opening to the record of its decision.
 
+use crate::config::PlatformConfig;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::platform_events::voting::masternode_vote_strength;
 use crate::execution::validation::state_transition::state_transitions::tests::{
@@ -27,6 +28,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::Network;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::identifier::Identifier;
@@ -1173,9 +1175,18 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
 
     let platform_version = PlatformVersion::latest();
-    let mut platform = new_platform();
+    // On mainnet a DPNS contest ends two weeks after its creation at the genesis block time,
+    // inside the window a yes/no poll opened then may end in (one to four weeks); a test
+    // network's 90 minutes would be too soon for it.
+    let mut platform = TestPlatformBuilder::new()
+        .with_latest_protocol_version()
+        .with_config(PlatformConfig {
+            network: Network::Mainnet,
+            ..Default::default()
+        })
+        .build_with_mock_rpc()
+        .set_genesis_state();
     let platform_state = platform.state.load();
-    // The DPNS contest ends two weeks after its creation at the genesis block time.
     let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
         &mut platform,
         &platform_state,
@@ -1323,6 +1334,7 @@ async fn should_only_remove_the_later_end_date_entry_of_a_poll_listed_twice() {
                 &vote_poll,
                 end_date,
                 &BlockInfo::default(),
+                &mut None,
                 &mut None,
                 &mut opening_operations,
                 None,
@@ -1739,3 +1751,5 @@ async fn should_answer_the_poll_state_and_masternode_vote_queries_through_a_poll
         );
     }
 }
+
+mod decision_proposal_tests;

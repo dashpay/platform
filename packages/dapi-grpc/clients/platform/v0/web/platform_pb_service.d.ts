@@ -292,6 +292,15 @@ type PlatformwaitForStateTransitionResult = {
   readonly responseType: typeof platform_pb.WaitForStateTransitionResultResponse;
 };
 
+type PlatformgetRecentStateTransitionStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentStateTransitionStatusRequest;
+  readonly responseType: typeof platform_pb.GetRecentStateTransitionStatusResponse;
+};
+
 type PlatformgetConsensusParams = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -679,6 +688,33 @@ type PlatformgetShieldedNullifiers = {
   readonly responseType: typeof platform_pb.GetShieldedNullifiersResponse;
 };
 
+type PlatformgetPrivateDocumentEntries = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetPrivateDocumentEntriesRequest;
+  readonly responseType: typeof platform_pb.GetPrivateDocumentEntriesResponse;
+};
+
+type PlatformgetOwnerTransactionsInBlock = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetOwnerTransactionsInBlockRequest;
+  readonly responseType: typeof platform_pb.GetOwnerTransactionsInBlockResponse;
+};
+
+type PlatformgetBlocks = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetBlocksRequest;
+  readonly responseType: typeof platform_pb.GetBlocksResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -713,6 +749,7 @@ export class Platform {
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
+  static readonly getRecentStateTransitionStatus: PlatformgetRecentStateTransitionStatus;
   static readonly getConsensusParams: PlatformgetConsensusParams;
   static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
   static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
@@ -756,6 +793,9 @@ export class Platform {
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
   static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
+  static readonly getPrivateDocumentEntries: PlatformgetPrivateDocumentEntries;
+  static readonly getOwnerTransactionsInBlock: PlatformgetOwnerTransactionsInBlock;
+  static readonly getBlocks: PlatformgetBlocks;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1078,6 +1118,15 @@ export class PlatformClient {
     requestMessage: platform_pb.WaitForStateTransitionResultRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.WaitForStateTransitionResultResponse|null) => void
   ): UnaryResponse;
+  getRecentStateTransitionStatus(
+    requestMessage: platform_pb.GetRecentStateTransitionStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentStateTransitionStatusResponse|null) => void
+  ): UnaryResponse;
+  getRecentStateTransitionStatus(
+    requestMessage: platform_pb.GetRecentStateTransitionStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentStateTransitionStatusResponse|null) => void
+  ): UnaryResponse;
   getConsensusParams(
     requestMessage: platform_pb.GetConsensusParamsRequest,
     metadata: grpc.Metadata,
@@ -1464,6 +1513,33 @@ export class PlatformClient {
   getShieldedNullifiers(
     requestMessage: platform_pb.GetShieldedNullifiersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getOwnerTransactionsInBlock(
+    requestMessage: platform_pb.GetOwnerTransactionsInBlockRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetOwnerTransactionsInBlockResponse|null) => void
+  ): UnaryResponse;
+  getOwnerTransactionsInBlock(
+    requestMessage: platform_pb.GetOwnerTransactionsInBlockRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetOwnerTransactionsInBlockResponse|null) => void
+  ): UnaryResponse;
+  getBlocks(
+    requestMessage: platform_pb.GetBlocksRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
+  ): UnaryResponse;
+  getBlocks(
+    requestMessage: platform_pb.GetBlocksRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
   ): UnaryResponse;
 }
 

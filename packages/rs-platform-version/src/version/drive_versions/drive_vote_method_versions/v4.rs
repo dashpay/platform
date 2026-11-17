@@ -1,7 +1,8 @@
 use crate::version::drive_versions::drive_vote_method_versions::v3::DRIVE_VOTE_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_vote_method_versions::{
     DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions,
-    DriveVoteInsertMethodVersions, DriveVoteMethodVersions, DriveVoteYesNoMethodVersions,
+    DriveVoteFetchMethodVersions, DriveVoteInsertMethodVersions, DriveVoteMethodVersions,
+    DriveVoteYesNoMethodVersions,
 };
 
 /// Drive vote method versions 4. Introduced in protocol version 15 with the yes/no poll
@@ -10,7 +11,8 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 /// * `insert.register_identity_vote` 1 registers a resolved vote of either kind (v0 knows only
 ///   contested resource votes, which v1 still hands to it).
 /// * `remove_all_votes_given_by_identities` 1 also removes the yes/no votes of a masternode
-///   that left the list.
+///   that left the list, and deletes a contested resource vote a reference points at while
+///   that vote is stored.
 /// * `cleanup.remove_vote_poll_end_date_query_operations` is `Some(0)`: the yes/no clean-up
 ///   removes finished polls from the end date index with it (`None`, not active, before).
 /// * every `yes_no` method is `Some(0)`: yes/no polls can be opened and voted on from this
@@ -18,6 +20,10 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 /// * `contested_resource_insert.add_vote_poll_end_date_query_operations` 1 adds only the entry
 ///   when the batch already queues an insert of the end date's tree with other storage flags (a
 ///   contest and a yes/no poll opening sharing an end date), where 0 queued the tree twice.
+///
+/// * `fetch.fetch_contest_opening_protocol_version` is `Some(0)`: a contested create joining a
+///   contest opened in an earlier epoch reads the protocol version that epoch ran, and names
+///   its poll as that version writes its index values (`None`, not read, before).
 ///
 /// Everything else matches `DRIVE_VOTE_METHOD_VERSIONS_V3`.
 pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMethodVersions {
@@ -44,6 +50,10 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMeth
         fetch_yes_no_vote_poll_state: Some(0),
         remove_yes_no_vote_poll_votes_operations: Some(0),
         remove_yes_no_vote_references_given_by_identity: Some(0),
+    },
+    fetch: DriveVoteFetchMethodVersions {
+        fetch_contest_opening_protocol_version: Some(0),
+        ..DRIVE_VOTE_METHOD_VERSIONS_V3.fetch
     },
     ..DRIVE_VOTE_METHOD_VERSIONS_V3
 };

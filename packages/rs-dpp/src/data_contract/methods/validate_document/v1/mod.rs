@@ -1,7 +1,9 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::{
-    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+    with_state_generated_stand_ins, DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
@@ -150,6 +152,16 @@ impl DataContract {
 
         let property_constraints_result =
             document_type.validate_property_constraints(&value, system, platform_version)?;
+
+        // A client does not know a property generated from state that the document leaves
+        // out, as the transition builders leave every one out; the platform writes it before
+        // checking the document. The client's schema check reads a value the property admits
+        // in its place, so a `required` naming it passes; consensus checks the value written.
+        let value = if system.consensus {
+            value
+        } else {
+            with_state_generated_stand_ins(document_type.generated_from_fields(), value)
+        };
 
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,

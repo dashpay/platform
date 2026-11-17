@@ -71,7 +71,7 @@ use dash_async::ThreadRegistry;
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
 use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET,
+    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -426,6 +426,14 @@ where
         // thread, and parks any still-draining prior generation — all under
         // one slot lock, so there is no check-then-spawn gap to race. A
         // no-op if a worker is already live, or if teardown has begun.
+        //
+        // A timed-out `quiesce` latched the gate; reopen it once the wedged
+        // pass has drained (now, or before each pass below).
+        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
+            tracing::debug!(
+                "identity sync loop started behind a wedged pass; passes resume once it drains"
+            );
+        }
         registry.start_thread(
             WalletWorker::IdentitySync,
             coordinator_worker_config(),
@@ -438,7 +446,18 @@ where
 
                         this.sync_now().await;
 
-                        let interval = this.interval();
+                        // `sync_now` clears a drained latch itself before its slot CAS.
+                        // Sample the latch AFTER the pass, so a latch raised or cleared
+                        // while it ran is what picks the cadence: behind a still-wedged
+                        // pass the call above bailed, so poll the slot briskly instead of
+                        // sleeping a full interval and passes resume promptly once that
+                        // pass drains.
+                        let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
+                        let interval = if gate_open {
+                            this.interval()
+                        } else {
+                            this.interval().min(LATCHED_RETRY_INTERVAL)
+                        };
                         tokio::select! {
                             _ = tokio::time::sleep(interval) => {}
                             _ = cancel.cancelled() => break,
@@ -495,7 +514,9 @@ where
     /// that path the `quiescing` gate is deliberately **left closed** so the
     /// wedged pass cannot be followed by a fresh one; the caller must
     /// treat the coordinator as non-clean. A later successful `quiesce`
-    /// reopens the gate.
+    /// reopens the gate, as does [`start`](Self::start), the running
+    /// loop, or a one-shot `sync_now`, once the wedged pass has released
+    /// `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         // The guard drops here, reopening the gate — this is the
         // "drain only" flavor.
@@ -549,6 +570,13 @@ where
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
     pub async fn sync_now(&self) {
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)

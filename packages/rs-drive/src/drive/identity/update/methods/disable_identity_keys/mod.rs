@@ -5,17 +5,16 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::KeyID;
 use dpp::prelude::TimestampMillis;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use dpp::block::epoch::Epoch;
-use std::collections::HashMap;
 
 impl Drive {
     /// Disables identity keys. This function is version controlled.
@@ -98,9 +97,7 @@ impl Drive {
         key_ids: Vec<KeyID>,
         disable_at: TimestampMillis,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

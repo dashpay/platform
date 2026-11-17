@@ -148,7 +148,9 @@ impl Checker<'_> {
                 })?;
                 self.member(map, "resolution", |c, value| {
                     c.integer(value, None, None)?;
-                    c.one_of_integers(value, &[0, 1])
+                    // 2, a vote among documents, joined the resolutions with this check
+                    // (protocol version 15); the meta-schemas before it admit 0 and 1
+                    c.one_of_integers(value, &[0, 1, 2])
                 })?;
                 self.member(map, "description", |c, value| {
                     c.string_of_length(value, 1, Some(256)).map(drop)

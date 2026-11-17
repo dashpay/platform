@@ -237,7 +237,7 @@ impl ShieldedActivityEntry {
 /// callers that could produce an empty visible set (a fully-dummy
 /// bundle) should not record an entry at all.
 pub fn compute_activity_id(cmxs: &[[u8; 32]]) -> [u8; 32] {
-    use dpp::dashcore::hashes::{sha256, Hash, HashEngine};
+    use dpp::dashcore::hashes::{sha256, HashEngine};
 
     let mut sorted: Vec<[u8; 32]> = cmxs.to_vec();
     sorted.sort_unstable();

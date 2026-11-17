@@ -24,6 +24,8 @@
 @class GetAddressesInfosResponse;
 @class GetAddressesTrunkStateRequest;
 @class GetAddressesTrunkStateResponse;
+@class GetBlocksRequest;
+@class GetBlocksResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
 @class GetContestedResourceIdentityVotesRequest;
@@ -118,10 +120,14 @@
 @class GetMasternodeYesNoVoteResponse;
 @class GetMostRecentShieldedAnchorRequest;
 @class GetMostRecentShieldedAnchorResponse;
+@class GetOwnerTransactionsInBlockRequest;
+@class GetOwnerTransactionsInBlockResponse;
 @class GetPathElementsRequest;
 @class GetPathElementsResponse;
 @class GetPrefundedSpecializedBalanceRequest;
 @class GetPrefundedSpecializedBalanceResponse;
+@class GetPrivateDocumentEntriesRequest;
+@class GetPrivateDocumentEntriesResponse;
 @class GetProtocolVersionUpgradeStateRequest;
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
@@ -130,6 +136,8 @@
 @class GetRecentAddressBalanceChangesResponse;
 @class GetRecentCompactedAddressBalanceChangesRequest;
 @class GetRecentCompactedAddressBalanceChangesResponse;
+@class GetRecentStateTransitionStatusRequest;
+@class GetRecentStateTransitionStatusResponse;
 @class GetShieldedAnchorsRequest;
 @class GetShieldedAnchorsResponse;
 @class GetShieldedEncryptedNotesRequest;
@@ -322,6 +330,15 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
 
 - (GRPCUnaryProtoCall *)waitForStateTransitionResultWithMessage:(WaitForStateTransitionResultRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse)
+
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getRecentStateTransitionStatusWithMessage:(GetRecentStateTransitionStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
@@ -520,6 +537,27 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)
 
 - (GRPCUnaryProtoCall *)getShieldedNullifiersWithMessage:(GetShieldedNullifiersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (GRPCUnaryProtoCall *)getPrivateDocumentEntriesWithMessage:(GetPrivateDocumentEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse)
+
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ */
+- (GRPCUnaryProtoCall *)getOwnerTransactionsInBlockWithMessage:(GetOwnerTransactionsInBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getBlocks(GetBlocksRequest) returns (GetBlocksResponse)
+
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ */
+- (GRPCUnaryProtoCall *)getBlocksWithMessage:(GetBlocksRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -761,6 +799,27 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)waitForStateTransitionResultWithRequest:(WaitForStateTransitionResultRequest *)request handler:(void(^)(WaitForStateTransitionResultResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTowaitForStateTransitionResultWithRequest:(WaitForStateTransitionResultRequest *)request handler:(void(^)(WaitForStateTransitionResultResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse)
+
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getRecentStateTransitionStatusWithRequest:(GetRecentStateTransitionStatusRequest *)request handler:(void(^)(GetRecentStateTransitionStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetRecentStateTransitionStatusWithRequest:(GetRecentStateTransitionStatusRequest *)request handler:(void(^)(GetRecentStateTransitionStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
@@ -1146,6 +1205,53 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (void)getPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse)
+
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getOwnerTransactionsInBlockWithRequest:(GetOwnerTransactionsInBlockRequest *)request handler:(void(^)(GetOwnerTransactionsInBlockResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetOwnerTransactionsInBlockWithRequest:(GetOwnerTransactionsInBlockRequest *)request handler:(void(^)(GetOwnerTransactionsInBlockResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getBlocks(GetBlocksRequest) returns (GetBlocksResponse)
+
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

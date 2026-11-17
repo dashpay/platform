@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         .build()?;
 
     // Set our trusted context provider
-    sdk.set_context_provider(context_provider);
+    sdk.set_context_provider(context_provider)?;
 
     // Fetch the identity
     println!("Fetching identity with proof verification...");

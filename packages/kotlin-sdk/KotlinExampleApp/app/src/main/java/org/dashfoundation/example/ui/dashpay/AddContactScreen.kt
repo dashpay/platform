@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -98,6 +100,30 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     var accountLabel by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Set when an accept's private reply may have gone through (its result
+    // could not be confirmed): the screen only offers to close, never to
+    // submit again, as the send screen does for an unconfirmed spend.
+    var unconfirmedNotice by remember { mutableStateOf<String?>(null) }
+    // Whether the wallet holds the pair with the resolved recipient for a
+    // private request, as a send decides it (in flight, paid and not yet
+    // read back, or kept by the shielded store's journal until the payment is
+    // proven never to land), or for a public request awaiting its outcome
+    // (`contactRequestHolds`). While it does, Send and the collision accept
+    // are off and the screen offers the sync that settles it: the private
+    // one, which reads a landed request back, or the DashPay one, which
+    // settles a public request. Read from the wallet, so reopening this
+    // screen keeps it. A failed read keeps them off until a read succeeds.
+    var recipientPending by remember { mutableStateOf(PrivateRepliesPendingSnapshot()) }
+    // Why the shielded store could not be opened, as last read with the
+    // pending state; null when it is open.
+    var shieldedStoreFailure by remember { mutableStateOf<String?>(null) }
+    var isSyncingPrivate by remember { mutableStateOf(false) }
+    // A DashPay sync the screen started is running.
+    var isCheckingPublic by remember { mutableStateOf(false) }
+    var pendingReadVersion by remember { mutableStateOf(0) }
+    // The automatic refreshes made since the wallet's private payments were
+    // last read restored (`PrivatePaymentsRecovery.recheckDelayMs`).
+    var readinessRechecks by remember { mutableStateOf(0) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
 
@@ -107,7 +133,15 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         AddMode.IDENTITY_ID -> parsedIdentityId
     }
     val recipientIsSelf = resolvedRecipient?.contentEquals(idBytes) == true
-    val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending
+    val canSend = resolvedRecipient != null && !recipientIsSelf && !isSending &&
+        unconfirmedNotice == null && recipientPending.allowsSubmission(resolvedRecipient.toHex())
+    val recipientBlocked = resolvedRecipient != null &&
+        (
+            recipientPending.isRestoringPrivatePayments ||
+                recipientPending.isAwaitingOutcome(resolvedRecipient.toHex()) ||
+                recipientPending.isPending(resolvedRecipient.toHex()) ||
+                recipientPending.isUnavailable
+            )
 
     // Scan-to-send: consume the QR string handed back by the scanner screen
     // (the house pattern — observe the saved-state flow, then null it out).
@@ -168,6 +202,50 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // Cache-only profile for the preview card (local read; most unknown
     // identities won't have one).
     val recipientHex = resolvedRecipient?.toHex()
+    LaunchedEffect(recipientHex, wallet, pendingReadVersion) {
+        val contactIds = listOfNotNull(resolvedRecipient)
+        // Recovery first: the readiness shown is read after the wallet was
+        // asked to retry a restoration its payments still wait for.
+        val refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness = recipientPending.readiness,
+            storeFailure = container.shieldedStoreFailure.value,
+            readReadiness = { privateContactReadiness(wallet, idBytes) },
+            configureAgain = { container.configureShieldedStoreAgain() },
+        )
+        shieldedStoreFailure = refreshed.storeFailure
+        val pendingRead = contactRequestHolds(wallet, idBytes, contactIds)
+        recipientPending = recipientPending
+            .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+            .recorded(pendingRead, contactIds.map { it.toHex() })
+        // While the payments stay unrestored, refresh again after a pause, for
+        // as long as the screen is shown: a restoration the wallet deferred
+        // behind a busy store completes later and changes no key of this
+        // effect (neither a bind nor a DashPay sync ends for it).
+        if (PrivatePaymentsRecovery.waitForRecheck(recipientPending.readiness, readinessRechecks)) {
+            readinessRechecks++
+            pendingReadVersion++
+        } else if (recipientPending.readiness?.privatePaymentsRestored == true) {
+            readinessRechecks = 0
+        }
+    }
+    // Binding the shielded account restores the wallet's private payments:
+    // read the readiness again then.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.isBound.collect { pendingReadVersion++ }
+    }
+    // A deferred restoration runs once the shielded scan holding the store
+    // ends: refresh then too, ahead of the timer.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.state
+            .map { it.isSyncing }
+            .distinctUntilChanged()
+            .collect { syncing -> if (!syncing) pendingReadVersion++ }
+    }
+    // A DashPay sync settles a public request awaiting its outcome: read the
+    // recipient's holds again when one ends, the background pass included.
+    LaunchedEffect(manager) {
+        manager?.dashPaySyncIsSyncing?.collect { syncing -> if (!syncing) pendingReadVersion++ }
+    }
     LaunchedEffect(recipientHex) {
         val recipient = resolvedRecipient
         val w = wallet
@@ -204,9 +282,71 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                 kickDashPaySync(scope, m)
                 navController.popBackStack()
             } catch (e: Exception) {
-                errorMessage = e.message ?: "Send failed"
+                val outcome = ContactRequestSubmissionOutcome.of(e)
+                recipientPending = recipientPending.withOutcome(outcome, recipient.toHex())
+                when (outcome) {
+                    // Nothing was sent: the wallet holds the pair. The screen
+                    // shows it as pending, with the private sync, until the
+                    // per-contact read says it is free.
+                    ContactRequestSubmissionOutcome.PrivateRequestPending -> Unit
+                    // Nothing was sent: the screen shows the wallet setting up
+                    // its private payments until its readiness says restored.
+                    ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored -> Unit
+                    // Nothing was signed: an earlier public request to the
+                    // recipient awaits its outcome. The screen shows it being
+                    // checked, with the DashPay sync, never a retry.
+                    ContactRequestSubmissionOutcome.PublicRequestUnconfirmed -> kickDashPaySync(scope, m)
+                    // Nothing was sent and nothing is pending: Send stays on,
+                    // and sending again continues the read.
+                    ContactRequestSubmissionOutcome.PrivateStoreNotRead ->
+                        errorMessage = ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                        kickDashPaySync(scope, m)
+                        unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                    }
+                    is ContactRequestSubmissionOutcome.Failed -> errorMessage = outcome.message
+                }
             } finally {
                 isSending = false
+                pendingReadVersion++
+            }
+        }
+    }
+
+    /**
+     * Read the private store, which settles a pending private request, then
+     * re-read the recipient's pending state: Send comes back once nothing is
+     * pending, for the user to try again.
+     */
+    fun syncPrivateRequests() {
+        val w = wallet ?: return
+        val m = manager ?: return
+        isSyncingPrivate = true
+        scope.launch {
+            try {
+                syncPrivateContactRequests(w, m)?.let { errorMessage = it }
+            } finally {
+                isSyncingPrivate = false
+                pendingReadVersion++
+            }
+        }
+    }
+
+    /**
+     * Run a DashPay sync, which settles a public request awaiting its
+     * outcome first (attaching to one already running), then re-read the
+     * recipient's holds: Send comes back once the wallet frees the pair, and
+     * a request found is recorded as sent.
+     */
+    fun checkPublicRequest() {
+        val m = manager ?: return
+        isCheckingPublic = true
+        scope.launch {
+            try {
+                attachOrStartSync(m)
+            } finally {
+                isCheckingPublic = false
+                pendingReadVersion++
             }
         }
     }
@@ -214,15 +354,17 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     fun acceptIncoming(recipient: ByteArray) {
         val w = wallet ?: return
         val m = manager ?: return
+        // A private reply to this contact may be pending in the wallet.
+        if (!recipientPending.allowsSubmission(recipient.toHex())) return
         isSending = true
         errorMessage = null
         scope.launch {
             try {
-                val ok = w.dashpay.acceptIncomingRequest(
+                val ok = acceptIncomingContactRequest(
+                    wallet = w,
+                    manager = m,
                     ourIdentityId = idBytes,
                     senderId = recipient,
-                    signerHandle = m.signerHandle,
-                    coreSignerHandle = m.mnemonicResolverHandle,
                 )
                 if (ok) {
                     kickDashPaySync(scope, m)
@@ -232,9 +374,28 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         "accept it from Requests."
                 }
             } catch (e: Exception) {
-                errorMessage = "Accept failed: ${e.message ?: "unknown error"}"
+                val outcome = ContactRequestSubmissionOutcome.of(e)
+                recipientPending = recipientPending.withOutcome(outcome, recipient.toHex())
+                when (outcome) {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
+                        // Pending, not failed: the next sync settles it.
+                        kickDashPaySync(scope, m)
+                        unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+                    }
+                    // Nothing was signed: the screen shows the pair being
+                    // checked, with the DashPay sync, never a retry.
+                    ContactRequestSubmissionOutcome.PublicRequestUnconfirmed -> kickDashPaySync(scope, m)
+                    // Nothing was sent: the screen offers the private sync.
+                    ContactRequestSubmissionOutcome.PrivateRequestPending -> Unit
+                    ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored -> Unit
+                    ContactRequestSubmissionOutcome.PrivateStoreNotRead ->
+                        errorMessage = ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE
+                    is ContactRequestSubmissionOutcome.Failed ->
+                        errorMessage = "Accept failed: ${outcome.message}"
+                }
             } finally {
                 isSending = false
+                pendingReadVersion++
             }
         }
     }
@@ -334,6 +495,38 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     enabled = canSend,
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.addContact.send"),
                 ) { attemptSend() }
+                if (recipientBlocked) {
+                    Text(
+                        ContactRequestSubmissionOutcome.rowMessage(
+                            pending = recipientPending.isPending(recipient.toHex()),
+                            awaitingOutcome = recipientPending.isAwaitingOutcome(recipient.toHex()),
+                            restoring = recipientPending.isRestoringPrivatePayments,
+                            restoreFailure = recipientPending.restoreFailure,
+                            shieldedStoreFailure = shieldedStoreFailure,
+                            unavailable = recipientPending.isUnavailable,
+                            error = null,
+                        ).orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("dashpay.addContact.pending"),
+                    )
+                    // A DashPay sync settles a public request awaiting its
+                    // outcome, and a private sync a pending private request;
+                    // neither restores private payments, so neither is offered
+                    // for that.
+                    when {
+                        recipientPending.isRestoringPrivatePayments -> Unit
+                        recipientPending.isAwaitingOutcome(recipient.toHex()) -> TextButton(
+                            onClick = { checkPublicRequest() },
+                            enabled = !isCheckingPublic,
+                            modifier = Modifier.testTag("dashpay.addContact.checkPublic"),
+                        ) { Text(if (isCheckingPublic) "Checking…" else "Check again") }
+                        else -> TextButton(
+                            onClick = { syncPrivateRequests() },
+                            enabled = !isSyncingPrivate,
+                            modifier = Modifier.testTag("dashpay.addContact.syncPrivate"),
+                        ) { Text(if (isSyncingPrivate) "Syncing private requests…" else "Sync private requests") }
+                    }
+                }
             }
 
             if (errorMessage != null) {
@@ -363,6 +556,17 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                     collisionRecipient = null
                     send(collision)
                 }) { Text("Continue anyway") }
+            },
+        )
+    }
+
+    unconfirmedNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { navController.popBackStack() },
+            title = { Text("Submitted") },
+            text = { Text(notice) },
+            confirmButton = {
+                TextButton(onClick = { navController.popBackStack() }) { Text("Done") }
             },
         )
     }

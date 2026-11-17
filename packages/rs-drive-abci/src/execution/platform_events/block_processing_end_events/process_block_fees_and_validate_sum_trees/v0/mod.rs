@@ -35,7 +35,6 @@ use crate::execution::types::processed_block_fees_outcome;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
@@ -156,11 +155,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
             platform_version,
-            Some(
-                block_execution_context
-                    .block_platform_state()
-                    .previous_fee_versions(),
-            ),
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {

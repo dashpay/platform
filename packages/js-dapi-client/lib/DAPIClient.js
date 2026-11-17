@@ -81,7 +81,13 @@ class DAPIClient extends EventEmitter {
     );
 
     this.blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
-      this.emit(EVENTS.ERROR, e);
+      // An 'error' event nobody listens to throws and takes the process down.
+      // Header sync users such as wallet-lib listen on the provider itself.
+      if (this.listenerCount(EVENTS.ERROR) > 0) {
+        this.emit(EVENTS.ERROR, e);
+      } else {
+        this.logger.error(`Block headers provider error: ${e.message}`, { error: e });
+      }
     });
   }
 

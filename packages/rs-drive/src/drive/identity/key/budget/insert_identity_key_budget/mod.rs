@@ -4,11 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Writes the full budget of a newly added key as its remaining budget, creating the
@@ -29,9 +28,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

@@ -1,6 +1,7 @@
 //! Implements in Drive a function which adds operations to a given `outpoint` if it is present in the estimated costs.
 
 use crate::drive::asset_lock::asset_lock_storage_path;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 use crate::error::Error;
@@ -11,10 +12,7 @@ use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGe
 use dpp::platform_value::Bytes36;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds operations to a given `outpoint` if it is present in the estimated costs.
@@ -23,7 +21,7 @@ impl Drive {
     ///
     /// * `&self` - A reference to the current object.
     /// * `outpoint` - An `OutPoint` reference to be potentially modified.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that contains layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` that contains layer information.
     ///
     /// # Returns
     ///
@@ -32,9 +30,7 @@ impl Drive {
         &self,
         outpoint: &Bytes36,
         asset_lock_value: AssetLockValue,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];

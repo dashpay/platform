@@ -349,7 +349,6 @@ fn insert_tip_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert sum bench document");
 }

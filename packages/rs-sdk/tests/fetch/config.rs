@@ -5,9 +5,7 @@
 
 use crate::fetch::generated_data::*;
 use dpp::{
-    dashcore::{hashes::Hash, ProTxHash},
-    data_contracts::dpns_contract,
-    prelude::Identifier,
+    dashcore::ProTxHash, data_contracts::dpns_contract, prelude::Identifier,
     version::PlatformVersion,
 };
 use rs_dapi_client::{Address, AddressList};

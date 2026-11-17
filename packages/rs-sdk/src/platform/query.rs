@@ -39,7 +39,7 @@ use dapi_grpc::platform::v0::{
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
 use dpp::address_funds::PlatformAddress;
-use dpp::dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::dashcore_rpc::dashcore::ProTxHash;
 use dpp::identity::KeyID;
 use dpp::version::PlatformVersionError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
@@ -109,6 +109,62 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
     /// On failure, it yields an [`Error`].
     fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<T, Error>;
+
+    /// The protocol version from which every node serves the request this query encodes
+    /// to, or `None` when every node serves it.
+    ///
+    /// The fetch paths refuse a request the network is not proven to serve, without sending
+    /// it ([`Error::ProtocolVersionNotActive`]): nodes below the version would answer a
+    /// different question or refuse it in a way that gets them banned. The default encodes
+    /// the query with `settings` and reads [`TransportRequest::needs_protocol_version`]; a
+    /// query whose features decide it, such as [`DocumentQuery`], overrides it.
+    ///
+    /// A document request declares nothing on the wire, so the default refuses a query that
+    /// encodes one: such a query overrides this, for example from
+    /// [`DocumentQuery::required_protocol_version`].
+    fn protocol_requirement(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error>
+    where
+        T: TransportRequest,
+    {
+        let request = self.query(settings)?;
+        if request.method_name() == proto::GetDocumentsRequest::default().method_name() {
+            return Err(Error::Config(
+                "a query that encodes a get_documents request must say which protocol version \
+                 its features need (Query::protocol_requirement); the wire request does not"
+                    .to_string(),
+            ));
+        }
+        Ok(ProtocolRequirement::of_request(&request))
+    }
+}
+
+/// A protocol version a request needs: not every node of a network below it serves the
+/// request. See [`Query::protocol_requirement`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProtocolRequirement {
+    /// The first protocol version at which every node serves the request.
+    pub protocol_version: u32,
+    /// The gRPC method of the request, for example `get_documents`.
+    pub method: &'static str,
+    /// The feature of the request that needs the version, when the method alone does not,
+    /// for example "time-range selections".
+    pub feature: Option<&'static str>,
+}
+
+impl ProtocolRequirement {
+    /// What `request` declares it needs ([`TransportRequest::needs_protocol_version`]).
+    pub fn of_request<R: TransportRequest>(request: &R) -> Option<Self> {
+        request
+            .needs_protocol_version()
+            .map(|protocol_version| Self {
+                protocol_version,
+                method: request.method_name(),
+                feature: None,
+            })
+    }
 }
 
 /// Marker for wire proto request types that serve as their own [`Query`]
@@ -128,6 +184,22 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
 /// own query (`Fetch::Query = Fetch::Request`), add the proto to the
 /// `impl_wire_query!` list below; a missing entry fails to compile at the
 /// fetch call site with a `WireQuery is not satisfied` error.
+///
+/// `GetDocumentsRequest` is deliberately not in the list. Which networks
+/// serve a document request depends on the features of the query it was
+/// encoded from ([`DocumentQuery::required_protocol_version`]), which the
+/// wire request does not show; fetch documents with a [`DocumentQuery`] or
+/// a [`ChainedDocumentQuery`](crate::platform::ChainedDocumentQuery).
+///
+/// ```
+/// fn wire_query<T: dash_sdk::platform::WireQuery>() {}
+/// wire_query::<dash_sdk::platform::proto::GetEpochsInfoRequest>();
+/// ```
+///
+/// ```compile_fail
+/// fn wire_query<T: dash_sdk::platform::WireQuery>() {}
+/// wire_query::<dash_sdk::platform::proto::GetDocumentsRequest>();
+/// ```
 ///
 /// # Breaking change for downstream crates
 ///
@@ -174,7 +246,6 @@ impl_wire_query!(
     proto::GetDataContractsByRangeRequest,
     proto::GetDataContractsRequest,
     proto::GetDocumentHistoryRequest,
-    proto::GetDocumentsRequest,
     proto::GetEpochsInfoRequest,
     proto::GetEvonodesProposedEpochBlocksByIdsRequest,
     proto::GetEvonodesProposedEpochBlocksByRangeRequest,
@@ -221,6 +292,7 @@ impl_wire_query!(
     proto::GetVotePollsByEndDateRequest,
     proto::GetYesNoVotePollStateRequest,
     proto::GetMasternodeYesNoVoteRequest,
+    proto::GetPrivateDocumentEntriesRequest,
     proto::WaitForStateTransitionResultRequest,
 );
 
@@ -235,6 +307,13 @@ where
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
         Ok(self.clone())
+    }
+
+    fn protocol_requirement(
+        &self,
+        _settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error> {
+        Ok(ProtocolRequirement::of_request(self))
     }
 }
 
@@ -310,26 +389,51 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
         &self,
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDocumentHistoryRequest, Error> {
-        let prove = settings.prove;
-        if !prove {
+        use drive::query::document_history_drive_query::{
+            DocumentHistoryDriveQuery, DocumentHistoryFilter,
+        };
+        use proto::get_document_history_request::{
+            get_document_history_request_v1::{Cursor, Filter},
+            GetDocumentHistoryRequestV1,
+        };
+        // Every history fetch verifies its GroveDB proof; there is no
+        // unproved decoding path, so a proof-disabled request would only fail
+        // after the round trip.
+        if !settings.prove {
             return Err(Error::Config(
-                "unproved queries are not supported for this query; enable proofs".to_string(),
+                "unproved queries are not supported for this query; enable proofs".to_owned(),
             ));
         }
-
-        Ok(proto::GetDocumentHistoryRequest {
-            version: Some(proto::get_document_history_request::Version::V0(
-                proto::get_document_history_request::GetDocumentHistoryRequestV0 {
-                    data_contract_id: self.data_contract_id.to_vec(),
-                    document_type_name: self.document_type_name.clone(),
-                    document_id: self.document_id.to_vec(),
-                    limit: self.limit,
-                    offset: self.offset,
-                    start_at_ms: self.start_at_ms,
-                    prove,
-                },
-            )),
-        })
+        let limit = self
+            .limit
+            .map(u16::try_from)
+            .transpose()
+            .map_err(|_| Error::Generic("history limit out of bounds".to_owned()))?;
+        DocumentHistoryDriveQuery {
+            contract_id: self.data_contract_id.to_buffer(),
+            document_type_name: self.document_type_name.clone(),
+            document_id: self.document_id.to_buffer(),
+            filter: self.filter.clone(),
+            limit,
+        }
+        .validate()?;
+        let filter = match self.filter {
+            DocumentHistoryFilter::StartAtTime(time) => Filter::StartAtMs(time),
+            DocumentHistoryFilter::StartAfter { time_ms, revision } => {
+                Filter::StartAfter(Cursor { time_ms, revision })
+            }
+            DocumentHistoryFilter::StartAtRevision(revision) => Filter::StartAtRevision(revision),
+            DocumentHistoryFilter::Revision(revision) => Filter::Revision(revision),
+        };
+        Ok(GetDocumentHistoryRequestV1 {
+            data_contract_id: self.data_contract_id.to_vec(),
+            document_type_name: self.document_type_name.clone(),
+            document_id: self.document_id.to_vec(),
+            limit: self.limit,
+            filter: Some(filter),
+            prove: settings.prove,
+        }
+        .into())
     }
 }
 
@@ -1664,5 +1768,211 @@ impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
                 },
             )),
         })
+    }
+}
+
+#[cfg(test)]
+mod history_query_tests {
+    use super::*;
+    use crate::platform::QuerySettings;
+    use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+    use drive::query::document_history_drive_query::DocumentHistoryFilter;
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_fetch_history_with_lifecycle_and_same_time_revisions() {
+        use crate::platform::Fetch;
+        use drive_proof_verifier::types::{
+            DocumentHistory, DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+        };
+        let mut sdk = crate::SdkBuilder::default()
+            .with_network(Network::Devnet)
+            .with_initial_version(PlatformVersion::get(15).unwrap())
+            .build()
+            .unwrap();
+        let query = DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: None,
+        };
+        let expected = DocumentHistory {
+            entries: [1, 2]
+                .into_iter()
+                .map(|revision| DocumentHistoryEntry {
+                    time_ms: 2000,
+                    revision,
+                    document: dpp::document::Document::V0(dpp::document::DocumentV0 {
+                        revision: Some(revision),
+                        ..Default::default()
+                    }),
+                })
+                .collect(),
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: 2,
+                times: Default::default(),
+            }),
+        };
+        sdk.mock()
+            .expect_fetch(query.clone(), Some(expected.clone()))
+            .await
+            .unwrap();
+        let result = DocumentHistory::fetch(&sdk, query).await.unwrap().unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn should_report_oversized_history_limits_as_request_errors() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::get(15).unwrap(),
+            verified_protocol_version: 0,
+            prove: true,
+        };
+        for limit in [u16::MAX as u32 + 1, u32::MAX] {
+            let query = DocumentHistoryQuery {
+                data_contract_id: [1; 32].into(),
+                document_type_name: "note".into(),
+                document_id: [2; 32].into(),
+                filter: DocumentHistoryFilter::StartAtTime(0),
+                limit: Some(limit),
+            };
+            assert!(
+                matches!(query.query(&settings), Err(Error::Generic(message))
+                if message == "history limit out of bounds")
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_proof_disabled_history_queries_before_sending() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::get(15).unwrap(),
+            verified_protocol_version: 0,
+            prove: false,
+        };
+        let query = DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: Some(1),
+        };
+        assert!(matches!(query.query(&settings), Err(Error::Config(message))
+            if message == "unproved queries are not supported for this query; enable proofs"));
+    }
+
+    #[test]
+    fn should_encode_complete_history_selectors_before_protocol_discovery() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::get(15).unwrap(),
+            verified_protocol_version: 0,
+            prove: true,
+        };
+        let mut query = DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            filter: DocumentHistoryFilter::StartAfter {
+                time_ms: 1000,
+                revision: 22,
+            },
+            limit: Some(10),
+        };
+        let request = query.query(&settings).unwrap();
+        let Some(proto::get_document_history_request::Version::V1(request)) = request.version
+        else {
+            panic!("expected history version one");
+        };
+        let Some(Filter::StartAfter(cursor)) = request.filter else {
+            panic!("expected composite cursor");
+        };
+        assert_eq!((cursor.time_ms, cursor.revision), (1000, 22));
+        for protocol in [12, 13, 14] {
+            let settings = QuerySettings {
+                protocol_version: PlatformVersion::get(protocol).unwrap(),
+                ..settings
+            };
+            for filter in [
+                DocumentHistoryFilter::StartAfter {
+                    time_ms: 1000,
+                    revision: 22,
+                },
+                DocumentHistoryFilter::StartAtRevision(2),
+                DocumentHistoryFilter::Revision(2),
+            ] {
+                query.filter = filter;
+                query.limit = Some(1);
+                assert!(query.query(&settings).is_ok());
+            }
+        }
+        query.filter = DocumentHistoryFilter::Revision(2);
+        query.limit = Some(10);
+        assert!(query.query(&settings).is_err());
+        query.limit = Some(1);
+        assert!(query.query(&settings).is_ok());
+        query.filter = DocumentHistoryFilter::StartAtRevision(65536);
+        assert!(query.query(&settings).is_ok());
+        query.filter = DocumentHistoryFilter::StartAtRevision(65537);
+        assert!(query.query(&settings).is_err());
+    }
+
+    #[test]
+    fn should_reject_malformed_history_filters_before_protocol_discovery() {
+        let request_settings = Default::default();
+        for version in [
+            PlatformVersion::get(13).unwrap(),
+            PlatformVersion::get(14).unwrap(),
+            PlatformVersion::latest(),
+        ] {
+            let settings = QuerySettings {
+                request_settings: &request_settings,
+                protocol_version: version,
+                verified_protocol_version: 0,
+                prove: true,
+            };
+            for (filter, limit) in [
+                (DocumentHistoryFilter::StartAtTime(0), Some(0)),
+                (DocumentHistoryFilter::StartAtTime(0), Some(11)),
+                (DocumentHistoryFilter::StartAtTime(1 << 63), None),
+                (
+                    DocumentHistoryFilter::StartAfter {
+                        time_ms: 1 << 63,
+                        revision: 1,
+                    },
+                    None,
+                ),
+                (
+                    DocumentHistoryFilter::StartAfter {
+                        time_ms: 0,
+                        revision: 0,
+                    },
+                    None,
+                ),
+                (DocumentHistoryFilter::Revision(0), None),
+                (DocumentHistoryFilter::Revision(65537), None),
+                (DocumentHistoryFilter::StartAtRevision(0), None),
+                (DocumentHistoryFilter::StartAtRevision(65537), None),
+                (DocumentHistoryFilter::Revision(1), Some(2)),
+            ] {
+                let query = DocumentHistoryQuery {
+                    data_contract_id: [1; 32].into(),
+                    document_type_name: "note".into(),
+                    document_id: [2; 32].into(),
+                    filter,
+                    limit,
+                };
+                assert!(query.query(&settings).is_err());
+            }
+        }
     }
 }

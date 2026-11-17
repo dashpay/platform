@@ -72,6 +72,10 @@ final class PlatformWalletProgressPollTests: XCTestCase {
                         firstPendingCountGate?.wait()
                     }
                     return 3
+                },
+                txoReconcileDueWallets: { [self] handle in
+                    record("txo_reconcile_due_wallets", handle)
+                    return []
                 }
             )
         }
@@ -236,7 +240,8 @@ final class PlatformWalletProgressPollTests: XCTestCase {
             pendingAccountBuildCount: { handle in
                 if handle == 20 { throw PlatformWalletError.invalidHandle("gone") }
                 return 3
-            }
+            },
+            txoReconcileDueWallets: { _ in [walletA] }
         )
 
         let snapshot = PlatformWalletManager.performManagerPoll(5, calls: calls)
@@ -251,6 +256,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(snapshot.shieldedSyncIsSyncing, true)
         XCTAssertEqual(snapshot.platformAddressSyncIsSyncing, false)
         XCTAssertEqual(snapshot.spvPeers, [])
+        XCTAssertEqual(snapshot.txoReconcileDueWallets, [walletA], "the reconcile schedule is read every tick")
         // `Date??`: compare the outer level explicitly — `XCTAssertNil` would
         // coerce the nested optional through `Any?` and see a value.
         XCTAssertTrue(
@@ -384,7 +390,8 @@ final class PlatformWalletProgressPollTests: XCTestCase {
             isPlatformAddressSyncing: pollCalls.isPlatformAddressSyncing,
             isShieldedSyncing: pollCalls.isShieldedSyncing,
             isDashPaySyncing: pollCalls.isDashPaySyncing,
-            pendingAccountBuildCount: pollCalls.pendingAccountBuildCount)
+            pendingAccountBuildCount: pollCalls.pendingAccountBuildCount,
+            txoReconcileDueWallets: pollCalls.txoReconcileDueWallets)
         let shieldedGeneration = manager.shieldedSyncGeneration.current()
         let balanceGeneration = manager.shieldedLocalBalanceGeneration.current()
         manager.startProgressPolling()

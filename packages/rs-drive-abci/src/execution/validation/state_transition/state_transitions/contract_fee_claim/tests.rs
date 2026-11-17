@@ -180,7 +180,6 @@ impl Setup {
                 &BlockInfo::default(),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("expected to fill the pot");
     }

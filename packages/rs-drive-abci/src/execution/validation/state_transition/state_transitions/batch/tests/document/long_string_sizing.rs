@@ -289,7 +289,6 @@ mod long_string_sizing_tests {
                     true,
                     None,
                     self.platform_version,
-                    None,
                 )
                 .expect("expected to seed the note");
         }

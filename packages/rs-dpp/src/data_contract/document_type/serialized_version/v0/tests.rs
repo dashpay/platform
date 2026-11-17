@@ -239,3 +239,21 @@ fn should_write_stored_generation_0_only_with_index_structure_builder_0() {
         .contract_storage_document_type_version = 1;
     assert!(compile(&unknown_generation).is_err());
 }
+
+#[test]
+fn should_preserve_boolean_deletion_bytes_and_refuse_erasable_storage_without_history() {
+    use super::StoredDeletion;
+    for (flag, policy) in [
+        (false, StoredDeletion::NotDeletable),
+        (true, StoredDeletion::Deletable),
+    ] {
+        assert_eq!(
+            bincode::encode_to_vec(flag, PLATFORM_BINCODE_CONFIG).unwrap(),
+            bincode::encode_to_vec(policy, PLATFORM_BINCODE_CONFIG).unwrap()
+        );
+    }
+    let policy = StoredDeletion::of(true, true).unwrap();
+    assert_eq!(policy.into_parts(true).unwrap(), (true, true));
+    assert!(policy.into_parts(false).is_err());
+    assert!(StoredDeletion::of(false, true).is_err());
+}

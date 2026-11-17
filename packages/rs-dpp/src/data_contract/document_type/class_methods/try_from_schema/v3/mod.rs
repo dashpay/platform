@@ -70,6 +70,7 @@ use crate::data_contract::document_type::schema::validation_schema::keep_native_
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
+use super::dynamic_reference::validate_dynamic_reference_sources;
 #[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
@@ -344,7 +345,7 @@ fn consensus_or_protocol_generation_3_error(error: ProtocolError) -> ProtocolErr
 /// records the stray keys those contracts do carry, and fails if a document
 /// meta-schema ever declares one of them as a keyword.
 #[allow(clippy::too_many_arguments)]
-fn try_from_schema_generation_3(
+pub(super) fn try_from_schema_generation_3(
     data_contract_id: Identifier,
     data_contract_system_version: u16,
     contract_config_version: u16,
@@ -355,9 +356,15 @@ fn try_from_schema_generation_3(
     data_contact_config: &DataContractConfig,
     full_validation: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    generation: &common::ParserGeneration,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    parse_generation_3(
+    let mut operations = SchemaReadBilling {
+        operations: validation_operations,
+        held_schema_size: None,
+        repeated_key_walk_read: None,
+    };
+    let parsed = parse_generation_3(
         data_contract_id,
         data_contract_system_version,
         contract_config_version,
@@ -367,13 +374,64 @@ fn try_from_schema_generation_3(
         token_configurations,
         data_contact_config,
         full_validation,
-        validation_operations,
+        &mut operations,
+        generation,
         platform_version,
-    )
-    .map_err(consensus_or_protocol_generation_3_error)
+    );
+    // A parse that ran the repeated-key walk records one schema size, at least the values the
+    // walk read, registered or refused: the depth check measures the schema after the base
+    // schema drops what it adds (the system fields of `required`), may stop early (an
+    // unresolvable `$ref`) and never runs when an earlier stage refuses the type. Held back
+    // until the parse is judged, since the depth check records its size along the way. Inert
+    // at protocol version 14, which selects this generation too: `check_document_type_schema`
+    // 0 runs no walk, so the count stays `None`, nothing is held, and every operation passes
+    // through unchanged.
+    if let Some(read) = operations.repeated_key_walk_read {
+        let size = operations
+            .held_schema_size
+            .map_or(read, |size| size.max(read));
+        operations.operations.extend(std::iter::once(
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size),
+        ));
+    }
+    parsed.map_err(consensus_or_protocol_generation_3_error)
 }
 
-/// The body of [`try_from_schema_generation_3`], which maps its bare errors.
+/// The operations a generation-3 parse records, forwarded as they come, except the schema's
+/// size (`DocumentTypeSchemaValidationForSize`, which only the core's depth check records,
+/// once) when the repeated-key walk ran: that one is held, for
+/// [`try_from_schema_generation_3`] to record once the parse is judged, raised to the walk's
+/// count.
+struct SchemaReadBilling<'a, E> {
+    operations: &'a mut E,
+    held_schema_size: Option<u64>,
+    repeated_key_walk_read: Option<u64>,
+}
+
+impl<E: Extend<ProtocolValidationOperation>> Extend<ProtocolValidationOperation>
+    for SchemaReadBilling<'_, E>
+{
+    fn extend<I: IntoIterator<Item = ProtocolValidationOperation>>(&mut self, operations: I) {
+        let held_schema_size = &mut self.held_schema_size;
+        let walked = self.repeated_key_walk_read.is_some();
+        self.operations.extend(
+            operations
+                .into_iter()
+                .filter_map(|operation| match operation {
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size)
+                        if walked =>
+                    {
+                        *held_schema_size = Some(size);
+                        None
+                    }
+                    operation => Some(operation),
+                }),
+        );
+    }
+}
+
+/// The body of [`try_from_schema_generation_3`], which maps its bare errors and records the
+/// schema's size of a parse that ran the repeated-key walk.
 #[allow(clippy::too_many_arguments)]
 fn parse_generation_3(
     data_contract_id: Identifier,
@@ -385,7 +443,8 @@ fn parse_generation_3(
     token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     data_contact_config: &DataContractConfig,
     full_validation: bool,
-    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    validation_operations: &mut SchemaReadBilling<'_, impl Extend<ProtocolValidationOperation>>,
+    generation: &common::ParserGeneration,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
     // Generation 3 refuses `-` in a document type name, as meta-schema v3
@@ -409,6 +468,21 @@ fn parse_generation_3(
     // since that is what the contract stores, serializes and proves. Only a
     // document type's parse expands the contract's `$defs`, so the `$defs` of
     // a contract without document types stay as sent, unchecked, as before 14.
+    //
+    // Registration from protocol version 15 refuses a key the schema or the
+    // `$defs` name twice, read here as sent: the expansion below keeps the
+    // last of a repeated `type` or `size`, which would hide the repeat from
+    // every stage after it while the contract stores both entries.
+    #[cfg(feature = "validation")]
+    if full_validation {
+        common::refuse_a_repeated_doctype_key(
+            &schema,
+            schema_defs,
+            name,
+            &mut validation_operations.repeated_key_walk_read,
+            platform_version,
+        )?;
+    }
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {
             DocumentType::expand_schema_defs_property_type_shorthands(
@@ -428,6 +502,14 @@ fn parse_generation_3(
         Some(expanded_schema) => (expanded_schema, Some(schema)),
         None => (schema, None),
     };
+
+    // A private document type (protocol version 15) is held to the doctype-level keywords it
+    // may declare before any stage below reads one, so that a keyword it may not declare is
+    // refused as such. In place in this generation, which protocol version 14 selects too: the
+    // function's own gate, `parse_private_document`, is `None` there, so it reads nothing and
+    // answers `false`.
+    let declares_private_document =
+        common::declares_private_document(&schema, name, platform_version)?;
 
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
@@ -464,73 +546,28 @@ fn parse_generation_3(
         // `apply_deleted_only_when_consumed` below records the consumption.
         deleted_only_when_consumed,
         validation_operations,
-        &common::ParserGeneration {
-            // Generation 3 exists if and only if `document_type_schema` is 3 —
-            // CONTRACT_VERSIONS_V6 and V7 are the only tables that select this
-            // parser, and the only tables naming meta-schema v3. So every constant
-            // here is a property of the generation, not of a platform version,
-            // and none of them is read out of a table.
-            document_type_schema_version: 3,
-            // Meta-schema v3 carries the `keeps*History` flags forward from v2,
-            // so they are unconditionally part of this generation's grammar.
-            // This is the conditional that was dead in the copied core: at
-            // schema 3 the old `document_type_schema >= 2` could only be true.
-            admit_history: true,
-            // Count indexes arrived at PV12; every version selecting this
-            // generation is far past that boundary.
-            admit_count_indexes: true,
-            meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // RANKED / TIME RANGE: the keyword admissions that make this
-            // generation 3, read from the shared generation → admission
-            // mapping so the registration-cost re-parse can never drift
-            // from what this parser accepts.
-            admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
-            ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
-            ranked_index_structure_check: validate_no_ranked_prefix_overlap,
-            admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
-            admit_integer_range: IndexGrammarAdmissions::for_schema_generation(3).integer_range,
-            // INDEX ONLY: the `terminal` index keyword, admitted from the
-            // same shared generation → admission mapping as the two above.
-            admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
-            // PREALLOCATED: the fourth generation-3 index keyword, from the
-            // same shared mapping.
-            admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
-            // OUTLIVES DELETE: from the same shared mapping.
-            admit_index_outlives_delete: IndexGrammarAdmissions::for_schema_generation(3)
-                .outlives_delete,
-            // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
-            // same shared mapping.
-            admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
-                .skip_if_absent,
-            // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
-            // shared mapping.
-            admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
-                .summable_off_count_index,
-            // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
-            // rather than a keyword, read from the same shared mapping so the
-            // registration-cost re-parse and the validator agree on it.
-            admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(
-                3,
-            )
-            .range_countable_implies_countable,
-            // NO LOCKING RESOLUTION: a contested index resolved without a Lock
-            // choice, a generation-3 value from the same shared mapping.
-            admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
-                .no_locking_resolution,
-            // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
-            // fields for its moderators carries (checked by `apply_moderator_abilities`).
-            admit_moderation_stamp_indexes: true,
-            // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
-            // moderated reference (`apply_derived_index_properties`).
-            admit_derived_index_properties: true,
-            // INDEXED ARRAYS: an index keyed by the elements of a typed array
-            // (`validate_indexed_array_index`).
-            admit_indexed_arrays: true,
-        },
+        generation,
         platform_version,
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
+    // A private type's declaration and what else it may not hold, first after the core parse:
+    // under full validation the native schema check there reports a malformed declaration,
+    // and the flags, properties and references this reads are parsed
+    let private_document = if declares_private_document {
+        common::parse_private_document_keyword(&v2.schema, name)?
+    } else {
+        None
+    };
+    common::apply_private_document(
+        &mut v2,
+        private_document,
+        deleted_only_when_consumed,
+        data_contact_config,
+        name,
+        full_validation,
+        platform_version,
+    )?;
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
     // Read from the stored schema once the core parse has run the meta-schema,
@@ -628,6 +665,12 @@ fn parse_generation_3(
     // the lookup of the `ownerRefersTo` declaration included.
     validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
         .map_err(consensus_or_protocol_data_contract_error)?;
+    // and for the properties a reference naming its target through the referring document
+    // reads the contract, the document type and its slots' property names from. No
+    // version before protocol version 15 parses such a reference, so there is none to
+    // check there.
+    validate_dynamic_reference_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
     // The `propertyConstraints` rules are parsed onto the type here, where the
     // integer properties they read and their transient flags are known; their
     // limits are checked under full validation only. The `enum`s their string
@@ -676,10 +719,22 @@ fn parse_generation_3(
     // documents.
     apply_derived_index_properties(&mut v2, data_contract_id, name, full_validation)?;
 
+    if generation.admit_lifecycle {
+        let can_be_erased = common::parse_can_be_erased_keyword(&v2.schema)?;
+        common::apply_can_be_erased(&mut v2, can_be_erased, name)?;
+        if full_validation {
+            common::reject_contested_keep_history(&v2, name)?;
+        }
+    }
+
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
     // default (`true` when the key is omitted).
-    if full_validation && v2.documents_keep_history() && v2.documents_can_be_deleted() {
+    if !generation.admit_lifecycle
+        && full_validation
+        && v2.documents_keep_history()
+        && v2.documents_can_be_deleted()
+    {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{}\" sets both `documentsKeepHistory: true` and \
@@ -1729,10 +1784,12 @@ fn with_own_contract_id_omitted(
                     .collect(),
             );
         }
+        // A dynamic reference names no contract in the schema
         DocumentPropertyReferenceTarget::Identity
         | DocumentPropertyReferenceTarget::Contract { .. }
         | DocumentPropertyReferenceTarget::Token
-        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => {}
+        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
+        | DocumentPropertyReferenceTarget::DynamicDocument(_) => {}
     }
     target
 }
@@ -1977,6 +2034,7 @@ impl DocumentType {
             data_contact_config,
             full_validation,
             validation_operations,
+            &PARSER_GENERATION,
             platform_version,
         )
         .map(DocumentType::V2)
@@ -1992,11 +2050,75 @@ mod choose_first_tests;
 #[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
+mod contest_decided_by_index_values_tests;
+#[cfg(all(test, feature = "validation"))]
+mod contest_keyed_by_top_level_properties_tests;
+#[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
 #[cfg(all(test, feature = "validation"))]
 mod delete_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
 mod derived_index_property_tests;
+/// Grammar owned by parser generation 3.
+pub(super) const PARSER_GENERATION: common::ParserGeneration = common::ParserGeneration {
+    admit_lifecycle: false,
+    // CONTRACT_VERSIONS_V6 selects this parser with meta-schema v3. Parser
+    // generation 4 also uses that schema and extends this grammar. These
+    // constants belong to the parser generation rather than its version table.
+    document_type_schema_version: 3,
+    // Meta-schema v3 carries the `keeps*History` flags forward from v2,
+    // so they are unconditionally part of this generation's grammar.
+    // This is the conditional that was dead in the copied core: at
+    // schema 3 the old `document_type_schema >= 2` could only be true.
+    admit_history: true,
+    // Count indexes arrived at PV12; every version selecting this
+    // generation is far past that boundary.
+    admit_count_indexes: true,
+    meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
+    // RANKED / TIME RANGE: the keyword admissions that make this
+    // generation 3, read from the shared generation → admission
+    // mapping so the registration-cost re-parse can never drift
+    // from what this parser accepts.
+    admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
+    ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
+    ranked_index_structure_check: validate_no_ranked_prefix_overlap,
+    admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
+    admit_integer_range: IndexGrammarAdmissions::for_schema_generation(3).integer_range,
+    // INDEX ONLY: the `terminal` index keyword, admitted from the
+    // same shared generation → admission mapping as the two above.
+    admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
+    // PREALLOCATED: the fourth generation-3 index keyword, from the
+    // same shared mapping.
+    admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
+    // OUTLIVES DELETE: from the same shared mapping.
+    admit_index_outlives_delete: IndexGrammarAdmissions::for_schema_generation(3).outlives_delete,
+    // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
+    // same shared mapping.
+    admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3).skip_if_absent,
+    // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
+    // shared mapping.
+    admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
+        .summable_off_count_index,
+    // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
+    // rather than a keyword, read from the same shared mapping so the
+    // registration-cost re-parse and the validator agree on it.
+    admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(3)
+        .range_countable_implies_countable,
+    // NO LOCKING RESOLUTION: a contested index resolved without a Lock
+    // choice, a generation-3 value from the same shared mapping.
+    admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
+        .no_locking_resolution,
+    // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
+    // fields for its moderators carries (checked by `apply_moderator_abilities`).
+    admit_moderation_stamp_indexes: true,
+    // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
+    // moderated reference (`apply_derived_index_properties`).
+    admit_derived_index_properties: true,
+    // INDEXED ARRAYS: an index keyed by the elements of a typed array
+    // (`validate_indexed_array_index`).
+    admit_indexed_arrays: true,
+};
+
 #[cfg(test)]
 mod documents_ttl_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -2019,7 +2141,11 @@ mod refusal_test_support;
 mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]
+mod dynamic_reference_tests;
+#[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_token_tests;
 #[cfg(test)]
 mod keep_history_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -2039,6 +2165,8 @@ mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]
+mod private_document_tests;
+#[cfg(all(test, feature = "validation"))]
 mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
@@ -2052,6 +2180,8 @@ mod reference_lookup_tests;
 mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
 mod referenced_rule_tests;
+#[cfg(all(test, feature = "validation"))]
+mod repeated_doctype_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -2117,6 +2247,7 @@ mod tests {
             &config,
             full_validation,
             &mut vec![],
+            &PARSER_GENERATION,
             platform_version,
         )
     }

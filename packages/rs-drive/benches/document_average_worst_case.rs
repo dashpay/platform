@@ -584,7 +584,6 @@ fn insert_grade_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert average bench grade document");
 }

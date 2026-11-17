@@ -4,13 +4,12 @@ mod v1;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use grovedb::batch::KeyInfoPath;
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a new prefunded specialized balance
@@ -32,9 +31,7 @@ impl Drive {
         &self,
         specialized_balance_id: Identifier,
         amount: u64,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

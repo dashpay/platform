@@ -22,4 +22,8 @@ pub struct DPPVotingVersions {
     /// (`YesNoVotePoll::required_voting_power` and `YesNoVotePoll::passes`). `None` (not
     /// active) before protocol version 15.
     pub yes_no_vote_poll_decision: OptionalFeatureVersion,
+    /// How a decision proposal's yes/no poll is read from the proposal, and its fund and end
+    /// date judged (`decision_proposal::DecisionProposal`). `None` (not active) before protocol
+    /// version 15.
+    pub decision_proposal_vote_poll: OptionalFeatureVersion,
 }

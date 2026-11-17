@@ -5,12 +5,13 @@ use crate::prelude::AddressNonce;
 use crate::serialization::JsonConvertible;
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 use crate::serialization::ValueConvertible;
+use crate::util::ecdsa;
 use crate::ProtocolError;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
-use dashcore::hashes::{sha256d, Hash};
+use dashcore::hashes::sha256d;
 use dashcore::{
     sign_message, signer, Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash,
 };
@@ -564,7 +565,7 @@ impl PlatformAddress {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if pub_key.inner.verify(&signable_bytes_hash, sig).is_ok() {
+                    if ecdsa::verify_digest(&pub_key.inner, &signable_bytes_hash, sig).is_ok() {
                         matched += 1;
                         sig_idx += 1;
                     }
@@ -784,7 +785,6 @@ impl FromStr for PlatformAddress {
 mod tests {
     use super::*;
     use dashcore::blockdata::opcodes::all::*;
-    use dashcore::hashes::Hash;
     use dashcore::PublicKey;
     use platform_value::BinaryData;
     use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};

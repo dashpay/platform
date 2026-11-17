@@ -4,13 +4,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Sets a balance for a given address in the AddressBalances tree.
@@ -33,9 +31,7 @@ impl Drive {
         address: PlatformAddress,
         nonce: AddressNonce,
         balance: Credits,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -68,9 +64,7 @@ impl Drive {
         address: PlatformAddress,
         nonce: AddressNonce,
         balance: Credits,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version
