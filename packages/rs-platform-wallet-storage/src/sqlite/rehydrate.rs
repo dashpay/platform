@@ -7,6 +7,7 @@
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
