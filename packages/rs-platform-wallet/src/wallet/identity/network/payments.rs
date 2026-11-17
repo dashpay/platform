@@ -2767,7 +2767,8 @@ mod tests {
             account_xpub,
             is_watch_only: true,
         };
-        let managed = ManagedCoreFundsAccount::from_account(&account);
+        let managed =
+            ManagedCoreFundsAccount::from_account(&account).expect("managed external account");
 
         wallet
             .add_account(account_type, Some(account_xpub))

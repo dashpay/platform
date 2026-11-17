@@ -101,7 +101,6 @@ pub struct IdentitySyncConfigSnapshot {
 pub struct CoreWalletStateSnapshot {
     pub synced_height: u32,
     pub last_processed_height: u32,
-    pub monitor_revision: u64,
 }
 
 /// Snapshot of the identity-wallet scan state for a single wallet,
@@ -137,7 +136,7 @@ pub struct PlatformAddressProviderStateSnapshot {
 
 // `WalletInfoMetadataSnapshot` and `wallet_info_metadata_blocking`
 // were removed: the diagnostic explorer's "PlatformWalletInfo Metadata"
-// section duplicated `CoreWalletStateSnapshot` (heights/revision) and
+// section duplicated `CoreWalletStateSnapshot` (heights) and
 // surfaced fields with no active populator (total_transactions is
 // event-driven; first_loaded_at isn't stamped on this path; name /
 // description are wallet-row labels, not part of the in-memory diag
@@ -170,7 +169,6 @@ pub struct TrackedAssetLockSnapshot {
 pub struct AccountMetadataSnapshot {
     pub total_transactions: u64,
     pub total_utxos: u64,
-    pub monitor_revision: u64,
 }
 
 /// Snapshot of one address-pool slot for the per-account drill-down.
@@ -865,27 +863,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     // -----------------------------------------------------------------
 
     /// Snapshot of the core wallet's SPV bookkeeping for a single
-    /// wallet. `monitor_revision` is the max across every account on
-    /// the wallet — the max picks up the most recent address-set
-    /// mutation the bloom-filter rebuilder cares about.
+    /// wallet.
     pub fn core_wallet_state_blocking(
         &self,
         wallet_id: &WalletId,
     ) -> Option<CoreWalletStateSnapshot> {
         let wm = self.wallet_manager.blocking_read();
         let info = wm.get_wallet_info(wallet_id)?;
-        let monitor_revision = info
-            .core_wallet
-            .accounts
-            .all_accounts()
-            .iter()
-            .map(|a| a.monitor_revision())
-            .max()
-            .unwrap_or(0);
         Some(CoreWalletStateSnapshot {
             synced_height: info.core_wallet.metadata.synced_height,
             last_processed_height: info.core_wallet.metadata.last_processed_height,
-            monitor_revision,
         })
     }
 
@@ -1116,7 +1103,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // 0 in production builds.
             total_transactions: account.transactions().len() as u64,
             total_utxos: funds.map(|a| a.utxos.len() as u64).unwrap_or(0),
-            monitor_revision: account.monitor_revision(),
         })
     }
 

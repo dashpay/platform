@@ -256,10 +256,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
         changed
     }
 
-    fn monitor_revision(&self) -> u64 {
-        self.core_wallet.monitor_revision()
-    }
-
     // Delegate the chain-lock methods to the inner `ManagedWalletInfo`.
     //
     // Without these delegations, `WalletInfoInterface`'s default impls
