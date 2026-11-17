@@ -279,6 +279,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use crate::drive::document::lifecycle::DocumentLifecycleState;
     use crate::drive::system::core_fork_activations::CoreFork;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
@@ -532,7 +533,15 @@ mod fixtures {
     /// Checks the state against the description, and records the shape of
     /// every layer below a template that is fuller here than seen so far
     fn conformance_of(drive: &Drive, fixture: &str, run: &mut FixtureRun) {
-        let platform_version = PlatformVersion::latest();
+        conformance_of_at_version(drive, fixture, run, PlatformVersion::latest());
+    }
+
+    fn conformance_of_at_version(
+        drive: &Drive,
+        fixture: &str,
+        run: &mut FixtureRun,
+        platform_version: &PlatformVersion,
+    ) {
         let structure = drive_structure();
         let report = check_conformance(drive, &structure, None, platform_version)
             .expect("expected to walk the state");
@@ -674,6 +683,167 @@ mod fixtures {
             }
         }
         conformance_of(&drive, "contracts_with_documents", run);
+    }
+
+    fn legacy_document_histories(run: &mut FixtureRun) {
+        let version = PlatformVersion::get(14).expect("protocol 14");
+        let drive = setup_drive_with_initial_state_structure(Some(version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            Some([77; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.config_mut().set_can_be_deleted(true);
+            }),
+            None,
+            Some(version),
+        );
+        let person = contract.document_type_for_name("person").expect("person");
+        for seed in 1..4 {
+            let document = person
+                .random_document(Some(seed), version)
+                .expect("fixture document");
+            let flags = (seed == 2).then(|| {
+                Cow::Owned(StorageFlags::new_single_epoch(
+                    0,
+                    Some(document.owner_id().to_buffer()),
+                ))
+            });
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, flags)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type: person,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    version,
+                )
+                .expect("insert legacy document");
+        }
+        conformance_of_at_version(&drive, "legacy_document_histories", run, version);
+    }
+
+    fn deleted_and_erasing_histories(run: &mut FixtureRun) {
+        let mut version = PlatformVersion::latest().clone();
+        version
+            .system_limits
+            .max_document_revisions_erased_per_transition = Some(1);
+        let drive = setup_drive_with_initial_state_structure(Some(&version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            Some([78; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract
+                    .set_document_schema(
+                        "person",
+                        platform_value!({
+                            "type": "object",
+                            "documentsKeepHistory": true,
+                            "canBeDeleted": true,
+                            "canBeErased": true,
+                            "properties": {
+                                "name": { "type": "string", "maxLength": 50, "position": 0 },
+                            },
+                            "additionalProperties": false,
+                        }),
+                        true,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected an erasable history type");
+            }),
+            None,
+            Some(&version),
+        );
+        let person = contract.document_type_for_name("person").expect("person");
+        for seed in 1..=2 {
+            let mut document = person
+                .random_document(Some(seed), &version)
+                .expect("fixture document");
+            let flags = Some(Cow::Owned(StorageFlags::new_single_epoch(
+                0,
+                Some(document.owner_id().to_buffer()),
+            )));
+            for revision in 1..=seed {
+                document.set_revision(Some(revision));
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&document, flags.clone())),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type: person,
+                        },
+                        revision > 1,
+                        BlockInfo::default_with_time(1_000 + revision),
+                        true,
+                        None,
+                        &version,
+                    )
+                    .expect("expected to retain a revision");
+            }
+            drive
+                .delete_document_for_contract_apply_and_add_to_operations(
+                    document.id(),
+                    &contract,
+                    "person",
+                    &BlockInfo::default_with_time(2_000),
+                    (seed == 2).then(|| document.owner_id()),
+                    None,
+                    None,
+                    &mut vec![],
+                    &version,
+                )
+                .expect("expected to delete the document");
+            if seed == 2 {
+                let batch = drive
+                    .erase_document_for_contract_operations(
+                        document.id(),
+                        &contract,
+                        person,
+                        &BlockInfo::default_with_time(3_000),
+                        &mut None,
+                        None,
+                        &version,
+                    )
+                    .expect("expected to start erasure");
+                drive
+                    .apply_batch_low_level_drive_operations(
+                        None,
+                        None,
+                        batch,
+                        &mut vec![],
+                        &version.drive,
+                    )
+                    .expect("expected to apply the first erase chunk");
+            }
+            let state = drive
+                .fetch_document_lifecycle(&contract, person, document.id(), None, None, &version)
+                .expect("expected to read the lifecycle")
+                .0;
+            assert!(match seed {
+                1 => matches!(state, DocumentLifecycleState::Deleted(_)),
+                _ => matches!(state, DocumentLifecycleState::Erasing),
+            });
+        }
+        conformance_of_at_version(&drive, "deleted_and_erasing_histories", run, &version);
+    }
+
+    #[test]
+    fn should_describe_deleted_and_erasing_history_records() {
+        deleted_and_erasing_histories(&mut FixtureRun::default());
     }
 
     /// A contract whose moderators only delete documents: no list, one document type they can
@@ -1909,6 +2079,8 @@ mod fixtures {
         let mut run = FixtureRun::default();
         identities(&mut run);
         contracts_with_documents(&mut run);
+        legacy_document_histories(&mut run);
+        deleted_and_erasing_histories(&mut run);
         expiring_documents(&mut run);
         moderated_contract(&mut run);
         warned_contract(&mut run);

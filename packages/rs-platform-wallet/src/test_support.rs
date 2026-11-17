@@ -365,6 +365,7 @@ pub async fn funded_wallet_manager_with_outputs(
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
+        finalized_spends: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -494,6 +495,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
+        finalized_spends: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -599,6 +601,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
+        finalized_spends: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -669,6 +672,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
+        finalized_spends: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -1008,6 +1012,7 @@ pub(crate) async fn mnemonic_wallet_manager(
     };
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
+        finalized_spends: Default::default(),
         core_wallet: managed_wallet,
         generation: Arc::new(WalletGeneration::new()),
         identity_manager: IdentityManager::new(),

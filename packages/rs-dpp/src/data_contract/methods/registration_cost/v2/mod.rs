@@ -140,9 +140,13 @@ impl DataContractInSerializationFormat {
                                     .schema
                                     .document_type_schema,
                             );
-                            if let Ok(index) =
-                                Index::try_from_value_map(index_value_map.as_slice(), admissions)
-                            {
+                            // and the same reading of a contested index's `resolution`,
+                            // which the platform version's tables decide
+                            if let Ok(index) = Index::try_from_value_map_for_platform_version(
+                                index_value_map.as_slice(),
+                                admissions,
+                                platform_version,
+                            ) {
                                 let base_index_fee = if index.contested_index.is_some() {
                                     fee_version.document_type_base_contested_index_registration_fee
                                 } else if index.unique {
@@ -206,8 +210,12 @@ mod tests {
     use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
     use crate::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
     use crate::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::tests::fixtures::get_dashpay_contract_fixture;
+    use platform_value::string_encoding::Encoding;
+    use platform_value::Identifier;
     use platform_version::TryFromPlatformVersioned;
+    use serde_json::json;
     use std::collections::BTreeMap;
 
     fn contract_with_token(once_per_identity_amount: Option<u64>) -> DataContract {
@@ -263,5 +271,97 @@ mod tests {
             with_serialized.registration_cost_v2(platform_version),
             without_serialized.registration_cost_v2(platform_version) + surcharge
         );
+    }
+
+    /// A contract with one document type, whose only index, when it has one, is contested
+    /// with `resolution`.
+    fn contract_with_contested_index(resolution: Option<u8>) -> DataContract {
+        let mut choice = json!({
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "proposalId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0
+                }
+            },
+            "required": ["proposalId"],
+            "additionalProperties": false
+        });
+        if let Some(resolution) = resolution {
+            choice["indices"] = json!([{
+                "name": "byProposal",
+                "properties": [{ "proposalId": "asc" }],
+                "unique": true,
+                "contested": { "resolution": resolution }
+            }]);
+        }
+        let value = platform_value::to_value(json!({
+            "$formatVersion": "1",
+            "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+            "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+            "version": 1,
+            "documentSchemas": { "choice": choice }
+        }))
+        .expect("the contract should convert");
+        DataContract::from_value(value, false, PlatformVersion::latest())
+            .expect("the contract should parse")
+    }
+
+    /// A contested index is charged the contested index fee whichever way it is resolved,
+    /// from the parsed contract and from the serialization format a state transition is
+    /// charged from, which reads the index out of the schema: a vote among documents
+    /// (`resolution` 2, protocol version 15) must parse there as it does in the contract, or
+    /// its index would be registered without its fee.
+    #[test]
+    fn should_charge_a_contested_index_resolved_among_documents() {
+        let platform_version = PlatformVersion::latest();
+        let contested_index_fee = platform_version
+            .fee_version
+            .data_contract_registration
+            .document_type_base_contested_index_registration_fee;
+        assert!(contested_index_fee > 0);
+
+        let serialized = |contract: DataContract| {
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                contract,
+                platform_version,
+            )
+            .expect("expected the serialization format")
+        };
+        let without = contract_with_contested_index(None);
+        let cost_without = without
+            .registration_cost(platform_version)
+            .expect("expected a cost");
+        assert_eq!(
+            serialized(without)
+                .registration_cost(platform_version)
+                .expect("expected a cost"),
+            cost_without
+        );
+
+        for resolution in [0, 1, 2] {
+            let with = contract_with_contested_index(Some(resolution));
+            let cost = with
+                .registration_cost(platform_version)
+                .expect("expected a cost");
+            assert_eq!(
+                cost,
+                cost_without + contested_index_fee,
+                "resolution {resolution}, from the contract"
+            );
+            assert_eq!(
+                serialized(with)
+                    .registration_cost(platform_version)
+                    .expect("expected a cost"),
+                cost,
+                "resolution {resolution}, from the serialization format"
+            );
+        }
     }
 }

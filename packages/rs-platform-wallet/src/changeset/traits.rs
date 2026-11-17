@@ -447,7 +447,12 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Called once at startup — this is a whole-client operation, not a
     /// per-wallet one, because `ClientStartState::platform_addresses` is
     /// already keyed by wallet id and the sub-changesets carry their own
-    /// wallet attribution where needed.
+    /// wallet attribution where needed. A registration reads it too, for the
+    /// wallet it registers: the cursors and backfill record of a wallet the
+    /// backend already holds, and the private contact request scan state
+    /// records it kept marked for that id
+    /// (`ClientStartState::retained_private_contact_scan_states`, see
+    /// [`PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`]).
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
 
     /// Read startup data without settling history; active wallets may share this backend.

@@ -226,6 +226,9 @@ impl DocumentTypeV1Getters for DocumentTypeV2 {
 }
 
 impl DocumentTypeV2Getters for DocumentTypeV2 {
+    fn documents_can_be_erased(&self) -> bool {
+        self.documents_can_be_erased
+    }
     fn documents_countable(&self) -> bool {
         self.documents_countable || self.range_countable
     }

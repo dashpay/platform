@@ -20,6 +20,11 @@ dash-spv = { workspace = true }
 # Core dependencies. Classic Dash signed messages use the optional base64 encoding.
 dashcore = { workspace = true, features = ["base64"] }
 
+# SPV context provider dependency (optional). `dash-spv` and `tokio` are
+# already non-optional dependencies above, so the `spv-context` feature only
+# needs to pull in the context-provider trait crate.
+dash-context-provider = { path = "../rs-context-provider", optional = true }
+
 # Standard dependencies
 thiserror = "1.0"
 async-trait = "0.1"
@@ -61,10 +66,11 @@ grovedb-commitment-tree = { workspace = true, optional = true }
 # is built against (its `Cargo.lock` resolves rusqlite at this major).
 rusqlite = { version = "0.41", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
-# `StreamExt`/`pin_mut!` to consume the SDK's `sync_shielded_notes_stream`
-# in the interleaved fetch/tree-append consumer (shielded sync only).
-# Same version as `dash-sdk` so the lockfile resolves a single copy.
-futures = { version = "0.3.30", optional = true }
+# `StreamExt` to consume the SDK's page streams: the shielded note sync's
+# `sync_shielded_notes_stream` and the private contact request sync's
+# `private_document_pages`. Same version as `dash-sdk` so the lockfile
+# resolves a single copy.
+futures = { version = "0.3.30" }
 
 # Networked, opt-in example binaries. Each one performs real network I/O
 # against a live devnet, so they are examples (compiled, never run by
@@ -113,8 +119,9 @@ static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
 # so time-driven manager, startup and SPV runtime logic can be tested
-# deterministically without sleeping wall-clock seconds.
-tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"] }
+# deterministically without sleeping wall-clock seconds. `net` gives the
+# broadcast tests a loopback port they hold bound and unlistened.
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util", "net"] }
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }
@@ -126,10 +133,15 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" 
 
 [features]
 default = ["bls", "eddsa"]
+# SPV-backed Platform context provider (delegates quorum lookups to the SPV
+# runtime). `dash-spv`/`tokio` are already non-optional deps; this pulls in the
+# context-provider trait crate plus `rt-multi-thread` (the sync->async bridge
+# in `spv_context_provider` uses `tokio::task::block_in_place`).
+spv-context = ["dep:dash-context-provider", "tokio/rt-multi-thread"]
 test-utils = ["key-wallet/test-utils"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
-shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
+shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
 # Opt-in serde derives on the changeset types in `src/changeset/` plus
 # the per-identity / DashPay scalar types those changesets carry.
 # Activates `key-wallet/serde` (which transitively activates

@@ -128,6 +128,38 @@ impl PersistenceCapabilities {
     /// (the pre-recipient behaviour).
     pub const ASSET_LOCK_SHIELDED_RECIPIENTS: Self = Self(1 << 14);
 
+    /// The private contact request sync's scan state round-trips: each
+    /// identity's read position in DashPay's private contact request store
+    /// (`ContactChangeSet::private_contact_requests_positions`) and each
+    /// private contact's shielded address
+    /// (`ContactChangeSet::private_shielded_addresses`, with its removals)
+    /// are stored, and loading restores them onto each `ManagedIdentity`
+    /// (`ManagedIdentity::apply_private_contact_requests_position`,
+    /// `ManagedIdentity::apply_private_shielded_address`), so a relaunch
+    /// reads the store from where it stopped. Without this bit nothing of
+    /// it is written, a restored value is dropped, and each launch reads the
+    /// store from its start.
+    ///
+    /// Honoured only together with [`Self::ATOMIC_CHANGESETS`]
+    /// ([`Self::PRIVATE_CONTACT_SCAN_STATE_RESTART`]): the scan state is written
+    /// in changesets that must commit whole, so a backend declaring this bit
+    /// alone is treated as keeping none of it.
+    ///
+    /// A backend declaring it keeps a position record whose
+    /// `private_payments_unresolved` is set when it removes the record's
+    /// wallet or purges that wallet's rows, until a record stored cleared for
+    /// the same wallet and owner replaces it, and returns such records for a
+    /// wallet it no longer holds in
+    /// `ClientStartState::retained_private_contact_scan_states`. The marker
+    /// stands for a private payment that may still execute: a wallet
+    /// registered again under the id holds the identity it names, in every
+    /// build, until a restoration from the shielded store's journal shows the
+    /// payment resolved. The wallet itself never asks for a marked record to
+    /// be deleted: `PlatformWalletManager::remove_wallet` stores nothing, and
+    /// `IdentityManager::remove_identity` refuses while the identity's record
+    /// is marked.
+    pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 15);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
@@ -147,6 +179,16 @@ impl PersistenceCapabilities {
     /// Capabilities required for seed-backed FVK persistence and seedless rebind.
     pub const SHIELDED_FVK_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::SHIELDED_VIEWING_KEYS.0);
+
+    /// Capabilities required for the private contact request scan state to
+    /// round-trip, and so for a private contact request to be paid for: the
+    /// state itself, and atomic changesets. An un-ignore stores the sender's
+    /// removal and the read-position rewind it brings in one changeset; a
+    /// backend committing the removal without the rewind would, after a
+    /// restart, read on past the requests passed over while the sender was
+    /// ignored, and nothing would read them again.
+    pub const PRIVATE_CONTACT_SCAN_STATE_RESTART: Self =
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::PRIVATE_CONTACT_REQUEST_SCAN_STATE.0);
 
     /// Capabilities required to durably reconcile an asset-lock status and
     /// restore that exact row after process restart.
@@ -243,6 +285,10 @@ impl PersistenceCapabilities {
                 "asset_lock_shielded_recipients",
             ),
             (
+                PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+                "private_contact_request_scan_state",
+            ),
+            (
                 PersistenceCapabilities::CORE_HISTORY_RESTORE,
                 "core_history_restore",
             ),
@@ -303,6 +349,10 @@ mod tests {
             PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS.bits(),
             0x4000
         );
+        assert_eq!(
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits(),
+            0x8000
+        );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
@@ -335,12 +385,7 @@ mod tests {
         // `KNOWN` entry would gate behaviour while staying invisible to
         // every `names()`-based diagnostic — exactly what this test exists
         // to prevent. Walking the whole width cannot go stale.
-        // Bit 15 is reserved for `CORE_CHAIN_TRUNCATION` (dashpay/platform#5384).
-        const RESERVED_BITS: &[u32] = &[15];
         for shift in 0..=PersistenceCapabilities::HIGHEST_DECLARED_BIT {
-            if RESERVED_BITS.contains(&shift) {
-                continue;
-            }
             let bit = PersistenceCapabilities::from_bits_retain(1u64 << shift);
             assert_eq!(
                 bit.names().len(),

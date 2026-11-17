@@ -1,0 +1,28 @@
+//! Versioned primary-key layout selection for document queries.
+
+mod v0;
+mod v1;
+
+use crate::drive::document::uses_current_document_history_layout;
+use crate::error::Error;
+use dpp::version::PlatformVersion;
+
+/// The value stored below a keep-history document's primary key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::query) enum PrimaryKeyPathQueryTarget {
+    /// The primary key contains a subtree of timestamp-keyed revisions.
+    LegacyHistoryTree,
+    /// The primary key contains the current document, directly in the ordinary
+    /// layout or through a reference to the current retained revision at PV15.
+    CurrentDocument,
+}
+
+pub(in crate::query) fn primary_key_path_query_target(
+    platform_version: &PlatformVersion,
+) -> Result<PrimaryKeyPathQueryTarget, Error> {
+    if uses_current_document_history_layout(platform_version)? {
+        Ok(v1::primary_key_path_query_target_v1())
+    } else {
+        Ok(v0::primary_key_path_query_target_v0())
+    }
+}

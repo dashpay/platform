@@ -387,6 +387,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
 
 /// Start SPV sync in the background.
 ///
+/// `network` must be the manager's network, its SDK's: the manager serves
+/// that SDK's SPV quorum keys from this client. Another network is refused
+/// with `ErrorInvalidParameter`.
+///
 /// `enable_masternodes` is NOT a caller knob: platform-wallet always
 /// needs `ChainLockManager` + `InstantSendManager` running so
 /// asset-lock proofs can resolve via the `CLSig` / `ISLock` P2P

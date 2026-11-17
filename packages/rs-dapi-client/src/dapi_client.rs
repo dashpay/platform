@@ -88,6 +88,13 @@ impl CanRetry for DapiClientError {
             _ => None,
         }
     }
+
+    fn is_node_busy(&self) -> bool {
+        match self {
+            DapiClientError::Transport(te) => te.is_node_busy(),
+            _ => false,
+        }
+    }
 }
 
 /// Serialization of [DapiClientError].
@@ -231,7 +238,11 @@ pub fn update_address_ban_status<R, E>(
         Err(error) => {
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
-                    if applied_settings.ban_failed_address {
+                    // A node that says it is busy is working, and a request can ask that it
+                    // is not banned for saying so.
+                    let ban = applied_settings.ban_failed_address
+                        && (applied_settings.ban_busy_address || !error.is_node_busy());
+                    if ban {
                         let reason = Some(error.to_string());
                         let period_opt = error.rate_limit_ban_duration();
                         let banned = match period_opt {
@@ -266,14 +277,14 @@ pub fn update_address_ban_status<R, E>(
                             );
                         }
                     } else {
-                        // Banning is disabled for this request, but failover
-                        // must still move traffic away from the failing node:
+                        // The request does not ban a node for this failure, but
+                        // failover must still move traffic away from the failing node:
                         // drop it from the sticky rotation, ban state untouched.
                         address_list.evict_from_rotation(address);
                         tracing::debug!(
                             ?error,
                             ?address,
-                            "banning is disabled; evicted address {address} from rotation due to the error"
+                            "not banning for this error; evicted address {address} from rotation"
                         );
                     }
                 } else {
@@ -302,6 +313,7 @@ mod tests {
             timeout: Duration::from_secs(10),
             retries: 5,
             ban_failed_address: ban,
+            ban_busy_address: true,
             max_decoding_message_size: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,

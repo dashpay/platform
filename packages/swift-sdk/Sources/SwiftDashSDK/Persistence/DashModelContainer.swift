@@ -95,6 +95,8 @@ public enum DashModelContainer {
             PersistentMasternode.self,
             PersistentTrackedMasternode.self,
             PersistentIdentityBalanceMetadata.self,
+            PersistentPrivateContactRequestsPosition.self,
+            PersistentPrivateShieldedAddress.self,
             PersistentTransactionAccounting.self,
             PersistentCoreInstantLock.self
         ]
@@ -407,8 +409,10 @@ public enum DashSchemaV4: VersionedSchema {
 }
 
 /// Current schema: per-wallet transaction accounting (`PersistentTransactionAccounting`),
-/// the wallet's accounting-backfill marker, raw InstantLock sidecars, and an asset
-/// lock's optional Orchard recipient of its shielded funding.
+/// the wallet's accounting-backfill marker, raw InstantLock sidecars, an asset
+/// lock's optional Orchard recipient of its shielded funding, and the private
+/// contact request sync's scan state (each identity's read position and its
+/// private contacts' shielded addresses).
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

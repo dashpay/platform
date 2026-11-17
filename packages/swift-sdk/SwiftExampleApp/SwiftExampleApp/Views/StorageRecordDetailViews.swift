@@ -86,6 +86,60 @@ struct IdentityBalanceMetadataStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentPrivateContactRequestsPosition
+
+struct PrivateContactRequestsPositionStorageDetailView: View {
+    let record: PersistentPrivateContactRequestsPosition
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Identity ID", value: hexString(record.identityId))
+            }
+            Section {
+                FieldRow(label: "Read Position", value: String(UInt64(bitPattern: record.position)))
+                FieldRow(label: "Key Fingerprint", value: hexString(record.keyFingerprint))
+                FieldRow(label: "Private Payments Unresolved", value: record.privatePaymentsUnresolved ? "Yes" : "No")
+            } header: {
+                Text("Private Contact Request Store")
+            } footer: {
+                // The purge rule: a marked record outlives its wallet.
+                if record.privatePaymentsUnresolved {
+                    Text("Kept when its wallet is removed, until a record stored cleared for the same "
+                        + "wallet and identity replaces it: the private payment it stands for may still "
+                        + "execute.")
+                }
+            }
+        }
+        .navigationTitle("Private Position")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentPrivateShieldedAddress
+
+struct PrivateShieldedAddressStorageDetailView: View {
+    let record: PersistentPrivateShieldedAddress
+
+    var body: some View {
+        Form {
+            Section("Contact") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Owner ID", value: hexString(record.ownerId))
+                FieldRow(label: "Contact ID", value: hexString(record.contactId))
+            }
+            Section("Shielded Address") {
+                FieldRow(label: "Raw Address", value: hexString(record.address))
+            }
+        }
+        .navigationTitle("Private Address")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentIdentity
 
 struct IdentityStorageDetailView: View {

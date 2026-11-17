@@ -6,7 +6,7 @@ A unique index normally works first come, first served: the first document to ta
 |---|---|
 | **Where** | a unique index |
 | **Value** | object: `resolution` (required), `fieldMatches`, `description` |
-| **Since** | protocol version 1; `resolution: 1` from protocol version 14 |
+| **Since** | protocol version 1; `resolution: 1` from protocol version 14; `resolution: 2` from protocol version 15 |
 | **On update** | Fixed, like every index (`DataContractInvalidIndexDefinitionUpdateError`, 10217) |
 | **Errors** | `DocumentContestNotPaidForError` (40114), `DocumentContestCurrentlyLockedError` (40110), `DocumentContestNotJoinableError` (40111), `DocumentContestIdentityAlreadyContestantError` (40112), `DocumentContestIndexMismatchError` (40118), `DocumentContestNotRequiredError` (40119), `DocumentContestMaximumContendersReachedError` (40141); `DuplicateUniqueIndexError` (40105) for values outside the contested range |
 
@@ -38,7 +38,7 @@ A name is unique under its parent domain. A label of 3 to 19 characters made of 
 
 | Key | Value | What it does |
 |---|---|---|
-| `resolution` | `0` or `1`, required | How the contest is decided. `0`: masternodes vote for a contender, abstain, or **lock** the value so nobody gets it. `1` (from protocol version 14): masternodes vote for a contender or abstain; there is no lock, so the contest always ends with a winner. |
+| `resolution` | `0`, `1` or `2`, required | How the contest is decided. `0`: masternodes vote for a contender, abstain, or **lock** the value so nobody gets it. `1` (from protocol version 14): masternodes vote for a contender or abstain; there is no lock, so the contest always ends with a winner. `2` (from protocol version 15): as `0`, but each document is a contender of its own, named by its document id, so an identity may enter several. |
 | `fieldMatches` | array of at least one `{ "field", "regexPattern" }` | Which values are contested. `field` is a property path of the document; `regexPattern` a regular expression its value must match. Each is 1 to 256 characters. |
 | `description` | string, 1 to 256 characters | A note for readers. Consensus does not read it. |
 
@@ -54,11 +54,11 @@ A name is unique under its parent domain. A label of 3 to 19 characters made of 
 - with `DocumentContestIndexMismatchError` (40118, from protocol version 14) when the pair names another index than the contested one its values match.
 - with `DocumentContestNotRequiredError` (40119, from protocol version 14) when the document is not contested but carries a prefunded balance.
 - with `DocumentContestNotJoinableError` (40111) when the contest's join window (one week on mainnet) has passed.
-- with `DocumentContestIdentityAlreadyContestantError` (40112) when its owner is already a contender.
+- with `DocumentContestIdentityAlreadyContestantError` (40112) when its owner is already a contender, under `resolution: 0` and `1`. Under `resolution: 2` an identity may enter as many documents as it wants, each paying the fund.
 - with `DocumentContestMaximumContendersReachedError` (40141, from protocol version 14) when the contest already holds 1,000 contenders.
 - with `DocumentContestCurrentlyLockedError` (40110) when an earlier contest for these values ended locked.
 
-**The vote.** Masternodes and evonodes vote with `MasternodeVote` transitions for the length of the poll (two weeks on mainnet). Under `resolution: 0` the contender with the most votes wins unless the lock tally beats it, and the contest always runs its full length, even with one contender. Under `resolution: 1` a contender always wins, and a contest that still has a single contender when its join window closes is awarded to it at once. From protocol version 14 a tie goes to the earliest contender.
+**The vote.** Masternodes and evonodes vote with `MasternodeVote` transitions for the length of the poll (two weeks on mainnet). Under `resolution: 0` the contender with the most votes wins unless the lock tally beats it, and the contest always runs its full length, even with one contender. Under `resolution: 1` a contender always wins, and a contest that still has a single contender when its join window closes is awarded to it at once. Under `resolution: 2` the vote runs as under `0`, lock included, but among documents: a vote towards a contender names a document id where the other resolutions name the owner's identity id, and the result names the winning document. From protocol version 14 a tie goes to the earliest contender.
 
 **After the contest.** The winning document is stored and held by the index like any unique-index document; the other contenders' documents are removed. The contest's result stays readable.
 
@@ -69,7 +69,7 @@ The fund, the windows, the tallies and the special case of moderation elections 
 - The index is `unique: true`. A contested index that is not unique is refused (`InvalidContractStructure`, 10231).
 - The document type's documents cannot be replaced: `documentsMutable: false` (`ContestedUniqueIndexOnMutableDocumentTypeError`, 10248). They may still be transferred and sold, as DPNS domains are.
 - A document type has at most one contested index, and no other unique index beside it (`ContestedUniqueIndexWithUniqueIndexError`, 10249).
-- `resolution` is present and is `0` or `1`; `1` is refused before protocol version 14.
+- `resolution` is present and is `0`, `1` or `2`; `1` is refused before protocol version 14 and `2` before protocol version 15.
 - `fieldMatches`, when present, holds at least one entry, and each `regexPattern` is a valid regular expression (`RegexError`, 10247).
 - From protocol version 15, the contest is decided by the index values, so that two documents with the same values are both contested or both ordinary: every `fieldMatches` field is a property of the index, and a match on a string property that may be empty (no `minLength` of at least 1) treats `""` and `"\0"` alike, since the two share one index key (`InvalidContractStructure`, 10231). Otherwise an ordinary document could take the values of a contested one, and the contest would have nothing left to award. A contract registered earlier keeps its contest, but can no longer be updated, since an update is checked like a registration; while such a contest is live, a create outside it with the same index values is refused (`DuplicateUniqueIndexError`).
 - From protocol version 15, every property of the index is a top-level property of the document: no property path such as `records.identity` and no system property such as `$ownerId` (`InvalidContractStructure`, 10231). A contested create finds the contest by reading each index value from the document's top-level properties, where such a property is never found, so no contested create could open or join the contest. A contract registered earlier keeps such an index, but can no longer be updated.

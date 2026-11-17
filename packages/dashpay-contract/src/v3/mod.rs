@@ -19,6 +19,15 @@ use serde_json::Value;
 //   check the profile data trigger made up to protocol version 14. Their descriptions say
 //   so in place of v2's mention of the data trigger.
 //
+// It adds one property:
+//
+// - `contactRequest.encryptedShieldedAddress`, optional and last in position: the
+//   sender's shielded payment address for this contact (43 bytes), encrypted as
+//   `encryptedPublicKey` is (`encryptedFor`). That is 64 bytes, an IV and three AES
+//   blocks. The contract also accepts 80 bytes, an IV and four blocks, which wallets
+//   keep for a later encoding. A contact request stored before the property existed
+//   ends before it and reads back without it.
+//
 // And it adds one type:
 //
 // - `privateContactRequest`, a private type of 589-byte entries: a contact request

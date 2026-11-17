@@ -23,8 +23,9 @@ where
     /// Updates the voter identity in the masternode.
     ///
     /// This function updates the voter identity in the masternode. The old identity key is
-    /// disabled (which might make the identity unusable) and a new identity is added with
-    /// the new key, which is a non-unique key.
+    /// disabled (which might make the identity unusable), and either a new identity is added
+    /// with the new key, which is a non-unique key, or, when the voter identity of the new
+    /// voting address already exists, a key is re-enabled.
     ///
     /// When the masternode returns to a voting address it used before, version 1 (from
     /// protocol version 15) re-enables the key of that address's voter identity. Version 0

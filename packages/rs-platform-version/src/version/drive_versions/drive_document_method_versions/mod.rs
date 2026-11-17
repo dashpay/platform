@@ -16,6 +16,10 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    /// `uses_current_document_history_layout`: selects legacy revision subtrees (0)
+    /// or current-document pointers into retained history (1) for derived reads,
+    /// cost estimation, layout descriptions and primary-key query lowering.
+    pub document_history_storage_layout: FeatureVersion,
     pub expiration: DriveDocumentExpirationMethodVersions,
     /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
     /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable
@@ -61,6 +65,8 @@ pub struct DriveDocumentExpirationMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
+    pub fetch_document_lifecycle: OptionalFeatureVersion,
+
     pub query_documents: FeatureVersion,
     /// Chained document queries (provable semi-join): the version slot
     /// shared by the no-proof and the two-proof execution paths.
@@ -142,13 +148,13 @@ pub struct DriveDocumentQueryMethodVersions {
     /// on such a type (`DocumentQuery::required_protocol_version` in
     /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
-    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, which the prover and the
-    /// verifier both do. 0 is what protocol versions 1 to 14 build. 1 (protocol version 15)
-    /// changes two lookups in a document type that keeps history: one at a block time stops
-    /// above the pointer to the latest version, so it answers with the newest version stored
-    /// at or before that time and with nothing before the first, and one of a document that
-    /// may be contested states its cap itself, which GroveDB's merge no longer derives above
-    /// a subquery, and is refused at a block time, as a contest's area keeps no history.
+    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, shared by prover and
+    /// verifier. 0 preserves released producers' queries and reads the current pointer when
+    /// verifying a newer producer's composite-layout execution proof. 1 (protocol version 15)
+    /// also supports time-bounded reads: the newest retained revision at or before the time,
+    /// highest revision first at equal times, or absence before the first retained entry.
+    /// It states both caps of a maybe-contested query for merge generation 2, and refuses
+    /// history documents in that status at a block time because contests keep no history.
     pub single_document_path_query: FeatureVersion,
 }
 
@@ -202,6 +208,12 @@ pub struct DriveDocumentUpdateMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentDeleteMethodVersions {
+    /// Prices the third-party balance updates caused by an erase; inactive before protocol 15.
+    pub erase_refund_recipient_cost: OptionalFeatureVersion,
+    pub erase_document_for_contract_operations: OptionalFeatureVersion,
+    pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
+    pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,
+
     pub add_estimation_costs_for_remove_document_to_primary_storage: FeatureVersion,
     pub delete_document_for_contract: FeatureVersion,
     pub delete_document_for_contract_id: FeatureVersion,
