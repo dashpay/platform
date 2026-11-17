@@ -8,8 +8,9 @@
 
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, dpns_name_vote_poll, get_vote_states, perform_votes_multi,
-    setup_identity,
+    create_dpns_identity_name_contest, dpns_name_vote_poll, first_time_check_tx_errors,
+    get_vote_states, perform_votes, perform_votes_multi, serialized_dpns_name_vote, setup_identity,
+    setup_masternode_voting_identity,
 };
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::MockCoreRPCLike;
@@ -20,6 +21,8 @@ use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_cont
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::{
@@ -29,7 +32,7 @@ use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::SecurityLevel;
+use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::platform_value::{Bytes32, Identifier, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::serialization::PlatformSerializable;
@@ -58,6 +61,7 @@ use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::test_helpers::{setup_contract, vote_poll_end_dates};
 use rand::prelude::StdRng;
+use simple_signer::signer::SimpleSigner;
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -621,6 +625,169 @@ async fn should_leave_a_contest_open_with_its_votes_when_the_contender_with_the_
     );
     assert_eq!(lock_tally, Some(1));
     assert_eq!(finished, None);
+}
+
+/// A masternode votes on the DPNS name contest on "quantum", which its end left open: check_tx
+/// and the block refuse the vote as one on a contest that takes no more votes
+async fn assert_vote_on_the_quantum_contest_is_refused(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    dpns_contract: &DataContract,
+    choice: ResourceVoteChoice,
+    (pro_tx_hash, _, signer, voting_key): &(Identifier, Identity, SimpleSigner, IdentityPublicKey),
+    nonce: u64,
+    platform_version: &PlatformVersion,
+) {
+    let serialized_vote = serialized_dpns_name_vote(
+        dpns_contract,
+        choice,
+        "quantum",
+        signer,
+        *pro_tx_hash,
+        voting_key,
+        nonce,
+        platform_version,
+    )
+    .await;
+    let platform_state = platform.state.load();
+    assert_matches!(
+        first_time_check_tx_errors(
+            platform,
+            &platform_state,
+            &serialized_vote,
+            platform_version
+        )
+        .as_slice(),
+        [ConsensusError::StateError(
+            StateError::VotePollNotAvailableForVotingError(_)
+        )]
+    );
+    let transaction = platform.drive.grove.start_transaction();
+    let processing_result = platform
+        .platform
+        .process_raw_state_transitions(
+            &[serialized_vote],
+            &platform_state,
+            &BlockInfo::default(),
+            &transaction,
+            platform_version,
+            false,
+            None,
+        )
+        .expect("expected to process the vote");
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("expected to commit the block");
+    assert_matches!(
+        processing_result.into_execution_results().remove(0),
+        StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+            StateError::VotePollNotAvailableForVotingError(_)
+        ))
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_vote_on_a_contest_left_open_and_take_votes_on_another() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contender_1, contender_2, dpns_contract) =
+        quantum_contest(platform_version).await;
+    let voters = perform_votes_multi(
+        &mut platform,
+        &dpns_contract,
+        vec![
+            (ResourceVoteChoice::TowardsIdentity(contender_1), 3),
+            (ResourceVoteChoice::TowardsIdentity(contender_2), 2),
+        ],
+        "quantum",
+        10,
+        None,
+        platform_version,
+    )
+    .await;
+    let documents = contender_documents(&platform, &dpns_contract, "quantum", platform_version);
+    let (_, leading_document) = documents
+        .iter()
+        .find(|(contender, _)| *contender == contender_1)
+        .expect("expected contender 1");
+    truncate_contender_document(
+        &platform,
+        dpns_contract.id(),
+        leading_document.id(),
+        platform_version,
+    );
+    assert_ending_leaves_the_quantum_contest_open(
+        &platform,
+        &dpns_contract,
+        &document_ids(&documents),
+        [contender_1, contender_2],
+        platform_version,
+    );
+
+    // A masternode that has not voted, then one changing the vote it cast
+    let new_voter = setup_masternode_voting_identity(&mut platform, 100, platform_version);
+    assert_vote_on_the_quantum_contest_is_refused(
+        &platform,
+        &dpns_contract,
+        ResourceVoteChoice::TowardsIdentity(contender_2),
+        &new_voter,
+        1,
+        platform_version,
+    )
+    .await;
+    let earlier_voter = &voters[&ResourceVoteChoice::TowardsIdentity(contender_1)][0];
+    assert_vote_on_the_quantum_contest_is_refused(
+        &platform,
+        &dpns_contract,
+        ResourceVoteChoice::TowardsIdentity(contender_2),
+        earlier_voter,
+        2,
+        platform_version,
+    )
+    .await;
+    let platform_state = platform.state.load();
+    let (contenders, ..) = get_vote_states(
+        &platform,
+        &platform_state,
+        &dpns_contract,
+        "quantum",
+        None,
+        true,
+        None,
+        ResultType::VoteTally,
+        platform_version,
+    );
+    let tallies: BTreeMap<Identifier, Option<u32>> = contenders
+        .iter()
+        .map(|contender| (contender.identity_id(), contender.vote_tally()))
+        .collect();
+    assert_eq!(
+        tallies,
+        BTreeMap::from([(contender_1, Some(3)), (contender_2, Some(2))]),
+        "the tallies must stay what they were at the contest's end"
+    );
+
+    // A contest opened since takes votes as usual
+    let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        8,
+        "cooldog",
+        platform_version,
+    )
+    .await;
+    perform_votes(
+        &mut platform,
+        &dpns_contract,
+        ResourceVoteChoice::Lock,
+        "cooldog",
+        1,
+        200,
+        None,
+        platform_version,
+    )
+    .await;
 }
 
 #[tokio::test]

@@ -37,6 +37,10 @@ use super::{
 ///   unpaid, where every other advanced structure failure bumps the signer's nonce.
 /// - the masternode vote `transform_into_action`, 1 rather than 0: a vote on a yes/no poll looks up
 ///   the masternode's previous answer on that poll.
+/// - the masternode vote `state`, 2 rather than 1: a vote on a contest its end left open
+///   (`check_for_ended_vote_polls` 2), which the end date `VOTE_POLLS_LEFT_OPEN_END_DATE` lists,
+///   is refused as a vote on a finished contest is, so no vote on it is cast or changed after
+///   its end.
 /// - the contract update `transform_into_action` 1: v0, then in check_tx and recheck, which run no
 ///   state validation, the updated contract is held to the compiled size cap with its time fields
 ///   at their widest, a bound on what a block measures once it restores the stored contract's
@@ -111,6 +115,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
             },
             masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
                 transform_into_action: 1, // a vote on a yes/no poll looks up the masternode's previous answer
+                state: 2,                 // refuses a vote on a contest its end left open
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .masternode_vote_state_transition
