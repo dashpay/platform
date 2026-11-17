@@ -33,7 +33,9 @@
 //!    (`InvalidInstantAssetLockProofSignatureError`), or the IS proof made
 //!    the transition larger than `max_state_transition_size`
 //!    (`StateTransitionMaxSizeExceededError`, refused by the SDK before
-//!    broadcast). Detected via
+//!    broadcast), or its funding transaction has more inputs than an IS
+//!    proof may carry (`IdentityAssetLockTransactionTooManyInputsError`;
+//!    from protocol 15 a ChainLock proof is not held to that cap). Detected via
 //!    [`needs_chain_lock_proof`]. Upgrade IS→CL via
 //!    `upgrade_to_persisted_chain_lock_proof`, which attaches the proof to
 //!    the tracked row first, and retry. The CL retry is itself wrapped in
@@ -217,8 +219,9 @@ impl IdentityWallet {
         // Step 3: submit, with two layers of Platform-side fallback:
         //   - **CL-height-too-low** (transient): bump `user_fee_increase`
         //     and retry the same proof. See [`submit_with_cl_height_retry`].
-        //   - **Unusable IS proof** (quorum rotated, or the IS proof made
-        //     the transition too large): upgrade IS→CL on the same
+        //   - **Unusable IS proof** (quorum rotated, the IS proof made the
+        //     transition too large, or its funding transaction is over the
+        //     input cap): upgrade IS→CL on the same
         //     credit-output outpoint — no new asset lock built, no new
         //     funding-tx broadcast.
         //

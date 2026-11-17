@@ -1386,6 +1386,9 @@ impl StateTransition {
                         BatchedTransitionRef::Document(DocumentTransition::Create(_)) => "Create",
                         BatchedTransitionRef::Document(DocumentTransition::Replace(_)) => "Replace",
                         BatchedTransitionRef::Document(DocumentTransition::Delete(_)) => "Delete",
+                        // Protocols through 14 publish no erase bounds, so their accepted batches
+                        // never reach this arm.
+                        BatchedTransitionRef::Document(DocumentTransition::Erase(_)) => "Erase",
                         BatchedTransitionRef::Document(DocumentTransition::Transfer(_)) => {
                             "Transfer"
                         }
@@ -2401,6 +2404,7 @@ impl StateTransition {
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let Some(signature) = self.signature() else {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
@@ -2416,15 +2420,19 @@ impl StateTransition {
         }
         let data = self.signable_bytes()?;
         let data_hash = double_sha(data);
-        signer::verify_hash_signature(&data_hash, signature.as_slice(), public_key_hash).map_err(
-            |e| {
-                ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(e.to_string()),
-                    ),
-                ))
-            },
-        )
+        ecdsa::verify_hash_signature(
+            &data_hash,
+            signature.as_slice(),
+            public_key_hash,
+            platform_version,
+        )?
+        .map_err(|e| {
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(e.to_string()),
+                ),
+            ))
+        })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -3425,6 +3433,91 @@ mod tests {
         }
     }
 
+    // An ECDSA_HASH160 key is checked by recovering the public key, which takes any S and either
+    // header form. From protocol version 15 (`verify_hash_signature` 1) the two twins a third
+    // party can derive from a valid signature, the high-S one and the one whose header names an
+    // uncompressed key, are refused; protocol version 14 keeps accepting them for replay.
+    // Masternode votes, signed by an ECDSA_HASH160 VOTING key, take the same path.
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_refuse_an_ecdsa_hash160_signature_twin_from_protocol_version_15() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::tests::utils::{high_s_twin, uncompressed_header_twin};
+        use secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [0x21; 32];
+        let public_key = SecpPublicKey::from_secret_key(
+            &SecretKey::from_secret_bytes(private_key).expect("a valid ECDSA private key"),
+        );
+        let key_hash = ripemd160_sha256(&public_key.serialize());
+
+        let latest = PlatformVersion::latest();
+        let last_without_the_check = PlatformVersion::get(14).expect("protocol version 14");
+
+        for (transition, key_id, purpose, label) in [
+            (sample_transfer_st(), 11, Purpose::TRANSFER, "transfer"),
+            (
+                sample_masternode_vote_st(),
+                5,
+                Purpose::VOTING,
+                "masternode vote",
+            ),
+        ] {
+            let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                id: key_id,
+                purpose,
+                security_level: SecurityLevel::CRITICAL,
+                key_type: KeyType::ECDSA_HASH160,
+                data: key_hash.to_vec().into(),
+                ..Default::default()
+            }
+            .into();
+
+            let mut signed = transition;
+            signed
+                .sign_by_private_key(&private_key, KeyType::ECDSA_HASH160, &bls)
+                .expect("the key signs");
+            let signature = signed.signature().expect("signed").to_vec();
+
+            for platform_version in [latest, last_without_the_check] {
+                signed
+                    .verify_identity_signed_signature(&key, &bls, platform_version)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "{label}: the low-S signature verifies at protocol version {}: {e:?}",
+                            platform_version.protocol_version
+                        )
+                    });
+            }
+            for (twin, twin_label) in [
+                (high_s_twin(&signature), "high-S twin"),
+                (
+                    uncompressed_header_twin(&signature),
+                    "uncompressed header twin",
+                ),
+            ] {
+                let mut malleated = signed.clone();
+                malleated.set_signature(BinaryData::new(twin));
+                malleated
+                    .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                    .unwrap_or_else(|e| {
+                        panic!("{label}: protocol version 14 accepts the {twin_label}: {e:?}")
+                    });
+                let error = malleated
+                    .verify_identity_signed_signature(&key, &bls, latest)
+                    .expect_err("the twin is refused");
+                assert!(
+                    matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                    if matches!(&**consensus_error, ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    ))),
+                    "{label}, {twin_label}: {error:?}"
+                );
+            }
+        }
+    }
+
     fn sample_batch_st_with_delete() -> StateTransition {
         let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
             id: Identifier::from([1u8; 32]),
@@ -3644,6 +3737,86 @@ mod tests {
         )
         .expect("expected protocol version 14 to decode a version 2 base");
         assert_eq!(recovered, version_2);
+    }
+
+    fn sample_format_1_batch_st_with_erase() -> StateTransition {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+        use crate::state_transition::batch_transition::batched_transition::{
+            BatchedTransition, DocumentEraseTransition,
+        };
+        use crate::state_transition::batch_transition::BatchTransitionV1;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::from([1u8; 32]),
+            identity_contract_nonce: 3,
+            document_type_name: "note".to_string(),
+            data_contract_id: Identifier::from([2u8; 32]),
+        });
+        let erase =
+            DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![BatchedTransition::Document(erase)],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    /// The erase kind rides in the shipped batch formats, so a format 1 batch
+    /// carrying one keeps format 1's range and decodes under protocol 14 on
+    /// software that knows the kind. Agreement with software that cannot
+    /// decode it comes one step later: the basic-structure check refuses the
+    /// kind wherever the active version publishes no bounds for it.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn test_format_1_batch_with_erase_decodes_at_protocol_14_and_is_refused_by_structure() {
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::serialization::PlatformSerializable;
+
+        let state_transition = sample_format_1_batch_st_with_erase();
+        assert_eq!(
+            state_transition.active_version_range(),
+            9..=LATEST_VERSION,
+            "format 1 arrived with tokens at protocol version 9; the erase kind does not move it"
+        );
+        let bytes = PlatformSerializable::serialize_to_bytes(&state_transition)
+            .expect("serialize succeeds");
+
+        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let decoded =
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, released)
+                .expect("a format 1 batch with an erase decodes under protocol version 14");
+        assert_eq!(decoded.name(), "DocumentsBatch([Erase])");
+        let StateTransition::Batch(batch) = decoded else {
+            panic!("expected a batch, got {decoded:?}");
+        };
+
+        let is_unsupported_version = |error: &ConsensusError| {
+            matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )
+        };
+        let result = batch
+            .validate_base_structure(released)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(is_unsupported_version),
+            "protocol version 14 must refuse the erase kind, got {:?}",
+            result.errors
+        );
+        let result = batch
+            .validate_base_structure(PlatformVersion::latest())
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(is_unsupported_version),
+            "the latest protocol version must admit the erase kind, got {:?}",
+            result.errors
+        );
     }
 
     fn sample_batch_st_empty() -> StateTransition {

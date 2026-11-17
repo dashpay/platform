@@ -400,9 +400,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Each submission is wrapped in [`submit_with_cl_height_retry`]. When the
     /// first one fails with an unusable InstantSend proof
-    /// ([`needs_chain_lock_proof`]: a stale islock, or a transition too large
-    /// with it), the ChainLock proof for the same outpoint is built and
-    /// attached to the tracked row
+    /// ([`needs_chain_lock_proof`]: a stale islock, a transition too large
+    /// with it, or a funding transaction over the input cap), the ChainLock
+    /// proof for the same outpoint is built and attached to the tracked row
     /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof)),
     /// waiting up to `cl_wait` (`None`: without a bound), and submitted
     /// instead. If the submit that ends the call fails, a ChainLock proof

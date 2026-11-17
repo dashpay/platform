@@ -1,56 +1,33 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
-use crate::version::drive_versions::drive_contract_method_versions::{
-    DriveContractFeePotMethodVersions, DriveContractMethodVersions,
-};
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_grove_method_versions::v2::DRIVE_GROVE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
-    DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
-    DriveIdentityUpdateMethodVersions,
+    DriveIdentityMethodVersions, DriveIdentityUpdateMethodVersions,
 };
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
-use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveInitializationMethodVersions,
-    DriveMethodVersions, DrivePlatformSystemMethodVersions,
-    DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
-    DriveVersion,
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveMethodVersions,
+    DrivePlatformSystemMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
 use grovedb_version::version::v5::GROVE_V5;
 
 /// Drive version 10, introduced in protocol v15:
 ///
+/// * **Retained history** (protocol v15 note 35): per-type revision trees and one proof
+///   authenticate its page, count and lifecycle.
 /// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
 ///   nothing when its format version 1 bytes match the stored contract's, whatever format the
 ///   stored one is in, as contracts are stored compiled from this version
 ///   (`contract_storage_serialization_version` 2).
-/// * **Escrow trees**: `create_initial_state_structure` 5 adds the two escrow trees of the
-///   token marketplace: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, the BigSumTree of the tokens open
-///   listings hold, and `[PreFundedSpecializedBalances, PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`,
-///   the SumTree of the credits open offers hold. The upgrade path
-///   (`Platform::transition_to_version_15`) inserts them through the same helper.
-/// * **Token conservation**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` bumps
-///   `calculate_total_tokens_balance` to 2, which counts the escrowed listings on the balance
-///   side; its escrow methods, `None` before, are active.
-/// * **Escrow fee estimates**: the offers' escrow key sits a level below the other keys of the
-///   prefunded specialized balances layer, so `estimated_cost_for_prefunded_specialized_balance_update`
-///   2 and `add_estimation_costs_for_contract_fee_pot_update` 1 keep a deeper description of that
-///   layer another write of the batch registered, rather than lowering it to their keys' level;
-///   likewise the listings' escrow key sits deeper in the Tokens layer than the balances key, and
-///   `for_token_balances` 1 keeps a deeper description of the Tokens layer. The escrows also sit
-///   deeper in the root tree than the identity balances and the token balances, so
-///   `for_balances` 1, `for_token_balances` 1 and the voting balance estimation 2 keep a deeper
-///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 merges
-///   the descriptions of every write of a batch (below), so no other write of the batch (a
-///   document, a nonce) lowers what the escrows describe, whichever is built first.
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
-///   a masternode that left the list. It sets every `yes_no` method to `Some(0)`, so yes/no
+///   a masternode that left the list and deletes a contested resource vote a reference
+///   points at while that vote is stored. It sets every `yes_no` method to `Some(0)`, so yes/no
 ///   polls can be opened and voted on (`None`, not active, in every earlier table), and bumps
 ///   `contested_resource_insert.add_vote_poll_end_date_query_operations` to 1, which adds only
 ///   the entry when the batch already queues the end date's tree with other storage flags.
@@ -76,10 +53,12 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
 ///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
-///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
+///   also sets `remove_reference_for_index_level_for_contract_operations` to 2,
+///   `add_reference_for_index_level_for_contract_operations` to 1 and
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
-///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
-///   system credits update describe their layers as they are. Applying a batch is unchanged.
+///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete, an
+///   insert under a summable index and a system credits update describe their layers as they
+///   are. Applying a batch is unchanged.
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
@@ -111,44 +90,30 @@ use grovedb_version::version::v5::GROVE_V5;
 ///
 /// * **A single document at a block time** (protocol v15 note 31):
 ///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets `query.single_document_path_query` to 1, which
-///   stops a lookup in a document's history above the pointer to the latest version, and
-///   `verify_proof_keep_serialized` 1 verifies its proof outside a contest. A document with
-///   history that may be contested is refused at a block time.
+///   selects the newest retained revision at or before the time, taking the highest revision
+///   at equal times in the composite history layout. `verify_proof_keep_serialized` 1 verifies
+///   its proof outside a contest. A history document that may be contested is refused at a
+///   block time; explicitly contested queries ignore the time.
+///
+/// * **An insert writes no entry in an expired time range bucket** (protocol v15 note 36):
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
+///   `insert.add_indices_for_top_index_level_for_contract_operations` to 3.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        initialization: DriveInitializationMethodVersions {
-            create_initial_state_structure: 5, // changed in v10: adds the token marketplace escrow trees
-        },
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active
-        contract: DriveContractMethodVersions {
-            fee_pots: DriveContractFeePotMethodVersions {
-                add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description
-                ..DRIVE_CONTRACT_METHOD_VERSIONS_V5.fee_pots
-            },
-            ..DRIVE_CONTRACT_METHOD_VERSIONS_V5 // changed in v10: apply_contract_with_serialization 1 (compiled contract storage)
-        },
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 (compiled contract storage)
         identity: DriveIdentityMethodVersions {
-            cost_estimation: DriveIdentityCostEstimationMethodVersions {
-                for_balances: 1,       // changed in v10: keeps a deeper root description
-                for_token_balances: 1, // changed in v10: keeps a deeper root and Tokens layer description
-                ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.cost_estimation
-            },
             update: DriveIdentityUpdateMethodVersions {
                 add_new_keys_to_masternode_identity: 1, // changed in v10: a masternode key whose hash the identity already holds a reference for is added without a second one
                 ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.update
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates; a single document at a block time
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time; no insert into an expired time range bucket
         batch_operations: DriveBatchOperationsMethodVersion {
+            convert_drive_operations_to_grove_operations: 2, // changed: sibling history deletes share their pending lifecycle container (note 41)
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
-            ..DRIVE_VERSION_V9.methods.batch_operations
-        },
-        prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
-            estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
-            ..DRIVE_VERSION_V9.methods.prefunded_specialized_balances
         },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers; a document that may be contested is verified
@@ -166,7 +131,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private
     // document store's entries are read and proved by position range, a store's creation is
     // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
-    // keeps, refuses all three.
+    // keeps, refuses all three. History also uses branch-local pagination and parent echoes.
     grove_version: GROVE_V5,
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V2, // changed in v10: the flags update follows the written owner
     ..DRIVE_VERSION_V9

@@ -26,6 +26,9 @@ pub mod test_support;
 mod util;
 pub mod wallet;
 
+#[cfg(feature = "spv-context")]
+pub mod spv_context_provider;
+
 pub use error::PlatformWalletError;
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -40,6 +43,8 @@ pub use key_wallet_manager::DerivedAddress;
 pub use address_paths::{
     derivation_path_for_derived_address, derivation_path_string_for_derived_address,
 };
+#[cfg(feature = "spv-context")]
+pub use manager::claim_spv_quorum_lease;
 pub use manager::dashpay_sync::{
     DashPaySyncManager, DashPaySyncSummary, WalletDashPaySyncOutcome,
     DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,

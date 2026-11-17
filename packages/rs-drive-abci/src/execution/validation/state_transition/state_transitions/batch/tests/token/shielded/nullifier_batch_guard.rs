@@ -731,7 +731,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "b9f5883991476eb6e01109ff5bf1057eab24b756170397d4d850e3e6e2c09a5b"
+        "cf69ef6453230e20690be3b3bc3ce08a7db20409a297f1dcc24e14ba1f3dce52"
     );
     assert_eq!(
         pool.platform
@@ -1893,9 +1893,9 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_785_480)
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_916_360)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2144,10 +2144,13 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
+        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
+        // incidental Debug output; keep actions, charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
-        );
+        )
+        .replace(", documents_can_be_erased: false", "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2182,39 +2185,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "7eea5d32409d3df173a4ec4f5e9b56d40d2cacfcea8cac49d05e170976a893df",
+                "7dc04b305978bbe10c536bdc48dd78d5de4e97df259557c6c144b64f7074a2d2",
             ),
             "valid-payment" => (
                 "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "2a7e8a57360fad775ab0411ed5f4e31db9bd3ac5948e3a33a21f11ee5fa2d93c",
+                "c02bb91ee2f7c6a3bbdbe5f4872e7e09b9ef26f300325d6e54d8ea81cec78f2f",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "00315213aa7c931f2304191465a0319c9dbcc280269216e63a3e0e60ca16b178",
+                "0371f7c9a204d21e095852f8252e3605c050a52f8f6c161873cfc0b141da1db1",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "9402a3dfd81a098f9575011fc0f6e5cd2415f0527ea9c4f45a04daaae2ab6ce9",
+                "58ac5c36b2f2e2b026b35e5f9779bc6e7f455239d628930a342980bf0ff98b97",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "68ecfa75165f58edcf7262697fddad9378492e71eb1b340c9683b6a08131bfb6",
+                "f4926cd89acca5f8e4e83faf2e9443c6596faba5d33cb6fd4ff2a623931a6f66",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "5c5eb01b9f9fa0ceaa458746fdbb705e0a4aa573c8efeb0bc9f2f4d7c499e95f",
+                "149ce9457c30a7ae11564b1d87d1891e2755067b899fc244a11eac605ee30a8f",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "a09c353badac216e6897ae44bfa6d20038ba2b9ac8b607dcfb5824da4e9e1a3d",
+                "0eb8bb2257372efdc4c3f226edf4bc673909ace34dddf9d88b83da7089f9c59e",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "de8b6eab60c7a94da3470facf22c1225e09e58f3779f0982a87a36b6dffec48c",
+                "e18f310b05100d9d760e9dba56a95739b011f58a9e584f2e39a2e67c6ef05089",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "bcd073ee886c1e0f07f316680756ee07ffd2961a0960090f685f25a8278c65ef",
+                "086f76c36de8a93f1a659ac36f3f2937690443a51a230cb154f0aad0462bc2c0",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

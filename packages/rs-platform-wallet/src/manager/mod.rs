@@ -11,7 +11,12 @@ mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "spv-context")]
+mod spv_quorums;
+#[cfg(feature = "spv-context")]
+pub use spv_quorums::claim_spv_quorum_lease;
 pub mod startup;
+pub mod txo_reconcile;
 mod wallet_lifecycle;
 
 pub(crate) use persistence_load::run_blocking_load;
@@ -42,10 +47,12 @@ use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
+use crate::manager::txo_reconcile::TxoReconcileSchedule;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 #[cfg(feature = "shielded")]
 use crate::wallet::shielded::NetworkShieldedCoordinator;
@@ -517,6 +524,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+    /// The SDK provider slot this manager serves SPV quorum keys into, held
+    /// from [`Self::serve_spv_quorums`] until [`Self::shutdown`].
+    #[cfg(feature = "spv-context")]
+    pub(super) spv_quorum_lease: std::sync::Mutex<Option<dash_context_provider::SpvSourceLease>>,
+    /// The host TXO-store reconcile's steady-state edge, runs in flight and
+    /// per-wallet cadence — see [`txo_reconcile`]. A `std::sync::Mutex`,
+    /// never held across an await.
+    pub(super) txo_reconcile_schedule: Arc<std::sync::Mutex<TxoReconcileSchedule>>,
 }
 
 /// Keep `record`'s coverage only for the DashPay receival accounts `core`
@@ -558,6 +573,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `app_handler` receives all SPV and platform events by reference.
     /// Internally, a `LockNotifyHandler` is also registered to wake
     /// `AssetLockManager` async waiters on lock events.
+    ///
+    /// The count of `persister`'s flushes per wallet id belongs to the
+    /// backend instance, not to this manager, and lives as long as the
+    /// instance does: every handle made over it counts there, so a flush
+    /// through a handle an earlier manager gave out that drops the backend's
+    /// buffer is seen by this manager and its wallets
+    /// (`WalletPersister::new`).
+    ///
+    /// The order of durable cursor writes ([`DurableCursors`]) is still kept
+    /// per manager, so two managers that both sync wallets over one backend
+    /// instance are not supported. A host that replaces its manager gives
+    /// the new one its own backend instance, as the FFI does, or stops the
+    /// earlier manager first.
     pub fn new(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,
@@ -697,6 +725,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sync_fault,
             durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            #[cfg(feature = "spv-context")]
+            spv_quorum_lease: std::sync::Mutex::new(None),
+            txo_reconcile_schedule: Arc::default(),
         }
     }
 
@@ -755,7 +786,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// not inline, or not atomic) gets no record at all, the same as the
     /// rescan sweep gives it: only an empty one is written — committed with a
     /// `flush` where `store` only buffers — before the wallet is published,
-    /// so a record an earlier run left cannot outlive this one.
+    /// so a record an earlier run left cannot outlive this one. That flush is
+    /// trusted as a wallet's handle trusts its own
+    /// ([`WalletPersister::store_durably`]): not when another flush of the
+    /// wallet id's records may have taken the empty record and failed, in
+    /// which case the wallet is not published.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn settle_published_backfill(
         &self,
@@ -766,7 +801,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         own_cursor: u32,
         snapshot_cursor: u32,
     ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
-        let inline = self.persister.store_commits_inline();
         let durable = persists_backfill_coverage(&*self.persister);
         let predecessor = durable_cursors.contains_key(&wallet_id);
         let held_on_host = !record.is_empty() || dropped;
@@ -810,26 +844,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dashpay_backfill: Some(record.clone()),
             ..PlatformWalletChangeSet::default()
         };
-        self.persister.store(wallet_id, changeset).map_err(|e| {
+        // Stored as a handle of the wallet stores a record it then acts on
+        // (`WalletPersister::store_durably`), in the wallet id's flush ledger,
+        // where every flush of its records is counted. A flush that fails for
+        // good here drops what a handle of an earlier wallet under the id
+        // still had buffered, and that handle learns of it from the ledger.
+        // And a flush that succeeds here is not trusted by itself: a flush
+        // by such a handle may have taken the replacement first and failed,
+        // which the ledger shows, and the wallet is then not published.
+        let persister = WalletPersister::new(
+            wallet_id,
+            Arc::clone(&self.persister) as Arc<dyn PlatformWalletPersistence>,
+        );
+        persister.store_durably(changeset).map_err(|not_durable| {
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
-                error = %e,
-                "failed to replace the host's DashPay backfill record; \
+                error = %not_durable,
+                "the replaced DashPay backfill record is not known to be on the host; \
                  the wallet was not published"
             );
-            PlatformWalletError::from_store_failure(&*self.persister, e)
+            persister.classify_not_durable(not_durable)
         })?;
-        if !inline {
-            self.persister.flush(wallet_id).map_err(|e| {
-                tracing::error!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "failed to commit the replaced DashPay backfill record; \
-                     the wallet was not published"
-                );
-                PlatformWalletError::from_flush_failure(e)
-            })?;
-        }
         if let Some(cursor) = cursor {
             durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
         }
@@ -1076,7 +1111,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 wallet.restore_private_payments_or_defer(&coordinator).await;
             }
             None if wallet.persister().persists_private_contact_scan_state() => {
-                wallet.persister().hold_until_private_payments_restored();
+                wallet
+                    .persister()
+                    .hold_until_private_payments_restored()
+                    .await;
             }
             None => {}
         }
@@ -1253,7 +1291,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
-    ///    DashPay payment-hook work is joined.
+    ///    DashPay payment-hook work is joined. TXO-reconcile engine guards a
+    ///    host still holds are force-released only after SPV stopped
+    ///    cleanly, never before, so no fork can land between a host's read
+    ///    and its in-flight store write; a failed stop leaves them held.
     /// 2. `quiesce()` each coordinator. Cancel-only `stop()` would
     ///    let a pass already inside `sync_now` keep running and call
     ///    `persister.store(...)` / fire a host completion callback after
@@ -1281,6 +1322,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// (its live handle is re-parked on timeout so a retry re-joins it).
     /// Past those SPV lock waits, a wedged await therefore surfaces as a
     /// non-clean report instead of hanging the FFI's `destroy` forever.
+    /// A host still writing a TXO-reconcile page holds its engine guard
+    /// through SPV stop, so SPV teardown (and anything queued on the engine
+    /// behind it) waits for that write; a write that never ends turns into a
+    /// timed-out SPV stop, not a hang.
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
@@ -1292,11 +1337,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // Stop serving SPV quorum keys before SPV stops, whether or not the
+        // stop is clean: a stopping client must not answer proof lookups.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
+
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the
         // report — a failed stop must not hide behind a clean coordinator join.
-        let spv_status = match self.spv_manager.stop().await {
+        //
+        // A TXO reconcile's engine guard is held across one host store write
+        // and released by the host, which may still be writing when this
+        // runs. It is released here only AFTER SPV stopped cleanly — SPV is
+        // what applies forks, and a fork landing under a revoked guard
+        // before the host's write lands is exactly what the guard prevents.
+        // Until then an SPV writer simply waits for the host's write, under
+        // the stop's own deadline. A failed or timed-out stop releases
+        // nothing (fail closed): the guard stays with the host's handle.
+        let spv_status = match self.stop_spv_then_release_txo_reconcile_holds().await {
             Ok(()) => WorkerStatus::Ok,
             Err(error) => {
                 tracing::warn!(?error, "SPV shutdown failed");
@@ -1445,6 +1504,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// fields can no longer be moved out.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
+        // As in `shutdown`: stop serving SPV quorum keys first. Until the lease
+        // goes, the SDK's slot keeps this manager's SPV runtime alive.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
         // Cancel and detach, never `abort`: the task observes the token at its
         // next `recv` and exits after committing whatever its drain claimed the
         // persister for. Aborting stops it at whatever await it is parked on,
@@ -1457,10 +1520,14 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
 mod tests {
     use super::*;
 
+    use std::sync::OnceLock;
+
     use dash_async::WorkerStatus;
 
+    use crate::changeset::flush_ledger::FlushLedgers;
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, FlushLedger, PersistenceError, PersistenceErrorKind,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
 
@@ -1511,6 +1578,186 @@ mod tests {
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
+
+    /// A buffering backend whose flush fails for good, dropping its buffer.
+    struct FatalFlushPersister;
+
+    impl PlatformWalletPersistence for FatalFlushPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("the database is corrupt"))
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// The flush the manager makes itself, of the backfill record it replaces
+    /// before a wallet is published, is counted where the handles of that
+    /// wallet id count theirs. One that fails for good dropped what a handle
+    /// of an earlier wallet under the id still had buffered, and that handle
+    /// then vouches for nothing it stored: a flush of its own would succeed
+    /// over an empty buffer.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_count_its_backfill_flush_in_the_wallet_ids_flush_ledger() {
+        use crate::wallet::persister::{NotDurable, WalletPersister};
+
+        let persister = Arc::new(FatalFlushPersister);
+        let mgr = PlatformWalletManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            Arc::clone(&persister),
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+        );
+        let wallet_id: WalletId = [7; 32];
+        // As `PlatformWallet::new` makes the handle of a wallet under the id.
+        let earlier = WalletPersister::new(
+            wallet_id,
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+        );
+        assert!(!earlier.buffered_writes_lost());
+
+        // Coverage the wallet about to be published does not hold was
+        // dropped, so the host's record is replaced and flushed.
+        let mut cursors = mgr.durable_cursors.lock().await;
+        let settled = mgr.settle_published_backfill(
+            &mut cursors,
+            wallet_id,
+            DashPayBackfillRecord::default(),
+            true,
+            5,
+            5,
+        );
+        assert!(settled.is_err(), "the flush failed for good");
+
+        assert!(
+            earlier.buffered_writes_lost(),
+            "the earlier wallet's handle learns of the flush that dropped the buffer"
+        );
+        assert!(matches!(earlier.flush_durably(), Err(NotDurable::Lost)));
+        // A handle made after it starts from what is on disk.
+        let later = WalletPersister::new(
+            wallet_id,
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+        );
+        assert!(!later.buffered_writes_lost());
+    }
+
+    /// A buffering backend whose every store is taken at once by a flush of
+    /// another handle of the wallet id, as one from another thread would
+    /// take it before the storer's own flush. That flush fails, for good or
+    /// keeping what it took, and the storer's own then succeeds over a buffer
+    /// that does not hold the record.
+    struct OvertakenPersister {
+        /// The ledger the other handle's flush is counted in, once known.
+        ledger: OnceLock<Arc<FlushLedger>>,
+        /// Whether the other flush fails for good.
+        for_good: bool,
+    }
+
+    /// A buffering backend whose flush fails keeping what it took.
+    struct TransientFlushPersister;
+
+    impl PlatformWalletPersistence for TransientFlushPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "the database is locked",
+            ))
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    impl PlatformWalletPersistence for OvertakenPersister {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if let Some(ledger) = self.ledger.get() {
+                let overtaking = if self.for_good {
+                    ledger.flush(&FatalFlushPersister, wallet_id)
+                } else {
+                    ledger.flush(&TransientFlushPersister, wallet_id)
+                };
+                assert!(overtaking.is_err(), "the other handle's flush fails");
+            }
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// The manager's own flush of the backfill record it replaces succeeding
+    /// is not proof the record is on the host: a flush by a handle of an
+    /// earlier wallet under the id may have taken it first and failed. The
+    /// wallet is then not published, and the error says whether the record
+    /// is gone (the other flush failed for good) or still buffered for a
+    /// later flush (it kept what it took).
+    #[tokio::test]
+    async fn should_not_publish_over_a_backfill_record_another_flush_took() {
+        for for_good in [true, false] {
+            let persister = Arc::new(OvertakenPersister {
+                ledger: OnceLock::new(),
+                for_good,
+            });
+            let mgr = PlatformWalletManager::new(
+                Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+                Arc::clone(&persister),
+                Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+            );
+            let wallet_id: WalletId = [7; 32];
+            persister
+                .ledger
+                .set(
+                    FlushLedgers::of_backend(
+                        &(Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>),
+                    )
+                    .of(wallet_id),
+                )
+                .expect("set once");
+
+            // Coverage the wallet about to be published does not hold was
+            // dropped, so the host's record is replaced and flushed.
+            let mut cursors = mgr.durable_cursors.lock().await;
+            let settled = mgr.settle_published_backfill(
+                &mut cursors,
+                wallet_id,
+                DashPayBackfillRecord::default(),
+                true,
+                5,
+                5,
+            );
+
+            match settled {
+                Err(PlatformWalletError::PersisterFlush(error)) => assert_eq!(
+                    error.is_transient(),
+                    !for_good,
+                    "to be tried again only when the record is still buffered"
+                ),
+                other => panic!("the wallet is not published, got {other:?}"),
+            }
+        }
+    }
 
     fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));

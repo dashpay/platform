@@ -84,6 +84,7 @@ use dpp::consensus::state::document::referenced_document_removed_error::Referenc
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use dpp::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use dpp::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
 use dpp::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
 use dpp::consensus::basic::document::{
@@ -151,6 +152,7 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::signature::{
     PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
+    PublicKeyWithLimitsCannotSignDataContractTransitionError,
     PublicKeyWithLimitsCannotUpdateKeyLimitsError,
 };
 use dpp::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
@@ -834,6 +836,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::PrivateDocumentEntrySizeMismatchError(e) => {
             generic_consensus_error!(PrivateDocumentEntrySizeMismatchError, e).into()
+        }
+        StateError::ReferencedDocumentTypeRequirementNotMetError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeRequirementNotMetError, e).into()
         }
     }
 }
@@ -1522,6 +1527,10 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         }
         SignatureError::PublicKeyWithLimitsCannotUpdateKeyLimitsError(e) => {
             generic_consensus_error!(PublicKeyWithLimitsCannotUpdateKeyLimitsError, e).into()
+        }
+        SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(e) => {
+            generic_consensus_error!(PublicKeyWithLimitsCannotSignDataContractTransitionError, e)
+                .into()
         }
     }
 }

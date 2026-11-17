@@ -1049,6 +1049,278 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
+  describe('a target the document names', () => {
+    /**
+     * A note described by a document of whichever contract and document type
+     * the note itself names (protocol version 15): `contractId` and
+     * `documentType` are read from the note, written `$self.<property>`, and
+     * `documentTypeRequirements` says what the named type must look like.
+     */
+    type NamedReference = {
+      path: string;
+      type: string | string[];
+      contractId: string;
+      documentType: string;
+      documentTypeRequirements?: {
+        properties: Record<string, Record<string, unknown>>;
+        require?: unknown;
+        when?: unknown;
+      };
+    };
+
+    const namedSchemas = {
+      note: {
+        type: 'object',
+        properties: {
+          descriptionId: identifierProperty(0, {
+            type: 'moderatedDocument',
+            contractId: '$self.descriptionContractId',
+            documentType: '$self.descriptionDocumentType',
+            documentTypeRequirements: {
+              properties: {
+                title: { name: '$any', type: 'string', maxBytes: 256 },
+                body: { name: '$self.bodyProperty', type: 'string', distinctFrom: 'title' },
+                bodyBytes: { name: '$any', type: 'array', byteArray: true },
+              },
+              require: { allOf: ['title', { anyOf: ['body', 'bodyBytes'] }] },
+            },
+          }),
+          descriptionContractId: { ...plainIdentifier, position: 1 },
+          descriptionDocumentType: {
+            type: 'string', minLength: 1, maxLength: 64, position: 2,
+          },
+          bodyProperty: {
+            type: 'string', minLength: 1, maxLength: 64, position: 3,
+          },
+        },
+        required: [
+          'descriptionId',
+          'descriptionContractId',
+          'descriptionDocumentType',
+          'bodyProperty',
+        ],
+        additionalProperties: false,
+      },
+    };
+
+    function buildNamedContract(
+      documentSchemas: object,
+      platformVersion = 15,
+      fullValidation = true,
+    ) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(4),
+        schemas: documentSchemas,
+        definitions: null,
+        fullValidation,
+        platformVersion: new PlatformVersion(platformVersion),
+      });
+    }
+
+    it('should report the target and its requirements as the schema declares them', () => {
+      const references = buildNamedContract(namedSchemas).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+
+      expect(references.map((reference) => reference.path)).to.deep.equal(['descriptionId']);
+      const [descriptionId] = references;
+      expect(descriptionId.type).to.equal('moderatedDocument');
+      // Read from the note, not literals: no contract id object, no type name
+      expect(descriptionId.contractId).to.equal('$self.descriptionContractId');
+      expect(descriptionId.documentType).to.equal('$self.descriptionDocumentType');
+      expect(descriptionId.documentTypeRequirements).to.deep.equal({
+        properties: {
+          title: { name: '$any', type: 'string', maxBytes: 256 },
+          // `distinctFrom` is always reported as a list
+          body: { name: '$self.bodyProperty', type: 'string', distinctFrom: ['title'] },
+          bodyBytes: { name: '$any', type: 'array', byteArray: true },
+        },
+        require: { allOf: ['title', { anyOf: ['body', 'bodyBytes'] }] },
+      });
+      expect(descriptionId).to.not.have.property('where');
+      expect(descriptionId).to.not.have.property('findBy');
+    });
+
+    it('should leave out requirements a declaration does not have', () => {
+      const withoutRequirements = structuredClone(namedSchemas);
+      delete (
+        withoutRequirements.note.properties.descriptionId as {
+          refersTo: { documentTypeRequirements?: object };
+        }
+      ).refersTo.documentTypeRequirements;
+      const [descriptionId] = buildNamedContract(withoutRequirements).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+
+      expect(descriptionId.type).to.equal('moderatedDocument');
+      expect(descriptionId).to.not.have.property('documentTypeRequirements');
+    });
+
+    /**
+     * A slot may be named `__proto__`: it is an own key of `properties`, not
+     * its prototype. The schemas come from JSON, where `__proto__` is an
+     * ordinary key.
+     */
+    it('should keep a slot named __proto__ as an own key', () => {
+      const declared = JSON.stringify(
+        (namedSchemas.note.properties.descriptionId as { refersTo: object }).refersTo,
+      );
+      // A replacer function: the text holds `$`, which a replacement string interprets
+      const protoSchemas = JSON.parse(JSON.stringify(namedSchemas).replace(
+        declared,
+        () => `{
+          "type": "moderatedDocument",
+          "contractId": "$self.descriptionContractId",
+          "documentType": "$self.descriptionDocumentType",
+          "documentTypeRequirements": {
+            "properties": { "__proto__": { "name": "$any", "type": "string" } }
+          }
+        }`,
+      ));
+      const [descriptionId] = buildNamedContract(protoSchemas).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+      const slots = descriptionId.documentTypeRequirements!.properties;
+
+      expect(Object.keys(slots)).to.deep.equal(['__proto__']);
+      expect(Object.getPrototypeOf(slots)).to.equal(Object.prototype);
+      expect(JSON.stringify(slots)).to.equal('{"__proto__":{"name":"$any","type":"string"}}');
+    });
+
+    /**
+     * `type` may list both kinds, reported as the list in its declared order
+     * of kinds, and a slot may carry a `when`, reported as declared: nested
+     * conditions, constants and listed strings (in order) included.
+     */
+    it('should report a type listing both kinds and a slot condition as declared', () => {
+      const when = {
+        ifThen: [
+          { equal: ['$kind', { const: 'moderatedDocument' }] },
+          {
+            allOf: [
+              { not: { contains: ['$moderatorAbilities.deleteKeepsFields', '$property'] } },
+              { not: { contains: ['$moderatorAbilities.changeFields', '$property'] } },
+            ],
+          },
+        ],
+      };
+      // A condition on the type as a whole, beside the slots
+      const ofTheType = {
+        allOf: [
+          { contains: ['$electedAbilities', { const: 'deleteDocuments' }] },
+          {
+            anyOf: [
+              { absent: '$moderatorAbilities.deleteWithin' },
+              {
+                allOf: [
+                  { present: '$moderatorAbilities.deleteSettled' },
+                  { absent: '$moderatorAbilities.deleteSettled.approversPredateDocument' },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      const eitherKind = structuredClone(namedSchemas);
+      (eitherKind.note.properties.descriptionId as { refersTo: object }).refersTo = {
+        // Given the other way round: reported permanent first
+        type: ['moderatedDocument', 'permanentDocument'],
+        contractId: '$self.descriptionContractId',
+        documentType: '$self.descriptionDocumentType',
+        documentTypeRequirements: {
+          when: ofTheType,
+          properties: {
+            body: { name: '$any', type: 'string', when },
+            code: {
+              name: '$any',
+              type: 'string',
+              distinctFrom: 'body',
+              when: { notIn: ['$property', ['label', 'tags']] },
+            },
+          },
+        },
+      };
+      const [descriptionId] = buildNamedContract(eitherKind).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+
+      expect(descriptionId.type).to.deep.equal(['permanentDocument', 'moderatedDocument']);
+      expect(descriptionId.documentTypeRequirements).to.deep.equal({
+        when: ofTheType,
+        properties: {
+          body: { name: '$any', type: 'string', when },
+          code: {
+            name: '$any',
+            type: 'string',
+            distinctFrom: ['body'],
+            when: { notIn: ['$property', ['label', 'tags']] },
+          },
+        },
+      });
+    });
+
+    it('should keep a slot named __proto__ with its condition as an own key', () => {
+      const declared = JSON.stringify(
+        (namedSchemas.note.properties.descriptionId as { refersTo: object }).refersTo,
+      );
+      const slot = '{"name":"$any","type":"string","when":{"notEqual":["$property",{"const":"title"}]}}';
+      const protoSchemas = JSON.parse(JSON.stringify(namedSchemas).replace(
+        declared,
+        () => `{
+          "type": "moderatedDocument",
+          "contractId": "$self.descriptionContractId",
+          "documentType": "$self.descriptionDocumentType",
+          "documentTypeRequirements": { "properties": { "__proto__": ${slot} } }
+        }`,
+      ));
+      const [descriptionId] = buildNamedContract(protoSchemas).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+      const slots = descriptionId.documentTypeRequirements!.properties;
+
+      expect(Object.keys(slots)).to.deep.equal(['__proto__']);
+      expect(Object.getPrototypeOf(slots)).to.equal(Object.prototype);
+      expect(JSON.stringify(slots)).to.equal(`{"__proto__":${slot}}`);
+    });
+
+    it('should refuse a list of kinds on a target the schema names', () => {
+      const listed = structuredClone(namedSchemas);
+      (listed.note.properties.descriptionId as { refersTo: object }).refersTo = {
+        type: ['permanentDocument', 'moderatedDocument'],
+        documentType: 'note',
+      };
+      for (const fullValidation of [true, false]) {
+        expect(
+          () => buildNamedContract(listed, 15, fullValidation),
+          `full validation ${fullValidation}`,
+        ).to.throw();
+      }
+    });
+
+    it('should not read a target through the document before protocol version 15', () => {
+      for (const fullValidation of [true, false]) {
+        expect(
+          () => buildNamedContract(namedSchemas, 14, fullValidation),
+          `full validation ${fullValidation}`,
+        ).to.throw();
+      }
+    });
+
+    it('should refuse a target named half in the schema and half through the document', () => {
+      const halfNamed = structuredClone(namedSchemas);
+      (
+        halfNamed.note.properties.descriptionId as { refersTo: { documentType: string } }
+      ).refersTo.documentType = 'post';
+      for (const fullValidation of [true, false]) {
+        expect(
+          () => buildNamedContract(halfNamed, 15, fullValidation),
+          `full validation ${fullValidation}`,
+        ).to.throw();
+      }
+    });
+  });
+
   describe('where over typed arrays', () => {
     const tags = (position: number) => ({
       type: 'array',
@@ -1316,6 +1588,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRuleReadInvalid).to.equal(40148);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentPreceded).to.equal(40149);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypePrivate).to.equal(40150);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeRequirementNotMet).to.equal(40153);
     });
 
     it('should resolve a code back to its name', () => {

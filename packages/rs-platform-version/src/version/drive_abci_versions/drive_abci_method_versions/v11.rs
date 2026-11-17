@@ -4,7 +4,8 @@ use super::{
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciVotingMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
+    DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -96,11 +97,12 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// `on_yes_no_vote_poll_finished` are `Some(0)`, `None` in every earlier table), in
 /// `core_based_updates.update_core_info`, which is 1 rather than 0: init chain and a block that
 /// move the chain locked Core height record, the first time they see it, that Core's V24 is
-/// active there (the coinbase of that Core block has payload version 4 or higher), and Core is
-/// not asked again once it is recorded; in the asset unlocks it emits for withdrawals, described
-/// below; in the voter key of a masternode that returns to a voting address, described below; in
-/// the consensus evidence policy; and in the chain lock verification. The chain lock
-/// changes only work as a whole:
+/// active there (the coinbase of that Core block has payload version 4 or higher), and
+/// `update_core_info` does not ask Core again once it is recorded (the masternode list's
+/// operator key normalization reads the record too, as described below); in the asset unlocks
+/// it emits for withdrawals, described below; in the voter key of a masternode that returns to a
+/// voting address, described below; in the consensus evidence policy; and in the chain lock
+/// verification. The chain lock changes only work as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -112,6 +114,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
 /// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes.
+/// - `protocol_upgrade.perform_events_on_first_block_of_protocol_change` is `Some(3)`:
+///   the first block crossing into protocol v15 migrates retained history after the other
+///   activation work, in the same transaction.
 ///
 /// The operator payouts: `core_based_updates.update_masternode_list` is 2 rather than 1, which
 /// keeps the operator payout and the revived height of an updated masternode's Core diff, reads
@@ -132,6 +137,10 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// masternode that returns to a voting address it used before has the key of that address's
 /// voter identity re-enabled, where 0 re-enabled the key of the voter identity it was leaving.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
+    protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
+        perform_events_on_first_block_of_protocol_change: Some(3),
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.protocol_upgrade
+    },
     engine: DriveAbciEngineMethodVersions {
         consensus_params_update: 2,
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.engine

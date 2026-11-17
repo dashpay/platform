@@ -789,7 +789,10 @@ sealed class DashSdkError(
          * DashPay sync settles it (the request found: recorded as sent; its
          * nonce proved used: the pair freed), and
          * `Dashpay.publicContactRequestsUnconfirmed` reads whether it still
-         * stands. Not a private request pending ([PrivateContactRequestPending]).
+         * stands. Also thrown by a public send or accept made while another
+         * public request to that identity is being sent: one is sent at a
+         * time, and nothing is signed for the second. Not a private request
+         * pending ([PrivateContactRequestPending]).
          * ← Swift `PlatformWalletError.publicContactRequestUnconfirmed`.
          */
         class PublicContactRequestUnconfirmed(message: String, cause: Throwable? = null) :

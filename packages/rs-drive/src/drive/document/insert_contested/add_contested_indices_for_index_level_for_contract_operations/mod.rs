@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::flags::StorageFlags;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
@@ -27,9 +27,7 @@ impl Drive {
         any_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            EstimatedLayers,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

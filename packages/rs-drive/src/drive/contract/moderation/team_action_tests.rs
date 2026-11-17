@@ -67,8 +67,7 @@ fn post_schema(rule: Option<Value>) -> Value {
 
 /// The fixture contract with an elected moderation declaration moderating posts with
 /// deletions, whose settled posts the team deletes by `rule` when it is given.
-fn elected_contract_with(rule: Option<Value>) -> DataContract {
-    let platform_version = PlatformVersion::latest();
+fn elected_contract_with(rule: Option<Value>, platform_version: &PlatformVersion) -> DataContract {
     let mut contract =
         get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
     let moderation = ContractModerationConfig {
@@ -91,18 +90,12 @@ fn elected_contract_with(rule: Option<Value>) -> DataContract {
     };
     contract.set_config(contract.config().clone().with_moderation(Some(moderation)));
     contract
-        .set_document_schema(
-            POST,
-            post_schema(rule),
-            true,
-            &mut vec![],
-            PlatformVersion::latest(),
-        )
+        .set_document_schema(POST, post_schema(rule), true, &mut vec![], platform_version)
         .expect("expected to add the post type");
     contract
 }
 
-fn insert(drive: &Drive, contract: &DataContract) {
+fn insert(drive: &Drive, contract: &DataContract, platform_version: &PlatformVersion) {
     // Estimated first, as the fee validation of the contract's creation estimates it
     for apply in [false, true] {
         drive
@@ -111,7 +104,7 @@ fn insert(drive: &Drive, contract: &DataContract) {
                 BlockInfo::default(),
                 apply,
                 None,
-                PlatformVersion::latest(),
+                platform_version,
             )
             .expect("expected to insert the contract");
     }
@@ -194,14 +187,19 @@ fn approve_dropping(dropped_signers: &[u8]) -> ContractTeamActionWrite {
     }
 }
 
-fn apply(drive: &Drive, operations: Vec<DriveOperation>, apply: bool) -> FeeResult {
+fn apply(
+    drive: &Drive,
+    operations: Vec<DriveOperation>,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> FeeResult {
     drive
         .apply_drive_operations(
             operations,
             apply,
             &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
             None,
-            PlatformVersion::latest(),
+            platform_version,
         )
         .expect("expected to apply the operations")
 }
@@ -316,8 +314,9 @@ fn should_create_the_team_action_trees_with_the_contract() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-    let settled = elected_contract_with(Some(platform_value!({ "leader": true })));
-    insert(&drive, &settled);
+    let settled =
+        elected_contract_with(Some(platform_value!({ "leader": true })), platform_version);
+    insert(&drive, &settled, platform_version);
     assert!(has(
         &drive,
         &contract_other_path(settled.id().as_slice()),
@@ -336,9 +335,9 @@ fn should_create_the_team_action_trees_with_the_contract() {
 
     // A contract whose settled documents nobody deletes keeps no team actions, and reads as
     // having none
-    let mut unsettled = elected_contract_with(None);
+    let mut unsettled = elected_contract_with(None, platform_version);
     unsettled.set_id(identity(0x77));
-    insert(&drive, &unsettled);
+    insert(&drive, &unsettled, platform_version);
     assert!(!has(
         &drive,
         &contract_other_path(unsettled.id().as_slice()),
@@ -375,8 +374,9 @@ fn should_create_the_team_action_trees_with_the_contract() {
 fn should_record_read_and_prove_team_actions_as_they_close() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(Some(platform_value!({ "approvals": 3 })));
-    insert(&drive, &contract);
+    let contract =
+        elected_contract_with(Some(platform_value!({ "approvals": 3 })), platform_version);
+    insert(&drive, &contract, platform_version);
     let contract_id = contract.id();
     let (first, second) = (identity(0xA1), identity(0xA2));
     let first_proposal = proposal(1, identity(0x51), "doxxing");
@@ -391,6 +391,7 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
             signature(contract_id, second, 4, propose(&second_proposal, true)),
         ],
         true,
+        platform_version,
     );
     apply(
         &drive,
@@ -403,6 +404,7 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
             },
         )],
         true,
+        platform_version,
     );
 
     assert_eq!(
@@ -463,6 +465,7 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
             close(&first_proposal, &[1, 2]),
         )],
         true,
+        platform_version,
     );
     assert_eq!(
         drive
@@ -549,8 +552,9 @@ fn should_record_read_and_prove_team_actions_as_they_close() {
 fn should_refuse_a_page_of_team_actions_out_of_bounds() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(Some(platform_value!({ "leader": true })));
-    insert(&drive, &contract);
+    let contract =
+        elected_contract_with(Some(platform_value!({ "leader": true })), platform_version);
+    insert(&drive, &contract, platform_version);
     let max = platform_version.drive_abci.query.max_returned_elements;
     for limit in [0, max + 1] {
         let query = ContractTeamActionsQuery {
@@ -591,8 +595,8 @@ fn assert_estimated_at_no_less_than_it_costs(
     sum_trees: u64,
     operations: impl Fn() -> Vec<DriveOperation<'static>>,
 ) {
-    let estimated = apply(drive, operations(), false);
-    let applied = apply(drive, operations(), true);
+    let estimated = apply(drive, operations(), false, PlatformVersion::latest());
+    let applied = apply(drive, operations(), true, PlatformVersion::latest());
     assert!(
         applied.storage_fee > 0,
         "{what}: the member pays for its approval"
@@ -616,8 +620,9 @@ fn assert_estimated_at_no_less_than_it_costs(
 fn should_estimate_team_actions_at_no_less_than_they_cost() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(Some(platform_value!({ "approvals": 16 })));
-    insert(&drive, &contract);
+    let contract =
+        elected_contract_with(Some(platform_value!({ "approvals": 16 })), platform_version);
+    insert(&drive, &contract, platform_version);
     let contract_id = contract.id();
     let longest = "x".repeat(
         platform_version
@@ -692,8 +697,12 @@ fn should_estimate_team_actions_at_no_less_than_they_cost() {
 }
 
 /// A post by `owner_id`, stored with its owner's flags, as a create leaves it
-fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Document {
-    let platform_version = PlatformVersion::latest();
+fn add_post(
+    drive: &Drive,
+    contract: &DataContract,
+    owner_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Document {
     let document_type = contract
         .document_type_for_name(POST)
         .expect("expected the post document type");
@@ -725,15 +734,28 @@ fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Doc
     document
 }
 
+/// The protocol versions a team's deletion of a settled post is run at: protocol version 14,
+/// whose `apply_drive_operations` 1 applies the post's forfeited deletion as a GroveDB batch of
+/// its own when the closing approval also moves the earlier approvals, and the latest version.
+fn forfeiting_protocol_versions() -> [&'static PlatformVersion; 2] {
+    [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        PlatformVersion::latest(),
+    ]
+}
+
 /// The refunds of the approval by 3 that closes the deletion of a post by `author` which 1
 /// proposed and 2 approved: the post's forfeited deletion, and the action closed, moving the
 /// earlier approvals
-fn refunds_of_a_closing_approval(author: Identifier) -> FeeResult {
-    let platform_version = PlatformVersion::latest();
+fn refunds_of_a_closing_approval(
+    author: Identifier,
+    platform_version: &PlatformVersion,
+) -> FeeResult {
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(Some(platform_value!({ "approvals": 3 })));
-    insert(&drive, &contract);
-    let post = add_post(&drive, &contract, author);
+    let contract =
+        elected_contract_with(Some(platform_value!({ "approvals": 3 })), platform_version);
+    insert(&drive, &contract, platform_version);
+    let post = add_post(&drive, &contract, author, platform_version);
     let action_id = identity(0xA1);
     let proposed = proposal(1, post.id(), "doxxing");
     apply(
@@ -745,6 +767,7 @@ fn refunds_of_a_closing_approval(author: Identifier) -> FeeResult {
             propose(&proposed, false),
         )],
         true,
+        platform_version,
     );
     apply(
         &drive,
@@ -757,6 +780,7 @@ fn refunds_of_a_closing_approval(author: Identifier) -> FeeResult {
             },
         )],
         true,
+        platform_version,
     );
     apply(
         &drive,
@@ -770,6 +794,7 @@ fn refunds_of_a_closing_approval(author: Identifier) -> FeeResult {
             ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds),
         ],
         true,
+        platform_version,
     )
 }
 
@@ -778,34 +803,39 @@ fn should_refund_the_earlier_approvers_when_the_closing_approval_moves_them() {
     // The author forfeits the post's refund; the proposer is refunded its action and its
     // approval, the second approver its approval, as they move to the closed actions without
     // flags.
-    let applied = refunds_of_a_closing_approval(identity(0x41));
-    assert_eq!(
-        applied
-            .fee_refunds
-            .0
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from([identity(1).to_buffer(), identity(2).to_buffer()])
-    );
-    assert!(applied.removed_bytes_from_system > 0);
+    for platform_version in forfeiting_protocol_versions() {
+        let applied = refunds_of_a_closing_approval(identity(0x41), platform_version);
+        assert_eq!(
+            applied
+                .fee_refunds
+                .0
+                .keys()
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([identity(1).to_buffer(), identity(2).to_buffer()])
+        );
+        assert!(applied.removed_bytes_from_system > 0);
+    }
 }
 
 #[test]
 fn should_refund_an_approver_who_wrote_the_post_only_its_approval() {
     // The approver who wrote the post forfeits the post's refund all the same, and gets back
     // its approval alone, as much as when another member wrote the post.
-    let own_post = refunds_of_a_closing_approval(identity(2));
-    let other_post = refunds_of_a_closing_approval(identity(0x41));
-    assert_eq!(own_post.fee_refunds, other_post.fee_refunds);
+    for platform_version in forfeiting_protocol_versions() {
+        let own_post = refunds_of_a_closing_approval(identity(2), platform_version);
+        let other_post = refunds_of_a_closing_approval(identity(0x41), platform_version);
+        assert_eq!(own_post.fee_refunds, other_post.fee_refunds);
+    }
 }
 
 #[test]
 fn should_drop_the_approvals_of_members_who_left_and_refund_them() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(Some(platform_value!({ "approvals": 3 })));
-    insert(&drive, &contract);
+    let contract =
+        elected_contract_with(Some(platform_value!({ "approvals": 3 })), platform_version);
+    insert(&drive, &contract, platform_version);
     let contract_id = contract.id();
     let action_id = identity(0xA1);
     let proposed = proposal(1, identity(0x51), "doxxing");
@@ -818,11 +848,13 @@ fn should_drop_the_approvals_of_members_who_left_and_refund_them() {
             propose(&proposed, false),
         )],
         true,
+        platform_version,
     );
     apply(
         &drive,
         vec![signature(contract_id, action_id, 2, approve_dropping(&[]))],
         true,
+        platform_version,
     );
 
     // 2 left the team: the next approval drops it, and refunds it its approval
@@ -830,6 +862,7 @@ fn should_drop_the_approvals_of_members_who_left_and_refund_them() {
         &drive,
         vec![signature(contract_id, action_id, 3, approve_dropping(&[2]))],
         true,
+        platform_version,
     );
     assert_eq!(
         dropping.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
@@ -847,6 +880,7 @@ fn should_drop_the_approvals_of_members_who_left_and_refund_them() {
         &drive,
         vec![signature(contract_id, action_id, 2, approve_dropping(&[]))],
         true,
+        platform_version,
     );
 
     // 3 left: the approval that closes the action drops it, and moves the others
@@ -859,6 +893,7 @@ fn should_drop_the_approvals_of_members_who_left_and_refund_them() {
             close_dropping(&proposed, &[1, 2], &[3]),
         )],
         true,
+        platform_version,
     );
     assert_signers(
         &drive,
@@ -880,8 +915,9 @@ fn should_drop_the_approvals_of_members_who_left_and_refund_them() {
 fn should_bill_the_reads_of_an_approval() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = elected_contract_with(Some(platform_value!({ "approvals": 3 })));
-    insert(&drive, &contract);
+    let contract =
+        elected_contract_with(Some(platform_value!({ "approvals": 3 })), platform_version);
+    insert(&drive, &contract, platform_version);
     let action_id = identity(0xA1);
     let proposed = proposal(1, identity(0x51), "doxxing");
     apply(
@@ -893,6 +929,7 @@ fn should_bill_the_reads_of_an_approval() {
             propose(&proposed, false),
         )],
         true,
+        platform_version,
     );
     let epoch = Epoch::new(3).expect("epoch");
 

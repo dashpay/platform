@@ -3779,27 +3779,6 @@ extension ManagedPlatformWallet {
             trackedAssetLocksCount: Int(ffi.tracked_asset_locks_count)
         )
     }
-
-    /// Shared array-marshalling body for the two id-list explorer
-    /// readers above. Both wrap the same `IdentifierArray` FFI shape +
-    /// free helper, so the per-method variance is just the FFI call
-    /// itself.
-    private func readIdentifierArray(
-        _ fetch: (inout IdentifierArray) -> PlatformWalletFFIResult
-    ) throws -> [Identifier] {
-        var array = IdentifierArray()
-        try fetch(&array).check()
-        defer { platform_wallet_identifier_array_free(&array) }
-        guard array.items != nil, array.count > 0 else {
-            return []
-        }
-        var ids: [Identifier] = []
-        ids.reserveCapacity(Int(array.count))
-        for i in 0..<Int(array.count) {
-            ids.append(identifierFromFFIArray(array, at: i))
-        }
-        return ids
-    }
 }
 
 /// Run `body` with three optional C-string pointers, each `nil` when
@@ -5013,6 +4992,43 @@ extension ManagedPlatformWallet {
 
             try result.check()
             return Data(documentIdBytes)
+        }.value
+    }
+
+    /// Rust owns eligibility, key selection, one submission and lifecycle observations.
+    public func eraseDocumentAndObserve(
+        submittingIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        signer: KeychainSigner
+    ) async throws -> DocumentEraseOutcome {
+        guard submittingIdentityId.count == 32, contractId.count == 32, documentId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Identifiers must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            var output = DocumentEraseOutcomeFFI()
+            let result = withExtendedLifetime((self, signer)) {
+                submittingIdentityId.withUnsafeBytes { owner in
+                    contractId.withUnsafeBytes { contract in
+                        documentType.withCString { type in
+                            documentId.withUnsafeBytes { document in
+                                platform_wallet_document_erase_and_observe(
+                                    self.handle,
+                                    owner.bindMemory(to: UInt8.self).baseAddress!,
+                                    contract.bindMemory(to: UInt8.self).baseAddress!,
+                                    type,
+                                    document.bindMemory(to: UInt8.self).baseAddress!,
+                                    signer.handle,
+                                    &output
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            try result.check()
+            return try DocumentEraseOutcome(ffi: output)
         }.value
     }
 

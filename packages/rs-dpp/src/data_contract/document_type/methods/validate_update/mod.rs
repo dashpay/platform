@@ -6,6 +6,7 @@ use platform_version::version::PlatformVersion;
 mod common;
 mod v0;
 mod v1;
+mod v2;
 
 impl DocumentTypeRef<'_> {
     /// Verify that the update to the document type is valid.
@@ -27,9 +28,10 @@ impl DocumentTypeRef<'_> {
         {
             0 => self.validate_update_v0(new_document_type, platform_version),
             1 => self.validate_update_v1(new_document_type, new_contract_version, platform_version),
+            2 => self.validate_update_v2(new_document_type, new_contract_version, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_update".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }

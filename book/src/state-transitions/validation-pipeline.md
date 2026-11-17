@@ -278,9 +278,10 @@ verify (a key whose public key data does not decode fails it too) is refused wit
 without using the nonce, as a failed identity signature is, and no key is added; a revision
 mismatch is still charged. A block holding such a transition is refused, as for any unpaid
 result. `check_tx` verifies the proofs of possession of the added keys at every protocol version,
-after the identity signature, so such a transition does not reach a block; it leaves the revision
-to the block, as an update queued behind another of the same identity does not match the stored
-revision yet.
+after the identity signature, so such a transition does not enter an honest node's mempool; it
+leaves the revision to the block, as an update queued behind another of the same identity does not
+match the stored revision yet. Below protocol version 15 a proposer can still put such a
+transition in a block, which charges it.
 
 ## Stage 9: Transform Into Action + Advanced Structure (with State)
 
@@ -418,7 +419,9 @@ But when the pipeline returns early after the nonce has been validated -- for ex
 during advanced structure validation or state validation -- it returns a
 **nonce-bump action** so the identity still pays a small fee. This prevents a different
 attack: submitting thousands of structurally invalid transitions to waste validator
-resources for free.
+resources for free. From protocol version 15 an `IdentityUpdate` whose added key's proof of
+possession fails is the exception: the identity did not sign that proof, so the update is
+refused unpaid, like a failed signature (see Stage 8).
 
 ## Rules and Guidelines
 
@@ -427,9 +430,10 @@ resources for free.
   can lead to consensus divergence.
 - Return early on signature/nonce failures without charging the user.
 - Bump the nonce (and charge) when structure or state validation fails after the nonce
-  check has passed. The exception is a failure in a field the signer did not sign, such as
-  an added key's proof of possession on an `IdentityUpdate` from protocol version 15: it is
-  refused unpaid, like a failed signature.
+  check has passed. The exception is a failed proof of possession the signer did not sign,
+  such as an added key's on an `IdentityUpdate` from protocol version 15, where key data that
+  does not decode fails the proof too although the signer signed it: it is refused unpaid,
+  like a failed signature.
 - Use `ConsensusValidationResult` everywhere -- do not use `Result<(), Error>` for
   validation outcomes, because a validation failure is not a system error.
 

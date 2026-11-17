@@ -76,3 +76,33 @@ pub(crate) fn out_string(
     unsafe { platform_wallet_free_string(out) };
     Ok(Some(string))
 }
+
+// Viewing-key callbacks that store nothing and load nothing: enough for a
+// persister to declare `SHIELDED_VIEWING_KEYS`, which a seed-backed shielded
+// bind requires.
+#[cfg(feature = "shielded")]
+pub(crate) unsafe extern "C" fn noop_persist_viewing_keys(
+    _ctx: *mut std::ffi::c_void,
+    _wallet_id: *const u8,
+    _entries: *const crate::shielded_persistence::ShieldedViewingKeyFFI,
+    _count: usize,
+) -> i32 {
+    0
+}
+#[cfg(feature = "shielded")]
+pub(crate) unsafe extern "C" fn noop_load_viewing_keys(
+    _ctx: *mut std::ffi::c_void,
+    out_entries: *mut *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+    out_count: *mut usize,
+) -> i32 {
+    *out_entries = std::ptr::null();
+    *out_count = 0;
+    0
+}
+#[cfg(feature = "shielded")]
+pub(crate) unsafe extern "C" fn noop_free_viewing_keys(
+    _ctx: *mut std::ffi::c_void,
+    _entries: *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+    _count: usize,
+) {
+}

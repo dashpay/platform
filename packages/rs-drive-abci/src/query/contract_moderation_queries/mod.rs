@@ -169,7 +169,7 @@ impl<C> Platform<C> {
     ) -> Result<Result<Arc<DataContractFetchInfo>, QueryError>, Error> {
         Ok(self
             .drive
-            .get_contract_with_fetch_info(contract_id.to_buffer(), false, None, platform_version)?
+            .get_contract_with_fetch_info(contract_id.to_buffer(), true, None, platform_version)?
             .ok_or_else(|| QueryError::NotFound(format!("contract {} not found", contract_id))))
     }
 

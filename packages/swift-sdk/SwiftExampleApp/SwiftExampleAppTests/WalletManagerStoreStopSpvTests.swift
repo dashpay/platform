@@ -52,7 +52,7 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
 
     func testStopSpvCancellingPendingStartsBumpsGenerationBeforeStopping() async throws {
         let container = try DashModelContainer.createInMemory()
-        let store = WalletManagerStore(modelContainer: container)
+        let store = WalletManagerStore(modelContainer: container, makeSdk: strictSpvSdk)
 
         let before = store.spvStartGeneration
         var stopInvocations = 0
@@ -80,13 +80,29 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
         XCTAssertEqual(stopInvocations, 1, "stop must be invoked exactly once")
     }
 
+    /// A rebuild or a peer change stops SPV through
+    /// `stopSpvForReconfiguration`, which must cancel pending starts as well:
+    /// a start resuming after the stop would otherwise revive the manager
+    /// the rebuild is replacing.
+    func testStopSpvForReconfigurationCancelsPendingStarts() async throws {
+        let store = WalletManagerStore(
+            modelContainer: try DashModelContainer.createInMemory(), makeSdk: strictSpvSdk)
+        let before = store.spvStartGeneration
+
+        // The placeholder manager is not configured, so its stop throws; the
+        // pending starts must be cancelled all the same.
+        _ = try? await store.stopSpvForReconfiguration()
+
+        XCTAssertNotEqual(store.spvStartGeneration, before)
+    }
+
     /// The Pause button and the global sync indicator can fire while the
     /// SDK is still inside the native start (a store open with a migration
     /// takes seconds). The helper must then stop the client that start
     /// brings up, not silently give up.
     func testStopIssuedDuringAnAdmittedStartRunsAfterTheNativeStart() async throws {
         let container = try DashModelContainer.createInMemory()
-        let store = WalletManagerStore(modelContainer: container)
+        let store = WalletManagerStore(modelContainer: container, makeSdk: strictSpvSdk)
 
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
@@ -146,7 +162,7 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
     /// after the stop instead.
     func testStartAfterPauseWaitsForTheStopStillTearingDown() async throws {
         let container = try DashModelContainer.createInMemory()
-        let store = WalletManagerStore(modelContainer: container)
+        let store = WalletManagerStore(modelContainer: container, makeSdk: strictSpvSdk)
 
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
