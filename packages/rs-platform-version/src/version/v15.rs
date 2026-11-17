@@ -174,9 +174,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    member: the JSON form the schema check reads does not tell an integer's
 ///    type, and the document serializer reads only bytes. Protocol v14 passes
 ///    such a document to the serializer, which fails with an internal error.
-///    A batch failing it is refused unpaid (batch `advanced_structure` 2), so
-///    blocks are as before: a proposer drops the batch and validators reject a
-///    block holding it; what changes is the error check_tx returns.
+///    A batch failing it, or a moderator's field change, is refused unpaid
+///    (batch `advanced_structure` 2, contract user moderation
+///    `transform_into_action` 1), so blocks are as before: a proposer drops the
+///    transition and validators reject a block holding it; what changes is the
+///    error check_tx returns.
 ///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the

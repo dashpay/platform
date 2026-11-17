@@ -1254,3 +1254,106 @@ async fn should_judge_a_field_change_by_the_rules_reading_what_it_changes() {
         .get("level")
         .is_some_and(|level| level.equal_underlying_data(&Value::U64(5))));
 }
+
+const SEAL: &str = "seal";
+
+/// A seal whose `mark`, a byte array, only moderators write
+fn seal_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "moderatorAbilities": { "changeFields": ["mark"] },
+        "properties": {
+            "title": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
+            "mark": { "type": "array", "byteArray": true, "maxItems": 16, "position": 1 },
+        },
+        "required": ["title"],
+        "additionalProperties": false,
+    })
+}
+
+/// A list of integers that are not bytes (`Value::U64`) passes the schema check, which reads
+/// the JSON form, and the document serializer does not read it. Document validation refuses it
+/// from protocol version 15, and the mempool gives that refusal, so the change is refused
+/// unpaid: nobody is charged and a block holding it is rejected.
+#[tokio::test]
+async fn should_refuse_unpaid_a_moderator_change_writing_a_byte_array_of_integers_that_are_not_bytes(
+) {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| add_document_type(contract, SEAL, seal_schema()),
+    )
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (seal, create_seal) = setup
+        .create_document_of_type_with(&setup.user, SEAL, |document| {
+            let properties = document.properties_mut();
+            properties.clear();
+            properties.insert("title".to_string(), Value::Text("first".to_string()));
+        })
+        .await;
+    assert_success(&setup.process(&create_seal, &transaction));
+    setup.commit(transaction);
+
+    let moderator_balance = setup.balance(setup.moderator.id(), None);
+    let not_bytes = setup
+        .moderate(
+            &setup.moderator,
+            change_action(
+                SEAL,
+                seal.id(),
+                platform_value!({ "mark": [Value::U64(1), Value::U64(2)] }),
+            ),
+        )
+        .await;
+    let errors = setup.check_tx(&not_bytes);
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "byteArray" && error.instance_path() == "/mark/0"
+        ),
+        "{errors:?}"
+    );
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_unpaid_with_code(&setup.process(&not_bytes, &transaction), JSON_SCHEMA);
+    setup.commit(transaction);
+    assert_eq!(setup.balance(setup.moderator.id(), None), moderator_balance);
+
+    // A member out of byte range is a schema violation, paid as every other refusal is
+    let out_of_range = setup
+        .moderate(
+            &setup.moderator,
+            change_action(
+                SEAL,
+                seal.id(),
+                platform_value!({ "mark": [Value::U64(300)] }),
+            ),
+        )
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_paid_with_code(&setup.process(&out_of_range, &transaction), JSON_SCHEMA);
+    setup.commit(transaction);
+
+    // Written as bytes, the change is stored
+    let bytes = setup
+        .moderate(
+            &setup.moderator,
+            change_action(
+                SEAL,
+                seal.id(),
+                platform_value!({ "mark": Value::Bytes(vec![1, 2]) }),
+            ),
+        )
+        .await;
+    assert!(setup.check_tx(&bytes).is_empty());
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&bytes, &transaction));
+    assert_eq!(
+        setup
+            .stored_document(SEAL, seal.id(), Some(&transaction))
+            .expect("expected the seal to stay")
+            .get("mark"),
+        Some(&Value::Bytes(vec![1, 2]))
+    );
+}

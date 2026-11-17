@@ -8,6 +8,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::data_contract::validate_document::is_unreadable_byte_array_refusal;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::{
@@ -40,6 +41,14 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
     /// 15 a document a gas sponsor paid for is held by the contract owner, and a write naming
     /// another owner hands such a document over: the contract owner would be refunded and the
     /// moderator charged for the whole document, which its owner could then delete and collect.
+    ///
+    /// A change writing a byte array or identifier the document serializer cannot read as bytes
+    /// (`is_unreadable_byte_array_refusal`, which document validation gives from protocol
+    /// version 15) is refused unpaid, its result carrying no action, where every other refusal
+    /// bumps the moderator's contract nonce. The mempool transforms too and gives the same
+    /// refusal, so no honest proposer holds such a change: a proposer drops it and validators
+    /// reject a block holding it. Charging for it would pay a proposer to add what the mempool
+    /// refused.
     ///
     /// Every other action transforms through version 0, unchanged.
     fn transform_into_action_v1<C: CoreRPCLike>(
@@ -87,7 +96,7 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
             ));
         };
 
-        transform_document_fields_change_v0(
+        let result = transform_document_fields_change_v0(
             self,
             platform,
             block_info,
@@ -99,6 +108,14 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
             execution_context,
             tx,
             platform_version,
-        )
+        )?;
+        if result
+            .errors
+            .first()
+            .is_some_and(is_unreadable_byte_array_refusal)
+        {
+            return Ok(ConsensusValidationResult::new_with_errors(result.errors));
+        }
+        Ok(result)
     }
 }

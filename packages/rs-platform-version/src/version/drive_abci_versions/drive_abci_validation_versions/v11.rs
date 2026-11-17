@@ -62,7 +62,9 @@ use super::{
 ///   change is written in that identity's name and the document's storage stays with whoever
 ///   holds it. v0 writes the change in the name of the document's owner, which from protocol
 ///   version 15 would hand a document a gas sponsor paid for over to its owner at the
-///   moderator's cost. Every other moderation action transforms as v0's does. The state
+///   moderator's cost. A change writing a byte array the document serializer cannot read
+///   (`validate_document` 2) is refused unpaid, where every other refusal bumps the moderator's
+///   contract nonce. Every other moderation action transforms as v0's does. The state
 ///   validation, which is the transformation, runs the same generation.
 ///
 /// - the `PrivateDocumentCreateFromShieldedPool` (type 29) `basic_structure`, `Some(0)` rather
