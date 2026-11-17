@@ -220,6 +220,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   entry is replayed through `mark_instant_send_utxos` after the UTXO
 ///   restore, so instant-locked funds come back instant-locked instead of
 ///   waiting for the next sync to re-learn them.
+/// - **Locked outpoints** (masternode collateral): every
+///   `locked_outpoints` entry is replayed through `lock_outpoint`, so coin
+///   selection keeps skipping the collateral.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
@@ -411,6 +414,12 @@ pub fn apply_persisted_core_state(
     // and stay that way until the next sync re-learns the lock.
     for (txid, lock) in &core.instant_locks_for_non_final_records {
         wallet_info.mark_instant_send_utxos(txid, lock);
+    }
+
+    // Masternode collateral locks: the block that set one is not processed
+    // again, so without the replay the collateral is spendable after restart.
+    for outpoint in &core.locked_outpoints {
+        wallet_info.lock_outpoint(*outpoint);
     }
 
     // Recompute per-account + wallet balance from the restored set.

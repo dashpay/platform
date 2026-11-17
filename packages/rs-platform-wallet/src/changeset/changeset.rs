@@ -320,6 +320,17 @@ pub struct CoreChangeSet {
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+
+    /// Outpoints the wallet locked out of coin selection in this batch — the
+    /// collateral of a ProRegTx — from `WalletEvent::TransactionDetected` /
+    /// `BlockProcessed.locked_outpoints`. The persister stores them and the
+    /// load path hands them back through `ManagedWalletInfo::lock_outpoint`:
+    /// the block that locked one is not processed again after a restart, so
+    /// without them the collateral is spendable again.
+    ///
+    /// Additive only: key-wallet emits no unlock event. Union on merge.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub locked_outpoints: BTreeSet<OutPoint>,
 }
 
 /// Why the engine did not credit a `Received` / `Change` output of a
@@ -867,6 +878,8 @@ impl Merge for CoreChangeSet {
         // entries of records the newer changeset re-projected were dropped
         // at the top of this merge.
         self.utxo_credit_verdicts.extend(other.utxo_credit_verdicts);
+
+        self.locked_outpoints.extend(other.locked_outpoints);
     }
 
     fn is_empty(&self) -> bool {
@@ -883,6 +896,7 @@ impl Merge for CoreChangeSet {
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
             && self.utxo_credit_verdicts.is_empty()
+            && self.locked_outpoints.is_empty()
     }
 }
 
@@ -3874,6 +3888,40 @@ mod tests {
         let merged = cs.account_highest_used[&acct];
         assert_eq!(merged.external, Some(5));
         assert_eq!(merged.internal, Some(1));
+    }
+}
+
+#[cfg(test)]
+mod locked_outpoint_merge_tests {
+    use super::*;
+
+    fn outpoint(byte: u8) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([byte; 32]),
+            vout: 1,
+        }
+    }
+
+    /// Locks only accumulate, so merging two rounds keeps every lock either
+    /// carried, and a round carrying nothing but a lock still reaches the
+    /// persister.
+    #[test]
+    fn should_union_locked_outpoints_on_merge() {
+        let mut older = CoreChangeSet {
+            locked_outpoints: BTreeSet::from([outpoint(1), outpoint(2)]),
+            ..Default::default()
+        };
+        let newer = CoreChangeSet {
+            locked_outpoints: BTreeSet::from([outpoint(2), outpoint(3)]),
+            ..Default::default()
+        };
+        assert!(!Merge::is_empty(&newer));
+
+        older.merge(newer);
+        assert_eq!(
+            older.locked_outpoints,
+            BTreeSet::from([outpoint(1), outpoint(2), outpoint(3)])
+        );
     }
 }
 

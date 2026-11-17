@@ -193,6 +193,15 @@ pub fn apply(
             ])?;
         }
     }
+    if !cs.locked_outpoints.is_empty() {
+        let mut stmt = tx.prepare_cached(
+            "INSERT OR IGNORE INTO core_locked_outpoints (wallet_id, outpoint) VALUES (?1, ?2)",
+        )?;
+        for outpoint in &cs.locked_outpoints {
+            let key = blob::encode_outpoint(outpoint)?;
+            stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+        }
+    }
     let chainlock_height = cs
         .last_applied_chain_lock
         .as_ref()
@@ -1033,6 +1042,21 @@ pub fn load_state(
             let islock: dashcore::ephemerealdata::instant_lock::InstantLock =
                 blob::decode(&blob_bytes)?;
             cs.instant_locks_for_non_final_records.insert(txid, islock);
+        }
+    }
+
+    // Fail-hard on a malformed key: a dropped lock frees a masternode
+    // collateral for spending.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT length(outpoint), outpoint FROM core_locked_outpoints WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            blob::check_size(row.get::<_, i64>(0)?)?;
+            let op_bytes: Vec<u8> = row.get(1)?;
+            cs.locked_outpoints
+                .insert(blob::decode_outpoint(&op_bytes)?);
         }
     }
 

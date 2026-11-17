@@ -99,6 +99,10 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "core_state.rs",
+        "SELECT length(outpoint), outpoint FROM core_locked_outpoints",
+    ),
+    (
+        "core_state.rs",
         "SELECT last_processed_height, synced_height,",
     ),
     (

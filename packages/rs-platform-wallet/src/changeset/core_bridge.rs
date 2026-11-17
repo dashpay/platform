@@ -1644,6 +1644,7 @@ async fn build_core_changeset(
             wallet_id,
             record,
             addresses_derived,
+            locked_outpoints,
             ..
         } => {
             // Live mempool matching emits ONE event per matched
@@ -1722,6 +1723,7 @@ async fn build_core_changeset(
                 addresses_marked_used,
                 account_highest_used,
                 utxo_credit_verdicts,
+                locked_outpoints: locked_outpoints.iter().copied().collect(),
                 ..CoreChangeSet::default()
             }
         }
@@ -1738,6 +1740,7 @@ async fn build_core_changeset(
             updated,
             matured,
             addresses_derived,
+            locked_outpoints,
             ..
         } => {
             let mut cs = CoreChangeSet::default();
@@ -1793,6 +1796,7 @@ async fn build_core_changeset(
                 collect_usage_deltas(wallet_manager, wallet_id, records).await;
             cs.addresses_marked_used = addresses_marked_used;
             cs.account_highest_used = account_highest_used;
+            cs.locked_outpoints = locked_outpoints.iter().copied().collect();
             // The engine's verdict on the outputs the persister is about to
             // materialise from these records — see
             // `CoreChangeSet::utxo_credit_verdicts`. Over the owned slices
@@ -2732,6 +2736,104 @@ impl CoreChangeSet {
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
             && self.utxo_credit_verdicts.is_empty()
+            && self.locked_outpoints.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod collateral_lock_projection_tests {
+    //! The collateral locks key-wallet reports must reach the persister, which
+    //! hands them back on load: a lock the store never sees is gone after a
+    //! restart, and the collateral is spendable again.
+
+    use super::*;
+    use dashcore::Txid;
+    use key_wallet::WalletCoreBalance;
+    use key_wallet_manager::WalletManager;
+    use std::collections::BTreeSet;
+
+    const WALLET_ID: WalletId = [9u8; 32];
+
+    fn test_manager() -> Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
+        Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            dashcore::Network::Testnet,
+        )))
+    }
+
+    fn collateral() -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([0xC0; 32]),
+            vout: 1,
+        }
+    }
+
+    fn registration_record() -> TransactionRecord {
+        TransactionRecord::new(
+            dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_carry_the_locks_of_a_detected_transaction() {
+        let event = WalletEvent::TransactionDetected {
+            wallet_id: WALLET_ID,
+            record: Box::new(registration_record()),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+            locked_outpoints: vec![collateral()],
+        };
+
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(cs.locked_outpoints, BTreeSet::from([collateral()]));
+    }
+
+    #[tokio::test]
+    async fn should_carry_the_locks_of_a_processed_block() {
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_000,
+            chain_lock: None,
+            inserted: Vec::new(),
+            updated: Vec::new(),
+            matured: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+            locked_outpoints: vec![collateral()],
+        };
+
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(cs.locked_outpoints, BTreeSet::from([collateral()]));
+    }
+
+    /// The adapter only hands non-empty rounds to the persister; a lock alone
+    /// is reason enough to write one.
+    #[test]
+    fn should_not_drop_a_round_carrying_only_a_lock() {
+        let cs = CoreChangeSet {
+            locked_outpoints: BTreeSet::from([collateral()]),
+            ..CoreChangeSet::default()
+        };
+        assert!(!cs.is_empty_no_records());
     }
 }
 

@@ -496,6 +496,11 @@ impl WalletChangeSetFFI {
     /// `BlockProcessed` and `TransactionInstantLocked`).
     /// When the standalone IS-lock event needs to flow to Swift, add
     /// a `BTreeMap`-shaped FFI field here and populate it.
+    ///
+    /// TODO(collateral-locks): `locked_outpoints` (masternode collateral) is
+    /// dropped here too, so on the Swift/Kotlin hosts a collateral lock does
+    /// not survive a restart. Carrying it needs an FFI field, host storage,
+    /// and a matching restore-entry field replayed through `lock_outpoint`.
     pub fn from_changeset(cs: &platform_wallet::changeset::CoreChangeSet) -> Self {
         use key_wallet::account::AccountType;
         use std::ffi::CString;

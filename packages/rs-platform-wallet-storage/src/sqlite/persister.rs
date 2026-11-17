@@ -2394,6 +2394,7 @@ mod tests {
             "contacts",
             "core_address_pool",
             "core_instant_locks",
+            "core_locked_outpoints",
             "core_sync_state",
             "core_transactions",
             "core_utxos",

@@ -105,6 +105,11 @@ fn tc027_smoke_insert_every_table() {
             &[&wallet_id.as_slice(), &txid],
         ),
         (
+            "core_locked_outpoints",
+            "INSERT INTO core_locked_outpoints (wallet_id, outpoint) VALUES (?1, ?2)",
+            &[&wallet_id.as_slice(), &outpoint],
+        ),
+        (
             "core_sync_state",
             "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, NULL, NULL)",
             &[&wallet_id.as_slice()],

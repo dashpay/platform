@@ -6119,6 +6119,10 @@ fn build_wallet_start_state(
         wallet_info.metadata.last_synced = Some(entry.last_synced);
     }
 
+    // TODO(collateral-locks): replay persisted masternode collateral locks
+    // through `wallet_info.lock_outpoint` once the restore entry carries them
+    // (see `WalletChangeSetFFI::from_changeset`).
+
     // Persisted `last_applied_chain_lock` — bincode-decoded from the
     // bytes Swift handed back. Restoring this before the wallet
     // enters the manager means the asset-lock-resume CL-from-metadata

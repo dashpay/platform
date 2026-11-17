@@ -8,6 +8,7 @@
 
 mod common;
 
+mod core_locked_outpoints;
 mod fixture_gen;
 mod persisted_core_transactions;
 mod persistence_error_kind_mapping;
