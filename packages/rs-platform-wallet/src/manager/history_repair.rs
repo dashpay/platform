@@ -110,7 +110,8 @@ pub fn repair_wallet_history(
 /// The stored claims to restore after `replay` settled `state`.
 ///
 /// A claim is left out only when the replay guards its coin in a way a fork
-/// releases: the coin's funding and its claimant were both replayed, the
+/// releases: the coin's funding and its claimant both went through the
+/// wallet checker and were not retired, the
 /// claimant in a plain block above the restored chain lock and without an
 /// InstantSend lock, and the claim was not stamped at or below the chain lock.
 /// The claimant's account then records the spend of the coin, and a fork
@@ -128,21 +129,20 @@ fn restorable_claims(
         .last_applied_chain_lock
         .as_ref()
         .map(|lock| lock.block_height);
-    let replayed: Vec<_> = state
+    // A record the replay withheld or set aside never reached the checker.
+    let funded: BTreeSet<Txid> = replay
+        .replayed_txids
+        .iter()
+        .filter(|txid| !replay.retired.contains(*txid))
+        .copied()
+        .collect();
+    let reversible: BTreeSet<Txid> = state
         .recorded_history
         .transactions
         .iter()
         .filter(|stored| {
-            let body = stored.transaction.txid();
-            !replay.retired.contains(&stored.txid) && !replay.retired.contains(&body)
+            funded.contains(&stored.transaction.txid()) && !replay.retired.contains(&stored.txid)
         })
-        .collect();
-    let funded: BTreeSet<Txid> = replayed
-        .iter()
-        .map(|stored| stored.transaction.txid())
-        .collect();
-    let reversible: BTreeSet<Txid> = replayed
-        .iter()
         .filter(|stored| match &stored.context {
             TransactionContext::InBlock(block) => {
                 chain_locked.is_none_or(|locked| block.height() > locked)
@@ -175,11 +175,16 @@ mod tests {
     use super::*;
     use crate::changeset::StoredTransaction;
     use crate::manager::history_replay::tests::{
-        authorize, checked_instant_lock, confirmed_spend_fixture,
+        authorize, checked_instant_lock, confirmed_spend_fixture, wallet_with_receive_address,
     };
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::AssetLockFundingType;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
+    use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::transaction::TransactionPayload;
     use dashcore::{Address, BlockHash, Transaction};
+    use dashcore::{TxIn, TxOut};
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::{ManagedWalletInfo, Wallet};
@@ -203,6 +208,7 @@ mod tests {
         wallet: Wallet,
         info: ManagedWalletInfo,
         history: RecordedHistory,
+        asset_locks: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>,
         claims: Vec<StoredReplayClaim>,
         on_write: OnWrite,
         writes: usize,
@@ -214,6 +220,7 @@ mod tests {
                 wallet: fixture.wallet.clone(),
                 info,
                 history,
+                asset_locks: BTreeMap::new(),
                 claims: Vec::new(),
                 on_write: OnWrite::Refuse,
                 writes: 0,
@@ -225,7 +232,7 @@ mod tests {
                 wallet: self.wallet.clone(),
                 wallet_info: self.info.clone(),
                 identity_manager: Default::default(),
-                unused_asset_locks: Default::default(),
+                unused_asset_locks: self.asset_locks.clone(),
                 unconfirmed_outgoing_txs: Vec::new(),
                 recorded_history: self.history.clone(),
                 dashpay_backfill: Default::default(),
@@ -415,6 +422,106 @@ mod tests {
         );
     }
 
+    /// A chain-final asset lock's funding the replay withholds is not replayed,
+    /// so a claim on its change stays even when the change's spend is reversible.
+    #[tokio::test]
+    async fn should_not_credit_withheld_asset_lock_change_after_its_spend_becomes_final() {
+        let (wallet, mut info, address) = wallet_with_receive_address();
+        let funding = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([81; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![
+                TxOut {
+                    value: 50_000,
+                    script_pubkey: dashcore::script::Builder::new()
+                        .push_opcode(dashcore::opcodes::all::OP_RETURN)
+                        .into_script(),
+                },
+                TxOut {
+                    value: 40_000,
+                    script_pubkey: address.script_pubkey(),
+                },
+            ],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(vec![TxOut {
+                    value: 50_000,
+                    script_pubkey: address.script_pubkey(),
+                }]),
+            )),
+        };
+        let change = OutPoint::new(funding.txid(), 1);
+        let spender = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: change,
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 39_000,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        };
+        let out_point = OutPoint::new(funding.txid(), 0);
+        let lock = TrackedAssetLock {
+            operation_id: None,
+            shielded_recipient: None,
+            out_point,
+            transaction: funding.clone(),
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 50_000,
+            status: AssetLockStatus::ChainLocked,
+            proof: None,
+        };
+        info.metadata.last_applied_chain_lock = Some(chain_lock(100));
+        let mut store = MemoryStore {
+            wallet,
+            info,
+            history: stored_history(vec![StoredTransaction {
+                txid: spender.txid(),
+                transaction: spender.clone(),
+                context: block(101),
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: Vec::new(),
+            }]),
+            asset_locks: [(0, [(out_point, lock)].into())].into(),
+            claims: vec![StoredReplayClaim {
+                outpoint: change,
+                claimant: Some(spender.txid()),
+                mined_height: None,
+            }],
+            on_write: OnWrite::Refuse,
+            writes: 0,
+        };
+        let (mut state, _) = repair_wallet_history(&mut store, &ReplayEvidence::default())
+            .unwrap()
+            .unwrap();
+
+        state.wallet_info.apply_chain_lock(chain_lock(300));
+        state.wallet_info.update_synced_height(300);
+        state
+            .wallet_info
+            .check_core_transaction(&funding, block(100), &mut state.wallet, true, true)
+            .await;
+
+        assert!(
+            !state
+                .wallet_info
+                .utxos()
+                .iter()
+                .any(|coin| coin.outpoint == change),
+            "the change was spent in a final block, so it must never be credited again"
+        );
+    }
+
     /// Only a claim the replay can stand in for, and a fork can release, is
     /// left out: every other stored claim is restored.
     #[tokio::test]
@@ -570,6 +677,78 @@ mod tests {
                 } else {
                     vec![]
                 },
+                "{case}"
+            );
+        }
+    }
+
+    /// A funding withheld from the replay or retired by it guards nothing in
+    /// an account, so the claim on its coin is restored.
+    #[tokio::test]
+    async fn should_restore_the_claim_when_the_funding_did_not_stay_replayed() {
+        let fixture = claimed_spend().await;
+        let unconfirmed_funding = StoredTransaction {
+            context: TransactionContext::Mempool,
+            ..fixture.funding_row.clone()
+        };
+        let mut rival = fixture.funding.clone();
+        rival.output.truncate(1);
+        rival.output[0].script_pubkey = dashcore::ScriptBuf::new();
+        let rival = StoredTransaction {
+            txid: rival.txid(),
+            transaction: rival,
+            context: block(100),
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+        let chain_final = TrackedAssetLock {
+            operation_id: None,
+            shielded_recipient: None,
+            out_point: fixture.spent,
+            transaction: fixture.funding.clone(),
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 0,
+            status: AssetLockStatus::ChainLocked,
+            proof: None,
+        };
+        for (case, transactions, withheld) in [
+            (
+                "withheld chain-final funding",
+                vec![fixture.spender.clone()],
+                true,
+            ),
+            (
+                "funding beaten by a mined rival",
+                vec![rival, unconfirmed_funding, fixture.spender.clone()],
+                false,
+            ),
+        ] {
+            let mut info = fixture.info.clone();
+            info.metadata.last_applied_chain_lock = Some(chain_lock(100));
+            let mut store = MemoryStore::new(&fixture, info, stored_history(transactions));
+            if withheld {
+                store.asset_locks = [(0, [(fixture.spent, chain_final.clone())].into())].into();
+            }
+            let mut state = store.snapshot();
+            let replay =
+                replay_wallet_history_blocking(&mut state, &ReplayEvidence::default()).unwrap();
+            assert!(
+                !replay.replayed_txids.contains(&fixture.funding.txid())
+                    || replay.retired.contains(&fixture.funding.txid()),
+                "{case}: the funding must not stay replayed"
+            );
+            let claim = StoredReplayClaim {
+                outpoint: fixture.spent,
+                claimant: Some(fixture.spender.txid),
+                mined_height: None,
+            };
+
+            assert_eq!(
+                restorable_claims(&state, &replay, &[claim]),
+                vec![(claim.outpoint, claim.claimant)],
                 "{case}"
             );
         }

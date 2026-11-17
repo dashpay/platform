@@ -70,6 +70,8 @@ pub struct HistoryReplay {
     pub authorization: HistoryAuthorization,
     /// How many records went through the wallet checker.
     pub replayed: usize,
+    /// The canonical txids of the records that went through the wallet checker.
+    pub replayed_txids: BTreeSet<Txid>,
     /// Stored transactions the replay removed or left out: the losers of a
     /// settled conflict with their descendants, and the records with unsafe
     /// amounts.
@@ -845,6 +847,10 @@ pub async fn replay_recorded_history_with_evidence(
         recorded_conflicts: BTreeMap::new(),
         authorization,
         replayed: replay.len(),
+        replayed_txids: replay
+            .iter()
+            .map(|stored| stored.transaction.txid())
+            .collect(),
         retired: swept,
         defeated,
         sweeps,
@@ -1570,7 +1576,7 @@ pub(crate) mod tests {
     }
 
     /// The test wallet and its first BIP44 receive address.
-    fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, dashcore::Address) {
+    pub(crate) fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, dashcore::Address) {
         let wallet = test_wallet(WalletAccountCreationOptions::Default);
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
