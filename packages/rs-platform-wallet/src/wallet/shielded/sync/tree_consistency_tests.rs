@@ -15,12 +15,14 @@ use grovedb_commitment_tree::{
 };
 use rusqlite::Connection;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
-use super::{serialize_note, sync_notes_across};
+use super::{serialize_note, sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
-use crate::manager::shielded_sync::ShieldedSyncManager;
+use crate::manager::shielded_sync::{ShieldedSyncManager, WalletShieldedOutcome};
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::keys::OrchardKeySet;
 use crate::wallet::shielded::store::{ShieldedNote, ShieldedStore, SubwalletId};
 use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator};
@@ -74,7 +76,7 @@ async fn sdk_with_notes(notes: Vec<ShieldedEncryptedNote>) -> Arc<Sdk> {
                 .shielded_queries
                 .max_query_chunks,
         );
-    for chunk in 0..16 {
+    for chunk in 0..MAX_CONCURRENT_CHUNK_FETCHES as u64 {
         sdk.mock()
             .expect_fetch(
                 ShieldedEncryptedNotesQuery {
@@ -133,7 +135,7 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
         .unwrap();
 
     assert!(matches!(
-        coordinator.try_sync(true).await,
+        coordinator.try_sync(true, &CancellationToken::new()).await,
         Err(PlatformWalletError::ShieldedTreeInconsistent {
             local_leaf_count: 3,
             chain_leaf_count: 2,
@@ -156,6 +158,22 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
             chain_leaf_count: 2,
         })
     ));
+    // The background pass reports the same verdict per wallet as a typed
+    // outcome, so hosts need not parse the error text to offer a rebuild.
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
+    assert_eq!(summary.error_count(), 1);
+    assert_eq!(summary.success_count(), 0);
+    assert!(
+        matches!(
+            summary.wallet_results.get(&id.wallet_id),
+            Some(WalletShieldedOutcome::TreeInconsistent {
+                local_leaf_count: 3,
+                chain_leaf_count: 2,
+            })
+        ),
+        "background sync must report a typed inconsistency, got {:?}",
+        summary.wallet_results.get(&id.wallet_id)
+    );
     coordinator.rebuild_shielded_tree().await.unwrap();
     {
         let store = coordinator.store().read().await;
@@ -174,7 +192,7 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
             .unwrap(),
         0
     );
-    let summary = coordinator.sync(false).await;
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
     assert_eq!(summary.error_count(), 0);
     assert_eq!(
         summary.success_count(),
@@ -207,9 +225,9 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
     let anchors = ShieldedAnchors::fetch_current(&anchors_sdk).await.unwrap();
     assert!(anchors.0.contains(&root));
     // Enter the caught-up cooldown, then prove explicit rebuild bypasses it.
-    coordinator.sync(false).await;
+    coordinator.sync(false, &CancellationToken::new()).await;
     coordinator.rebuild_shielded_tree().await.unwrap();
-    let summary = coordinator.sync(false).await;
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
     assert_eq!(summary.error_count(), 0);
     assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 2);
 }
@@ -232,6 +250,7 @@ async fn should_rescan_empty_tree_despite_restored_watermark() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .unwrap();
@@ -265,6 +284,7 @@ async fn should_preserve_tree_height_across_reopen_and_ignore_one_block_behind_s
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await
     .expect("one-block-behind source must not trigger inconsistency");
@@ -274,6 +294,32 @@ async fn should_preserve_tree_height_across_reopen_and_ignore_one_block_behind_s
     assert_eq!(store.last_synced_note_index(id).unwrap(), 2);
     store.reset_commitment_tree().unwrap();
     assert_eq!(store.tree_sync_height().unwrap(), None);
+}
+
+#[test]
+fn should_reset_scan_metadata_when_rewinding_for_rebuild() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store =
+        FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100).unwrap();
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let with_notes = SubwalletId::new([42; 32], 0);
+    let empty = SubwalletId::new([42; 32], 1);
+    let (note, _) = owned_note(&keys, 0);
+    store.save_note(with_notes, &note).unwrap();
+    store.set_last_synced_note_index(with_notes, 2).unwrap();
+    store.set_last_synced_note_index(empty, 2).unwrap();
+
+    store.rewind_scan_watermarks();
+
+    // The emptied tree no longer backs the old scan coverage; only the
+    // retained note ledger remains as evidence.
+    let balance = store.local_account_balance(with_notes).unwrap();
+    assert_eq!(balance.last_scanned_index, None);
+    assert_eq!(balance.source, ShieldedBalanceSource::Restored);
+    assert_eq!(balance.spendable_credits, 100);
+    let balance = store.local_account_balance(empty).unwrap();
+    assert_eq!(balance.last_scanned_index, None);
+    assert_eq!(balance.source, ShieldedBalanceSource::NoHistory);
 }
 
 #[test]
@@ -319,6 +365,7 @@ async fn should_record_height_before_appending_commitments() {
         &[(id, keys.viewing_keys())],
         None,
         None,
+        &CancellationToken::new(),
     )
     .await;
     assert!(matches!(
@@ -329,5 +376,145 @@ async fn should_record_height_before_appending_commitments() {
         store.read().await.tree_size().unwrap(),
         0,
         "height persistence must succeed before any corresponding leaf is appended"
+    );
+}
+
+/// A coordinator over a 3-leaf local tree that the 2-note chain contradicts,
+/// with the subwallet's cursor at 2 and the tree's recorded height present.
+async fn inconsistent_coordinator(
+    path: &std::path::Path,
+) -> (Arc<NetworkShieldedCoordinator>, SubwalletId) {
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([42; 32], 0);
+    let (first, first_wire) = owned_note(&keys, 0);
+    let (second, second_wire) = owned_note(&keys, 1);
+    let mut store = FileBackedShieldedStore::open_path(path, 100).unwrap();
+    for note in [&first, &second, &second] {
+        store.append_commitment(&note.cmx, true).unwrap();
+    }
+    store.save_note(id, &first).unwrap();
+    store.set_tree_sync_height(0).unwrap();
+    store.checkpoint_tree(3).unwrap();
+    store.set_last_synced_note_index(id, 2).unwrap();
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        sdk_with_notes(vec![first_wire, second_wire]).await,
+        Network::Testnet,
+        path.to_path_buf(),
+        store,
+    ));
+    coordinator
+        .register_wallet(
+            id.wallet_id,
+            BTreeMap::from([(0, keys.viewing_keys())]),
+            WalletPersister::new(id.wallet_id, Arc::new(NoPlatformPersistence)),
+        )
+        .await
+        .unwrap();
+    (coordinator, id)
+}
+
+#[tokio::test]
+async fn should_leave_tree_and_cursors_untouched_when_rebuild_reset_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tree.sqlite");
+    let (coordinator, id) = inconsistent_coordinator(&path).await;
+    // Fail the LAST statement of the reset, after every tree table was
+    // already emptied: only a single transaction can undo those deletes.
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER reject_height_reset BEFORE DELETE ON shielded_tree_sync_height
+        BEGIN SELECT RAISE(FAIL, 'injected reset failure'); END;",
+    )
+    .unwrap();
+
+    let result = coordinator.rebuild_shielded_tree().await;
+
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedStoreError(_))),
+        "the injected failure must surface: {result:?}"
+    );
+    {
+        let store = coordinator.store().read().await;
+        assert_eq!(store.tree_size().unwrap(), 3, "live tree must be untouched");
+        assert_eq!(
+            store.last_synced_note_index(id).unwrap(),
+            2,
+            "the cursor must not be rewound over an intact tree"
+        );
+    }
+    assert_eq!(
+        FileBackedShieldedStore::open_path(&path, 100)
+            .unwrap()
+            .tree_size()
+            .unwrap(),
+        3,
+        "on-disk tree must be untouched"
+    );
+    conn.execute_batch("DROP TRIGGER reject_height_reset;")
+        .unwrap();
+    // The next pass reports the same verdict, so the host can retry.
+    let summary = coordinator.sync(false, &CancellationToken::new()).await;
+    assert!(
+        matches!(
+            summary.wallet_results.get(&id.wallet_id),
+            Some(WalletShieldedOutcome::TreeInconsistent {
+                local_leaf_count: 3,
+                chain_leaf_count: 2,
+            })
+        ),
+        "a failed rebuild must leave the inconsistency detectable, got {:?}",
+        summary.wallet_results.get(&id.wallet_id)
+    );
+    coordinator.rebuild_shielded_tree().await.unwrap();
+    assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_attribute_a_failed_pass_to_the_wallets_it_snapshotted() {
+    let dir = tempfile::tempdir().unwrap();
+    let (coordinator, id) = inconsistent_coordinator(&dir.path().join("tree.sqlite")).await;
+    // Park the pass on the store write lock, after its account snapshot.
+    let store_guard = coordinator.store().read().await;
+    let pass = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.sync(true, &CancellationToken::new()).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        // Tokio's RwLock is write-preferring: once the pass queues for the
+        // write guard, further readers are refused.
+        while coordinator.store().try_read().is_ok() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the pass never queued for the store write lock");
+    // Unregister mid-pass: the registry drops the wallet at once, and the
+    // store purge queues behind the pass.
+    let unregister = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.unregister_wallet(id.wallet_id).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !coordinator.registered_subwallets().await.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("unregister never dropped the wallet from the registry");
+    drop(store_guard);
+
+    let summary = pass.await.unwrap();
+    unregister.await.unwrap();
+
+    assert!(
+        matches!(
+            summary.wallet_results.get(&id.wallet_id),
+            Some(WalletShieldedOutcome::TreeInconsistent {
+                local_leaf_count: 3,
+                chain_leaf_count: 2,
+            })
+        ),
+        "the failure belongs to the wallets the pass ran for, got {:?}",
+        summary.wallet_results
     );
 }

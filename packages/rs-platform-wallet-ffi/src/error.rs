@@ -656,6 +656,14 @@ pub enum PlatformWalletFFIResultCode {
     /// carry none and accept the caller's.
     ErrorAssetLockRecipientMismatch = 61,
 
+    /// Maps `PlatformWalletError::ShieldedTreeInconsistent`: the local shielded
+    /// commitment tree holds more leaves than a sufficiently fresh sync proves.
+    /// Resyncing cannot repair it; call
+    /// `platform_wallet_manager_shielded_rebuild_tree`, which keeps notes and
+    /// spent status. Also carried per wallet by the shielded sync-completed
+    /// callback. 62-66 are claimed by open branches; see `ERROR_CODE_REGISTRY.md`.
+    ErrorShieldedTreeInconsistent = 67,
+
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
     /// the contact requests with that identity came or went privately
     /// (protocol version 15), so a public `contactRequest` to it, in reply or
@@ -1098,6 +1106,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            PlatformWalletError::ShieldedTreeInconsistent { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedTreeInconsistent
             }
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
@@ -2552,6 +2563,25 @@ mod tests {
         assert_eq!(
             retry.code,
             PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+        );
+    }
+
+    /// Hosts offer the tree rebuild by code alone, so the inconsistent-tree
+    /// verdict must keep its own pinned code rather than flatten.
+    #[test]
+    fn should_map_shielded_tree_inconsistent_to_pinned_code_67() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedTreeInconsistent as i32,
+            67
+        );
+        let result: PlatformWalletFFIResult = PlatformWalletError::ShieldedTreeInconsistent {
+            local_leaf_count: 3,
+            chain_leaf_count: 2,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTreeInconsistent
         );
     }
 
