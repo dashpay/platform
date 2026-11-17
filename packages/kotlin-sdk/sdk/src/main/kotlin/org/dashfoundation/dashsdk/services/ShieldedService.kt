@@ -208,7 +208,9 @@ class ShieldedService(private val database: DashDatabase) {
         _state.value = ShieldedSyncState()
         _shieldedBalance.value = database.shieldedDao()
             .observeUnspentNotesByWallet(walletId)
-            .map { notes -> notes.sumOf { it.value } }
+            // Rust also binds and scans each identity's shielded account. This
+            // balance is the ordinary one: only the accounts the caller bound.
+            .map { notes -> notes.filter { it.accountIndex in sortedAccounts }.sumOf { it.value } }
 
         try {
             manager.configureShielded(dbPath)
