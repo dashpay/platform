@@ -1843,9 +1843,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Accept a contact request that came privately, replying privately: as
     /// [`Self::accept_contact_request_with_external_signer`], with the reply
-    /// sent by [`Self::send_private_contact_request`], signed by `signer`,
-    /// `pay` paying for it and `shielded_address` the address the contact may
-    /// pay us at privately.
+    /// sent by [`Self::send_private_contact_request`], signed by `signer`
+    /// and paid for by `pay`. The address the contact may pay us at
+    /// privately is the one the wallet derives for this contact, as for any
+    /// request it sends.
     ///
     /// As for the send, refused first for a persister that cannot keep a
     /// private payment's recovery marker
