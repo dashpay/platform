@@ -194,7 +194,9 @@ version would leave one referenced by no `PLATFORM_V*` at all.
 
 Leaf implementation modules follow the same boundary. A feature that changes a
 generation a released protocol version selects gets a new `vN` module under the
-method directory. A generation that only the unreleased protocol version
+method directory, unless the edit is inert there (see "Shipped generations are
+frozen unless the change cannot modify consensus" above). A generation that
+only the unreleased protocol version
 selects has never run on a chain, so a later feature in the same protocol
 version edits it in place: a new `vN` there would leave the previous one
 selected by no `PLATFORM_V*`, as with tables.
