@@ -22,8 +22,20 @@ use crate::version::system_limits::SystemLimits;
 /// * Retained-history erasure: one transition removes at most 100 revisions
 ///   (`max_document_revisions_erased_per_transition`, `None` before), as enforced by
 ///   `erase_document_for_contract_operations` 0.
+/// * Enum violations: a document's `enum` violation lists at most 16 of the allowed values
+///   (`max_enum_violation_listed_values`, `None` before), whose JSON takes at most 256 bytes
+///   together (`max_enum_violation_listed_bytes`, `None` before), and counts the others, so
+///   the error stays small, and readable by a client, whatever the schema's enum holds.
+/// * Summed values: a summed property admits values past ±2^27
+///   (`max_summed_value_magnitude_without_type_total`, `None` before) only when it declares a
+///   `minimum` of at least 0 on a type that keeps the total of the property over all its
+///   documents. Registration and update refuse any other; document create state validation 3
+///   and replace state validation 2 hold that total in the range the type's sums hold.
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
+    max_summed_value_magnitude_without_type_total: Some(1 << 27), // changed: larger summed values need a minimum of 0 and the type's total
     max_document_revisions_erased_per_transition: Some(100), // one bounded lifecycle erasure chunk (note 41)
+    max_enum_violation_listed_values: Some(16), // changed: an enum violation lists at most 16 allowed values
+    max_enum_violation_listed_bytes: Some(256), // changed: whose JSON takes at most 256 bytes together
     max_compiled_contract_size: Some(1_048_576), // changed: contracts stored compiled take at most 1 MiB
     max_private_document_entry_size: Some(4096), // changed: a private document type's entries take at most 4096 bytes
     private_document_store_target_chunk_bytes: Some(1024 * 1024), // changed: a private type's store keeps a compacted chunk near 1 MiB

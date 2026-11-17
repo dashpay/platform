@@ -1,7 +1,8 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::contract_user_moderation::state::v0::{
-    fetch_moderated_contract, transform_document_fields_change_v0,
+    fetch_moderated_contract, transform_document_fields_change_v0, transform_document_restore_v0,
     ContractUserModerationStateTransitionStateValidationV0,
 };
 use crate::platform_types::platform::PlatformRef;
@@ -31,15 +32,20 @@ pub(in crate::execution::validation::state_transition::state_transitions::contra
 }
 
 impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserModerationTransition {
-    /// Version 1 (protocol version 15) transforms a document field change so that the change
-    /// leaves the document's storage with whoever holds it. The read of the stored document
-    /// also returns who its storage flags name, and the action carries that identity for Drive
-    /// to write the change in its name.
+    /// Version 1 (protocol version 15) transforms a document field change and a document
+    /// restore itself.
     ///
-    /// Version 0 writes the change in the name of the document's owner. From protocol version
-    /// 15 a document a gas sponsor paid for is held by the contract owner, and a write naming
-    /// another owner hands such a document over: the contract owner would be refunded and the
-    /// moderator charged for the whole document, which its owner could then delete and collect.
+    /// A field change leaves the document's storage with whoever holds it. The read of the
+    /// stored document also returns who its storage flags name, and the action carries that
+    /// identity for Drive to write the change in its name. Version 0 writes the change in the
+    /// name of the document's owner. From protocol version 15 a document a gas sponsor paid
+    /// for is held by the contract owner, and a write naming another owner hands such a
+    /// document over: the contract owner would be refunded and the moderator charged for the
+    /// whole document, which its owner could then delete and collect.
+    ///
+    /// A restore is held to the total its type keeps of its summed property, as a create is:
+    /// it puts the document's summed value back in the type's sums, which other writes may
+    /// have raised while the document was gone. Version 0 reads no total.
     ///
     /// Every other action transforms through version 0, unchanged.
     fn transform_into_action_v1<C: CoreRPCLike>(
@@ -50,13 +56,12 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let ContractUserModerationAction::ChangeDocumentFields {
-            document_type_name,
-            document_id,
-            fields,
-            ..
-        } = self.action()
-        else {
+        let action = self.action();
+        if !matches!(
+            action,
+            ContractUserModerationAction::ChangeDocumentFields { .. }
+                | ContractUserModerationAction::RestoreDocument { .. }
+        ) {
             return self.transform_into_action_v0(
                 platform,
                 block_info,
@@ -64,7 +69,7 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
                 tx,
                 platform_version,
             );
-        };
+        }
 
         // The contract is read, and its absence refused, as version 0 does for every action.
         let contract_id = self.data_contract_id();
@@ -87,18 +92,44 @@ impl ContractUserModerationStateTransitionStateValidationV1 for ContractUserMode
             ));
         };
 
-        transform_document_fields_change_v0(
-            self,
-            platform,
-            block_info,
-            &contract_fetch_info,
-            document_type_name,
-            *document_id,
-            fields,
-            true,
-            execution_context,
-            tx,
-            platform_version,
-        )
+        match action {
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name,
+                document_id,
+                fields,
+                ..
+            } => transform_document_fields_change_v0(
+                self,
+                platform,
+                block_info,
+                &contract_fetch_info,
+                document_type_name,
+                *document_id,
+                fields,
+                true,
+                execution_context,
+                tx,
+                platform_version,
+            ),
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document,
+            } => transform_document_restore_v0(
+                self,
+                platform,
+                block_info,
+                &contract_fetch_info,
+                document_type_name,
+                document.as_slice(),
+                true,
+                execution_context,
+                tx,
+                platform_version,
+            ),
+            // Every other action left through version 0 above.
+            _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "only a field change and a restore transform through version 1",
+            ))),
+        }
     }
 }

@@ -87,6 +87,7 @@ mod referenced_rules;
 mod restore_constraints;
 mod retraction;
 mod seated_team;
+mod type_total;
 mod typed_array_counters;
 mod typed_array_where;
 

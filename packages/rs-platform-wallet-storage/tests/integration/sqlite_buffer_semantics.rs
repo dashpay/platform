@@ -787,3 +787,62 @@ fn atom_006_commit_writes_continues_past_per_wallet_failures() {
     assert_eq!(read_synced_height(&path, &b), Some(2));
     assert_eq!(read_synced_height(&path, &c), Some(3));
 }
+
+/// A changeset a flush dropped for good is counted for the wallet it was
+/// buffered for, whichever call drained the buffer: `commit_writes`, which a
+/// wallet's own count of the flushes it made does not see, as much as
+/// `flush`. One a flush kept for a retry, or wrote, is not counted.
+#[test]
+fn should_count_a_changeset_dropped_by_a_commit_the_wallet_did_not_make() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xD1);
+    let other = wid(0xD2);
+    ensure_wallet_meta(&persister, &w);
+    assert_eq!(persister.buffered_writes_dropped(w), Some(0));
+
+    persister
+        .store(w, changeset(core_with_height(4, 4)))
+        .unwrap();
+    persister.force_next_flush_to_fail(make_busy_error());
+    let report = persister.commit_writes().expect("the commit reports");
+    assert_eq!(report.failed.len(), 1, "the transient failure is reported");
+    assert_eq!(
+        persister.buffered_writes_dropped(w),
+        Some(0),
+        "kept for a retry"
+    );
+
+    persister.force_next_flush_to_fail(make_fatal_error());
+    let report = persister.commit_writes().expect("the commit reports");
+    assert_eq!(report.failed.len(), 1, "the fatal failure is reported");
+    assert_eq!(
+        persister.buffered_writes_dropped(w),
+        Some(1),
+        "dropped for good"
+    );
+    assert_eq!(
+        persister.buffered_writes_dropped(other),
+        Some(0),
+        "another wallet's count is its own"
+    );
+    assert_eq!(read_synced_height(&path, &w), None);
+
+    persister
+        .store(w, changeset(core_with_height(5, 5)))
+        .unwrap();
+    let report = persister.commit_writes().expect("the commit reports");
+    assert!(report.failed.is_empty());
+    assert_eq!(persister.buffered_writes_dropped(w), Some(1), "written");
+    assert_eq!(read_synced_height(&path, &w), Some(5));
+
+    persister
+        .store(w, changeset(core_with_height(6, 6)))
+        .unwrap();
+    persister.force_next_flush_to_fail(make_fatal_error());
+    persister.flush(w).expect_err("the flush fails for good");
+    assert_eq!(
+        persister.buffered_writes_dropped(w),
+        Some(2),
+        "a flush that drops is counted the same way"
+    );
+}

@@ -244,6 +244,13 @@ before drop to make Manual-mode writes durable.
 `succeeded` / `failed` / `still_pending` vectors classify each dirty wallet
 so one failed wallet does not hide its siblings.
 
+A wallet that makes a record durable before acting on it counts only the
+flushes it makes itself. A commit made here, or a `flush` called on the
+persister directly, is not one of them, so the persister counts every
+changeset it drops without writing, whichever call drained the buffer, and
+reports the count through `PlatformWalletPersistence::buffered_writes_dropped`.
+The wallet then refuses to trust a record such a commit may have taken.
+
 #### load() reconstruction
 
 `SqlitePersister::load()` returns a fully-rehydrated `ClientStartState`

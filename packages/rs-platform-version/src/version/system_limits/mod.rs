@@ -9,6 +9,17 @@ pub struct SystemLimits {
     /// Maximum retained revisions removed by one erase, read by
     /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
     pub max_document_revisions_erased_per_transition: Option<u16>,
+    /// Most allowed values a document's `enum` violation lists in its parameters and its
+    /// message, the first the schema writes; the others are counted, not listed. Read by the
+    /// native document validator (`validation_schema` 0, which `validate_document` 2 of
+    /// protocol version 15 runs). `None` in the earlier tables, whose document validation
+    /// never reaches it.
+    pub max_enum_violation_listed_values: Option<u16>,
+    /// Most bytes the JSON of the allowed values a document's `enum` violation lists takes
+    /// together; listing stops before the first value that would go past it, or that is an
+    /// array or an object. Read with `max_enum_violation_listed_values`, and `None` where it
+    /// is.
+    pub max_enum_violation_listed_bytes: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,
     /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
@@ -517,6 +528,21 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The largest magnitude a summed property may admit on a document type that keeps no
+    /// total a write can be checked against, enforced when a contract is registered or updated
+    /// (full validation only, like `max_contested_summed_value_magnitude`): unless the
+    /// property's schema declares a `maximum` of at most this and a `minimum` of at least its
+    /// negation, it must declare a `minimum` of at least 0 and the type must keep the total of
+    /// the property over all its documents (`documentsSummable` or `documentsAverageable`).
+    /// With every value this small, a sum of fewer than 2^36 documents stays in `i64`. With
+    /// values that are never negative, no sum of the type exceeds the type's total times the
+    /// entries one document adds to an index, so state validation holds every sum in `i64` by
+    /// reading that one total before a create or a replace. Read by the document type parser
+    /// from generation 3 on and by the document create and replace state validation of
+    /// protocol version 15.
+    ///
+    /// `None` preserves the behavior of protocol versions that do not read it.
+    pub max_summed_value_magnitude_without_type_total: Option<u64>,
     /// The highest `maxItems` a typed array may declare when an index keys the document by
     /// its elements, enforced when a contract is registered or updated (full validation only,
     /// like `max_typed_array_items`). Each distinct element is one index entry, so this is the

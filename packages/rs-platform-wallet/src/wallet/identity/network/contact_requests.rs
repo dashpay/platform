@@ -1121,6 +1121,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ),
         }
 
+        // 4e. The sender's shielded payment address for this contact, when the
+        //     identity's shielded account was proven against the seed in this
+        //     session and the network's contact requests carry one; the request
+        //     goes without it otherwise.
+        let shielded_address = self
+            .contact_shielded_address(sender_identity_id, recipient_identity_id, account_reference)
+            .await?;
+
         // 5. Build the signing key reference for document signing.
         let identity_public_key = sender_identity
             // Contact-request send writes a document state transition,
@@ -1176,6 +1184,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 account_reference,
                 account_label,
                 auto_accept_proof,
+                shielded_address,
                 shared_secret,
                 expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,

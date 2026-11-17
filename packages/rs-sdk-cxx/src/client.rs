@@ -550,6 +550,7 @@ impl PlatformClient {
                         Error::Generic("the wallet refused the contact xpub".to_string())
                     }))
                 };
+                let shielded_address = marshal::shielded_address(&input.shielded_address)?;
                 let (sender, key) =
                     identity_and_key(&sdk, Identifier::from(input.sender), input.signing_key_id)
                         .await?;
@@ -560,6 +561,7 @@ impl PlatformClient {
                     recipient_key_index: input.recipient_key_index,
                     account_reference: input.account_reference,
                     account_label: (!input.account_label.is_empty()).then_some(input.account_label),
+                    shielded_address,
                     auto_accept_proof: None,
                 };
                 let sent = sdk

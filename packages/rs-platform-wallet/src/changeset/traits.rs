@@ -399,6 +399,20 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Write all buffered changesets atomically for the given wallet, then
     /// clear that wallet's buffer.
     ///
+    /// ## Order of concurrent flushes (required)
+    ///
+    /// What a flush took from the buffer MUST reach the disk before anything
+    /// a later flush takes. Two flushes of one wallet that run at once must
+    /// not write in the other order: the older state of a record would land
+    /// over the newer, and a restart would load it. Holding one lock across
+    /// the take and the write, as the SQLite backend does, is enough; a
+    /// backend whose `store` is the commit has nothing to order.
+    ///
+    /// The wallet refuses a store it makes durable when another flush
+    /// returned while it did (`WalletPersister::store_durably`), so those do
+    /// not rest on this. Everything else that is stored and then flushed
+    /// does.
+    ///
     /// # Errors
     ///
     /// Implementations classify failures via
@@ -512,6 +526,32 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Err(StoreAndCommitError::NotStaged(PersistenceError::backend(
             "this backend does not offer an atomic store and commit",
         )))
+    }
+
+    /// How many times this backend has dropped what it had buffered for
+    /// `wallet_id` without writing it, by whatever drained the buffer, or
+    /// wrote it only to delete it again with the wallet's records. It only
+    /// grows. `None`, the default, when the backend does not count them.
+    ///
+    /// The wallet counts the flushes it makes itself, and so learns of a
+    /// drop only when one of those fails. A backend whose buffer can be
+    /// drained any other way (a commit the host calls on the backend, a
+    /// `flush` the host calls directly, a discard) MUST count every
+    /// changeset it drops here, and count it before a later flush of the
+    /// wallet can begin: the wallet then refuses to trust a record that such
+    /// a drain may have taken. Without the count, a record stored and then
+    /// flushed by the wallet is trusted even when the host's own commit took
+    /// it first and failed for good.
+    ///
+    /// Not read for a backend that keeps no buffer, which is one whose
+    /// `store` is the commit ([`Self::store_commits_inline`]) and that does
+    /// not commit a store in one step
+    /// ([`Self::offers_store_and_commit`]): it buffers nothing a flush could
+    /// drop. A backend that offers the step is read whatever its `store`
+    /// does, as it keeps a changeset whose commit failed transiently.
+    fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
+        let _ = wallet_id;
+        None
     }
 
     /// Replace the persisted tracked-masternode set for `network` with

@@ -6,6 +6,13 @@
 //! endpoints, quorum keys ([`context`]) and wallet ([`signer`]). Each entry
 //! point ([`client`]) forwards to `dash-sdk` and returns a [`ffi::Status`].
 //! No panic reaches C++: every entry point runs under [`guarded`].
+//!
+//! The shared structs of [`ffi`] are laid out in the generated header
+//! (`dash/sdk/ffi.h`), which each build stages next to its static archive.
+//! The two go together. A struct that gains a member changes its layout, so
+//! an embedder that takes a new archive rebuilds every caller against the
+//! header of the same build: an old header passes and reads these structs at
+//! the old offsets.
 
 #[cfg(panic = "abort")]
 compile_error!("dash-sdk-cxx requires panic = \"unwind\"; its FFI guards rely on catch_unwind");
@@ -212,6 +219,9 @@ pub mod ffi {
         account_reference: u64,
         encrypted_account_label: Vec<u8>,
         auto_accept_proof: Vec<u8>,
+        /// The sender's shielded payment address for this contact, encrypted
+        /// under the request's shared key as stored.
+        encrypted_shielded_address: Vec<u8>,
         created_at_ms: u64,
         created_at_core_height: u32,
     }
@@ -248,7 +258,10 @@ pub mod ffi {
     }
 
     /// `signing_key_id`: the sender's key that signs the document.
-    /// `account_label` empty = none.
+    /// `account_label` empty = none. `shielded_address` empty = none;
+    /// otherwise the sender's shielded payment address for this contact, 43
+    /// raw bytes, sent encrypted under the request's shared key. A network
+    /// below protocol version 15 refuses a request that carries one.
     #[derive(Debug, Clone)]
     struct ContactRequestInput {
         sender: [u8; 32],
@@ -258,6 +271,7 @@ pub mod ffi {
         signing_key_id: u32,
         account_reference: u32,
         account_label: String,
+        shielded_address: Vec<u8>,
     }
 
     /// The DIP-15 compact extended public key, unvalidated beyond its
