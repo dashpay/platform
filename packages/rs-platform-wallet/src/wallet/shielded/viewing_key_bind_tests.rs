@@ -48,10 +48,9 @@ struct CapturingPersistence {
     /// has not yet opened its install transaction. A real host callback
     /// blocks its calling thread the same way.
     load_gate: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
-    /// Incremented on ENTRY to `load()`, before the gate blocks — the
-    /// handshake a test waits on to know a bind has actually reached the
-    /// gate rather than merely having been spawned.
-    load_entries: Mutex<usize>,
+    /// Notified when a `load()` reaches the gate, so a test waits for the
+    /// gated call itself instead of polling a counter against the clock.
+    gated_load_entered: tokio::sync::Notify,
     fail_next_load: Mutex<bool>,
 }
 
@@ -98,9 +97,14 @@ impl CapturingPersistence {
         tx
     }
 
-    /// How many `load()` calls have STARTED (gated ones included).
-    fn load_entries(&self) -> usize {
-        *self.load_entries.lock().expect("load_entries lock")
+    /// Wait until a `load()` is parked at the gate ([`Self::gate_next_load`]).
+    async fn gated_load_entered(&self) {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            self.gated_load_entered.notified(),
+        )
+        .await
+        .expect("no load reached the gate");
     }
 }
 
@@ -130,7 +134,6 @@ impl PlatformWalletPersistence for CapturingPersistence {
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        *self.load_entries.lock().expect("load_entries lock") += 1;
         if std::mem::take(&mut *self.fail_next_load.lock().expect("failure lock")) {
             return Err(PersistenceError::backend(
                 "injected local restore load failure",
@@ -140,6 +143,7 @@ impl PlatformWalletPersistence for CapturingPersistence {
         // stuck behind the mutex of the one being held.
         let gate = self.load_gate.lock().expect("load_gate lock").take();
         if let Some(rx) = gate {
+            self.gated_load_entered.notify_one();
             let _ = rx.recv();
         }
         *self.load_calls.lock().expect("load_calls lock") += 1;
@@ -812,21 +816,11 @@ async fn should_hold_a_removal_until_a_bind_in_flight_returns() {
     let seed = [0x42u8; 64];
 
     let release = persister.gate_next_load();
-    let entries_before = persister.load_entries();
     let binder = {
         let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
         tokio::spawn(async move { wallet.bind_shielded(&seed, &[0], &coordinator).await })
     };
-    for _ in 0..400 {
-        if persister.load_entries() > entries_before {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-    assert!(
-        persister.load_entries() > entries_before,
-        "the bind never reached the persister load"
-    );
+    persister.gated_load_entered().await;
 
     let mut removal = std::pin::pin!(wallet.generation().teardown_guard());
     assert!(
@@ -997,19 +991,9 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    let entries_before = persister.load_entries();
     let release = persister.gate_next_load();
     let bind = tokio::spawn(bind);
-    for _ in 0..400 {
-        if persister.load_entries() > entries_before {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-    assert!(
-        persister.load_entries() > entries_before,
-        "the bind never reached the persister load"
-    );
+    persister.gated_load_entered().await;
 
     let mut clear = std::pin::pin!(coordinator.clear());
     assert!(
@@ -1235,6 +1219,52 @@ async fn should_refuse_a_bind_on_a_second_coordinator_while_the_first_exists() {
         .expect("bound again on the first coordinator");
 }
 
+/// A bind dropped after it registered the wallet on a coordinator, while it
+/// waited for the key slot, leaves that registration behind. The wallet
+/// records the coordinator before that wait, so it still refuses another
+/// coordinator: the first one would otherwise go on scanning and persisting
+/// for a wallet that moved.
+#[tokio::test]
+async fn should_refuse_a_second_coordinator_after_a_bind_dropped_once_it_registered() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let first = coordinator_at(&temp_dir("bind_dropped_first_coordinator"));
+    let second = coordinator_at(&temp_dir("bind_dropped_second_coordinator"));
+    let seed = [0x42u8; 64];
+
+    // A reader of the key slot, as a balance read is, parks the bind at the
+    // slot's write lock: the last wait of its install, after registration.
+    let reader = wallet.shielded_keys.read().await;
+    let mut bind = Box::pin(wallet.bind_shielded(&seed, &[0], &first));
+    assert!(
+        futures::poll!(bind.as_mut()).is_pending(),
+        "the bind waits for the key slot"
+    );
+    drop(bind);
+    drop(reader);
+    assert!(
+        first
+            .registered_subwallets()
+            .await
+            .contains(&SubwalletId::new(wallet.wallet_id(), 0)),
+        "the dropped bind had registered the wallet"
+    );
+
+    let refused = wallet.bind_shielded(&seed, &[0], &second).await;
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::InvalidParameter(_))
+        ),
+        "{refused:?}"
+    );
+    assert!(second.registered_subwallets().await.is_empty());
+    wallet
+        .bind_shielded(&seed, &[0], &first)
+        .await
+        .expect("the bind completes on the first coordinator");
+}
+
 /// Two binds of one wallet must not interleave: neither may publish its
 /// registration while the other's transaction is open. That is what
 /// keeps the handle's key slot and the coordinator's registration from
@@ -1372,21 +1402,11 @@ async fn add_account_does_not_hold_the_key_slot_across_host_persistence() {
         .expect("bind succeeds");
 
     let release = persister.gate_next_load();
-    let entries_before = persister.load_entries();
     let adder = {
         let wallet = wallet.clone();
         tokio::spawn(async move { wallet.shielded_add_account(&seed, 1).await })
     };
-    for _ in 0..400 {
-        if persister.load_entries() > entries_before {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-    assert!(
-        persister.load_entries() > entries_before,
-        "add_account never reached the persister load"
-    );
+    persister.gated_load_entered().await;
 
     // The slot must still be readable while the host call is parked.
     let read = tokio::time::timeout(

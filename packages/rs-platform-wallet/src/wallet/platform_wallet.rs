@@ -923,8 +923,9 @@ impl PlatformWallet {
     /// can rebind via [`bind_shielded_from_persisted`] without
     /// resolving the mnemonic at all.
     ///
-    /// Idempotent: a second call replaces the previously-bound
-    /// shielded wallet (e.g. after a network switch).
+    /// Idempotent on the coordinator the wallet is bound on: a second call
+    /// there replaces the previously-bound shielded wallet. A different
+    /// coordinator is refused while the one the wallet is bound on exists.
     ///
     /// `accounts` must be non-empty; pass `&[0]` for the
     /// single-account default. They are the ordinary accounts to bind,
@@ -1370,10 +1371,12 @@ impl PlatformWallet {
         install
             .register(account_views.clone(), self.persister.clone())
             .await?;
-        // Publish wallet keys only after registration accepted the new shape.
-        *self.shielded_keys.write().await = Some(account_views);
-        // The bind holds the coordinator's operation admission, so no Clear
-        // runs between this read of its generation and the bind's return.
+        // Record the coordinator before the next wait. A bind dropped while
+        // it waits for the key slot below leaves the wallet registered on
+        // `coordinator`, and the wallet must know it: a later bind on
+        // another coordinator is refused only for a recorded one. The bind
+        // holds the coordinator's operation admission, so no Clear runs
+        // between this read of its generation and the bind's return.
         *self
             .shielded_binding
             .lock()
@@ -1381,6 +1384,8 @@ impl PlatformWallet {
             coordinator: Arc::downgrade(coordinator),
             clear_generation: coordinator.clear_generation(),
         });
+        // Publish wallet keys only after registration accepted the new shape.
+        *self.shielded_keys.write().await = Some(account_views);
 
         // Idempotent re-bind fast path: hosts re-run bind liberally
         // (launch fires it twice — a direct call plus the wallet-set

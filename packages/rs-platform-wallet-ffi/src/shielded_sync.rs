@@ -406,7 +406,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// `ErrorWalletOperation`.
 ///
 /// Idempotent: a second call replaces the previously-bound
-/// shielded wallet on the same `wallet_id`.
+/// shielded wallet on the same `wallet_id`. The wallet stays on the
+/// manager's coordinator; a bind on another one is refused.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.
