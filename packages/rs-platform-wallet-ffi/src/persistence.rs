@@ -206,7 +206,9 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_ST
 /// `on_persist_asset_lock_payment_intent_fn` and
 /// `on_load_asset_lock_payment_intent_fn` next to the legacy asset-lock
 /// persist/load callbacks; with it the row is stored and flushed before the
-/// lock is sent. Reported, never required: a host without the slots keeps the
+/// lock is sent. The row and its intent arrive in separate callbacks, so they
+/// commit as one unit only on a host that also attests `ATOMIC_CHANGESETS`.
+/// Reported, never required: a host without the slots keeps the
 /// best-effort row and loads such rows with no intent.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS: u64 = 1 << 16;
 /// Capacity of the buffer `on_load_asset_lock_payment_intent_fn` writes into:
