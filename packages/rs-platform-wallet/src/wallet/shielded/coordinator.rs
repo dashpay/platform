@@ -3806,8 +3806,10 @@ mod tests {
     }
 
     /// A host persister that keeps the activity rows it holds durably by id,
-    /// last write wins, as the Swift persistence callback does, and the
-    /// nullifiers of the notes it holds spent.
+    /// last write wins, as the Swift persistence callback does, and its notes
+    /// by nullifier with whether each is spent, as the Swift and Kotlin hosts
+    /// do: a saved note is upserted, and a spent nullifier marks a note the
+    /// host holds and skips one it does not.
     struct RecordingHost {
         mode: std::sync::Mutex<HostMode>,
         /// What [`PlatformWalletPersistence::persists_shielded_settlement`] answers.
@@ -3816,8 +3818,34 @@ mod tests {
         durable: std::sync::Mutex<
             BTreeMap<[u8; 32], crate::wallet::shielded::activity::ShieldedActivityEntry>,
         >,
-        buffered_spent: std::sync::Mutex<Vec<[u8; 32]>>,
-        durable_spent: std::sync::Mutex<std::collections::BTreeSet<[u8; 32]>>,
+        buffered_notes: std::sync::Mutex<Vec<HostNoteWrite>>,
+        durable_notes: std::sync::Mutex<BTreeMap<[u8; 32], bool>>,
+    }
+
+    /// One note write a host store carries, in the order the FFI persister
+    /// sends them: saved notes, then spent nullifiers.
+    #[derive(Debug, Clone, Copy)]
+    enum HostNoteWrite {
+        Saved { nullifier: [u8; 32], is_spent: bool },
+        Spent([u8; 32]),
+    }
+
+    impl HostNoteWrite {
+        fn apply(self, notes: &mut BTreeMap<[u8; 32], bool>) {
+            match self {
+                Self::Saved {
+                    nullifier,
+                    is_spent,
+                } => {
+                    notes.insert(nullifier, is_spent);
+                }
+                Self::Spent(nullifier) => {
+                    if let Some(spent) = notes.get_mut(&nullifier) {
+                        *spent = true;
+                    }
+                }
+            }
+        }
     }
 
     impl RecordingHost {
@@ -3827,8 +3855,8 @@ mod tests {
                 settles: std::sync::atomic::AtomicBool::new(true),
                 buffered: Default::default(),
                 durable: Default::default(),
-                buffered_spent: Default::default(),
-                durable_spent: Default::default(),
+                buffered_notes: Default::default(),
+                durable_notes: Default::default(),
             })
         }
 
@@ -3856,13 +3884,13 @@ mod tests {
 
         /// Whether the host holds the note of `nullifier` spent durably.
         fn holds_spent(&self, nullifier: &[u8; 32]) -> bool {
-            self.durable_spent.lock().unwrap().contains(nullifier)
+            self.durable_notes.lock().unwrap().get(nullifier) == Some(&true)
         }
 
         /// A process exit: what was not flushed is gone.
         fn crash(&self) {
             self.buffered.lock().unwrap().clear();
-            self.buffered_spent.lock().unwrap().clear();
+            self.buffered_notes.lock().unwrap().clear();
         }
     }
 
@@ -3881,7 +3909,22 @@ mod tests {
             changeset: crate::changeset::PlatformWalletChangeSet,
         ) -> Result<(), crate::changeset::PersistenceError> {
             let shielded = changeset.shielded.unwrap_or_default();
-            let spent: Vec<[u8; 32]> = shielded.nullifiers_spent.into_values().flatten().collect();
+            let notes: Vec<HostNoteWrite> = shielded
+                .notes_saved
+                .into_values()
+                .flatten()
+                .map(|note| HostNoteWrite::Saved {
+                    nullifier: note.nullifier,
+                    is_spent: note.is_spent,
+                })
+                .chain(
+                    shielded
+                        .nullifiers_spent
+                        .into_values()
+                        .flatten()
+                        .map(HostNoteWrite::Spent),
+                )
+                .collect();
             let rows: Vec<_> = shielded.activity_entries.into_values().flatten().collect();
             match self.mode() {
                 HostMode::StoreFails => Err(crate::changeset::PersistenceError::backend_with_kind(
@@ -3893,12 +3936,15 @@ mod tests {
                     for row in rows {
                         durable.insert(row.id, row);
                     }
-                    self.durable_spent.lock().unwrap().extend(spent);
+                    let mut durable_notes = self.durable_notes.lock().unwrap();
+                    for write in notes {
+                        write.apply(&mut durable_notes);
+                    }
                     Ok(())
                 }
                 HostMode::FlushFails => {
                     self.buffered.lock().unwrap().extend(rows);
-                    self.buffered_spent.lock().unwrap().extend(spent);
+                    self.buffered_notes.lock().unwrap().extend(notes);
                     Ok(())
                 }
             }
@@ -3915,10 +3961,10 @@ mod tests {
             for row in self.buffered.lock().unwrap().drain(..) {
                 durable.insert(row.id, row);
             }
-            self.durable_spent
-                .lock()
-                .unwrap()
-                .extend(self.buffered_spent.lock().unwrap().drain(..));
+            let mut durable_notes = self.durable_notes.lock().unwrap();
+            for write in self.buffered_notes.lock().unwrap().drain(..) {
+                write.apply(&mut durable_notes);
+            }
             Ok(())
         }
 

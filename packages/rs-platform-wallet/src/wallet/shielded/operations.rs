@@ -34,7 +34,7 @@ use super::store::{
 };
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_tracking_endpoint, broadcast_was_refused,
-    carries_consensus_rejection, BroadcastDelivery,
+    carries_consensus_rejection, refused_before_sending, BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -3558,8 +3558,8 @@ async fn keep_identity_outcome<S: ShieldedStore>(
     }
 }
 
-/// Keep `endpoint`, the node a dispatch of identity create `activity_id` reached or is about to
-/// reach, with its recovery record, so the sync pass reads its outcome from that node only. True
+/// Keep `endpoint`, the node a dispatch of identity create `activity_id` may have reached, with its
+/// recovery record, so the sync pass reads its outcome from that node only. True
 /// when it is kept; a failure is logged and returns false.
 async fn keep_outcome_endpoint<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -3847,12 +3847,14 @@ async fn write_proven_identity_create_row<S: ShieldedStore>(
 }
 
 /// Mark every note held identity create `redrive` consumed spent in the in-memory store, and put
-/// each onto `changeset` as spent whether or not the store already had it so. A spent-note delta
-/// queued earlier, by its result wait or its outcome read, may never have reached the host, and
-/// a scan that finds a note already spent emits none: the pass that settles the create's row is
-/// the last chance to write them. False, logged, when a note did not mark, or the store does not
-/// hold one of them: a spent-note delta only updates a note the host holds, so the record stays
-/// until the store holds every note it consumed.
+/// each onto `changeset` as spent whether or not the store already had it so: as a spent-note
+/// delta, and as the whole note, spent, among the saved notes. A spent-note delta queued earlier,
+/// by its result wait or its outcome read, may never have reached the host, and a scan that finds
+/// a note already spent emits none: the pass that settles the create's row is the last chance to
+/// write them. A spent-note delta only updates a note the host holds, and a host skips one it
+/// lacks; the whole note is upserted, so the host holds every consumed note spent even if it
+/// never had one. False, logged, when a note did not mark, or the store does not hold one of
+/// them: the record stays until the store holds every note it consumed.
 async fn replay_identity_create_spends<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -3889,6 +3891,27 @@ async fn replay_identity_create_spends<S: ShieldedStore>(
                 return false;
             }
         }
+        let consumed: Vec<ShieldedNote> = match store.get_all_notes(id) {
+            Ok(notes) => notes
+                .into_iter()
+                .filter(|note| redrive.nullifiers.contains(&note.nullifier))
+                .map(|note| ShieldedNote {
+                    is_spent: true,
+                    ..note
+                })
+                .collect(),
+            Err(e) => {
+                warn!(
+                    activity_id = %hex::encode(redrive.activity_id),
+                    error = %e,
+                    "held identity create: its notes did not read; settled next pass"
+                );
+                return false;
+            }
+        };
+        let saved = changeset.notes_saved.entry(id).or_default();
+        saved.retain(|note| !redrive.nullifiers.contains(&note.nullifier));
+        saved.extend(consumed);
     }
     let spent = changeset.nullifiers_spent.entry(id).or_default();
     for nullifier in &redrive.nullifiers {
@@ -4960,20 +4983,23 @@ async fn bump_redrive_attempts_logged<S: ShieldedStore>(
 /// ([`ShieldedStore::retire_undelivered_spend`]): the attempt is counted
 /// before the broadcast starts, so a retirement after the claim sees it and
 /// refuses. A record retired, armed again with other bytes, or out of attempts
-/// since `redrive` was read is not claimed, and not broadcast. Returns the
-/// attempt count, or `None` when nothing was claimed: a counter that fails to
-/// persist claims nothing.
+/// since `redrive` was read is not claimed, and not broadcast; with `budgeted`
+/// false, as for the dispatch that acquires a held identity create's node
+/// ([`redrive_one`]), the attempts made so far do not bar the claim. Returns
+/// the attempt count, or `None` when nothing was claimed: a counter that fails
+/// to persist claims nothing.
 async fn claim_redrive_attempt<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     redrive: &PendingRedrive,
+    budgeted: bool,
 ) -> Option<u32> {
     let mut store = store.write().await;
     let live = store.pending_redrives(id).is_ok_and(|current| {
         current.iter().any(|record| {
             record.activity_id == redrive.activity_id
                 && record.st_bytes == redrive.st_bytes
-                && record.attempts < MAX_REDRIVE_ATTEMPTS
+                && (!budgeted || record.attempts < MAX_REDRIVE_ATTEMPTS)
         })
     });
     if !live {
@@ -5134,8 +5160,9 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 ///
 /// A held identity create is re-broadcast only to the node it was
 /// delivered to, through an SDK scoped to it; one no node was kept for goes
-/// to one node, kept with its record before anything is sent;
-/// and none is re-broadcast once the scan
+/// to one node, kept with its record once the dispatch was not refused
+/// before sending ([`redrive_unkept_identity_creates`] does that past the
+/// budget); and none is re-broadcast once the scan
 /// saw its notes spent or its outcome is proven:
 /// [`settle_held_identity_creates`] settles it then.
 ///
@@ -5183,10 +5210,12 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
 }
 
 /// Sync-time recovery of `id`'s held identity creates (Type 20) no node was kept for: each is
-/// re-broadcast to one node, kept with its record ([`redrive_one`]), so the sync pass can read its
-/// outcome there ([`settle_held_identity_creates`]). Scheduled from the record journal on every
-/// completed pass, whatever reservations or recorded anchors are left: a scan that saw a create's
-/// notes spent cleared its reservations but kept its record.
+/// re-broadcast to one node, kept with its record once the dispatch was not refused before sending
+/// ([`redrive_one`]), so the sync pass can read its outcome there
+/// ([`settle_held_identity_creates`]). Scheduled from the record journal on every completed pass,
+/// whatever reservations or recorded anchors are left (a scan that saw a create's notes spent
+/// cleared its reservations but kept its record), and whatever attempts the record has made: a
+/// record saved by an earlier build, or one whose node did not persist, keeps a way to a node.
 pub(super) async fn redrive_unkept_identity_creates<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -5209,10 +5238,10 @@ pub(super) async fn redrive_unkept_identity_creates<S: ShieldedStore>(
         if cancel.is_cancelled() {
             return;
         }
+        // Not bounded by the re-broadcast budget: see `redrive_one`.
         if redrive.identity_outcome != Some(IdentityCreateOutcome::Awaiting)
             || redrive.outcome_endpoint.is_some()
             || redrive.nullifiers.is_empty()
-            || redrive.attempts >= MAX_REDRIVE_ATTEMPTS
         {
             continue;
         }
@@ -5263,16 +5292,38 @@ async fn redrive_one<S: ShieldedStore>(
     if held_at.is_some() && notes_seen_spent(store, id, &redrive.nullifiers).await {
         return;
     }
-    // A held identity create no node was kept for goes to one node, kept with its record
-    // before anything is sent or an attempt spent, so its outcome can be read there. With no
-    // node to send to, or a node that could not be kept, nothing is sent and no attempt is
-    // spent: a later pass sends it and keeps its node.
-    let held_at = match held_at {
+    // A held identity create no node was kept for goes to one node, and that node is kept with
+    // its record only once the dispatch was not refused before sending: a kept node always
+    // holds the transition, so its outcome may be read there. This acquisition is not bounded
+    // by the re-broadcast budget: a create whose node was never kept (one saved by an earlier
+    // build, one whose node did not persist) would otherwise never get one, and its outcome
+    // would never be read. Its dispatch still counts as an attempt, so a claimed one blocks
+    // retiring the record as never delivered. With no node to send to, nothing is sent.
+    let (held_at, acquiring) = match held_at {
         None if redrive.held_for_identity_outcome() => {
             let Some(endpoint) = sdk.address_list().get_live_address() else {
                 debug!("redrive: no node to send a held identity create to; not re-broadcast");
                 return;
             };
+            (Some(endpoint), true)
+        }
+        held_at => (held_at, false),
+    };
+    let broadcaster = match held_at.as_ref() {
+        Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
+        None => Arc::clone(sdk),
+    };
+    let Some(attempts) = claim_redrive_attempt(store, id, &redrive, !acquiring).await else {
+        return;
+    };
+    let broadcast_result = st.broadcast(&broadcaster, None).await;
+    let held_at = match held_at {
+        Some(endpoint) if acquiring => {
+            if !dispatch_left_wallet(&broadcast_result) {
+                debug!("redrive: a held identity create was refused before sending; no node kept");
+                return;
+            }
+            // A node that does not persist is acquired again on a later pass.
             if !keep_outcome_endpoint(store, id, &redrive.activity_id, &endpoint).await {
                 return;
             }
@@ -5281,14 +5332,6 @@ async fn redrive_one<S: ShieldedStore>(
         }
         held_at => held_at,
     };
-    let broadcaster = match held_at.as_ref() {
-        Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
-        None => Arc::clone(sdk),
-    };
-    let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
-        return;
-    };
-    let broadcast_result = st.broadcast(&broadcaster, None).await;
     let err_display = broadcast_result
         .as_ref()
         .err()
@@ -5337,6 +5380,12 @@ async fn redrive_one<S: ShieldedStore>(
             );
         }
     }
+}
+
+/// Whether a single dispatch's `result` may have reached its node: anything but a refusal before
+/// sending ([`refused_before_sending`]). Only such a node may be kept for an outcome read.
+fn dispatch_left_wallet(result: &Result<(), dash_sdk::Error>) -> bool {
+    !matches!(result, Err(error) if refused_before_sending(error))
 }
 
 /// Whether every one of `nullifiers` belongs to a note of `id` the store holds spent.
@@ -8959,9 +9008,10 @@ mod redrive_tests {
 
     /// A held identity create whose node was never kept (its process stopped before its first
     /// dispatch's node was kept) is re-broadcast to one node, kept with its record for its
-    /// outcome read, across a restart too. With no node to send to, nothing is sent and no
-    /// attempt is spent, for more passes than the re-broadcast budget: once a node is there, the
-    /// next pass sends it and keeps that node.
+    /// outcome read once the dispatch left the wallet, across a restart too. With no node to send
+    /// to, nothing is sent and no attempt is spent. A node that does not persist after the
+    /// dispatch is not kept, and the re-broadcast budget those dispatches spend does not stop a
+    /// later pass from sending it again and keeping that node.
     #[tokio::test(start_paused = true)]
     async fn should_keep_the_node_a_redrive_of_a_create_with_no_kept_node_reached() {
         let wallet_id = [0x77; 32];
@@ -9007,7 +9057,8 @@ mod redrive_tests {
             Some(IdentityCreateOutcome::Awaiting)
         );
 
-        // A node that cannot be kept with the record: nothing is sent, no attempt is spent.
+        // A node that cannot be kept with the record after the dispatch: the dispatch counts,
+        // the node is not kept, and acquisition goes on past the re-broadcast budget.
         let sqlite = rusqlite::Connection::open(&path).expect("the database");
         sqlite
             .execute_batch(
@@ -9019,12 +9070,11 @@ mod redrive_tests {
             FileBackedShieldedStore::open_path(&path, 100).expect("reopened"),
         ));
         for _ in 0..=MAX_REDRIVE_ATTEMPTS {
-            redrive_pending_spends(
+            redrive_unkept_identity_creates(
                 &reachable_sdk(),
                 &store,
                 None,
                 id,
-                &recorded,
                 &CancellationToken::new(),
             )
             .await;
@@ -9033,31 +9083,43 @@ mod redrive_tests {
         let records = records_at(&path);
         assert_eq!(records.len(), 1);
         assert_eq!(
-            records[0].attempts, 0,
-            "nothing was sent without its node kept"
+            records[0].attempts,
+            MAX_REDRIVE_ATTEMPTS + 1,
+            "every dispatch counts, past the budget"
         );
-        assert_eq!(records[0].outcome_endpoint, None);
+        assert_eq!(records[0].outcome_endpoint, None, "no node was kept");
         sqlite
             .execute_batch("DROP TRIGGER refuse_endpoint;")
             .expect("dropped");
 
+        // Out of re-broadcast budget, as a record of an earlier build can be: its node is still
+        // acquired.
         let store = Arc::new(RwLock::new(
             FileBackedShieldedStore::open_path(&path, 100).expect("reopened"),
         ));
-        redrive_pending_spends(
+        redrive_unkept_identity_creates(
             &reachable_sdk(),
             &store,
             None,
             id,
-            &recorded,
             &CancellationToken::new(),
         )
         .await;
         drop(store);
         let records = records_at(&path);
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].attempts, 1);
-        assert!(records[0].outcome_endpoint.is_some(), "the node is kept");
+        assert_eq!(records[0].attempts, MAX_REDRIVE_ATTEMPTS + 2);
+        assert_eq!(
+            records[0].outcome_endpoint.as_deref(),
+            Some(
+                ENDPOINT
+                    .parse::<dash_sdk::sdk::Address>()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
+            "the node is kept"
+        );
         assert_eq!(
             records[0].identity_outcome,
             Some(IdentityCreateOutcome::Awaiting)
@@ -9768,5 +9830,29 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+#[cfg(test)]
+mod dispatch_left_wallet_tests {
+    use super::*;
+    use dash_sdk::dapi_client::DapiClientError;
+
+    /// Only a refusal before sending keeps a node from being kept for an outcome read: any other
+    /// answer, a success, a transport error or a verdict, may follow a delivery.
+    #[test]
+    fn should_keep_a_node_unless_the_dispatch_was_refused_before_sending() {
+        assert!(dispatch_left_wallet(&Ok(())));
+        assert!(dispatch_left_wallet(&Err(dash_sdk::Error::Generic(
+            "connection reset".to_string()
+        ))));
+        assert!(!dispatch_left_wallet(&Err(
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+        )));
+        assert!(!dispatch_left_wallet(&Err(
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+            ))
+        )));
     }
 }
