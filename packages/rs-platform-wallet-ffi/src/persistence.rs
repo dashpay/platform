@@ -13111,6 +13111,81 @@ mod tests {
         drop(path_c);
     }
 
+    /// A persisted row past the pool's next index to derive (rows missing
+    /// below it) is refused by key-wallet: the restore drops it with a warning
+    /// and counts it, and the pool keeps its pre-derived window.
+    #[test]
+    fn a_persisted_row_leaving_a_gap_is_dropped_and_counted() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use std::ffi::CString;
+
+        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+        let (pool_type, generated_before) = {
+            let owner = wallet_info
+                .accounts
+                .provider_owner_keys
+                .as_mut()
+                .expect("managed provider-owner account must exist");
+            let pool = &owner.managed_account_type_mut().address_pools_mut()[0];
+            (pool.pool_type(), pool.highest_generated())
+        };
+        assert_ne!(pool_type, AddressPoolType::AbsentHardened);
+        let pool_type_tag: u8 = match pool_type {
+            AddressPoolType::External => 0,
+            AddressPoolType::Internal => 1,
+            AddressPoolType::Absent => 2,
+            AddressPoolType::AbsentHardened => 3,
+        };
+
+        let sparse_index = generated_before.map_or(0, |h| h + 1) + 5;
+        let addr_c = CString::new("yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA").unwrap();
+        let path_c = CString::new(format!("m/9'/1'/2'/{sparse_index}")).unwrap();
+        let row = CoreAddressEntryFFI {
+            public_key: [0u8; 48],
+            public_key_len: 0,
+            key_type_tag: 0,
+            pool_type_tag,
+            address_index: sparse_index,
+            is_used: true,
+            balance: 0,
+            address_base58: addr_c.as_ptr(),
+            derivation_path: path_c.as_ptr(),
+        };
+        let no_xpub: &[u8] = &[];
+        let pools = [AccountAddressPoolFFI {
+            account: build_account_spec_ffi(&AccountType::ProviderOwnerKeys, no_xpub),
+            pool_type_tag,
+            addresses_ptr: &row,
+            addresses_count: 1,
+        }];
+
+        // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
+        let stats = unsafe {
+            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+        }
+        .expect("a refused row must not fail the restore");
+        assert_eq!(
+            stats,
+            PoolRestoreStats {
+                routed: 0,
+                dropped: 1
+            }
+        );
+
+        let owner = wallet_info
+            .accounts
+            .provider_owner_keys
+            .as_mut()
+            .expect("managed provider-owner account must exist");
+        let pool = &owner.managed_account_type_mut().address_pools_mut()[0];
+        assert!(!pool.addresses().contains_key(&sparse_index));
+        assert_eq!(pool.highest_generated(), generated_before);
+        assert_eq!(pool.highest_used(), None);
+
+        drop(addr_c);
+        drop(path_c);
+    }
+
     /// A staged provider special tx must round-trip its persisted in-block
     /// position (rust-dashcore#891) onto the rebuilt record's `BlockInfo`,
     /// so the masternode aggregation keeps Core's same-block apply order
