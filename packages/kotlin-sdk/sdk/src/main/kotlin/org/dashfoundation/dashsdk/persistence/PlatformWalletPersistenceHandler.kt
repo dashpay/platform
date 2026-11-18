@@ -157,7 +157,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
-            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -2435,6 +2436,9 @@ class PlatformWalletPersistenceHandler(
                     amountDuffs = amountDuffs,
                     statusRaw = incomingStatus,
                     proofBytes = proofBytes,
+                    // Written by its own sidecar callback; a status
+                    // snapshot never carries it and must not erase it.
+                    paymentIntent = existing?.paymentIntent,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
                 ),
@@ -2457,6 +2461,36 @@ class PlatformWalletPersistenceHandler(
         }
         0
     }
+
+    override fun onPersistAssetLockPaymentIntent(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        intent: ByteArray,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            val outPointHex = encodeOutPointHex(outPoint)
+            val existing = checkNotNull(db.assetLockDao().getByOutPointHex(outPointHex)) {
+                "payment intent for an asset lock with no row"
+            }
+            // A recorded intent never changes: a resume must pay what the
+            // lock was built for. Failing the op fails the whole round.
+            check(existing.paymentIntent == null || existing.paymentIntent.contentEquals(intent)) {
+                "asset lock payment intent cannot change"
+            }
+            db.assetLockDao().setPaymentIntent(outPointHex, intent)
+        }
+        0
+    }
+
+    override fun onLoadAssetLockPaymentIntent(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadOrThrow {
+            runBlockingResult {
+                val row = checkNotNull(
+                    database.assetLockDao().getByOutPointHex(encodeOutPointHex(outPoint)),
+                ) { "payment intent requested for an asset lock with no row" }
+                row.paymentIntent
+            }
+        }
 
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
         stage(walletId) { db ->
@@ -4210,6 +4244,9 @@ class PlatformWalletPersistenceHandler(
 
         internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+
+        internal const val CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS
 
         private const val TAG = "DashPersistence"
 

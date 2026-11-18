@@ -98,6 +98,43 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(try handler.loadAssetLockShieldedRecipient(walletId: walletId, outPoint: rawOutPoint), recipient)
     }
 
+    func testPaymentIntentSurvivesStaleSnapshotsAndStoreReopenAndCannotChange() throws {
+        let intent = Data([1, 0, 1] + [UInt8](repeating: 0x44, count: 21) + [0])
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            // No row yet: a read is a failure, not a legacy nil.
+            XCTAssertThrowsError(try handler.loadAssetLockPaymentIntent(walletId: walletId, outPoint: rawOutPoint))
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertTrue(handler.persistAssetLocks(walletId: walletId,
+                upserts: [snapshot(status: 0, operationId: nil)], removed: []))
+            // A row stored without an intent (an owned funding, or a row
+            // from before intents existed) loads with none.
+            XCTAssertNil(try handler.loadAssetLockPaymentIntent(walletId: walletId, outPoint: rawOutPoint))
+            try handler.persistAssetLockPaymentIntent(
+                walletId: walletId, outPoint: rawOutPoint, intent: intent)
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+            // A later snapshot without an intent must not erase it; a
+            // different one is refused.
+            try persist(handler, status: 1, operationId: nil)
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertThrowsError(try handler.persistAssetLockPaymentIntent(
+                walletId: walletId, outPoint: rawOutPoint, intent: Data([1, 0, 0])))
+            XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+            XCTAssertEqual(try handler.loadAssetLockPaymentIntent(walletId: walletId, outPoint: rawOutPoint), intent)
+        }
+        let reopened = try DashModelContainer.create(url: url)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
+        let rows = try handler.loadCachedAssetLocks(walletId: walletId)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.paymentIntent, intent)
+        XCTAssertEqual(try handler.loadAssetLockPaymentIntent(walletId: walletId, outPoint: rawOutPoint), intent)
+    }
+
     func testPublishedV3MigratesOperationIdToNil() throws {
         _ = DashModelContainer.schema
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

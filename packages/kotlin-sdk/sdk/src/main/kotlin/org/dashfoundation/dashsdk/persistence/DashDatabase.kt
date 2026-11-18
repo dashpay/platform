@@ -192,7 +192,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * reads the store from its start, as every sync did before.
  */
 @Database(
-    version = 16,
+    version = 17,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -753,6 +753,18 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v16 → v17: `asset_locks.paymentIntent`, the recipients an external
+         * payment's asset lock was built to pay (dashpay/platform#5824).
+         * Additive and nullable: rows from before read back with none and
+         * resume as before.
+         */
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `paymentIntent` BLOB")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -783,6 +795,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
+                    MIGRATION_16_17,
                 )
                 .build()
 

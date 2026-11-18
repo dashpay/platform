@@ -855,7 +855,21 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///   - onAssetLockBuilt: Called at most once, with the new asset
     ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
-    ///     `AssetLockBuiltHandler`.
+    ///     `AssetLockBuiltHandler`. Informational only: recovery does not
+    ///     depend on it.
+    ///
+    /// ## Recovery
+    ///
+    /// The recipient set is recorded with the asset lock by the SDK before
+    /// the lock is broadcast (its payment intent, stored in
+    /// `PersistentAssetLock.paymentIntent`), so you do not have to associate
+    /// the outpoint with the recipients yourself. A lock left behind by a
+    /// failed or interrupted call shows `TrackedAssetLock.hasPaymentIntent`;
+    /// resume it with [`resumeFundFromAssetLockExternal`] and the recipients
+    /// `ManagedPlatformWallet.assetLockPaymentIntent(txid:vout:)` returns. Any other
+    /// resume of it — [`resumeFundFromAssetLock`], or other recipients — is
+    /// refused with `assetLockRecipientMismatch` before anything is
+    /// submitted, so the payment is never returned to this wallet.
     ///
     /// Returns `[UpdatedBalance]` for the recipients that resolved to
     /// this wallet — in practice just the remainder/change address. The
@@ -921,15 +935,12 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// shape) and to [`fundFromAssetLockExternal`] (same relaxed
     /// recipient rules).
     ///
-    /// The recipients are a PARAMETER, not something recovered from the
-    /// tracked lock: Rust never learns the destination of an
-    /// address-funding asset lock — it only tracks the L1 outpoint, its
-    /// status and its proof. The host is responsible for round-tripping
-    /// the intended recipient, which is what
-    /// `PersistentAssetLock.recipientPlatformAddressHash` /
-    /// `.recipientIsExternal` record. Resuming with a different
-    /// recipient set pays the new set; the asset lock is a bearer input,
-    /// not a commitment to a destination.
+    /// The lock recorded its recipients when it was built (its payment
+    /// intent): pass exactly the ones
+    /// `ManagedPlatformWallet.assetLockPaymentIntent(txid:vout:)` returns. A
+    /// different recipient set is refused with `assetLockRecipientMismatch`
+    /// before anything is submitted. A lock tracked before intents were
+    /// recorded carries none and pays whatever set you pass.
     ///
     /// - Parameters:
     ///   - outPointTxid: 32-byte raw txid (little-endian wire order) —

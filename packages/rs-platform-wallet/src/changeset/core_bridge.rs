@@ -8445,6 +8445,7 @@ mod tests {
             AssetLockEntry {
                 operation_id: None,
                 shielded_recipient: None,
+                payment_intent: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,

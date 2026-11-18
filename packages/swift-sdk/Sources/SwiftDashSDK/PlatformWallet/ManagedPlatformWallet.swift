@@ -124,6 +124,56 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         return ManagedAssetLockManager(handle: assetLockHandle)
     }
 
+    /// What an asset lock pays when that is not this wallet, as recorded by
+    /// Rust when the lock was built.
+    public enum AssetLockPaymentIntent: Sendable {
+        /// The recipient set of `fundFromAssetLockExternal`, in Rust's order
+        /// (the single `credits == nil` entry is this wallet's remainder).
+        /// Resume with exactly these through
+        /// `ManagedPlatformAddressWallet.resumeFundFromAssetLockExternal`.
+        case platformAddresses([ManagedPlatformAddressWallet.FundFromAssetLockRecipient])
+    }
+
+    /// The payment intent a tracked asset lock of this wallet recorded, or
+    /// `nil` for an owned funding, a lock tracked before intents were
+    /// recorded, or an outpoint that is not tracked.
+    public func assetLockPaymentIntent(txid: Data, vout: UInt32) throws -> AssetLockPaymentIntent? {
+        guard txid.count == 32 else {
+            throw PlatformWalletError.invalidParameter("txid must be 32 bytes, got \(txid.count)")
+        }
+        var txidTuple: FFIByteTuple32 =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        txid.withUnsafeBytes { buf in
+            withUnsafeMutableBytes(of: &txidTuple) { dst in
+                dst.copyBytes(from: buf.prefix(32))
+            }
+        }
+        var found = false
+        var kind: UInt8 = 0
+        var recipientsPtr: UnsafeMutablePointer<AssetLockPaymentRecipientFFI>? = nil
+        var count: UInt = 0
+        try platform_wallet_get_asset_lock_payment_intent(
+            handle, &txidTuple, vout, &found, &kind, &recipientsPtr, &count
+        ).check()
+        defer { platform_wallet_free_asset_lock_payment_recipients(recipientsPtr, count) }
+        guard found else { return nil }
+        let recipients = (0..<Int(count)).map { i -> ManagedPlatformAddressWallet.FundFromAssetLockRecipient in
+            let row = recipientsPtr![i]
+            let address = withUnsafeBytes(of: row.address) { Data($0) }
+            return ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
+                addressType: address[0],
+                hash: address.subdata(in: 1..<21),
+                credits: row.has_amount ? row.amount_credits : nil
+            )
+        }
+        switch Int32(kind) {
+        case Int32(ASSET_LOCK_PAYMENT_INTENT_KIND_PLATFORM_ADDRESSES):
+            return .platformAddresses(recipients)
+        default:
+            throw PlatformWalletError.unknown("unknown asset-lock payment intent kind \(kind)")
+        }
+    }
+
     // MARK: - Persistence
 
     /// Flush all queued changesets to the storage backend.

@@ -1961,7 +1961,8 @@ mod tests {
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
             .expect("Recovery must complete V021 past an undecodable kept record");
 
-        assert_eq!(schema_version(&conn), 21);
+        // V021 completed, and the upgrade ran on to the latest version (V022).
+        assert_eq!(schema_version(&conn), 22);
     }
 
     #[test]

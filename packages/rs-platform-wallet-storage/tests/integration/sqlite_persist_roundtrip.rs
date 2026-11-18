@@ -407,6 +407,7 @@ fn tc010_asset_lock_roundtrip() {
         identity_index: 9,
         operation_id: None,
         shielded_recipient: None,
+        payment_intent: None,
         amount_duffs: 12_345,
         status: AssetLockStatus::Built,
         proof: None,
@@ -474,6 +475,7 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
         identity_index: 0,
         operation_id: None,
         shielded_recipient: None,
+        payment_intent: None,
         amount_duffs: 500_000,
         status: AssetLockStatus::RecoveredFromChain,
         proof: Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
@@ -546,6 +548,7 @@ fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
         identity_index: 0,
         operation_id: None,
         shielded_recipient: None,
+        payment_intent: None,
         amount_duffs: 1_000_000,
         status: status.clone(),
         proof: match status {

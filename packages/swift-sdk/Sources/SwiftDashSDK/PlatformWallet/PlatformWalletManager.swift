@@ -114,6 +114,13 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// recipient. Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`;
     /// Rust only honours the declaration when both recipient slots are wired.
     public static let assetLockShieldedRecipients: UInt64 = 1 << 14
+    /// The payment intent of an asset lock that pays someone other than the
+    /// wallet (the recipients of `fundFromAssetLockExternal`) survives store
+    /// and load with its row, so a resume after restart pays those recipients
+    /// or is refused, and never refunds the sender. Mirrors
+    /// `PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS`; Rust only
+    /// honours the declaration when both intent slots are wired.
+    public static let assetLockPaymentIntents: UInt64 = 1 << 16
     /// The private contact request sync's scan state (each identity's read
     /// position in DashPay's private contact request store, and its private
     /// contacts' shielded addresses) is stored on its round and restored at

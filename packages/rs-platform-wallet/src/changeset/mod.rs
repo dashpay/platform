@@ -8,6 +8,7 @@
 //!   [`PlatformWalletPersistence::load`] so the platform wallet can boot without re-syncing.
 //! - [`PlatformWalletPersistence`] — storage backend trait.
 
+pub mod asset_lock_payment_intent;
 #[allow(clippy::module_inception)]
 pub mod changeset;
 pub mod client_start_state;
@@ -33,6 +34,10 @@ pub mod shielded_sync_start_state;
 pub mod traits;
 mod wallet_accounting;
 
+pub use asset_lock_payment_intent::{
+    AssetLockPaymentIntent, AssetLockPaymentIntentDecodeError, AssetLockPaymentIntentEncodeError,
+    ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE,
+};
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,

@@ -37,8 +37,10 @@ struct FundFromAssetLockPlatformAddressView: View {
     /// build time) and routes Submit to
     /// `ManagedPlatformAddressWallet.resumeFundFromAssetLock` instead
     /// of building a fresh lock. The user still picks the recipient
-    /// platform address because the orphan lock doesn't carry that
-    /// information — it's set at ST-submission time.
+    /// platform address for an owned lock. A lock built by
+    /// `fundFromAssetLockExternal` carries its recipients
+    /// (`PersistentAssetLock.paymentIntent`) and resumes through
+    /// `resumeFundFromAssetLockExternal` with exactly those instead.
     var resumeFromLock: PersistentAssetLock? = nil
 
     /// All persisted accounts. Filtered down to the wallet's Core
@@ -73,6 +75,13 @@ struct FundFromAssetLockPlatformAddressView: View {
     /// so view dismissal mid-flight doesn't lose the work.
     @State private var activeController: AddressFundFromAssetLockController? = nil
 
+    /// The recipients an external lock (`resumeFromLock.paymentIntent !=
+    /// nil`) recorded when it was built, loaded before submission is
+    /// enabled so the form shows exactly what the resume pays. `nil`
+    /// while not loaded, for an owned lock, or when the lock no longer
+    /// carries them.
+    @State private var recordedPayees: [ManagedPlatformAddressWallet.FundFromAssetLockRecipient]? = nil
+
     /// 1 DASH = 1e8 duffs (Core side). The asset-lock builder takes
     /// duffs; we convert here for display ergonomics only.
     private static let duffsPerDash: UInt64 = 100_000_000
@@ -103,7 +112,13 @@ struct FundFromAssetLockPlatformAddressView: View {
                     walletSection
                     resumeFromAssetLockSection
                     platformAccountSection
-                    recipientSection
+                    if isExternalResume {
+                        // An external lock pays its recorded payees, not
+                        // a picked address of this wallet.
+                        recordedPayeesSection
+                    } else {
+                        recipientSection
+                    }
                     if canSubmit {
                         submitSection
                     }
@@ -133,7 +148,10 @@ struct FundFromAssetLockPlatformAddressView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
-            .onAppear(perform: autoSelectDefaults)
+            .onAppear {
+                autoSelectDefaults()
+                loadRecordedPayees()
+            }
             .onChange(of: activeController?.phase) { _, newPhase in
                 // On successful funding, stamp the recipient hash
                 // onto the matching consumed asset-lock row so the
@@ -271,7 +289,11 @@ struct FundFromAssetLockPlatformAddressView: View {
                 submit()
             } label: {
                 HStack {
-                    Text(resumeFromLock == nil ? "Top Up" : "Resume Top Up")
+                    Text(
+                        isExternalResume
+                            ? "Complete External Payment"
+                            : (resumeFromLock == nil ? "Top Up" : "Resume Top Up")
+                    )
                     Spacer()
                 }
                 .foregroundColor(.white)
@@ -325,6 +347,34 @@ struct FundFromAssetLockPlatformAddressView: View {
         }
     }
 
+    /// The payees an external lock recorded, in their recorded order:
+    /// each explicit amount, and the remainder that returns to this
+    /// wallet. Shown before the user confirms the payment.
+    @ViewBuilder
+    private var recordedPayeesSection: some View {
+        Section {
+            if let payees = recordedPayees, !payees.isEmpty {
+                ForEach(Array(payees.enumerated()), id: \.offset) { _, payee in
+                    HStack {
+                        Text(hexShort(payee.hash))
+                            .font(.system(.body, design: .monospaced))
+                        Spacer()
+                        Text(payee.credits.map(formatCredits) ?? "Remainder (this wallet)")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                Text("This asset lock no longer carries its recorded recipients.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Recorded Payees")
+        } footer: {
+            Text("This lock was built to pay someone else. Completing it pays exactly these recipients.")
+        }
+    }
+
     /// Inline terminal section that follows the controller's
     /// `.completed` / `.failed` phase. Mirrors the
     /// `terminalSection` shape on `AddressFundFromAssetLockProgressView`,
@@ -338,21 +388,27 @@ struct FundFromAssetLockPlatformAddressView: View {
         case .completed(let newBalance):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Address funded", systemImage: "checkmark.seal.fill")
+                    Label(
+                        newBalance == nil ? "Payment completed" : "Address funded",
+                        systemImage: "checkmark.seal.fill"
+                    )
                         .foregroundColor(.green)
                         .font(.headline)
-                    HStack {
-                        Text("New balance")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(formatCredits(newBalance))
-                            .font(.system(.body, design: .monospaced))
+                    if let newBalance {
+                        HStack {
+                            Text("New balance")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formatCredits(newBalance))
+                                .font(.system(.body, design: .monospaced))
+                        }
                     }
                     Button {
                         walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
+                            recipientHash: controller.recipientHash,
+                            assetLockOutPoint: controller.assetLockOutPoint
                         )
                         dismiss()
                     } label: {
@@ -377,7 +433,8 @@ struct FundFromAssetLockPlatformAddressView: View {
                         walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
+                            recipientHash: controller.recipientHash,
+                            assetLockOutPoint: controller.assetLockOutPoint
                         )
                         dismiss()
                     }
@@ -469,13 +526,19 @@ struct FundFromAssetLockPlatformAddressView: View {
         return UInt64(duffsDouble.rounded(.toNearestOrAwayFromZero))
     }
 
+    private var isExternalResume: Bool {
+        resumeFromLock?.paymentIntent != nil
+    }
+
     private var canSubmit: Bool {
         if resumeFromLock != nil {
             // Resume only needs a recipient. The lock + amount +
-            // funding account are fixed by the original build.
+            // funding account are fixed by the original build. An
+            // external lock also needs its recorded payees shown.
             return platformAccountIndex != nil
                 && selectedRecipientHash != nil
                 && activeController == nil
+                && (!isExternalResume || !(recordedPayees ?? []).isEmpty)
         }
         let amount = parsedDuffs ?? 0
         return fundingCoreAccountIndex != nil
@@ -498,6 +561,18 @@ struct FundFromAssetLockPlatformAddressView: View {
             platformAccountIndex = platformAccountOptions.first?.accountIndex
         }
         autoSelectRecipient()
+    }
+
+    private func loadRecordedPayees() {
+        guard isExternalResume, recordedPayees == nil,
+              let lock = resumeFromLock,
+              let parsed = parseOutPoint(lock.outPointHex),
+              let managed = walletManager.wallet(for: wallet.walletId),
+              case .platformAddresses(let recipients)? = try? managed.assetLockPaymentIntent(
+                  txid: parsed.txid, vout: parsed.vout
+              )
+        else { return }
+        recordedPayees = recipients
     }
 
     private func autoSelectRecipient() {
@@ -545,7 +620,7 @@ struct FundFromAssetLockPlatformAddressView: View {
         // resume flows. Returning the proof-attested credit
         // balance of the recipient so the terminal section can
         // surface a meaningful number.
-        let body: () async throws -> UInt64
+        let body: () async throws -> UInt64?
         if let lock = resumeFromLock {
             // Resume path: outpoint is decoded from the persisted
             // `outPointHex` (canonical `<txid display hex>:<vout>`
@@ -556,22 +631,49 @@ struct FundFromAssetLockPlatformAddressView: View {
                 )
                 return
             }
-            body = {
-                let updates = try await addressWallet.resumeFundFromAssetLock(
-                    outPointTxid: parsed.txid,
-                    outPointVout: parsed.vout,
-                    platformAccountIndex: platformAcct,
-                    recipients: [
-                        ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
-                            addressType: recipientType,
-                            hash: recipientHash,
-                            credits: nil
-                        )
-                    ],
-                    signer: signer
-                )
-                return updates
-                    .first(where: { $0.hash == recipientHash })?.balance ?? 0
+            if lock.paymentIntent != nil {
+                // The lock was built to pay someone else and recorded who:
+                // resume it with exactly the recipients shown in the form.
+                // An owned resume (the picked address below) would be
+                // refused by the SDK — it must never return the payment to
+                // this wallet.
+                guard let recipients = recordedPayees, !recipients.isEmpty else {
+                    submitError = SubmitError(
+                        message: "The asset lock no longer carries its recorded recipients."
+                    )
+                    return
+                }
+                body = {
+                    _ = try await addressWallet.resumeFundFromAssetLockExternal(
+                        outPointTxid: parsed.txid,
+                        outPointVout: parsed.vout,
+                        platformAccountIndex: platformAcct,
+                        recipients: recipients,
+                        signer: signer
+                    )
+                    // The returned updates are the wallet's own address
+                    // changes, not a balance of the picked address or of a
+                    // payee: report no balance.
+                    return nil
+                }
+            } else {
+                body = {
+                    let updates = try await addressWallet.resumeFundFromAssetLock(
+                        outPointTxid: parsed.txid,
+                        outPointVout: parsed.vout,
+                        platformAccountIndex: platformAcct,
+                        recipients: [
+                            ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
+                                addressType: recipientType,
+                                hash: recipientHash,
+                                credits: nil
+                            )
+                        ],
+                        signer: signer
+                    )
+                    return updates
+                        .first(where: { $0.hash == recipientHash })?.balance ?? 0
+                }
             }
         } else {
             // Fresh build path: needs the funding account + amount
@@ -617,6 +719,7 @@ struct FundFromAssetLockPlatformAddressView: View {
             platformAccountIndex: platformAcct,
             recipientHash: recipientHash,
             recipientType: recipientType,
+            assetLockOutPoint: resumeFromLock?.outPointHex,
             body: body
         )
         controller.preSubmitConsumedOutpoints = preSubmitOutpoints
@@ -695,6 +798,11 @@ struct FundFromAssetLockPlatformAddressView: View {
     ///   to leave both showing "—" in the storage explorer than to
     ///   silently tag the wrong row.
     private func backfillRecipientOnConsumedLock() {
+        // A resumed lock that carries a payment intent paid the intent's
+        // recipients, not the address picked here: its recipient map is the
+        // source of truth, so stamping the picked address as an own one
+        // would mislabel the row.
+        if resumeFromLock?.paymentIntent != nil { return }
         guard let controller = activeController else { return }
         let walletId = wallet.walletId
         let recipientHash = controller.recipientHash

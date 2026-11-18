@@ -33,6 +33,8 @@ class AddressFundFromAssetLockController(
     val recipientType: Int,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
+    /** The resumed lock's `<txid>:<vout>`, or null for a fresh funding. Part of the slot. */
+    val assetLockOutPointHex: String? = null,
 ) {
     /**
      * Funding phase. Flow: [Idle] → [InFlight] (submit) →
@@ -45,8 +47,12 @@ class AddressFundFromAssetLockController(
         /** FFI funding call in flight; the asset-lock progress is read from Room. */
         data object InFlight : Phase
 
-        /** Address credited; [newBalance] is the proof-attested credit balance. */
-        data class Completed(val newBalance: Long) : Phase
+        /**
+         * Funding done. [newBalance] is the picked address's proof-attested
+         * credit balance, or null when the result does not establish one (an
+         * external payment credits its recorded payees, not that address).
+         */
+        data class Completed(val newBalance: Long?) : Phase
 
         /** Failure terminal state; the message is shown inline. Stays until dismissed. */
         data class Failed(val message: String) : Phase
@@ -68,9 +74,10 @@ class AddressFundFromAssetLockController(
 
     private var task: Job? = null
 
-    /** Composite id for stable list diffing — wallet hex + account + recipient hex. */
+    /** Composite id for stable list diffing — wallet hex + account + recipient hex (+ outpoint). */
     val slotRowId: String
-        get() = walletId.toHex() + "-" + platformAccountIndex + "-" + recipientHash.toHex()
+        get() = walletId.toHex() + "-" + platformAccountIndex + "-" + recipientHash.toHex() +
+            (assetLockOutPointHex?.let { "-$it" } ?: "")
 
     /**
      * Submit the funding. Defensively rejects [Phase.InFlight] and
@@ -80,10 +87,10 @@ class AddressFundFromAssetLockController(
      * ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the new credit
-     * balance, or throws. It runs on its own dispatcher; the terminal
+     * balance (null when the result establishes none), or throws. It runs on its own dispatcher; the terminal
      * phase flip hops back to [scope].
      */
-    fun submit(body: suspend () -> Long) {
+    fun submit(body: suspend () -> Long?) {
         when (_phase.value) {
             is Phase.Idle, is Phase.Failed -> Unit
             is Phase.InFlight, is Phase.Completed -> return

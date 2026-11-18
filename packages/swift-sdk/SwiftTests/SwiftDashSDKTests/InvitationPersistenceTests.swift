@@ -75,6 +75,9 @@ final class InvitationPersistenceTests: XCTestCase {
             // persist/load/free trio onto `PersistentPrivateContactRequestsPosition`
             // and `PersistentPrivateShieldedAddress`.
             | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+            // Asset lock payment intents: the handler wires the persist/load
+            // pair onto `PersistentAssetLock.paymentIntent`.
+            | PlatformWalletPersistenceCapabilities.assetLockPaymentIntents
 
         XCTAssertEqual(
             capabilities.version,

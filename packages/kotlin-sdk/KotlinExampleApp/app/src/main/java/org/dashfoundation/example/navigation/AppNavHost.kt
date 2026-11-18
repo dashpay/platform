@@ -279,6 +279,7 @@ fun AppNavHost(
                 route.walletIdHex,
                 route.platformAccountIndex,
                 route.recipientHashHex,
+                route.assetLockOutPointHex,
                 navController,
             )
         }

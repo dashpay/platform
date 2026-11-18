@@ -83,6 +83,14 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         /// pays; `nil` for other funding types and for locks tracked before
         /// the recipient was recorded.
         public let shieldedRecipientRaw43: Data?
+        /// Whether the lock was built to pay someone other than this wallet
+        /// and recorded what it pays (read it with
+        /// `ManagedPlatformWallet.assetLockPaymentIntent(txid:vout:)`).
+        /// Such a lock resumes only through the flow it was built for, with
+        /// the recorded recipients; every other resume is refused with
+        /// `assetLockRecipientMismatch`. Route recovery by it: never offer
+        /// these locks to an owned top-up resume.
+        public let hasPaymentIntent: Bool
     }
 
     /// Result of building an asset lock transaction.
@@ -137,7 +145,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
                 hasProof: lock.has_proof,
                 shieldedRecipientRaw43: lock.has_shielded_recipient
                     ? withUnsafeBytes(of: lock.shielded_recipient_raw_43) { Data($0) }
-                    : nil
+                    : nil,
+                hasPaymentIntent: lock.has_payment_intent
             )
         }
     }

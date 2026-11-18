@@ -88,6 +88,14 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        /**
+         * The recipients an external payment's asset lock was built to pay
+         * are stored with its row and restored at load, so a resume after
+         * restart pays them or is refused and never refunds the sender.
+         * Mirrors `PersistenceCapabilities::ASSET_LOCK_PAYMENT_INTENTS`.
+         */
+        const val ASSET_LOCK_PAYMENT_INTENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_PAYMENT_INTENTS
     }
 }
 

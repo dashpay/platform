@@ -113,10 +113,11 @@ pub use wallet::PlatformWallet;
 // Re-export changeset types for caller-level staging.
 pub use changeset::Merge;
 pub use changeset::{
-    AssetLockChangeSet, AssetLockEntry, ClientStartState, ClientWalletStartState, ContactChangeSet,
-    ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
-    IdentityManagerStartState, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
-    PlatformAddressSyncStartState, PlatformWalletChangeSet, TokenBalanceChangeSet,
+    AssetLockChangeSet, AssetLockEntry, AssetLockPaymentIntent, ClientStartState,
+    ClientWalletStartState, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
+    IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, IdentityManagerStartState,
+    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformAddressSyncStartState,
+    PlatformWalletChangeSet, TokenBalanceChangeSet,
 };
 pub use changeset::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 

@@ -740,13 +740,43 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v16 -> v17 adds the nullable `asset_locks.paymentIntent` column: an
+     * existing lock reads back with none (it resumes as before), and a row
+     * written afterwards keeps the bytes.
+     */
+    @Test
+    fun migrate16To17AddsAssetLockPaymentIntent() {
+        helper.createDatabase(dbName, 16).apply {
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                    "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, createdAt, updatedAt) " +
+                    "VALUES ('aa:0', x'01', x'02', 4, 0, 0, 1000, 1, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 17, true, DashDatabase.MIGRATION_16_17)
+
+        db.query("SELECT paymentIntent FROM asset_locks WHERE outPointHex = 'aa:0'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+        }
+        db.execSQL("UPDATE asset_locks SET paymentIntent = x'010001' WHERE outPointHex = 'aa:0'")
+        db.query("SELECT paymentIntent FROM asset_locks WHERE outPointHex = 'aa:0'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(1, 0, 1).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -760,16 +790,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v16 schema. */
+    /** The full chain from v1 must also land on a valid v17 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -786,6 +817,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 }

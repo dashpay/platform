@@ -22,6 +22,7 @@ private enum AssetLockPersistenceError: Error {
     case malformedRecord
     case duplicateOperationId
     case conflictingShieldedRecipient
+    case conflictingPaymentIntent
     case missingRecord
     case requiresChangeset
 }
@@ -590,6 +591,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.operationId = entry.operationId ?? existing.operationId
                     existing.shieldedRecipientRaw43 =
                         entry.shieldedRecipientRaw43 ?? existing.shieldedRecipientRaw43
+                    existing.paymentIntent = entry.paymentIntent ?? existing.paymentIntent
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -603,7 +605,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         statusRaw: entry.statusRaw,
                         proofBytes: entry.proofBytes,
                         operationId: entry.operationId,
-                        shieldedRecipientRaw43: entry.shieldedRecipientRaw43
+                        shieldedRecipientRaw43: entry.shieldedRecipientRaw43,
+                        paymentIntent: entry.paymentIntent
                     )
                     backgroundContext.insert(record)
                 }
@@ -721,6 +724,47 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 throw AssetLockPersistenceError.conflictingShieldedRecipient
             }
             record.shieldedRecipientRaw43 = recipientRaw43
+        }
+    }
+
+    /// Payment-intent sidecar for the frozen legacy FFI row, saved with the
+    /// base upsert by endChangeset. The bytes are Rust's opaque intent form,
+    /// stored as given. Like the recipient, a recorded intent can never
+    /// change: a resume must pay what the lock was built for.
+    func persistAssetLockPaymentIntent(walletId: Data, outPoint: Data, intent: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, !intent.isEmpty,
+                  intent.count <= Int(PLATFORM_WALLET_ASSET_LOCK_PAYMENT_INTENT_MAX_LEN) else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let previous = record.paymentIntent, previous != intent {
+                throw AssetLockPersistenceError.conflictingPaymentIntent
+            }
+            record.paymentIntent = intent
+        }
+    }
+
+    /// A missing base row is a failed read, not evidence of a legacy nil
+    /// intent; whether the stored bytes are readable is Rust's call.
+    func loadAssetLockPaymentIntent(walletId: Data, outPoint: Data) throws -> Data? {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            return record.paymentIntent
         }
     }
 
@@ -1109,7 +1153,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 statusRaw: record.statusRaw,
                 proofBytes: record.proofBytes,
                 operationId: record.operationId,
-                shieldedRecipientRaw43: record.shieldedRecipientRaw43
+                shieldedRecipientRaw43: record.shieldedRecipientRaw43,
+                paymentIntent: record.paymentIntent
             )
         }
     }
@@ -1132,6 +1177,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// Raw 43-byte Orchard recipient of a shielded funding; see
         /// `PersistentAssetLock.shieldedRecipientRaw43`.
         public var shieldedRecipientRaw43: Data? = nil
+        /// Opaque payment intent of an external payment; see
+        /// `PersistentAssetLock.paymentIntent`.
+        public var paymentIntent: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -3383,6 +3431,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
+                | PlatformWalletPersistenceCapabilities.assetLockPaymentIntents
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
         )
     }
@@ -3427,6 +3476,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             persistAssetLockShieldedRecipientCallback
         extensionCallbacks.on_load_asset_lock_shielded_recipient_fn =
             loadAssetLockShieldedRecipientCallback
+        extensionCallbacks.on_persist_asset_lock_payment_intent_fn =
+            persistAssetLockPaymentIntentCallback
+        extensionCallbacks.on_load_asset_lock_payment_intent_fn =
+            loadAssetLockPaymentIntentCallback
         extensionCallbacks.on_persist_private_contact_scan_state_fn = persistPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_fn = loadPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_free_fn =
@@ -12348,6 +12401,43 @@ private func loadAssetLockShieldedRecipientCallback(
         if let recipient = try handler.loadAssetLockShieldedRecipient(
             walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
             recipient.copyBytes(to: outRecipientRaw43, count: 43)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
+}
+
+private func persistAssetLockPaymentIntentCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, intent: UnsafePointer<UInt8>?, intentLen: UInt
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let intent else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAssetLockPaymentIntent(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            intent: Data(bytes: intent, count: Int(intentLen)))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAssetLockPaymentIntentCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outIntent: UnsafeMutablePointer<UInt8>?, intentCapacity: UInt,
+    outIntentLen: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outFound, let outIntent, let outIntentLen else {
+        return -1
+    }
+    outFound.pointee = false
+    outIntentLen.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let intent = try handler.loadAssetLockPaymentIntent(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
+            guard !intent.isEmpty, intent.count <= Int(intentCapacity) else { return -1 }
+            intent.copyBytes(to: outIntent, count: intent.count)
+            outIntentLen.pointee = UInt(intent.count)
             outFound.pointee = true
         }
         return 0
