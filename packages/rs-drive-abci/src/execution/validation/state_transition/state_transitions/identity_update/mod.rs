@@ -129,7 +129,6 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::execution::validation::state_transition::test_helpers::random_ecdsa_secret_key;
     use crate::execution::validation::state_transition::tests::{
         setup_add_key_to_identity, setup_identity_return_master_key,
     };
@@ -160,6 +159,7 @@ mod tests {
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::StateTransition;
+    use dpp::util::ecdsa::random_secret_key;
     use drive::drive::Drive;
     use platform_version::version::PlatformVersion;
     use rand::rngs::StdRng;
@@ -263,7 +263,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(292);
 
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -543,7 +543,7 @@ mod tests {
         };
         let platform_state = platform.state.load();
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::AUTHENTICATION,
@@ -750,7 +750,7 @@ mod tests {
         };
         let platform_state = platform.state.load();
         let mut rng = SecpStdRng::seed_from_u64(293);
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
         let build =
             |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
                 StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
@@ -1108,7 +1108,7 @@ mod tests {
         let mut rng = SecpStdRng::seed_from_u64(292);
         let pairs: BTreeMap<u32, EcdsaSecretKey> = [2u32, 3, 4]
             .into_iter()
-            .map(|id| (id, random_ecdsa_secret_key(&mut rng)))
+            .map(|id| (id, random_secret_key(&mut rng)))
             .collect();
         let bound_key = |id: u32| IdentityPublicKeyInCreationV0 {
             id,
@@ -1672,7 +1672,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1859,7 +1859,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -2144,9 +2144,9 @@ mod tests {
         // Two encryption keys, the newer one listed first: both write the encryption
         // current-key alias, and the one naming the highest key id must win.
         let pairs: Vec<(u32, Purpose, EcdsaSecretKey)> = vec![
-            (4, Purpose::ENCRYPTION, random_ecdsa_secret_key(&mut rng)),
-            (2, Purpose::ENCRYPTION, random_ecdsa_secret_key(&mut rng)),
-            (3, Purpose::DECRYPTION, random_ecdsa_secret_key(&mut rng)),
+            (4, Purpose::ENCRYPTION, random_secret_key(&mut rng)),
+            (2, Purpose::ENCRYPTION, random_secret_key(&mut rng)),
+            (3, Purpose::DECRYPTION, random_secret_key(&mut rng)),
         ];
         let mut adds: Vec<IdentityPublicKeyInCreationV0> = pairs
             .iter()
@@ -2631,7 +2631,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3002,7 +3002,7 @@ mod tests {
         let platform_state = platform.state.load();
 
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         // Add a key with id 2 and also disable key id 2 in the same transition
         let new_key = IdentityPublicKeyInCreationV0 {
@@ -3231,7 +3231,7 @@ mod tests {
         let platform_state = platform.state.load();
 
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let signable_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
@@ -3366,7 +3366,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             let mut rng = SecpStdRng::seed_from_u64(292);
-            let new_key_pair = random_ecdsa_secret_key(&mut rng);
+            let new_key_pair = random_secret_key(&mut rng);
             let mut new_key = IdentityPublicKeyInCreationV1 {
                 id: NEW_KEY_ID,
                 purpose: added_key.purpose,
@@ -3919,7 +3919,7 @@ mod tests {
             nonce: IdentityNonce,
         ) -> StateTransition {
             let mut rng = SecpStdRng::seed_from_u64(292);
-            let authentication_key_pair = random_ecdsa_secret_key(&mut rng);
+            let authentication_key_pair = random_secret_key(&mut rng);
             let (authentication_key_type, authentication_key_data) = match fault {
                 Some(Fault::UndecodableBlsKeyData) => (KeyType::BLS12_381, vec![0xff; 48]),
                 Some(Fault::ShortBlsKeyData) => (KeyType::BLS12_381, vec![0xa0; 47]),
@@ -4070,7 +4070,7 @@ mod tests {
         async fn update_adding_ecdsa_keys(owner: &Owner, key_count: usize) -> StateTransition {
             let mut rng = SecpStdRng::seed_from_u64(517);
             let key_pairs: Vec<EcdsaSecretKey> = (0..key_count)
-                .map(|_| random_ecdsa_secret_key(&mut rng))
+                .map(|_| random_secret_key(&mut rng))
                 .collect();
             let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
                 identity_id: owner.identity.id(),
