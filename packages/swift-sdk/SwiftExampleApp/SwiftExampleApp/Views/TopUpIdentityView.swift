@@ -39,12 +39,18 @@ struct TopUpIdentityView: View {
     @State private var isToppingUp: Bool = false
     @State private var submitError: SubmitError? = nil
     @State private var newBalance: UInt64? = nil
+    /// The top-up may have been broadcast and its outcome is not confirmed
+    /// (code 20): shown as pending, and the form is gone so the same top-up
+    /// cannot be sent again.
+    @State private var isPending: Bool = false
 
     var body: some View {
         NavigationStack {
             Form {
                 if newBalance != nil {
                     successSection
+                } else if isPending {
+                    pendingSection
                 } else {
                     walletSection
                     fundingSection
@@ -215,6 +221,31 @@ struct TopUpIdentityView: View {
         }
     }
 
+    private var pendingSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Top-up pending", systemImage: "clock")
+                    .foregroundColor(.orange)
+                    .font(.headline)
+                    .accessibilityIdentifier("topup.pending")
+                Text(
+                    "The top-up may still complete. Don't send it again; "
+                    + "the next sync settles it."
+                )
+                .font(.callout)
+                .foregroundColor(.secondary)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+        }
+    }
+
     // MARK: - Derived state
 
     private var canSubmit: Bool {
@@ -328,6 +359,13 @@ struct TopUpIdentityView: View {
                     // success banner so we don't depend on the row
                     // re-fetch landing before this UI swap.
                     self.newBalance = balance
+                    self.isToppingUp = false
+                }
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+                // Not a failure: the top-up may still execute, so no retry
+                // is offered.
+                await MainActor.run {
+                    self.isPending = true
                     self.isToppingUp = false
                 }
             } catch {
