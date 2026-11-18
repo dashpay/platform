@@ -16,6 +16,21 @@ impl FromProof<GetAssetLockOutpointInfoRequest> for StoredAssetLockInfo {
     type Request = GetAssetLockOutpointInfoRequest;
     type Response = GetAssetLockOutpointInfoResponse;
 
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let get_asset_lock_outpoint_info_request::Version::V0(request) =
+            request.version.as_ref().ok_or(Error::EmptyVersion)?;
+        if !request.prove {
+            return Err(Error::RequestError {
+                error: "unproved asset-lock outpoint queries cannot be verified; enable proofs"
+                    .to_string(),
+            });
+        }
+        Ok(())
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -47,5 +62,31 @@ impl FromProof<GetAssetLockOutpointInfoRequest> for StoredAssetLockInfo {
         .map_drive_error(&proof, &metadata)?;
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
         Ok((Some(info), metadata, proof))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_asset_lock_outpoint_info_request;
+
+    #[test]
+    fn should_reject_unproved_requests_before_sending() {
+        let request = GetAssetLockOutpointInfoRequest {
+            version: Some(get_asset_lock_outpoint_info_request::Version::V0(
+                get_asset_lock_outpoint_info_request::GetAssetLockOutpointInfoRequestV0 {
+                    outpoint: vec![0; 36],
+                    prove: false,
+                },
+            )),
+        };
+
+        let error =
+            <StoredAssetLockInfo as FromProof<GetAssetLockOutpointInfoRequest>>::check_request(
+                &request,
+                PlatformVersion::latest(),
+            )
+            .expect_err("unproved requests cannot be verified");
+        assert!(matches!(error, Error::RequestError { .. }));
     }
 }

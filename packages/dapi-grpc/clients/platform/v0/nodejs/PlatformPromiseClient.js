@@ -291,11 +291,17 @@ class PlatformPromiseClient {
       throw new Error('metadata must be an object');
     }
 
+    // Preserve the conversion interceptor when callers add authentication, tracing, or
+    // other interceptors of their own.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
     return this.client.getAssetLockOutpointInfo(
       getAssetLockOutpointInfoRequest,
       convertObjectToMetadata(metadata),
       {
+        ...callOptions,
         interceptors: [
+          ...callerInterceptors,
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetAssetLockOutpointInfoResponse,
@@ -306,7 +312,6 @@ class PlatformPromiseClient {
             ),
           ),
         ],
-        ...options,
       },
     );
   }
