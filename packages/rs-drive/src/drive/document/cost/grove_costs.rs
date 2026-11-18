@@ -26,6 +26,8 @@ pub(crate) enum NodeKind {
     ProvableSum,
     ProvableCountProvableSum,
     ProvableCountProvableBigSum,
+    CountBigSum,
+    ProvableBigSum,
 }
 
 impl NodeKind {
@@ -49,7 +51,14 @@ impl NodeKind {
             TreeType::ProvableSumTree | TreeType::ProvableSumIndexedTree => NodeKind::ProvableSum,
             TreeType::ProvableCountProvableSumTree
             | TreeType::ProvableCountProvableSumIndexedTree => NodeKind::ProvableCountProvableSum,
-            TreeType::ProvableCountProvableBigSumTree => NodeKind::ProvableCountProvableBigSum,
+            TreeType::ProvableCountProvableBigSumTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree => {
+                NodeKind::ProvableCountProvableBigSum
+            }
+            TreeType::CountBigSumTree => NodeKind::CountBigSum,
+            TreeType::ProvableBigSumTree | TreeType::ProvableBigSumIndexedTree => {
+                NodeKind::ProvableBigSum
+            }
         }
     }
 
@@ -59,10 +68,11 @@ impl NodeKind {
             NodeKind::Normal => 1,
             NodeKind::Sum | NodeKind::Count | NodeKind::ProvableCount | NodeKind::ProvableSum => 9,
             NodeKind::BigSum
+            | NodeKind::ProvableBigSum
             | NodeKind::CountSum
             | NodeKind::ProvableCountSum
             | NodeKind::ProvableCountProvableSum => 17,
-            NodeKind::ProvableCountProvableBigSum => 25,
+            NodeKind::ProvableCountProvableBigSum | NodeKind::CountBigSum => 25,
         }
     }
 
@@ -109,13 +119,15 @@ fn tree_cost_size(tree_type: TreeType) -> u32 {
         | TreeType::CountTree
         | TreeType::ProvableCountTree
         | TreeType::ProvableSumTree => 12,
-        TreeType::BigSumTree => 19,
+        TreeType::BigSumTree | TreeType::ProvableBigSumTree => 19,
         TreeType::CountSumTree
         | TreeType::ProvableCountSumTree
         | TreeType::ProvableCountProvableSumTree => 21,
         TreeType::ProvableCountIndexedTree | TreeType::ProvableSumIndexedTree => 13,
         TreeType::ProvableCountProvableSumIndexedTree => 28,
-        TreeType::ProvableCountProvableBigSumTree => 28,
+        TreeType::ProvableCountProvableBigSumTree | TreeType::CountBigSumTree => 28,
+        TreeType::ProvableBigSumIndexedTree => 20,
+        TreeType::ProvableCountProvableBigSumIndexedTree => 35,
         TreeType::CommitmentTree(_) | TreeType::BulkAppendTree(_) => 12,
         TreeType::MmrTree => 11,
         TreeType::DenseAppendOnlyFixedSizeTree(_) => 6,
@@ -191,7 +203,7 @@ mod tests {
     use grovedb_merk::tree::kv::KV;
     use grovedb_version::version::GroveVersion;
 
-    const TREE_TYPES: [TreeType; 13] = [
+    const TREE_TYPES: [TreeType; 17] = [
         TreeType::NormalTree,
         TreeType::SumTree,
         TreeType::BigSumTree,
@@ -205,6 +217,10 @@ mod tests {
         TreeType::ProvableCountIndexedTree,
         TreeType::ProvableCountProvableSumIndexedTree,
         TreeType::ProvableCountProvableBigSumTree,
+        TreeType::CountBigSumTree,
+        TreeType::ProvableBigSumTree,
+        TreeType::ProvableBigSumIndexedTree,
+        TreeType::ProvableCountProvableBigSumIndexedTree,
     ];
 
     #[test]
@@ -277,6 +293,14 @@ mod tests {
                             flags.clone(),
                         ),
                     ),
+                    (
+                        TreeType::CountBigSumTree,
+                        Element::empty_count_big_sum_tree_with_flags(flags.clone()),
+                    ),
+                    (
+                        TreeType::ProvableBigSumTree,
+                        Element::empty_provable_big_sum_tree_with_flags(flags.clone()),
+                    ),
                     (TreeType::NormalTree, Element::empty_tree_with_flags(None)),
                 ] {
                     let serialized = element.serialize(grove_version).expect("serialize");
@@ -293,6 +317,8 @@ mod tests {
                         | Element::CountTree(_, _, f)
                         | Element::CountSumTree(_, _, _, f)
                         | Element::ProvableCountTree(_, _, f)
+                        | Element::ProvableBigSumTree(_, _, f)
+                        | Element::CountBigSumTree(_, _, _, f)
                         | Element::ProvableCountProvableBigSumTree(_, _, _, f) => {
                             f.as_ref().map(|f| f.len() as u32)
                         }

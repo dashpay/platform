@@ -112,13 +112,16 @@ pub(crate) fn ranking_row(
 ) -> Result<(Vec<u8>, PricedElement), Error> {
     let sort_key_len = match axis {
         IndexAxis::Count | IndexAxis::Sum => 8,
-        IndexAxis::Avg => 16,
+        IndexAxis::Avg | IndexAxis::BigSum => 16,
     };
     let mut key = vec![0u8; sort_key_len];
     key.extend_from_slice(entry_key);
     let payload = match axis {
         IndexAxis::Count => i64::try_from(count).unwrap_or(i64::MAX),
         IndexAxis::Sum | IndexAxis::Avg => sum,
+        // A row of the big sum axis carries no sum: the order is in its key
+        // (grovedb `axis_payload_sum`).
+        IndexAxis::BigSum => 0,
     };
     let row = Element::new_reference_with_sum_item_with_hops(
         SiblingReference(entry_key.to_vec()),

@@ -1897,6 +1897,12 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountProvableBigSumTree => {
                 Element::empty_provable_count_provable_big_sum_tree_with_flags(element_flags)
             }
+            TreeType::CountBigSumTree => {
+                Element::empty_count_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableBigSumTree => {
+                Element::empty_provable_big_sum_tree_with_flags(element_flags)
+            }
             TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
             TreeType::CommitmentTree(chunk_power) => {
                 Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)?
@@ -1918,6 +1924,9 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountIndexedTree => {
                 Element::empty_provable_count_indexed_tree_with_flags(element_flags)
             }
+            TreeType::ProvableBigSumIndexedTree => {
+                Element::empty_provable_big_sum_indexed_tree_with_flags(element_flags)
+            }
             // The multi-axis variant is the exception: its axes TLV lives
             // only on the `Element`, `TreeType` does not carry it, and an
             // empty TLV is rejected by grovedb's `validate_pcpsit_axes`. The
@@ -1935,6 +1944,15 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
                      ProvableCountProvableSumIndexedTree — the ranked axis set is not carried \
                      by TreeType; use for_known_path_key_empty_indexed_tree (or \
                      batch_insert_empty_provable_count_provable_sum_indexed_tree) instead.",
+                )))
+            }
+            // Like the variant above, its axes are carried by the `Element`
+            // alone, and Drive creates none yet.
+            TreeType::ProvableCountProvableBigSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "empty_tree_operation_for_known_path_key cannot create a \
+                     ProvableCountProvableBigSumIndexedTree — the ranked axis set is not \
+                     carried by TreeType",
                 )))
             }
             // A private document store's entry size lives only on the

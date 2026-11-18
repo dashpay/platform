@@ -163,6 +163,30 @@
       "is_tree": true,
       "is_opaque": false,
       "is_reference": false
+    },
+    {
+      "name": "CountBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumIndexedTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumIndexedTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
     }
   ],
   "flag_kinds": [

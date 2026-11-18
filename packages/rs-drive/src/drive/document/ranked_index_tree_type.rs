@@ -259,6 +259,10 @@ pub(crate) fn non_indexed_mirror_tree_type(tree_type: TreeType) -> TreeType {
         TreeType::ProvableCountIndexedTree => TreeType::ProvableCountTree,
         TreeType::ProvableSumIndexedTree => TreeType::ProvableSumTree,
         TreeType::ProvableCountProvableSumIndexedTree => TreeType::ProvableCountProvableSumTree,
+        TreeType::ProvableBigSumIndexedTree => TreeType::ProvableBigSumTree,
+        TreeType::ProvableCountProvableBigSumIndexedTree => {
+            TreeType::ProvableCountProvableBigSumTree
+        }
         other => other,
     }
 }

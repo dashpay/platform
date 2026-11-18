@@ -42,6 +42,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::BigSumTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -54,6 +56,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::CountTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -66,6 +70,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::ProvableCountTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -78,6 +84,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::ProvableSumTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -90,6 +98,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::CountSumTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -102,6 +112,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::ProvableCountSumTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -114,6 +126,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 1,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::ProvableCountProvableSumTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -126,6 +140,8 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 1,
             provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
         },
         TreeType::ProvableCountProvableBigSumTree => SomeSumTrees {
             sum_trees_weight: 0,
@@ -138,6 +154,36 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
             provable_count_sum_trees_weight: 0,
             provable_count_provable_sum_trees_weight: 0,
             provable_count_provable_big_sum_trees_weight: 1,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 0,
+        },
+        TreeType::CountBigSumTree => SomeSumTrees {
+            sum_trees_weight: 0,
+            big_sum_trees_weight: 0,
+            count_trees_weight: 0,
+            count_sum_trees_weight: 0,
+            non_sum_trees_weight: 0,
+            provable_sum_trees_weight: 0,
+            provable_count_trees_weight: 0,
+            provable_count_sum_trees_weight: 0,
+            provable_count_provable_sum_trees_weight: 0,
+            provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 1,
+            provable_big_sum_trees_weight: 0,
+        },
+        TreeType::ProvableBigSumTree => SomeSumTrees {
+            sum_trees_weight: 0,
+            big_sum_trees_weight: 0,
+            count_trees_weight: 0,
+            count_sum_trees_weight: 0,
+            non_sum_trees_weight: 0,
+            provable_sum_trees_weight: 0,
+            provable_count_trees_weight: 0,
+            provable_count_sum_trees_weight: 0,
+            provable_count_provable_sum_trees_weight: 0,
+            provable_count_provable_big_sum_trees_weight: 0,
+            count_big_sum_trees_weight: 0,
+            provable_big_sum_trees_weight: 1,
         },
         // Indexed trees (grovedb PR 657) — the ranked variants. grovedb's
         // `EstimatedSumTrees` has no indexed weight slots, so each indexed
@@ -158,7 +204,9 @@ pub(crate) fn estimated_sum_trees_for_value_tree_type(
         // during contract insertion.
         TreeType::ProvableCountIndexedTree
         | TreeType::ProvableSumIndexedTree
-        | TreeType::ProvableCountProvableSumIndexedTree => {
+        | TreeType::ProvableCountProvableSumIndexedTree
+        | TreeType::ProvableBigSumIndexedTree
+        | TreeType::ProvableCountProvableBigSumIndexedTree => {
             estimated_sum_trees_for_value_tree_type(non_indexed_mirror_tree_type(value_tree_type))
         }
         // Defensive: any future TreeType not handled here falls back
@@ -214,6 +262,37 @@ mod tests {
                 provable_count_provable_big_sum_trees_weight,
                 ..
             } => *provable_count_provable_big_sum_trees_weight,
+            _ => 0,
+        });
+        expect_slot(TreeType::ProvableBigSumIndexedTree, |w| match w {
+            SomeSumTrees {
+                provable_big_sum_trees_weight,
+                ..
+            } => *provable_big_sum_trees_weight,
+            _ => 0,
+        });
+        expect_slot(
+            TreeType::ProvableCountProvableBigSumIndexedTree,
+            |w| match w {
+                SomeSumTrees {
+                    provable_count_provable_big_sum_trees_weight,
+                    ..
+                } => *provable_count_provable_big_sum_trees_weight,
+                _ => 0,
+            },
+        );
+        expect_slot(TreeType::CountBigSumTree, |w| match w {
+            SomeSumTrees {
+                count_big_sum_trees_weight,
+                ..
+            } => *count_big_sum_trees_weight,
+            _ => 0,
+        });
+        expect_slot(TreeType::ProvableBigSumTree, |w| match w {
+            SomeSumTrees {
+                provable_big_sum_trees_weight,
+                ..
+            } => *provable_big_sum_trees_weight,
             _ => 0,
         });
     }
