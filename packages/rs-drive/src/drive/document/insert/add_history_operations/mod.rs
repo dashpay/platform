@@ -83,7 +83,13 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
+    use crate::query::{WhereClause, WhereOperator};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::platform_value::Value;
     use dpp::system_data_contracts::SystemDataContract;
     use grovedb::Element;
 
@@ -273,5 +279,150 @@ mod tests {
             error.to_string().contains("overflow"),
             "expected an overflow, got {error}"
         );
+    }
+
+    /// The sum of the prices listed for the source contract, proved over the `byContract`
+    /// index and verified, alone and with the count of the listings.
+    fn proved_price_totals(
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) -> (Result<i64, Error>, Result<(u64, i64), Error>) {
+        let contract = drive
+            .cache
+            .system_data_contracts
+            .load_document_history(platform_version)
+            .expect("expected the document history contract");
+        let document_type = contract
+            .document_type_for_name("priceUpdate")
+            .expect("expected the priceUpdate type");
+        let query = DriveDocumentSumQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "priceUpdate".to_string(),
+            index: document_type
+                .indexes()
+                .get("byContract")
+                .expect("expected the byContract index"),
+            where_clauses: vec![
+                WhereClause {
+                    field: "dataContractId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(SOURCE_CONTRACT),
+                },
+                WhereClause {
+                    field: "$createdAt".to_string(),
+                    operator: WhereOperator::Between,
+                    value: Value::Array(vec![Value::U64(0), Value::U64(1_000_000)]),
+                },
+            ],
+            sum_property: "price".to_string(),
+        };
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .value
+            .expect("expected the root hash");
+
+        let proof = query
+            .execute_aggregate_sum_with_proof(drive, None, platform_version)
+            .expect("expected to prove the sum");
+        let sum = query
+            .verify_aggregate_sum_proof(&proof, platform_version)
+            .map(|(proved_root, sum)| {
+                assert_eq!(proved_root, root_hash);
+                sum
+            });
+
+        let proof = query
+            .execute_aggregate_count_and_sum_with_proof(drive, None, platform_version)
+            .expect("expected to prove the count and the sum");
+        let count_and_sum = query
+            .verify_aggregate_count_and_sum_proof(&proof, platform_version)
+            .map(|(proved_root, count, sum)| {
+                assert_eq!(proved_root, root_hash);
+                (count, sum)
+            });
+        (sum, count_and_sum)
+    }
+
+    /// A sum over a range of a 128-bit tree is proved and verified, and agrees with the
+    /// unproven read.
+    #[test]
+    fn should_prove_and_verify_the_listed_prices_of_a_contract() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_document_history(platform_version);
+        for (nonce, price) in [(1, 5), (2, 70_000), (3, 9)] {
+            record(
+                &drive,
+                DocumentEvent::PriceUpdate { price },
+                nonce,
+                platform_version,
+            )
+            .expect("expected to record the listing");
+        }
+
+        let (sum, count_and_sum) = proved_price_totals(&drive, platform_version);
+        assert_eq!(sum.expect("expected the proved sum"), 70_014);
+        assert_eq!(
+            count_and_sum.expect("expected the proved count and sum"),
+            (3, 70_014)
+        );
+    }
+
+    /// The same proofs at protocol version 14, over the 64-bit tree it keeps.
+    #[test]
+    fn should_prove_and_verify_the_listed_prices_of_a_contract_at_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_document_history(platform_version);
+        for (nonce, price) in [(1, 5), (2, 70_000), (3, 9)] {
+            record(
+                &drive,
+                DocumentEvent::PriceUpdate { price },
+                nonce,
+                platform_version,
+            )
+            .expect("expected to record the listing");
+        }
+
+        let (sum, count_and_sum) = proved_price_totals(&drive, platform_version);
+        assert_eq!(sum.expect("expected the proved sum"), 70_014);
+        assert_eq!(
+            count_and_sum.expect("expected the proved count and sum"),
+            (3, 70_014)
+        );
+    }
+
+    /// A proved sum past 64 bits verifies against the root, and is refused as too wide for
+    /// the result that carries it, never read as another number.
+    #[test]
+    fn should_refuse_a_proved_sum_past_64_bits_as_too_wide() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_document_history(platform_version);
+        for nonce in 1..=2 {
+            record(
+                &drive,
+                DocumentEvent::PriceUpdate {
+                    price: i64::MAX as u64,
+                },
+                nonce,
+                platform_version,
+            )
+            .expect("expected to record the listing");
+        }
+
+        let (sum, count_and_sum) = proved_price_totals(&drive, platform_version);
+        for error in [
+            sum.expect_err("expected the sum to be refused"),
+            count_and_sum.expect_err("expected the count and sum to be refused"),
+        ] {
+            assert!(
+                matches!(
+                    &error,
+                    Error::Query(QuerySyntaxError::Unsupported(message))
+                        if message.contains("does not fit the 64 bits")
+                ),
+                "{error:?}"
+            );
+        }
     }
 }

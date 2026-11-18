@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
+use crate::query::sum_width::sum_in_64_bits;
 use crate::verify::RootHash;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -37,6 +39,23 @@ impl DriveDocumentSumQuery<'_> {
     ) -> Result<(RootHash, Vec<(Vec<u8>, i64)>), Error> {
         let path_query =
             self.carrier_aggregate_sum_path_query(limit, left_to_right, platform_version)?;
+        // A type that keeps its sums in 128 bits is verified through the verifier that
+        // returns one: the 64-bit one refuses its trees. No type keeps them so before
+        // protocol version 15 (`DocumentTypeV2Getters::uses_big_sums`), so earlier
+        // versions verify as they did.
+        if self.document_type.uses_big_sums() {
+            let (root_hash, entries) = GroveDb::verify_aggregate_big_sum_query_per_key(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let entries = entries
+                .into_iter()
+                .map(|(key, sum)| Ok((key, sum_in_64_bits(sum)?)))
+                .collect::<Result<Vec<_>, Error>>()?;
+            return Ok((root_hash, entries));
+        }
         let (root_hash, entries) = GroveDb::verify_aggregate_sum_query_per_key(
             proof,
             &path_query,
