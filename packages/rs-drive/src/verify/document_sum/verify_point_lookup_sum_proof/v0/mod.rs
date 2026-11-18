@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::{DriveDocumentSumQuery, SumEntry};
+use crate::query::sum_width::element_sum;
 use crate::query::WhereOperator;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -53,7 +54,8 @@ impl DriveDocumentSumQuery<'_> {
             // protocol version 14 reads a value tree, which is never wrapped,
             // so it decodes as before
             // (`should_verify_an_average_point_proof_unchanged_at_protocol_version_13`).
-            let sum = elem.map(|e| e.underlying().sum_value_or_default());
+            // At either width a type keeps its sums in (`crate::query::sum_width`)
+            let sum = elem.map(|e| element_sum(e.underlying())).transpose()?;
             out.push(SumEntry {
                 in_key: None,
                 key,
