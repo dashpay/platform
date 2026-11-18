@@ -47,7 +47,7 @@ mod tests {
         let error = Drive::verify_asset_lock_outpoint_info(
             &proof,
             &Bytes36::from([0; 36]),
-            &PlatformVersion::latest(),
+            PlatformVersion::latest(),
         )
         .expect_err("legacy proof envelope must be rejected");
 
