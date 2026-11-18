@@ -47,6 +47,12 @@ pub struct DataContractMethodVersions {
     pub validate_moderation_config: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
+    /// `DataContract::validate_schema_patterns`: refuses a contract whose document schemas and
+    /// `$defs` hold more patterns than `max_contract_schema_patterns`, or one that does not
+    /// compile within `max_schema_pattern_compiled_size`. `None` on versions that predate the
+    /// rule: the method refuses nothing there, so the shipped
+    /// `create_document_types_from_document_schemas` 1 that calls it is inert.
+    pub validate_schema_patterns: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

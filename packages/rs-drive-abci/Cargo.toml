@@ -23,7 +23,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
   "server",
   "grovedb_operations_logging",
 ] }
-thiserror = "1.0.64"
+thiserror = "2.0"
 rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
@@ -32,7 +32,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = ["abci"] }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 rust_decimal = "1.39.0"
 rust_decimal_macros = "1.39.0"
-mockall = { version = "0.13", optional = true }
+mockall = { version = "0.15", optional = true }
 prost = { version = "0.14", default-features = false }
 tracing = { version = "0.1.41", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
@@ -51,7 +51,7 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.8.1", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v2.0.0-dev.2", features = [
   "grpc",
 ] }
 time = { version = "0.3", optional = true, features = [
@@ -61,13 +61,13 @@ time = { version = "0.3", optional = true, features = [
 ] }
 
 lazy_static = "1.4.0"
-itertools = { version = "0.13" }
-file-rotate = { version = "0.7.3" }
+itertools = { version = "0.15" }
+file-rotate = { version = "0.8.0" }
 reopen = { version = "1.0.3" }
 delegate = { version = "0.13" }
 regex = { version = "1.8.1" }
 metrics = { version = "0.24" }
-metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = [
   "http-listener",
 ] }
 url = { version = "2.3.1" }
@@ -80,8 +80,8 @@ tokio = { version = "1.40", features = [
 tokio-util = { version = "0.7" }
 derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
-console-subscriber = { version = "0.4", optional = true }
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
+console-subscriber = { version = "0.5", optional = true }
+dashcore-crypto = { workspace = true, features = ["bls"], optional = true }
 grovedb-commitment-tree = { workspace = true }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
@@ -121,8 +121,7 @@ strategy-tests = { path = "../strategy-tests" }
 grovedb-commitment-tree = { workspace = true, features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
-mockall = { version = "0.13" }
+mockall = { version = "0.15" }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
 libc = "0.2"
 
@@ -136,8 +135,8 @@ grovedb-path = { workspace = true }
 grovedb-storage = { workspace = true }
 
 [features]
-default = ["bls-signatures"]
-mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
+default = []
+mocks = ["mockall", "drive/fixtures-and-mocks", "dep:dashcore-crypto"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 # Compiles in the shielded-pool seeder, the `snapshot-bake` subcommand, and

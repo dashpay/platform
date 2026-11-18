@@ -460,6 +460,7 @@ export { ShieldedFacade } from './shielded/facade.js';
 export { EncryptedForFacade } from './encrypted-for/facade.js';
 export { ModerationChartersFacade } from './moderation-charters/facade.js';
 export { DecisionProposalsFacade } from './decision-proposals/facade.js';
+export { MultipleChoiceProposalsFacade } from './decision-proposals/multiple-choice-facade.js';
 export { PrivateDocumentsFacade } from './private-documents/facade.js';
 export { wallet } from './wallet/functions.js';
 export * from './wasm.js';

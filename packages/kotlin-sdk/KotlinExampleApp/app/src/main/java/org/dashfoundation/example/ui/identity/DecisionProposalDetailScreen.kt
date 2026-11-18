@@ -255,9 +255,10 @@ fun DecisionProposalDetailScreen(
 
 /**
  * [read]'s value, or null after handing its failure to [onError], so one failed read
- * leaves the others shown. Cancellation is rethrown, never reported as a failure.
+ * leaves the others shown. Cancellation is rethrown, never reported as a failure. Shared
+ * with the multiple choice proposal detail screen.
  */
-private suspend fun <T> readOrNull(onError: (Exception) -> Unit, read: suspend () -> T?): T? =
+internal suspend fun <T> readOrNull(onError: (Exception) -> Unit, read: suspend () -> T?): T? =
     try {
         read()
     } catch (e: CancellationException) {

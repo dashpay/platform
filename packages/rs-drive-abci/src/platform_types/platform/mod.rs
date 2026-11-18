@@ -167,15 +167,27 @@ impl<C> Platform<C> {
         // when no records exist; a failure leaves the records for the
         // per-block flush to retry.
         if let Some(platform_version) = current_platform_version {
-            if let Err(error) = drive
+            match drive
                 .grove
                 .flush_pending_prefix_drops(&platform_version.drive.grove_version)
             {
-                tracing::warn!(
-                    ?error,
-                    "failed to flush pending prefix drops at startup; records persist and \
-                     will be retried after the next block"
-                );
+                Ok(report) => {
+                    if report.unresolved_records > 0 {
+                        tracing::warn!(
+                            unresolved_records = report.unresolved_records,
+                            first_unresolved_error = report.first_unresolved_error.as_deref(),
+                            "pending prefix drops left unresolved at startup; records persist \
+                             and will be retried after the next block"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        ?error,
+                        "failed to flush pending prefix drops at startup; records persist and \
+                         will be retried after the next block"
+                    );
+                }
             }
         }
 
