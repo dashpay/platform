@@ -9222,6 +9222,55 @@ mod tests {
         );
     }
 
+    /// A `$defs` definition's own `required` is not read for storage (its members are stored as
+    /// optional), so a member it alone lists may not carry `requiredSince`: the refusal says
+    /// where the list that may name it is written.
+    #[test]
+    fn should_reject_required_since_on_a_member_only_its_definition_requires() {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+        let defs = BTreeMap::from([(
+            "m".to_string(),
+            platform_value::to_value(json!({
+                "type": "object",
+                "properties": {
+                    "x": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 1},
+                },
+                "required": ["x"],
+                "additionalProperties": false
+            }))
+            .expect("definition should convert"),
+        )]);
+        let schema = platform_value::to_value(json!({
+            "type": "object",
+            "properties": {
+                "meta": {"$ref": "#/$defs/m", "position": 0},
+            },
+            "additionalProperties": false
+        }))
+        .expect("schema should convert");
+
+        let error = DocumentType::try_from_schema(
+            Identifier::random(),
+            1,
+            config.version(),
+            "msg",
+            schema,
+            Some(&defs),
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect_err("a member only its definition requires may not carry requiredSince");
+        assert!(
+            error.to_string().contains("beside the $ref"),
+            "the refusal should name where the list goes, got {error}"
+        );
+    }
+
     #[test]
     fn should_reject_required_since_on_a_nested_property_its_object_does_not_require() {
         let result = try_document_type_from_schema(nested_required_since_schema(false));

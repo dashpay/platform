@@ -11,6 +11,9 @@ use crate::data_contract::errors::DataContractError;
 /// `$ref`, or (a type no document can satisfy) a dotted name in an enclosing list; and its value
 /// is a contract version of at least 1 fitting in a u32.
 ///
+/// A `$defs` definition's own `required` lists, at any depth of the definition, are not read for
+/// storage: a member they alone list is parsed as optional, so it may not carry the keyword.
+///
 /// A member with the keyword is stored like an optional member at every contract version, with
 /// a presence byte (`DocumentProperty::always_required`), so documents written before it was
 /// required still decode; the document validator requires it of every document written from
@@ -25,7 +28,12 @@ pub(super) fn apply_required_since_v1(
 
     if !is_required {
         return Err(DataContractError::InvalidContractStructure(
-            "requiredSince is only allowed on properties listed in required".to_string(),
+            "requiredSince is only allowed on properties listed in required: the document \
+             type's required, an object's own required, or, for a member of a $defs \
+             definition, the required written beside the $ref that uses it (a definition's own \
+             required is not read for storage, so the members only it lists are stored as \
+             optional)"
+                .to_string(),
         ));
     }
 

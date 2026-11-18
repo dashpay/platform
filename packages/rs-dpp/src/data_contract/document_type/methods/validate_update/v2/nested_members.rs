@@ -60,9 +60,9 @@ impl DocumentTypeRef<'_> {
     /// type's own `required` does: in the list of every object the old type has (its own list,
     /// or the one beside its `$ref`) no name is removed, and a name is added only for a member
     /// the same update adds to that object. A dotted name is never one of an object's own
-    /// members, so none is added to any list, the type's own included: the validator reads it
-    /// as a property named with a dot, which no document can hold, while the parser reads it as
-    /// a nested requirement. One may leave a list when another list still requires the member it
+    /// members, so none is added to any list, the type's own included, nor written in the list
+    /// of an object the update adds: the validator reads it as a property named with a dot,
+    /// which no document can hold, while the parser reads it as a nested requirement. One may leave a list when another list still requires the member it
     /// names, which leaves the parse as it was and lets the validator accept documents again.
     /// The type's own undotted names are judged by generation 1's required-fields check.
     pub(super) fn validate_required_lists_kept(
@@ -354,7 +354,46 @@ fn first_required_list_change(
             return Some(change);
         }
     }
+    // An object the update adds holds no stored document, so its lists are its own to choose,
+    // except a dotted name, which would leave the object unable to hold any document
+    for (name, new_property) in new {
+        if old.contains_key(name)
+            || !matches!(new_property.property_type, DocumentPropertyType::Object(_))
+        {
+            continue;
+        }
+        if let Some(added_schema) = member_schema(new_schema, name) {
+            if let Some(change) =
+                first_dotted_name_in_added_object(added_schema, &member_path(path, name))
+            {
+                return Some(change);
+            }
+        }
+    }
     None
+}
+
+/// The first dotted name in a `required` list of the object the update adds at `path`, whose
+/// schema is `schema`, or of an object inside it written inline.
+fn first_dotted_name_in_added_object(schema: &Value, path: &str) -> Option<String> {
+    if let Some(dotted) = required_names(schema)
+        .into_iter()
+        .find(|name| name.contains('.'))
+    {
+        return Some(format!(
+            "the required of '{path}' can not name the dotted name '{dotted}': a required list \
+             names the members of its own object, and the document validator reads a dotted \
+             name as a property named with a dot, which no document can hold"
+        ));
+    }
+    let members = schema
+        .as_map()
+        .filter(|schema| schema.get_optional_key(REF).is_none())
+        .and_then(|schema| schema.get_optional_key(PROPERTIES))
+        .and_then(Value::as_map)?;
+    members.iter().find_map(|(name, member)| {
+        first_dotted_name_in_added_object(member, &member_path(Some(path), name.as_text()?))
+    })
 }
 
 fn member_path(path: Option<&str>, name: &str) -> String {

@@ -912,3 +912,108 @@ fn should_keep_what_the_parse_and_the_validator_agree_on() {
     ];
     run(&cases, PlatformVersion::latest());
 }
+
+/// An object the update adds is held to the dotted-name rule too: the document validator reads
+/// a dotted name in its `required` as a property named with a dot, which no document can hold.
+/// Its own member requirements, written on the object that holds the member, are accepted.
+#[test]
+fn should_refuse_a_dotted_name_in_the_required_of_an_object_the_update_adds() {
+    let inner = || object(platform_value!({ "p": boolean(0) }), 1, None);
+    let cases = vec![
+        case(
+            "a new object whose required names a member of its own object member",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "inner": inner() }),
+                    1,
+                    Some(platform_value!(["inner.p"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "inner.p"),
+        ),
+        case(
+            "a member added to an existing object, whose required names a member of its member",
+            document_type_schema(
+                with_meta(object(platform_value!({ "y": boolean(0) }), 1, None)),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({
+                        "y": boolean(0),
+                        "added": object(
+                            platform_value!({ "inner": object(platform_value!({ "p": boolean(0) }), 0, None) }),
+                            1,
+                            Some(platform_value!(["inner.p"])),
+                        ),
+                    }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "inner.p"),
+        ),
+        case(
+            "a new object whose member object requires its own member",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({
+                        "y": boolean(0),
+                        "inner": object(platform_value!({ "p": boolean(0) }), 1, Some(platform_value!(["p"]))),
+                    }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Accepted,
+        ),
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// Through a `$ref` an object gains a required member as an inline one does, in the `required`
+/// written beside the `$ref`, at any depth of the type's own schema.
+#[test]
+fn should_admit_a_member_required_beside_a_ref_inside_an_object() {
+    let with_q = |q_required: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({
+                    "y": boolean(0),
+                    "q": with(
+                        platform_value!({ "$ref": "#/$defs/m", "position": 1 }),
+                        "required",
+                        q_required,
+                    ),
+                }),
+                1,
+                None,
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let cases = vec![Case {
+        name: "a definition's member required beside a $ref inside an object",
+        old: with_q(platform_value!(["y"])),
+        new: with_q(platform_value!(["y", "x"])),
+        old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
+        new_defs: definitions(platform_value!({
+            "y": boolean(0),
+            "z": integer(1),
+            "x": with(boolean(2), "requiredSince", Value::U32(2)),
+        })),
+        expected: Expected::Accepted,
+    }];
+    run(&cases, PlatformVersion::latest());
+}

@@ -278,7 +278,7 @@ The two spellings are the same property: a value is validated, indexed and store
 | **Where** | Properties of type `object` |
 | **Value** | The same as at the top of a document type: see [Document Shape](document-shape.md) |
 | **Since** | protocol version 1 |
-| **On update** | Members may be added after the existing ones, never removed or reordered (10246; reordering 40212 from protocol version 15); `required` follows the rules of the type's own `required` from protocol version 15 (10276) and is fixed before (10246); `additionalProperties` is fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
+| **On update** | Members may be added, never removed (10246). From protocol version 15 they keep their order and are added only after the existing ones: reordering them, or adding a member before them, is refused (`DocumentTypeUpdateError`, 40212). `required` follows the rules of the type's own `required` from protocol version 15 (10276), and may not name more members than `maxProperties` allows; before, it is fixed (10246). `additionalProperties` is fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
 | **Errors** | `JsonSchemaError` (10101) |
 
 ```json
@@ -333,7 +333,8 @@ A property of any document type of the contract then reads `"shippingAddress": {
 - A reference that does not resolve, or that leads back to itself, is refused (10207).
 - The property keeps its own `position`; the definition supplies everything else.
 - A definition may be written with a [shorthand](#shorthands-identifier-and-bytes): `"schemaDefs": { "owner": { "type": "identifier" } }`.
-- The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213). An object definition's members follow the rules of [Objects](#objects) in every type that references it: members only after the existing ones. The definition's own `required` is fixed; a type requires a definition's member through the `required` beside its `$ref`.
+- The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213). An object definition's members follow the rules of [Objects](#objects) in every type that references it: members only after the existing ones.
+- Requiredness through a `$ref` comes from the `required` written beside it, which follows the rules of [Objects](#objects). A definition's own `required` lists, at any depth of the definition, are not read for storage (a member only they list is stored as optional) and are fixed, and so are the `required` lists in `properties` written beside a `$ref`. So inside a definition, a member can be added as required only directly to the definition a `$ref` names, through the `required` beside that `$ref`; the members of the objects inside a definition can only be added as optional.
 
 ## Annotations
 
