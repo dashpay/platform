@@ -532,7 +532,8 @@ final class PlatformWalletStopShieldedSyncTests: XCTestCase {
                 return (
                     PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil),
                     ShieldedLocalBalanceSnapshotFFI(
-                        status: SHIELDED_LOCAL_BALANCE_STATUS_FFI_UNBOUND, accounts: nil, accounts_count: 0))
+                        status: SHIELDED_LOCAL_BALANCE_STATUS_FFI_UNBOUND, ordinary_spendable_credits: 0,
+                        accounts: nil, accounts_count: 0))
             },
             free: { snapshot in snapshot.pointee = ShieldedLocalBalanceSnapshotFFI() })
 

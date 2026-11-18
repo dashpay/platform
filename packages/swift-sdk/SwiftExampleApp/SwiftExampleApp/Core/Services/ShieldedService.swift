@@ -88,10 +88,27 @@ class ShieldedService: ObservableObject {
     /// failed to bind.
     @Published var addressesByAccount: [UInt32: String] = [:]
 
+    /// Last `.ready` local balance snapshot per wallet id, as Rust
+    /// computed it (`localShieldedBalanceSnapshot(walletId:)`). Covers
+    /// every engine-bound wallet, not only the mirror wallet. A wallet
+    /// without an entry has no known balance yet. Read it through
+    /// [`ordinaryShieldedBalance(walletId:)`] and
+    /// [`spendableShieldedCredits(walletId:account:)`].
+    @Published private(set) var localBalances: [Data: ShieldedLocalBalanceSnapshot] = [:]
+
     // MARK: - Internals
 
     /// Wallet manager whose shielded sync events we mirror.
     private weak var walletManager: PlatformWalletManager?
+
+    /// Manager the local balance reads go to. Set by both `bind` and
+    /// `bindEngine`, so wallets bound only into the engine can be read
+    /// too; cleared by `reset`.
+    private weak var localBalanceManager: PlatformWalletManager?
+
+    /// The refresh in flight per wallet id. A newer refresh for the
+    /// same wallet cancels it, including its pending retries.
+    private var localBalanceRefreshTasks: [Data: Task<Void, Never>] = [:]
 
     /// Wallet id we filter sync results by. Exposed read-only so
     /// diagnostics views (e.g. Sync Status) can resolve persisted
@@ -208,6 +225,7 @@ class ShieldedService: ObservableObject {
         accounts: [UInt32] = [0]
     ) {
         self.walletManager = walletManager
+        self.localBalanceManager = walletManager
         self.boundWalletId = walletId
         self.network = network
         self.resolver = resolver
@@ -299,6 +317,9 @@ class ShieldedService: ObservableObject {
             // bound account.
             let primary = sortedAccounts.contains(0) ? 0 : (sortedAccounts.first ?? 0)
             orchardDisplayAddress = addressesByAccount[primary]
+            // Read right after bind, before sync holds the store: at
+            // launch this is the read that normally succeeds.
+            refreshLocalBalance(walletId: walletId)
 
             SDKLogger.event(
                 "shielded_bind_completed",
@@ -310,6 +331,9 @@ class ShieldedService: ObservableObject {
                 ]
             )
         } catch {
+            // A failed bind cannot certify the old ledger, so the cached
+            // balance is no longer known.
+            dropLocalBalance(walletId: walletId)
             lastError = "Shielded bind failed: \(error.localizedDescription)"
             SDKLogger.event(
                 "shielded_bind_failed",
@@ -428,6 +452,7 @@ class ShieldedService: ObservableObject {
     ) -> Bool {
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
+        localBalanceManager = walletManager
 
         // No "already bound" fast path on purpose: the only cheap probe,
         // `shieldedDefaultAddress`, reflects the wallet-level sub-wallet
@@ -455,8 +480,10 @@ class ShieldedService: ObservableObject {
                     "wallet_reference": .reference(walletId),
                 ]
             )
+            refreshLocalBalance(walletId: walletId)
             return true
         } catch {
+            dropLocalBalance(walletId: walletId)
             SDKLogger.event(
                 "shielded_engine_bind_failed",
                 category: .shielded,
@@ -693,6 +720,8 @@ class ShieldedService: ObservableObject {
         progressCancellable?.cancel()
         treeProgressCancellable?.cancel()
         walletManager = nil
+        localBalanceManager = nil
+        dropAllLocalBalances()
         boundWalletId = nil
         isSyncing = false
         shieldedBalance = 0
@@ -881,6 +910,8 @@ class ShieldedService: ObservableObject {
         //    / boundAccounts) so [`manualSync`] can re-bind on
         //    the next Sync Now tap. Bare [`reset`] would nil
         //    them and leave the user stranded on this screen.
+        //    Clear is global, so every wallet's cached balance goes.
+        dropAllLocalBalances()
         shieldedBalance = 0
         lastNewNotes = 0
         lastNewlySpent = 0
@@ -990,6 +1021,13 @@ class ShieldedService: ObservableObject {
     // MARK: - Sync event handling
 
     private func handleShieldedSyncEvent(_ event: ShieldedSyncEvent) {
+        // A pass that walked Platform can change every scanned wallet's
+        // balance, the engine-bound ones included, so each gets a fresh
+        // local read. A cooldown skip did no work and changes nothing.
+        for result in event.walletResults where result.success && !result.cooldownSkip {
+            refreshLocalBalance(walletId: result.walletId)
+        }
+
         // Drop completion events that arrive while unbound. Clear
         // (`clearLocalState`) sets `isBound = false` and cancels this
         // subscription, but the Rust completion event is hopped onto the
@@ -1141,6 +1179,121 @@ class ShieldedService: ObservableObject {
         }
     }
 
+    // MARK: - Local balance cache
+
+    /// The wallet's shielded balance as Rust computes it (its ordinary
+    /// accounts; identity accounts left out). `nil` while not known yet.
+    func ordinaryShieldedBalance(walletId: Data) -> UInt64? {
+        localBalances[walletId]?.ordinarySpendableCredits
+    }
+
+    /// What one account of the wallet can spend, as Rust computes it.
+    /// `nil` while not known yet, or when the last snapshot does not
+    /// list that account.
+    func spendableShieldedCredits(walletId: Data, account: UInt32) -> UInt64? {
+        localBalances[walletId]?.accounts[account]?.spendableCredits
+    }
+
+    /// Adds Rust-computed per-wallet totals for a multi-wallet surface.
+    /// Not-known entries (`nil`) count as 0. Returns `nil` when no entry
+    /// is known, or when the sum does not fit in `UInt64`.
+    nonisolated static func sumKnownBalances(_ balances: some Sequence<UInt64?>) -> UInt64? {
+        var total: UInt64 = 0
+        var anyKnown = false
+        for case let balance? in balances {
+            anyKnown = true
+            let (sum, overflow) = total.addingReportingOverflow(balance)
+            guard !overflow else { return nil }
+            total = sum
+        }
+        return anyKnown ? total : nil
+    }
+
+    /// Delays before each retry of a refresh whose read threw (for
+    /// example busy while a scan holds the store). After the last one
+    /// the refresh gives up and keeps the previous entry.
+    nonisolated static let localBalanceRetryDelays: [Duration] = [
+        .milliseconds(300), .seconds(1), .seconds(3),
+    ]
+
+    /// Start one refresh of `walletId`'s cached balance: a local read,
+    /// retried after each of [`localBalanceRetryDelays`] while it throws
+    /// an error other than cancellation. Replaces (cancels) a refresh
+    /// of the same wallet still in flight. No-op before any bind.
+    func refreshLocalBalance(walletId: Data) {
+        guard let manager = localBalanceManager else { return }
+        localBalanceRefreshTasks[walletId]?.cancel()
+        localBalanceRefreshTasks[walletId] = Task { [weak self, weak manager] in
+            var delays = Self.localBalanceRetryDelays[...]
+            while true {
+                guard let manager, !Task.isCancelled else { return }
+                let read: Result<ShieldedLocalBalanceState, any Error>
+                do {
+                    read = .success(try await manager.localShieldedBalanceSnapshot(walletId: walletId))
+                } catch {
+                    read = .failure(error)
+                }
+                // A newer refresh, a reset or a Clear cancelled this one;
+                // its result must not overwrite theirs.
+                guard let self, !Task.isCancelled else { return }
+                let previous = self.localBalances[walletId]
+                let updated = Self.cachedLocalBalance(after: read, previous: previous)
+                if updated != previous {
+                    self.localBalances[walletId] = updated
+                }
+                guard Self.shouldRetryLocalBalanceRead(after: read), let delay = delays.popFirst() else {
+                    break
+                }
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
+            }
+            self?.localBalanceRefreshTasks[walletId] = nil
+        }
+    }
+
+    /// How one read result changes a wallet's cache entry. `.ready`
+    /// replaces it; `.unbound` removes it (no bound accounts, so no
+    /// balance); `.restoreIncomplete` and every thrown error (busy,
+    /// `CancellationError`, `bindingChanged`) keep the previous entry.
+    nonisolated static func cachedLocalBalance(
+        after read: Result<ShieldedLocalBalanceState, any Error>,
+        previous: ShieldedLocalBalanceSnapshot?
+    ) -> ShieldedLocalBalanceSnapshot? {
+        switch read {
+        case .success(.ready(let snapshot)):
+            return snapshot
+        case .success(.unbound):
+            return nil
+        case .success(.restoreIncomplete), .failure:
+            return previous
+        }
+    }
+
+    /// Whether a refresh tries the read again. A thrown error other than
+    /// cancellation (busy, `bindingChanged`) is retried; cancellation
+    /// means Clear, stop or a failed bind made the read obsolete, and the
+    /// owner of that operation requests the next read.
+    nonisolated static func shouldRetryLocalBalanceRead(
+        after read: Result<ShieldedLocalBalanceState, any Error>
+    ) -> Bool {
+        guard case .failure(let error) = read else { return false }
+        return !(error is CancellationError)
+    }
+
+    private func dropLocalBalance(walletId: Data) {
+        localBalanceRefreshTasks.removeValue(forKey: walletId)?.cancel()
+        localBalances[walletId] = nil
+    }
+
+    private func dropAllLocalBalances() {
+        for task in localBalanceRefreshTasks.values { task.cancel() }
+        localBalanceRefreshTasks = [:]
+        localBalances = [:]
+    }
+
     // MARK: - Private
 
     /// Per-network commitment-tree DB.
@@ -1160,5 +1313,24 @@ class ShieldedService: ObservableObject {
         return docs
             .appendingPathComponent("shielded_tree_\(network.networkName).sqlite")
             .path
+    }
+}
+
+extension View {
+    /// Refreshes the cached local balances of `walletIds` on appear and
+    /// whenever the identity of `noteRows` changes: a receive adds a row
+    /// and a spend flips one out of an unspent query, so the nullifier
+    /// list changes with every event that moves a balance.
+    func refreshingShieldedLocalBalances(
+        _ service: ShieldedService,
+        walletIds: [Data],
+        noteRows: [PersistentShieldedNote]
+    ) -> some View {
+        onAppear {
+            for walletId in walletIds { service.refreshLocalBalance(walletId: walletId) }
+        }
+        .onChange(of: noteRows.map(\.nullifier)) { _, _ in
+            for walletId in walletIds { service.refreshLocalBalance(walletId: walletId) }
+        }
     }
 }

@@ -49,6 +49,7 @@ use jni::sys::{jboolean, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::{ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI};
 use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -1260,21 +1261,147 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
-/// Whether `account` is an identity shielded account, by the wallet's rule.
-/// Bridges `platform_wallet_is_shielded_identity_account`. The `jint` is
-/// passed on as its `u32` bit pattern, so Kotlin's `Int` account index and
-/// Rust's `u32` name the same account.
+/// Number of `long` values before the account rows in the array
+/// [`Java_org_dashfoundation_dashsdk_ffi_FundingNative_localShieldedBalanceSnapshot`]
+/// returns: status, ordinary spendable credits, account count.
+const LOCAL_BALANCE_HEADER_LONGS: usize = 3;
+/// Number of `long` values per account row: account index, spendable
+/// credits, has last scanned index (0 or 1), last scanned index, source.
+const LOCAL_BALANCE_ACCOUNT_LONGS: usize = 5;
+
+/// The wallet's local shielded balance, read without networking. Bridges
+/// `platform_wallet_manager_local_shielded_balance_snapshot` and copies its
+/// result into a `long[]` so no native pointer reaches Kotlin:
+///
+/// ```text
+/// [0] status: 0 unbound, 1 restore incomplete, 2 ready
+/// [1] ordinary spendable credits (the wallet's shielded balance)
+/// [2] account count N
+/// then N rows of 5: account index, spendable credits,
+///     has last scanned index (0 or 1), last scanned index,
+///     source (0 no history, 1 restored, 2 scanned this session)
+/// ```
+///
+/// Credits and indices are `u64` bit patterns. An error result, including
+/// the busy one while a scan holds the store, is thrown as an exception and
+/// null is returned.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_isShieldedIdentityAccount(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_localShieldedBalanceSnapshot(
     mut env: JNIEnv,
     _class: JClass,
-    account: jint,
-) -> jboolean {
-    guard(&mut env, JNI_FALSE, |_env| {
-        if platform_wallet_ffi::platform_wallet_is_shielded_identity_account(account as u32) {
-            JNI_TRUE
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jni::sys::jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let mut snapshot = ShieldedLocalBalanceSnapshotFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_local_shielded_balance_snapshot(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut snapshot,
+            )
+        };
+        let failed = take_pwffi_error(env, result);
+        let values = if failed {
+            Vec::new()
         } else {
-            JNI_FALSE
+            local_balance_longs(&snapshot)
+        };
+        // The snapshot owns its account array on every return path.
+        unsafe {
+            platform_wallet_ffi::platform_wallet_manager_local_shielded_balance_snapshot_free(
+                &mut snapshot,
+            );
         }
+        if failed {
+            return ptr::null_mut();
+        }
+        let Ok(length) = jni::sys::jsize::try_from(values.len()) else {
+            throw_sdk_exception(env, 1, "local shielded balance snapshot is too large");
+            return ptr::null_mut();
+        };
+        let Ok(array) = env.new_long_array(length) else {
+            return ptr::null_mut();
+        };
+        if env.set_long_array_region(&array, 0, &values).is_err() {
+            return ptr::null_mut();
+        }
+        array.into_raw()
     })
+}
+
+/// Copy a snapshot into the flat layout the JNI export documents.
+fn local_balance_longs(snapshot: &ShieldedLocalBalanceSnapshotFFI) -> Vec<jlong> {
+    let accounts: &[ShieldedLocalAccountBalanceFFI] = if snapshot.accounts.is_null() {
+        &[]
+    } else {
+        // SAFETY: a non-null `accounts` points to `accounts_count` rows the
+        // snapshot owns until it is freed.
+        unsafe { std::slice::from_raw_parts(snapshot.accounts, snapshot.accounts_count) }
+    };
+    let mut values = Vec::with_capacity(
+        LOCAL_BALANCE_HEADER_LONGS + accounts.len() * LOCAL_BALANCE_ACCOUNT_LONGS,
+    );
+    values.push(snapshot.status as jlong);
+    values.push(snapshot.ordinary_spendable_credits as jlong);
+    values.push(accounts.len() as jlong);
+    for account in accounts {
+        values.push(jlong::from(account.account_index));
+        values.push(account.spendable_credits as jlong);
+        values.push(jlong::from(account.has_last_scanned_index));
+        values.push(account.last_scanned_index as jlong);
+        values.push(account.source as jlong);
+    }
+    values
+}
+
+#[cfg(test)]
+mod local_balance_tests {
+    use super::*;
+    use platform_wallet_ffi::{ShieldedBalanceSourceFFI, ShieldedLocalBalanceStatusFFI};
+
+    #[test]
+    fn should_lay_out_the_total_then_one_row_per_account() {
+        let accounts = [
+            ShieldedLocalAccountBalanceFFI {
+                account_index: 0,
+                spendable_credits: 100,
+                last_scanned_index: 0,
+                has_last_scanned_index: false,
+                source: ShieldedBalanceSourceFFI::Restored,
+            },
+            ShieldedLocalAccountBalanceFFI {
+                account_index: 0x4000_0000,
+                spendable_credits: u64::MAX,
+                last_scanned_index: 42,
+                has_last_scanned_index: true,
+                source: ShieldedBalanceSourceFFI::ScannedThisSession,
+            },
+        ];
+        // Borrows `accounts`; never passed to the free function.
+        let snapshot = ShieldedLocalBalanceSnapshotFFI {
+            status: ShieldedLocalBalanceStatusFFI::Ready,
+            ordinary_spendable_credits: 100,
+            accounts: accounts.as_ptr(),
+            accounts_count: accounts.len(),
+        };
+        assert_eq!(
+            local_balance_longs(&snapshot),
+            vec![2, 100, 2, 0, 100, 0, 0, 1, 0x4000_0000, -1, 1, 42, 2]
+        );
+    }
+
+    #[test]
+    fn should_lay_out_a_state_without_numbers_as_a_bare_header() {
+        let unbound = ShieldedLocalBalanceSnapshotFFI::default();
+        assert_eq!(local_balance_longs(&unbound), vec![0, 0, 0]);
+        let incomplete = ShieldedLocalBalanceSnapshotFFI {
+            status: ShieldedLocalBalanceStatusFFI::RestoreIncomplete,
+            ..ShieldedLocalBalanceSnapshotFFI::default()
+        };
+        assert_eq!(local_balance_longs(&incomplete), vec![1, 0, 0]);
+    }
 }

@@ -52,9 +52,9 @@ struct SendTransactionView: View {
     /// credits".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    /// This wallet's unspent account-0 shielded (Orchard) notes. Summed into
-    /// `shieldedBalance` below so the shielded source row reflects THIS
-    /// wallet's own pool, not the single-mirror `shieldedService`.
+    /// This wallet's unspent account-0 shielded (Orchard) note rows. Their
+    /// changes (a receive or a spend) trigger a refresh of the Rust local
+    /// balance that `shieldedBalance` below reads.
     @Query private var shieldedNotes: [PersistentShieldedNote]
 
     init(wallet: PersistentWallet) {
@@ -392,6 +392,8 @@ struct SendTransactionView: View {
                     }
                 }
             }
+            .refreshingShieldedLocalBalances(
+                shieldedService, walletIds: [wallet.walletId], noteRows: shieldedNotes)
         }
     }
 
@@ -492,14 +494,15 @@ struct SendTransactionView: View {
             .reduce(0) { $0 + $1.confirmed }
     }
 
-    /// Account-0 shielded balance: sum of THIS wallet's unspent
-    /// `PersistentShieldedNote` values (Rust pushes note rows via the
-    /// shielded persister). Reads SwiftData rather than the
-    /// single-mirror `shieldedService.shieldedBalance`, so the shielded
-    /// send source is correct for a non-`firstWallet` wallet whose
-    /// engine binding is live but whose UI mirror is pointed elsewhere.
+    /// What a shielded send from this screen can spend: account 0's
+    /// spendable credits as Rust computes them, because the send spends
+    /// from account 0. Read from the service's per-wallet local balance
+    /// cache rather than the single-mirror `shieldedService.shieldedBalance`,
+    /// so it is correct for a non-`firstWallet` wallet whose engine
+    /// binding is live but whose UI mirror is pointed elsewhere. Not known
+    /// yet counts as 0, so the shielded source is not offered.
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+        shieldedService.spendableShieldedCredits(walletId: wallet.walletId, account: 0) ?? 0
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced

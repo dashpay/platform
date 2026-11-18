@@ -324,7 +324,7 @@ fun SyncStatusScreen() {
                 val balanceFlow by container.shieldedService.shieldedBalance
                     .collectAsStateWithLifecycle()
                 val balance by remember(balanceFlow) { balanceFlow }
-                    .collectAsStateWithLifecycle(initialValue = 0L)
+                    .collectAsStateWithLifecycle(initialValue = null)
 
                 LabeledContent(
                     "State",
@@ -335,7 +335,7 @@ fun SyncStatusScreen() {
                         else -> "Idle"
                     },
                 )
-                LabeledContent("Shielded Balance", formatCredits(balance))
+                LabeledContent("Shielded Balance", balance?.let { formatCredits(it) } ?: "—")
                 LabeledContent("Notes Scanned", shielded.totalScanned.toString())
                 LabeledContent("New Notes", shielded.totalNewNotes.toString())
                 LabeledContent("Syncs Since Launch", shielded.syncCountSinceLaunch.toString())

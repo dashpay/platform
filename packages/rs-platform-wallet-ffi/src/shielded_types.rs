@@ -56,6 +56,14 @@ pub struct ShieldedLocalAccountBalanceFFI {
 #[derive(Debug)]
 pub struct ShieldedLocalBalanceSnapshotFFI {
     pub status: ShieldedLocalBalanceStatusFFI,
+    /// The wallet's shielded balance: spendable credits of its ordinary
+    /// accounts, as the wallet computes it
+    /// (`ShieldedLocalBalanceSnapshot::ordinary_spendable_total`). Identity
+    /// accounts are in `accounts` but not in this total, since an ordinary
+    /// send cannot spend their notes. Hosts show this number and do not add
+    /// up `accounts` or stored notes themselves. Meaningful only when
+    /// `status` is Ready; zero otherwise.
+    pub ordinary_spendable_credits: u64,
     pub accounts: *const ShieldedLocalAccountBalanceFFI,
     pub accounts_count: usize,
 }
@@ -64,6 +72,7 @@ impl Default for ShieldedLocalBalanceSnapshotFFI {
     fn default() -> Self {
         Self {
             status: ShieldedLocalBalanceStatusFFI::Unbound,
+            ordinary_spendable_credits: 0,
             accounts: std::ptr::null(),
             accounts_count: 0,
         }
