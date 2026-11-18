@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.services
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -254,6 +255,19 @@ class ShieldedServiceTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
         service.unbind()
         assertNull(service.ordinaryBalance(walletId).first())
+    }
+
+    @Test
+    fun shouldTellACollectorOfTheBoundBalanceThatItIsUnknownAfterUnbind() = runTest {
+        // A screen follows `shieldedBalance` from one inner flow to the next.
+        val seen = mutableListOf<Long?>()
+        val collecting = launch(UnconfinedTestDispatcher(testScheduler)) {
+            service.shieldedBalance.flatMapLatest { it }.collect { seen += it }
+        }
+        service.unbind()
+        collecting.cancel()
+        // Not an empty flow: the collector is told the balance is not known.
+        assertEquals(listOf<Long?>(null), seen)
     }
 
     @Test

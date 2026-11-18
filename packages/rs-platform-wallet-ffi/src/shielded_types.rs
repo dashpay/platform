@@ -83,12 +83,16 @@ pub struct ShieldedBalanceUpdateFFI {
     pub wallet_id: [u8; 32],
     pub revision: u64,
     pub status: ShieldedLocalBalanceStatusFFI,
-    /// The wallet's shielded balance: spendable credits of its ordinary
-    /// accounts, as the wallet computes it
-    /// (`ShieldedLocalBalanceSnapshot::ordinary_balance`). Identity accounts
-    /// are in `accounts` but not in this total. Ready only; zero otherwise,
-    /// and zero when the total is not known (see
-    /// `ordinary_balance_established`).
+    /// Spendable credits of the wallet's ordinary accounts, as the wallet
+    /// computes them (`ShieldedLocalBalanceSnapshot::ordinary_balance`).
+    /// Identity accounts are in `accounts` but not in this total. Zero unless
+    /// `status` is Ready, and zero when the total does not fit in `u64`.
+    ///
+    /// It is the wallet's shielded balance only when
+    /// `ordinary_balance_established` is true. When it is false the number is
+    /// what is selectable locally so far and may be partial (one ordinary
+    /// account restored with 100 and another with no history gives 100), so
+    /// it must not be shown as the wallet's balance.
     pub ordinary_spendable_credits: u64,
     /// Whether `ordinary_spendable_credits` is a known balance: every
     /// ordinary account's ledger rests on a restored history or a completed

@@ -9,8 +9,10 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+
+use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
 
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -18,13 +20,13 @@ use tokio_util::sync::CancellationToken;
 
 use super::balance::{ShieldedBalanceUpdate, ShieldedLocalBalanceState};
 use super::balance_emitter::spawn_balance_emitter;
-use super::cancelled_scan_tests::{chunked_pool, coordinator_over, note_to, WALLET};
+use super::cancelled_scan_tests::{chunked_pool, coordinator_over, note_to, opaque_note, WALLET};
 use super::operations::mark_notes_pending;
 use super::{
     FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedNote,
     ShieldedStore, SubwalletId,
 };
-use crate::events::{EventHandler, PlatformEventHandler};
+use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
 use crate::manager::{PlatformWalletManager, WalletWorker};
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use crate::wallet::platform_wallet::WalletId;
@@ -104,11 +106,21 @@ struct Emitter {
 
 impl Emitter {
     fn start(coordinator: &Arc<NetworkShieldedCoordinator>) -> Self {
+        Self::start_with(coordinator, |_| {})
+    }
+
+    /// [`Self::start`] whose sink runs `before_delivery` on each update before
+    /// passing it on, on the emitter's task.
+    fn start_with(
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        before_delivery: impl Fn(&ShieldedBalanceUpdate) + Send + Sync + 'static,
+    ) -> Self {
         let (sender, updates) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
         let join = spawn_balance_emitter(
             Arc::clone(coordinator),
             Arc::new(move |update: &ShieldedBalanceUpdate| {
+                before_delivery(update);
                 let _ = sender.send(update.clone());
             }),
             cancel.clone(),
@@ -139,6 +151,61 @@ impl Emitter {
             .await
             .expect("emitter joins")
             .expect("emitter did not panic");
+    }
+}
+
+/// Holds the thread that reaches it, once armed, until released: stands in
+/// for a scan paused inside its download or a host callback that does not
+/// return.
+#[derive(Default)]
+struct Pause {
+    state: Mutex<PauseState>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct PauseState {
+    armed: bool,
+    entered: bool,
+    released: bool,
+}
+
+impl Pause {
+    fn armed() -> Arc<Self> {
+        let pause = Arc::new(Self::default());
+        pause.state.lock().expect("pause").armed = true;
+        pause
+    }
+
+    fn arm(&self) {
+        self.state.lock().expect("pause").armed = true;
+    }
+
+    /// Block here until released when armed; a later call passes.
+    fn hold_if_armed(&self) {
+        let mut state = self.state.lock().expect("pause");
+        if !state.armed {
+            return;
+        }
+        state.armed = false;
+        state.entered = true;
+        self.wake.notify_all();
+        while !state.released {
+            state = self.wake.wait(state).expect("pause");
+        }
+    }
+
+    async fn wait_entered(&self) {
+        let deadline = tokio::time::Instant::now() + DELIVERY;
+        while !self.state.lock().expect("pause").entered {
+            assert!(tokio::time::Instant::now() < deadline, "pause reached");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    fn release(&self) {
+        self.state.lock().expect("pause").released = true;
+        self.wake.notify_all();
     }
 }
 
@@ -203,38 +270,80 @@ async fn should_emit_the_balance_a_completed_scan_found() {
     emitter.stop().await;
 }
 
-/// A scan holds the store write lock for its whole download. The emitter
-/// waits for it instead of giving up, and the update comes out when it is
-/// released, here by a failing scan that ran behind the held store.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_emit_once_a_failed_scan_releases_the_store() {
-    let coordinator = coordinator(&tree_path());
-    let wallet = [2; 32];
-    let id = SubwalletId::new(wallet, 0);
-    register(&coordinator, wallet, &[0]).await;
-    coordinator.mark_hydrated(wallet, true).await;
-    let mut emitter = Emitter::start(&coordinator);
-    assert_eq!(ordinary_credits(&emitter.next().await), 0);
+/// A pool whose first chunk is full and served, and whose later chunks the
+/// mock has no answer for: a scan takes the store, commits the first chunk,
+/// then fails on the next fetch.
+async fn pool_failing_after_one_chunk() -> dash_sdk::Sdk {
+    let mut sdk = dash_sdk::Sdk::new_mock();
+    let count = 2048
+        * u64::from(
+            sdk.version()
+                .drive_abci
+                .query
+                .shielded_queries
+                .max_query_chunks,
+        );
+    sdk.mock()
+        .expect_fetch(
+            ShieldedEncryptedNotesQuery {
+                start_index: 0,
+                count: count as u32,
+            },
+            Some(ShieldedEncryptedNotes {
+                notes: (0..count).map(opaque_note).collect(),
+                total_count: count * 2,
+            }),
+        )
+        .await
+        .expect("mock first chunk");
+    sdk
+}
 
-    let mut store = coordinator.store().write().await;
-    store.save_note(id, &note(1, 100)).expect("save");
-    // A scan queued behind the held store; the mock pool has no answer for
-    // it, so it fails once it gets the store.
+/// A scan holds the store write lock for its whole download. A change that
+/// lands meanwhile is read by the emitter, which waits for the store instead
+/// of giving up, and the update comes out once the scan releases it, here
+/// after the scan failed. The scan is paused inside its download, after it
+/// took the store and committed its first chunk.
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn should_emit_once_a_failed_scan_releases_the_store() {
+    let coordinator = coordinator_with(pool_failing_after_one_chunk().await, &tree_path());
+    let wallet = [2; 32];
+    register(&coordinator, wallet, &[0]).await;
+    let mut emitter = Emitter::start(&coordinator);
+    let first = emitter.next().await;
+    assert_eq!(first.state, ShieldedLocalBalanceState::RestoreIncomplete);
+
+    let pause = Pause::armed();
+    {
+        let pause = Arc::clone(&pause);
+        coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| {
+            pause.hold_if_armed();
+        })));
+    }
     let scan = {
         let coordinator = Arc::clone(&coordinator);
         tokio::spawn(async move { coordinator.sync(true, &CancellationToken::new()).await })
     };
-    emitter.assert_quiet().await;
-    drop(store);
+    pause.wait_entered().await;
+    assert!(
+        coordinator.store().try_write().is_err(),
+        "the paused scan holds the store"
+    );
 
+    // Needs no store: the emitter wakes and waits for the scan's store.
+    coordinator.mark_hydrated(wallet, true).await;
+    emitter.assert_quiet().await;
+
+    pause.release();
     let update = emitter.next().await;
     assert_eq!(update.revision, 2);
-    assert_eq!(ordinary_credits(&update), 100);
+    assert_eq!(ordinary_credits(&update), 0);
     let outcome = tokio::time::timeout(DELIVERY, scan)
         .await
         .expect("scan ends")
         .expect("scan task");
     assert_eq!(outcome.success_count(), 0, "the scan fails: {outcome:?}");
+    assert_eq!(outcome.error_count(), 1, "the scan fails: {outcome:?}");
     emitter.assert_quiet().await;
 
     // The failed scan left the emitter watching.
@@ -242,11 +351,117 @@ async fn should_emit_once_a_failed_scan_releases_the_store() {
         .store()
         .write()
         .await
-        .save_note(id, &note(2, 50))
+        .save_note(SubwalletId::new(wallet, 0), &note(1, 50))
         .expect("save");
     let after = emitter.next().await;
     assert_eq!(after.revision, 3);
-    assert_eq!(ordinary_credits(&after), 150);
+    assert_eq!(ordinary_credits(&after), 50);
+    emitter.stop().await;
+}
+
+/// A wallet that was unregistered is read first in a pass: its `Unbound`
+/// needs no store, so it is not held up behind a bound wallet's read while
+/// a scan holds the store.
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn should_emit_an_unregistered_wallet_before_bound_ones_wait_for_the_store() {
+    let coordinator = coordinator(&tree_path());
+    let (first, unregistered, last) = ([0x11; 32], [0x12; 32], [0x13; 32]);
+    for wallet in [first, unregistered, last] {
+        register(&coordinator, wallet, &[0]).await;
+        coordinator.mark_hydrated(wallet, true).await;
+    }
+    let pause = Arc::new(Pause::default());
+    let mut emitter = {
+        let pause = Arc::clone(&pause);
+        Emitter::start_with(&coordinator, move |update| {
+            if update.wallet_id == last {
+                pause.hold_if_armed();
+            }
+        })
+    };
+    let mut ready = std::collections::BTreeSet::new();
+    while ready.len() < 3 {
+        let update = emitter.next().await;
+        if matches!(update.state, ShieldedLocalBalanceState::Ready(_)) {
+            ready.insert(update.wallet_id);
+        }
+    }
+
+    // Park the emitter in a delivery for the last wallet, unregister the
+    // middle one, then hold the store as a scan would.
+    pause.arm();
+    coordinator
+        .store()
+        .write()
+        .await
+        .save_note(SubwalletId::new(last, 0), &note(1, 10))
+        .expect("save");
+    pause.wait_entered().await;
+    coordinator.unregister_wallet(unregistered).await;
+    let held = coordinator.store().write().await;
+    pause.release();
+
+    let delivered = emitter.next().await;
+    assert_eq!(delivered.wallet_id, last);
+    assert_eq!(ordinary_credits(&delivered), 10);
+    let update = emitter.next().await;
+    assert_eq!(update.wallet_id, unregistered);
+    assert_eq!(update.state, ShieldedLocalBalanceState::Unbound);
+    assert_eq!(update.revision, 2);
+    emitter.assert_quiet().await;
+    drop(held);
+    emitter.stop().await;
+}
+
+/// Forwards balance updates to a channel, as a host handler would.
+struct ChannelHandler(mpsc::UnboundedSender<ShieldedBalanceUpdate>);
+
+impl EventHandler for ChannelHandler {}
+
+impl PlatformEventHandler for ChannelHandler {
+    fn on_shielded_balance_changed(&self, update: &ShieldedBalanceUpdate) {
+        let _ = self.0.send(update.clone());
+    }
+}
+
+struct PanickingHandler;
+
+impl EventHandler for PanickingHandler {}
+
+impl PlatformEventHandler for PanickingHandler {
+    fn on_shielded_balance_changed(&self, _update: &ShieldedBalanceUpdate) {
+        panic!("host handler failed");
+    }
+}
+
+/// A handler that panics neither stops the emitter nor keeps the update
+/// from the other handlers, now or later.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_keep_emitting_to_other_handlers_after_one_panics() {
+    let coordinator = coordinator(&tree_path());
+    let (sender, updates) = mpsc::unbounded_channel();
+    let events = Arc::new(PlatformEventManager::new(vec![
+        Arc::new(PanickingHandler) as Arc<dyn PlatformEventHandler>,
+        Arc::new(ChannelHandler(sender)) as Arc<dyn PlatformEventHandler>,
+    ]));
+    let cancel = CancellationToken::new();
+    let join = spawn_balance_emitter(
+        Arc::clone(&coordinator),
+        Arc::new(move |update: &ShieldedBalanceUpdate| events.on_shielded_balance_changed(update)),
+        cancel.clone(),
+    );
+    let mut emitter = Emitter {
+        updates,
+        cancel,
+        join,
+    };
+    let wallet = [0x21; 32];
+    register(&coordinator, wallet, &[0]).await;
+    assert_eq!(emitter.next().await.revision, 1);
+    coordinator.mark_hydrated(wallet, true).await;
+    let later = emitter.next().await;
+    assert_eq!(later.revision, 2);
+    assert_eq!(ordinary_credits(&later), 0);
     emitter.stop().await;
 }
 
@@ -530,5 +745,56 @@ async fn should_deliver_nothing_after_shutdown_returns() {
     assert_eq!(
         again.per_worker.get(&WalletWorker::ShieldedBalanceEmitter),
         Some(&WorkerStatus::NotRunning)
+    );
+}
+
+/// Holds the first balance update it receives until released, as a host
+/// callback that has not returned yet.
+struct BlockingHandler {
+    pause: Arc<Pause>,
+}
+
+impl EventHandler for BlockingHandler {}
+
+impl PlatformEventHandler for BlockingHandler {
+    fn on_shielded_balance_changed(&self, _update: &ShieldedBalanceUpdate) {
+        self.pause.hold_if_armed();
+    }
+}
+
+/// A `shutdown` dropped while it waits for the emitter, whose host callback
+/// is still running, leaves the emitter owned: the next `shutdown` joins it
+/// and reports it, instead of finding nothing to join.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_join_the_emitter_on_a_later_shutdown_after_one_was_dropped_mid_join() {
+    let pause = Pause::armed();
+    let manager = PlatformWalletManager::new(
+        Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+        Arc::new(NoPlatformPersistence),
+        Arc::new(BlockingHandler {
+            pause: Arc::clone(&pause),
+        }) as Arc<dyn PlatformEventHandler>,
+    );
+    manager
+        .configure_shielded(tree_path())
+        .await
+        .expect("configure shielded");
+    let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+    register(&coordinator, [0x31; 32], &[0]).await;
+    pause.wait_entered().await;
+
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), manager.shutdown())
+            .await
+            .is_err(),
+        "shutdown waits for the callback in progress"
+    );
+
+    pause.release();
+    let report = manager.shutdown().await;
+    assert_eq!(
+        report.per_worker.get(&WalletWorker::ShieldedBalanceEmitter),
+        Some(&WorkerStatus::Ok),
+        "{report:?}"
     );
 }

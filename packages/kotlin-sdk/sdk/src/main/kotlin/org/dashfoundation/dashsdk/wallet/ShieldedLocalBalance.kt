@@ -6,7 +6,10 @@ package org.dashfoundation.dashsdk.wallet
  * wallet's balance state changes: a scan ends (also when it fails), a spend
  * reserves or releases notes, a bind changes the accounts, a Clear empties
  * the ledger. A host keeps the latest update per wallet and shows it; it
- * never reads or adds up a balance itself.
+ * never reads or adds up a balance itself. An update is the latest state
+ * Rust read, not one per change: notes reserved and released again before
+ * Rust reads produce none, and a revision names a delivered state, not a
+ * ledger change.
  *
  * @param revision counts this wallet's updates, starting at 1. An update
  *   with a lower revision than the one held is older and is dropped.
@@ -177,7 +180,8 @@ private fun decodeAccounts(values: LongArray): Map<Int, ShieldedLocalAccountBala
         )
         check(previous == null) { "Duplicate shielded account in balance update: $index" }
     }
-    return accounts
+    // Shared by every collector of the published update: read-only.
+    return java.util.Collections.unmodifiableMap(accounts)
 }
 
 /** The key a wallet's update is held under: its id in lowercase hex. */

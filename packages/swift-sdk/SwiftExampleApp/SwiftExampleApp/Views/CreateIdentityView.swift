@@ -810,10 +810,10 @@ struct CreateIdentityView: View {
         } header: {
             Text("Denomination")
         } footer: {
-            let available = Self.formatDash(
-                raw: poolBalance,
-                divisor: Double(Self.creditsPerDash)
-            )
+            // A figure only for a known balance; a known zero still shows 0.
+            let available: String = knownPoolBalance.map {
+                Self.formatDash(raw: $0, divisor: Double(Self.creditsPerDash))
+            } ?? "not known yet"
             Text(
                 "Available shielded: \(available). The whole denomination "
                 + "leaves the pool; the metered fee is taken FROM it (the new "

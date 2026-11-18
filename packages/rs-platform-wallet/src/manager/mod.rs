@@ -103,9 +103,9 @@ pub enum WalletWorker {
     /// shielded balance state to the event handlers whenever it changes. Not
     /// a registry worker: a tokio task spawned by `configure_shielded`,
     /// cancelled and joined by [`shutdown`](PlatformWalletManager::shutdown)
-    /// under a bounded budget, with the live handle re-parked on timeout so a
-    /// destroy retry can re-join it. It fires host callbacks, so a straggler
-    /// is reported non-clean.
+    /// under a bounded budget. Its handle stays owned until a join completes,
+    /// so a destroy retry re-joins a straggler. It fires host callbacks, so a
+    /// straggler is reported non-clean.
     ShieldedBalanceEmitter,
 }
 
@@ -152,8 +152,9 @@ const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
 /// Deadline for joining the shielded balance emitter at shutdown. The emitter
 /// observes its cancellation at every await, including the wait for a store a
 /// scan holds, so only a host callback it is inside can hold it up; the bound
-/// keeps such a callback from hanging `destroy`. On timeout the live handle is
-/// re-parked so a destroy retry re-joins it, and the report carries
+/// keeps such a callback from hanging `destroy`. The handle stays in its slot
+/// until a join completes, so a timeout or a dropped `shutdown` future leaves
+/// it for a destroy retry to re-join, and the report carries
 /// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout).
 #[cfg(feature = "shielded")]
 const SHIELDED_BALANCE_EMITTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
@@ -1502,24 +1503,30 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             self.shielded_balance_emitter_cancel.cancel();
             let emitter_status = {
                 let mut slot = self.shielded_balance_emitter_join.lock().await;
-                match slot.take() {
+                // Joined in place: the handle leaves the slot only once the
+                // join completed. A timed-out join, or a caller that drops
+                // this future mid-join while a host callback is still
+                // running, leaves it there for the next shutdown to join.
+                match slot.as_mut() {
                     None => WorkerStatus::NotRunning,
-                    Some(mut handle) => {
-                        match tokio::time::timeout(
-                            SHIELDED_BALANCE_EMITTER_JOIN_BUDGET,
-                            &mut handle,
-                        )
-                        .await
+                    Some(handle) => {
+                        match tokio::time::timeout(SHIELDED_BALANCE_EMITTER_JOIN_BUDGET, handle)
+                            .await
                         {
-                            Ok(Ok(())) => WorkerStatus::Ok,
-                            Ok(Err(e)) if e.is_panic() => WorkerStatus::Panicked(e.to_string()),
-                            Ok(Err(e)) => WorkerStatus::Stopped(Some(e.to_string())),
+                            Ok(joined) => {
+                                *slot = None;
+                                match joined {
+                                    Ok(()) => WorkerStatus::Ok,
+                                    Err(e) if e.is_panic() => WorkerStatus::Panicked(e.to_string()),
+                                    Err(e) => WorkerStatus::Stopped(Some(e.to_string())),
+                                }
+                            }
                             Err(_) => {
                                 tracing::warn!(
-                                    "shielded balance emitter did not join within {:?}; re-parking",
+                                    "shielded balance emitter did not join within {:?}; kept for a \
+                                     retry",
                                     SHIELDED_BALANCE_EMITTER_JOIN_BUDGET
                                 );
-                                *slot = Some(handle);
                                 WorkerStatus::Timeout
                             }
                         }

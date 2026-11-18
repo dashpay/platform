@@ -97,15 +97,18 @@ pub enum ShieldedLocalBalanceState {
     Ready(ShieldedLocalBalanceSnapshot),
 }
 
-/// One wallet's local balance state, pushed to the host whenever it differs
-/// from the state last pushed for that wallet
-/// (`PlatformEventHandler::on_shielded_balance_changed`).
+/// One wallet's local balance state, pushed to the host whenever the state
+/// the emitter reads differs from the state last pushed for that wallet
+/// (`PlatformEventHandler::on_shielded_balance_changed`). It is the latest
+/// state read, not every transition: changes between two reads coalesce, and
+/// a reservation taken and released before the next read produces no update.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShieldedBalanceUpdate {
     pub wallet_id: WalletId,
-    /// Per wallet, starting at 1 and strictly increasing for the life of the
-    /// coordinator. A wallet's updates are delivered in revision order, so a
-    /// host keeps the one with the highest revision.
+    /// Identifies a delivered state, not a ledger mutation. Per wallet,
+    /// starting at 1 and strictly increasing for the life of the coordinator.
+    /// A wallet's updates are delivered in revision order, so a host keeps the
+    /// one with the highest revision.
     pub revision: u64,
     /// What `NetworkShieldedCoordinator::local_balance_snapshot` returns for
     /// the wallet now.

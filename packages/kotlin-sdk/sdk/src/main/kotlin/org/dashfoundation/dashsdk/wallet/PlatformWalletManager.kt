@@ -297,9 +297,16 @@ class PlatformWalletManager(
      * balance to show: nothing reads or adds one up on the Kotlin side. A
      * wallet without an entry has not been announced yet. A state, not an
      * event stream, so a collector that starts late still sees the latest.
+     * Each update is the latest state Rust read, not one per ledger change.
+     * Emptied when the manager closes: a closed manager's balances are no
+     * longer anyone's.
      */
     val shieldedBalances: StateFlow<Map<String, ShieldedBalanceUpdate>> =
         _shieldedBalances.asStateFlow()
+
+    /** Set when teardown starts, so a late update cannot refill [shieldedBalances]. */
+    @Volatile
+    private var shieldedBalancesClosed = false
 
     // ── Children (retained for the manager's lifetime) ────────────────
     //
@@ -453,7 +460,11 @@ class PlatformWalletManager(
                 android.util.Log.w("PlatformWalletManager", "Dropped a shielded balance update: ${e.message}")
                 return
             }
-            _shieldedBalances.update { latestShieldedBalances(it, update) }
+            _shieldedBalances.update { held ->
+                // Read inside the update: a close that lands while this
+                // callback runs wins, whichever of the two writes last.
+                if (shieldedBalancesClosed) emptyMap() else latestShieldedBalances(held, update)
+            }
         }
     }
 
@@ -2968,6 +2979,10 @@ class PlatformWalletManager(
     }
 
     private suspend fun closeInternal(bundle: Long) {
+        // The native emitter stops with the manager, so what it last sent
+        // would otherwise stay on screen for good.
+        shieldedBalancesClosed = true
+        _shieldedBalances.value = emptyMap()
         // Stop the progress poll loops + event fan-out scope before teardown
         // so no collector touches a destroyed handle.
         progressPollJob?.cancel()

@@ -97,6 +97,20 @@ final class SendViewModelSourceSelectionTests: XCTestCase {
         XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore))
     }
 
+    /// The dispatch-time check against the published account-0 balance:
+    /// a shielded spend needs a known, non-zero balance even when the
+    /// offered list has not caught up with the latest update yet.
+    func testShouldDispatchAShieldedSpendOnlyWithAKnownNonZeroBalance() {
+        for flow in [SendFlow.shieldedToShielded, .shieldedToPlatform, .shieldedToCore] {
+            XCTAssertTrue(SendViewModel.mayDispatch(flow, accountZeroShieldedBalance: 1), "\(flow)")
+            XCTAssertFalse(SendViewModel.mayDispatch(flow, accountZeroShieldedBalance: 0), "\(flow)")
+            XCTAssertFalse(SendViewModel.mayDispatch(flow, accountZeroShieldedBalance: nil), "\(flow)")
+        }
+        for flow in [SendFlow.coreToCore, .coreToShielded, .platformToPlatform, .platformToShielded] {
+            XCTAssertTrue(SendViewModel.mayDispatch(flow, accountZeroShieldedBalance: nil), "\(flow)")
+        }
+    }
+
     func testShouldNotAllowSendingFromASourceThatIsNotOffered() {
         let vm = makeViewModel()
         vm.reconcileSource(available: [.core])

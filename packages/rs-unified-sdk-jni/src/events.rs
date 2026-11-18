@@ -350,6 +350,12 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
 /// scanned index (0 or 1), last scanned index, source.
 const SHIELDED_BALANCE_ACCOUNT_LONGS: usize = 5;
 
+/// JNI descriptor of `NativeWalletEventBridge.onShieldedBalanceChanged`:
+/// wallet id, revision, status, ordinary spendable credits, ordinary balance
+/// established, account rows. The Kotlin unit test
+/// `NativeWalletEventBridgeTest` pins the same signature on its side.
+const SHIELDED_BALANCE_CHANGED_DESCRIPTOR: &str = "([BJIJZ[J)V";
+
 /// One wallet's shielded balance state after it changed. The update and its
 /// account array are only valid during this call, so the accounts are copied
 /// into a `long[]` (rows of [`SHIELDED_BALANCE_ACCOUNT_LONGS`]) before the
@@ -377,7 +383,7 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
             env.call_method(
                 bridge,
                 "onShieldedBalanceChanged",
-                "([BJIJZ[J)V",
+                SHIELDED_BALANCE_CHANGED_DESCRIPTOR,
                 &[
                     (&wid).into(),
                     JValue::Long(update.revision as i64),
@@ -480,5 +486,12 @@ mod shielded_balance_tests {
             vec![0, 100, 0, 0, 1, 0x4000_0000, -1, 1, 42, 2]
         );
         assert!(shielded_balance_account_longs(&[]).is_empty());
+    }
+
+    #[test]
+    fn should_call_the_bridge_with_the_signature_kotlin_declares() {
+        // byte[] walletId, long revision, int status, long credits,
+        // boolean established, long[] accounts, returning void.
+        assert_eq!(SHIELDED_BALANCE_CHANGED_DESCRIPTOR, "([BJIJZ[J)V");
     }
 }

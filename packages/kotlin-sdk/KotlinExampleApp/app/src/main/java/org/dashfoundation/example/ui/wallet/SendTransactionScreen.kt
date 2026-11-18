@@ -269,10 +269,12 @@ fun SendTransactionScreen(
             lastRecipientKind = recipientKind
         }
     }
-    // Without a choice of the user's, follow the offered sources: select
-    // the first one (← SendTransactionView's source reconciliation).
+    // Without a choice of the user's, follow the offered sources: the
+    // first one is the default, also when it only appears later (Shielded
+    // once its balance is known) while another one was the default until
+    // then (← SendTransactionView's source reconciliation).
     LaunchedEffect(availableSources, sourceChosenByUser) {
-        if (!sourceChosenByUser && selectedSource !in availableSources) {
+        if (!sourceChosenByUser) {
             availableSources.firstOrNull()?.let { selectedSource = it }
         }
     }
@@ -657,8 +659,7 @@ fun SendTransactionScreen(
                     when (addressType) {
                         is DashAddressType.Orchard, is DashAddressType.Platform ->
                             if (shieldedNotKnown) {
-                                "The shielded balance is not known yet. It is read " +
-                                    "again when the current sync pass ends."
+                                "The shielded balance is not known yet."
                             } else {
                                 "No spendable shielded balance to fund this send — " +
                                     "shield funds first (Wallet → Shielded Balance → Fund Shielded)."
@@ -721,9 +722,17 @@ fun SendTransactionScreen(
                                 val ownShielded = runCatching {
                                     activeManager.shieldedDefaultAddress(walletId)
                                 }.getOrNull()
-                                if (ownShielded != null &&
-                                    !ownShielded.contentEquals(recipientRaw)
-                                ) {
+                                if (ownShielded == null) {
+                                    // Unreadable is not "matches": without
+                                    // this wallet's own address the recipient
+                                    // cannot be checked, and shielding anyway
+                                    // would read as a payment to it.
+                                    error = "This wallet's shielded address could not be " +
+                                        "read, so the recipient could not be checked. " +
+                                        "Nothing was sent."
+                                    return@launch
+                                }
+                                if (!ownShielded.contentEquals(recipientRaw)) {
                                     error = "Shield always sends to your own shielded " +
                                         "address — enter this wallet's own shielded " +
                                         "address as the recipient."
