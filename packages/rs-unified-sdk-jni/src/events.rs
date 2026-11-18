@@ -369,6 +369,11 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
     let Some(update) = update.as_ref() else {
         return;
     };
+    // Kotlin orders updates by a signed revision. One past `i64::MAX` has no
+    // place in that order, so it is not delivered; the host keeps its last.
+    let Ok(revision) = i64::try_from(update.revision) else {
+        return;
+    };
     let rows =
         shielded_balance_account_longs(slice_or_empty(update.accounts, update.accounts_count));
     let (ordinary_credits, ordinary_established) = kotlin_amount(
@@ -391,7 +396,7 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
                 SHIELDED_BALANCE_CHANGED_DESCRIPTOR,
                 &[
                     (&wid).into(),
-                    JValue::Long(update.revision as i64),
+                    JValue::Long(revision),
                     JValue::Int(update.status as i32),
                     JValue::Long(ordinary_credits),
                     JValue::Bool(ordinary_established as u8),
@@ -414,6 +419,15 @@ fn kotlin_amount(credits: u64, established: bool) -> (i64, bool) {
     }
 }
 
+/// A scan index as Kotlin receives it: one past `i64::MAX` goes over as "no
+/// index known", in place of a negative watermark.
+fn kotlin_scan_index(has_index: bool, index: u64) -> (bool, i64) {
+    match i64::try_from(index) {
+        Ok(index) if has_index => (true, index),
+        _ => (false, 0),
+    }
+}
+
 /// Lay `accounts` out as the flat rows `onShieldedBalanceChanged` documents.
 fn shielded_balance_account_longs(accounts: &[ShieldedBalanceAccountFFI]) -> Vec<i64> {
     let mut values = Vec::with_capacity(accounts.len() * SHIELDED_BALANCE_ACCOUNT_LONGS);
@@ -422,8 +436,10 @@ fn shielded_balance_account_longs(accounts: &[ShieldedBalanceAccountFFI]) -> Vec
         let (credits, established) = kotlin_amount(account.spendable_credits, account.established);
         values.push(credits);
         values.push(i64::from(established));
-        values.push(i64::from(account.has_last_scanned_index));
-        values.push(account.last_scanned_index as i64);
+        let (has_last_scanned_index, last_scanned_index) =
+            kotlin_scan_index(account.has_last_scanned_index, account.last_scanned_index);
+        values.push(i64::from(has_last_scanned_index));
+        values.push(last_scanned_index);
         values.push(account.source as i64);
     }
     values
@@ -516,6 +532,15 @@ mod shielded_balance_tests {
         assert_eq!(kotlin_amount(u64::MAX, true), (0, false));
         // An amount Rust did not establish stays not established.
         assert_eq!(kotlin_amount(7, false), (7, false));
+    }
+
+    #[test]
+    fn should_pass_a_scan_index_past_a_kotlin_long_as_not_known() {
+        assert_eq!(kotlin_scan_index(true, 0), (true, 0));
+        assert_eq!(kotlin_scan_index(true, i64::MAX as u64), (true, i64::MAX));
+        assert_eq!(kotlin_scan_index(true, i64::MAX as u64 + 1), (false, 0));
+        // An index that is not set stays not set, whatever the field holds.
+        assert_eq!(kotlin_scan_index(false, 42), (false, 0));
     }
 
     #[test]

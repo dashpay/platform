@@ -121,6 +121,10 @@ extension ShieldedBalanceUpdate {
     /// Copies a native update into Swift values. `ffi.accounts` is borrowed
     /// for the callback only, so this runs inside the callback.
     nonisolated static func decode(_ ffi: ShieldedBalanceUpdateFFI) throws -> ShieldedBalanceUpdate {
+        // Rust revisions start at 1; 0 is a malformed or default value.
+        guard ffi.revision >= 1 else {
+            throw PlatformWalletError.deserialization("Shielded balance update has revision 0")
+        }
         let walletId = withUnsafeBytes(of: ffi.wallet_id) { Data($0) }
         let state: ShieldedBalanceState
         switch ffi.status {

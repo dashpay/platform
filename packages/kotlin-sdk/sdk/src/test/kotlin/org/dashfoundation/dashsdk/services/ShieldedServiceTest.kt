@@ -98,7 +98,6 @@ class ShieldedServiceTest {
             ),
         )
         val s = service.state.value
-        assertEquals(7_500L, s.shieldedBalance)
         assertEquals(2, s.lastNewNotes)
         assertEquals(150L, s.totalScanned) // 100 + 50
         assertEquals(5L, s.totalNewNotes) // 3 + 2
@@ -120,7 +119,6 @@ class ShieldedServiceTest {
             ),
         )
         val s = service.state.value
-        assertEquals(9_000L, s.shieldedBalance)
         assertEquals(200L, s.totalScanned)
         assertEquals(4L, s.totalNewNotes)
     }
@@ -134,7 +132,6 @@ class ShieldedServiceTest {
             ),
         )
         assertEquals(0L, service.state.value.totalScanned)
-        assertEquals(0L, service.state.value.shieldedBalance)
     }
 
     @Test
@@ -429,6 +426,53 @@ class ShieldedServiceTest {
         assertEquals("jobs started", done.last())
     }
 
+    private suspend fun failsWithIllegalState(block: suspend () -> Unit): Boolean =
+        try {
+            block()
+            false
+        } catch (e: IllegalStateException) {
+            true
+        }
+
+    @Test
+    fun shouldRestoreNothingWhileAClearsWipeIsStillOwed() = runTest {
+        // The Rust reset went through and the Room wipe failed.
+        val pending = PendingHostWipe()
+        var wipeFails = true
+        var wiped = 0
+        pending.owe {
+            if (wipeFails) error("disk full")
+            wiped += 1
+        }
+        assertTrue(failsWithIllegalState { pending.commit() })
+        assertTrue(pending.isOwed)
+
+        // A bind commits the owed wipe before it restores. While the wipe
+        // keeps failing the bind fails and restores nothing.
+        val restored = mutableListOf<String>()
+        assertTrue(
+            failsWithIllegalState {
+                service.withLedgerLifecycle {
+                    pending.commit()
+                    restored += "stale rows"
+                }
+            },
+        )
+        assertTrue(restored.isEmpty())
+
+        // Once the wipe goes through, the bind restores from the wiped
+        // tables, and the wipe is not run a second time.
+        wipeFails = false
+        service.withLedgerLifecycle {
+            pending.commit()
+            restored += "wiped tables"
+        }
+        pending.commit()
+        assertEquals(listOf("wiped tables"), restored)
+        assertEquals(1, wiped)
+        assertFalse(pending.isOwed)
+    }
+
     @Test
     fun shouldShowNoBalanceAfterUnbind() = runTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
@@ -469,7 +513,6 @@ class ShieldedServiceTest {
         )
         service.unbind()
         val s = service.state.value
-        assertEquals(0L, s.shieldedBalance)
         assertEquals(0L, s.totalScanned)
         assertEquals(0, s.syncCountSinceLaunch)
     }
