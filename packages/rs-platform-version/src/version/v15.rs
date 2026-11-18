@@ -341,7 +341,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     holds such a type to the keywords a private type may declare (no index, history,
 ///     transfer, trade, cost, rule or reference; documents neither mutable nor deletable; no
 ///     system field; no elected moderation), and registration holds `entrySize` to
-///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`. The compiled
+///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`; check tx and recheck,
+///     which parse a contract without validating it, hold a contract create or update to the
+///     same cap after the parse, with the same error (data contract create and update
+///     `transform_into_action` 0, edited in place: no type is private before). The compiled
 ///     stored form of note 8 records the declaration. A contract update cannot add, remove or
 ///     change it (`DocumentTypeUpdateError`), and may only add properties after a private type's
 ///     existing ones, at the end of the type and of each object, since its immutable entries are
@@ -900,8 +903,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     validation left them, so a create that is refused pays its gas alone. It goes to the
 ///     processing fee pools with the rest of the processing fee, the create does not state
 ///     it, and a payer whose balance does not cover it is refused
-///     (`IdentityInsufficientBalanceError`). The fee schedules of protocol v14 and earlier
-///     carry 0, and the contract does not exist there, so nothing is charged.
+///     (`IdentityInsufficientBalanceError`). The batch minimum-balance pre-check asks for it too,
+///     added after the user fee increase as the block adds it, so such a payer is refused before
+///     the create is transformed. The fee schedules of protocol v14 and earlier carry 0, and the
+///     contract does not exist there, so nothing is charged.
 ///
 /// 41. **Retained-history lifecycle**: a deletable history document loses its current
 ///     pointer and index entries on delete, retaining its revisions and a lifecycle record.
