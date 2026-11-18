@@ -1097,8 +1097,9 @@ pub enum PlatformWalletError {
     ShieldedWithdrawalAmountOutOfRange { amount: u64, min: u64, max: u64 },
 
     /// The network runs a protocol version this SDK has no tables for, so an operation priced
-    /// or built at it (a shielded spend or its plan) cannot be, and is refused before any note
-    /// was reserved or anything built. A retry does not lift it: only an SDK that knows the
+    /// or built at it (a shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan; not a private document create) cannot be, and is refused before any
+    /// note was reserved or anything built. A retry does not lift it: only an SDK that knows the
     /// version does, so a host asks the user to update the app.
     #[error(
         "The network runs protocol version {network}, which this SDK does not support \

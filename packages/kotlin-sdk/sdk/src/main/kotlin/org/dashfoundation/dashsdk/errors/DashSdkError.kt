@@ -833,7 +833,8 @@ sealed class DashSdkError(
         /**
          * `ErrorNetworkProtocolVersionUnsupported` (native code 81). The
          * network runs a protocol version this SDK has no tables for, so a
-         * shielded spend or its plan cannot be priced. Nothing was reserved,
+         * shielded transfer, unshield, withdrawal or identity top-up from the
+         * pool, or its plan, cannot be priced. Nothing was reserved,
          * built or broadcast. A retry does not help: ask the user to update
          * the app.
          * ← Swift `PlatformWalletError.networkProtocolVersionUnsupported`.

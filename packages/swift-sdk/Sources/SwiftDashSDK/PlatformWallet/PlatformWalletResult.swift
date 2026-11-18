@@ -335,8 +335,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Nothing was reserved, built or broadcast: another amount fits.
     case errorShieldedWithdrawalAmountOutOfRange = 79
     /// The network runs a protocol version this SDK has no tables for, so a
-    /// shielded spend or its plan cannot be priced. Nothing was reserved,
-    /// built or broadcast. A retry does not help: ask the user to update the app.
+    /// shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan, cannot be priced. Nothing was reserved, built or
+    /// broadcast. A retry does not help: ask the user to update the app.
     case errorNetworkProtocolVersionUnsupported = 81
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -784,7 +785,8 @@ public enum PlatformWalletError: LocalizedError {
     /// 79). Nothing was reserved, built or broadcast: another amount fits.
     case shieldedWithdrawalAmountOutOfRange(String)
     /// The network runs a protocol version this SDK has no tables for (code
-    /// 81), so a shielded spend or its plan cannot be priced. Nothing was
+    /// 81), so a shielded transfer, unshield, withdrawal or identity top-up
+    /// from the pool, or its plan, cannot be priced. Nothing was
     /// reserved, built or broadcast; only an app update lifts it.
     case networkProtocolVersionUnsupported(String)
     case walletAlreadyExists(String)

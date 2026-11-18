@@ -794,7 +794,9 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::NetworkProtocolVersionUnsupported`: the
     /// network runs a protocol version this SDK has no tables for, so a
-    /// shielded spend or its plan cannot be priced. Nothing was reserved, built
+    /// shielded transfer, unshield, withdrawal or identity top-up from the
+    /// pool, or its plan, cannot be priced (private document create does not
+    /// check it). Nothing was reserved, built
     /// or broadcast. Retrying does not help: the host asks the user to update
     /// the app. (80 is held by the external identity top-up PR, #5860.)
     ErrorNetworkProtocolVersionUnsupported = 81,
