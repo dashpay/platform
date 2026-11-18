@@ -123,18 +123,34 @@ fn last_forwarded_address(header: &str) -> Option<IpAddr> {
         .or_else(|| SocketAddr::from_str(entry).ok().map(|address| address.ip()))
 }
 
+/// The most Orchard actions Drive verifies in one bundle: the active protocol
+/// version's limit, or, when DAPI does not know the active version, the
+/// largest limit of any version this build knows. Drive refuses a bundle over
+/// the active limit before any proof work, so a larger one costs no more than
+/// the largest valid one.
+pub(super) fn bundle_action_limit(active_version: Option<&PlatformVersion>) -> u16 {
+    active_version.map_or(MAX_SHIELDED_ACTIONS, |version| {
+        version.system_limits.max_shielded_transition_actions
+    })
+}
+
 /// Orchard actions whose proof Drive verifies before admitting the transition,
 /// or 0 for bytes without any (including bytes that do not decode, which Drive
 /// refuses before any proof work). The same count Drive's CheckTx proof
-/// admission takes (`shielded_proof_action_count` in drive-abci). Every kind
-/// and version is named, so a new one has to say whether it carries actions
-/// before this compiles.
-pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
+/// admission takes (`shielded_proof_action_count` in drive-abci), with each
+/// bundle bounded on its own by `bundle_action_limit`. Every kind and version
+/// is named, so a new one has to say whether it carries actions before this
+/// compiles.
+pub(super) fn orchard_action_count(
+    state_transition_bytes: &[u8],
+    bundle_action_limit: u16,
+) -> usize {
     let Ok(state_transition) =
         StateTransition::deserialize_from_bytes_untrusted(state_transition_bytes)
     else {
         return 0;
     };
+    let bundle = |actions: usize| actions.min(usize::from(bundle_action_limit));
     match state_transition {
         StateTransition::Shield(ShieldTransition::V0(v0)) => bundle(v0.actions.len()),
         StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(v0)) => {
@@ -210,13 +226,6 @@ pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
     }
 }
 
-/// The actions Drive can verify for one bundle: it refuses a bundle over the
-/// system limit before any proof work, so a larger one costs no more than the
-/// largest valid one. Each bundle of a transition is bounded on its own.
-fn bundle(actions: usize) -> usize {
-    actions.min(usize::from(MAX_SHIELDED_ACTIONS))
-}
-
 #[derive(Debug)]
 struct SourceBudget {
     /// When this source's failed actions have fully drained.
@@ -258,13 +267,9 @@ impl Default for ShieldedProofFailureBudget {
     }
 }
 
-/// The largest `max_shielded_transition_actions` in `versions`.
-///
-/// DAPI does not track which version the network runs, so the budget clamps a
-/// bundle to the most actions any version this build knows admits: a smaller
-/// bound would charge a bundle the active version still verifies for fewer
-/// actions than Drive checks. Drive refuses a bundle over the active limit
-/// before any proof work.
+/// The largest `max_shielded_transition_actions` in `versions`: the bound
+/// that never charges a bundle for fewer actions than Drive verifies, whichever
+/// of these versions the network runs.
 const fn largest_action_limit(versions: &[PlatformVersion]) -> u16 {
     let mut largest = 0;
     let mut index = 0;
@@ -591,7 +596,10 @@ mod tests {
                 binding_signature: [0; 64],
             },
         ));
-        let count = orchard_action_count(&oversized.serialize_to_bytes().unwrap());
+        let count = orchard_action_count(
+            &oversized.serialize_to_bytes().unwrap(),
+            MAX_SHIELDED_ACTIONS,
+        );
         assert_eq!(count, 16);
         broadcast(&budget, SOURCE, count, true, now).expect("a clean source is admitted");
         assert_eq!(
@@ -621,6 +629,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn should_bound_a_bundle_by_the_active_version_or_the_largest_known_limit() {
+        let mut active = PlatformVersion::latest().clone();
+        active.system_limits.max_shielded_transition_actions = 8;
+        assert_eq!(bundle_action_limit(Some(&active)), 8);
+        assert_eq!(bundle_action_limit(None), MAX_SHIELDED_ACTIONS);
+
+        let bundle = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+            ShieldedTransferTransitionV0 {
+                actions: actions(9),
+                value_balance: 1,
+                anchor: [7; 32],
+                proof: vec![0; 100],
+                binding_signature: [0; 64],
+            },
+        ))
+        .serialize_to_bytes()
+        .unwrap();
+        assert_eq!(
+            orchard_action_count(&bundle, bundle_action_limit(Some(&active))),
+            8,
+            "Drive refuses the ninth action under the active version before proof work"
+        );
+        assert_eq!(orchard_action_count(&bundle, bundle_action_limit(None)), 9);
+    }
+
     /// Drive bounds each bundle of a token pool transition on its own, so two
     /// full bundles are charged twice the largest bundle, even to a source
     /// that already has a settled broadcast behind it.
@@ -645,7 +679,10 @@ mod tests {
                 },
             ),
         );
-        let count = orchard_action_count(&transition.serialize_to_bytes().unwrap());
+        let count = orchard_action_count(
+            &transition.serialize_to_bytes().unwrap(),
+            MAX_SHIELDED_ACTIONS,
+        );
         assert_eq!(count, 2 * largest);
 
         let budget = budget();
@@ -774,8 +811,8 @@ mod tests {
             },
         ));
         let bytes = transfer.serialize_to_bytes().unwrap();
-        assert_eq!(orchard_action_count(&bytes), 3);
-        assert_eq!(orchard_action_count(&[0xff, 0x00]), 0);
+        assert_eq!(orchard_action_count(&bytes, MAX_SHIELDED_ACTIONS), 3);
+        assert_eq!(orchard_action_count(&[0xff, 0x00], MAX_SHIELDED_ACTIONS), 0);
     }
 
     /// A private document create is verified unpaid like the other pool-paid spends, so a
@@ -806,7 +843,8 @@ mod tests {
                 },
             ),
         );
-        let actions = orchard_action_count(&create.serialize_to_bytes().unwrap());
+        let actions =
+            orchard_action_count(&create.serialize_to_bytes().unwrap(), MAX_SHIELDED_ACTIONS);
         assert_eq!(actions, 2);
 
         let budget = budget();
@@ -839,7 +877,10 @@ mod tests {
     /// the 4-action allowance, so after one failure the source waits until all
     /// 5 have drained.
     fn assert_both_bundles_metered(transition: StateTransition) {
-        let actions = orchard_action_count(&transition.serialize_to_bytes().unwrap());
+        let actions = orchard_action_count(
+            &transition.serialize_to_bytes().unwrap(),
+            MAX_SHIELDED_ACTIONS,
+        );
         assert_eq!(actions, 5, "the token bundle and the fee bundle both count");
 
         let budget = budget();
@@ -937,7 +978,7 @@ mod tests {
             },
         ));
         assert_eq!(
-            orchard_action_count(&shield.serialize_to_bytes().unwrap()),
+            orchard_action_count(&shield.serialize_to_bytes().unwrap(), MAX_SHIELDED_ACTIONS),
             2
         );
     }
@@ -999,7 +1040,7 @@ mod tests {
                 signature_public_key_id: 0,
                 signature: BinaryData::default(),
             }));
-            orchard_action_count(&batch.serialize_to_bytes().unwrap())
+            orchard_action_count(&batch.serialize_to_bytes().unwrap(), MAX_SHIELDED_ACTIONS)
         };
 
         assert_eq!(

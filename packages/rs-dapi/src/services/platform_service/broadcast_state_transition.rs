@@ -12,7 +12,7 @@ use crate::services::platform_service::TenderdashStatus;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::error_mapping::map_tenderdash_message;
 use crate::services::platform_service::shielded_proof_failure_budget::{
-    INVALID_SHIELDED_PROOF_CODE, SourceKey, orchard_action_count,
+    INVALID_SHIELDED_PROOF_CODE, SourceKey, bundle_action_limit, orchard_action_count,
 };
 use base64::prelude::*;
 use dapi_grpc::platform::v0::get_status_request::{self, GetStatusRequestV0};
@@ -57,7 +57,11 @@ impl PlatformServiceImpl {
         } = request.into_inner();
 
         validate_state_transition_not_empty(&tx)?;
-        validate_state_transition_bytes_size(&tx, self.size_limit_version().await)?;
+        let active_version = self.active_version().await;
+        validate_state_transition_bytes_size(
+            &tx,
+            active_version.unwrap_or(MOST_PERMISSIVE_SIZE_VERSION),
+        )?;
 
         let txid = Sha256::digest(&tx).to_vec();
         let txid_hex = hex::encode(&txid);
@@ -65,7 +69,10 @@ impl PlatformServiceImpl {
         let reservation = match source {
             Some(source) => self
                 .shielded_proof_failure_budget
-                .try_reserve(source, orchard_action_count(&tx))
+                .try_reserve(
+                    source,
+                    orchard_action_count(&tx, bundle_action_limit(active_version)),
+                )
                 .map_err(|retry_after| {
                     debug!(
                         ?source,
@@ -262,18 +269,19 @@ impl PlatformServiceImpl {
     }
 }
 
-/// How long a broadcast waits for Drive's status before it checks the size
-/// against [`MOST_PERMISSIVE_SIZE_VERSION`] instead.
+/// How long a broadcast waits for Drive's status before it falls back to the
+/// largest limits this build knows.
 const ACTIVE_VERSION_LOOKUP_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl PlatformServiceImpl {
-    /// The protocol version whose size limit a broadcast must meet: the one
-    /// the network runs now, from the cached `getStatus`. When the status
-    /// does not answer in [`ACTIVE_VERSION_LOOKUP_TIMEOUT`], or names a
-    /// version this build does not know, the most permissive known version,
-    /// so DAPI never refuses what the network could accept. Drive enforces
-    /// the active version's limit when it decodes.
-    async fn size_limit_version(&self) -> &'static PlatformVersion {
+    /// The protocol version the network runs now, from the cached
+    /// `getStatus`. `None` when the status does not answer in
+    /// [`ACTIVE_VERSION_LOOKUP_TIMEOUT`] or names a version this build does
+    /// not know; callers then fall back to the largest limit any known
+    /// version has, so DAPI never refuses what the network could accept, nor
+    /// charges less proof work than Drive does. Drive enforces the active
+    /// version's limits when it decodes.
+    async fn active_version(&self) -> Option<&'static PlatformVersion> {
         let request = Request::new(GetStatusRequest {
             version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
         });
@@ -285,15 +293,15 @@ impl PlatformServiceImpl {
         {
             Ok(Ok(response)) => Some(response.into_inner()),
             Ok(Err(error)) => {
-                debug!(%error, "Status unavailable; checking the size against the largest known limit");
+                debug!(%error, "Status unavailable; falling back to the largest known limits");
                 None
             }
             Err(_) => {
-                debug!("Status timed out; checking the size against the largest known limit");
+                debug!("Status timed out; falling back to the largest known limits");
                 None
             }
         };
-        active_platform_version(status.as_ref()).unwrap_or(MOST_PERMISSIVE_SIZE_VERSION)
+        active_platform_version(status.as_ref())
     }
 }
 
