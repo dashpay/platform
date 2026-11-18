@@ -307,8 +307,10 @@ pub(crate) fn funding_inputs(
 /// transition may have spent them elsewhere. The result stands only when
 /// the proved identity balance is also above `balance_before`; a balance at
 /// or below it is the snapshot of a top-up that did not reach the identity
-/// (or of an identity that spent meanwhile, which reads the same way and
-/// errs on the safe side). Every refusal is the SDK's unconfirmed outcome,
+/// (or of an identity that spent at least the top-up amount meanwhile, or
+/// of an identity in debt that the top-up only repaid, its balance staying
+/// at 0; both read the same way and err on the safe side). Every refusal is
+/// the SDK's unconfirmed outcome,
 /// never done: the host must not pay again.
 ///
 /// Residual limit: the two checks bind the proof to this transition's
