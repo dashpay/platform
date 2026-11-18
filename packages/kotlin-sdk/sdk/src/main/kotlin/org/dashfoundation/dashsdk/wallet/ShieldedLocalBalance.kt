@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -72,14 +73,45 @@ class ShieldedLocalBalanceBindingChanged : Exception(
 )
 
 /**
- * Run [read] and return its value only if [generation] did not move while
- * it ran; otherwise throw [ShieldedLocalBalanceBindingChanged].
+ * Keeps a local balance read from being returned when a shielded bind or
+ * clear of the same manager overlapped it. Rust's ledger locks make the
+ * native snapshot coherent, but they do not cover its way back to Kotlin.
+ *
+ * A read is returned only if no bind or clear was in flight when it started
+ * and none started before it finished. Counting a change at its start, and
+ * holding it as in flight until it returns, covers a read on either side of
+ * the native call: one that captured the old binding before the change took
+ * effect, and one that began while the change was still running.
  */
-internal inline fun <T> fencedByShieldedBinding(generation: AtomicLong, read: () -> T): T {
-    val before = generation.get()
-    val value = read()
-    if (before != generation.get()) throw ShieldedLocalBalanceBindingChanged()
-    return value
+internal class ShieldedBindingFence {
+    private val changesStarted = AtomicLong(0)
+    private val changesInFlight = AtomicInteger(0)
+
+    /** Run a bind or clear. */
+    fun <T> changing(change: () -> T): T {
+        // In flight first: a read that already noted the count then sees
+        // either the change in flight or the count moved.
+        changesInFlight.incrementAndGet()
+        changesStarted.incrementAndGet()
+        try {
+            return change()
+        } finally {
+            changesInFlight.decrementAndGet()
+        }
+    }
+
+    /**
+     * Run [read] and return its value, or throw
+     * [ShieldedLocalBalanceBindingChanged] when a bind or clear overlapped
+     * it. [read] is not run at all while one is in flight.
+     */
+    fun <T> reading(read: () -> T): T {
+        val before = changesStarted.get()
+        if (changesInFlight.get() != 0) throw ShieldedLocalBalanceBindingChanged()
+        val value = read()
+        if (changesStarted.get() != before) throw ShieldedLocalBalanceBindingChanged()
+        return value
+    }
 }
 
 private const val HEADER_LONGS = 3

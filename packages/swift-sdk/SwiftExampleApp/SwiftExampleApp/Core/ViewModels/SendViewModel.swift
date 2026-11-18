@@ -120,9 +120,14 @@ class SendViewModel: ObservableObject {
     /// of these.
     @Published private(set) var offeredSources: [FundSource] = []
     /// Whether `selectedSource` is the user's explicit choice rather than
-    /// the automatic default. Cleared when the recipient's address type
-    /// changes, and when the chosen source stops being offered.
+    /// the automatic default. Cleared when the recipient changes to a
+    /// different known kind (Core, Orchard, Platform), and when the chosen
+    /// source stops being offered. Another address of the same kind keeps
+    /// it, and so does passing through an unparsable or empty recipient
+    /// while the user edits the address.
     private(set) var sourceChosenByUser = false
+    /// The kind of the last recipient that parsed to a known kind.
+    private var lastRecipientKind: DashAddressType.Kind?
     @Published var detectedFlow: SendFlow?
     @Published var estimatedFee: UInt64?
     @Published var isSending = false
@@ -433,13 +438,20 @@ class SendViewModel: ObservableObject {
         }
 
         let parsed = DashAddress.parse(trimmed, network: network)
-        if parsed.type != detectedAddressType {
-            // A different recipient can offer different sources, so the
-            // next reconcile picks that recipient's default again.
-            sourceChosenByUser = false
-        }
+        noteRecipientKind(parsed.type.kind)
         detectedAddressType = parsed.type
         updateFlow()
+    }
+
+    /// A recipient of a different known kind offers different sources,
+    /// so the next reconcile picks that kind's default again. An unknown
+    /// recipient is an address being edited, not a new kind.
+    private func noteRecipientKind(_ kind: DashAddressType.Kind) {
+        guard kind != .unknown else { return }
+        if let lastRecipientKind, lastRecipientKind != kind {
+            sourceChosenByUser = false
+        }
+        lastRecipientKind = kind
     }
 
     // MARK: - Source selection
@@ -459,6 +471,13 @@ class SendViewModel: ObservableObject {
     /// source arrives after the recipient was typed.
     func reconcileSource(available: [FundSource]) {
         offeredSources = available
+        guard !available.isEmpty else {
+            // Nothing is offered (no parsable recipient yet, or no funds):
+            // nothing can be sent, and there is no source to judge the
+            // explicit choice against, so it stays for the next list.
+            updateFlow()
+            return
+        }
         if sourceChosenByUser, available.contains(selectedSource) {
             updateFlow()
             return
