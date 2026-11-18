@@ -1,3 +1,4 @@
+pub mod address_pool_restore;
 pub mod apply;
 pub mod asset_lock;
 pub mod core;
