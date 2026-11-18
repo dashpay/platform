@@ -501,7 +501,7 @@ class SendViewModel: ObservableObject {
     }
 
     static let routeChangedMessage =
-        "The payment route changed after Send was tapped. Review it and tap Send again."
+        "The payment route or recipient changed after Send was tapped. Review it and tap Send again."
 
     /// Whether `flow` may be dispatched given the account-0 shielded
     /// balance read from the published wallet state at dispatch time. A
@@ -514,12 +514,14 @@ class SendViewModel: ObservableObject {
         return balance > 0
     }
 
-    /// The flow to send when Send was tapped while `tappedFlow` was shown:
-    /// `nil` unless that is still the current flow and its source is still
-    /// offered, so an asynchronous send never runs a route other than the
-    /// one the user confirmed.
-    func flowToSend(tappedFlow: SendFlow?) -> SendFlow? {
+    /// The flow to send when Send was tapped while `tappedFlow` was shown
+    /// for `tappedRecipient`: `nil` unless that is still the current flow,
+    /// its source is still offered, and the recipient text is unchanged,
+    /// so an asynchronous send never runs a route or pays a recipient
+    /// other than the one the user confirmed.
+    func flowToSend(tappedFlow: SendFlow?, tappedRecipient: String) -> SendFlow? {
         guard let tappedFlow, tappedFlow == detectedFlow,
+              recipientAddress == tappedRecipient,
               offeredSources.contains(selectedSource) else { return nil }
         return tappedFlow
     }
@@ -600,9 +602,10 @@ class SendViewModel: ObservableObject {
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
         modelContext: ModelContext,
-        tappedFlow: SendFlow?
+        tappedFlow: SendFlow?,
+        tappedRecipient: String
     ) async {
-        guard let flow = flowToSend(tappedFlow: tappedFlow),
+        guard let flow = flowToSend(tappedFlow: tappedFlow, tappedRecipient: tappedRecipient),
               Self.mayDispatch(
                   flow,
                   accountZeroShieldedBalance: walletManager.spendableShieldedCredits(

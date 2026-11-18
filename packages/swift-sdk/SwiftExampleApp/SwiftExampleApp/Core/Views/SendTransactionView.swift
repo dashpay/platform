@@ -258,10 +258,12 @@ struct SendTransactionView: View {
                         // guaranteed to agree with the version the
                         // shielded builders carve their fee at.
                         resolveShieldedFees()
-                        // The route the user confirmed by tapping. The
-                        // handler below is asynchronous; `executeSend`
-                        // refuses if the route changed in between.
+                        // The route and recipient the user confirmed by
+                        // tapping. The handler below is asynchronous;
+                        // `executeSend` refuses if either changed in
+                        // between.
                         let tappedFlow = viewModel.detectedFlow
+                        let tappedRecipient = viewModel.recipientAddress
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -322,7 +324,8 @@ struct SendTransactionView: View {
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
                                 modelContext: modelContext,
-                                tappedFlow: tappedFlow
+                                tappedFlow: tappedFlow,
+                                tappedRecipient: tappedRecipient
                             )
                         }
                     }

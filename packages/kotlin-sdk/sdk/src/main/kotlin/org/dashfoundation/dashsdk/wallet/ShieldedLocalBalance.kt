@@ -211,6 +211,7 @@ internal fun latestShieldedBalances(
     return if (current != null && current.revision >= update.revision) {
         held
     } else {
-        held + (key to update)
+        // Shared by every collector of the published state: read-only.
+        java.util.Collections.unmodifiableMap(held + (key to update))
     }
 }

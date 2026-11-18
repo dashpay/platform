@@ -54,8 +54,8 @@ final class SendViewModelSourceSelectionTests: XCTestCase {
         XCTAssertNil(vm.detectedFlow)
         XCTAssertFalse(vm.canSend)
         XCTAssertTrue(vm.chosenSourceUnavailable)
-        XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore))
-        XCTAssertNil(vm.flowToSend(tappedFlow: .coreToCore))
+        XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore, tappedRecipient: coreAddress))
+        XCTAssertNil(vm.flowToSend(tappedFlow: .coreToCore, tappedRecipient: coreAddress))
     }
 
     func testShouldResumeAnExplicitChoiceWhenItIsOfferedAgain() {
@@ -88,13 +88,25 @@ final class SendViewModelSourceSelectionTests: XCTestCase {
         let vm = makeViewModel()
         vm.reconcileSource(available: [.shielded, .core])
         XCTAssertEqual(vm.detectedFlow, .shieldedToCore)
-        XCTAssertEqual(vm.flowToSend(tappedFlow: .shieldedToCore), .shieldedToCore)
-        XCTAssertNil(vm.flowToSend(tappedFlow: nil))
+        XCTAssertEqual(vm.flowToSend(tappedFlow: .shieldedToCore, tappedRecipient: coreAddress), .shieldedToCore)
+        XCTAssertNil(vm.flowToSend(tappedFlow: nil, tappedRecipient: coreAddress))
         // The automatic default moves after the tap: the tapped route is
         // no longer the selected one, so nothing is sent.
         vm.reconcileSource(available: [.core])
         XCTAssertEqual(vm.detectedFlow, .coreToCore)
-        XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore))
+        XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore, tappedRecipient: coreAddress))
+    }
+
+    /// A recipient edit of the same kind between the tap and dispatch
+    /// changes the payee without changing the flow; the send is refused.
+    func testShouldSendOnlyToTheRecipientThatWasTapped() {
+        let vm = makeViewModel()
+        vm.reconcileSource(available: [.core])
+        XCTAssertEqual(vm.flowToSend(tappedFlow: .coreToCore, tappedRecipient: coreAddress), .coreToCore)
+        vm.recipientAddress = otherCoreAddress
+        XCTAssertEqual(vm.detectedFlow, .coreToCore)
+        XCTAssertNil(vm.flowToSend(tappedFlow: .coreToCore, tappedRecipient: coreAddress))
+        XCTAssertEqual(vm.flowToSend(tappedFlow: .coreToCore, tappedRecipient: otherCoreAddress), .coreToCore)
     }
 
     /// The dispatch-time check against the published account-0 balance:

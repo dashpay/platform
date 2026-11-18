@@ -204,8 +204,30 @@ impl Pause {
     }
 
     fn release(&self) {
-        self.state.lock().expect("pause").released = true;
+        // Also reached from `PauseRelease::drop` while a failed assertion
+        // unwinds, so a poisoned lock is taken over rather than unwrapped.
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.released = true;
         self.wake.notify_all();
+    }
+
+    /// Release the pause when the returned guard drops, on every exit of the
+    /// test, a failed assertion included: a worker parked here would
+    /// otherwise keep the runtime, and the suite, from finishing.
+    fn release_on_drop(self: &Arc<Self>) -> PauseRelease {
+        PauseRelease(Arc::clone(self))
+    }
+}
+
+/// Releases its [`Pause`] when dropped.
+struct PauseRelease(Arc<Pause>);
+
+impl Drop for PauseRelease {
+    fn drop(&mut self) {
+        self.0.release();
     }
 }
 
@@ -314,6 +336,7 @@ async fn should_emit_once_a_failed_scan_releases_the_store() {
     assert_eq!(first.state, ShieldedLocalBalanceState::RestoreIncomplete);
 
     let pause = Pause::armed();
+    let _release = pause.release_on_drop();
     {
         let pause = Arc::clone(&pause);
         coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| {
@@ -371,6 +394,7 @@ async fn should_emit_an_unregistered_wallet_before_bound_ones_wait_for_the_store
         coordinator.mark_hydrated(wallet, true).await;
     }
     let pause = Arc::new(Pause::default());
+    let _release = pause.release_on_drop();
     let mut emitter = {
         let pause = Arc::clone(&pause);
         Emitter::start_with(&coordinator, move |update| {
@@ -672,6 +696,54 @@ async fn should_number_each_wallet_s_updates_on_its_own_strictly_increasing_revi
     emitter.stop().await;
 }
 
+/// A ledger the read cannot sum is delivered as not established, so a host
+/// stops showing its earlier balance, and the next successful read brings
+/// `Ready` back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_report_an_unreadable_ledger_as_restore_incomplete_until_it_reads_again() {
+    let coordinator = coordinator(&tree_path());
+    let wallet = [0x41; 32];
+    let id = SubwalletId::new(wallet, 0);
+    register(&coordinator, wallet, &[0]).await;
+    coordinator.mark_hydrated(wallet, true).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .save_note(id, &note(1, 50))
+        .expect("save");
+    let mut emitter = Emitter::start(&coordinator);
+    assert_eq!(ordinary_credits(&emitter.next().await), 50);
+
+    // One account's notes now sum past `u64`: the read fails.
+    coordinator
+        .store()
+        .write()
+        .await
+        .save_note(id, &note(2, u64::MAX))
+        .expect("save");
+    assert!(coordinator.local_balance_snapshot(wallet).await.is_err());
+    let unreadable = emitter.next().await;
+    assert_eq!(unreadable.revision, 2);
+    assert_eq!(
+        unreadable.state,
+        ShieldedLocalBalanceState::RestoreIncomplete
+    );
+    emitter.assert_quiet().await;
+
+    // Reserving the oversized note makes the ledger readable again.
+    coordinator
+        .store()
+        .write()
+        .await
+        .mark_pending(id, &[2; 32])
+        .expect("reserve");
+    let readable = emitter.next().await;
+    assert_eq!(readable.revision, 3);
+    assert_eq!(ordinary_credits(&readable), 50);
+    emitter.stop().await;
+}
+
 /// Records every balance update the manager's event fan-out delivers.
 #[derive(Default)]
 struct BalanceRecorder {
@@ -768,6 +840,7 @@ impl PlatformEventHandler for BlockingHandler {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_join_the_emitter_on_a_later_shutdown_after_one_was_dropped_mid_join() {
     let pause = Pause::armed();
+    let _release = pause.release_on_drop();
     let manager = PlatformWalletManager::new(
         Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
         Arc::new(NoPlatformPersistence),
@@ -783,12 +856,20 @@ async fn should_join_the_emitter_on_a_later_shutdown_after_one_was_dropped_mid_j
     register(&coordinator, [0x31; 32], &[0]).await;
     pause.wait_entered().await;
 
-    assert!(
-        tokio::time::timeout(Duration::from_secs(2), manager.shutdown())
-            .await
-            .is_err(),
-        "shutdown waits for the callback in progress"
-    );
+    // Run the first shutdown until it waits for the emitter's join, then
+    // drop it there, with the host callback still in progress.
+    {
+        let shutdown = manager.shutdown();
+        tokio::pin!(shutdown);
+        tokio::select! {
+            _ = &mut shutdown => panic!("shutdown returned while the callback was in progress"),
+            _ = manager.shielded_balance_emitter_join_reached.notified() => {}
+        }
+        tokio::select! {
+            _ = &mut shutdown => panic!("shutdown returned while the callback was in progress"),
+            _ = tokio::time::sleep(QUIET) => {}
+        }
+    }
 
     pause.release();
     let report = manager.shutdown().await;

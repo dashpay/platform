@@ -365,6 +365,33 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun shouldGiveABindItsOwnTurnWhenItsInstallWakesAnUnbind() {
+        // An observer woken by a bind's first writes calls unbind on the
+        // same thread, inside the lock. The bind must get its own turn
+        // back, not the unbind's, so it knows it was overtaken.
+        val turns = BindingTurns()
+        var unbindTurn = 0L
+        val bindTurn = turns.begin { unbindTurn = turns.begin { } }
+        assertEquals(1L, bindTurn)
+        assertEquals(2L, unbindTurn)
+        assertFalse(turns.isLatest(bindTurn))
+        assertFalse(turns.finish(bindTurn) { })
+    }
+
+    @Test
+    fun shouldNotLetAnOvertakenBindTouchTheNativeRegistration() = runTest {
+        // Two binds of one wallet: [0] takes its turn first but reaches the
+        // ledger step second. The later bind's accounts must stand.
+        val turns = BindingTurns()
+        val registered = mutableListOf<String>()
+        val older = turns.begin { }
+        val newer = turns.begin { }
+        service.withLedgerLifecycle { if (turns.isLatest(newer)) registered += "[1]" }
+        service.withLedgerLifecycle { if (turns.isLatest(older)) registered += "[0]" }
+        assertEquals(listOf("[1]"), registered)
+    }
+
+    @Test
     fun shouldShowNoBalanceAfterUnbind() = runTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
         service.unbind()

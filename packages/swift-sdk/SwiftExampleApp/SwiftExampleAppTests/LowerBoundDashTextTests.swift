@@ -8,7 +8,20 @@ final class LowerBoundDashTextTests: XCTestCase {
     func testShouldRoundAPartialSubtotalDown() {
         // 1.00000001999 DASH would round up to 1.00000002 with ordinary rounding.
         XCTAssertEqual(LowerBoundDashText.atLeast(credits: Decimal(100_000_001_999)), "At least 1.00000001 DASH")
-        XCTAssertEqual(LowerBoundDashText.atLeast(credits: Decimal(999)), "At least 0 DASH")
+        XCTAssertEqual(LowerBoundDashText.atLeast(credits: Decimal(1_000)), "At least 0.00000001 DASH")
+    }
+
+    /// A positive subtotal below one duff would floor to 0 DASH; it is
+    /// shown as its exact credits instead.
+    func testShouldShowASubDuffSubtotalInCredits() {
+        XCTAssertEqual(LowerBoundDashText.atLeast(credits: Decimal(1)), "At least 1 credit")
+        XCTAssertEqual(LowerBoundDashText.atLeast(credits: Decimal(999)), "At least 999 credits")
+        XCTAssertEqual(LowerBoundDashText.atLeast(duffs: 0, credits: 2), "At least 2 credits")
+    }
+
+    func testShouldNotBoundAZeroSubtotal() {
+        XCTAssertEqual(LowerBoundDashText.atLeast(credits: Decimal(0)), "Not known yet")
+        XCTAssertEqual(LowerBoundDashText.atLeast(duffs: 0, credits: 0), "Not known yet")
     }
 
     func testShouldKeepExactAmountsAndTrimTrailingZeros() {

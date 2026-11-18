@@ -644,6 +644,7 @@ struct CreateIdentityView: View {
         // Whether to surface the shielded-pool funding row. Computed
         // once so the picker body and the footer text stay in lockstep.
         let showShielded = shieldedOptionAvailable(for: walletId)
+        let shieldedPending = shieldedBalancePending(for: walletId)
         Section {
             Picker("Funding Source", selection: $fundingSelection) {
                 Text("Select…")
@@ -674,6 +675,14 @@ struct CreateIdentityView: View {
                 // denomination on every funding-source change.
                 amountDash = defaultAmountString(for: newValue)
                 selectedDenomination = nil
+            }
+            if shieldedPending {
+                // The option appears once the wallet's shielded balance
+                // is known and positive.
+                Text("Shielded Balance: waiting for this wallet's shielded balance.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("createIdentity.fundingSource.shieldedPending")
             }
         } header: {
             Text("Funding Source")
@@ -1808,13 +1817,25 @@ struct CreateIdentityView: View {
         // pool balance > 0 + a Type-20 fallback platform address exists.
         // No longer gated on the single UI mirror (`boundWalletId`), so
         // ANY loaded+bound wallet can fund from its own pool.
+        shieldedFundingEligible(for: walletId)
+            && shieldedPoolBalance(for: walletId) > 0
+    }
+
+    /// Whether the wallet meets every shielded funding condition except the
+    /// balance: engine-bound (its default Orchard address resolves) and a
+    /// Type-20 fallback platform address exists.
+    private func shieldedFundingEligible(for walletId: Data) -> Bool {
         let engineBound = (try? walletManager.shieldedDefaultAddress(
             walletId: walletId,
             account: 0
         )) != nil
-        return engineBound
-            && shieldedPoolBalance(for: walletId) > 0
-            && shieldedFallbackAddressBytes(for: walletId) != nil
+        return engineBound && shieldedFallbackAddressBytes(for: walletId) != nil
+    }
+
+    /// Whether the shielded option is missing only because the wallet's
+    /// shielded balance is not known yet, so the section can say so.
+    private func shieldedBalancePending(for walletId: Data) -> Bool {
+        knownShieldedPoolBalance(for: walletId) == nil && shieldedFundingEligible(for: walletId)
     }
 
     /// Per-wallet shielded funding balance: account 0's spendable credits
