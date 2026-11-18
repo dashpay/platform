@@ -2871,6 +2871,26 @@ mod tests {
         rebuilt
     }
 
+    /// `pool` holding only its index-0 address, moved to the last normal
+    /// child index `2^31 - 1`. A test cannot derive that deep, so the pool
+    /// is rebuilt through serde, which bypasses `insert`'s checks.
+    fn at_last_normal_index(
+        pool: &key_wallet::managed_account::address_pool::AddressPool,
+    ) -> key_wallet::managed_account::address_pool::AddressPool {
+        const LAST_NORMAL_INDEX: u32 = (1 << 31) - 1;
+        let mut value = serde_json::to_value(pool).expect("a serializable pool");
+        let mut info = value["addresses"]["0"].take();
+        info["index"] = LAST_NORMAL_INDEX.into();
+        value["addresses"] = serde_json::json!({ LAST_NORMAL_INDEX.to_string(): info });
+        for lookup in ["address_index", "script_pubkey_index"] {
+            let map = value[lookup].as_object_mut().expect("a lookup map");
+            map.retain(|_, index| *index == 0);
+            map.values_mut()
+                .for_each(|index| *index = LAST_NORMAL_INDEX.into());
+        }
+        serde_json::from_value(value).expect("a pool with one deep address")
+    }
+
     fn gap_refill_fixture(
         seed: u8,
         gap_limit: Option<u32>,
@@ -2971,6 +2991,55 @@ mod tests {
             Some(MAX_GAP_LIMIT),
             "the refill must reach one gap window past the used index 0"
         );
+    }
+
+    /// A refill whose target passes the last normal child index is a typed
+    /// derivation error, never a panic: strict fails the load with it, and
+    /// recovery counts it at the gap-maintenance site and leaves the pool
+    /// as it was.
+    #[test]
+    fn gap_refill_past_the_last_normal_index_is_a_typed_load_error() {
+        for strict in [true, false] {
+            let mut fixture = gap_refill_fixture(24, None, None);
+            {
+                let mut funding = fixture.wallet_info.accounts.all_funding_accounts_mut();
+                let mut pools = funding[0].managed_account_type_mut().address_pools_mut();
+                let pool = (pools.iter_mut())
+                    .find(|p| p.is_external())
+                    .expect("an external pool");
+                **pool = at_last_normal_index(pool);
+            }
+            let ctx = if strict {
+                LoadCtx::strict()
+            } else {
+                LoadCtx::recovery()
+            };
+            let result = rehydrate_fixture(&mut fixture, &ctx);
+            if strict {
+                assert!(
+                    matches!(
+                        result,
+                        Err(WalletStorageError::RehydrationGapLimitFailed {
+                            source: key_wallet::Error::Bip32(_)
+                        })
+                    ),
+                    "{result:?}"
+                );
+                continue;
+            }
+            result.expect("recovery tolerates the failed refill");
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1)
+            );
+            assert_eq!(
+                external_pool_state(&fixture.wallet_info),
+                Some((1 << 31) - 1),
+                "the failed refill derives nothing"
+            );
+        }
     }
 
     /// A legitimately deep pool already generated up to its used index
@@ -3929,6 +3998,59 @@ mod tests {
                 ),
                 "{strict:?}"
             );
+        }
+
+        /// A coin on a pool's address at the last normal child index, whose
+        /// refill target is a hardened index: strict fails the load with the
+        /// derivation error, and recovery counts it once and still holds the
+        /// coin in its account.
+        #[test]
+        fn a_coin_whose_refill_passes_the_last_normal_index_is_still_held_in_recovery() {
+            let (wallet, manifest) = fixture(49);
+            let deep_info = || {
+                let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+                let mut pools = funds.managed_account_type_mut().address_pools_mut();
+                let pool = (pools.iter_mut())
+                    .find(|p| p.pool_type() == AddressPoolType::External)
+                    .unwrap();
+                **pool = at_last_normal_index(pool);
+                info
+            };
+            let coin = utxo(1, &external_address(&wallet, &bip44(), 0));
+            let load = |ctx: &LoadCtx| {
+                let mut info = deep_info();
+                let result = load_into(
+                    &mut info,
+                    &manifest,
+                    vec![coin.clone()],
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    ctx,
+                );
+                (info, result)
+            };
+            let (_, strict) = load(&LoadCtx::strict());
+            assert!(
+                matches!(
+                    strict,
+                    Err(WalletStorageError::RehydrationGapLimitFailed {
+                        source: key_wallet::Error::Bip32(_)
+                    })
+                ),
+                "{strict:?}"
+            );
+            let ctx = LoadCtx::recovery();
+            let (info, recovery) = load(&ctx);
+            recovery.expect("recovery tolerates the failed refill");
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1)
+            );
+            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
+            assert_eq!(info.balance.total(), VALUE);
         }
 
         fn contact() -> AccountType {
