@@ -14,8 +14,8 @@ use super::token_pool_paid_transitions_tests::{
 };
 use super::token_shielded_pool_tests::{
     assert_check_tx_accepts, assert_check_tx_rejects, assert_tokens_conserved, build_spend_bundle,
-    enable_shielded_pool, identity_token_balance, nullifier_is_spent, platform_with_latest_version,
-    pool_balance, spend_keys, spendable_note,
+    current_platform_version, enable_shielded_pool, identity_token_balance, nullifier_is_spent,
+    platform_with_latest_version, pool_balance, spend_keys, spendable_note,
 };
 use super::*;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
@@ -269,7 +269,12 @@ fn credit_nullifier_is_spent(
 ) -> bool {
     platform
         .drive
-        .has_nullifier(nullifier, None, &mut vec![], PlatformVersion::latest())
+        .has_nullifier(
+            nullifier,
+            None,
+            &mut vec![],
+            current_platform_version(platform),
+        )
         .expect("credit pool nullifier lookup")
 }
 

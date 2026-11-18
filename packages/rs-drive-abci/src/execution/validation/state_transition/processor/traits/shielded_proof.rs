@@ -33,7 +33,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::shielded::{
-    compute_private_document_create_from_shielded_pool_fee,
+    compute_platform_sighash, compute_private_document_create_from_shielded_pool_fee,
     private_document_create_from_shielded_pool_extra_sighash_data, shield_extra_sighash_data, shield_from_identity_extra_sighash_data, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_pool_output_only_extra_sighash_data, token_pool_paid_fee_binding_extra_sighash_data_v0, SerializedAction, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
 };
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
@@ -1953,7 +1953,8 @@ fn validate_shielded_proof_v2(
 /// token bundle over `token_extra_sighash_data` followed by the fee bundle's commitment (version
 /// 0 of `token_pool_paid_fee_binding`, a constant of the generations that call this), the fee
 /// bundle over `fee_extra_sighash_data`. The fee bundle is reconstructed first, since its
-/// commitment is part of the token bundle's preimage.
+/// commitment is part of the token bundle's preimage; that one commitment also goes into the fee
+/// bundle's own sighash, so it is computed once, as it was before the binding.
 #[allow(clippy::too_many_arguments)]
 fn verify_token_bundle_bound_to_its_fee_bundle(
     token_actions: &[SerializedAction],
@@ -1992,7 +1993,12 @@ fn verify_token_bundle_bound_to_its_fee_bundle(
         token_binding_signature,
         &token_extra_sighash_data,
     )
-    .and_then(|()| verify_bundle(&fee_bundle, fee_extra_sighash_data))
+    .and_then(|()| {
+        verify_bundle(
+            &fee_bundle,
+            &compute_platform_sighash(&fee_bundle_commitment, fee_extra_sighash_data),
+        )
+    })
 }
 
 #[cfg(test)]
