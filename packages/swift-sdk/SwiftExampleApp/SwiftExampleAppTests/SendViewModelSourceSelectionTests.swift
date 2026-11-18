@@ -4,9 +4,10 @@ import SwiftDashSDK
 
 /// Source selection on the send screen: the automatic default follows the
 /// offered sources as they change (a balance that gates a source can
-/// arrive after the recipient is typed), an explicit choice that is still
-/// offered stays, and nothing is sendable from a source that is not
-/// offered. Pure view-model tests; address parsing is offline.
+/// arrive after the recipient is typed), an explicit choice is never
+/// replaced by another source, nothing is sendable from a source that is
+/// not offered, and Send runs only the route that was tapped. Pure
+/// view-model tests; address parsing is offline.
 @MainActor
 final class SendViewModelSourceSelectionTests: XCTestCase {
 
@@ -39,15 +40,61 @@ final class SendViewModelSourceSelectionTests: XCTestCase {
         XCTAssertTrue(vm.sourceChosenByUser)
     }
 
-    func testShouldFallBackToTheDefaultWhenTheChosenSourceIsNoLongerOffered() {
+    /// The privacy rule: an explicit Shielded choice for a Core recipient
+    /// must never become a Core (transparent) payment. When it stops being
+    /// offered it stays selected, Send is disabled, and the screen says so.
+    func testShouldKeepAnExplicitChoiceThatIsNoLongerOfferedAndDisableSend() {
+        let vm = makeViewModel()
+        vm.reconcileSource(available: [.core, .shielded])
+        vm.selectSource(.shielded)
+        XCTAssertTrue(vm.canSend)
+        vm.reconcileSource(available: [.core])
+        XCTAssertEqual(vm.selectedSource, .shielded)
+        XCTAssertTrue(vm.sourceChosenByUser)
+        XCTAssertNil(vm.detectedFlow)
+        XCTAssertFalse(vm.canSend)
+        XCTAssertTrue(vm.chosenSourceUnavailable)
+        XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore))
+        XCTAssertNil(vm.flowToSend(tappedFlow: .coreToCore))
+    }
+
+    func testShouldResumeAnExplicitChoiceWhenItIsOfferedAgain() {
         let vm = makeViewModel()
         vm.reconcileSource(available: [.core, .shielded])
         vm.selectSource(.shielded)
         vm.reconcileSource(available: [.core])
-        XCTAssertEqual(vm.selectedSource, .core)
-        XCTAssertFalse(vm.sourceChosenByUser)
-        XCTAssertEqual(vm.detectedFlow, .coreToCore)
+        vm.reconcileSource(available: [.core, .shielded])
+        XCTAssertEqual(vm.selectedSource, .shielded)
+        XCTAssertEqual(vm.detectedFlow, .shieldedToCore)
+        XCTAssertFalse(vm.chosenSourceUnavailable)
         XCTAssertTrue(vm.canSend)
+    }
+
+    func testShouldLetTheUserPickAnotherSourceAfterTheChoiceBecameUnavailable() {
+        let vm = makeViewModel()
+        vm.reconcileSource(available: [.core, .shielded])
+        vm.selectSource(.shielded)
+        vm.reconcileSource(available: [.core])
+        vm.selectSource(.core)
+        XCTAssertEqual(vm.selectedSource, .core)
+        XCTAssertEqual(vm.detectedFlow, .coreToCore)
+        XCTAssertFalse(vm.chosenSourceUnavailable)
+        XCTAssertTrue(vm.canSend)
+    }
+
+    /// The asynchronous Send handler sends only the route that was shown
+    /// when the user tapped Send.
+    func testShouldSendOnlyTheRouteThatWasTapped() {
+        let vm = makeViewModel()
+        vm.reconcileSource(available: [.shielded, .core])
+        XCTAssertEqual(vm.detectedFlow, .shieldedToCore)
+        XCTAssertEqual(vm.flowToSend(tappedFlow: .shieldedToCore), .shieldedToCore)
+        XCTAssertNil(vm.flowToSend(tappedFlow: nil))
+        // The automatic default moves after the tap: the tapped route is
+        // no longer the selected one, so nothing is sent.
+        vm.reconcileSource(available: [.core])
+        XCTAssertEqual(vm.detectedFlow, .coreToCore)
+        XCTAssertNil(vm.flowToSend(tappedFlow: .shieldedToCore))
     }
 
     func testShouldNotAllowSendingFromASourceThatIsNotOffered() {

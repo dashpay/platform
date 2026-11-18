@@ -593,21 +593,37 @@ do {
 
 ---
 
+## Shielded balances pushed by Rust
+
+Rust pushes each wallet's shielded balance state whenever it changes: first
+bind, a scan ending (also when it fails), a spend reserving or releasing
+notes, a rebind, a Clear, unregister. `manager.shieldedBalances[walletId]`
+holds the latest `ShieldedBalanceUpdate` for each wallet (an update replaces
+the held one only when its revision is higher). Hosts show this and hold no
+balance of their own; do not add up `PersistentShieldedNote` rows or
+snapshot accounts.
+
+- `update.ordinaryBalance` is what the wallet holds (its ordinary accounts;
+  identity accounts left out), or `nil` when it is not a known balance: the
+  state is `unbound` or `restoreIncomplete`, or the ready ledger is not
+  established yet (a wallet restored without history reads 0 before its
+  first scan).
+- `update.accountBalance(account)` is what one account can spend, or `nil`
+  when the account is not bound or has no history yet. A screen that spends
+  from one account shows this.
+- `unbound` means Rust read nothing for the wallet; it is not a known zero.
+
+Stopping shielded sync and Clear do not touch the dictionary (Clear's outcome
+arrives as an update). Shutdown empties it and drops any update still queued.
+
 ## Local shielded balance snapshots
 
 After configuring and binding shielded state, call
 `await manager.localShieldedBalanceSnapshot(walletId:)` to read the local,
 reservation-aware account balances without starting a network scan. Each
 invocation performs one native read. `unbound` and `restoreIncomplete` do not
-provide a numeric balance. `ready` carries `ordinarySpendableCredits`, the
-wallet's shielded balance as Rust computes it (the spendable credits of its
-ordinary accounts; identity accounts, which an ordinary send cannot spend, are
-left out), and `accounts`, each bound account (identity accounts included) with
-its spendable credits and scan provenance. Show `ordinarySpendableCredits` as
-the wallet's shielded balance; do not add up `accounts` or stored
-`PersistentShieldedNote` rows to get it. A screen that spends from one account
-shows that account's `spendableCredits`. A `noHistory` zero does not establish
-that the wallet has no funds.
+provide a numeric balance; `ready` includes each bound account and its scan
+provenance. A `noHistory` zero does not establish that the wallet has no funds.
 
 If a successful bind overlaps Swift delivery, the call throws
 `ShieldedLocalBalanceReadError.bindingChanged`. The host owns whether and when

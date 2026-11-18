@@ -1,37 +1,45 @@
 package org.dashfoundation.dashsdk.wallet
 
-import java.util.concurrent.CountDownLatch
-import kotlin.concurrent.thread
-import kotlin.coroutines.CoroutineContext
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Runnable
-import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Decoding of the flat `long[]` the native local balance snapshot returns. */
+/** Reading a shielded balance update, and keeping the latest one per wallet. */
 class ShieldedLocalBalanceTest {
 
+    private val walletId = ByteArray(32) { 7 }
+    private val otherWallet = ByteArray(32) { 8 }
     private val identityAccount = 0x4000_0000
 
+    private fun ready(
+        revision: Long,
+        ordinary: Long,
+        established: Boolean = true,
+        accounts: LongArray = longArrayOf(0, ordinary, 1, 1, 2),
+        wallet: ByteArray = walletId,
+    ) = decodeShieldedBalanceUpdate(wallet, revision, 2, ordinary, established, accounts)
+
     @Test
-    fun shouldDecodeAReadySnapshotWithItsOrdinaryTotalAndEveryAccount() {
-        val state = decodeLocalShieldedBalance(
-            longArrayOf(
-                2, 150, 3,
+    fun shouldReadAReadyUpdateWithRustsTotalAndEveryAccount() {
+        val update = decodeShieldedBalanceUpdate(
+            walletId,
+            revision = 4,
+            status = 2,
+            ordinarySpendableCredits = 150,
+            ordinaryBalanceEstablished = true,
+            accounts = longArrayOf(
                 0, 100, 0, 0, 1,
                 1, 50, 1, 0, 2,
                 identityAccount.toLong(), 900, 1, 42, 2,
             ),
         )
-        val snapshot = (state as ShieldedLocalBalanceState.Ready).snapshot
+        assertEquals(4L, update.revision)
+        val snapshot = (update.state as ShieldedLocalBalanceState.Ready).snapshot
         // The total is the one Rust sent, not a sum of the rows.
         assertEquals(150L, snapshot.ordinarySpendableCredits)
+        assertEquals(150L, snapshot.ordinaryBalance)
         assertEquals(setOf(0, 1, identityAccount), snapshot.accounts.keys)
         assertEquals(
             ShieldedLocalAccountBalance(100, null, ShieldedBalanceSource.RESTORED),
@@ -42,179 +50,90 @@ class ShieldedLocalBalanceTest {
             ShieldedLocalAccountBalance(50, 0, ShieldedBalanceSource.SCANNED_THIS_SESSION),
             snapshot.accounts[1],
         )
-        assertEquals(
-            ShieldedLocalAccountBalance(900, 42, ShieldedBalanceSource.SCANNED_THIS_SESSION),
-            snapshot.accounts[identityAccount],
-        )
+        assertEquals(900L, snapshot.accountBalance(identityAccount))
     }
 
     @Test
-    fun shouldDecodeStatesThatCarryNoNumbers() {
+    fun shouldNotTakeAnAmountWithoutEvidenceForABalance() {
+        // A wallet restored without history: readable, zero, never scanned.
+        val unscanned = decodeShieldedBalanceUpdate(
+            walletId, 1, 2, 0, false, longArrayOf(0, 0, 0, 0, 0),
+        )
+        val snapshot = (unscanned.state as ShieldedLocalBalanceState.Ready).snapshot
+        assertEquals(0L, snapshot.ordinarySpendableCredits)
+        assertNull(snapshot.ordinaryBalance)
+        assertNull(snapshot.accountBalance(0))
+        // An account that is not bound has no balance either.
+        assertNull(snapshot.accountBalance(5))
+
+        // The same zero after a completed scan is a balance of zero.
+        val scanned = decodeShieldedBalanceUpdate(
+            walletId, 2, 2, 0, true, longArrayOf(0, 0, 1, 0, 2),
+        )
+        val known = (scanned.state as ShieldedLocalBalanceState.Ready).snapshot
+        assertEquals(0L, known.ordinaryBalance)
+        assertEquals(0L, known.accountBalance(0))
+    }
+
+    @Test
+    fun shouldReadStatesThatCarryNoNumbers() {
         assertEquals(
             ShieldedLocalBalanceState.Unbound,
-            decodeLocalShieldedBalance(longArrayOf(0, 0, 0)),
+            decodeShieldedBalanceUpdate(walletId, 1, 0, 0, false, longArrayOf()).state,
         )
         assertEquals(
             ShieldedLocalBalanceState.RestoreIncomplete,
-            decodeLocalShieldedBalance(longArrayOf(1, 0, 0)),
+            decodeShieldedBalanceUpdate(walletId, 1, 1, 0, false, longArrayOf()).state,
         )
     }
 
     @Test
-    fun shouldRefuseALayoutItCannotReadExactly() {
-        val malformed = listOf(
-            longArrayOf(),
-            longArrayOf(2, 150),
-            // Count says one account, no row follows.
-            longArrayOf(2, 150, 1),
-            // A row is cut short.
-            longArrayOf(2, 150, 1, 0, 100, 0, 0),
-            // Values after the last row.
-            longArrayOf(2, 150, 1, 0, 100, 0, 0, 1, 9),
-            longArrayOf(2, 150, -1),
+    fun shouldRefuseAnUpdateItCannotReadExactly() {
+        val row = longArrayOf(0, 100, 0, 0, 1)
+        val malformed: List<() -> Unit> = listOf(
+            { decodeShieldedBalanceUpdate(ByteArray(31), 1, 2, 100, true, row) },
+            { decodeShieldedBalanceUpdate(walletId, 0, 2, 100, true, row) },
             // Ready without accounts, and accounts on a state without numbers.
-            longArrayOf(2, 0, 0),
-            longArrayOf(0, 0, 1, 0, 100, 0, 0, 1),
-            longArrayOf(1, 0, 1, 0, 100, 0, 0, 1),
-            // Unknown status, flag and source.
-            longArrayOf(3, 0, 0),
-            longArrayOf(2, 150, 1, 0, 100, 2, 0, 1),
-            longArrayOf(2, 150, 1, 0, 100, 0, 0, 3),
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 0, true, longArrayOf()) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 0, 0, false, row) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 1, 0, false, row) },
+            // A row cut short, and an unknown status, flag and source.
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 0, 0)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 3, 0, false, longArrayOf()) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 2, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 0, 0, 3)) },
             // An account index outside Int, and the same account twice.
-            longArrayOf(2, 150, 1, 0x1_0000_0000, 100, 0, 0, 1),
-            longArrayOf(2, 150, 1, -1, 100, 0, 0, 1),
-            longArrayOf(2, 150, 2, 0, 100, 0, 0, 1, 0, 50, 0, 0, 1),
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0x1_0000_0000, 100, 0, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(-1, 100, 0, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, row + row) },
         )
-        for (values in malformed) {
-            assertThrows(
-                "accepted ${values.toList()}",
-                IllegalStateException::class.java,
-            ) { decodeLocalShieldedBalance(values) }
-        }
-    }
-
-    @Test
-    fun shouldReturnAReadThatNoBindOrClearOverlaps() {
-        val fence = ShieldedBindingFence()
-        assertEquals(7, fence.reading { 7 })
-        // A bind or clear that finished earlier does not taint a later read.
-        fence.changing { }
-        assertEquals(8, fence.reading { 8 })
-        // Nor does one that failed.
-        assertThrows(IllegalStateException::class.java) { fence.changing { error("bind failed") } }
-        assertEquals(9, fence.reading { 9 })
-    }
-
-    @Test
-    fun shouldRefuseAReadThatABindOrClearStartsAndFinishesInside() {
-        val fence = ShieldedBindingFence()
-        assertThrows(ShieldedLocalBalanceBindingChanged::class.java) {
-            fence.reading {
-                // The native read captured the old binding; the bind then
-                // replaced it before the read came back.
-                fence.changing { }
-                1
+        malformed.forEachIndexed { index, decode ->
+            assertThrows("accepted malformed update $index", IllegalStateException::class.java) {
+                decode()
             }
         }
     }
 
     @Test
-    fun shouldRefuseAReadThatStartsWhileABindOrClearIsRunning() {
-        val fence = ShieldedBindingFence()
-        var readRan = false
-        fence.changing {
-            // The change has started and has not returned: a read here could
-            // capture either binding, so it is refused before it runs.
-            assertThrows(ShieldedLocalBalanceBindingChanged::class.java) {
-                fence.reading { readRan = true }
-            }
-        }
-        assertFalse(readRan)
-    }
+    fun shouldKeepTheLatestUpdateOfEachWallet() {
+        val first = ready(revision = 1, ordinary = 100)
+        val second = ready(revision = 2, ordinary = 70)
+        val other = ready(revision = 1, ordinary = 900, wallet = otherWallet)
 
-    @Test
-    fun shouldRefuseAReadThatReturnsWhileABindOrClearIsStillRunning() {
-        val fence = ShieldedBindingFence()
-        val readCaptured = CountDownLatch(1)
-        val changeStarted = CountDownLatch(1)
-        val readDelivered = CountDownLatch(1)
-        var failure: Throwable? = null
-        val reader = thread {
-            failure = runCatching {
-                fence.reading {
-                    // Captured the old binding, then the change starts and is
-                    // still in native code when this read returns.
-                    readCaptured.countDown()
-                    changeStarted.await()
-                    1
-                }
-            }.exceptionOrNull()
-            readDelivered.countDown()
-        }
-        readCaptured.await()
-        fence.changing {
-            changeStarted.countDown()
-            readDelivered.await()
-        }
-        reader.join()
-        assertTrue(failure is ShieldedLocalBalanceBindingChanged)
-    }
+        var held = latestShieldedBalances(emptyMap(), first)
+        held = latestShieldedBalances(held, other)
+        held = latestShieldedBalances(held, second)
+        assertEquals(second, held[shieldedBalanceKey(walletId)])
+        assertEquals(other, held[shieldedBalanceKey(otherWallet)])
 
-    /** Runs nothing until the test says so, one queued step at a time. */
-    private class StepDispatcher : CoroutineDispatcher() {
-        val queued = ArrayDeque<Runnable>()
+        // An update that arrives late, or twice, changes nothing.
+        assertSame(held, latestShieldedBalances(held, first))
+        assertSame(held, latestShieldedBalances(held, second))
 
-        override fun dispatch(context: CoroutineContext, block: Runnable) {
-            queued.addLast(block)
-        }
-
-        fun runNext() = queued.removeFirst().run()
-    }
-
-    @Test
-    fun shouldRefuseAReadWhoseResultWaitsForTheCallerWhileABindOrClearRuns() {
-        val fence = ShieldedBindingFence()
-        val caller = StepDispatcher()
-        val reader = StepDispatcher()
-        var readRan = false
-        var outcome: Result<Int>? = null
-        CoroutineScope(caller).launch {
-            outcome = runCatching {
-                fence.readingIn(reader) {
-                    readRan = true
-                    1
-                }
-            }
-        }
-        // The caller starts and hands the read to the other context.
-        caller.runNext()
-        assertEquals(1, reader.queued.size)
-        assertTrue(caller.queued.isEmpty())
-        // The read runs to its end there and queues its result for the
-        // caller. Everything on the reading side is finished at this point.
-        reader.runNext()
-        assertTrue(readRan)
-        assertTrue(reader.queued.isEmpty())
-        assertEquals(1, caller.queued.size)
-        assertNull(outcome)
-        // A bind or clear runs to the end while the result waits.
-        fence.changing { }
-        caller.runNext()
-        assertTrue(outcome?.exceptionOrNull() is ShieldedLocalBalanceBindingChanged)
-    }
-
-    @Test
-    fun shouldDeliverAReadFromAnotherContextThatNothingOverlaps() {
-        val fence = ShieldedBindingFence()
-        val caller = StepDispatcher()
-        val reader = StepDispatcher()
-        var outcome: Result<Int>? = null
-        CoroutineScope(caller).launch {
-            outcome = runCatching { fence.readingIn(reader) { 2 } }
-        }
-        caller.runNext()
-        reader.runNext()
-        caller.runNext()
-        assertEquals(2, outcome?.getOrNull())
+        // A later state without numbers replaces the numbers.
+        val cleared = decodeShieldedBalanceUpdate(walletId, 3, 1, 0, false, longArrayOf())
+        held = latestShieldedBalances(held, cleared)
+        assertEquals(ShieldedLocalBalanceState.RestoreIncomplete, held[shieldedBalanceKey(walletId)]?.state)
+        assertEquals(other, held[shieldedBalanceKey(otherWallet)])
     }
 }

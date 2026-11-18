@@ -33,7 +33,9 @@ use platform_wallet_ffi::event_handler::{
     DpnsSyncWalletResultFFI, EventHandlerCallbacks, EventHandlerCallbacksExtension,
 };
 use platform_wallet_ffi::platform_address_sync::PlatformAddressSyncWalletResultFFI;
-use platform_wallet_ffi::shielded_types::ShieldedSyncWalletResultFFI;
+use platform_wallet_ffi::shielded_types::{
+    ShieldedBalanceUpdateFFI, ShieldedLocalAccountBalanceFFI, ShieldedSyncWalletResultFFI,
+};
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -341,6 +343,68 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
     });
 }
 
+// ── on_shielded_balance_changed ───────────────────────────────────────
+
+/// Number of `long` values per account row handed to
+/// `onShieldedBalanceChanged`: account index, spendable credits, has last
+/// scanned index (0 or 1), last scanned index, source.
+const SHIELDED_BALANCE_ACCOUNT_LONGS: usize = 5;
+
+/// One wallet's shielded balance state after it changed. The update and its
+/// account array are only valid during this call, so the accounts are copied
+/// into a `long[]` (rows of [`SHIELDED_BALANCE_ACCOUNT_LONGS`]) before the
+/// bridge is called; credits and indices are `u64` bit patterns.
+unsafe extern "C" fn tramp_shielded_balance_changed(
+    context: *mut c_void,
+    update: *const ShieldedBalanceUpdateFFI,
+) {
+    // SAFETY: the FFI passes a pointer valid for the callback window, or null.
+    let Some(update) = update.as_ref() else {
+        return;
+    };
+    let rows =
+        shielded_balance_account_longs(slice_or_empty(update.accounts, update.accounts_count));
+    with_bridge(context, |env, bridge| {
+        env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
+            let wid = id32(env, &update.wallet_id)?;
+            let Ok(length) = jni::sys::jsize::try_from(rows.len()) else {
+                // More account values than a JVM array holds: nothing a
+                // real wallet reaches. The host keeps its last update.
+                return Ok(());
+            };
+            let accounts = env.new_long_array(length)?;
+            env.set_long_array_region(&accounts, 0, &rows)?;
+            env.call_method(
+                bridge,
+                "onShieldedBalanceChanged",
+                "([BJIJZ[J)V",
+                &[
+                    (&wid).into(),
+                    JValue::Long(update.revision as i64),
+                    JValue::Int(update.status as i32),
+                    JValue::Long(update.ordinary_spendable_credits as i64),
+                    JValue::Bool(update.ordinary_balance_established as u8),
+                    (&accounts).into(),
+                ],
+            )?;
+            Ok(())
+        })
+    });
+}
+
+/// Lay `accounts` out as the flat rows `onShieldedBalanceChanged` documents.
+fn shielded_balance_account_longs(accounts: &[ShieldedLocalAccountBalanceFFI]) -> Vec<i64> {
+    let mut values = Vec::with_capacity(accounts.len() * SHIELDED_BALANCE_ACCOUNT_LONGS);
+    for account in accounts {
+        values.push(i64::from(account.account_index));
+        values.push(account.spendable_credits as i64);
+        values.push(i64::from(account.has_last_scanned_index));
+        values.push(account.last_scanned_index as i64);
+        values.push(account.source as i64);
+    }
+    values
+}
+
 // ── Vtable ────────────────────────────────────────────────────────────
 
 /// Build the full event vtable pointing at `context` (a boxed
@@ -368,6 +432,7 @@ pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks 
 pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
     EventHandlerCallbacksExtension {
         on_dpns_marketplace_sync_completed_fn: Some(tramp_dpns_marketplace_sync_completed),
+        on_shielded_balance_changed_fn: Some(tramp_shielded_balance_changed),
         ..EventHandlerCallbacksExtension::default()
     }
 }
@@ -384,5 +449,36 @@ pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
 unsafe extern "C" fn release_event_ctx(context: *mut c_void) {
     if !context.is_null() {
         drop(Box::from_raw(context as *mut KotlinEventCtx));
+    }
+}
+
+#[cfg(test)]
+mod shielded_balance_tests {
+    use super::*;
+    use platform_wallet_ffi::shielded_types::ShieldedBalanceSourceFFI;
+
+    #[test]
+    fn should_lay_out_one_row_per_account() {
+        let accounts = [
+            ShieldedLocalAccountBalanceFFI {
+                account_index: 0,
+                spendable_credits: 100,
+                last_scanned_index: 0,
+                has_last_scanned_index: false,
+                source: ShieldedBalanceSourceFFI::Restored,
+            },
+            ShieldedLocalAccountBalanceFFI {
+                account_index: 0x4000_0000,
+                spendable_credits: u64::MAX,
+                last_scanned_index: 42,
+                has_last_scanned_index: true,
+                source: ShieldedBalanceSourceFFI::ScannedThisSession,
+            },
+        ];
+        assert_eq!(
+            shielded_balance_account_longs(&accounts),
+            vec![0, 100, 0, 0, 1, 0x4000_0000, -1, 1, 42, 2]
+        );
+        assert!(shielded_balance_account_longs(&[]).is_empty());
     }
 }

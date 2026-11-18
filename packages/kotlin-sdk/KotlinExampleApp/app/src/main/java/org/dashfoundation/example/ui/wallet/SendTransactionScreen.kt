@@ -160,6 +160,10 @@ fun SendTransactionScreen(
     // SendViewModel.additionalCoreRecipients). Empty until "Add recipient".
     val additionalRecipients = remember { mutableStateListOf<AdditionalRecipient>() }
     var selectedSource by rememberSaveable { mutableStateOf(FundSource.CORE) }
+    // Whether [selectedSource] is the user's own pick, and the kind of the
+    // last recipient that parsed; see the source selection below.
+    var sourceChosenByUser by rememberSaveable { mutableStateOf(false) }
+    var lastRecipientKind by rememberSaveable { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var isSending by remember { mutableStateOf(false) }
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
@@ -245,10 +249,30 @@ fun SendTransactionScreen(
             DashAddressType.Unknown -> emptyList()
         }
     }
-    // Auto-select the first available source when the recipient family
-    // changes (← SendTransactionView.autoSelectSource).
-    LaunchedEffect(availableSources) {
-        if (selectedSource !in availableSources) {
+    // A source the user picked is never replaced by another one: moving a
+    // send the user set to Shielded onto Core would turn a private payment
+    // into a public one. When that source stops being offered (its balance
+    // went away, or is not known for a moment) it stays selected and Send
+    // stays disabled until it is offered again or the user picks another.
+    // The choice ends when the recipient changes to another kind.
+    val recipientKind = when (addressType) {
+        is DashAddressType.Core -> "core"
+        is DashAddressType.Orchard -> "orchard"
+        is DashAddressType.Platform -> "platform"
+        DashAddressType.Unknown -> null
+    }
+    LaunchedEffect(recipientKind) {
+        if (recipientKind != null) {
+            if (lastRecipientKind != null && lastRecipientKind != recipientKind) {
+                sourceChosenByUser = false
+            }
+            lastRecipientKind = recipientKind
+        }
+    }
+    // Without a choice of the user's, follow the offered sources: select
+    // the first one (← SendTransactionView's source reconciliation).
+    LaunchedEffect(availableSources, sourceChosenByUser) {
+        if (!sourceChosenByUser && selectedSource !in availableSources) {
             availableSources.firstOrNull()?.let { selectedSource = it }
         }
     }
@@ -526,13 +550,27 @@ fun SendTransactionScreen(
 
             // Send From (← the iOS "Send From" section) — only shown once
             // the recipient resolves and more than one source can fund it.
-            if (availableSources.size > 1) {
+            // Also shown when the user's own source is not offered now, so
+            // another one can be picked.
+            val chosenSourceNotOffered = sourceChosenByUser && !sourceOffered
+            if (availableSources.size > 1 || (chosenSourceNotOffered && availableSources.isNotEmpty())) {
                 FormSection(title = "Send From") {
+                    if (chosenSourceNotOffered) {
+                        Text(
+                            "${selectedSource.label} is not available right now. Send is " +
+                                "off until it is, or pick another source.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         availableSources.forEachIndexed { index, source ->
                             SegmentedButton(
                                 selected = selectedSource == source,
-                                onClick = { selectedSource = source },
+                                onClick = {
+                                    selectedSource = source
+                                    sourceChosenByUser = true
+                                },
                                 shape = SegmentedButtonDefaults.itemShape(
                                     index,
                                     availableSources.size,
@@ -645,7 +683,6 @@ fun SendTransactionScreen(
                     error = "Wallet is not ready. Try again in a moment."
                     return@SubmitButton
                 }
-                val spendsShielded = selectedSource == FundSource.SHIELDED
                 isSending = true
                 scope.launch {
                     try {
@@ -766,12 +803,6 @@ fun SendTransactionScreen(
                         }
                     } finally {
                         isSending = false
-                        // A shielded spend reserves notes in Rust without
-                        // touching the stored ones, so nothing else would
-                        // tell the balance to be read again.
-                        if (spendsShielded) {
-                            container.shieldedService.refreshLocalBalance(walletId)
-                        }
                     }
                 }
             }

@@ -11,7 +11,6 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
     private final class NativeFixture: @unchecked Sendable {
         let rows: [ShieldedLocalAccountBalanceFFI]
         let status: ShieldedLocalBalanceStatusFFI
-        let ordinary: UInt64
         let code: PlatformWalletFFIResultCode
         let countOverride: UInt?
         let gate: DispatchSemaphore?
@@ -25,7 +24,6 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         init(
             rows: [ShieldedLocalAccountBalanceFFI] = [],
             status: ShieldedLocalBalanceStatusFFI = SHIELDED_LOCAL_BALANCE_STATUS_FFI_READY,
-            ordinary: UInt64 = 0,
             code: PlatformWalletFFIResultCode = PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS,
             countOverride: UInt? = nil,
             gate: DispatchSemaphore? = nil,
@@ -33,7 +31,6 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         ) {
             self.rows = rows
             self.status = status
-            self.ordinary = ordinary
             self.code = code
             self.countOverride = countOverride
             self.gate = gate
@@ -75,7 +72,6 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
                 PlatformWalletFFIResult(code: code, message: nil),
                 ShieldedLocalBalanceSnapshotFFI(
                     status: status,
-                    ordinary_spendable_credits: ordinary,
                     accounts: entries.map { UnsafePointer($0) },
                     accounts_count: countOverride ?? UInt(rows.count)))
         }
@@ -168,11 +164,10 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             row(1, index: 0),
             row(2, credits: UInt64.max),
             row(9, credits: 400, index: 71, source: SHIELDED_BALANCE_SOURCE_FFI_SCANNED_THIS_SESSION)
-        ], ordinary: 12_345)
+        ])
         let manager = makeManager(fixture)
         let state = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
-        // The ordinary total is Rust's number, taken as is, not a sum of the rows.
-        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(ordinarySpendableCredits: 12_345, accounts: [
+        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
             0: ShieldedLocalAccountBalance(spendableCredits: 0, lastScannedIndex: nil, source: .noHistory),
             1: ShieldedLocalAccountBalance(spendableCredits: 0, lastScannedIndex: 0, source: .restored),
             2: ShieldedLocalAccountBalance(spendableCredits: UInt64.max, lastScannedIndex: nil, source: .restored),
@@ -181,23 +176,6 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         XCTAssertEqual(fixture.walletIds, [Self.walletId])
         XCTAssertEqual(fixture.offMain, [true])
         XCTAssertEqual(fixture.events, ["read:\(Handle.max)", "free"])
-        await manager.shutdown()
-    }
-
-    func testShouldKeepIdentityAccountsInAccountsWhileTheOrdinaryTotalLeavesThemOut() async throws {
-        // Account 0x4000_0000 is identity 0's shielded account. Rust leaves
-        // it out of the ordinary total; the snapshot still lists it.
-        let fixture = NativeFixture(rows: [
-            row(0, credits: 150, index: 10),
-            row(0x4000_0000, credits: 900, index: 10)
-        ], ordinary: 150)
-        let manager = makeManager(fixture)
-        let state = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
-        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(ordinarySpendableCredits: 150, accounts: [
-            0: ShieldedLocalAccountBalance(spendableCredits: 150, lastScannedIndex: 10, source: .restored),
-            0x4000_0000: ShieldedLocalAccountBalance(spendableCredits: 900, lastScannedIndex: 10, source: .restored)
-        ])))
-        XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
         await manager.shutdown()
     }
 
@@ -287,7 +265,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         let scanLock = DispatchSemaphore(value: 0)
         let allowStopToFinish = DispatchSemaphore(value: 0)
         let stopStarted = expectation(description: "Shielded stop runs while the snapshot is blocked")
-        let fixture = NativeFixture(rows: [row(0, credits: 900)], ordinary: 900, gate: scanLock)
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: scanLock)
         let manager = makeManager(fixture)
         let calls = manager.nativeTeardownCalls
         manager.nativeTeardownCalls = PlatformWalletNativeTeardownCalls(
@@ -326,7 +304,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         let secondMetrics = await second.value
 
         XCTAssertFalse(fixture.readTimedOut, "Shutdown must release the scan before draining the blocked read")
-        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(ordinarySpendableCredits: 900, accounts: [
+        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
             0: ShieldedLocalAccountBalance(spendableCredits: 900, lastScannedIndex: nil, source: .restored)
         ])))
         XCTAssertEqual(Array(fixture.events.prefix(3)), ["read:\(Handle.max)", "shielded_stop", "free"])
@@ -339,7 +317,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
 
     func testShouldDrainAdmittedReadAndRejectNewReadsDuringShutdown() async throws {
         let gate = DispatchSemaphore(value: 0)
-        let fixture = NativeFixture(rows: [row(0, credits: 900)], ordinary: 900, gate: gate)
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
         let manager = makeManager(fixture)
         let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
         defer { gate.signal() }
@@ -372,7 +350,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         }
         gate.signal()
         let state = try await read.value
-        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(ordinarySpendableCredits: 900, accounts: [
+        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
             0: ShieldedLocalAccountBalance(spendableCredits: 900, lastScannedIndex: nil, source: .restored)
         ])))
         _ = await shutdown.value
@@ -534,8 +512,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             let gate = DispatchSemaphore(value: 0)
             let didFree = DispatchSemaphore(value: 0)
             let first = NativeFixture(rows: [row(0, credits: 900)], gate: gate, didFree: didFree)
-            let second = NativeFixture(
-                rows: [row(replacementAccount, credits: replacementCredits)], ordinary: replacementCredits)
+            let second = NativeFixture(rows: [row(replacementAccount, credits: replacementCredits)])
             let sequence = NativeSequence([first, second])
             let manager = makeManager(first)
             manager.nativeShieldedLocalBalanceCalls = sequence.calls
@@ -559,8 +536,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             }
             XCTAssertTrue(second.walletIds.isEmpty, "No implicit retry")
             let state = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
-            XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(
-                ordinarySpendableCredits: replacementCredits, accounts: [
+            XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
                 replacementAccount: ShieldedLocalAccountBalance(
                     spendableCredits: replacementCredits, lastScannedIndex: nil, source: .restored)
             ])))

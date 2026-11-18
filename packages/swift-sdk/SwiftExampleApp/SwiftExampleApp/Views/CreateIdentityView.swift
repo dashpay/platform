@@ -63,7 +63,6 @@ struct CreateIdentityView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
-    @EnvironmentObject var shieldedService: ShieldedService
 
     /// Default number of Platform identity keys to register in this
     /// first-pass flow. The Rust-owned per-slot policy
@@ -249,22 +248,6 @@ struct CreateIdentityView: View {
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
 
-    /// All wallets' unspent account-0 shielded note rows. The shielded
-    /// funding picker spans multiple wallets, so this uses the
-    /// all-wallets predicate. The rows do not give the balance
-    /// (`shieldedPoolBalance(for:)` reads Rust's number); their changes
-    /// while this sheet is open (a receive or a spend) trigger a refresh
-    /// of the wallets' local balances, which re-renders the funding
-    /// option and denomination list.
-    @Query(filter: CreateIdentityView.shieldedFundingPredicate)
-    private var unspentShieldedNotes: [PersistentShieldedNote]
-
-    static var shieldedFundingPredicate: Predicate<PersistentShieldedNote> {
-        #Predicate<PersistentShieldedNote> {
-            $0.accountIndex == 0 && $0.isSpent == false
-        }
-    }
-
     // MARK: - Selection state
 
     /// The source wallet selection. `nil` encodes "pick nothing yet";
@@ -428,9 +411,6 @@ struct CreateIdentityView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
-            .refreshingShieldedLocalBalances(
-                shieldedService, walletIds: wallets.map(\.walletId),
-                noteRows: unspentShieldedNotes)
         }
     }
 
@@ -1328,7 +1308,6 @@ struct CreateIdentityView: View {
         // another isolation domain (mirrors how the other submit paths
         // capture `managedWallet`).
         let manager = walletManager
-        let service = shieldedService
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
@@ -1339,11 +1318,6 @@ struct CreateIdentityView: View {
                 // `ManagedPlatformWallet` registration methods) and
                 // returns the new identity id directly. Account 0 = the
                 // app's shielded default.
-                //
-                // The spend reserves notes in Rust without changing any
-                // stored note row, so refresh the cached balance when it
-                // returns, whatever the outcome.
-                defer { service.refreshLocalBalance(walletId: walletId) }
                 let identityId = try await manager.shieldedIdentityCreateFromPool(
                     walletId: walletId,
                     resolver: MnemonicResolver(),
@@ -1844,19 +1818,19 @@ struct CreateIdentityView: View {
     }
 
     /// Per-wallet shielded funding balance: account 0's spendable credits
-    /// as Rust computes them, because shielded identity funding spends
-    /// from account 0. Read from the service's per-wallet local balance
-    /// cache (rather than the single-mirror
-    /// `shieldedService.shieldedBalance`), so it is correct for ANY
-    /// loaded wallet, not just the mirror's `firstWallet`. Not known yet
-    /// counts as 0, so the shielded option is not offered.
+    /// as Rust pushes them, because shielded identity funding spends from
+    /// account 0. Read per wallet from `walletManager.shieldedBalances`
+    /// (rather than the single-mirror `shieldedService.shieldedBalance`),
+    /// so it is correct for ANY loaded wallet, not just the mirror's
+    /// `firstWallet`. Not known yet counts as 0, so the shielded option is
+    /// not offered.
     private func shieldedPoolBalance(for walletId: Data) -> UInt64 {
         knownShieldedPoolBalance(for: walletId) ?? 0
     }
 
     /// Account 0's spendable credits, or `nil` while not known yet.
     private func knownShieldedPoolBalance(for walletId: Data) -> UInt64? {
-        shieldedService.spendableShieldedCredits(walletId: walletId, account: 0)
+        walletManager.spendableShieldedCredits(walletId: walletId, account: 0)
     }
 
     /// The wallet id currently chosen in the source-wallet picker, or

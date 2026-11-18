@@ -250,11 +250,15 @@ fun WalletDetailScreen(
                 // unspent shielded note is not empty even when its ordinary
                 // shielded balance is 0 (all its notes sit in identity
                 // accounts), so the shielded row and its actions stay shown.
+                // A shielded balance that is not known is not zero: with
+                // shielded support the wallet reads as empty only once Rust
+                // has announced a balance of 0.
+                val shieldedKnownEmpty = !hasShielded || shieldedBalance == 0L
                 val allZero = (core?.confirmed ?: 0) == 0L &&
                     (core?.unconfirmed ?: 0) == 0L &&
                     (core?.immature ?: 0) == 0L &&
                     platformBalance == 0L &&
-                    (shieldedBalance ?: 0L) == 0L &&
+                    shieldedKnownEmpty &&
                     !hasShieldedNotes
                 if (allZero) {
                     Text(

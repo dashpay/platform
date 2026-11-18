@@ -1,17 +1,41 @@
 package org.dashfoundation.dashsdk.wallet
 
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
-import kotlin.coroutines.CoroutineContext
-import kotlinx.coroutines.withContext
+/**
+ * One wallet's shielded balance as Rust last announced it
+ * (`on_shielded_balance_changed_fn`). Rust sends an update whenever the
+ * wallet's balance state changes: a scan ends (also when it fails), a spend
+ * reserves or releases notes, a bind changes the accounts, a Clear empties
+ * the ledger. A host keeps the latest update per wallet and shows it; it
+ * never reads or adds up a balance itself.
+ *
+ * @param revision counts this wallet's updates, starting at 1. An update
+ *   with a lower revision than the one held is older and is dropped.
+ */
+data class ShieldedBalanceUpdate(
+    val walletId: ByteArray,
+    val revision: Long,
+    val state: ShieldedLocalBalanceState,
+) {
+    override fun equals(other: Any?): Boolean =
+        other is ShieldedBalanceUpdate &&
+            walletId.contentEquals(other.walletId) &&
+            revision == other.revision &&
+            state == other.state
+
+    override fun hashCode(): Int =
+        31 * (31 * walletId.contentHashCode() + revision.hashCode()) + state.hashCode()
+}
 
 /**
- * Availability of a wallet's local shielded ledger, read without contacting
- * the network. Port of Swift `ShieldedLocalBalanceState`
- * (`PlatformWalletManagerShieldedLocalBalance.swift`).
+ * Availability of a wallet's local shielded ledger. Port of Swift
+ * `ShieldedLocalBalanceState` (`PlatformWalletManagerShieldedLocalBalance.swift`).
  */
 sealed interface ShieldedLocalBalanceState {
-    /** No shielded coordinator or bound account exists for this wallet. */
+    /**
+     * No shielded account is registered for this wallet. Rust did not read a
+     * ledger, so this says nothing about what the wallet holds: it is not a
+     * known zero.
+     */
     data object Unbound : ShieldedLocalBalanceState
 
     /**
@@ -25,25 +49,43 @@ sealed interface ShieldedLocalBalanceState {
 }
 
 /**
- * One coherent read of a wallet's local shielded balances.
+ * One coherent view of a wallet's local shielded balances.
  *
- * @param ordinarySpendableCredits the wallet's shielded balance as Rust
- *   computes it: spendable credits of its ordinary accounts. Identity
- *   accounts are in [accounts] but not in this total, because an ordinary
- *   send cannot spend their notes. Show this number; do not add up
- *   [accounts] or stored notes.
+ * @param ordinarySpendableCredits spendable credits of the wallet's ordinary
+ *   accounts, as Rust computes them. Identity accounts are in [accounts] but
+ *   not in this total, because an ordinary send cannot spend their notes.
+ *   Do not add up [accounts] or stored notes instead.
+ * @param ordinaryBalanceEstablished whether every ordinary account has
+ *   evidence behind its amount (restored notes or a completed scan). When
+ *   false, [ordinarySpendableCredits] is only what is selectable locally
+ *   right now: a wallet restored without history reads zero here before its
+ *   first scan, and that zero is not the wallet's balance. Use
+ *   [ordinaryBalance] to show a balance.
  * @param accounts every bound account by its ZIP-32 index, identity accounts
  *   and accounts holding nothing included.
  */
 data class ShieldedLocalBalanceSnapshot(
     val ordinarySpendableCredits: Long,
+    val ordinaryBalanceEstablished: Boolean,
     val accounts: Map<Int, ShieldedLocalAccountBalance>,
-)
+) {
+    /** The wallet's shielded balance, or null while it is not established. */
+    val ordinaryBalance: Long?
+        get() = ordinarySpendableCredits.takeIf { ordinaryBalanceEstablished }
+
+    /**
+     * What a send from [account] can spend, or null when the account is not
+     * bound or its amount has no evidence behind it yet.
+     */
+    fun accountBalance(account: Int): Long? =
+        accounts[account]
+            ?.takeIf { it.source != ShieldedBalanceSource.NO_HISTORY }
+            ?.spendableCredits
+}
 
 /**
  * @param spendableCredits credits a send from this account can select now:
- *   unspent notes, leaving out the ones a pending spend has reserved. A new
- *   network scan may change it.
+ *   unspent notes, leaving out the ones a pending spend has reserved.
  * @param lastScannedIndex the account's scan coverage; null when no completed
  *   scan is known, which is distinct from a scan that ended at index zero.
  */
@@ -65,122 +107,53 @@ enum class ShieldedBalanceSource {
     SCANNED_THIS_SESSION,
 }
 
-/**
- * A local balance read finished, but a shielded bind or clear of the same
- * manager ran while it was in flight, so its accounts may belong to the
- * binding that was replaced. Nothing was changed; read again.
- */
-class ShieldedLocalBalanceBindingChanged : Exception(
-    "Shielded binding changed during the local balance snapshot; request a fresh read",
-)
-
-/**
- * Keeps a local balance read from being returned when a shielded bind or
- * clear of the same manager overlapped it. Rust's ledger locks make the
- * native snapshot coherent, but they do not cover its way back to Kotlin.
- *
- * A read is returned only if no bind or clear was in flight when it started
- * and none started before it finished. Counting a change at its start, and
- * holding it as in flight until it returns, covers a read on either side of
- * the native call: one that captured the old binding before the change took
- * effect, and one that began while the change was still running.
- */
-internal class ShieldedBindingFence {
-    private val changesStarted = AtomicLong(0)
-    private val changesInFlight = AtomicInteger(0)
-
-    /** Run a bind or clear. */
-    fun <T> changing(change: () -> T): T {
-        // In flight first: a read that already noted the count then sees
-        // either the change in flight or the count moved.
-        changesInFlight.incrementAndGet()
-        changesStarted.incrementAndGet()
-        try {
-            return change()
-        } finally {
-            changesInFlight.decrementAndGet()
-        }
-    }
-
-    /**
-     * A read is about to start. Throws [ShieldedLocalBalanceBindingChanged]
-     * while a bind or clear is in flight; otherwise returns the token to
-     * pass to [readEnds].
-     */
-    fun readStarts(): Long {
-        val started = changesStarted.get()
-        if (changesInFlight.get() != 0) throw ShieldedLocalBalanceBindingChanged()
-        return started
-    }
-
-    /**
-     * The read that got [started] from [readStarts] is about to hand its
-     * value to the caller. Throws [ShieldedLocalBalanceBindingChanged] when
-     * a bind or clear started since.
-     */
-    fun readEnds(started: Long) {
-        if (changesStarted.get() != started) throw ShieldedLocalBalanceBindingChanged()
-    }
-
-    /**
-     * Run [read] and return its value, or throw
-     * [ShieldedLocalBalanceBindingChanged] when a bind or clear overlapped
-     * it. [read] is not run at all while one is in flight.
-     */
-    fun <T> reading(read: () -> T): T {
-        val started = readStarts()
-        val value = read()
-        readEnds(started)
-        return value
-    }
-
-    /**
-     * [reading] for a read that runs in another [context]. The closing
-     * check runs after the value is back in the caller's context, so a bind
-     * or clear that starts while the result waits for the caller's
-     * dispatcher is still seen. Nothing can cover the time after this
-     * returns: a snapshot is as of its delivery, and a caller that keeps it
-     * reads again after a later bind or clear.
-     */
-    suspend fun <T> readingIn(context: CoroutineContext, read: () -> T): T {
-        val started = readStarts()
-        val value = withContext(context) { read() }
-        readEnds(started)
-        return value
-    }
-}
-
-private const val HEADER_LONGS = 3
+/** Number of `long` values per account row in a balance update. */
 private const val ACCOUNT_LONGS = 5
 
 /**
- * Decode the `long[]` that `FundingNative.localShieldedBalanceSnapshot`
- * returns (its layout is documented there). Refuses anything it cannot read
- * exactly, so a layout mismatch never turns into a balance.
+ * Build a [ShieldedBalanceUpdate] from the arguments of
+ * `NativeWalletEventBridge.onShieldedBalanceChanged` (their layout is
+ * documented there). Refuses anything it cannot read exactly, so a layout
+ * mismatch never turns into a balance.
  */
-internal fun decodeLocalShieldedBalance(values: LongArray): ShieldedLocalBalanceState {
-    check(values.size >= HEADER_LONGS) { "Local shielded balance snapshot is truncated" }
-    val status = values[0]
-    val count = values[2]
-    check(count >= 0 && values.size.toLong() == HEADER_LONGS + count * ACCOUNT_LONGS) {
-        "Local shielded balance snapshot has ${values.size} values for $count accounts"
+internal fun decodeShieldedBalanceUpdate(
+    walletId: ByteArray,
+    revision: Long,
+    status: Int,
+    ordinarySpendableCredits: Long,
+    ordinaryBalanceEstablished: Boolean,
+    accounts: LongArray,
+): ShieldedBalanceUpdate {
+    check(walletId.size == 32) { "Shielded balance update has a ${walletId.size}-byte wallet id" }
+    check(revision > 0) { "Shielded balance update has revision $revision" }
+    check(accounts.size % ACCOUNT_LONGS == 0) {
+        "Shielded balance update has ${accounts.size} account values"
     }
-    when (status) {
-        0L -> {
-            check(count == 0L) { "Unbound shielded snapshot contains accounts" }
-            return ShieldedLocalBalanceState.Unbound
+    val state = when (status) {
+        0 -> {
+            check(accounts.isEmpty()) { "Unbound shielded balance update contains accounts" }
+            ShieldedLocalBalanceState.Unbound
         }
-        1L -> {
-            check(count == 0L) { "Incomplete shielded snapshot contains accounts" }
-            return ShieldedLocalBalanceState.RestoreIncomplete
+        1 -> {
+            check(accounts.isEmpty()) { "Incomplete shielded balance update contains accounts" }
+            ShieldedLocalBalanceState.RestoreIncomplete
         }
-        2L -> Unit
-        else -> error("Unknown local shielded balance status: $status")
+        2 -> ShieldedLocalBalanceState.Ready(
+            ShieldedLocalBalanceSnapshot(
+                ordinarySpendableCredits = ordinarySpendableCredits,
+                ordinaryBalanceEstablished = ordinaryBalanceEstablished,
+                accounts = decodeAccounts(accounts),
+            ),
+        )
+        else -> error("Unknown shielded balance status: $status")
     }
-    check(count > 0) { "Ready shielded snapshot has no accounts" }
-    val accounts = LinkedHashMap<Int, ShieldedLocalAccountBalance>(count.toInt())
-    for (row in 0 until count.toInt()) {
-        val at = HEADER_LONGS + row * ACCOUNT_LONGS
+    return ShieldedBalanceUpdate(walletId.copyOf(), revision, state)
+}
+
+private fun decodeAccounts(values: LongArray): Map<Int, ShieldedLocalAccountBalance> {
+    check(values.isNotEmpty()) { "Ready shielded balance update has no accounts" }
+    val accounts = LinkedHashMap<Int, ShieldedLocalAccountBalance>(values.size / ACCOUNT_LONGS)
+    for (at in values.indices step ACCOUNT_LONGS) {
         val index = values[at]
         check(index in 0..Int.MAX_VALUE) { "Shielded account index out of range: $index" }
         val hasLastScannedIndex = when (values[at + 2]) {
@@ -192,7 +165,7 @@ internal fun decodeLocalShieldedBalance(values: LongArray): ShieldedLocalBalance
             0L -> ShieldedBalanceSource.NO_HISTORY
             1L -> ShieldedBalanceSource.RESTORED
             2L -> ShieldedBalanceSource.SCANNED_THIS_SESSION
-            else -> error("Unknown local shielded balance source: ${values[at + 4]}")
+            else -> error("Unknown shielded balance source: ${values[at + 4]}")
         }
         val previous = accounts.put(
             index.toInt(),
@@ -202,12 +175,29 @@ internal fun decodeLocalShieldedBalance(values: LongArray): ShieldedLocalBalance
                 source = source,
             ),
         )
-        check(previous == null) { "Duplicate shielded account in local snapshot: $index" }
+        check(previous == null) { "Duplicate shielded account in balance update: $index" }
     }
-    return ShieldedLocalBalanceState.Ready(
-        ShieldedLocalBalanceSnapshot(
-            ordinarySpendableCredits = values[1],
-            accounts = accounts,
-        ),
-    )
+    return accounts
+}
+
+/** The key a wallet's update is held under: its id in lowercase hex. */
+internal fun shieldedBalanceKey(walletId: ByteArray): String =
+    walletId.joinToString("") { "%02x".format(it) }
+
+/**
+ * The latest update per wallet after [update] arrived: it replaces the one
+ * held unless that one has the same or a higher revision, so an update
+ * delivered late never overwrites a newer one.
+ */
+internal fun latestShieldedBalances(
+    held: Map<String, ShieldedBalanceUpdate>,
+    update: ShieldedBalanceUpdate,
+): Map<String, ShieldedBalanceUpdate> {
+    val key = shieldedBalanceKey(update.walletId)
+    val current = held[key]
+    return if (current != null && current.revision >= update.revision) {
+        held
+    } else {
+        held + (key to update)
+    }
 }

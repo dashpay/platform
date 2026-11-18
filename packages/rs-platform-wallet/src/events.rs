@@ -22,6 +22,8 @@ use crate::manager::dpns_sync::DpnsSyncPassSummary;
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncPassSummary;
+#[cfg(feature = "shielded")]
+use crate::wallet::shielded::ShieldedBalanceUpdate;
 
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
@@ -104,6 +106,24 @@ pub trait PlatformEventHandler: EventHandler {
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]
     fn on_shielded_tree_progress(&self, _leaves_committed: u64, _total_target: u64) {}
+
+    /// Fired whenever a wallet's local shielded balance state changes: what
+    /// `NetworkShieldedCoordinator::local_balance_snapshot` returns for the
+    /// wallet now differs from the state last delivered for it, or the
+    /// wallet is seen for the first time. Covers every cause, including a
+    /// scan (completed or failed), a bind, an unregister (the state becomes
+    /// `Unbound`), a Clear (successful or failed) and note reservations taken
+    /// or released. An unchanged state is not delivered again.
+    ///
+    /// `update.revision` starts at 1 per wallet and strictly increases;
+    /// a wallet's updates arrive in revision order, from one task, never
+    /// after `PlatformWalletManager::shutdown` returned with the emitter
+    /// joined. A host shows the latest state it received and keeps no
+    /// balance of its own.
+    ///
+    /// Default impl is a no-op.
+    #[cfg(feature = "shielded")]
+    fn on_shielded_balance_changed(&self, _update: &ShieldedBalanceUpdate) {}
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -193,6 +213,18 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_shielded_tree_progress(leaves_committed, total_target);
+        }
+    }
+
+    /// Dispatch a shielded balance update to every handler.
+    ///
+    /// Called from the coordinator's balance emitter, once per changed
+    /// wallet state.
+    #[cfg(feature = "shielded")]
+    pub fn on_shielded_balance_changed(&self, update: &ShieldedBalanceUpdate) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_shielded_balance_changed(update);
         }
     }
 }

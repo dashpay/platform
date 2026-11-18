@@ -24,17 +24,10 @@ public enum ShieldedLocalBalanceReadError: LocalizedError, Sendable, Equatable {
 }
 
 public struct ShieldedLocalBalanceSnapshot: Sendable, Equatable {
-    /// The wallet's shielded balance as Rust computes it: the spendable
-    /// credits of its ordinary accounts, which an ordinary send can spend.
-    /// Identity accounts are left out. Hosts show this number and do not
-    /// add up `accounts` or stored notes to get it.
-    public let ordinarySpendableCredits: UInt64
-    /// Every bound account is present, identity accounts included, and
-    /// accounts with zero credits included.
+    /// Every bound account is present, including accounts with zero credits.
     public let accounts: [UInt32: ShieldedLocalAccountBalance]
 
-    public init(ordinarySpendableCredits: UInt64, accounts: [UInt32: ShieldedLocalAccountBalance]) {
-        self.ordinarySpendableCredits = ordinarySpendableCredits
+    public init(accounts: [UInt32: ShieldedLocalAccountBalance]) {
         self.accounts = accounts
     }
 }
@@ -237,7 +230,6 @@ extension PlatformWalletManager {
                 lastScannedIndex: entry.has_last_scanned_index ? entry.last_scanned_index : nil,
                 source: source)
         }
-        return .ready(ShieldedLocalBalanceSnapshot(
-            ordinarySpendableCredits: snapshot.ordinary_spendable_credits, accounts: accounts))
+        return .ready(ShieldedLocalBalanceSnapshot(accounts: accounts))
     }
 }
