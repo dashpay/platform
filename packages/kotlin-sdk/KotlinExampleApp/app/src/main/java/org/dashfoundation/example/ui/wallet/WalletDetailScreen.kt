@@ -145,7 +145,8 @@ fun WalletDetailScreen(
         } else {
             MutableStateFlow(false)
         }
-    }.collectAsStateWithLifecycle(initialValue = false)
+        // Null until the first query result: not yet known to hold none.
+    }.collectAsStateWithLifecycle(initialValue = null)
 
     // Distinct on-chain transactions this wallet participates in — union
     // of every TXO's creating and spending tx (WalletDetailView's
@@ -259,7 +260,7 @@ fun WalletDetailScreen(
                     (core?.immature ?: 0) == 0L &&
                     platformBalance == 0L &&
                     shieldedKnownEmpty &&
-                    !hasShieldedNotes
+                    hasShieldedNotes == false
                 if (allZero) {
                     Text(
                         "Empty Wallet",

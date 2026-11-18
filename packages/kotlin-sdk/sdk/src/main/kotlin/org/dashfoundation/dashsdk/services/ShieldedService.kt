@@ -6,10 +6,12 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -148,15 +150,21 @@ class ShieldedService(private val database: DashDatabase) {
     /**
      * [walletId]'s local shielded balances as Rust last announced them, or
      * null while there are no numbers: the wallet was not announced yet, it
-     * is not bound, or its restoration is incomplete. Rust announces every
-     * change (a scan ending, a spend reserving or releasing notes, a bind, a
-     * Clear), so a collector needs no refresh of its own.
+     * is not bound, or its restoration is incomplete. Rust announces the
+     * state whenever it has changed (after a scan ends, a spend reserves or
+     * releases notes, a bind, a Clear), so a collector needs no refresh of
+     * its own. An update is the latest state Rust read, not one per change:
+     * notes reserved and released again before Rust reads produce none.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun localBalance(walletId: ByteArray): Flow<ShieldedLocalBalanceSnapshot?> {
         val key = shieldedBalanceKey(walletId)
         return balanceUpdates
             .flatMapLatest { it }
+            // No buffer between the sources and the collector: a value of
+            // the source that was switched away from must not be handed
+            // over after the switch.
+            .buffer(Channel.RENDEZVOUS)
             .map { updates -> (updates[key]?.state as? ShieldedLocalBalanceState.Ready)?.snapshot }
             .distinctUntilChanged()
     }
@@ -438,7 +446,10 @@ class ShieldedService(private val database: DashDatabase) {
         boundWalletId = null
         boundDbPath = null
         _boundAccounts.value = emptyList()
-        _shieldedBalance.value = emptyFlow()
+        // Not an empty flow: a collector that follows this to its next
+        // inner flow must receive "not known", or it keeps showing the
+        // balance of the wallet that was unbound.
+        _shieldedBalance.value = flowOf(null)
         balanceUpdates.value = flowOf(emptyMap())
         _state.value = ShieldedSyncState()
         _isBound.value = false
@@ -551,6 +562,15 @@ class ShieldedService(private val database: DashDatabase) {
         // relaunch. bind() re-runs configureShielded (idempotent same-path)
         // + bindShielded (re-registers on the now-empty coordinator; its
         // restore_for_wallet finds no watermark → starts at index 0).
+        if (manager !== mgr) {
+            // The service was bound to another manager (another network)
+            // while this Clear was suspended. Its reset and wipe were of
+            // the old network; binding the old manager again now would
+            // point the balances and the events of the active wallet back
+            // at it.
+            android.util.Log.i(TAG, "Shielded clear: bound manager changed; skipping re-bind")
+            return
+        }
         if (dbPath != null) {
             bind(mgr, walletId, dbPath, accounts)
             // Fleet recovery: clearShieldedStorage dropped EVERY wallet's

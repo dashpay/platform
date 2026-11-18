@@ -1172,7 +1172,7 @@ struct WalletRowView: View {
         let knownPartsHoldSomething = coreTotal > 0 || platformBalance > 0
         guard let shielded = shieldedBalance else {
             return knownPartsHoldSomething
-                ? ("At least \(formatDash(combinedDashAmount(coreTotal: coreTotal)))", true)
+                ? (LowerBoundDashText.atLeast(duffs: coreTotal, credits: platformBalance), true)
                 : ("Not known yet", false)
         }
         if knownPartsHoldSomething || shielded > 0 || !shieldedNotes.isEmpty {
@@ -1565,7 +1565,9 @@ private struct ShieldedNetworkSummaryRows: View {
         case .complete(let credits):
             return credits > 0 ? (formatCredits(credits), true) : ("0", false)
         case .partial(let credits):
-            return credits > 0 ? ("At least \(formatCredits(credits))", false) : ("Not known yet", false)
+            return credits > 0
+                ? (LowerBoundDashText.atLeast(credits: Decimal(credits)), false)
+                : ("Not known yet", false)
         case .overflow:
             return ("Too large to show", false)
         }

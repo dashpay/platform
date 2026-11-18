@@ -9,6 +9,8 @@
 //! `DashSpvClient`, and supports dynamic handler registration via
 //! lock-free `ArcSwap`.
 
+#[cfg(feature = "shielded")]
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
@@ -107,19 +109,35 @@ pub trait PlatformEventHandler: EventHandler {
     #[cfg(feature = "shielded")]
     fn on_shielded_tree_progress(&self, _leaves_committed: u64, _total_target: u64) {}
 
-    /// Fired whenever a wallet's local shielded balance state changes: what
-    /// `NetworkShieldedCoordinator::local_balance_snapshot` returns for the
-    /// wallet now differs from the state last delivered for it, or the
-    /// wallet is seen for the first time. Covers every cause, including a
-    /// scan (completed or failed), a bind, an unregister (the state becomes
+    /// Fired when a wallet's local shielded balance state changes: the
+    /// coordinator's balance emitter read
+    /// `NetworkShieldedCoordinator::local_balance_snapshot` for the wallet
+    /// and found a state that differs from the one it last delivered, or saw
+    /// the wallet for the first time. Covers every cause, including a scan
+    /// (completed or failed), a bind, an unregister (the state becomes
     /// `Unbound`), a Clear (successful or failed) and note reservations taken
     /// or released. An unchanged state is not delivered again.
     ///
-    /// `update.revision` starts at 1 per wallet and strictly increases;
-    /// a wallet's updates arrive in revision order, from one task, never
-    /// after `PlatformWalletManager::shutdown` returned with the emitter
-    /// joined. A host shows the latest state it received and keeps no
-    /// balance of its own.
+    /// An update carries the latest state the emitter read, not every
+    /// transition: changes that land before it reads again coalesce, so a
+    /// reservation taken and released between two reads produces no update.
+    /// `update.revision` identifies a delivered state, not a ledger mutation.
+    /// It starts at 1 per wallet and strictly increases; a wallet's updates
+    /// arrive in revision order, from one task, and none arrives once
+    /// `PlatformWalletManager::shutdown` returned with the emitter joined. A
+    /// host shows the latest state it received and keeps no balance of its
+    /// own.
+    ///
+    /// No replay: an update is sent when the state changes, so a handler
+    /// added after a wallet's state was delivered
+    /// ([`PlatformEventManager::add_handler`]) hears about that wallet only
+    /// at its next change, and reads
+    /// `NetworkShieldedCoordinator::local_balance_snapshot` if it needs the
+    /// current state before then.
+    ///
+    /// A panic in this method is caught and logged by
+    /// [`PlatformEventManager::on_shielded_balance_changed`], so it does not
+    /// stop later updates; where panics abort the process it is not caught.
     ///
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]
@@ -218,13 +236,29 @@ impl PlatformEventManager {
 
     /// Dispatch a shielded balance update to every handler.
     ///
-    /// Called from the coordinator's balance emitter, once per changed
-    /// wallet state.
+    /// Called from the coordinator's balance emitter, once per delivered
+    /// wallet state; the handlers registered now receive it, and a handler
+    /// added later receives the next change, not this one (see
+    /// [`PlatformEventHandler::on_shielded_balance_changed`]).
+    ///
+    /// Each handler call is isolated: the emitter is the only task that
+    /// delivers balance updates, for every wallet, so a handler that panics
+    /// must not unwind it. The panic is logged and the remaining handlers
+    /// still receive the update.
     #[cfg(feature = "shielded")]
     pub fn on_shielded_balance_changed(&self, update: &ShieldedBalanceUpdate) {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
-            h.on_shielded_balance_changed(update);
+            let delivered =
+                catch_unwind(AssertUnwindSafe(|| h.on_shielded_balance_changed(update)));
+            if delivered.is_err() {
+                tracing::error!(
+                    wallet_id = %hex::encode(update.wallet_id),
+                    revision = update.revision,
+                    "a shielded balance handler panicked; the other handlers still receive \
+                     this update and later ones are delivered"
+                );
+            }
         }
     }
 }
@@ -263,5 +297,57 @@ impl EventHandler for PlatformEventManager {
         for h in handlers.iter() {
             h.on_error(error);
         }
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod tests {
+    use super::*;
+
+    use std::sync::Mutex;
+
+    use crate::wallet::shielded::ShieldedLocalBalanceState;
+
+    struct PanickingHandler;
+
+    impl EventHandler for PanickingHandler {}
+
+    impl PlatformEventHandler for PanickingHandler {
+        fn on_shielded_balance_changed(&self, _update: &ShieldedBalanceUpdate) {
+            panic!("host handler failed");
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingHandler {
+        revisions: Mutex<Vec<u64>>,
+    }
+
+    impl EventHandler for RecordingHandler {}
+
+    impl PlatformEventHandler for RecordingHandler {
+        fn on_shielded_balance_changed(&self, update: &ShieldedBalanceUpdate) {
+            self.revisions
+                .lock()
+                .expect("recorder")
+                .push(update.revision);
+        }
+    }
+
+    #[test]
+    fn should_keep_delivering_balance_updates_past_a_panicking_handler() {
+        let recorder = Arc::new(RecordingHandler::default());
+        let manager = PlatformEventManager::new(vec![
+            Arc::new(PanickingHandler) as Arc<dyn PlatformEventHandler>,
+            Arc::clone(&recorder) as Arc<dyn PlatformEventHandler>,
+        ]);
+        for revision in [1, 2] {
+            manager.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+                wallet_id: [1; 32],
+                revision,
+                state: ShieldedLocalBalanceState::Unbound,
+            });
+        }
+        assert_eq!(*recorder.revisions.lock().expect("recorder"), vec![1, 2]);
     }
 }

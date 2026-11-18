@@ -595,11 +595,15 @@ do {
 
 ## Shielded balances pushed by Rust
 
-Rust pushes each wallet's shielded balance state whenever it changes: first
-bind, a scan ending (also when it fails), a spend reserving or releasing
-notes, a rebind, a Clear, unregister. `manager.shieldedBalances[walletId]`
-holds the latest `ShieldedBalanceUpdate` for each wallet (an update replaces
-the held one only when its revision is higher). Hosts show this and hold no
+Rust reads each wallet's shielded balance state at points such as a first
+bind, a scan ending (also when it fails), a spend, a rebind, a Clear or
+unregister, and pushes an update when what it read differs from what it last
+delivered. An update carries the latest state Rust read, not every
+transition: a spend that reserves notes and releases them again before Rust
+next reads produces no update. `manager.shieldedBalances[walletId]` holds the
+latest `ShieldedBalanceUpdate` for each wallet. Its `revision` identifies a
+delivered state, not a ledger change; an update replaces the held one only
+when its revision is higher. Hosts show this and hold no
 balance of their own; do not add up `PersistentShieldedNote` rows or
 snapshot accounts.
 

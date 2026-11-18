@@ -12,6 +12,16 @@ enum SendFlow: Equatable {
     case shieldedToPlatform      // Unshield
     case shieldedToCore          // Withdrawal from shielded to L1
 
+    /// Whether the flow spends this wallet's account-0 shielded notes.
+    var spendsShieldedNotes: Bool {
+        switch self {
+        case .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return true
+        case .coreToCore, .coreToShielded, .platformToPlatform, .platformToShielded:
+            return false
+        }
+    }
+
     var displayName: String {
         switch self {
         case .coreToCore: return "Core Payment"
@@ -490,6 +500,20 @@ class SendViewModel: ObservableObject {
             && !offeredSources.contains(selectedSource)
     }
 
+    static let routeChangedMessage =
+        "The payment route changed after Send was tapped. Review it and tap Send again."
+
+    /// Whether `flow` may be dispatched given the account-0 shielded
+    /// balance read from the published wallet state at dispatch time. A
+    /// shielded spend needs a known, non-zero balance; the offered list
+    /// can lag behind a balance update that landed after the tap. Other
+    /// flows do not spend shielded notes and are not affected.
+    nonisolated static func mayDispatch(_ flow: SendFlow, accountZeroShieldedBalance: UInt64?) -> Bool {
+        guard flow.spendsShieldedNotes else { return true }
+        guard let balance = accountZeroShieldedBalance else { return false }
+        return balance > 0
+    }
+
     /// The flow to send when Send was tapped while `tappedFlow` was shown:
     /// `nil` unless that is still the current flow and its source is still
     /// offered, so an asynchronous send never runs a route other than the
@@ -578,8 +602,13 @@ class SendViewModel: ObservableObject {
         modelContext: ModelContext,
         tappedFlow: SendFlow?
     ) async {
-        guard let flow = flowToSend(tappedFlow: tappedFlow) else {
-            error = "The payment route changed after Send was tapped. Review it and tap Send again."
+        guard let flow = flowToSend(tappedFlow: tappedFlow),
+              Self.mayDispatch(
+                  flow,
+                  accountZeroShieldedBalance: walletManager.spendableShieldedCredits(
+                      walletId: wallet.walletId, account: 0))
+        else {
+            error = Self.routeChangedMessage
             return
         }
 

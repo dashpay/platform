@@ -51,6 +51,10 @@ class ShieldedLocalBalanceTest {
             snapshot.accounts[1],
         )
         assertEquals(900L, snapshot.accountBalance(identityAccount))
+        // The update is shared by every collector: its accounts are read-only.
+        assertThrows(UnsupportedOperationException::class.java) {
+            (snapshot.accounts as MutableMap<Int, ShieldedLocalAccountBalance>).clear()
+        }
     }
 
     @Test

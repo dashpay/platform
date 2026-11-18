@@ -85,12 +85,22 @@ pub struct EventHandlerCallbacksExtension {
     /// emitted when the `shielded` feature is enabled in the FFI build):
     /// what `platform_wallet_manager_local_shielded_balance_snapshot` would
     /// return for the wallet now differs from the state last delivered for
-    /// it, or the wallet is seen for the first time. `update` is valid only
-    /// for the duration of the call; copy what you keep. A wallet's updates
-    /// arrive in strictly increasing `revision` order, and none arrives once
-    /// `platform_wallet_manager_destroy` reported a clean shutdown. Read only
-    /// when `struct_size` covers it, so an extension built before the slot
-    /// existed keeps its earlier callbacks.
+    /// it, or the wallet is seen for the first time. It carries the latest
+    /// state read, not every transition. `update` is valid only for the
+    /// duration of the call; copy what you keep. A wallet's updates arrive in
+    /// strictly increasing `revision` order. No replay: the slot is copied
+    /// when the manager is created, so it receives every change from the
+    /// first one on.
+    ///
+    /// `platform_wallet_manager_destroy` stops the emitter that calls this
+    /// and waits for it within a bounded budget; when the budget runs out it
+    /// returns while a delivery already in progress may still be finishing.
+    /// The host context must therefore stay valid until `release_fn` runs,
+    /// which happens only after that delivery has returned: the emitter holds
+    /// the event handler, and with it the context, until it ends.
+    ///
+    /// Read only when `struct_size` covers it, so an extension built before
+    /// the slot existed keeps its earlier callbacks.
     pub on_shielded_balance_changed_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, update: *const ShieldedBalanceUpdateFFI)>,
 }

@@ -2,14 +2,19 @@ import Foundation
 import DashSDKFFI
 
 /// One wallet's shielded balance state as Rust pushed it through
-/// `on_shielded_balance_changed_fn`. Rust sends a new update whenever the
-/// state changes (first bind, a scan ending or failing, a spend reserving
-/// or releasing notes, a rebind, a Clear, unregister), so the latest update
-/// is the wallet's current state and a host holds no balance of its own.
+/// `on_shielded_balance_changed_fn`. Rust reads the wallet's state at
+/// points such as a first bind, a scan ending or failing, a spend, a
+/// rebind, a Clear or unregister, and sends an update when what it read
+/// differs from what it last delivered. An update therefore carries the
+/// latest state Rust read, not every transition: a spend that reserves
+/// notes and releases them again before Rust next reads produces no
+/// update. The latest update is the wallet's current state as far as
+/// Rust has read it, and a host holds no balance of its own.
 public struct ShieldedBalanceUpdate: Sendable, Equatable {
     public let walletId: Data
     /// Starts at 1 per wallet and strictly increases for the life of the
-    /// native manager. A higher revision is newer.
+    /// native manager. It identifies a delivered state, not a ledger
+    /// change: a higher revision is a newer delivery.
     public let revision: UInt64
     public let state: ShieldedBalanceState
 
@@ -99,6 +104,11 @@ extension ShieldedBalanceUpdate {
             }
             state = .restoreIncomplete
         case SHIELDED_LOCAL_BALANCE_STATUS_FFI_READY:
+            // Rust reports an empty registration as unbound, so a ready
+            // update without accounts is malformed, not a known zero.
+            guard ffi.accounts_count > 0 else {
+                throw PlatformWalletError.deserialization("Ready shielded balance update has no accounts")
+            }
             state = .ready(ShieldedReadyBalance(
                 ordinarySpendableCredits: ffi.ordinary_spendable_credits,
                 ordinaryBalanceEstablished: ffi.ordinary_balance_established,

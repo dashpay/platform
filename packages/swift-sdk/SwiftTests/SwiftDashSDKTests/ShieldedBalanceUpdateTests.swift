@@ -89,6 +89,14 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
         XCTAssertEqual(decoded.ordinaryBalance, 150)
     }
 
+    func testShouldDecodeAReadyUpdateWhoseBalanceIsZero() throws {
+        let decoded = try withNativeUpdate(ordinary: 0, established: true, rows: [row(0, credits: 0)]) {
+            try ShieldedBalanceUpdate.decode($0.pointee)
+        }
+        XCTAssertEqual(decoded.ordinaryBalance, 0)
+        XCTAssertEqual(decoded.accountBalance(0), 0)
+    }
+
     func testShouldDecodeUnboundAndIncompleteUpdates() throws {
         let unbound = try withNativeUpdate(status: SHIELDED_LOCAL_BALANCE_STATUS_FFI_UNBOUND) {
             try ShieldedBalanceUpdate.decode($0.pointee)
@@ -124,6 +132,11 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
             }),
             ("unknown source", {
                 try self.withNativeUpdate(rows: [self.row(0, source: ShieldedBalanceSourceFFI(rawValue: 99))]) {
+                    try ShieldedBalanceUpdate.decode($0.pointee)
+                }
+            }),
+            ("ready without accounts", {
+                try self.withNativeUpdate(ordinary: 0, established: true) {
                     try ShieldedBalanceUpdate.decode($0.pointee)
                 }
             }),

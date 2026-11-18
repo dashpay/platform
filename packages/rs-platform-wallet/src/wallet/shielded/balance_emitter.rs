@@ -18,7 +18,20 @@
 //! releases it, whatever the scan's outcome. The read takes the locks in the
 //! documented order (`lifecycle` -> `store`) and releases them before the sink
 //! runs, so the emitter never holds a lock across a host callback and cannot
-//! deadlock with Clear, unregister or a bind.
+//! deadlock with Clear, unregister or a bind. Each pass reads the wallets that
+//! are no longer registered first: their `Unbound` needs no store read, so it
+//! is not held up behind a bound wallet's read while a scan holds the store.
+//!
+//! An update carries the latest state the emitter read. Changes that land
+//! between two reads coalesce into one update, or into none when they cancel
+//! out (a reservation taken and released before the next read).
+//!
+//! Stopping: cancelling the token only requests the stop. The emitter checks
+//! the token before each sink call, but the check and the call are not one
+//! step, so a sink call can still start just after the token fired. The
+//! barrier is a completed join of the task: only after it is the sink never
+//! called again, and a host must not release what its callback uses on
+//! cancellation alone.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -35,9 +48,9 @@ use crate::wallet::platform_wallet::WalletId;
 pub(crate) type ShieldedBalanceSink = Arc<dyn Fn(&ShieldedBalanceUpdate) + Send + Sync>;
 
 /// Spawn the emitter for `coordinator` on the current tokio runtime. It runs
-/// until `cancel` fires; the returned handle joins it. No update is delivered
-/// once `cancel` has fired, so cancelling and then joining the handle is the
-/// barrier after which the sink is never called again.
+/// until `cancel` fires; the returned handle joins it. Cancelling requests the
+/// stop, and a sink call may still start right after it; once the join has
+/// completed the sink is never called again (see the module docs).
 pub(crate) fn spawn_balance_emitter(
     coordinator: Arc<NetworkShieldedCoordinator>,
     sink: ShieldedBalanceSink,
@@ -66,9 +79,15 @@ pub(crate) async fn run_balance_emitter(
             _ = cancel.cancelled() => return,
             registered = coordinator.registered_wallets() => registered,
         };
-        let mut wallets = registered;
-        wallets.extend(emitted.keys().copied());
-        for wallet_id in wallets {
+        // Wallets no longer registered first (their read needs no store),
+        // then the registered ones. Each wallet is read once per pass, so
+        // its revisions still go out in order.
+        let unregistered: Vec<WalletId> = emitted
+            .keys()
+            .filter(|wallet_id| !registered.contains(*wallet_id))
+            .copied()
+            .collect();
+        for wallet_id in unregistered.into_iter().chain(registered) {
             let read = tokio::select! {
                 biased;
                 _ = cancel.cancelled() => return,
