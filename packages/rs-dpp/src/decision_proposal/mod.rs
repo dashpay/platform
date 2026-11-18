@@ -9,6 +9,11 @@
 //!
 //! [`DecisionProposalVotePoll::from_proposal`] reads the poll a proposal opens from its id and
 //! properties. Consensus uses it to open the poll, and clients to name the poll they query.
+//!
+//! A multiple choice proposal opens no yes/no poll: its choices contend in a masternode vote
+//! among documents, which [`multiple_choice`] names for clients.
+
+pub mod multiple_choice;
 
 use crate::balances::credits::Credits;
 use crate::consensus::basic::decision_proposal::InvalidDecisionProposalRuleError;
