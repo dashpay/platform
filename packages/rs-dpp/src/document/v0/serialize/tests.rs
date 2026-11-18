@@ -1889,3 +1889,61 @@ fn should_read_a_document_stored_before_its_object_gained_a_member() {
         "the member the update added reads as absent"
     );
 }
+
+/// Protocol version 14 keeps the object layout it always wrote: a required member raw, an
+/// optional one behind a presence byte.
+#[test]
+fn should_keep_the_protocol_version_14_layout_of_an_object() {
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "meta": {
+                "type": "object",
+                "position": 0,
+                "properties": {
+                    "y": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "x": {"type": "string", "position": 1, "maxLength": 60_u32},
+                },
+                "required": ["y"],
+                "additionalProperties": false,
+            },
+        },
+        "required": ["meta"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    let document_type = DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type");
+    let document_type_ref = document_type.as_ref();
+
+    for (members, expected) in [
+        (vec![("y", "a")], vec![3u8, 1, b'a', 0]),
+        (vec![("y", "a"), ("x", "b")], vec![5u8, 1, b'a', 1, 1, b'b']),
+    ] {
+        let document = stamped_document(Some(1), meta_properties(&members), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("expected the document to serialize");
+        assert_eq!(meta_bytes(&serialized), expected.as_slice());
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected the document to deserialize");
+        assert_eq!(deserialized, document);
+    }
+}

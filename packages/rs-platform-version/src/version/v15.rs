@@ -1087,22 +1087,21 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 49. **An object's members follow the update rules of the type's own properties**:
 ///     document type `validate_update` 2 (`DPP_VALIDATION_VERSIONS_V6`) holds every object of
-///     every document type, private ones included, at every depth and through `$ref`, to what
-///     the type's own properties are held to. An object's members keep their order (the
+///     every document type a contract has, private ones included, at every depth and through
+///     `$ref`, to what the type's own properties are held to. An object's members keep their order (the
 ///     schema's map order, in which they are stored) and their requiredness as the type parses
 ///     it, and members are added only after them; a member added to an object the type already
 ///     has is optional, or required with `requiredSince` equal to the version the update
 ///     creates; a member the update adds is required exactly when a `required` list names it;
 ///     an object's `required` loses no name and gains only members the same update adds; and
-///     no `required` list, the type's own included, gains or loses a dotted name
-///     (`DocumentTypeUpdateError`, `DataContractInvalidRequiredFieldsUpdateError`).
+///     neither that list nor the type's own gains a dotted name, or loses one no other list
+///     still requires (`DocumentTypeUpdateError`, `DataContractInvalidRequiredFieldsUpdateError`).
 ///     `CONTRACT_VERSIONS_V7` selects `apply_required_since` 1, which admits `requiredSince` on
 ///     a member its object's `required` (or the `required` beside its `$ref`) names, stored with
 ///     a presence byte at every contract version, and `validate_schema_compatibility` 2, which
 ///     leaves the objects' `required` lists out of the JSON-schema diff for `validate_update` 2
-///     to judge. Contract `validate_update` 2 holds every `requiredSince` in the objects of a
-///     document type the update adds to the version it creates. Protocol v14 keeps
-///     `validate_update` 1, `apply_required_since` 0 and `validate_schema_compatibility` 1.
+///     to judge. Protocol v14 keeps `validate_update` 1, `apply_required_since` 0 and
+///     `validate_schema_compatibility` 1.
 ///
 /// 50. **A `chooseFirst` competitor's hash is billed by its blocks**: document reference
 ///     validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) bills the competitors query up to the

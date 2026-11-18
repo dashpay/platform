@@ -6,9 +6,10 @@ use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 
 /// Generation 1 parse rules (protocol version 15): generation 0 at every depth. The keyword is
-/// admitted on a property listed as required, a top-level one in the type's `required` or an
-/// object's member in that object's `required` or the `required` beside its `$ref`, and its
-/// value is a contract version of at least 1 fitting in a u32.
+/// admitted on a property whose path a `required` list names: a top-level one in the type's
+/// `required`, or an object's member in that object's `required`, the `required` beside its
+/// `$ref`, or (a type no document can satisfy) a dotted name in an enclosing list; and its value
+/// is a contract version of at least 1 fitting in a u32.
 ///
 /// A member with the keyword is stored like an optional member at every contract version, with
 /// a presence byte (`DocumentProperty::always_required`), so documents written before it was

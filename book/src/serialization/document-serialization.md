@@ -88,6 +88,8 @@ Requiredness is baked into the wire format — a required property serializes ra
 
 > A property is encoded as **required** (no presence flag) if it is listed in `required` **and** either it has no `requiredSince` annotation, or the document's stamp is **at or above** the annotation. Otherwise it is encoded as optional (presence-flagged).
 
+This rule is for the type's top-level properties. A member of an object with a `requiredSince` annotation (protocol v15) is always encoded as optional, whatever the stamp.
+
 An unstamped document (`0`) predates every `requiredSince` annotation, so only unconditionally required properties count as required for it. This means the **latest contract alone** reconstructs the byte layout of every document ever stored — no historical contract lookups are needed.
 
 The stamp is **platform-assigned**: Drive sets it to the current contract version whenever document content is supplied (create and replace), and preserves it untouched through server-side rewrites that do not re-supply content (transfer and purchase). A document created before a contract update therefore keeps its old stamp — and may legitimately omit properties the newest schema requires — until a replace re-supplies its content and re-stamps it. Clients can also use the stamp as a staleness signal: a document stamped above the client's cached contract version means the contract needs refetching.
@@ -292,4 +294,4 @@ See `packages/rs-scripts/README.md` for full usage details.
 
 7. **A typed array's element width comes from its `items` schema.** Each element is laid out as a required property of the element's type, so an integer element bounded `0`..`100` is 1 byte and an unbounded one 8, and a fixed-size byte array or identifier element has no length prefix. Parse the `items` schema exactly as a property schema to know the width, including the contract's `sizedIntegerTypes` setting.
 
-8. **In version 3, the same document type can produce different property layouts.** A property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it. Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.
+8. **In version 3, the same document type can produce different property layouts.** A top-level property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it (an annotated member of an object is presence-flagged at every stamp). Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.

@@ -811,3 +811,104 @@ fn should_admit_a_member_required_from_the_version_the_update_creates() {
     ];
     run(&cases, PlatformVersion::latest());
 }
+
+/// The edits that keep, or break, what the parse and the document validator agree on, beyond
+/// the order of the members and the members an update adds.
+#[test]
+fn should_keep_what_the_parse_and_the_validator_agree_on() {
+    let meta_y_required = || {
+        object(
+            platform_value!({ "y": boolean(0), "z": integer(1) }),
+            1,
+            Some(platform_value!(["y"])),
+        )
+    };
+    let below_ref = |inner_required: Option<Value>| {
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "meta": meta_ref(Some((
+                    "properties",
+                    platform_value!({
+                        "q": object(platform_value!({ "p": boolean(0) }), 0, inner_required),
+                    }),
+                ))),
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    let q_definition = || {
+        Some(platform_value!({
+            "m": {
+                "type": "object",
+                "properties": {
+                    "q": object(platform_value!({ "p": boolean(0) }), 0, None),
+                },
+                "additionalProperties": false,
+            }
+        }))
+    };
+    let cases = vec![
+        case(
+            "a member its object's required names without requiredSince",
+            document_type_schema(with_meta(meta_yz()), platform_value!(["a"])),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "z": integer(1), "x": boolean(2) }),
+                    1,
+                    Some(platform_value!(["x"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "must carry requiredSince 2"),
+        ),
+        case(
+            "a member left out of its object's required while another property's name requires it",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10), "meta": meta_y_required(), "meta_y": string(2, 10) }),
+                platform_value!(["a", "meta_y"]),
+            ),
+            document_type_schema(
+                platform_value!({ "a": string(0, 10), "meta": meta_yz(), "meta_y": string(2, 10) }),
+                platform_value!(["a", "meta_y"]),
+            ),
+            Expected::Refused(10276, "removed required field 'meta.y'"),
+        ),
+        case(
+            "a dotted name dropped while its object's required still names the member",
+            document_type_schema(
+                with_meta(meta_y_required()),
+                platform_value!(["a", "meta.y"]),
+            ),
+            document_type_schema(with_meta(meta_y_required()), platform_value!(["a"])),
+            Expected::Accepted,
+        ),
+        case(
+            "a member removed after an object's other members",
+            document_type_schema(with_meta(meta_yz()), platform_value!(["a"])),
+            document_type_schema(
+                with_meta(object(platform_value!({ "y": boolean(0) }), 1, None)),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10246, "remove"),
+        ),
+        case(
+            "a top-level property removed after the others",
+            document_type_schema(with_meta(meta_yz()), platform_value!(["a"])),
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10246, "remove"),
+        ),
+        Case {
+            name: "a name that is no member added to a required list below a $ref",
+            old: below_ref(None),
+            new: below_ref(Some(platform_value!(["ghost"]))),
+            old_defs: q_definition(),
+            new_defs: q_definition(),
+            expected: Expected::Refused(10246, "required"),
+        },
+    ];
+    run(&cases, PlatformVersion::latest());
+}

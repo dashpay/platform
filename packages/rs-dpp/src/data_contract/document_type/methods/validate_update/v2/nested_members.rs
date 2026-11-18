@@ -2,9 +2,9 @@
 //!
 //! A stored document is read with the type as it is now. Inside an object the members are
 //! stored one after another in the order the type parses them (the schema's map order, not
-//! `position`), a required member without the presence byte an optional one carries, so an
-//! object's members must keep their place and their requiredness, and a member may only be added
-//! after them. Its requiredness is what the type's parse makes of it, whatever made it so: the
+//! `position`), a member required at every contract version without the presence byte an
+//! optional one (or one required from a contract version) carries, so an object's members must
+//! keep their place and their requiredness, and a member may only be added after them. Its requiredness is what the type's parse makes of it, whatever made it so: the
 //! object's own `required`, a `required` beside its `$ref`, a dotted name in an enclosing
 //! `required`, or the parser reading a required name of an enclosing property as naming it (a
 //! name made of the object's name, any one character and the member's name). These rules compare
@@ -22,13 +22,15 @@ use crate::data_contract::document_type::property_names::{PROPERTIES, REF, REQUI
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
 use indexmap::IndexMap;
-use platform_value::Value;
+use platform_value::{Value, ValueMapHelper};
 use std::collections::BTreeSet;
 
 impl DocumentTypeRef<'_> {
     /// Every object of the type keeps its members in their order, and the members an update adds
     /// come after them: a document stored before reads the added members as absent. The type's
-    /// own properties are held by their frozen, gapless positions, and are checked here too.
+    /// own properties are held by their frozen, gapless positions, and are checked here too. A
+    /// member removed after the others is left to the schema compatibility check, which refuses
+    /// every removal.
     pub(super) fn validate_member_order_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -58,10 +60,11 @@ impl DocumentTypeRef<'_> {
     /// type's own `required` does: in the list of every object the old type has (its own list,
     /// or the one beside its `$ref`) no name is removed, and a name is added only for a member
     /// the same update adds to that object. A dotted name is never one of an object's own
-    /// members, so none is added to or removed from any list, the type's own included: the
-    /// validator reads it as a property named with a dot, which no document can hold, while the
-    /// parser reads it as a nested requirement. The type's own undotted names are judged by
-    /// generation 1's required-fields check.
+    /// members, so none is added to any list, the type's own included: the validator reads it
+    /// as a property named with a dot, which no document can hold, while the parser reads it as
+    /// a nested requirement. One may leave a list when another list still requires the member it
+    /// names, which leaves the parse as it was and lets the validator accept documents again.
+    /// The type's own undotted names are judged by generation 1's required-fields check.
     pub(super) fn validate_required_lists_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -69,9 +72,10 @@ impl DocumentTypeRef<'_> {
         match first_required_list_change(
             self.properties(),
             new_document_type.properties(),
-            Some(self.schema()),
-            Some(new_document_type.schema()),
+            self.schema(),
+            new_document_type.schema(),
             None,
+            new_document_type.required_fields(),
         ) {
             Some(details) => SimpleConsensusValidationResult::new_with_error(
                 DataContractInvalidRequiredFieldsUpdateError::new(self.name().clone(), details)
@@ -86,8 +90,10 @@ impl DocumentTypeRef<'_> {
     /// document validator holds every document to it. A member added to an object the type
     /// already has may be required only from the contract version the update creates
     /// (`requiredSince`): documents stored before do not hold it. Inside an object the update
-    /// adds, no stored document holds the object, so its members may be required outright; every
-    /// `requiredSince` the update brings names the version it creates.
+    /// adds, no stored document holds the object, so its members may be required outright, or
+    /// from any version the contract has reached (as a member of a shared `$defs` definition
+    /// carries it): a member with `requiredSince` is stored with a presence byte at every version,
+    /// so the version it names never decides how a document is read.
     pub(super) fn validate_member_requiredness_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -120,16 +126,17 @@ struct ReorderedMemberList {
     stored_order: String,
 }
 
-/// The first member list of `new` that does not start with `old`'s members in their order: the
-/// type's own properties when `path` is `None`, else those of the object at `path`, searched at
-/// every depth. `None` when every list of `old` is a prefix of the matching list of `new`.
+/// The first member list of `new` whose members do not start with `old`'s in their order, as
+/// far as both go: the type's own properties when `path` is `None`, else those of the object at
+/// `path`, searched at every depth. `None` when every pair of lists agrees on the members they
+/// both hold at each place, a longer `new` adding members after `old`'s and a shorter one
+/// removing them from the end.
 fn first_reordered_member_list(
     old: &IndexMap<String, DocumentProperty>,
     new: &IndexMap<String, DocumentProperty>,
     path: Option<&str>,
 ) -> Option<ReorderedMemberList> {
-    let keeps_order =
-        new.len() >= old.len() && old.keys().zip(new.keys()).all(|(old, new)| old == new);
+    let keeps_order = old.keys().zip(new.keys()).all(|(old, new)| old == new);
     if !keeps_order {
         return Some(ReorderedMemberList {
             place: path.map_or_else(
@@ -244,15 +251,6 @@ fn added_member_error(
              contract version this update creates"
         ));
     }
-    if property
-        .required_since
-        .is_some_and(|required_since| required_since != new_contract_version)
-    {
-        return Some(format!(
-            "new field '{path}' must carry requiredSince {new_contract_version}, the contract \
-             version this update creates"
-        ));
-    }
     match &property.property_type {
         DocumentPropertyType::Object(members) => first_added_members_error(members, path, added),
         _ => None,
@@ -272,33 +270,47 @@ fn first_added_members_error(
 
 /// The first change to a `required` list of an object the old type has, below the object at
 /// `path` (`None`: the type itself, whose dotted names only are judged here). `old_schema` and
-/// `new_schema` are the schemas of that object as the document type schema writes them, or
-/// `None` below a `$ref`, whose definition's lists the parser does not read and the contract's
-/// `$defs` compatibility freezes.
+/// `new_schema` are the schemas of that object as the document type schema writes them; the
+/// walk stops at a `$ref`, whose definition's own lists the parser does not read and the
+/// contract's `$defs` compatibility freezes. `new_required_fields` holds every path the new
+/// type's lists require.
 fn first_required_list_change(
     old: &IndexMap<String, DocumentProperty>,
     new: &IndexMap<String, DocumentProperty>,
-    old_schema: Option<&Value>,
-    new_schema: Option<&Value>,
+    old_schema: &Value,
+    new_schema: &Value,
     path: Option<&str>,
+    new_required_fields: &BTreeSet<String>,
 ) -> Option<String> {
     let (old_names, new_names) = (required_names(old_schema), required_names(new_schema));
     let list = path.map_or_else(
         || "the document type's required".to_string(),
         |path| format!("the required of '{path}'"),
     );
-    if let Some(dotted) = old_names
-        .symmetric_difference(&new_names)
+    if let Some(dotted) = new_names
+        .difference(&old_names)
         .find(|name| name.contains('.'))
     {
         return Some(format!(
-            "{list} can not gain or lose the dotted name '{dotted}': a required list names the \
-             members of its own object, and the document validator reads a dotted name as a \
-             property named with a dot, which no document can hold"
+            "{list} can not gain the dotted name '{dotted}': a required list names the members \
+             of its own object, and the document validator reads a dotted name as a property \
+             named with a dot, which no document can hold"
+        ));
+    }
+    if let Some(dotted) = old_names
+        .difference(&new_names)
+        .find(|name| name.contains('.') && !new_required_fields.contains(&member_path(path, name)))
+    {
+        return Some(format!(
+            "{list} can not lose the dotted name '{dotted}' while no other required list names \
+             the member: the type would stop requiring a member it stores as required"
         ));
     }
     if let Some(path) = path {
-        if let Some(removed) = old_names.difference(&new_names).next() {
+        if let Some(removed) = old_names
+            .difference(&new_names)
+            .find(|name| !name.contains('.'))
+        {
             return Some(format!("removed required field '{path}.{removed}'"));
         }
         for added in new_names.difference(&old_names) {
@@ -325,19 +337,19 @@ fn first_required_list_change(
         else {
             continue;
         };
-        let (old_member_schema, new_member_schema) = (
+        let (Some(old_member_schema), Some(new_member_schema)) = (
             member_schema(old_schema, name),
             member_schema(new_schema, name),
-        );
-        if old_member_schema.is_none() || new_member_schema.is_none() {
+        ) else {
             continue;
-        }
+        };
         if let Some(change) = first_required_list_change(
             old_members,
             new_members,
             old_member_schema,
             new_member_schema,
             Some(&member_path(path, name)),
+            new_required_fields,
         ) {
             return Some(change);
         }
@@ -353,26 +365,24 @@ fn member_path(path: Option<&str>, name: &str) -> String {
 /// describes none or takes its members from a `$ref`. A key named twice reads its first entry:
 /// a contract updated from protocol version 15 names no key twice in either schema (contract
 /// update generation 2 and the registration check refuse it).
-fn member_schema<'a>(schema: Option<&'a Value>, name: &str) -> Option<&'a Value> {
-    let schema = schema?;
-    if map_entry(schema, REF).is_some() {
+fn member_schema<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
+    let schema = schema.as_map()?;
+    if schema.get_optional_key(REF).is_some() {
         return None;
     }
-    map_entry(map_entry(schema, PROPERTIES)?, name)
+    schema
+        .get_optional_key(PROPERTIES)?
+        .as_map()?
+        .get_optional_key(name)
 }
 
 /// The names of the `required` list of `schema`, entries that are not text left out as the
 /// parser leaves them out.
-fn required_names(schema: Option<&Value>) -> BTreeSet<&str> {
+fn required_names(schema: &Value) -> BTreeSet<&str> {
     schema
-        .and_then(|schema| map_entry(schema, REQUIRED))
+        .as_map()
+        .and_then(|schema| schema.get_optional_key(REQUIRED))
         .and_then(Value::as_array)
         .map(|names| names.iter().filter_map(Value::as_text).collect())
         .unwrap_or_default()
-}
-
-fn map_entry<'a>(map: &'a Value, key: &str) -> Option<&'a Value> {
-    map.as_map()?
-        .iter()
-        .find_map(|(entry_key, value)| (entry_key.as_text() == Some(key)).then_some(value))
 }

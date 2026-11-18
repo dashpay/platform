@@ -2,8 +2,8 @@
 //!
 //! v2 is v1 with the `required` lists of a document type's object properties
 //! left out of the diff, as v1 leaves out the type's own `required`: the list
-//! of an inline object, and the list written beside a `$ref`, at every depth
-//! below the root `properties`. Document type `validate_update` v2 judges them
+//! of an inline object, and the list written beside a `$ref`, at every depth of
+//! the inline objects below the root `properties`. Document type `validate_update` v2 judges them
 //! against the parsed types instead (its member rules): an object's list may
 //! gain a member the same update adds with `requiredSince`, which the differ's
 //! frozen `required` rule cannot express, and may lose nothing.
@@ -11,7 +11,10 @@
 //! Only the keyword is removed, at the schema positions that hold one: a
 //! member named `required` is a property schema like any other and is still
 //! diffed. A `required` on a property schema that is neither an object nor a
-//! `$ref` stays in the diff, frozen as before. The contract's `$defs` are
+//! `$ref` stays in the diff, frozen as before, and so does every list below a
+//! `$ref` (in `properties` written beside it), which `validate_update` 2 does
+//! not walk: the type's parse reads its members from the definition. The
+//! contract's `$defs` are
 //! diffed through a wrapper with no root `properties`, so the lists of a
 //! definition stay frozen: the parser never reads them.
 //!
@@ -19,6 +22,7 @@
 //! `validate_update` is generation 2 or later may select this generation, since
 //! that generation is what judges the lists this one leaves out.
 
+use super::v1::validate_schema_compatibility_v1;
 use crate::data_contract::document_type::property_names::{PROPERTIES, REF, REQUIRED, TYPE};
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::JsonValue;
@@ -35,7 +39,7 @@ pub(super) fn validate_schema_compatibility_v2(
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
     let original_schema = without_object_required_lists(original_schema);
     let new_schema = without_object_required_lists(new_schema);
-    super::v1::validate_schema_compatibility_v1(&original_schema, &new_schema, platform_version)
+    validate_schema_compatibility_v1(&original_schema, &new_schema, platform_version)
 }
 
 /// `schema` without the `required` keyword of the object properties below its root
@@ -52,18 +56,22 @@ fn without_object_required_lists(schema: &JsonValue) -> Cow<'_, JsonValue> {
 }
 
 /// Removes the `required` keyword of every object property of `properties` (a `properties`
-/// map: member name to property schema), and of the objects inside them.
+/// map: member name to property schema), and of the inline objects inside them. Below a
+/// `$ref` nothing more is removed.
 fn remove_member_required_lists(properties: &mut Map<String, JsonValue>) {
     for property in properties.values_mut() {
         let JsonValue::Object(property) = property else {
             continue;
         };
-        let is_object = property.get(TYPE).and_then(JsonValue::as_str) == Some("object");
-        if is_object || property.contains_key(REF) {
+        if property.contains_key(REF) {
             property.remove(REQUIRED);
+            continue;
         }
-        if let Some(JsonValue::Object(members)) = property.get_mut(PROPERTIES) {
-            remove_member_required_lists(members);
+        if property.get(TYPE).and_then(JsonValue::as_str) == Some("object") {
+            property.remove(REQUIRED);
+            if let Some(JsonValue::Object(members)) = property.get_mut(PROPERTIES) {
+                remove_member_required_lists(members);
+            }
         }
     }
 }
@@ -92,7 +100,14 @@ mod tests {
                     },
                     "required": ["required"],
                 },
-                "shared": { "$ref": "#/$defs/m", "position": 1, "required": ["y"] },
+                "shared": {
+                    "$ref": "#/$defs/m",
+                    "position": 1,
+                    "required": ["y"],
+                    "properties": {
+                        "q": { "type": "object", "position": 0, "properties": {}, "required": ["a"] },
+                    },
+                },
                 "scalar": { "type": "string", "position": 2, "required": ["x"] },
             },
             "required": ["meta"],
@@ -117,13 +132,20 @@ mod tests {
                             },
                         },
                     },
-                    "shared": { "$ref": "#/$defs/m", "position": 1 },
+                    "shared": {
+                        "$ref": "#/$defs/m",
+                        "position": 1,
+                        "properties": {
+                            "q": { "type": "object", "position": 0, "properties": {}, "required": ["a"] },
+                        },
+                    },
                     "scalar": { "type": "string", "position": 2, "required": ["x"] },
                 },
                 "required": ["meta"],
             }),
-            "only the lists of objects and $ref properties go; a member named `required`, a \
-             scalar's list and the type's own list (v1 strips that) stay"
+            "only the lists of inline objects and $ref properties go; a member named \
+             `required`, a scalar's list, a list below a $ref and the type's own list (v1 \
+             strips that) stay"
         );
     }
 

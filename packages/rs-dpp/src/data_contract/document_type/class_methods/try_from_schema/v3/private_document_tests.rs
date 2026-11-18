@@ -1068,8 +1068,8 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
 /// The same rule on a type that registers under full validation (top-level positions run on
 /// without a gap) and one level deeper: `meta` holds an unchanged object `side` before the object
 /// `inner` an update changes, so the check must look past an unchanged sibling and into a nested
-/// object. Prepending to `inner`, reordering it or removing one of its members is refused and
-/// names `the object meta.inner`; appending to it, or appending a property to the type at the
+/// object. Prepending to `inner`, reordering it or removing a member before another is refused
+/// and names `the object meta.inner`; appending to it, or appending a property to the type at the
 /// next position, is accepted.
 #[test]
 fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth() {
@@ -1115,8 +1115,8 @@ fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth()
             registrable(platform_value!({ "q": boolean(1), "p": boolean(0) }), None),
         ),
         (
-            "a member removed from inner",
-            registrable(platform_value!({ "p": boolean(0) }), None),
+            "a member removed from inner before another",
+            registrable(platform_value!({ "q": boolean(1) }), None),
         ),
     ] {
         let result = update(&new);

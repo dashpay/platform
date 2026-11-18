@@ -8,7 +8,7 @@
 | **Value** | A contract version: an integer from 1 to 4294967295 |
 | **Default** | Absent: a property listed in `required` is required of every document |
 | **Since** | protocol version 14 |
-| **On update** | May only appear on a property or object member the update adds, equal to the contract version the update creates (`DataContractInvalidRequiredFieldsUpdateError`, 10276). An existing annotation may not be added, changed or removed (`IncompatibleDocumentTypeSchemaError`, 10246). |
+| **On update** | May only appear on a property or object member the update adds, equal to the contract version the update creates (`DataContractInvalidRequiredFieldsUpdateError`, 10276). An existing annotation may not be added, changed or removed (`IncompatibleDocumentTypeSchemaError`, 10246; `IncompatibleDataContractSchemaError`, 10213, in a `$defs` definition). |
 | **Errors** | `DataContractInvalidRequiredFieldsUpdateError` (10276), `InvalidContractStructure` (10231), `IncompatibleDocumentTypeSchemaError` (10246), all at registration; `JsonSchemaError` (10101) for a new document without the property |
 
 ## Example
@@ -41,7 +41,7 @@ From protocol version 14, every create and replace stamps the document with the 
 
 ## Members of an object
 
-From protocol version 15 an update may also add a required member to an object the type already has. The member goes after the object's existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required`:
+From protocol version 15 an update may also add a required member to an object the type already has, an inline object or one a `$ref` names. The member goes after the object's existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required` (for a `$ref`, the `required` beside it). An object inside a `$defs` definition has only the definition's own `required`, which is fixed, so its members can only be added as optional:
 
 ```json
 "post": {
@@ -67,7 +67,7 @@ From protocol version 15 an update may also add a required member to an object t
 - **New writes are held to it, older documents are left alone,** as for a top-level property: every `meta` created or replaced under version 3 or later must hold a `language`, and documents written earlier may lack it.
 - **Storage does not follow the stamp.** Such a member is stored with the presence byte an optional member carries, in every document whatever its stamp, so a document written before the update reads with the member absent.
 - **Listed in the object's own `required`.** A dotted name in the type's `required` (`"meta.language"`) cannot carry it: no `required` list gains or loses a dotted name on update (see [Document Shape](document-shape.md#required)).
-- **A shared definition.** A member of a `$defs` definition is required through the `required` beside each `$ref` that uses it. Every document type that references the definition must list the member there, or its parse refuses the `requiredSince`.
+- **A shared definition.** A member of a `$defs` definition is required through the `required` beside each `$ref` that uses it. Every property that references the definition must list the member there, or its parse refuses the `requiredSince`. A property an update adds may reference such a definition whatever version its member names, since no stored document holds the property.
 
 ## Rules at registration
 
@@ -82,7 +82,7 @@ On an update to an existing document type, which always creates the version one 
 - No property may leave `required` (10276).
 - A property's existing `requiredSince` may not be changed or removed, and one may not be added to an existing property (`IncompatibleDocumentTypeSchemaError`, 10246).
 
-A document type that the update adds has no older documents. Every `requiredSince` in it, on its own properties and on its objects' members, must still equal the version the update creates (10276). So must one inside an object the update adds to an existing type, whose members may otherwise be required outright, since no stored document holds the object.
+A document type that the update adds has no older documents. Every `requiredSince` on its own properties must still equal the version the update creates (10276). The members of an object, in a type the update adds or an object it adds to an existing type, may be required outright, since no stored document holds the object, or carry `requiredSince` up to the contract's version.
 
 ## See also
 

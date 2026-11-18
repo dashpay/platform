@@ -1,5 +1,4 @@
 use crate::block::block_info::BlockInfo;
-use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,12 +6,10 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::{
     first_repeated_key_of_definitions, first_repeated_key_of_schema,
 };
-use crate::data_contract::document_type::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use indexmap::IndexMap;
 use platform_version::version::PlatformVersion;
 
 impl DataContract {
@@ -29,12 +26,8 @@ impl DataContract {
     /// The rule is about an update that submits schemas. A token configuration update submits
     /// none and stores the stored schemas and `$defs` as they are, so it does not come here.
     ///
-    /// It also holds the members of the objects of a document type the update adds to the rule
-    /// generation 1 holds that type's own properties to: a `requiredSince` names the version the
-    /// update creates. Only this protocol version parses one on an object's member.
-    ///
     /// Delegating to generation 1 is safe because that generation is shipped and therefore
-    /// frozen. The checks are independent and short-circuiting, so running the extra ones first
+    /// frozen. The checks are independent and short-circuiting, so running the extra one first
     /// changes only which error is reported when an update violates several rules at once,
     /// never whether it is rejected.
     #[inline(always)]
@@ -49,55 +42,7 @@ impl DataContract {
             return Ok(result);
         }
 
-        let result =
-            self.validate_update_new_document_types_member_required_since(new_data_contract);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
         self.validate_update_v1(new_data_contract, block_info, platform_version)
-    }
-
-    /// Refuses a document type the update adds when a member of one of its objects, at any
-    /// depth, carries a `requiredSince` other than the version the update creates. Generation 1
-    /// checks the type's own properties.
-    fn validate_update_new_document_types_member_required_since(
-        &self,
-        new_data_contract: &DataContract,
-    ) -> SimpleConsensusValidationResult {
-        let new_version = new_data_contract.version();
-        for (document_type_name, new_document_type) in new_data_contract.document_types() {
-            if self
-                .document_type_optional_for_name(document_type_name)
-                .is_some()
-            {
-                continue;
-            }
-            let misdated =
-                new_document_type
-                    .as_ref()
-                    .properties()
-                    .iter()
-                    .find_map(|(name, property)| match &property.property_type {
-                        DocumentPropertyType::Object(members) => {
-                            first_member_required_since_other_than(members, name, new_version)
-                        }
-                        _ => None,
-                    });
-            if let Some(path) = misdated {
-                return SimpleConsensusValidationResult::new_with_error(
-                    DataContractInvalidRequiredFieldsUpdateError::new(
-                        document_type_name.clone(),
-                        format!(
-                            "new document type property '{path}' must carry requiredSince {new_version}, the contract version this update creates"
-                        ),
-                    )
-                    .into(),
-                );
-            }
-        }
-
-        SimpleConsensusValidationResult::new()
     }
 
     /// Refuses the update when an object of a stored document type's schema, or of the
@@ -144,30 +89,6 @@ impl DataContract {
 
         SimpleConsensusValidationResult::new()
     }
-}
-
-/// The dotted path of the first of `members`, the members of the object at `path`, at any
-/// depth, whose `requiredSince` is set to a version other than `version`.
-fn first_member_required_since_other_than(
-    members: &IndexMap<String, DocumentProperty>,
-    path: &str,
-    version: u32,
-) -> Option<String> {
-    members.iter().find_map(|(name, member)| {
-        let member_path = format!("{path}.{name}");
-        if member
-            .required_since
-            .is_some_and(|required_since| required_since != version)
-        {
-            return Some(member_path);
-        }
-        match &member.property_type {
-            DocumentPropertyType::Object(members) => {
-                first_member_required_since_other_than(members, &member_path, version)
-            }
-            _ => None,
-        }
-    })
 }
 
 #[cfg(test)]
@@ -447,66 +368,88 @@ mod tests {
         }
     }
 
-    /// A document type the update adds has no stored documents, but a `requiredSince` it
-    /// declares on an object's member names the version the update creates, as one on its
-    /// own properties does.
+    /// A definition's member required from the contract version an update creates, through the
+    /// `required` beside a `$ref`, passes the contract's `$defs` compatibility as an added
+    /// member; and a document type added later may take the definition whatever version its
+    /// member names, since no stored document holds the new type.
     #[test]
-    fn should_refuse_a_new_document_type_whose_member_is_required_from_another_version() {
-        use crate::consensus::basic::BasicError;
-
+    fn should_admit_a_definition_member_required_from_the_version_an_update_creates() {
         let platform_version = PlatformVersion::latest();
-        let old_data_contract = get_data_contract_fixture(
-            None,
-            IdentityNonce::default(),
-            platform_version.protocol_version,
-        )
-        .data_contract_owned();
-        let new_type_schema = |required_since: u32| {
+        let definition = |with_x: bool| {
+            let mut members = platform_value!({
+                "y": { "type": "boolean", "position": 0 },
+            });
+            if with_x {
+                members
+                    .set_value(
+                        "x",
+                        platform_value!({ "type": "boolean", "position": 1, "requiredSince": 2 }),
+                    )
+                    .expect("expected a map");
+            }
+            BTreeMap::from([(
+                "m".to_string(),
+                platform_value!({
+                    "type": "object",
+                    "properties": members,
+                    "additionalProperties": false,
+                }),
+            )])
+        };
+        let referencing = |required: Value| {
             platform_value!({
                 "type": "object",
                 "properties": {
-                    "meta": {
-                        "type": "object",
-                        "position": 0,
-                        "properties": {
-                            "x": {
-                                "type": "string",
-                                "position": 0,
-                                "maxLength": 60_u32,
-                                "requiredSince": required_since,
-                            }
-                        },
-                        "required": ["x"],
-                        "additionalProperties": false,
-                    }
+                    "meta": { "$ref": "#/$defs/m", "position": 0, "required": required },
                 },
-                "additionalProperties": false
+                "additionalProperties": false,
             })
         };
-        let update = |required_since: u32| {
-            let mut new_data_contract = old_data_contract.clone();
-            new_data_contract.set_version(old_data_contract.version() + 1);
-            new_data_contract
-                .set_document_schema(
-                    "note",
-                    new_type_schema(required_since),
-                    false,
-                    &mut Vec::new(),
-                    platform_version,
-                )
-                .expect("expected the document type to parse");
-            old_data_contract
-                .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
-                .expect("expected validate_update to run")
-        };
 
-        assert_matches!(
-            update(1).errors.as_slice(),
-            [ConsensusError::BasicError(
-                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
-            )] if e.details().contains("meta.x") && e.details().contains("must carry requiredSince 2")
+        // The stored contract, and its update: the new schema is placed before the new `$defs`,
+        // which a parse of the old schema with the new definition would refuse
+        let (stored, _) = stored_and_updated(
+            referencing(platform_value!(["y"])),
+            Some(definition(false)),
+            referencing(platform_value!(["y"])),
+            Some(definition(false)),
+            platform_version,
         );
-        let accepted = update(2);
-        assert!(accepted.is_valid(), "{:?}", accepted.errors);
+        let mut updated = stored.clone();
+        updated.set_version(stored.version() + 1);
+        updated
+            .set_document_schema(
+                TYPE_NAME,
+                referencing(platform_value!(["y", "x"])),
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("expected the new schema to be placed");
+        let mut defs = updated.schema_defs().cloned().unwrap_or_default();
+        defs.extend(definition(true));
+        updated
+            .set_schema_defs(Some(defs), true, &mut Vec::new(), platform_version)
+            .expect("expected the new $defs to register");
+        let result = stored
+            .validate_update(&updated, &BlockInfo::default(), platform_version)
+            .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
+
+        let mut with_new_type = updated.clone();
+        with_new_type.set_version(updated.version() + 1);
+        with_new_type
+            .set_document_schema(
+                "other",
+                referencing(platform_value!(["y", "x"])),
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("expected the new type to register");
+        let result = updated
+            .validate_update(&with_new_type, &BlockInfo::default(), platform_version)
+            .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
     }
 }
