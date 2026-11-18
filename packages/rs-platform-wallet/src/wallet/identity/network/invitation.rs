@@ -402,10 +402,12 @@ impl IdentityWallet {
         if self.holds_identity(&claimed.id()).await {
             return Some(true);
         }
+        // A wallet that is no longer this handle's generation makes the
+        // answer unknown here, before the host is asked for key material.
         let has_resident_keys = {
             let wm = self.wallet_manager.read().await;
-            self.current_wallet_and_info(&wm)
-                .is_some_and(|(wallet, _)| has_resident_keys(wallet))
+            let (wallet, _) = self.current_wallet_and_info(&wm)?;
+            has_resident_keys(wallet)
         };
         if has_resident_keys {
             return self
@@ -1087,10 +1089,18 @@ mod tests {
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == ours.id()
             ));
+            let resolved = std::cell::Cell::new(false);
             assert_eq!(
-                old.invitation_claimed_by_this_wallet_resolving(Some(&ours), 2, || Some(master()))
-                    .await,
+                old.invitation_claimed_by_this_wallet_resolving(Some(&ours), 2, || {
+                    resolved.set(true);
+                    Some(master())
+                })
+                .await,
                 None
+            );
+            assert!(
+                !resolved.get(),
+                "a stale handle must not ask the host for key material"
             );
             assert!(matches!(
                 replacement

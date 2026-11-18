@@ -86,7 +86,9 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransition;
 use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 
 use crate::core::FetchedCoreTransaction;
@@ -844,6 +846,39 @@ fn validate_claim_keys_structure(
     }
 }
 
+/// Refuse a key set whose format the network's protocol version does not
+/// accept yet (a version 1 key or a group-bound key before the version that
+/// introduced them), by DPP's own activation rule for an identity create.
+/// The node would drop such a claim undecoded, so it is refused before the
+/// signer is asked for anything. Without a verified network version
+/// [`claim_keys_platform_version`] has already refused the claim.
+fn validate_claim_keys_active(
+    keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
+    info: &ProtocolVersionInfo,
+) -> Result<(), InvitationError> {
+    let Some(network) = info.verified_version else {
+        return Ok(());
+    };
+    let transition = StateTransition::IdentityCreate(
+        IdentityCreateTransitionV0 {
+            public_keys: keys_map.values().map(Into::into).collect(),
+            ..Default::default()
+        }
+        .into(),
+    );
+    let active = transition.active_version_range();
+    if active.contains(&network) {
+        Ok(())
+    } else {
+        Err(invalid(format!(
+            "the network runs protocol version {network}, but these identity keys \
+             need protocol version {} or later; claim with version 0 keys that are \
+             not bound to a contract group",
+            active.start()
+        )))
+    }
+}
+
 /// Byte-reverse a txid hex string. Old iOS invitation links carry the funding
 /// txid in little-endian internal order; DAPI keys `getTransaction` by the
 /// big-endian display id, so the claim retries with the id reversed on a miss
@@ -1066,8 +1101,10 @@ impl Sdk {
             // network's signed protocol version is known, and the keys are
             // judged by the rules Platform will apply rather than by the
             // version an SDK starts with or is pinned to.
-            let rules = claim_keys_platform_version(&self.protocol_version_info())?;
+            let version_info = self.protocol_version_info();
+            let rules = claim_keys_platform_version(&version_info)?;
             validate_claim_keys_structure(&keys_map, rules)?;
+            validate_claim_keys_active(&keys_map, &version_info)?;
 
             // The voucher key signs the asset lock's outer ST signature (ECDSA
             // over the credit-output pubkey hash), scrubbed on every exit path
@@ -3974,7 +4011,8 @@ mod tests {
         /// A master key with a budget passes protocol version 13's structural
         /// validation and is refused by the latest. An SDK pinned to 13 on a
         /// network that signed its answers at the latest still refuses it
-        /// before signing; on a network at 13 the claim goes on to the signer.
+        /// before signing; on a network at 13 the key's version 1 format,
+        /// which 13 cannot decode, refuses it before signing instead.
         #[tokio::test]
         async fn should_judge_keys_by_the_networks_version_on_a_pinned_sdk() {
             use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
@@ -4003,6 +4041,60 @@ mod tests {
             );
 
             let (result, _) = claim_on(Some(v13), Some(13), keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("the network runs protocol version 13, but these identity keys need protocol version 14")),
+                "got {result:?}"
+            );
+        }
+
+        /// On a network at protocol version 13 a claim of version 0 keys goes
+        /// on to the signer, and one carrying a version 1 key, even without a
+        /// budget or an expiry, is refused before signing: 13 cannot decode
+        /// an identity create with that key format.
+        #[tokio::test]
+        async fn should_refuse_a_key_format_the_networks_version_cannot_decode() {
+            use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+
+            let v13 = PlatformVersion::get(13).expect("v13");
+
+            let (result, _) =
+                claim_on(Some(v13), Some(13), claim_keys(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
+
+            let mut keys = claim_keys();
+            let IdentityPublicKey::V0(master) = keys[&0].clone() else {
+                panic!("claim_keys() builds V0 keys");
+            };
+            keys.insert(
+                0,
+                IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(master, None, None)),
+            );
+            let (result, _) =
+                claim_on(Some(v13), Some(13), keys.clone(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("the network runs protocol version 13, but these identity keys need protocol version 14")),
+                "got {result:?}"
+            );
+
+            // The same keys reach the signer on the latest network version.
+            let latest = PlatformVersion::latest();
+            let (result, _) = claim_on(
+                Some(latest),
+                Some(latest.protocol_version),
+                keys,
+                |_| None,
+                |_, _| None,
+            )
+            .await;
             assert!(
                 matches!(
                     &result,
