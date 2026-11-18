@@ -362,8 +362,12 @@ class ShieldedService(private val database: DashDatabase) {
         // whatever rows persist. Only the latest bind attaches them: one
         // that a later bind or an unbind overtook while it was suspended
         // above leaves the service as the later turn set it.
-        val finished = bindingTurns.finish(turn) {
+        val finished = bindingTurns.finish(turn) { stillThisTurn ->
             _isBound.value = bound
+            // A collector of [isBound] may have answered that write with an
+            // unbind or a bind on this thread. The jobs below belong to this
+            // turn and are not started for a service that has moved on.
+            if (!stillThisTurn()) return@finish
             // Both jobs write [state] only while this bind is the latest
             // turn: cancelling a job does not stop a write it has already
             // reached, and that write must not land on the state an unbind
@@ -817,15 +821,19 @@ internal class BindingTurns {
     fun <T> read(read: () -> T): Pair<Long, T> = synchronized(this) { latest to read() }
 
     /**
-     * Run [finish] if [turn] is still the latest and say whether it was.
-     * [finish] runs under the same lock as every turn's first step.
+     * Run [finish] if [turn] is still the latest, and say whether it was and
+     * still is once [finish] returned. [finish] runs under the same lock as
+     * every turn's first step and is handed the same check as an install:
+     * a collector it wakes can take a later turn on this thread, after which
+     * it must write nothing more.
      */
-    fun finish(turn: Long, finish: () -> Unit): Boolean = synchronized(this) {
-        if (turn != latest) {
-            false
-        } else {
-            finish()
-            true
+    fun finish(turn: Long, finish: (stillThisTurn: () -> Boolean) -> Unit): Boolean =
+        synchronized(this) {
+            if (turn != latest) {
+                false
+            } else {
+                finish { latest == turn }
+                latest == turn
+            }
         }
-    }
 }

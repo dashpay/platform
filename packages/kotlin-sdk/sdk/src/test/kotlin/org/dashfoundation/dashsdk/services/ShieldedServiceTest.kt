@@ -408,6 +408,28 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun shouldNotStartABindsJobsOnceItsLastWriteWokeAnUnbind() {
+        // The bind publishes "is bound", a collector answers with an unbind
+        // on the same thread, and the bind's last step goes on. It must not
+        // start its jobs, and it must report that it was overtaken.
+        val turns = BindingTurns()
+        val done = mutableListOf<String>()
+        val bind = turns.begin { }
+        val finished = turns.finish(bind) { stillThisTurn ->
+            done += "bind: is bound"
+            turns.begin { done += "unbind" }
+            if (stillThisTurn()) done += "bind: jobs started"
+        }
+        assertFalse(finished)
+        assertEquals(listOf("bind: is bound", "unbind"), done)
+
+        // Nothing woken: the jobs start and the bind is the latest.
+        val alone = turns.begin { }
+        assertTrue(turns.finish(alone) { stillThisTurn -> if (stillThisTurn()) done += "jobs started" })
+        assertEquals("jobs started", done.last())
+    }
+
+    @Test
     fun shouldShowNoBalanceAfterUnbind() = runTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
         service.unbind()
