@@ -146,6 +146,10 @@ sealed class DashSdkError(
          * The one-shot output cannot be reused. This may be a retained local
          * tombstone or an unauthenticated Platform report; operation completion
          * must not be inferred from this signal.
+         *
+         * Also `AssetLockConsumptionUnknown` on the same native code (24):
+         * assigning a recipient to a lock rebuilt from the chain, which
+         * Platform may already have used. Nothing was assigned.
          */
         class AssetLockAlreadyConsumed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
@@ -255,8 +259,27 @@ sealed class DashSdkError(
          * recipient than the one the tracked lock recorded when it was built. Nothing
          * was submitted or paid; resume with the recorded recipient. Locks tracked
          * before the recipient was recorded carry none and accept the caller's.
+         *
+         * Also an unbound identity top-up lock resumed or assigned to a different
+         * identity than the one its row recorded
+         * (`PlatformWalletError::AssetLockIdentityRecipientMismatch`,
+         * dashpay/platform#5924): nothing was submitted; resume to the recorded
+         * identity ([org.dashfoundation.dashsdk.wallet.TrackedAssetLock.identityRecipient]).
          */
         class AssetLockRecipientMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * Code 81 (`ErrorAssetLockRecipientUnknown`, dashpay/platform#5924): an
+         * unbound identity top-up lock records no identity to pay — it was
+         * rebuilt from the chain, for example after a restore from the seed —
+         * so no resume pays it; it may have been meant for someone else's
+         * identity. Nothing was submitted or paid. Not retryable as is: assign
+         * the lock a recipient the user chooses
+         * ([org.dashfoundation.dashsdk.credits.IdentityCredits.assignTopUpRecipient]),
+         * then resume it.
+         */
+        class AssetLockRecipientUnknown(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -922,6 +945,7 @@ sealed class DashSdkError(
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             61 -> PlatformWallet.AssetLockRecipientMismatch(message, cause) // ErrorAssetLockRecipientMismatch
+            81 -> PlatformWallet.AssetLockRecipientUnknown(message, cause) // ErrorAssetLockRecipientUnknown
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

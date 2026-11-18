@@ -88,6 +88,24 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+
+        /** Mirrors `PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS` (bit 13). */
+        const val ASSET_LOCK_OPERATION_IDS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+
+        /** Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS` (bit 14). */
+        const val ASSET_LOCK_SHIELDED_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+
+        /**
+         * Mirrors `PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`
+         * (bit 17): required before native builds a top-up lock for an
+         * identity this wallet does not manage
+         * ([org.dashfoundation.dashsdk.credits.IdentityCredits.topUpExternalIdentityFromCore])
+         * or assigns one a recipient.
+         */
+        const val ASSET_LOCK_IDENTITY_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
     }
 }
 

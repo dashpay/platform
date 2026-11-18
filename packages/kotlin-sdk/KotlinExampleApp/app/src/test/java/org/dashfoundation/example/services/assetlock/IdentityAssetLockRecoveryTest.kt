@@ -38,6 +38,26 @@ class IdentityAssetLockRecoveryTest {
     }
 
     @Test
+    fun `should list an unassigned unbound topup apart and never as resumable`() {
+        val recorded = lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, 2, recipient = ByteArray(32) { 9 })
+        val unassigned = lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, 3, unassigned = true)
+        val bound = lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP, 4)
+        val rows = listOf(recorded, unassigned, bound)
+
+        assertEquals(listOf(recorded, bound), IdentityAssetLockRecovery.topUps(rows, selectedIdentityIndex = 4))
+        assertEquals(listOf(unassigned), IdentityAssetLockRecovery.unassignedTopUps(rows))
+    }
+
+    @Test
+    fun `should label an unbound topup with the identity it pays`() {
+        val label = IdentityAssetLockRecovery.label(
+            lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, 2, recipient = ByteArray(32) { 0x0a }),
+        )
+
+        assertTrue(label.endsWith(" → 0a0a0a0a"))
+    }
+
+    @Test
     fun `display formatting does not mutate submission outpoint`() {
         val lock = lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION, 7)
         val original = lock.outpointTxid.copyOf()
@@ -83,6 +103,8 @@ class IdentityAssetLockRecoveryTest {
         type: TrackedAssetLock.FundingType,
         vout: Int,
         registrationIndex: Int = 4,
+        recipient: ByteArray? = null,
+        unassigned: Boolean = false,
     ) = TrackedAssetLock(
         outpointTxid = ByteArray(32) { it.toByte() },
         outpointVout = vout,
@@ -91,5 +113,7 @@ class IdentityAssetLockRecoveryTest {
         registrationIndex = registrationIndex,
         instantLockPresent = false,
         chainLockHeight = 0,
+        identityRecipient = recipient,
+        identityRecipientUnassigned = unassigned,
     )
 }
