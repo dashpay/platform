@@ -5,8 +5,7 @@ use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
 
 use dpp::bls;
-use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
-use dpp::dashcore::key::rand::{RngCore as EcdsaRngCore, SeedableRng};
+use dpp::dashcore::key::rand::SeedableRng;
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -14,6 +13,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+use dpp::util::ecdsa::random_secret_key;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::{ed25519_dalek, ProtocolError};
 use rand::RngCore;
@@ -101,13 +101,7 @@ impl SimpleSigner {
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
         let mut ecdsa_rng = dpp::dashcore::key::rand::rngs::StdRng::from_seed(seed);
-        let secret_key = loop {
-            let mut bytes = [0; 32];
-            EcdsaRngCore::fill_bytes(&mut ecdsa_rng, &mut bytes);
-            if let Ok(key) = EcdsaSecretKey::from_bytes(&bytes) {
-                break key;
-            }
-        };
+        let secret_key = random_secret_key(&mut ecdsa_rng);
 
         // Derive compressed public key
         let public_key = secret_key.public_key();

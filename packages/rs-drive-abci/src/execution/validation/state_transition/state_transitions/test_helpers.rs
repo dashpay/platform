@@ -18,7 +18,6 @@ use dpp::consensus::ConsensusError;
 use dpp::dashcore::blockdata::script::ScriptBuf;
 use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dpp::dashcore::hashes::{sha256, Hash};
-use dpp::dashcore::key::rand::RngCore as EcdsaRngCore;
 use dpp::dashcore::PublicKey;
 use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
@@ -954,15 +953,4 @@ fn serialize_bundle_actions(
             }
         })
         .collect()
-}
-
-/// Draws the same seeded scalar as the historical secp256k1 keypair constructor.
-pub fn random_ecdsa_secret_key(rng: &mut impl EcdsaRngCore) -> EcdsaSecretKey {
-    loop {
-        let mut bytes = [0; 32];
-        rng.fill_bytes(&mut bytes);
-        if let Ok(key) = EcdsaSecretKey::from_bytes(&bytes) {
-            return key;
-        }
-    }
 }

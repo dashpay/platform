@@ -9,7 +9,7 @@
 
 use async_trait::async_trait;
 use dash_sdk::dpp::address_funds::AddressWitness;
-use dash_sdk::dpp::dashcore::ecdsa::{EcdsaPublicKey, EcdsaSignature};
+use dash_sdk::dpp::dashcore::ecdsa::{EcdsaPublicKey, EcdsaRecSignature, EcdsaSignature};
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType};
@@ -17,8 +17,6 @@ use dash_sdk::dpp::key_wallet::bip32::DerivationPath;
 use dash_sdk::dpp::key_wallet::signer::{Signer as KeyWalletSigner, SignerMethod};
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::ProtocolError;
-use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use secp256k1::Message;
 
 use crate::ffi;
 use crate::runtime::blocking;
@@ -138,11 +136,10 @@ impl KeyWalletSigner for AssetLockSigner<'_> {
         }) {
             return Err("the wallet refused to sign the asset lock".to_string());
         }
-        let recoverable = compressed_key_signature(&signature)?;
-        let public_key = recoverable
-            .recover_ecdsa(Message::from_digest(sighash))
+        let (recoverable, standard) = compressed_key_signature(signature)?;
+        let public_key = EcdsaPublicKey::recover(&sighash, &recoverable)
             .map_err(|e| format!("the asset lock signature recovers no public key: {e}"))?;
-        Ok((recoverable.to_standard().into(), public_key.into()))
+        Ok((standard, public_key))
     }
 
     async fn public_key(&self, _path: &DerivationPath) -> Result<EcdsaPublicKey, String> {
@@ -151,21 +148,27 @@ impl KeyWalletSigner for AssetLockSigner<'_> {
 }
 
 /// A compact signature by a compressed key: header 31 + recovery id.
-fn compressed_key_signature(signature: &[u8; 65]) -> Result<RecoverableSignature, String> {
-    let recovery_id = RecoveryId::try_from(i32::from(signature[0]) - 31).map_err(|_| {
-        format!(
+fn compressed_key_signature(
+    signature: [u8; 65],
+) -> Result<(EcdsaRecSignature, EcdsaSignature), String> {
+    if !(31..=34).contains(&signature[0]) {
+        return Err(format!(
             "signature header {:#04x} is not a compressed-key header (31..=34)",
             signature[0]
-        )
-    })?;
-    RecoverableSignature::from_compact(&signature[1..], recovery_id)
-        .map_err(|e| format!("malformed asset lock signature: {e}"))
+        ));
+    }
+    let recoverable = EcdsaRecSignature::from(signature);
+    let standard = recoverable
+        .signature()
+        .map_err(|e| format!("malformed asset lock signature: {e}"))?;
+    Ok((recoverable, standard))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::{PublicKey, SecretKey};
+    use secp256k1::ecdsa::RecoverableSignature;
+    use secp256k1::{Message, PublicKey, SecretKey};
 
     #[test]
     fn an_asset_lock_signature_recovers_its_compressed_key() {
@@ -177,12 +180,15 @@ mod tests {
         signature[0] = 31 + u8::from(recovery_id);
         signature[1..].copy_from_slice(&compact);
 
-        let recovered = compressed_key_signature(&signature)
-            .and_then(|sig| sig.recover_ecdsa(message).map_err(|e| e.to_string()))
-            .expect("recovers");
-        assert_eq!(recovered, PublicKey::from_secret_key(&key));
+        let (recoverable, standard) = compressed_key_signature(signature).expect("parses");
+        let recovered = EcdsaPublicKey::recover(&[9; 32], &recoverable).expect("recovers");
+        assert_eq!(
+            recovered,
+            EcdsaPublicKey::from(PublicKey::from_secret_key(&key))
+        );
+        assert_eq!(standard.to_bytes(), compact);
         // An uncompressed-key header is refused.
         signature[0] -= 4;
-        assert!(compressed_key_signature(&signature).is_err());
+        assert!(compressed_key_signature(signature).is_err());
     }
 }

@@ -1,3 +1,5 @@
+#[cfg(feature = "random-public-keys")]
+use crate::util::ecdsa::random_secret_key;
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -7,7 +9,7 @@ use dashcore::crypto::ecdsa::EcdsaSecretKey;
 #[cfg(feature = "random-public-keys")]
 use dashcore::key::rand::rngs::StdRng as EcdsaRng;
 #[cfg(feature = "random-public-keys")]
-use dashcore::key::rand::{RngCore, SeedableRng};
+use dashcore::key::rand::SeedableRng;
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -70,17 +72,6 @@ lazy_static! {
         .last()
         .map(|(key_type, _)| *key_type)
         .unwrap();
-}
-
-#[cfg(feature = "random-public-keys")]
-fn random_ecdsa_secret_key(rng: &mut EcdsaRng) -> EcdsaSecretKey {
-    loop {
-        let mut bytes = [0; 32];
-        rng.fill_bytes(&mut bytes);
-        if let Ok(key) = EcdsaSecretKey::from_bytes(&bytes) {
-            return key;
-        }
-    }
 }
 
 impl KeyType {
@@ -175,7 +166,7 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let secret_key = random_secret_key(&mut rng);
                 let public_key = secret_key.public_key();
                 public_key.to_compressed().to_vec()
             }
@@ -276,7 +267,7 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let secret_key = random_secret_key(&mut rng);
                 let public_key = secret_key.public_key();
                 (public_key.to_compressed().to_vec(), *secret_key.to_bytes())
             }
@@ -289,7 +280,7 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let secret_key = random_secret_key(&mut rng);
                 let public_key = secret_key.public_key();
                 (
                     ripemd160_sha256(public_key.to_compressed().as_slice()).to_vec(),
@@ -308,7 +299,7 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let secret_key = random_secret_key(&mut rng);
                 let public_key = secret_key.public_key();
                 (
                     ripemd160_sha256(public_key.to_compressed().as_slice()).to_vec(),

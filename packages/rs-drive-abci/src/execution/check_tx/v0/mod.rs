@@ -293,9 +293,9 @@ mod tests {
     use dpp::validation::ValidationResult;
     use simple_signer::signer::SimpleSigner;
 
-    use crate::execution::validation::state_transition::test_helpers::random_ecdsa_secret_key;
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::{signer, Network, PrivateKey};
+    use dpp::util::ecdsa::random_secret_key;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -3965,7 +3965,7 @@ mod tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -4065,7 +4065,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = random_ecdsa_secret_key(&mut rng);
+        let new_key_pair = random_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,

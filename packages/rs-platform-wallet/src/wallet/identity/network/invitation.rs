@@ -259,11 +259,11 @@ impl IdentityWallet {
         // it is path-gated to the invitation sub-feature inside the provider.
         let mut voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
 
-        // Build the (secret) URI, then scrub the exported scalar on BOTH the
-        // success and the encode-error path. `EcdsaSecretKey` has no
-        // Drop-zeroize, so wipe it explicitly; scrubbing before propagating an
-        // encode failure matters most there — on that path the key never
-        // legitimately left the device, so a lingering copy is the worst kind.
+        // Build the (secret) URI, then scrub the exported scalar right away on
+        // BOTH the success and the encode-error path instead of waiting for its
+        // drop-time zeroize; scrubbing before propagating an encode failure
+        // matters most there — on that path the key never legitimately left
+        // the device, so a lingering copy is the worst kind.
         // The link carries the funding txid + islock (legacy query form), not
         // the embedded proof; the invitee refetches the tx at claim.
         let network = self.sdk.network;
