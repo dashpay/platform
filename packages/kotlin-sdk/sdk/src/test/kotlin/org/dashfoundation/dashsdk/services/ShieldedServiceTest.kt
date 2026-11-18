@@ -379,6 +379,22 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun shouldNotLetABindsInstallWriteOverTheUnbindItWoke() {
+        // The bind publishes "can resume", a collector answers with an
+        // unbind on the same thread, and the bind's install goes on. Its
+        // remaining writes (the balance source among them) must not land
+        // on top of what the unbind published.
+        val turns = BindingTurns()
+        val published = mutableListOf<String>()
+        turns.begin { stillThisTurn ->
+            if (stillThisTurn()) published += "bind: can resume"
+            turns.begin { published += "unbind: no balance source" }
+            if (stillThisTurn()) published += "bind: old balance source"
+        }
+        assertEquals(listOf("bind: can resume", "unbind: no balance source"), published)
+    }
+
+    @Test
     fun shouldNotLetAnOvertakenBindTouchTheNativeRegistration() = runTest {
         // Two binds of one wallet: [0] takes its turn first but reaches the
         // ledger step second. The later bind's accounts must stand.
