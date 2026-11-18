@@ -5554,7 +5554,6 @@ class PlatformWalletPersistenceHandlerTest {
             addressPoolTypeTag = 3,
             addressIndex = 0,
             isUsed = true,
-            balance = 0,
             addressBase58 = "yTestInvitationPoolAddress000000",
             derivationPath = "m/9'/1'/5'/3'/0'",
         )

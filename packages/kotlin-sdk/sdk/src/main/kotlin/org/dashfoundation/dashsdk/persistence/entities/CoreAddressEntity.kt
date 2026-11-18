@@ -47,7 +47,10 @@ data class CoreAddressEntity(
     val firstSeenHeight: Int = 0,
     /** Swift `UInt32` → [Int]. */
     val lastSeenHeight: Int = 0,
-    /** Cached balance in duffs; Swift `UInt64` → [Long] (unsigned semantics). */
+    /**
+     * Unused: key-wallet keeps no per-address balance and the persistence
+     * callbacks neither write nor read it. Kept so the schema needs no migration.
+     */
     val balance: Long = 0,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
