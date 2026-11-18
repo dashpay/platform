@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.services
 
 import androidx.room.withTransaction
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -129,6 +130,11 @@ class ShieldedService(private val database: DashDatabase) {
     /**
      * The bound wallet's shielded balance (credits): [ordinaryBalance] of the
      * bound wallet. Empty until [bind].
+     *
+     * The inner flow emits `Long?`. Null means the balance is not known yet
+     * (no local snapshot has been read, or the last bind failed); it is not
+     * zero, and a collector should show it as unknown. Earlier versions
+     * emitted a non-null `Long` summed from the stored notes.
      */
     val shieldedBalance: StateFlow<Flow<Long?>> = _shieldedBalance.asStateFlow()
 
@@ -141,6 +147,14 @@ class ShieldedService(private val database: DashDatabase) {
 
     /** The read in flight for each wallet, so a newer one replaces it. */
     private val localBalanceReads = ConcurrentHashMap<String, Job>()
+
+    /**
+     * Counts the times every cached snapshot was dropped (another manager,
+     * an unbind, a Clear). A read notes the count when it starts and its
+     * result is kept only if the count is still the same, so a read that
+     * began against an earlier manager or ledger cannot repopulate the cache.
+     */
+    private val localBalanceGeneration = AtomicLong(0)
 
     /**
      * [walletId]'s local shielded balance as Rust computes it, or null while
@@ -193,22 +207,28 @@ class ShieldedService(private val database: DashDatabase) {
      * service scope and replaces an earlier read of the same wallet.
      */
     fun refreshLocalBalance(walletId: ByteArray) {
+        // The generation is read before the manager. [bind] assigns a new
+        // manager before it bumps the generation, so a read never pairs the
+        // new generation with the manager it replaced.
+        val generation = localBalanceGeneration.get()
         val mgr = manager ?: return
         val id = walletId.copyOf()
-        launchLocalBalanceRead(id) { mgr.localShieldedBalanceSnapshot(id) }
+        launchLocalBalanceRead(id, generation) { mgr.localShieldedBalanceSnapshot(id) }
     }
 
     /**
      * Start one read of [walletId]'s local balance through [read], cancelling
-     * the read of that wallet still in flight.
+     * the read of that wallet still in flight. The result is kept only while
+     * [generation] is still the current one.
      */
     internal fun launchLocalBalanceRead(
         walletId: ByteArray,
+        generation: Long = localBalanceGeneration.get(),
         read: suspend () -> ShieldedLocalBalanceState,
     ): Job {
         val key = walletId.toHexKey()
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            readLocalBalance(key, LOCAL_BALANCE_RETRY_DELAYS_MS, read)
+            readLocalBalance(key, LOCAL_BALANCE_RETRY_DELAYS_MS, generation, read)
         }
         localBalanceReads.put(key, job)?.cancel()
         job.start()
@@ -221,11 +241,13 @@ class ShieldedService(private val database: DashDatabase) {
      * shielded store, and both signals that start a read can arrive while
      * the scan still holds it; without these few retries the balance would
      * stay stale until the next pass. The last good snapshot is kept when
-     * every attempt fails.
+     * every attempt fails. A result is dropped, and the read ends, once the
+     * cache was dropped after [generation] was noted.
      */
     internal suspend fun readLocalBalance(
         key: String,
         retryDelaysMs: List<Long>,
+        generation: Long = localBalanceGeneration.get(),
         read: suspend () -> ShieldedLocalBalanceState,
     ) {
         var attempt = 0
@@ -239,9 +261,18 @@ class ShieldedService(private val database: DashDatabase) {
                 null
             }
             if (state != null) {
-                localBalances.update { applyLocalBalanceRead(it, key, state) }
+                // Checked inside the update, so a drop that lands between
+                // the read and the write still wins.
+                localBalances.update {
+                    if (localBalanceGeneration.get() == generation) {
+                        applyLocalBalanceRead(it, key, state)
+                    } else {
+                        it
+                    }
+                }
                 return
             }
+            if (localBalanceGeneration.get() != generation) return
             if (attempt >= retryDelaysMs.size) return
             delay(retryDelaysMs[attempt])
             attempt += 1
@@ -324,12 +355,14 @@ class ShieldedService(private val database: DashDatabase) {
         eventJob = null
         pollJob?.cancel()
         pollJob = null
-        if (this.manager !== manager) {
+        val managerChanged = this.manager !== manager
+        this.manager = manager
+        if (managerChanged) {
             // Another manager is another network: its wallets' snapshots
-            // say nothing about this one's.
+            // say nothing about this one's. Dropped after the assignment;
+            // see [refreshLocalBalance] for why the order matters.
             dropLocalBalances()
         }
-        this.manager = manager
         this.boundWalletId = walletId.copyOf()
         this.boundDbPath = dbPath
         _boundAccounts.value = sortedAccounts
@@ -404,8 +437,11 @@ class ShieldedService(private val database: DashDatabase) {
      * shielded sync pass trial-decrypts against the union of all wallets'
      * viewing keys and routes note hits to each wallet's own persister.
      * Per-wallet receive addresses and balances are then read on demand
-     * ([PlatformWalletManager.shieldedDefaultAddress], per-wallet Room
-     * queries) rather than from this singleton mirror.
+     * rather than from this singleton mirror: the address from
+     * [PlatformWalletManager.shieldedDefaultAddress], a wallet's balance from
+     * [ordinaryBalance] and one account's from [accountBalance]. Do not sum
+     * a wallet's stored notes for a balance: they include the notes of
+     * identity accounts, which an ordinary send cannot spend.
      *
      * Best-effort and independent per wallet: a missing mnemonic /
      * declined keystore read for one wallet logs and returns `false`
@@ -537,6 +573,8 @@ class ShieldedService(private val database: DashDatabase) {
 
     /** Forget every cached snapshot and stop the reads in flight. */
     private fun dropLocalBalances() {
+        // First, so a read that is about to write sees the new count.
+        localBalanceGeneration.incrementAndGet()
         localBalanceReads.values.forEach { it.cancel() }
         localBalanceReads.clear()
         localBalances.value = emptyMap()
@@ -617,6 +655,11 @@ class ShieldedService(private val database: DashDatabase) {
         val walletIdHex = walletId.joinToString("") { "%02x".format(it) }
         android.util.Log.i(TAG, "Shielded clear: resetting Rust store for $walletIdHex")
         mgr.clearShieldedStorage()
+        // The Rust reset emptied every wallet's ledger on this network, so
+        // no cached balance is true any more. Dropped here, before the Room
+        // work below can fail and leave the old numbers on screen; the
+        // re-bind at the end reads the new ones.
+        dropLocalBalances()
         android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
 
         // Wipe every wallet on THIS network, but NOT other networks'. `mgr`
@@ -643,9 +686,6 @@ class ShieldedService(private val database: DashDatabase) {
             }
         }
         _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
-        // The Rust reset emptied every wallet's ledger on this network; the
-        // re-bind below reads the new ones.
-        dropLocalBalances()
 
         // Re-bind + restart so the cold rebuild runs now, not just after a
         // relaunch. bind() re-runs configureShielded (idempotent same-path)
