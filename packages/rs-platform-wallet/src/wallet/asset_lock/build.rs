@@ -1334,8 +1334,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             } if locked_amount_duffs < minimum => {
                 Some(PlatformWalletError::AssetLockTransaction(format!(
                     "drained asset lock of {locked_amount_duffs} duffs is below the required \
-                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
-                     nothing was broadcast"
+                     minimum of {minimum} duffs (the balance cannot pay what the funded \
+                     transition needs); nothing was broadcast"
                 )))
             }
             _ => None,

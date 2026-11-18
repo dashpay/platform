@@ -337,11 +337,12 @@ impl PlatformAddressWallet {
 
         // Step 1c: a fresh L1 asset lock is single-use and
         // non-refundable. Reject or floor it before build/broadcast if
-        // it cannot satisfy DPP's static admission fee for this
-        // address-funding transition shape.
+        // it cannot pay the explicit outputs and DPP's static admission
+        // fee for this address-funding transition shape — the funds
+        // Platform checks the transition for once the lock is on chain.
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            addresses.len(),
+            &addresses,
             self.sdk.version(),
         )?;
 
@@ -690,12 +691,24 @@ fn validate_funding_transition_structure(
     }
 }
 
+/// Refuses, or floors, a fresh asset lock that cannot fund `addresses`, before
+/// it is built or broadcast. Platform checks the funding transition against
+/// the lock's value only once the lock is on chain: the value must cover DPP's
+/// count-based admission fee, the explicit outputs
+/// (`AddressesNotEnoughFunds`, with a penalty charged to the lock), and the
+/// fee the remainder output absorbs (`ReduceOutput`). The lock therefore has
+/// to hold the explicit outputs plus that admission fee, the fee estimate the
+/// transition itself is admitted on; a remainder smaller than it is refused
+/// here. A `FromWalletBalance` amount below it is refused; a
+/// `DrainAccountBalance`, whose value is known only once it is built, gets it
+/// as its floor, which the build enforces on the built lock before it is
+/// tracked or broadcast. A resumed lock already exists and is not judged here.
 fn enforce_asset_lock_amount_covers_address_funding_floor(
     funding: AssetLockFunding,
-    output_count: usize,
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
     platform_version: &PlatformVersion,
 ) -> Result<AssetLockFunding, PlatformWalletError> {
-    let required = minimum_address_funding_asset_lock_duffs(output_count, platform_version);
+    let required = required_address_funding_asset_lock_duffs(addresses, platform_version);
 
     match funding {
         AssetLockFunding::FromWalletBalance {
@@ -731,17 +744,23 @@ fn enforce_asset_lock_amount_covers_address_funding_floor(
     }
 }
 
-/// Minimum L1 asset-lock value that can pass DPP's count-based
-/// `AddressFundingFromAssetLock` admission-floor fee check.
-fn minimum_address_funding_asset_lock_duffs(
-    output_count: usize,
+/// L1 asset-lock value that pays `addresses`' explicit outputs and leaves the
+/// remainder DPP's count-based admission fee for the transition, rounded up to
+/// whole duffs. A sum past `u64` saturates, so no lock can meet it.
+fn required_address_funding_asset_lock_duffs(
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
     platform_version: &PlatformVersion,
 ) -> u64 {
-    ceil_credits_to_duffs(calculate_address_funding_from_asset_lock_min_required_fee(
+    let explicit_outputs: Credits = addresses
+        .values()
+        .flatten()
+        .fold(0, |sum: Credits, amount| sum.saturating_add(*amount));
+    let fee = calculate_address_funding_from_asset_lock_min_required_fee(
         ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
-        output_count,
+        addresses.len(),
         platform_version,
-    ))
+    );
+    ceil_credits_to_duffs(explicit_outputs.saturating_add(fee))
 }
 
 fn ceil_credits_to_duffs(credits: Credits) -> u64 {
@@ -939,6 +958,33 @@ mod tests {
     use dpp::version::LATEST_PLATFORM_VERSION;
     use key_wallet::account::account_collection::PlatformPaymentAccountKey;
     use std::sync::{Arc, Mutex};
+
+    /// Minimum L1 asset-lock value that can pass DPP's count-based
+    /// `AddressFundingFromAssetLock` admission-floor fee check.
+    fn minimum_address_funding_asset_lock_duffs(
+        output_count: usize,
+        platform_version: &PlatformVersion,
+    ) -> u64 {
+        ceil_credits_to_duffs(calculate_address_funding_from_asset_lock_min_required_fee(
+            ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
+            output_count,
+            platform_version,
+        ))
+    }
+
+    /// A payee's explicit output of `credits` and the remainder.
+    fn payee_and_remainder(credits: Credits) -> BTreeMap<PlatformAddress, Option<Credits>> {
+        BTreeMap::from([(p2pkh(0xBB), Some(credits)), (p2pkh(0xAA), None)])
+    }
+
+    /// The explicit output the floor tests pay: DPP's minimum output.
+    fn min_output() -> Credits {
+        LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount
+    }
 
     #[derive(Debug)]
     struct NullAddressSigner;
@@ -1367,9 +1413,83 @@ mod tests {
         );
     }
 
+    /// The lock must hold the explicit outputs on top of the admission fee
+    /// the remainder pays: Platform checks both against the lock's value
+    /// only once the lock is on chain.
+    #[test]
+    fn should_require_the_explicit_outputs_on_top_of_the_admission_fee() {
+        let fee = calculate_address_funding_from_asset_lock_min_required_fee(
+            ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
+            2,
+            LATEST_PLATFORM_VERSION,
+        );
+        let explicit = 1_000_000 * CREDITS_PER_DUFF + 1;
+        assert_eq!(
+            required_address_funding_asset_lock_duffs(
+                &payee_and_remainder(explicit),
+                LATEST_PLATFORM_VERSION
+            ),
+            ceil_credits_to_duffs(explicit + fee)
+        );
+        // Only the remainder: the count-based floor alone.
+        assert_eq!(
+            required_address_funding_asset_lock_duffs(
+                &BTreeMap::from([(p2pkh(0xAA), None)]),
+                LATEST_PLATFORM_VERSION
+            ),
+            minimum_address_funding_asset_lock_duffs(1, LATEST_PLATFORM_VERSION)
+        );
+        // A sum past u64 saturates instead of wrapping onto a small floor.
+        let overflowing = BTreeMap::from([
+            (p2pkh(1), Some(u64::MAX)),
+            (p2pkh(2), Some(1)),
+            (p2pkh(0xAA), None),
+        ]);
+        assert_eq!(
+            required_address_funding_asset_lock_duffs(&overflowing, LATEST_PLATFORM_VERSION),
+            ceil_credits_to_duffs(u64::MAX)
+        );
+    }
+
+    /// An explicit output the lock could pay only by eating into the fee is
+    /// refused, although the lock clears the count-based floor many times.
+    #[test]
+    fn should_refuse_a_fresh_lock_whose_value_the_explicit_outputs_exceed() {
+        let amount_duffs = 1_000_000;
+        let addresses = payee_and_remainder(amount_duffs * CREDITS_PER_DUFF);
+        let funding = AssetLockFunding::FromWalletBalance {
+            amount_duffs,
+            account_index: 0,
+        };
+
+        let err = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            &addresses,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect_err("the outputs leave nothing for the fee");
+
+        match err {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            } => {
+                assert_eq!(available, amount_duffs);
+                assert_eq!(
+                    required,
+                    required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION)
+                );
+                assert!(required > amount_duffs);
+            }
+            other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
+        }
+    }
+
     #[test]
     fn fresh_asset_lock_floor_rejects_undersized_exact_amount() {
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let funding = AssetLockFunding::FromWalletBalance {
             amount_duffs: required - 1,
             account_index: 0,
@@ -1377,7 +1497,7 @@ mod tests {
 
         let err = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect_err("fresh asset lock below the admission floor must be rejected");
@@ -1396,7 +1516,9 @@ mod tests {
 
     #[test]
     fn fresh_asset_lock_floor_accepts_exact_minimum() {
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let funding = AssetLockFunding::FromWalletBalance {
             amount_duffs: required,
             account_index: 0,
@@ -1404,7 +1526,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("DPP rejects only amounts below the admission floor");
@@ -1422,7 +1544,9 @@ mod tests {
     fn address_funding_floor_is_installed_for_fresh_drain_builds() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
 
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let funding = AssetLockFunding::DrainAccountBalance {
             account: AssetLockFundingAccount::Bip44 { account_index: 0 },
             minimum_lock_duffs: None,
@@ -1430,7 +1554,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("drain builds should be floored before broadcast");
@@ -1447,7 +1571,9 @@ mod tests {
     fn address_funding_floor_preserves_higher_fresh_drain_floor() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
 
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let higher_floor = required + 1;
         let funding = AssetLockFunding::DrainAccountBalance {
             account: AssetLockFundingAccount::Bip44 { account_index: 0 },
@@ -1456,7 +1582,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("caller-supplied drain floors should survive when stricter");
@@ -1471,6 +1597,7 @@ mod tests {
 
     #[test]
     fn address_funding_floor_does_not_block_existing_asset_lock_resume() {
+        let addresses = payee_and_remainder(min_output());
         let funding = AssetLockFunding::FromExistingAssetLock {
             out_point: dashcore::OutPoint::null(),
             consume_invitation_voucher: false,
@@ -1478,7 +1605,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("existing locks are resumed rather than pre-sized");
@@ -1744,6 +1871,118 @@ mod tests {
                 Some(ConsensusError::BasicError(
                     BasicError::TransitionOverMaxOutputsError(_)
                 ))
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    /// Runs `fund_from_asset_lock_external` with `funding` on a wallet holding
+    /// 1 DASH, paying `explicit` credits to a third party with the wallet's
+    /// own remainder address. Returns the error, every lock the builder
+    /// reported (it reports a lock once it is tracked, before it is sent) and
+    /// how many locks the wallet tracks afterwards.
+    async fn fund_external_paying(
+        funding: AssetLockFunding,
+        explicit: Credits,
+    ) -> (PlatformWalletError, Vec<OutPoint>, usize) {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 100_000_000).await;
+        let remainder = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        let addresses = BTreeMap::from([(p2pkh(0xBB), Some(explicit)), (remainder, None)]);
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                funding,
+                0,
+                addresses,
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the call must fail");
+        let wm = wallet.wallet_manager().read().await;
+        let tracked = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet registered")
+            .tracked_asset_locks
+            .len();
+        (error, seen.into_inner().unwrap(), tracked)
+    }
+
+    /// Explicit outputs above what the lock can pay past the fee would be
+    /// refused by Platform only after the lock is broadcast (with a penalty
+    /// charged to it), leaving it pinned to a payment it cannot make. A fixed
+    /// amount is refused before any lock is built.
+    #[tokio::test]
+    async fn should_refuse_explicit_outputs_over_the_lock_value_before_building_a_lock() {
+        let amount_duffs = 1_000_000;
+        let explicit = amount_duffs * CREDITS_PER_DUFF;
+
+        let (error, built, tracked) = fund_external_paying(
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs,
+                account_index: 0,
+            },
+            explicit,
+        )
+        .await;
+
+        assert!(built.is_empty(), "a lock was built: {error:?}");
+        assert_eq!(tracked, 0, "a lock was recorded: {error:?}");
+        match error {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            } => {
+                assert_eq!(available, amount_duffs);
+                assert!(required > amount_duffs, "{required}");
+            }
+            other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
+        }
+    }
+
+    /// A drain's value is known only once it is built: explicit outputs the
+    /// drained lock cannot pay past the fee abandon the built lock before it
+    /// is tracked or broadcast.
+    #[tokio::test]
+    async fn should_abandon_a_drain_the_explicit_outputs_exceed_before_broadcast() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
+
+        // The whole 1 DASH balance: more than the drained lock, which pays
+        // the Core fee out of it.
+        let explicit = 100_000_000 * CREDITS_PER_DUFF;
+
+        let (error, built, tracked) = fund_external_paying(
+            AssetLockFunding::DrainAccountBalance {
+                account: AssetLockFundingAccount::Bip44 { account_index: 0 },
+                minimum_lock_duffs: None,
+            },
+            explicit,
+        )
+        .await;
+
+        assert!(built.is_empty(), "a lock was tracked: {error:?}");
+        assert_eq!(tracked, 0, "a lock was recorded: {error:?}");
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::AssetLockTransaction(message)
+                    if message.contains("below the required minimum")
+                        && message.contains("nothing was broadcast")
             ),
             "unexpected error: {error:?}"
         );
