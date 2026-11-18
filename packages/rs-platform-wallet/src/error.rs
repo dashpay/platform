@@ -1553,6 +1553,13 @@ impl PlatformWalletError {
                 | Self::ShutdownIncomplete(_)
                 | Self::PrivateContactStoreNotRead(_) => true,
                 Self::PersisterLoad(source) | Self::PersisterStore(source) => source.is_transient(),
+                // Not even when transient: a transient flush leaves the
+                // operation's record buffered, and it may still commit at a
+                // later flush, so running the operation again could write a
+                // second record (a second prepared payment) next to it. The
+                // retry a transient flush allows is another flush, not the
+                // operation.
+                Self::PersisterFlush(_) => false,
                 _ => false,
             },
         }
@@ -3022,6 +3029,21 @@ mod payment_delivery_tests {
             );
         }
         assert!(!PlatformWalletError::PersisterLoad(persistence()).is_retryable());
+    }
+
+    /// A failed flush never allows running the operation again, transient or
+    /// not: its record may still be buffered and commit later, so a retry
+    /// could write a second one.
+    #[test]
+    fn should_not_retry_an_operation_whose_flush_failed() {
+        use crate::changeset::PersistenceErrorKind as Kind;
+
+        for kind in [Kind::Transient, Kind::Fatal, Kind::Constraint] {
+            let error = PlatformWalletError::from_flush_failure(
+                PersistenceError::backend_with_kind(kind, std::io::Error::other("flush")),
+            );
+            assert!(!error.is_retryable(), "flush {kind:?}");
+        }
     }
 
     /// A payment call that panicked is classed as one whose dispatch may
