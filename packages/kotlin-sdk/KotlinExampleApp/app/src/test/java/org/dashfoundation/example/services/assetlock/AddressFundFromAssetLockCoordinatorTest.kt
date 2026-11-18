@@ -206,4 +206,57 @@ class AddressFundFromAssetLockCoordinatorTest {
         gate.complete(1L)
         advanceUntilIdle()
     }
+
+    /**
+     * An external payment does not credit the picked address, so the next
+     * resume can pick it again. A different lock on that address must run its
+     * own submission, not be handed the earlier lock's completed result; a
+     * second tap for the same lock still coalesces.
+     */
+    @Test
+    fun `resumes of two distinct locks on one address submit independently`() = runTest {
+        val coordinator = coordinator()
+        var lockARuns = 0
+        val lockA = coordinator.startFunding(walletA, 0, recipient0, 0, "aa:0") {
+            lockARuns++
+            null
+        }
+        runCurrent() // completes A without reaching its retention sweep
+        assertEquals(Phase.Completed(null), lockA.phase.value)
+
+        assertSame(
+            lockA,
+            coordinator.startFunding(walletA, 0, recipient0, 0, "aa:0") {
+                lockARuns++
+                null
+            },
+        )
+        assertEquals(1, lockARuns)
+
+        val gateB = CompletableDeferred<Long?>()
+        var lockBRuns = 0
+        val lockB = coordinator.startFunding(walletA, 0, recipient0, 0, "bb:1") {
+            lockBRuns++
+            gateB.await()
+        }
+        runCurrent()
+        assertTrue(lockB !== lockA)
+        assertEquals(1, lockBRuns)
+        assertEquals(Phase.InFlight, lockB.phase.value)
+        assertSame(lockB, coordinator.controller(walletA, 0, recipient0, "bb:1"))
+        assertSame(lockA, coordinator.controller(walletA, 0, recipient0, "aa:0"))
+        assertNull(coordinator.controller(walletA, 0, recipient0))
+
+        gateB.complete(null)
+        advanceUntilIdle()
+    }
+
+    /** A payment whose result establishes no balance completes without one. */
+    @Test
+    fun `a funding that reports no balance completes without one`() = runTest {
+        val coordinator = coordinator()
+        val controller = coordinator.startFunding(walletA, 0, recipient0, 0, "aa:0") { null }
+        advanceUntilIdle()
+        assertNull((controller.phase.value as Phase.Completed).newBalance)
+    }
 }

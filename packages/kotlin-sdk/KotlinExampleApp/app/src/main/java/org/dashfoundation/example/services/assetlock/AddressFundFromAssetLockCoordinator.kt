@@ -14,9 +14,11 @@ import kotlinx.coroutines.launch
  * app container (the Kotlin analog of hosting it on `PlatformWalletManager`)
  * so fundings survive screen dismissal and network-toggle pressure.
  *
- * Keyed by `(walletId, platformAccountIndex, recipientHash)` — a wallet can
- * fund many addresses concurrently on the same account, so the slot key is
- * composite. [startFunding] single-flights on the slot key, and
+ * Keyed by `(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)`
+ * — a wallet can fund many addresses concurrently on the same account, so the
+ * slot key is composite. A resume also keys on the lock it resumes: an
+ * external payment does not credit the picked address, so the next resume can
+ * pick the same address, and must not be handed the earlier lock's result. [startFunding] single-flights on the slot key, and
  * [hasInFlightFundings] gates the Settings network picker alongside the
  * registration coordinator.
  *
@@ -38,6 +40,8 @@ class AddressFundFromAssetLockCoordinator(
         val walletIdHex: String,
         val platformAccountIndex: Int,
         val recipientHashHex: String,
+        /** The resumed lock's `<txid>:<vout>`, null for a fresh funding. */
+        val assetLockOutPointHex: String? = null,
     )
 
     private val _controllers =
@@ -59,8 +63,9 @@ class AddressFundFromAssetLockCoordinator(
         walletId: ByteArray,
         platformAccountIndex: Int,
         recipientHash: ByteArray,
+        assetLockOutPointHex: String? = null,
     ): AddressFundFromAssetLockController? =
-        _controllers.value[key(walletId, platformAccountIndex, recipientHash)]
+        _controllers.value[key(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)]
 
     /**
      * Every active controller, most-recently-submitted first — the order
@@ -81,9 +86,10 @@ class AddressFundFromAssetLockCoordinator(
         platformAccountIndex: Int,
         recipientHash: ByteArray,
         recipientType: Int,
-        body: suspend () -> Long,
+        assetLockOutPointHex: String? = null,
+        body: suspend () -> Long?,
     ): AddressFundFromAssetLockController {
-        val key = key(walletId, platformAccountIndex, recipientHash)
+        val key = key(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)
         val existing = _controllers.value[key]
         if (existing != null) {
             when (existing.phase.value) {
@@ -106,6 +112,7 @@ class AddressFundFromAssetLockCoordinator(
             recipientType,
             scope,
             now,
+            assetLockOutPointHex,
         )
         _controllers.update { it + (key to controller) }
         controller.submit(body)
@@ -117,8 +124,15 @@ class AddressFundFromAssetLockCoordinator(
      * Manually drop a controller from the map — the UI's "Dismiss" action
      * on a [Phase.Failed] row. ← Swift `dismiss`.
      */
-    fun dismiss(walletId: ByteArray, platformAccountIndex: Int, recipientHash: ByteArray) {
-        _controllers.update { it - key(walletId, platformAccountIndex, recipientHash) }
+    fun dismiss(
+        walletId: ByteArray,
+        platformAccountIndex: Int,
+        recipientHash: ByteArray,
+        assetLockOutPointHex: String? = null,
+    ) {
+        _controllers.update {
+            it - key(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)
+        }
     }
 
     /**
@@ -156,7 +170,9 @@ class AddressFundFromAssetLockCoordinator(
         walletId: ByteArray,
         platformAccountIndex: Int,
         recipientHash: ByteArray,
-    ): SlotKey = SlotKey(walletId.toHex(), platformAccountIndex, recipientHash.toHex())
+        assetLockOutPointHex: String?,
+    ): SlotKey =
+        SlotKey(walletId.toHex(), platformAccountIndex, recipientHash.toHex(), assetLockOutPointHex)
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }

@@ -347,21 +347,27 @@ struct AddressFundFromAssetLockProgressView: View {
         case .completed(let newBalance):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Address funded", systemImage: "checkmark.seal.fill")
+                    Label(
+                        newBalance == nil ? "Payment completed" : "Address funded",
+                        systemImage: "checkmark.seal.fill"
+                    )
                         .foregroundColor(.green)
                         .font(.headline)
-                    HStack {
-                        Text("New balance")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(formatCredits(newBalance))
-                            .font(.system(.body, design: .monospaced))
+                    if let newBalance {
+                        HStack {
+                            Text("New balance")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formatCredits(newBalance))
+                                .font(.system(.body, design: .monospaced))
+                        }
                     }
                     Button {
                         walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
+                            recipientHash: controller.recipientHash,
+                            assetLockOutPoint: controller.assetLockOutPoint
                         )
                         dismiss()
                     } label: {
@@ -394,7 +400,8 @@ struct AddressFundFromAssetLockProgressView: View {
                         walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
+                            recipientHash: controller.recipientHash,
+                            assetLockOutPoint: controller.assetLockOutPoint
                         )
                         dismiss()
                     } label: {

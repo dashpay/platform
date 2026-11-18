@@ -182,6 +182,8 @@ import kotlinx.serialization.Serializable
     val walletIdHex: String,
     val platformAccountIndex: Int,
     val recipientHashHex: String,
+    /** The resumed lock's `<txid>:<vout>`, null for a fresh funding. */
+    val assetLockOutPointHex: String? = null,
 )
 
 // ── Shielded funding graph (gated on Sdk.hasShielded) ──────────────────
