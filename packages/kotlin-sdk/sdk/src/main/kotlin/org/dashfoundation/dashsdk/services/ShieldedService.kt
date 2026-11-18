@@ -307,7 +307,7 @@ class ShieldedService(private val database: DashDatabase) {
         // service permanently unbound with no path back, disabling Clear while
         // the coordinator kept syncing. That was the on-device "Clear disabled
         // when needed" defect.
-        val turn = bindingTurns.beginIf(onlyIf) {
+        val turn = bindingTurns.beginIf(onlyIf) { stillThisTurn ->
             eventJob?.cancel()
             eventJob = null
             pollJob?.cancel()
@@ -315,12 +315,17 @@ class ShieldedService(private val database: DashDatabase) {
             this.manager = manager
             this.boundWalletId = walletId.copyOf()
             this.boundDbPath = dbPath
-            _boundAccounts.value = sortedAccounts
-            _canResume.value = true
-            _isBound.value = false
-            _state.value = ShieldedSyncState()
-            balanceUpdates.value = manager.shieldedBalances
-            _shieldedBalance.value = ordinaryBalance(walletId)
+            // Each write below can wake a collector on this thread, and a
+            // collector may call unbind() or bind() from there, taking a
+            // later turn inside this one. What that turn published must
+            // stand, so the rest of this install is skipped once it
+            // happened.
+            if (stillThisTurn()) _boundAccounts.value = sortedAccounts
+            if (stillThisTurn()) _canResume.value = true
+            if (stillThisTurn()) _isBound.value = false
+            if (stillThisTurn()) _state.value = ShieldedSyncState()
+            if (stillThisTurn()) balanceUpdates.value = manager.shieldedBalances
+            if (stillThisTurn()) _shieldedBalance.value = ordinaryBalance(walletId)
         } ?: return null
 
         var bound = false
@@ -519,7 +524,7 @@ class ShieldedService(private val database: DashDatabase) {
      * re-bind (see [bind]).
      */
     fun unbind() {
-        bindingTurns.begin { unbindNow() }
+        bindingTurns.begin { _ -> unbindNow() }
     }
 
     private fun unbindNow() {
@@ -767,14 +772,19 @@ private class ClearedBinding(
 internal class BindingTurns {
     private var latest = 0L
 
-    /** Take the next turn and run [install] as its first, uninterleaved step. */
-    fun begin(install: () -> Unit): Long = synchronized(this) {
-        // The turn is fixed before [install] runs: an observer that
-        // [install] wakes can take a later turn on this thread (the lock
-        // is reentrant), and this call must still return its own.
+    /**
+     * Take the next turn and run [install] as its first step. No other
+     * thread's turn interleaves with it. [install] is handed a check that
+     * says whether its turn is still the latest: an observer it wakes can
+     * take a later turn on this same thread (the lock is reentrant), and
+     * [install] must not write over what that turn set.
+     */
+    fun begin(install: (stillThisTurn: () -> Boolean) -> Unit): Long = synchronized(this) {
+        // Fixed before [install] runs, so this call returns its own turn
+        // whatever a nested turn does to [latest].
         val turn = latest + 1
         latest = turn
-        install()
+        install { latest == turn }
         turn
     }
 
@@ -783,13 +793,16 @@ internal class BindingTurns {
      * lock, so no other turn can begin between the check and this one; when
      * it is false no turn is taken and null is returned.
      */
-    fun beginIf(allowed: () -> Boolean, install: () -> Unit): Long? = synchronized(this) {
+    fun beginIf(
+        allowed: () -> Boolean,
+        install: (stillThisTurn: () -> Boolean) -> Unit,
+    ): Long? = synchronized(this) {
         if (!allowed()) {
             null
         } else {
             val turn = latest + 1
             latest = turn
-            install()
+            install { latest == turn }
             turn
         }
     }
