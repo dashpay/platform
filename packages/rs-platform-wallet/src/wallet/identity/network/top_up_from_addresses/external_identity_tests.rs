@@ -570,7 +570,10 @@ async fn should_complete_a_removal_while_the_top_up_signer_is_pending() {
                 }
             })
         };
-        signer.entered.notified().await;
+        // Bounded: a route that fails before signing never notifies.
+        tokio::time::timeout(Duration::from_secs(5), signer.entered.notified())
+            .await
+            .unwrap_or_else(|_| panic!("managed {managed}: the top-up never reached the signer"));
 
         tokio::time::timeout(
             Duration::from_secs(5),
