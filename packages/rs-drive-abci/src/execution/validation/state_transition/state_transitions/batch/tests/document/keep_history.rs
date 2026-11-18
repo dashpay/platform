@@ -497,13 +497,11 @@ async fn should_keep_migrated_and_new_history_writable_through_signed_transition
     }
 }
 
-/// The count, when the tree keeps one, and the sum of a `note` type's primary tree. A type
-/// registered at protocol version 15 keeps the sum in 128 bits, as its `amount` may pass
-/// 2^27; one registered at protocol version 14 and upgraded keeps the 64-bit tree it has.
-fn primary_total(
-    primary: &drive::grovedb::Element,
-    registered_before: bool,
-) -> (Option<u64>, i128) {
+/// The count, when the tree keeps one, and the sum of a `note` type's primary tree. From
+/// protocol version 15 the type keeps the sum in 128 bits, as its `amount` may pass 2^27:
+/// in the tree a registration at that version creates, or in the tree the activation
+/// converted. Before the activation the tree keeps it in 64 bits.
+fn primary_total(primary: &drive::grovedb::Element, sum_in_128_bits: bool) -> (Option<u64>, i128) {
     use drive::grovedb::Element;
     let (big, count, sum) = match primary {
         Element::CountSumTree(_, count, sum, _) => (false, Some(*count), i128::from(*sum)),
@@ -512,7 +510,7 @@ fn primary_total(
         Element::BigSumTree(_, sum, _) => (true, None, *sum),
         other => panic!("expected a sum tree, got {other:?}"),
     };
-    assert_eq!(big, !registered_before, "{primary:?}");
+    assert_eq!(big, sum_in_128_bits, "{primary:?}");
     (count, sum)
 }
 
@@ -768,7 +766,8 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             .unwrap();
         let expected_sum = if revision == 1 { 100 } else { 250 };
         assert_eq!(
-            primary_total(&primary, migrated),
+            // The first revision of a migrated type is read before the activation
+            primary_total(&primary, !(migrated && revision == 1)),
             (countable.then_some(1), expected_sum),
             "one live document contributes its current amount after each signed action: {primary:?}"
         );
@@ -909,7 +908,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 .unwrap();
             let expected_sum = if revision == 1 { 280 } else { 300 };
             assert_eq!(
-                primary_total(&primary, migrated),
+                primary_total(&primary, true),
                 (countable.then_some(2), expected_sum),
                 "both migrated and new live documents contribute to count and sum: {primary:?}"
             );
