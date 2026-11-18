@@ -96,15 +96,11 @@ fn catch_address_top_up_panic(
 /// refused once a dispatch may have reached it: the refusal is no proof that
 /// the signed top-up was left out of every mempool, so an address-nonce
 /// refusal is 20 too, and this export never returns
-/// `ErrorAddressNonceMismatch` (21). The host must not submit it again; the
-/// next sync settles the outcome.
-///
-/// The wallet holds the input addresses of a top-up reported 20: until a
-/// platform-address sync (or another proved result) shows the nonces it was
-/// signed with used, a top-up from any of them, on this export or
-/// [`platform_wallet_top_up_external_identity_from_addresses_with_signer`],
-/// is refused with 20 as well, before anything is read, signed or
-/// broadcast. The hold is not persisted: it ends with the process.
+/// `ErrorAddressNonceMismatch` (21). The host must not submit it again and
+/// keeps it pending. Nothing in the wallet holds its input addresses yet: a
+/// top-up submitted again reads a fresh nonce and is signed and broadcast,
+/// so once this one executed it is a second payment (a durable,
+/// execution-bound record of the pending top-up is dashpay/platform#4270).
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -228,11 +224,9 @@ unsafe fn funding_rows(
 /// from, a fresh read from Platform taken before signing; any other proof is
 /// 20 and nothing is reconciled from it, and a refused broadcast reads as
 /// for [`platform_wallet_top_up_from_addresses_with_signer`] (20, never
-/// `ErrorAddressNonceMismatch` (21)). The host must not submit it again; the
-/// next sync settles the outcome. The input addresses of a top-up reported 20
-/// are held as for [`platform_wallet_top_up_from_addresses_with_signer`]: a
-/// top-up from any of them on either export is refused with 20 until a
-/// platform-address sync shows them settled.
+/// `ErrorAddressNonceMismatch` (21)). The host must not submit it again and
+/// keeps it pending; as on that export, nothing in the wallet holds its
+/// input addresses yet (dashpay/platform#4270).
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_top_up_from_addresses_with_signer`].

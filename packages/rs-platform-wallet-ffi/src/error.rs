@@ -203,10 +203,6 @@ pub enum PlatformWalletFFIResultCode {
     /// could not be verified after possible acceptance, without Core UTXO
     /// reservations. The host must reconcile the original operation and NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
-    /// An identity top-up from Platform addresses reported 20 holds its input
-    /// addresses: another top-up from them is refused with 20 too
-    /// (`PlatformWalletError::PlatformAddressSpendPending`), nothing signed,
-    /// until a platform-address sync proves the held nonces used.
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
     /// address-funds transition (a transfer or withdrawal from Platform
@@ -1191,13 +1187,6 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
-            // A top-up refused while an earlier one from the same address is
-            // held unconfirmed: the host's action is the earlier 20's (do not
-            // submit again; a platform-address sync settles it), so it rides
-            // that code rather than claiming a registry number.
-            PlatformWalletError::PlatformAddressSpendPending { .. } => {
-                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
-            }
             // Both shapes are "the wallet cannot cover this payment"; hosts
             // classify and retry them identically, so the pooled variant rides
             // the same code rather than forcing every host to learn a second
@@ -2062,25 +2051,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    /// A top-up refused while an earlier one from its address is held
-    /// unconfirmed reaches the host as 20, the code of the held one, never
-    /// as the catch-all, which a host could read as safe to submit again.
-    #[test]
-    fn should_report_a_held_platform_address_spend_as_unconfirmed() {
-        let error = PlatformWalletError::PlatformAddressSpendPending {
-            address: PlatformAddress::P2pkh([7; 20]),
-        };
-        let rendered = error.to_string();
-        let mut result = PlatformWalletFFIResult::from(error);
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
-        );
-        assert_eq!(message_of(&result), rendered);
-        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]

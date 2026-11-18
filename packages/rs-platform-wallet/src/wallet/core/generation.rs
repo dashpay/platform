@@ -3,13 +3,11 @@
 //! in-broadcast outpoint pins that fence a mid-dispatch transaction's inputs
 //! against concurrent re-selection.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dashcore::{OutPoint, Transaction};
-use dpp::address_funds::PlatformAddress;
-use dpp::prelude::AddressNonce;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 use super::balance::WalletBalance;
@@ -257,15 +255,6 @@ impl std::fmt::Debug for SettleBoundaryHook {
 #[derive(Debug, Default)]
 pub(crate) struct InBroadcastFences {
     fences: Mutex<HashMap<OutPoint, InBroadcastFence>>,
-    /// The platform-address sibling of `fences`: each input address of an
-    /// address spend that may have been delivered, with the address nonce
-    /// that spend was signed with
-    /// ([`WalletGeneration::hold_address_spend`]). Same scope (the wallet,
-    /// not the generation), same lifetime (the process, not persisted) and
-    /// the same rule: released by evidence only, a proved address nonce at
-    /// or past the held one ([`WalletGeneration::observe_address_nonces`]),
-    /// never by elapsed time.
-    address_spends: Mutex<BTreeMap<PlatformAddress, AddressNonce>>,
 }
 
 impl InBroadcastFences {
@@ -273,13 +262,6 @@ impl InBroadcastFences {
     /// [`WalletGeneration::in_broadcast_lock`].
     fn lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
         self.fences.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Same poison policy as [`Self::lock`].
-    fn address_spends(&self) -> MutexGuard<'_, BTreeMap<PlatformAddress, AddressNonce>> {
-        self.address_spends
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -481,82 +463,6 @@ impl WalletGeneration {
     /// generation. (Same policy as key-wallet's `ReservationSet`.)
     fn in_broadcast_lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
         self.in_broadcast.lock()
-    }
-
-    /// The first of `addresses` an earlier address spend holds
-    /// ([`Self::hold_address_spend`]), if any.
-    pub(crate) fn held_address_spend<'a>(
-        &self,
-        addresses: impl IntoIterator<Item = &'a PlatformAddress>,
-    ) -> Option<PlatformAddress> {
-        let held = self.in_broadcast.address_spends();
-        addresses
-            .into_iter()
-            .find(|address| held.contains_key(address))
-            .copied()
-    }
-
-    /// Every address an address spend holds, for the sync that settles them.
-    pub(crate) fn held_address_spends(&self) -> Vec<PlatformAddress> {
-        self.in_broadcast.address_spends().keys().copied().collect()
-    }
-
-    /// Hold the input addresses of a signed address spend, each with the
-    /// nonce it was signed with (`submitted`), before it is broadcast: the
-    /// platform-address counterpart of
-    /// [`pin_in_broadcast`](Self::pin_in_broadcast).
-    ///
-    /// An address nonce is used once and in order, so a spend that may have
-    /// been delivered can execute for as long as its input addresses sit
-    /// before the nonces it was signed with, and a second spend built from a
-    /// fresh nonce read after it executed would be a second payment. So the
-    /// hold stands until a proved read shows the nonces used
-    /// ([`Self::observe_address_nonces`]), or the spend provably never left
-    /// the wallet ([`Self::release_address_spend`]).
-    ///
-    /// Refused, holding nothing, when an earlier spend holds one of the
-    /// addresses: that address is returned. Check and hold are one critical
-    /// section, so two concurrent spends never both hold an address.
-    pub(crate) fn hold_address_spend(
-        &self,
-        submitted: &BTreeMap<PlatformAddress, AddressNonce>,
-    ) -> Result<(), PlatformAddress> {
-        let mut held = self.in_broadcast.address_spends();
-        if let Some(address) = submitted.keys().find(|address| held.contains_key(address)) {
-            return Err(*address);
-        }
-        held.extend(submitted.iter().map(|(address, nonce)| (*address, *nonce)));
-        Ok(())
-    }
-
-    /// Release the hold of a spend that never left the wallet: each of
-    /// `submitted`'s addresses still held with the nonce it names.
-    pub(crate) fn release_address_spend(
-        &self,
-        submitted: &BTreeMap<PlatformAddress, AddressNonce>,
-    ) {
-        let mut held = self.in_broadcast.address_spends();
-        for (address, nonce) in submitted {
-            if held.get(address) == Some(nonce) {
-                held.remove(address);
-            }
-        }
-    }
-
-    /// Release every held address a proved read shows at or past its held
-    /// nonce (`observed`): the spend it held executed, or another spend took
-    /// that nonce, and either way it can no longer execute. An address
-    /// observed before its held nonce stays held.
-    pub(crate) fn observe_address_nonces(
-        &self,
-        observed: impl IntoIterator<Item = (PlatformAddress, AddressNonce)>,
-    ) {
-        let mut held = self.in_broadcast.address_spends();
-        for (address, nonce) in observed {
-            if held.get(&address).is_some_and(|held| nonce >= *held) {
-                held.remove(&address);
-            }
-        }
     }
 
     /// Pin `transaction`'s inputs as **in-broadcast** until the returned
@@ -1040,10 +946,6 @@ mod tests {
     use std::sync::{mpsc, Arc};
 
     use dashcore::{OutPoint, Transaction, TxIn, Txid};
-
-    use std::collections::BTreeMap;
-
-    use dpp::address_funds::PlatformAddress;
 
     use super::{InBroadcastFences, InBroadcastProbe, WalletGeneration};
 
@@ -1596,70 +1498,5 @@ mod tests {
         settle_dispatched(&generation, &tx);
 
         assert_eq!(fired.load(Ordering::SeqCst), 1);
-    }
-
-    const HELD: PlatformAddress = PlatformAddress::P2pkh([1; 20]);
-    const OTHER: PlatformAddress = PlatformAddress::P2pkh([2; 20]);
-
-    /// A held address refuses a second hold naming it, which then holds
-    /// none of its addresses, and leaves addresses it does not name free.
-    #[test]
-    fn should_refuse_a_second_hold_on_a_held_address() {
-        let generation = WalletGeneration::new();
-        generation
-            .hold_address_spend(&BTreeMap::from([(HELD, 4)]))
-            .expect("free");
-
-        assert_eq!(
-            generation.hold_address_spend(&BTreeMap::from([(HELD, 4), (OTHER, 9)])),
-            Err(HELD)
-        );
-        assert_eq!(generation.held_address_spends(), vec![HELD]);
-        assert_eq!(generation.held_address_spend([&OTHER]), None);
-    }
-
-    /// A proved nonce before the held one keeps the hold (the spend may still
-    /// execute); one at or past it releases it.
-    #[test]
-    fn should_release_a_held_address_only_once_its_nonce_is_proved_used() {
-        let generation = WalletGeneration::new();
-        generation
-            .hold_address_spend(&BTreeMap::from([(HELD, 4), (OTHER, 9)]))
-            .expect("free");
-
-        generation.observe_address_nonces([(HELD, 3), (OTHER, 8)]);
-        assert_eq!(generation.held_address_spends(), vec![HELD, OTHER]);
-        generation.observe_address_nonces([(HELD, 4), (OTHER, 10)]);
-        assert!(generation.held_address_spends().is_empty());
-    }
-
-    /// A spend that never left the wallet releases its own hold, and only
-    /// its own: an address held with another nonce stays held.
-    #[test]
-    fn should_release_the_hold_of_a_spend_never_sent() {
-        let generation = WalletGeneration::new();
-        generation
-            .hold_address_spend(&BTreeMap::from([(HELD, 4)]))
-            .expect("free");
-
-        generation.release_address_spend(&BTreeMap::from([(HELD, 5)]));
-        assert_eq!(generation.held_address_spends(), vec![HELD]);
-        generation.release_address_spend(&BTreeMap::from([(HELD, 4)]));
-        assert!(generation.held_address_spends().is_empty());
-    }
-
-    /// The hold describes a signed spend that may still execute, so a wallet
-    /// re-created under the same id inherits it, as it does the outpoint
-    /// fences.
-    #[test]
-    fn should_keep_an_address_hold_across_a_recreated_generation() {
-        let fences = Arc::new(InBroadcastFences::default());
-        let first = WalletGeneration::with_fences(Arc::clone(&fences));
-        first
-            .hold_address_spend(&BTreeMap::from([(HELD, 4)]))
-            .expect("free");
-
-        let recreated = WalletGeneration::with_fences(fences);
-        assert_eq!(recreated.held_address_spend([&HELD]), Some(HELD));
     }
 }

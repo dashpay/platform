@@ -127,10 +127,6 @@ impl PlatformAddressWallet {
     /// `result.found` after, emit entries whose funds differ (or are
     /// new). `result.found` carries the full `(tag, p2pkh)` identity
     /// the SDK used, so we don't need a second snapshot.
-    ///
-    /// A pass that succeeds also settles the address spends the wallet holds
-    /// (`settle_held_address_spends`): the incremental sync carries
-    /// no nonces, so the held addresses are read with a proof of their own.
     pub async fn sync_balances(
         &self,
         config: Option<AddressSyncConfig>,
@@ -197,8 +193,6 @@ impl PlatformAddressWallet {
             }
         }
         drop(guard);
-
-        self.settle_held_address_spends().await;
 
         Ok(result)
     }

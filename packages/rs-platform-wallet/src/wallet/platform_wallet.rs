@@ -609,15 +609,6 @@ impl PlatformWallet {
     /// so the top-up never reports
     /// [`PlatformWalletError::AddressNonceMismatch`].
     ///
-    /// An unconfirmed top-up holds its input addresses: until a proved read
-    /// shows the nonces it was signed with used (a platform-address sync,
-    /// [`PlatformAddressWallet::sync_balances`], or another proved result
-    /// reconciled through the platform-address wallet), a top-up from any of
-    /// them, on either route, is refused with
-    /// [`PlatformWalletError::PlatformAddressSpendPending`] before anything is
-    /// read, signed or broadcast. The hold is kept in memory for the process,
-    /// like the Core outpoint fence, and is not persisted.
-    ///
     /// Holds the wallet generation's lifecycle gate like
     /// [`Self::top_up_external_identity_from_addresses`]: a wallet removed or
     /// re-created since this handle was taken is refused with
