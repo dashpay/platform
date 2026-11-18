@@ -34,7 +34,7 @@ use platform_wallet_ffi::event_handler::{
 };
 use platform_wallet_ffi::platform_address_sync::PlatformAddressSyncWalletResultFFI;
 use platform_wallet_ffi::shielded_types::{
-    ShieldedBalanceUpdateFFI, ShieldedLocalAccountBalanceFFI, ShieldedSyncWalletResultFFI,
+    ShieldedBalanceAccountFFI, ShieldedBalanceUpdateFFI, ShieldedSyncWalletResultFFI,
 };
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
@@ -346,9 +346,9 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
 // ── on_shielded_balance_changed ───────────────────────────────────────
 
 /// Number of `long` values per account row handed to
-/// `onShieldedBalanceChanged`: account index, spendable credits, has last
-/// scanned index (0 or 1), last scanned index, source.
-const SHIELDED_BALANCE_ACCOUNT_LONGS: usize = 5;
+/// `onShieldedBalanceChanged`: account index, spendable credits, established
+/// (0 or 1), has last scanned index (0 or 1), last scanned index, source.
+const SHIELDED_BALANCE_ACCOUNT_LONGS: usize = 6;
 
 /// JNI descriptor of `NativeWalletEventBridge.onShieldedBalanceChanged`:
 /// wallet id, revision, status, ordinary spendable credits, ordinary balance
@@ -399,11 +399,12 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
 }
 
 /// Lay `accounts` out as the flat rows `onShieldedBalanceChanged` documents.
-fn shielded_balance_account_longs(accounts: &[ShieldedLocalAccountBalanceFFI]) -> Vec<i64> {
+fn shielded_balance_account_longs(accounts: &[ShieldedBalanceAccountFFI]) -> Vec<i64> {
     let mut values = Vec::with_capacity(accounts.len() * SHIELDED_BALANCE_ACCOUNT_LONGS);
     for account in accounts {
         values.push(i64::from(account.account_index));
         values.push(account.spendable_credits as i64);
+        values.push(i64::from(account.established));
         values.push(i64::from(account.has_last_scanned_index));
         values.push(account.last_scanned_index as i64);
         values.push(account.source as i64);
@@ -466,16 +467,18 @@ mod shielded_balance_tests {
     #[test]
     fn should_lay_out_one_row_per_account() {
         let accounts = [
-            ShieldedLocalAccountBalanceFFI {
+            ShieldedBalanceAccountFFI {
                 account_index: 0,
                 spendable_credits: 100,
+                established: false,
                 last_scanned_index: 0,
                 has_last_scanned_index: false,
-                source: ShieldedBalanceSourceFFI::Restored,
+                source: ShieldedBalanceSourceFFI::NoHistory,
             },
-            ShieldedLocalAccountBalanceFFI {
+            ShieldedBalanceAccountFFI {
                 account_index: 0x4000_0000,
                 spendable_credits: u64::MAX,
+                established: true,
                 last_scanned_index: 42,
                 has_last_scanned_index: true,
                 source: ShieldedBalanceSourceFFI::ScannedThisSession,
@@ -483,7 +486,7 @@ mod shielded_balance_tests {
         ];
         assert_eq!(
             shielded_balance_account_longs(&accounts),
-            vec![0, 100, 0, 0, 1, 0x4000_0000, -1, 1, 42, 2]
+            vec![0, 100, 0, 0, 0, 0, 0x4000_0000, -1, 1, 1, 42, 2]
         );
         assert!(shielded_balance_account_longs(&[]).is_empty());
     }

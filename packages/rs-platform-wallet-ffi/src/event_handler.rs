@@ -5,7 +5,7 @@ use crate::platform_address_sync::{
 };
 #[cfg(feature = "shielded")]
 use crate::shielded_types::{
-    ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceStatusFFI,
+    ShieldedBalanceAccountFFI, ShieldedBalanceSourceFFI, ShieldedLocalBalanceStatusFFI,
 };
 use crate::shielded_types::{ShieldedBalanceUpdateFFI, ShieldedSyncWalletResultFFI};
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
@@ -507,7 +507,7 @@ impl PlatformEventHandler for FFIEventHandler {
             ..ShieldedBalanceUpdateFFI::default()
         };
         // Owns the account rows `ffi.accounts` borrows for the call.
-        let mut accounts: Vec<ShieldedLocalAccountBalanceFFI> = Vec::new();
+        let mut accounts: Vec<ShieldedBalanceAccountFFI> = Vec::new();
         match &update.state {
             ShieldedLocalBalanceState::Unbound => {}
             ShieldedLocalBalanceState::RestoreIncomplete => {
@@ -531,9 +531,10 @@ impl PlatformEventHandler for FFIEventHandler {
                 accounts = snapshot
                     .accounts
                     .iter()
-                    .map(|(account_index, balance)| ShieldedLocalAccountBalanceFFI {
+                    .map(|(account_index, balance)| ShieldedBalanceAccountFFI {
                         account_index: *account_index,
                         spendable_credits: balance.spendable_credits,
+                        established: balance.is_established(),
                         last_scanned_index: balance.last_scanned_index.unwrap_or(0),
                         has_last_scanned_index: balance.last_scanned_index.is_some(),
                         source: match balance.source {
@@ -670,7 +671,7 @@ mod release_tests {
         status: ShieldedLocalBalanceStatusFFI,
         ordinary_spendable_credits: u64,
         ordinary_balance_established: bool,
-        accounts: Vec<ShieldedLocalAccountBalanceFFI>,
+        accounts: Vec<ShieldedBalanceAccountFFI>,
         accounts_null: bool,
     }
 
@@ -784,23 +785,26 @@ mod release_tests {
                 ordinary_spendable_credits: 150,
                 ordinary_balance_established: true,
                 accounts: vec![
-                    ShieldedLocalAccountBalanceFFI {
+                    ShieldedBalanceAccountFFI {
                         account_index: 0,
                         spendable_credits: 100,
+                        established: true,
                         last_scanned_index: 9,
                         has_last_scanned_index: true,
                         source: ShieldedBalanceSourceFFI::ScannedThisSession,
                     },
-                    ShieldedLocalAccountBalanceFFI {
+                    ShieldedBalanceAccountFFI {
                         account_index: 1,
                         spendable_credits: 50,
+                        established: true,
                         last_scanned_index: 0,
                         has_last_scanned_index: false,
                         source: ShieldedBalanceSourceFFI::Restored,
                     },
-                    ShieldedLocalAccountBalanceFFI {
+                    ShieldedBalanceAccountFFI {
                         account_index: identity_account,
                         spendable_credits: 900,
+                        established: true,
                         last_scanned_index: 9,
                         has_last_scanned_index: true,
                         source: ShieldedBalanceSourceFFI::ScannedThisSession,

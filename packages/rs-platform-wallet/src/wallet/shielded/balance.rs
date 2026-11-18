@@ -32,6 +32,17 @@ pub struct ShieldedLocalAccountBalance {
     pub source: ShieldedBalanceSource,
 }
 
+impl ShieldedLocalAccountBalance {
+    /// Whether `spendable_credits` is a known amount for this account: its
+    /// ledger rests on a restored history or a completed scan. False while
+    /// the account has no history, when its zero says nothing about what it
+    /// holds. The one rule for it: the ordinary balance uses it, and hosts
+    /// receive its result with each account instead of reading `source`.
+    pub fn is_established(&self) -> bool {
+        self.source != ShieldedBalanceSource::NoHistory
+    }
+}
+
 /// Every account bound to one wallet, captured under one store read lock.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ShieldedLocalBalanceSnapshot {
@@ -79,8 +90,7 @@ impl ShieldedLocalBalanceSnapshot {
                         })?;
                     Ok(ShieldedOrdinaryBalance {
                         spendable_credits,
-                        established: total.established
-                            && balance.source != ShieldedBalanceSource::NoHistory,
+                        established: total.established && balance.is_established(),
                     })
                 },
             )

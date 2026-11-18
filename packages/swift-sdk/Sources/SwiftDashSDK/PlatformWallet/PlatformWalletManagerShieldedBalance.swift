@@ -61,12 +61,12 @@ public struct ShieldedReadyBalance: Sendable, Equatable {
     /// credits read 0 before its first scan.
     public let ordinaryBalanceEstablished: Bool
     /// Every bound account, identity accounts included.
-    public let accounts: [UInt32: ShieldedLocalAccountBalance]
+    public let accounts: [UInt32: ShieldedBalanceAccount]
 
     public init(
         ordinarySpendableCredits: UInt64,
         ordinaryBalanceEstablished: Bool,
-        accounts: [UInt32: ShieldedLocalAccountBalance]
+        accounts: [UInt32: ShieldedBalanceAccount]
     ) {
         self.ordinarySpendableCredits = ordinarySpendableCredits
         self.ordinaryBalanceEstablished = ordinaryBalanceEstablished
@@ -79,10 +79,38 @@ public struct ShieldedReadyBalance: Sendable, Equatable {
     }
 
     /// One account's spendable credits, or `nil` when the account is not
-    /// bound or has no history yet (its zero is not a known zero).
+    /// bound or Rust did not establish its amount (`established`).
     public func accountBalance(_ account: UInt32) -> UInt64? {
-        guard let entry = accounts[account], entry.source != .noHistory else { return nil }
+        guard let entry = accounts[account], entry.established else { return nil }
         return entry.spendableCredits
+    }
+}
+
+/// One bound account in a pushed update.
+public struct ShieldedBalanceAccount: Sendable, Equatable {
+    /// Credits a send from this account can select now. A known amount
+    /// only when `established`.
+    public let spendableCredits: UInt64
+    /// Whether `spendableCredits` is a known amount for this account. This
+    /// is Rust's decision, sent per account; Swift does not derive it from
+    /// `source` or anything else.
+    public let established: Bool
+    /// The account's local scan coverage. A persisted index of zero is
+    /// distinct from absent scan history (`nil`).
+    public let lastScannedIndex: UInt64?
+    /// What backs the amount, for diagnostics only.
+    public let source: ShieldedBalanceSource
+
+    public init(
+        spendableCredits: UInt64,
+        established: Bool,
+        lastScannedIndex: UInt64?,
+        source: ShieldedBalanceSource
+    ) {
+        self.spendableCredits = spendableCredits
+        self.established = established
+        self.lastScannedIndex = lastScannedIndex
+        self.source = source
     }
 }
 
@@ -120,18 +148,18 @@ extension ShieldedBalanceUpdate {
     }
 
     nonisolated private static func decodeAccounts(
-        _ pointer: UnsafePointer<ShieldedLocalAccountBalanceFFI>?,
+        _ pointer: UnsafePointer<ShieldedBalanceAccountFFI>?,
         count rawCount: UInt
-    ) throws -> [UInt32: ShieldedLocalAccountBalance] {
+    ) throws -> [UInt32: ShieldedBalanceAccount] {
         guard let count = Int(exactly: rawCount),
-              count <= Int.max / MemoryLayout<ShieldedLocalAccountBalanceFFI>.stride else {
+              count <= Int.max / MemoryLayout<ShieldedBalanceAccountFFI>.stride else {
             throw PlatformWalletError.deserialization("Shielded balance update has invalid account storage")
         }
         guard count > 0 else { return [:] }
         guard let pointer else {
             throw PlatformWalletError.deserialization("Shielded balance update has invalid account storage")
         }
-        var accounts: [UInt32: ShieldedLocalAccountBalance] = [:]
+        var accounts: [UInt32: ShieldedBalanceAccount] = [:]
         for entry in UnsafeBufferPointer(start: pointer, count: count) {
             let source: ShieldedBalanceSource
             switch entry.source {
@@ -144,8 +172,9 @@ extension ShieldedBalanceUpdate {
             guard accounts[entry.account_index] == nil else {
                 throw PlatformWalletError.deserialization("Duplicate shielded account in balance update")
             }
-            accounts[entry.account_index] = ShieldedLocalAccountBalance(
+            accounts[entry.account_index] = ShieldedBalanceAccount(
                 spendableCredits: entry.spendable_credits,
+                established: entry.established,
                 lastScannedIndex: entry.has_last_scanned_index ? entry.last_scanned_index : nil,
                 source: source)
         }

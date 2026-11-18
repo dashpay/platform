@@ -17,7 +17,7 @@ class ShieldedLocalBalanceTest {
         revision: Long,
         ordinary: Long,
         established: Boolean = true,
-        accounts: LongArray = longArrayOf(0, ordinary, 1, 1, 2),
+        accounts: LongArray = longArrayOf(0, ordinary, 1, 1, 1, 2),
         wallet: ByteArray = walletId,
     ) = decodeShieldedBalanceUpdate(wallet, revision, 2, ordinary, established, accounts)
 
@@ -30,9 +30,9 @@ class ShieldedLocalBalanceTest {
             ordinarySpendableCredits = 150,
             ordinaryBalanceEstablished = true,
             accounts = longArrayOf(
-                0, 100, 0, 0, 1,
-                1, 50, 1, 0, 2,
-                identityAccount.toLong(), 900, 1, 42, 2,
+                0, 100, 1, 0, 0, 1,
+                1, 50, 1, 1, 0, 2,
+                identityAccount.toLong(), 900, 1, 1, 42, 2,
             ),
         )
         assertEquals(4L, update.revision)
@@ -42,12 +42,12 @@ class ShieldedLocalBalanceTest {
         assertEquals(150L, snapshot.ordinaryBalance)
         assertEquals(setOf(0, 1, identityAccount), snapshot.accounts.keys)
         assertEquals(
-            ShieldedLocalAccountBalance(100, null, ShieldedBalanceSource.RESTORED),
+            ShieldedLocalAccountBalance(100, true, null, ShieldedBalanceSource.RESTORED),
             snapshot.accounts[0],
         )
         // A completed scan that ended at index zero is not "no scan".
         assertEquals(
-            ShieldedLocalAccountBalance(50, 0, ShieldedBalanceSource.SCANNED_THIS_SESSION),
+            ShieldedLocalAccountBalance(50, true, 0, ShieldedBalanceSource.SCANNED_THIS_SESSION),
             snapshot.accounts[1],
         )
         assertEquals(900L, snapshot.accountBalance(identityAccount))
@@ -61,7 +61,7 @@ class ShieldedLocalBalanceTest {
     fun shouldNotTakeAnAmountWithoutEvidenceForABalance() {
         // A wallet restored without history: readable, zero, never scanned.
         val unscanned = decodeShieldedBalanceUpdate(
-            walletId, 1, 2, 0, false, longArrayOf(0, 0, 0, 0, 0),
+            walletId, 1, 2, 0, false, longArrayOf(0, 0, 0, 0, 0, 0),
         )
         val snapshot = (unscanned.state as ShieldedLocalBalanceState.Ready).snapshot
         assertEquals(0L, snapshot.ordinarySpendableCredits)
@@ -72,11 +72,30 @@ class ShieldedLocalBalanceTest {
 
         // The same zero after a completed scan is a balance of zero.
         val scanned = decodeShieldedBalanceUpdate(
-            walletId, 2, 2, 0, true, longArrayOf(0, 0, 1, 0, 2),
+            walletId, 2, 2, 0, true, longArrayOf(0, 0, 1, 1, 0, 2),
         )
         val known = (scanned.state as ShieldedLocalBalanceState.Ready).snapshot
         assertEquals(0L, known.ordinaryBalance)
         assertEquals(0L, known.accountBalance(0))
+    }
+
+    @Test
+    fun shouldTakeRustsWordForWhetherAnAccountsAmountIsKnown() {
+        // The flag decides, not the source: Rust owns the rule, so an
+        // account it calls not established has no balance here whatever its
+        // source says, and one it calls established has one.
+        val update = decodeShieldedBalanceUpdate(
+            walletId, 1, 2, 70, true,
+            longArrayOf(
+                0, 70, 1, 0, 0, 0,
+                1, 30, 0, 1, 5, 2,
+            ),
+        )
+        val snapshot = (update.state as ShieldedLocalBalanceState.Ready).snapshot
+        assertEquals(ShieldedBalanceSource.NO_HISTORY, snapshot.accounts[0]?.source)
+        assertEquals(70L, snapshot.accountBalance(0))
+        assertEquals(ShieldedBalanceSource.SCANNED_THIS_SESSION, snapshot.accounts[1]?.source)
+        assertNull(snapshot.accountBalance(1))
     }
 
     @Test
@@ -93,7 +112,7 @@ class ShieldedLocalBalanceTest {
 
     @Test
     fun shouldRefuseAnUpdateItCannotReadExactly() {
-        val row = longArrayOf(0, 100, 0, 0, 1)
+        val row = longArrayOf(0, 100, 1, 0, 0, 1)
         val malformed: List<() -> Unit> = listOf(
             { decodeShieldedBalanceUpdate(ByteArray(31), 1, 2, 100, true, row) },
             { decodeShieldedBalanceUpdate(walletId, 0, 2, 100, true, row) },
@@ -102,13 +121,14 @@ class ShieldedLocalBalanceTest {
             { decodeShieldedBalanceUpdate(walletId, 1, 0, 0, false, row) },
             { decodeShieldedBalanceUpdate(walletId, 1, 1, 0, false, row) },
             // A row cut short, and an unknown status, flag and source.
-            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 0, 0)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 1, 0, 0)) },
             { decodeShieldedBalanceUpdate(walletId, 1, 3, 0, false, longArrayOf()) },
-            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 2, 0, 1)) },
-            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 0, 0, 3)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 2, 0, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 1, 2, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0, 100, 1, 0, 0, 3)) },
             // An account index outside Int, and the same account twice.
-            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0x1_0000_0000, 100, 0, 0, 1)) },
-            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(-1, 100, 0, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(0x1_0000_0000, 100, 1, 0, 0, 1)) },
+            { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, longArrayOf(-1, 100, 1, 0, 0, 1)) },
             { decodeShieldedBalanceUpdate(walletId, 1, 2, 100, true, row + row) },
         )
         malformed.forEachIndexed { index, decode ->

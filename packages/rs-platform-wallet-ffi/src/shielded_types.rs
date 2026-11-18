@@ -70,6 +70,25 @@ impl Default for ShieldedLocalBalanceSnapshotFFI {
     }
 }
 
+/// One account in a [`ShieldedBalanceUpdateFFI`].
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ShieldedBalanceAccountFFI {
+    pub account_index: u32,
+    /// Credits a send from this account can select now.
+    pub spendable_credits: u64,
+    /// Whether `spendable_credits` is a known amount for this account, as
+    /// the wallet decides it (`ShieldedLocalAccountBalance::is_established`).
+    /// When false the amount must not be shown as the account's balance. A
+    /// host reads this flag and does not derive it from `source`.
+    pub established: bool,
+    pub last_scanned_index: u64,
+    /// Preserves the distinction between no watermark and an explicit zero.
+    pub has_last_scanned_index: bool,
+    /// What backs the amount, for diagnostics.
+    pub source: ShieldedBalanceSourceFFI,
+}
+
 /// One wallet's local shielded balance state, pushed by
 /// `on_shielded_balance_changed_fn` whenever it changes. Valid only for the
 /// duration of the callback: `accounts` is borrowed and must be copied.
@@ -102,7 +121,7 @@ pub struct ShieldedBalanceUpdateFFI {
     pub ordinary_balance_established: bool,
     /// Ready only: every bound account, identity accounts included. Borrowed
     /// for the callback; null when `accounts_count` is zero.
-    pub accounts: *const ShieldedLocalAccountBalanceFFI,
+    pub accounts: *const ShieldedBalanceAccountFFI,
     pub accounts_count: usize,
 }
 
