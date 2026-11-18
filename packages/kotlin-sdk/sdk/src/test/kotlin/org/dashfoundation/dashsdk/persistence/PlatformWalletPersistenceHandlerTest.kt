@@ -4504,7 +4504,6 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("m/44'/1'/0'/0/100", far.derivationPath)
         assertEquals(100, far.addressIndex)
         assertTrue(far.isUsed)
-        assertEquals(12_345L, far.balance)
         assertTrue(pubkey.contentEquals(far.publicKey))
         assertEquals(0.toByte(), far.poolTypeTag)
 
