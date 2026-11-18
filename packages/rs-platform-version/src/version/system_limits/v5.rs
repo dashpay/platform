@@ -31,6 +31,9 @@ use crate::version::system_limits::SystemLimits;
 ///   `minimum` of at least 0 on a type that keeps the total of the property over all its
 ///   documents. Registration and update refuse any other; document create state validation 3
 ///   and replace state validation 2 hold that total in the range the type's sums hold.
+/// * Document history layout: the first block of the version moves retained document histories
+///   to the composite-key layout in batches of about 500 GroveDB operations
+///   (`max_history_migration_batch_operations`, `None` before).
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
     max_summed_value_magnitude_without_type_total: Some(1 << 27), // changed: larger summed values need a minimum of 0 and the type's total
     max_document_revisions_erased_per_transition: Some(100), // one bounded lifecycle erasure chunk (note 41)
@@ -42,5 +45,6 @@ pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
     private_document_store_min_chunk_power: Some(4), // changed: and its chunk power is at least 4
     private_document_store_max_chunk_power: Some(11), // changed: and at most 11
     max_private_document_entries_per_transition: Some(16), // changed: a PrivateDocumentCreateFromShieldedPool appends at most 16 entries
+    max_history_migration_batch_operations: Some(500), // changed: the protocol version 15 move of retained document histories applies its writes in batches of about this many operations
     ..SYSTEM_LIMITS_V4
 };

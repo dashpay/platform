@@ -165,6 +165,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
                 document_erase_transition_state_validation: None,
+                document_erase_transition_refund_recipient_reservation: None,
                 document_replace_transition_state_validation: 0,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,

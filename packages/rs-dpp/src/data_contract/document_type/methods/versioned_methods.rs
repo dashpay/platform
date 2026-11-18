@@ -700,6 +700,27 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         Ok(total_size)
     }
 
+    /// Generation 0 with each property sized by
+    /// [`DocumentPropertyType::saturating_max_byte_size`]: a string of 16384
+    /// or more characters without `maxBytes` has a byte bound past `u16::MAX`,
+    /// which generation 0 fails on with an overflow and this generation holds
+    /// at `u16::MAX`. Every other type is sized as generation 0 sizes it, and
+    /// the total saturates as generation 0's does.
+    fn max_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
+        let mut total_size = 0u16;
+
+        for document_property in self.flattened_properties().values() {
+            if let Some(size) = document_property
+                .property_type
+                .saturating_max_byte_size(platform_version)?
+            {
+                total_size = total_size.saturating_add(size);
+            }
+        }
+
+        Ok(total_size)
+    }
+
     /// Figures out the prefunded voting balance (v0) for a document in a document type
     fn prefunded_voting_balance_for_document_v0(
         &self,

@@ -38,6 +38,7 @@ fn should_activate_lifecycle_handlers_and_limits_only_with_erase_wire_bounds() {
             conversion.document_erase_transition,
             batch.document_erase_transition_structure_validation,
             batch.document_erase_transition_state_validation,
+            batch.document_erase_transition_refund_recipient_reservation,
         ] {
             assert_eq!(slot, expected, "lifecycle handler at {protocol}");
         }
