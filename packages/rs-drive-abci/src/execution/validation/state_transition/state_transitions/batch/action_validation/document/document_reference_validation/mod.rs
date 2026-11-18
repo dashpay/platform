@@ -1,4 +1,5 @@
 pub(crate) mod choose_first_reservation;
+pub(crate) mod reference_lookup_reservation;
 pub mod v0;
 pub mod v1;
 

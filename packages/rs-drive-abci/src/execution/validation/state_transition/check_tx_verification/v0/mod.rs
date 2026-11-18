@@ -22,6 +22,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::choose_first_reservation;
 use crate::execution::validation::state_transition::batch::erase_refund_recipient_reservation;
+use crate::execution::validation::state_transition::batch::reference_lookup_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -553,6 +554,14 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     &mut state_transition_execution_context,
                     platform_version,
                 )?;
+                // A create's `refersTo` lookups are billed in a block for their hashes, their
+                // queries and the documents they consume
+                reserve_reference_lookups(
+                    &action,
+                    platform,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                )?;
             }
 
             let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -768,6 +777,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         &mut state_transition_execution_context,
                         platform_version,
                     )?;
+                    // As on the first check
+                    reserve_reference_lookups(
+                        &action,
+                        platform,
+                        &mut state_transition_execution_context,
+                        platform_version,
+                    )?;
                 }
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -796,13 +812,37 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 /// competitor scan's budget), for an action whose state check tx did not validate. Fee
 /// validation then admits only a signer who could pay for them.
 ///
-/// Every protocol version selects the reservation's generation 0, which returns no error.
+/// It fails only when the method version is unknown or generation 1's reservation overflows.
 fn reserve_choose_first_scans(
     action: &StateTransitionAction,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
     execution_context.add_operations(choose_first_reservation(action, platform_version)?);
+    Ok(())
+}
+
+/// Reserves, on top of the estimated fee of `action`, what document reference validation may
+/// bill in a block for the `refersTo` lookups of its creates (see
+/// `reference_lookup_reservation`: the computed keys' hashes, an allowance for each lookup
+/// query, and the delete of each document a lookup consumes), priced in the block check tx
+/// estimates in, for an action whose state check tx did not validate. Fee validation then admits
+/// only a signer who could pay for them.
+///
+/// Mempool admission only, at every protocol version: a block validates the references and bills
+/// what they read. No lookup parses before protocol version 14, so it adds nothing there.
+fn reserve_reference_lookups<C>(
+    action: &StateTransitionAction,
+    platform: &PlatformRef<C>,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    execution_context.add_operations(reference_lookup_reservation(
+        action,
+        platform.drive,
+        platform.state.last_block_info(),
+        platform_version,
+    )?);
     Ok(())
 }
 

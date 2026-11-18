@@ -42,4 +42,10 @@ pub struct FeeDocumentReferenceVersion {
     /// of the slot's `when` for it. Billed before the type is judged, so a write refused
     /// for a type that does not meet them pays for it too (protocol version 15).
     pub requirement_credits_per_comparison: u64,
+    /// The credits check tx reserves, on top of a create's estimated fee, for each `refersTo`
+    /// lookup query its references may make, when it does not validate the create's state
+    /// (`reference_lookup_reservation` 0). A block bills the query from state, at its cost,
+    /// which no estimate made without the state bounds, so this is an allowance set well above
+    /// what such a query costs (see `FEE_DOCUMENT_REFERENCE_VERSION1`). Read by check tx alone.
+    pub lookup_query_credits_reserved: u64,
 }

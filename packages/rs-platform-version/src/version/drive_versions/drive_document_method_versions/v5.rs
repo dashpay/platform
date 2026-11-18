@@ -74,6 +74,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
             erase_refund_recipient_cost: Some(0), // changed: prices third-party balance work caused by erasure
+            consumed_document_delete_cost: 0,
             add_estimation_costs_for_remove_document_to_primary_storage: 1, // changed: estimates removal of the composite current pointer
             remove_document_from_primary_storage: 1, // changed: removes only the current history pointer
             delete_document_for_contract_operations: 1, // changed: retains history and records deletion

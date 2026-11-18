@@ -308,6 +308,20 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// `document_reference_validation` does for it included, would admit a signer the block
     /// then refuses unpaid.
     pub choose_first_reservation: FeatureVersion,
+    /// Versions what check tx reserves, for each create of a batch whose state it does not
+    /// validate, for the `refersTo` lookups document reference validation runs in a block
+    /// (`reference_lookup_reservation`): the computed key's hash, the lookup query and, for a
+    /// lookup declaring `consume`, the delete of the document it consumes.
+    ///
+    /// - `0` (every protocol version): for each lookup its references may make, the key's
+    ///   double SHA-256 (but for a `chooseFirst` lookup's, which `choose_first_reservation`
+    ///   reserves), `lookup_query_credits_reserved`, and Drive's estimated delete of one
+    ///   document of a consumed type. No lookup parses before protocol version 14, so it
+    ///   reserves nothing there.
+    ///
+    /// Mempool admission only: a block runs document reference validation and bills what it
+    /// reads.
+    pub reference_lookup_reservation: FeatureVersion,
     pub token_mint_transition_structure_validation: FeatureVersion,
     pub token_burn_transition_structure_validation: FeatureVersion,
     pub token_transfer_transition_structure_validation: FeatureVersion,

@@ -4173,4 +4173,110 @@ mod commit_reveal_lookup_tests {
         assert!(result.is_valid(), "{:?}", result.errors);
         assert!(execution_context.operations_slice().is_empty());
     }
+
+    /// Holds `who` to `transition`'s check tx estimate on the first check and on a recheck,
+    /// each judged on its own: one credit short of a level's estimate is refused there and its
+    /// estimate admitted. Leaves `who` holding the smaller of the two, the least a signer whose
+    /// transaction check tx keeps can hold, and returns it.
+    fn hold_to_the_check_tx_estimate(
+        fixture: &CommitRevealFixture,
+        who: Who,
+        transition: &StateTransition,
+    ) -> Credits {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let mut least = Credits::MAX;
+        for level in [FirstTimeCheck, Recheck] {
+            fixture.set_balance(who, dash_to_credits!(0.5));
+            let (errors, estimated) = fixture.check_tx_at(transition, level);
+            assert_eq!(errors, Vec::<u32>::new());
+            let estimated = estimated
+                .expect("expected an estimated fee")
+                .total_base_fee();
+            fixture.set_balance(who, estimated - 1);
+            assert_eq!(
+                fixture.check_tx_at(transition, level).0,
+                vec![IDENTITY_INSUFFICIENT_BALANCE]
+            );
+            fixture.set_balance(who, estimated);
+            assert_eq!(fixture.check_tx_at(transition, level).0, Vec::<u32>::new());
+            least = least.min(estimated);
+        }
+        fixture.set_balance(who, least);
+        least
+    }
+
+    /// Check tx does not validate the state of a reveal, so its fee estimate held none of what
+    /// document reference validation bills a block for the commitment it finds: the key's hash
+    /// and the lookup query, and the delete of the commitment it consumes, which the block
+    /// prices with the create. It reserves them on the first check and on a recheck: a signer
+    /// holding exactly the smaller of the two estimates is charged for the reveal in the block,
+    /// at protocol version 14 and 15, and the consumed commitment is gone.
+    #[tokio::test]
+    async fn should_reserve_the_lookup_and_the_consumed_commitments_delete_when_admitting_a_reveal()
+    {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = CommitRevealFixture::new_at(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_| {},
+            );
+            let salt = [0x11; 32];
+            let preorder = fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let contract = fixture.contract.clone();
+            let (_, reveal) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Alice,
+                    "domain",
+                    &subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    None,
+                )
+                .await;
+            hold_to_the_check_tx_estimate(&fixture, Who::Alice, &reveal);
+
+            let result = fixture.process(&reveal, REVEAL_HEIGHT);
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "at {protocol_version}"
+            );
+            assert!(!fixture.preorder_exists(preorder.id()));
+        }
+    }
+
+    /// A lookup that does not consume is reserved too: a post finding its author's handle by
+    /// name, made by a signer holding exactly the smaller of the check tx and recheck estimates,
+    /// is charged in the block, at protocol version 14 and 15.
+    #[tokio::test]
+    async fn should_reserve_the_lookup_of_a_write_finding_a_document_by_a_value() {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = handle_fixture_at(
+                "permanentDocument",
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_, _| {},
+            );
+            make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+            let contract = fixture.contract.clone();
+            let (_, post) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Mallory,
+                    "post",
+                    &[("authorHandle", text("alice")), ("body", text("gm"))],
+                    &[],
+                    None,
+                )
+                .await;
+            hold_to_the_check_tx_estimate(&fixture, Who::Mallory, &post);
+
+            let result = fixture.process(&post, REVEAL_HEIGHT);
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "at {protocol_version}"
+            );
+        }
+    }
 }

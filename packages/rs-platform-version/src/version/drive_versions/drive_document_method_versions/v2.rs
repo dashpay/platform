@@ -36,6 +36,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
         },
         delete: DriveDocumentDeleteMethodVersions {
             erase_refund_recipient_cost: None,
+            consumed_document_delete_cost: 0,
             erase_document_for_contract_operations: None,
             add_estimation_costs_for_erase_document: None,
             add_estimation_costs_for_lifecycle_record: None,
