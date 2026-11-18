@@ -489,8 +489,8 @@ pub fn apply_persisted_core_state(
         // DashPay contact account holds: `restore_utxos` places it there,
         // outside the total. Discovery moves one a funds account derives
         // within its reach; one past that reach stays, as does one placed
-        // after a failed refill (Recovery only), where discovery is skipped
-        // (`place_held_coins`).
+        // before a failed restore (Recovery only), where discovery is
+        // skipped.
         if unresolved > 0 {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
@@ -567,10 +567,7 @@ fn owner_label(owner: &OwningAccount) -> String {
 /// refill derives nothing and the loop exits. Each refill derives at most
 /// one gap window, which key-wallet caps at `MAX_GAP_LIMIT`.
 ///
-/// A derivation error stops the refills and is reported at
-/// [`LoadSite::RehydrationMaintainGapLimit`]. The coins whose script a pool
-/// already holds are then still placed, without growing any pool
-/// ([`place_held_coins`]), and only the others are returned unmatched.
+/// A derivation error stops the refills and the restore ([`restore_failed`]).
 fn restore_owned_utxos(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &Wallet,
@@ -628,8 +625,7 @@ fn restore_owned_utxos(
             }
         }
         if let Err(source) = wallet_info.restore_utxos(wallet, std::iter::empty()) {
-            restore_failed(ctx, wallet_id, source)?;
-            return place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false));
+            return restore_failed(wallet_info, unspent, wallet_id, ctx, source);
         }
         if !marked_any && !derived_past(wallet_info, &looked_up) {
             break;
@@ -637,39 +633,7 @@ fn restore_owned_utxos(
     }
     match wallet_info.restore_utxos(wallet, unspent.iter().map(|u| (*u).clone())) {
         Ok(unmatched) => Ok((unmatched, true)),
-        Err(source) => {
-            restore_failed(ctx, wallet_id, source)?;
-            place_held_coins(wallet_info, wallet, unspent, ctx).map(|left| (left, false))
-        }
-    }
-}
-
-/// Places each of `unspent` whose script an account's pools already hold as
-/// `restore_utxos` does: in the first account holding it, in its order, with
-/// the address marked used and any copy in another account removed. Derives
-/// nothing: the restore runs against `wallet` without its accounts, so no
-/// pool has a key source and its refill skips every one. Returns the coins no
-/// account holds. The placement can't fail: `restore_utxos` errs only from a
-/// refill, and with no key source there is none. Were it to fail, it is
-/// reported as a failed restore is and every coin comes back, which is right
-/// only while no earlier restore of this load has placed any of them.
-///
-/// Only the pools as far as the marking rounds grew them are matched, so a
-/// coin a DashPay contact account already holds before its funds account's
-/// pool reaches it lands in the contact account, outside the balance and not
-/// counted as unresolved.
-fn place_held_coins(
-    wallet_info: &mut ManagedWalletInfo,
-    wallet: &Wallet,
-    unspent: &[&key_wallet::Utxo],
-    ctx: &LoadCtx,
-) -> Result<Vec<key_wallet::Utxo>, WalletStorageError> {
-    let keyless =
-        Wallet::new_external_signable(wallet.network, wallet.wallet_id, AccountCollection::new());
-    let coins = || unspent.iter().map(|u| (*u).clone());
-    match wallet_info.restore_utxos(&keyless, coins()) {
-        Ok(unmatched) => Ok(unmatched),
-        Err(source) => restore_failed(ctx, wallet.wallet_id, source).map(|()| coins().collect()),
+        Err(source) => restore_failed(wallet_info, unspent, wallet_id, ctx, source),
     }
 }
 
@@ -799,11 +763,18 @@ fn discover_in_funds_accounts(
     Ok(derived)
 }
 
+/// Reports a failed `restore_utxos` at
+/// [`LoadSite::RehydrationMaintainGapLimit`] (strict fails the load) and
+/// returns the coins of `unspent` no account holds, for the fallback, and
+/// `false`: the restore is not run again. A failed restore inserts no coin,
+/// so one an earlier restore of this load placed stays where it is.
 fn restore_failed(
-    ctx: &LoadCtx,
+    wallet_info: &ManagedWalletInfo,
+    unspent: &[&key_wallet::Utxo],
     wallet_id: [u8; 32],
+    ctx: &LoadCtx,
     source: key_wallet::Error,
-) -> Result<(), WalletStorageError> {
+) -> Result<(Vec<key_wallet::Utxo>, bool), WalletStorageError> {
     ctx.tolerate_at(
         LoadSite::RehydrationMaintainGapLimit,
         SiteCoords {
@@ -813,7 +784,16 @@ fn restore_failed(
             detail: None,
         },
         WalletStorageError::RehydrationGapLimitFailed { source },
-    )
+    )?;
+    let accounts = &wallet_info.accounts;
+    let holders: Vec<_> = (accounts.all_funding_accounts().into_iter())
+        .chain(accounts.dashpay_external_accounts.values())
+        .collect();
+    let unheld = (unspent.iter())
+        .filter(|u| !holders.iter().any(|a| a.utxos.contains_key(&u.outpoint)))
+        .map(|u| (*u).clone())
+        .collect();
+    Ok((unheld, false))
 }
 
 /// Owning-account identity of a funds account, keyed on the same
@@ -3914,6 +3894,41 @@ mod tests {
                 assert_eq!(every_holder(&info, &deep.outpoint), vec![cj()]);
                 assert_eq!(info.balance.total(), 2 * VALUE);
             }
+        }
+
+        /// A failed restore is reported at its site and returns only the
+        /// coins no account holds, so a coin an earlier restore of the load
+        /// placed is not placed again by the fallback.
+        #[test]
+        fn a_failed_restore_returns_only_the_coins_no_account_holds() {
+            let (wallet, _) = fixture(48);
+            let placed = utxo(1, &external_address(&wallet, &bip44(), 3));
+            let unplaced = utxo(2, &external_address(&wallet, &bip44(), 4));
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+            funds.utxos.insert(placed.outpoint, placed.clone());
+            let coins = [&placed, &unplaced];
+            let ctx = LoadCtx::recovery();
+            let failure = || key_wallet::Error::WatchOnly;
+            let (left, restorable) =
+                restore_failed(&info, &coins, info.wallet_id, &ctx, failure()).unwrap();
+            assert_eq!(left, vec![unplaced.clone()]);
+            assert!(!restorable);
+            assert_eq!(
+                ctx.degradation()
+                    .by_site
+                    .get(&LoadSite::RehydrationMaintainGapLimit),
+                Some(&1)
+            );
+            let strict =
+                restore_failed(&info, &coins, info.wallet_id, &LoadCtx::strict(), failure());
+            assert!(
+                matches!(
+                    strict,
+                    Err(WalletStorageError::RehydrationGapLimitFailed { .. })
+                ),
+                "{strict:?}"
+            );
         }
 
         fn contact() -> AccountType {
