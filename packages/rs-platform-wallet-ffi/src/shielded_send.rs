@@ -950,7 +950,7 @@ fn map_asset_lock_funding_result(
 ///   ownership.
 /// - `out_identity_id` must point to 32 writable bytes. It is written on `Success` AND on the
 ///   `ErrorShieldedBroadcastUnconfirmed` result code (and only those); on all other codes it is
-///   left as the caller initialized it.
+///   left untouched, so it need not be initialized.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
@@ -1060,21 +1060,28 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
-    map_identity_create_result(result, &mut *out_identity_id)
+    let (mapped, identity_id) = map_identity_create_result(result);
+    // The caller's buffer may be uninitialized, so it is only ever written through the raw
+    // pointer, never borrowed as `&mut [u8; 32]`, and only when there is an id to write.
+    if let Some(identity_id) = identity_id {
+        out_identity_id.write(identity_id);
+    }
+    mapped
 }
 
-/// The FFI result of a shielded identity create from the pool, writing the
-/// identity id to `out_identity_id` on success and on the unconfirmed
-/// outcome. Every failure carries its wallet error's own payment-delivery
-/// class, whichever code the arm below reports it under.
+/// The FFI result of a shielded identity create from the pool, plus the
+/// identity id the export writes to `out_identity_id`: present on success and
+/// on the unconfirmed outcome, absent on every other failure. Every failure
+/// carries its wallet error's own payment-delivery class, whichever code the
+/// arm below reports it under.
 fn map_identity_create_result(
     result: Result<dpp::prelude::Identifier, PlatformWalletError>,
-    out_identity_id: &mut [u8; 32],
-) -> PlatformWalletFFIResult {
+) -> (PlatformWalletFFIResult, Option<[u8; 32]>) {
     let class = result.as_ref().err().map(payment_class);
+    let mut out_identity_id = None;
     let mapped = match result {
         Ok(identity_id) => {
-            *out_identity_id = identity_id.to_buffer();
+            out_identity_id = Some(identity_id.to_buffer());
             PlatformWalletFFIResult::ok()
         }
         // Broadcast accepted but its execution result couldn't be confirmed and a direct fetch came
@@ -1086,7 +1093,7 @@ fn map_identity_create_result(
             identity_id,
             ref reason,
         }) => {
-            *out_identity_id = identity_id.to_buffer();
+            out_identity_id = Some(identity_id.to_buffer());
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
                 format!(
@@ -1112,10 +1119,11 @@ fn map_identity_create_result(
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
     };
-    match class {
+    let mapped = match class {
         Some(class) => mapped.with_payment_class(class),
         None => mapped,
-    }
+    };
+    (mapped, out_identity_id)
 }
 
 /// Preflight the maximum credits the cached state can shield from one Platform
@@ -3433,7 +3441,6 @@ mod tests {
     /// dispatch never did.
     #[test]
     fn should_keep_the_delivery_class_through_the_identity_create_mapping() {
-        let mut out = [0u8; 32];
         let cases = [
             (
                 PlatformWalletError::ShieldedBroadcastUnconfirmed {
@@ -3467,17 +3474,38 @@ mod tests {
         for (error, code, delivery) in cases {
             let rendered = format!("{error:?}");
             let retryable = error.is_retryable();
-            let result = map_identity_create_result(Err(error), &mut out);
+            let (result, _) = map_identity_create_result(Err(error));
             assert_eq!(result.code, code, "{rendered}");
             assert_eq!(result.payment_delivery, delivery, "{rendered}");
             assert_eq!(result.retryable, retryable, "{rendered}");
         }
-        assert_eq!(out, [5; 32], "the unconfirmed outcome writes the id");
-        assert_eq!(
-            map_identity_create_result(Ok(dpp::prelude::Identifier::from([6; 32])), &mut out)
-                .payment_delivery,
-            PlatformWalletFFIPaymentDelivery::None
-        );
+        let (ok, _) = map_identity_create_result(Ok(dpp::prelude::Identifier::from([6; 32])));
+        assert_eq!(ok.payment_delivery, PlatformWalletFFIPaymentDelivery::None);
+    }
+
+    /// The identity id goes to the caller's buffer only on success and on the
+    /// unconfirmed outcome; every other failure leaves the buffer (which may
+    /// be uninitialized) untouched, so the export never writes or borrows it.
+    #[test]
+    fn should_hand_out_the_identity_id_only_on_success_or_unconfirmed() {
+        let (_, id) = map_identity_create_result(Ok(dpp::prelude::Identifier::from([6; 32])));
+        assert_eq!(id, Some([6; 32]));
+        let (_, id) =
+            map_identity_create_result(Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id: dpp::prelude::Identifier::from([5; 32]),
+                reason: "timeout".into(),
+            }));
+        assert_eq!(id, Some([5; 32]));
+        for error in [
+            PlatformWalletError::ShieldedNoUnspentNotes,
+            PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".into()),
+            PlatformWalletError::ShieldedBroadcastFailed("refused".into()),
+            PlatformWalletError::ShieldedBroadcastMaybeDelivered("transport".into()),
+        ] {
+            let rendered = format!("{error:?}");
+            let (_, id) = map_identity_create_result(Err(error));
+            assert_eq!(id, None, "{rendered}");
+        }
     }
 
     /// The catch-all fold of the asset-lock funding mapping keeps the wallet
