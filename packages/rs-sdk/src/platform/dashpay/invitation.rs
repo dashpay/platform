@@ -767,8 +767,9 @@ fn preflight_keys_map(keys_map: &BTreeMap<u32, IdentityPublicKey>) -> Result<(),
     // `KeysAlreadyRegistered`.
     if let Some((slot, key)) = keys_map.iter().find(|(slot, key)| key.id() != **slot) {
         return Err(InvitationError::Invalid(format!(
-            "keys_map entry {slot} holds key id {}",
-            key.id()
+            "keys_map entry {slot} holds key id {id}; file each key under its own id \
+             (key {id} goes in entry {id})",
+            id = key.id()
         )));
     }
     // More keys than any protocol version this build knows lets an identity
@@ -788,7 +789,9 @@ fn preflight_keys_map(keys_map: &BTreeMap<u32, IdentityPublicKey>) -> Result<(),
         .unwrap_or_default() as usize;
     if keys_map.len() > most_keys {
         return Err(InvitationError::Invalid(format!(
-            "keys_map holds {} keys; an identity is created with at most {most_keys}",
+            "keys_map holds {} keys, but an identity is created with at most \
+             {most_keys}; claim with at most {most_keys} keys and add the rest \
+             to the identity after the claim",
             keys_map.len()
         )));
     }
