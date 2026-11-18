@@ -16,6 +16,13 @@
 //! key is therefore a two-stage flow; stage two is the explicit-values
 //! update-service in this crate's sibling module. A voting-only (or
 //! payout-only) update has no such reset.
+//!
+//! Version-3 (ExtAddr) entries are refused. The payload built here is
+//! version 2, and Core applies one to a version-3 state by replacing its
+//! DIP-0026 payout list with a single payout to `script_payout`; the
+//! masternode list carries no payouts, so the existing shares cannot be
+//! restated. An operator rotation could not restore the entry's endpoint
+//! map either.
 
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::blockdata::transaction::special_transaction::provider_update_registrar::ProviderUpdateRegistrarPayload;
@@ -192,15 +199,20 @@ pub(crate) fn assemble_update_registrar_placeholder(
             ))
         })?;
 
-    // Rotating the operator key erases the entry's service values, and
-    // stage two re-asserts a single address per service, which cannot
-    // restore a v3 extended-net-info entry's endpoint map. Fail closed. A
-    // voting-only update touches no service state.
-    if params.new_operator_key_index.is_some() && entry.has_extended_net_info {
+    // A version-3 entry is refused whatever the update changes. The
+    // payload built below is version 2, and Core applies one to a
+    // version-3 state as `LegacyPayoutAsList(scriptPayout)`: the entry's
+    // DIP-0026 payout list becomes a single payout. The list entry carries
+    // no payouts, so the existing shares cannot be restated here. Rotating
+    // the operator key also erases the service values, and stage two
+    // re-asserts a single address per service, which cannot restore the
+    // endpoint map. Fail closed.
+    if entry.has_extended_net_info {
         return Err(PlatformWalletError::InvalidParameter(
-            "this masternode advertises v3 extended network info; rotating its operator key \
-             would require re-asserting a single service address and discard its endpoint \
-             map, so it cannot be rotated from this wallet yet"
+            "this masternode is registered at version 3 (extended network info); the update \
+             this wallet builds would replace its payout list with a single payout, and an \
+             operator rotation would discard its endpoint map, so its keys cannot be rotated \
+             from this wallet yet"
                 .to_string(),
         ));
     }
@@ -251,10 +263,21 @@ pub(crate) fn assemble_update_registrar_placeholder(
             ensure_operator_key_unused(summaries, &params.pro_tx_hash, &bytes, legacy.as_ref())?;
             bytes
         }
-        None => normalize_operator_key_to_basic(
-            &entry.operator_public_key,
-            entry.operator_key_is_legacy,
-        )?,
+        None => {
+            let kept = normalize_operator_key_to_basic(
+                &entry.operator_public_key,
+                entry.operator_key_is_legacy,
+            )?;
+            if entry.operator_key_is_legacy {
+                ensure_kept_legacy_operator_key_unused(
+                    summaries,
+                    &params.pro_tx_hash,
+                    &kept,
+                    &entry.operator_public_key,
+                )?;
+            }
+            kept
+        }
     };
     let voting_key_hash = match params.new_voting_key_index {
         Some(index) => {
@@ -481,14 +504,7 @@ pub(crate) fn ensure_operator_key_unused(
     candidate: &[u8; 48],
     candidate_legacy: Option<&[u8; 48]>,
 ) -> Result<(), PlatformWalletError> {
-    let clash = summaries
-        .iter()
-        .filter(|entry| entry.pro_tx_hash != *target)
-        .find(|entry| {
-            entry.operator_public_key == *candidate
-                || candidate_legacy.is_some_and(|legacy| entry.operator_public_key == *legacy)
-        });
-    if let Some(entry) = clash {
+    if let Some(entry) = operator_key_holder(summaries, target, candidate, candidate_legacy) {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "the chosen operator key is already used by masternode {} — operator keys must \
              be unique; pick an unused key",
@@ -496,6 +512,46 @@ pub(crate) fn ensure_operator_key_unused(
         )));
     }
     Ok(())
+}
+
+/// Refuse keeping a legacy-serialized operator key that another masternode
+/// holds under either serialization. A version-2 payload moves a version-1
+/// entry to the basic scheme, and from V24 Core checks the re-encoded key
+/// against every other masternode on that migration, not only on a key
+/// change (`bad-protx-dup-key`). The check runs before V24 as well, so
+/// such a pair is refused here slightly earlier than Core would.
+pub(crate) fn ensure_kept_legacy_operator_key_unused(
+    summaries: &[MasternodeListSummary],
+    target: &[u8; 32],
+    kept_basic: &[u8; 48],
+    kept_legacy: &[u8; 48],
+) -> Result<(), PlatformWalletError> {
+    if let Some(entry) = operator_key_holder(summaries, target, kept_basic, Some(kept_legacy)) {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "the masternode's current operator key is also registered to masternode {}; this \
+             update moves the key to the basic BLS scheme, where it must be unique — rotate \
+             to a fresh operator key instead of keeping it",
+            display_hex(&entry.pro_tx_hash)
+        )));
+    }
+    Ok(())
+}
+
+/// The masternode other than `target` that holds an operator key, matched
+/// under either serialization.
+fn operator_key_holder<'a>(
+    summaries: &'a [MasternodeListSummary],
+    target: &[u8; 32],
+    key: &[u8; 48],
+    key_legacy: Option<&[u8; 48]>,
+) -> Option<&'a MasternodeListSummary> {
+    summaries
+        .iter()
+        .filter(|entry| entry.pro_tx_hash != *target)
+        .find(|entry| {
+            entry.operator_public_key == *key
+                || key_legacy.is_some_and(|legacy| entry.operator_public_key == *legacy)
+        })
 }
 
 /// Consensus rejects a P2PKH payout paid to the owner key or the payload's
@@ -1025,6 +1081,100 @@ mod tests {
                 owner_key_hash().to_byte_array()
             );
         });
+    }
+
+    /// Voting-only parameters for masternode `0x11`.
+    fn voting_only_params(wallet: &PlatformWallet) -> MasternodeUpdateRegistrarParams {
+        MasternodeUpdateRegistrarParams {
+            pro_tx_hash: [0x11; 32],
+            new_operator_key_index: None,
+            new_voting_key_index: Some(0),
+            payout_address: DashAddress::dummy(wallet.network(), 3).to_string(),
+        }
+    }
+
+    /// Core applies a version-2 ProUpRegTx to a version-3 state by
+    /// replacing its payout list with one payout, so no update of such an
+    /// entry is built — the voting-only one included.
+    #[test]
+    fn should_refuse_every_registrar_update_of_a_version_3_entry() {
+        let wallet = crate::test_support::sync_test_platform_wallet();
+        let mut target = masternode(0x11);
+        target.has_extended_net_info = true;
+        let summaries = vec![target, masternode(0x22)];
+        let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
+
+        let voting_only = voting_only_params(&wallet);
+        let with_operator = MasternodeUpdateRegistrarParams {
+            new_operator_key_index: Some(0),
+            ..voting_only.clone()
+        };
+        for params in [voting_only, with_operator] {
+            let err = assemble_update_registrar_placeholder(
+                &wallet,
+                &summaries,
+                &test_registration(),
+                &collateral,
+                &params,
+                &owner(),
+            )
+            .expect_err("a version-3 entry is refused");
+            assert!(
+                matches!(
+                    &err,
+                    PlatformWalletError::InvalidParameter(message)
+                        if message.contains("payout list")
+                ),
+                "unexpected error: {err:?}"
+            );
+        }
+    }
+
+    /// Keeping a version-1 entry's operator key re-encodes it to the basic
+    /// scheme, and Core then requires the key to be unique under both
+    /// serializations (`bad-protx-dup-key`).
+    #[test]
+    fn should_refuse_a_kept_legacy_operator_key_another_masternode_holds() {
+        use super::super::locator::bls_public_keys;
+
+        let wallet = crate::test_support::sync_test_platform_wallet();
+        let (basic, legacy) = bls_public_keys(&[7u8; 32]).expect("valid scalar");
+        let mut target = masternode(0x11);
+        target.operator_public_key = legacy;
+        target.operator_key_is_legacy = true;
+        let params = voting_only_params(&wallet);
+        let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
+
+        let placeholder = assemble_update_registrar_placeholder(
+            &wallet,
+            &[target.clone(), masternode(0x22)],
+            &test_registration(),
+            &collateral,
+            &params,
+            &owner(),
+        )
+        .expect("a key no other masternode holds is kept");
+        assert_eq!(placeholder.operator_public_key, BLSPublicKey::from(basic));
+
+        let mut holder = masternode(0x22);
+        holder.operator_public_key = basic;
+        let err = assemble_update_registrar_placeholder(
+            &wallet,
+            &[target, holder],
+            &test_registration(),
+            &collateral,
+            &params,
+            &owner(),
+        )
+        .expect_err("the same key under the basic serialization is a duplicate");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::InvalidParameter(message)
+                    if message.contains("current operator key")
+            ),
+            "unexpected error: {err:?}"
+        );
     }
 
     /// A rotation must not select an operator index the managed provider
