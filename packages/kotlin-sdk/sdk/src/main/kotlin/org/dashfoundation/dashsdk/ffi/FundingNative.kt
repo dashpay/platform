@@ -31,12 +31,23 @@ internal object FundingNative {
     )
 
     /**
-     * Whether [account] is an identity shielded account, by the wallet's rule
-     * (bridges `platform_wallet_is_shielded_identity_account`). The wallet
-     * binds and scans those accounts, but a send from its ordinary accounts
-     * cannot spend their notes.
+     * The wallet's local shielded balance, read without networking (bridges
+     * `platform_wallet_manager_local_shielded_balance_snapshot`). Returns a
+     * flat `long[]`, decoded by `decodeLocalShieldedBalance`:
+     *
+     * ```text
+     * [0] status: 0 unbound, 1 restore incomplete, 2 ready
+     * [1] ordinary spendable credits (the wallet's shielded balance)
+     * [2] account count N
+     * then N rows of 5: account index, spendable credits,
+     *     has last scanned index (0 or 1), last scanned index,
+     *     source (0 no history, 1 restored, 2 scanned this session)
+     * ```
+     *
+     * Throws while a scan holds the store (busy): keep the last balance and
+     * read again after the sync pass completes.
      */
-    external fun isShieldedIdentityAccount(account: Int): Boolean
+    external fun localShieldedBalanceSnapshot(managerHandle: Long, walletId: ByteArray): LongArray?
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */
     external fun warmUpProver()

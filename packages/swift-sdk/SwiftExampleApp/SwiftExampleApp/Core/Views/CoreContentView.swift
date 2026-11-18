@@ -1064,6 +1064,7 @@ struct WalletRowView: View {
     /// Rust's in-memory account totals (via `accountBalances(for:)`)
     /// are the single source of truth, mirroring `BalanceCardView`.
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var shieldedService: ShieldedService
 
     /// Per-wallet BLAST-synced platform-address balances. Mirrors
     /// `BalanceCardView` so the summary row sees the same balance as
@@ -1072,13 +1073,9 @@ struct WalletRowView: View {
     /// addresses (no identities) showed "Empty".
     @Query private var addressBalances: [PersistentPlatformAddress]
 
-    /// Per-wallet unspent shielded notes. Same persisted-truth
-    /// source as the Sync Status diagnostic; the balance is their
-    /// ordinary balance, in credits. Without this the
-    /// wallet row's combined DASH total under-reported the wallet's
-    /// real value by every shielded note: a wallet with funds in
-    /// the shielded pool would show Core + Platform on the list but
-    /// silently exclude Shielded.
+    /// Per-wallet unspent shielded note rows, every account. They mark
+    /// the wallet as not empty and drive local balance refreshes; the
+    /// balance itself is Rust's number from `shieldedService`.
     @Query private var shieldedNotes: [PersistentShieldedNote]
 
     init(wallet: PersistentWallet) {
@@ -1149,12 +1146,12 @@ struct WalletRowView: View {
         totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
     }
 
-    /// The wallet's ordinary shielded balance in credits: its unspent
-    /// notes outside identity accounts, by the wallet's rule. Same scale
-    /// as `platformBalance` (1e11 credits/DASH), so it folds into
-    /// the same divisor in [`combinedDashAmount(coreTotal:)`].
+    /// The wallet's shielded balance in credits as Rust computes it
+    /// (ordinary accounts; identity accounts left out), 0 while not known
+    /// yet. Same scale as `platformBalance` (1e11 credits/DASH), so it
+    /// folds into the same divisor in [`combinedDashAmount(coreTotal:)`].
     private var shieldedBalance: UInt64 {
-        PersistentShieldedNote.ordinaryBalance(shieldedNotes)
+        shieldedService.ordinaryShieldedBalance(walletId: wallet.walletId) ?? 0
     }
 
     /// Combined wallet balance expressed in DASH for a precomputed
@@ -1243,8 +1240,9 @@ struct WalletRowView: View {
         // re-invoking the accessor.
         let core = coreBalanceTotals()
         let coreTotal = Self.sumCoreBalance(core)
-        // Unspent notes in identity accounts leave the ordinary shielded
-        // balance at 0, but the wallet is not empty while it holds any.
+        // The wallet is not empty while it holds any unspent note row, even
+        // when its shielded balance is 0 (notes only in identity accounts)
+        // or not known yet.
         let hasAny = coreTotal > 0 || platformBalance > 0 || shieldedBalance > 0
             || !shieldedNotes.isEmpty
         return VStack(alignment: .leading, spacing: 6) {
@@ -1328,6 +1326,8 @@ struct WalletRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .refreshingShieldedLocalBalances(
+            shieldedService, walletIds: [wallet.walletId], noteRows: shieldedNotes)
     }
 }
 
@@ -1509,17 +1509,18 @@ extension CoreContentView {
 /// notes-synced watermark across every wallet/account **on the active
 /// network**.
 ///
-/// Both figures are read **directly from SwiftData** (scoped to the
-/// active network via `walletIds`) rather than from the
-/// `ShieldedService.shieldedBalance` mirror that's updated
-/// per-bound-wallet from sync events, so they survive restart and
-/// reflect the whole on-network pool:
+/// Both figures are scoped to the active network via `walletIds`
+/// rather than taken from the `ShieldedService.shieldedBalance` mirror
+/// that tracks only the mirror wallet:
 ///
-///   * **Total Shielded Balance**: the ordinary balance of every unspent
-///     `PersistentShieldedNote` whose wallet is on this network
-///     (identity accounts left out by the wallet's rule).
+///   * **Total Shielded Balance**: the sum of the shielded balances Rust
+///     computed for each wallet on this network (each one's ordinary
+///     accounts; identity accounts left out), from the service's local
+///     balance cache. A wallet whose balance is not known yet counts as
+///     0; "Not known" means no wallet's balance is known yet, or the sum does not
+///     fit in `UInt64`.
 ///
-///   * **Notes Synced** — the highest `lastSyncedIndex` across this
+///   * **Notes Synced**: read from SwiftData, the highest `lastSyncedIndex` across this
 ///     network's `PersistentShieldedSyncState` rows. The Orchard
 ///     commitment tree is chain-wide and shared by every wallet/account
 ///     **on a given network**, so each subwallet advances toward the
@@ -1534,16 +1535,22 @@ private struct ShieldedNetworkSummaryRows: View {
     /// Sync Status section's `walletIdsOnNetwork` scoping.
     let walletIds: Set<Data>
 
+    @EnvironmentObject var shieldedService: ShieldedService
+
     @Query private var allNotes: [PersistentShieldedNote]
     @Query private var syncStates: [PersistentShieldedSyncState]
 
-    /// Ordinary shielded balance over this network's unspent notes, in
-    /// credits: identity accounts are left out by the wallet's rule, as
-    /// in every wallet's own balance.
-    private var totalUnspentCredits: UInt64 {
-        PersistentShieldedNote.ordinaryBalance(
-            allNotes.lazy.filter { !$0.isSpent && walletIds.contains($0.walletId) }
+    /// Sum of this network's wallets' Rust-computed shielded balances, in
+    /// credits. `nil` when none is known yet or the sum overflows.
+    private var totalShieldedCredits: UInt64? {
+        ShieldedService.sumKnownBalances(
+            walletIds.map { shieldedService.ordinaryShieldedBalance(walletId: $0) }
         )
+    }
+
+    /// This network's unspent note rows; their identity drives refreshes.
+    private var unspentNotesOnNetwork: [PersistentShieldedNote] {
+        allNotes.filter { !$0.isSpent && walletIds.contains($0.walletId) }
     }
 
     /// Furthest-scanned commitment-tree index across this network's subwallets.
@@ -1577,12 +1584,12 @@ private struct ShieldedNetworkSummaryRows: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
-                if totalUnspentCredits > 0 {
-                    Text(formatCredits(totalUnspentCredits))
+                if let total = totalShieldedCredits, total > 0 {
+                    Text(formatCredits(total))
                         .font(.subheadline)
                         .fontWeight(.medium)
                 } else {
-                    Text("0")
+                    Text(totalShieldedCredits == nil ? "Not known" : "0")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -1599,6 +1606,9 @@ private struct ShieldedNetworkSummaryRows: View {
                     .fontWeight(.medium)
             }
         }
+        .refreshingShieldedLocalBalances(
+            shieldedService, walletIds: walletIds.sorted { $0.lexicographicallyPrecedes($1) },
+            noteRows: unspentNotesOnNetwork)
     }
 }
 

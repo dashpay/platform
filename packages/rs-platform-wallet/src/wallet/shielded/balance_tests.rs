@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::balance::{
-    ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
+    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    ShieldedLocalBalanceState,
 };
 use super::{
-    FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedNote,
-    ShieldedStore, SubwalletId,
+    shielded_identity_account_index, FileBackedShieldedStore, NetworkShieldedCoordinator,
+    OrchardKeySet, ShieldedNote, ShieldedStore, SubwalletId,
 };
 use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
@@ -576,4 +577,54 @@ async fn should_reject_restored_local_balance_overflow() {
         ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
         u64::MAX
     );
+}
+
+fn snapshot_of(spendable: &[(u32, u64)]) -> ShieldedLocalBalanceSnapshot {
+    ShieldedLocalBalanceSnapshot {
+        accounts: spendable
+            .iter()
+            .map(|(account, spendable_credits)| {
+                (
+                    *account,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: *spendable_credits,
+                        ..ShieldedLocalAccountBalance::default()
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn should_leave_identity_accounts_out_of_the_ordinary_spendable_total() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    let snapshot = snapshot_of(&[(0, 100), (1, 50), (identity_account, 900)]);
+    assert_eq!(snapshot.ordinary_spendable_total().unwrap(), 150);
+}
+
+#[test]
+fn should_report_zero_ordinary_spendable_total_without_an_ordinary_account() {
+    assert_eq!(snapshot_of(&[]).ordinary_spendable_total().unwrap(), 0);
+    let identity_account = shielded_identity_account_index(7).unwrap();
+    assert_eq!(
+        snapshot_of(&[(identity_account, 900)])
+            .ordinary_spendable_total()
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn should_refuse_an_ordinary_spendable_total_past_u64() {
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    // The identity account's balance does not count toward the overflow.
+    let fits = snapshot_of(&[(0, u64::MAX - 1), (identity_account, u64::MAX)]);
+    assert_eq!(fits.ordinary_spendable_total().unwrap(), u64::MAX - 1);
+    let overflows = snapshot_of(&[(0, u64::MAX - 1), (1, 2), (identity_account, u64::MAX)]);
+    assert!(matches!(
+        overflows.ordinary_spendable_total(),
+        Err(PlatformWalletError::ShieldedStoreError(message))
+            if message == "wallet-wide shielded balance exceeds u64"
+    ));
 }

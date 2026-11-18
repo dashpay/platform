@@ -125,18 +125,19 @@ fun WalletDetailScreen(
             .map { rows -> rows.sumOf { it.balance } }
     }.collectAsStateWithLifecycle(initialValue = 0L)
 
-    // Shielded credits: the wallet's ordinary shielded balance as the SDK
-    // reports it, which leaves out identity accounts by the wallet's rule.
-    // The SDK emits 0 when shielded support is not compiled in.
+    // Shielded credits: the wallet's shielded balance as Rust computes it
+    // (spendable credits of its ordinary accounts; identity accounts are
+    // left out). Null until a local snapshot is known, and always null when
+    // shielded support is not compiled in.
     val hasShielded = remember { Sdk.hasShielded() }
     val shieldedBalance by remember(walletIdHex) {
         container.shieldedService.ordinaryBalance(walletId)
-    }.collectAsStateWithLifecycle(initialValue = 0L)
+    }.collectAsStateWithLifecycle(initialValue = null)
 
     // Whether the wallet holds any unspent shielded note, in any account.
     // Only the empty-wallet check reads it: notes in an identity's shielded
-    // account leave the ordinary balance at 0 but still make the wallet
-    // non-empty.
+    // account leave the shielded balance at 0, and a balance not known yet
+    // is null, but either way the wallet is not empty.
     val hasShieldedNotes by remember(walletIdHex) {
         if (hasShielded) {
             container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
@@ -253,7 +254,7 @@ fun WalletDetailScreen(
                     (core?.unconfirmed ?: 0) == 0L &&
                     (core?.immature ?: 0) == 0L &&
                     platformBalance == 0L &&
-                    shieldedBalance == 0L &&
+                    (shieldedBalance ?: 0L) == 0L &&
                     !hasShieldedNotes
                 if (allZero) {
                     Text(
@@ -279,7 +280,7 @@ fun WalletDetailScreen(
                 )
                 if (hasShielded) {
                     ShieldedBalanceRow(
-                        value = formatCredits(shieldedBalance),
+                        value = shieldedBalance?.let { formatCredits(it) } ?: "—",
                         onSeedPool = { navController.navigate(SeedShieldedPool(walletIdHex)) },
                         onFund = { navController.navigate(ShieldedFund(walletIdHex)) },
                         onActivity = { navController.navigate(ShieldedActivity(walletIdHex)) },

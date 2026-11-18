@@ -1,24 +1,30 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.room.withTransaction
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
-import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
-import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceSnapshot
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceState
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 
 /**
@@ -31,9 +37,11 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
  *
  * State is a single [ShieldedSyncState] StateFlow (isSyncing, totalScanned,
  * totalNewNotes, syncCountSinceLaunch) fed by the manager's completion +
- * progress events (`on_shielded_sync_*` callbacks). [shieldedBalance] is a
- * Room `Flow` summing unspent notes for the bound wallet — the analogue of
- * Swift's CoreContentView unspent scan. Cumulative counters accumulate
+ * progress events (`on_shielded_sync_*` callbacks). Balances are numbers Rust
+ * computes: [localBalance] keeps the last good local snapshot of each wallet
+ * ([PlatformWalletManager.localShieldedBalanceSnapshot]) and reads it again
+ * when a sync pass completes or the wallet's stored notes change; nothing
+ * here adds up notes. Cumulative counters accumulate
  * across passes since [bind], mirroring Swift's `totalScanned` /
  * `totalNewNotes` / `syncCountSinceLaunch`.
  *
@@ -51,8 +59,8 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
  * union of all wallets' viewing keys and routes note hits to each
  * wallet's own persister (SH-14/15/16 cross-wallet flows). Per-wallet
  * receive addresses and balances are read on demand
- * ([PlatformWalletManager.shieldedDefaultAddress], per-wallet Room
- * queries) rather than from this singleton mirror.
+ * ([PlatformWalletManager.shieldedDefaultAddress], [localBalance]) rather
+ * than from this singleton mirror.
  */
 class ShieldedService(private val database: DashDatabase) {
 
@@ -61,10 +69,10 @@ class ShieldedService(private val database: DashDatabase) {
      * `@Published` shielded scalars.
      *
      * @param isSyncing a pass is currently in flight.
-     * @param shieldedBalance last observed unspent balance of the wallet's
-     *   ordinary accounts (credits), as Rust reports it in the sync result;
-     *   the live value is [shieldedBalance] (the Room Flow), which leaves out
-     *   the same identity accounts.
+     * @param shieldedBalance unspent balance of the wallet's ordinary
+     *   accounts (credits) as Rust reported it in the last sync result. The
+     *   balance to show is [shieldedBalance] (the flow): it is read from
+     *   Rust's local snapshot, so it also follows sends between passes.
      * @param lastNewNotes new notes in the most recent pass.
      * @param lastNewlySpent notes newly spent in the most recent pass.
      * @param totalScanned cumulative encrypted notes scanned since [bind].
@@ -116,33 +124,128 @@ class ShieldedService(private val database: DashDatabase) {
     /** ZIP-32 account indices bound for the current wallet (Swift `boundAccounts`). */
     val boundAccounts: StateFlow<List<Int>> = _boundAccounts.asStateFlow()
 
-    private val _shieldedBalance = MutableStateFlow<Flow<Long>>(emptyFlow())
+    private val _shieldedBalance = MutableStateFlow<Flow<Long?>>(emptyFlow())
 
     /**
-     * Live unspent shielded balance (credits) of the bound wallet's ordinary
-     * accounts ([ordinaryBalance] of the bound wallet). Empty until [bind].
+     * The bound wallet's shielded balance (credits): [ordinaryBalance] of the
+     * bound wallet. Empty until [bind].
      */
-    val shieldedBalance: StateFlow<Flow<Long>> = _shieldedBalance.asStateFlow()
+    val shieldedBalance: StateFlow<Flow<Long?>> = _shieldedBalance.asStateFlow()
 
     /** Whether shielded support is compiled into the native library. */
     val isAvailable: Boolean get() = Sdk.hasShielded()
 
+    /** Last good local snapshot of each wallet, by hex wallet id. */
+    private val localBalances =
+        MutableStateFlow<Map<String, ShieldedLocalBalanceSnapshot>>(emptyMap())
+
+    /** The read in flight for each wallet, so a newer one replaces it. */
+    private val localBalanceReads = ConcurrentHashMap<String, Job>()
+
     /**
-     * Live unspent shielded balance (credits) of [walletId]'s ordinary
-     * accounts: the sum of its unspent `shielded_notes` rows whose account is
-     * not an identity account by Rust's rule ([ordinaryShieldedBalance] with
-     * [FundingNative.isShieldedIdentityAccount]). This is the number the sync
-     * result reports, for any wallet, bound or not; a screen that shows a
-     * wallet's shielded balance reads it here instead of summing notes. A
-     * build without shielded support has no shielded balance and emits 0.
+     * [walletId]'s local shielded balance as Rust computes it, or null while
+     * no snapshot is known (not bound yet, restoration incomplete, or the
+     * first read has not finished). Emits the last good snapshot and reads a
+     * new one when a sync pass completes for the wallet, after a bind, and
+     * whenever the wallet's stored notes change (a send or a received note
+     * rewrites them; the rows are only the signal, their values are not
+     * used). A build without shielded support emits null.
      */
-    fun ordinaryBalance(walletId: ByteArray): Flow<Long> {
-        if (!isAvailable) return flowOf(0L)
-        return database.shieldedDao()
-            .observeUnspentNotesByWallet(walletId)
-            .map { notes ->
-                ordinaryShieldedBalance(notes, FundingNative::isShieldedIdentityAccount)
+    fun localBalance(walletId: ByteArray): Flow<ShieldedLocalBalanceSnapshot?> {
+        if (!isAvailable) return flowOf(null)
+        return channelFlow {
+            launch {
+                database.shieldedDao().observeNotesByWallet(walletId)
+                    .collect { refreshLocalBalance(walletId) }
             }
+            cachedLocalBalance(walletId).collect { send(it) }
+        }
+    }
+
+    /**
+     * [walletId]'s shielded balance (credits): spendable credits of its
+     * ordinary accounts, which leaves out identity accounts. The number is
+     * Rust's ([ShieldedLocalBalanceSnapshot.ordinarySpendableCredits]); null
+     * while it is not known. See [localBalance].
+     */
+    fun ordinaryBalance(walletId: ByteArray): Flow<Long?> =
+        localBalance(walletId).map { it?.ordinarySpendableCredits }.distinctUntilChanged()
+
+    /**
+     * Credits a send from [account] of [walletId] can spend now, as Rust
+     * reports them for that account; null while not known or when the
+     * account is not bound. A screen that sends from one account shows this,
+     * not the wallet's total. See [localBalance].
+     */
+    fun accountBalance(walletId: ByteArray, account: Int): Flow<Long?> =
+        localBalance(walletId).map { it?.accounts?.get(account)?.spendableCredits }
+            .distinctUntilChanged()
+
+    /** The cached snapshot of [walletId], without starting a read. */
+    internal fun cachedLocalBalance(walletId: ByteArray): Flow<ShieldedLocalBalanceSnapshot?> {
+        val key = walletId.toHexKey()
+        return localBalances.map { it[key] }.distinctUntilChanged()
+    }
+
+    /**
+     * Read [walletId]'s local balance from Rust again and keep the result.
+     * No-op while no manager is bound. Returns at once; the read runs on the
+     * service scope and replaces an earlier read of the same wallet.
+     */
+    fun refreshLocalBalance(walletId: ByteArray) {
+        val mgr = manager ?: return
+        val id = walletId.copyOf()
+        launchLocalBalanceRead(id) { mgr.localShieldedBalanceSnapshot(id) }
+    }
+
+    /**
+     * Start one read of [walletId]'s local balance through [read], cancelling
+     * the read of that wallet still in flight.
+     */
+    internal fun launchLocalBalanceRead(
+        walletId: ByteArray,
+        read: suspend () -> ShieldedLocalBalanceState,
+    ): Job {
+        val key = walletId.toHexKey()
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            readLocalBalance(key, LOCAL_BALANCE_RETRY_DELAYS_MS, read)
+        }
+        localBalanceReads.put(key, job)?.cancel()
+        job.start()
+        return job
+    }
+
+    /**
+     * Read once, and again after each of [retryDelaysMs] while the read
+     * throws. Rust refuses the read (busy) for as long as a scan holds the
+     * shielded store, and both signals that start a read can arrive while
+     * the scan still holds it; without these few retries the balance would
+     * stay stale until the next pass. The last good snapshot is kept when
+     * every attempt fails.
+     */
+    internal suspend fun readLocalBalance(
+        key: String,
+        retryDelaysMs: List<Long>,
+        read: suspend () -> ShieldedLocalBalanceState,
+    ) {
+        var attempt = 0
+        while (true) {
+            val state = try {
+                read()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.d(TAG, "Local shielded balance read failed: ${e.message}")
+                null
+            }
+            if (state != null) {
+                localBalances.update { applyLocalBalanceRead(it, key, state) }
+                return
+            }
+            if (attempt >= retryDelaysMs.size) return
+            delay(retryDelaysMs[attempt])
+            attempt += 1
+        }
     }
 
     private val _isBound = MutableStateFlow(false)
@@ -221,6 +324,11 @@ class ShieldedService(private val database: DashDatabase) {
         eventJob = null
         pollJob?.cancel()
         pollJob = null
+        if (this.manager !== manager) {
+            // Another manager is another network: its wallets' snapshots
+            // say nothing about this one's.
+            dropLocalBalances()
+        }
         this.manager = manager
         this.boundWalletId = walletId.copyOf()
         this.boundDbPath = dbPath
@@ -234,7 +342,13 @@ class ShieldedService(private val database: DashDatabase) {
             manager.configureShielded(dbPath)
             manager.bindShielded(walletId, sortedAccounts)
             _isBound.value = true
+            // The bind restored the stored ledger and no scan holds the
+            // store yet: the read that normally succeeds at launch.
+            refreshLocalBalance(walletId)
         } catch (e: Exception) {
+            // A failed bind does not vouch for the ledger read before it:
+            // the wallet's balance is not known until a bind succeeds.
+            dropLocalBalance(walletId)
             // Stay resumable: credentials are retained above, so a later
             // bind() retry (or the Clear→re-bind path) picks up cleanly.
             android.util.Log.w(
@@ -250,7 +364,14 @@ class ShieldedService(private val database: DashDatabase) {
         // events for an unregistered wallet and the balance flow just reflects
         // whatever rows persist.
         eventJob = scope.launch {
-            manager.syncEvents.collect { event -> reduce(walletId, event) }
+            manager.syncEvents.collect { event ->
+                // A completed pass changed some wallet's ledger, the mirror's
+                // or another's: read that wallet's balance again.
+                if (event is WalletSyncEvent.ShieldedResult && changesLocalBalance(event)) {
+                    refreshLocalBalance(event.walletId)
+                }
+                reduce(walletId, event)
+            }
         }
 
         pollJob = scope.launch {
@@ -323,8 +444,11 @@ class ShieldedService(private val database: DashDatabase) {
                 TAG,
                 "Shielded engine-bound: walletId=$walletIdHex4… accounts=$sortedAccounts",
             )
+            val id = walletId.copyOf()
+            launchLocalBalanceRead(id) { manager.localShieldedBalanceSnapshot(id) }
             true
         } catch (e: Exception) {
+            dropLocalBalance(walletId)
             android.util.Log.w(
                 TAG,
                 "Shielded engine-bind failed for walletId=$walletIdHex4…: ${e.message}",
@@ -398,9 +522,24 @@ class ShieldedService(private val database: DashDatabase) {
         boundDbPath = null
         _boundAccounts.value = emptyList()
         _shieldedBalance.value = emptyFlow()
+        dropLocalBalances()
         _state.value = ShieldedSyncState()
         _isBound.value = false
         _canResume.value = false
+    }
+
+    /** Forget [walletId]'s cached snapshot and stop its read in flight. */
+    internal fun dropLocalBalance(walletId: ByteArray) {
+        val key = walletId.toHexKey()
+        localBalanceReads.remove(key)?.cancel()
+        localBalances.update { it - key }
+    }
+
+    /** Forget every cached snapshot and stop the reads in flight. */
+    private fun dropLocalBalances() {
+        localBalanceReads.values.forEach { it.cancel() }
+        localBalanceReads.clear()
+        localBalances.value = emptyMap()
     }
 
     /**
@@ -504,6 +643,9 @@ class ShieldedService(private val database: DashDatabase) {
             }
         }
         _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
+        // The Rust reset emptied every wallet's ledger on this network; the
+        // re-bind below reads the new ones.
+        dropLocalBalances()
 
         // Re-bind + restart so the cold rebuild runs now, not just after a
         // relaunch. bind() re-runs configureShielded (idempotent same-path)
@@ -545,19 +687,33 @@ class ShieldedService(private val database: DashDatabase) {
     private companion object {
         const val TAG = "ShieldedService"
         const val POLL_INTERVAL_MS = 1_000L
+
+        /** Waits between the attempts of one local balance read. */
+        val LOCAL_BALANCE_RETRY_DELAYS_MS = listOf(300L, 1_000L, 3_000L)
     }
 }
 
 /**
- * The ordinary shielded balance: the value of [notes] whose account is not an
- * identity account. Rust also binds and scans each identity's shielded
- * account, whose notes a send from the ordinary accounts cannot spend, and
- * leaves them out of the sync result's balance; [isIdentityAccount] is Rust's
- * rule for which accounts those are ([FundingNative.isShieldedIdentityAccount]
- * in [ShieldedService.ordinaryBalance]), so both balances agree. Taken as a parameter so a test can
- * pass a plain predicate without loading native code.
+ * Whether a wallet's sync result can have changed its local ledger: a pass
+ * that ran and succeeded. A skipped wallet and a cooldown skip scanned
+ * nothing.
  */
-internal fun ordinaryShieldedBalance(
-    notes: List<ShieldedNoteEntity>,
-    isIdentityAccount: (Int) -> Boolean,
-): Long = notes.filterNot { isIdentityAccount(it.accountIndex) }.sumOf { it.value }
+internal fun changesLocalBalance(result: WalletSyncEvent.ShieldedResult): Boolean =
+    result.success && !result.skipped && !result.cooldownSkip
+
+/**
+ * The cache after one read of the wallet at [key]: a ready snapshot replaces
+ * the entry, an unbound wallet loses it, and an incomplete restoration keeps
+ * what was there, since it establishes nothing new.
+ */
+internal fun applyLocalBalanceRead(
+    cache: Map<String, ShieldedLocalBalanceSnapshot>,
+    key: String,
+    state: ShieldedLocalBalanceState,
+): Map<String, ShieldedLocalBalanceSnapshot> = when (state) {
+    is ShieldedLocalBalanceState.Ready -> cache + (key to state.snapshot)
+    ShieldedLocalBalanceState.Unbound -> cache - key
+    ShieldedLocalBalanceState.RestoreIncomplete -> cache
+}
+
+private fun ByteArray.toHexKey(): String = joinToString("") { "%02x".format(it) }

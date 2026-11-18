@@ -63,6 +63,7 @@ struct CreateIdentityView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
+    @EnvironmentObject var shieldedService: ShieldedService
 
     /// Default number of Platform identity keys to register in this
     /// first-pass flow. The Rust-owned per-slot policy
@@ -248,14 +249,13 @@ struct CreateIdentityView: View {
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
 
-    /// All wallets' unspent account-0 shielded notes. The shielded funding
-    /// picker spans multiple wallets, so this uses the all-wallets
-    /// predicate and `shieldedPoolBalance(for:)` scopes by walletId in
-    /// memory — a single-walletId `@Query` couldn't serve every row
-    /// the picker needs. Being a `@Query` (rather than a one-off
-    /// `modelContext.fetch`) makes the funding option and denomination
-    /// list update live: rows arriving while this sheet is open
-    /// re-render the view.
+    /// All wallets' unspent account-0 shielded note rows. The shielded
+    /// funding picker spans multiple wallets, so this uses the
+    /// all-wallets predicate. The rows do not give the balance
+    /// (`shieldedPoolBalance(for:)` reads Rust's number); their changes
+    /// while this sheet is open (a receive or a spend) trigger a refresh
+    /// of the wallets' local balances, which re-renders the funding
+    /// option and denomination list.
     @Query(filter: CreateIdentityView.shieldedFundingPredicate)
     private var unspentShieldedNotes: [PersistentShieldedNote]
 
@@ -428,6 +428,9 @@ struct CreateIdentityView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+            .refreshingShieldedLocalBalances(
+                shieldedService, walletIds: wallets.map(\.walletId),
+                noteRows: unspentShieldedNotes)
         }
     }
 
@@ -1826,22 +1829,15 @@ struct CreateIdentityView: View {
             && shieldedFallbackAddressBytes(for: walletId) != nil
     }
 
-    /// Per-wallet shielded funding balance: sum of `walletId`'s unspent
-    /// account-0 `PersistentShieldedNote` values, filtered in memory from the
-    /// `unspentShieldedNotes` `@Query` (rather than the single-mirror
-    /// `shieldedService.shieldedBalance`). Correct for ANY loaded
-    /// wallet, not just the mirror's `firstWallet`.
-    ///
-    /// Reactive via `@Query`: note rows arriving while this sheet is
-    /// open re-render the view, so the funding option and denomination
-    /// list stay live (vs. the previous one-off `modelContext.fetch`,
-    /// which froze the balance at first render). One shared query
-    /// materialized once per render also removes the per-call-site
-    /// FetchDescriptor round-trip.
+    /// Per-wallet shielded funding balance: account 0's spendable credits
+    /// as Rust computes them, because shielded identity funding spends
+    /// from account 0. Read from the service's per-wallet local balance
+    /// cache (rather than the single-mirror
+    /// `shieldedService.shieldedBalance`), so it is correct for ANY
+    /// loaded wallet, not just the mirror's `firstWallet`. Not known yet
+    /// counts as 0, so the shielded option is not offered.
     private func shieldedPoolBalance(for walletId: Data) -> UInt64 {
-        unspentShieldedNotes
-            .filter { $0.walletId == walletId }
-            .reduce(0) { $0 + $1.value }
+        shieldedService.spendableShieldedCredits(walletId: walletId, account: 0) ?? 0
     }
 
     /// The wallet id currently chosen in the source-wallet picker, or

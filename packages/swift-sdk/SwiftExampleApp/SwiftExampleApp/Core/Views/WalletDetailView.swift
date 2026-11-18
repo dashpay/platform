@@ -1040,15 +1040,15 @@ struct BalanceCardView: View {
         )
     }
 
-    /// Per-wallet shielded balance: the ordinary balance of this
-    /// wallet's unspent `PersistentShieldedNote` rows, which leaves out
-    /// identity accounts by the wallet's rule. Reads SwiftData (Rust pushes
-    /// note rows via the shielded persister) rather than the single-mirror
+    /// This wallet's shielded balance as Rust computes it (ordinary
+    /// accounts; identity accounts left out), from the service's
+    /// per-wallet local balance cache rather than the single-mirror
     /// `shieldedService.shieldedBalance`, so the card is correct for a
     /// non-`firstWallet` wallet whose engine binding is live but whose UI
-    /// mirror is pointed elsewhere.
+    /// mirror is pointed elsewhere. Not known yet counts as 0, which the row
+    /// shows with its empty placeholder rather than a number.
     private var shieldedBalance: UInt64 {
-        PersistentShieldedNote.ordinaryBalance(shieldedNotes)
+        shieldedService.ordinaryShieldedBalance(walletId: wallet.walletId) ?? 0
     }
 
     /// Core-chain balance summed from one Rust in-memory account snapshot.
@@ -1132,9 +1132,10 @@ struct BalanceCardView: View {
 
     var body: some View {
         let core = coreBalance
-        // A wallet holding any unspent shielded note is not empty even when
-        // its ordinary shielded balance is 0 (all its notes sit in identity
-        // accounts), so the shielded row and its actions stay shown.
+        // A wallet holding any unspent shielded note row is not empty even
+        // when its shielded balance is 0 or not known yet (for example all
+        // its notes sit in identity accounts), so the shielded row and its
+        // actions stay shown.
         let allZero = WalletBalanceCardState.isEmpty(
             confirmedCore: core.confirmed,
             unconfirmedCore: core.unconfirmed,
@@ -1215,6 +1216,8 @@ struct BalanceCardView: View {
         .padding()
         .background(Color(UIColor.secondarySystemBackground))
         .cornerRadius(12)
+        .refreshingShieldedLocalBalances(
+            shieldedService, walletIds: [wallet.walletId], noteRows: shieldedNotes)
     }
 }
 

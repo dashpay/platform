@@ -1,20 +1,28 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
+import org.dashfoundation.dashsdk.wallet.ShieldedBalanceSource
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalAccountBalance
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceSnapshot
+import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceState
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Reduction, cumulative counters, balance summing, and clear-local-state
+ * Reduction, cumulative counters, the local balance cache, and clear-local-state
  * for [ShieldedService]. Reduction is exercised directly (bind() is gated on
  * the native `hasShielded()` probe, which is unavailable under Robolectric);
  * balance and teardown use an in-memory [DashDatabase].
@@ -158,22 +166,120 @@ class ShieldedServiceTest {
         assertEquals(3_000L, balance)
     }
 
-    @Test
-    fun ordinaryBalanceLeavesOutOnlyIdentityAccounts() {
-        val notes = listOf(
-            // The account the caller bound.
-            note(1, 100, spent = false),
-            // An ordinary account added after the bind: ordinary too.
-            note(2, 50, spent = false).copy(accountIndex = 7),
-            // An identity's shielded account, which Rust binds on its own.
-            note(3, 900, spent = false).copy(accountIndex = 0x4000_0000),
+    private fun snapshot(ordinary: Long, vararg accounts: Pair<Int, Long>) =
+        ShieldedLocalBalanceSnapshot(
+            ordinarySpendableCredits = ordinary,
+            accounts = accounts.associate { (index, spendable) ->
+                index to ShieldedLocalAccountBalance(
+                    spendableCredits = spendable,
+                    lastScannedIndex = 1,
+                    source = ShieldedBalanceSource.SCANNED_THIS_SESSION,
+                )
+            },
         )
-        // Stands in for Rust's rule, which the service passes natively.
-        val isIdentityAccount = { account: Int -> account >= 0x4000_0000 }
-        assertEquals(150L, ordinaryShieldedBalance(notes, isIdentityAccount))
-        assertEquals(1_050L, ordinaryShieldedBalance(notes) { false })
-        assertEquals(0L, ordinaryShieldedBalance(notes) { true })
-        assertEquals(0L, ordinaryShieldedBalance(emptyList(), isIdentityAccount))
+
+    private fun ready(ordinary: Long, vararg accounts: Pair<Int, Long>) =
+        ShieldedLocalBalanceState.Ready(snapshot(ordinary, *accounts))
+
+    @Test
+    fun shouldKeepAReadySnapshotAndDropAnUnboundWallet() {
+        val first = snapshot(150, 0 to 100, 1 to 50)
+        val second = snapshot(70, 0 to 70)
+        var cache = applyLocalBalanceRead(emptyMap(), "aa", ShieldedLocalBalanceState.Ready(first))
+        assertEquals(mapOf("aa" to first), cache)
+        // An incomplete restoration establishes nothing: the entry stays.
+        cache = applyLocalBalanceRead(cache, "aa", ShieldedLocalBalanceState.RestoreIncomplete)
+        assertEquals(mapOf("aa" to first), cache)
+        cache = applyLocalBalanceRead(cache, "bb", ShieldedLocalBalanceState.Ready(second))
+        cache = applyLocalBalanceRead(cache, "aa", ShieldedLocalBalanceState.Ready(second))
+        assertEquals(mapOf("aa" to second, "bb" to second), cache)
+        cache = applyLocalBalanceRead(cache, "aa", ShieldedLocalBalanceState.Unbound)
+        assertEquals(mapOf("bb" to second), cache)
+    }
+
+    @Test
+    fun shouldShowRustsTotalAndTheAccountASendSpendsFrom() = runTest {
+        val identityAccount = 0x4000_0000
+        // Rust's total leaves the identity account out; the service must
+        // show that number as it is, not a sum over the accounts.
+        service.launchLocalBalanceRead(walletId) {
+            ready(150, 0 to 100, 1 to 50, identityAccount to 900)
+        }.join()
+        val cached = service.cachedLocalBalance(walletId).first()
+        assertEquals(150L, cached?.ordinarySpendableCredits)
+        assertEquals(100L, cached?.accounts?.get(0)?.spendableCredits)
+        assertEquals(900L, cached?.accounts?.get(identityAccount)?.spendableCredits)
+        // Another wallet has no snapshot: not known, which is not zero.
+        assertNull(service.cachedLocalBalance(otherWallet).first())
+    }
+
+    @Test
+    fun shouldReadAgainWhileTheStoreIsBusyAndGiveUpAfterTheLastDelay() = runTest {
+        var reads = 0
+        // Busy twice, then the scan releases the store.
+        service.readLocalBalance("aa", listOf(300L, 1_000L, 3_000L)) {
+            reads += 1
+            if (reads < 3) error("busy") else ready(150, 0 to 150)
+        }
+        assertEquals(3, reads)
+
+        reads = 0
+        // Busy on every attempt: one read plus one per delay, then give up.
+        service.readLocalBalance("aa", listOf(300L, 1_000L, 3_000L)) {
+            reads += 1
+            error("busy")
+        }
+        assertEquals(4, reads)
+    }
+
+    @Test
+    fun shouldKeepTheLastSnapshotOfAWalletWhoseReadFails() = runTest {
+        service.launchLocalBalanceRead(walletId) { ready(150, 0 to 150) }.join()
+        service.readLocalBalance(walletId.joinToString("") { "%02x".format(it) }, emptyList()) {
+            error("busy")
+        }
+        assertEquals(150L, service.cachedLocalBalance(walletId).first()?.ordinarySpendableCredits)
+    }
+
+    @Test
+    fun shouldLetANewerReadReplaceTheOneInFlight() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val older = service.launchLocalBalanceRead(walletId) {
+            release.await()
+            ready(1, 0 to 1)
+        }
+        val newer = service.launchLocalBalanceRead(walletId) { ready(2, 0 to 2) }
+        newer.join()
+        older.join()
+        assertTrue(older.isCancelled)
+        release.complete(Unit)
+        assertEquals(2L, service.cachedLocalBalance(walletId).first()?.ordinarySpendableCredits)
+    }
+
+    @Test
+    fun shouldForgetOnlyTheDroppedWalletsSnapshot() = runTest {
+        service.launchLocalBalanceRead(walletId) { ready(150, 0 to 150) }.join()
+        service.launchLocalBalanceRead(otherWallet) { ready(70, 0 to 70) }.join()
+        service.dropLocalBalance(walletId)
+        assertNull(service.cachedLocalBalance(walletId).first())
+        assertEquals(70L, service.cachedLocalBalance(otherWallet).first()?.ordinarySpendableCredits)
+    }
+
+    @Test
+    fun shouldForgetEverySnapshotOnUnbind() = runTest {
+        service.launchLocalBalanceRead(walletId) { ready(150, 0 to 150) }.join()
+        service.unbind()
+        assertNull(service.cachedLocalBalance(walletId).first())
+    }
+
+    @Test
+    fun shouldReadTheBalanceAgainOnlyAfterAPassThatRan() {
+        fun result(success: Boolean, skipped: Boolean, cooldownSkip: Boolean) =
+            WalletSyncEvent.ShieldedResult(walletId, success, skipped, cooldownSkip, 0, 0, 0, 0, null)
+        assertTrue(changesLocalBalance(result(success = true, skipped = false, cooldownSkip = false)))
+        assertFalse(changesLocalBalance(result(success = true, skipped = false, cooldownSkip = true)))
+        assertFalse(changesLocalBalance(result(success = false, skipped = true, cooldownSkip = false)))
+        assertFalse(changesLocalBalance(result(success = false, skipped = false, cooldownSkip = false)))
     }
 
     @Test

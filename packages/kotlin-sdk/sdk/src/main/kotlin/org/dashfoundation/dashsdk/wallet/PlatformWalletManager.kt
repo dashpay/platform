@@ -1675,6 +1675,31 @@ class PlatformWalletManager(
     }
 
     /**
+     * Read [walletId]'s local shielded balance: one coherent snapshot of
+     * every bound account plus the wallet's ordinary total, as Rust computes
+     * them. Port of Swift's `PlatformWalletManager.localShieldedBalanceSnapshot`
+     * (`PlatformWalletManagerShieldedLocalBalance.swift`). No network request
+     * and no mnemonic lookup.
+     *
+     * The native read waits at most 100 ms for the shielded store. A scan
+     * holds that store for its whole download, which can take minutes, and
+     * the read throws (wallet operation, "busy") for that long. Keep the last
+     * balance and read again after the sync pass completes; repeating the
+     * read at once does not get past the scan.
+     *
+     * [ShieldedLocalBalanceState.Unbound] and
+     * [ShieldedLocalBalanceState.RestoreIncomplete] carry no numbers.
+     */
+    suspend fun localShieldedBalanceSnapshot(
+        walletId: ByteArray,
+    ): ShieldedLocalBalanceState = withContext(Dispatchers.IO) {
+        val values = mapNativeErrors {
+            FundingNative.localShieldedBalanceSnapshot(managerHandle, walletId)
+        } ?: error("Local shielded balance snapshot returned nothing")
+        decodeLocalShieldedBalance(values)
+    }
+
+    /**
      * Consensus-pinned flat shielded fee (in credits) for a pool-paid
      * shielded transition of [kind] with [numActions] Orchard actions —
      * port of Swift's `PlatformWalletManager.estimateShieldedFee`

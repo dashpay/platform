@@ -114,6 +114,12 @@ private class AdditionalRecipient {
 private const val MEMO_BYTE_LIMIT = 32
 
 /**
+ * The shielded account this screen spends from. The balance it shows for the
+ * shielded source is this account's, so the two always name the same money.
+ */
+private const val SHIELDED_SEND_ACCOUNT = 0
+
+/**
  * Send form — port of `SendTransactionView.swift` + `SendViewModel.swift`:
  * recipient with address-family detection (Core / Platform / Shielded via
  * [DashAddress.parse]), a "Send From" source selector, and per-flow routing:
@@ -192,16 +198,14 @@ fun SendTransactionScreen(
         }
     }
 
-    // Ordinary shielded sends spend account zero.
+    // Ordinary shielded sends spend account zero, so the shielded source is
+    // what Rust says that account can spend now. Until a local snapshot is
+    // known (null) the source is not offered.
     val hasShielded = remember { Sdk.hasShielded() }
-    val shieldedBalance by remember(walletIdHex) {
-        if (hasShielded) {
-            container.database.shieldedDao().observeUnspentNotesByWalletAccount(walletId, 0)
-                .map { notes -> notes.sumOf { it.value } }
-        } else {
-            MutableStateFlow(0L)
-        }
-    }.collectAsStateWithLifecycle(initialValue = 0L)
+    val shieldedSpendable by remember(walletIdHex) {
+        container.shieldedService.accountBalance(walletId, SHIELDED_SEND_ACCOUNT)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val shieldedBalance = shieldedSpendable ?: 0L
 
     // Transparent Platform-Payment balance (credits) — the fund source for a
     // shield (Type 15). Same DAO sum WalletDetailScreen's Platform row reads.
@@ -692,6 +696,7 @@ fun SendTransactionScreen(
                                     walletId = walletId,
                                     recipientRaw43 = recipientRaw,
                                     amount = credits,
+                                    account = SHIELDED_SEND_ACCOUNT,
                                     memo = trimmedMemo.ifEmpty { null },
                                 )
                                 successMessage = "Shielded transfer complete"
@@ -709,6 +714,7 @@ fun SendTransactionScreen(
                                     walletId = walletId,
                                     toPlatformAddress = trimmedRecipient,
                                     amount = credits,
+                                    account = SHIELDED_SEND_ACCOUNT,
                                 )
                                 successMessage = "Unshield complete"
                             }
@@ -724,6 +730,7 @@ fun SendTransactionScreen(
                                     toCoreAddress = trimmedRecipient,
                                     amount = credits,
                                     coreFeePerByte = 1,
+                                    account = SHIELDED_SEND_ACCOUNT,
                                 )
                                 successMessage = "Withdrawal submitted"
                             }
