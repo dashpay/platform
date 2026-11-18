@@ -26,6 +26,7 @@ class ShieldedCreatePayloadTest {
         const val MAYBE_SENT: Byte = 2
         const val NOT_RETRYABLE: Byte = 0
         const val RETRYABLE: Byte = 1
+        const val UNCONFIRMED: Byte = 2
     }
 
     @Test
@@ -37,7 +38,7 @@ class ShieldedCreatePayloadTest {
     @Test
     fun unconfirmedThrowsTypedErrorWithIdAndDiagnostic() {
         val diagnostic = "proof wait timed out after 3 retries"
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE) + diagnostic.encodeToByteArray()
+        val packed = byteArrayOf(UNCONFIRMED) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE) + diagnostic.encodeToByteArray()
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
         val unconfirmed = e as? DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertTrue("expected ShieldedCreateUnconfirmed, got $e", unconfirmed != null)
@@ -54,7 +55,7 @@ class ShieldedCreatePayloadTest {
     /// The retry is the native result's: Kotlin reads the byte, whatever the class.
     @Test
     fun unconfirmedReadsTheRetryTheNativeResultCarried() {
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, RETRYABLE)
+        val packed = byteArrayOf(UNCONFIRMED) + id + byteArrayOf(MAYBE_SENT, RETRYABLE)
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
             as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertTrue(e.isRetryable)
@@ -63,7 +64,7 @@ class ShieldedCreatePayloadTest {
     @Test
     fun unconfirmedWithMultibyteUtf8DiagnosticRoundTrips() {
         val diagnostic = "确认失败 — proof ✗ (𝟛 retries)"
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE) + diagnostic.encodeToByteArray()
+        val packed = byteArrayOf(UNCONFIRMED) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE) + diagnostic.encodeToByteArray()
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
             as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertArrayEquals(id, e.identityId)
@@ -72,7 +73,7 @@ class ShieldedCreatePayloadTest {
 
     @Test
     fun unconfirmedWithEmptyDiagnosticFallsBackToGenericMessage() {
-        val packed = byteArrayOf(1) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE)
+        val packed = byteArrayOf(UNCONFIRMED) + id + byteArrayOf(MAYBE_SENT, NOT_RETRYABLE)
         val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
             as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
         assertArrayEquals(id, e.identityId)
@@ -83,7 +84,31 @@ class ShieldedCreatePayloadTest {
 
     @Test
     fun shortPayloadIsRejected() {
-        val e = runCatching { decodeShieldedCreatePayload(ByteArray(34)) }.exceptionOrNull()
+        val e = runCatching { decodeShieldedCreatePayload(ByteArray(32)) }.exceptionOrNull()
         assertEquals(IllegalStateException::class, e!!::class)
+        val unconfirmed = byteArrayOf(UNCONFIRMED) + id + byteArrayOf(MAYBE_SENT)
+        val e2 = runCatching { decodeShieldedCreatePayload(unconfirmed) }.exceptionOrNull()
+        assertEquals(IllegalStateException::class, e2!!::class)
+    }
+
+    /// An earlier native library's success is 33 bytes: still a success.
+    @Test
+    fun legacySuccessReturnsTheIdentityId() {
+        assertArrayEquals(id, decodeShieldedCreatePayload(byteArrayOf(0) + id))
+    }
+
+    /// An earlier native library's unconfirmed result (tag 1) puts its
+    /// diagnostic right after the id. Its first bytes are text, never a
+    /// delivery class or a retry: the error is unclassified and not retryable.
+    @Test
+    fun legacyUnconfirmedNeverGrantsRetry() {
+        val diagnostic = "proof wait timed out"
+        val packed = byteArrayOf(1) + id + diagnostic.encodeToByteArray()
+        val e = runCatching { decodeShieldedCreatePayload(packed) }.exceptionOrNull()
+            as DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
+        assertArrayEquals(id, e.identityId)
+        assertEquals(null, e.delivery)
+        assertFalse(e.isRetryable)
+        assertTrue(e.message.orEmpty().contains(diagnostic))
     }
 }

@@ -3167,8 +3167,14 @@ internal suspend fun isGenuineWatchOnly(
  * Decode the tagged shielded-create payload the JNI returns:
  * `[tag || identity_id[32] || delivery || retryable || diagnostic_utf8...]`.
  *
- * - tag 0 → returns the 32-byte identity id (success).
- * - tag != 0 → throws [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed]
+ * - tag 0 → returns the 32-byte identity id (success). An earlier native
+ *   library's 33-byte success (no delivery and retry bytes) is a success too.
+ * - any other tag than 0 and 2 is an earlier native library's unconfirmed
+ *   result, `[1 || identity_id[32] || diagnostic_utf8...]`: it throws
+ *   [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed] with the id, the
+ *   diagnostic from byte 33, no delivery class and no retry, so a stale
+ *   `.so` never turns diagnostic bytes into retry permission.
+ * - tag 2 → throws [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed]
  *   carrying the id AND the native diagnostic from bytes 35.. (the
  *   underlying DAPI / result-proof confirmation failure); an empty
  *   diagnostic falls back to a generic message. The C ABI writes the id
@@ -3186,29 +3192,34 @@ internal suspend fun isGenuineWatchOnly(
  * delivery class or diagnostic on an ambiguous broadcast).
  */
 internal fun decodeShieldedCreatePayload(packed: ByteArray): ByteArray {
-    check(packed.size >= 35) { "expected >=35-byte tagged identity id, got ${packed.size}" }
+    check(packed.size >= 33) { "expected >=33-byte tagged identity id, got ${packed.size}" }
     val identityId = packed.copyOfRange(1, 33)
-    if (packed[0].toInt() != 0) {
-        val diagnostic = if (packed.size > 35) {
-            packed.copyOfRange(35, packed.size).decodeToString()
-        } else {
-            "shielded identity create broadcast unconfirmed"
-        }
-        throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
-            identityId = identityId,
-            message = diagnostic,
-            cause = DashSDKException(
-                code = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + SHIELDED_BROADCAST_UNCONFIRMED_CODE,
-                message = diagnostic,
-                consensusCode = 0,
-                consensusKind = 0,
-                paymentDelivery = packed[33].toInt() and 0xFF,
-                retryable = packed[34].toInt() != 0,
-            ),
-        )
+    val tag = packed[0].toInt()
+    if (tag == 0) return identityId
+    val current = tag == SHIELDED_CREATE_UNCONFIRMED_TAG
+    check(!current || packed.size >= 35) { "expected >=35-byte unconfirmed payload, got ${packed.size}" }
+    val diagnosticStart = if (current) 35 else 33
+    val diagnostic = if (packed.size > diagnosticStart) {
+        packed.copyOfRange(diagnosticStart, packed.size).decodeToString()
+    } else {
+        "shielded identity create broadcast unconfirmed"
     }
-    return identityId
+    throw DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(
+        identityId = identityId,
+        message = diagnostic,
+        cause = DashSDKException(
+            code = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + SHIELDED_BROADCAST_UNCONFIRMED_CODE,
+            message = diagnostic,
+            consensusCode = 0,
+            consensusKind = 0,
+            paymentDelivery = if (current) packed[33].toInt() and 0xFF else 0,
+            retryable = current && packed[34].toInt() != 0,
+        ),
+    )
 }
+
+/** The unconfirmed tag of the payload that carries the delivery and retry bytes. */
+private const val SHIELDED_CREATE_UNCONFIRMED_TAG = 2
 
 /** `ErrorShieldedBroadcastUnconfirmed`, the native code the unconfirmed tag stands for. */
 private const val SHIELDED_BROADCAST_UNCONFIRMED_CODE = 17

@@ -1081,11 +1081,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         // the identity may already be live on-chain, so the host must
         // retain the id and hold its derivation slot instead of retrying
         // into a duplicate. Return a tagged variable-length payload
-        // (`[0|1] || identity_id || delivery || retryable || diagnostic_utf8`)
+        // (`[0|2] || identity_id || delivery || retryable || diagnostic_utf8`)
         // so Kotlin can surface a typed unconfirmed result without losing the
         // id, the native error, the result's payment-delivery class (the
         // `PlatformWalletFFIPaymentDelivery` discriminant, `None` = 0 on
-        // success) or whether the wallet allows a retry (`0|1`).
+        // success) or whether the wallet allows a retry (`0|1`). The
+        // unconfirmed tag is 2, not the earlier layout's 1 (whose diagnostic
+        // started right after the id), so Kotlin never reads a stale
+        // library's diagnostic bytes as a delivery class and a retry.
         let unconfirmed = result.code
             == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
         let delivery = result.payment_delivery as u8;
@@ -1107,7 +1110,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             return ptr::null_mut();
         }
         let mut packed = Vec::with_capacity(35 + diagnostic.len());
-        packed.push(u8::from(unconfirmed));
+        packed.push(if unconfirmed { 2 } else { 0 });
         packed.extend_from_slice(&out_id);
         packed.push(delivery);
         packed.push(retryable);
