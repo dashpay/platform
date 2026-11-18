@@ -1032,17 +1032,28 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     commitment's `validWhen` (as the `findBy` function) reads exactly the properties of the
 ///     contested index, so the commitments it would order are those of the contest's would-be
 ///     contenders. A commitment to more than those values (an answer beside a name), or to
-///     fewer, keeps the order, which then decides what the contest does not. The create's own
-///     commitment is still found and must be valid and within its `ttl`; `minimumAgeBlocks`
-///     and `consume` apply as declared. No other commitment is read or billed, and the contest
-///     decides between the contenders (with no votes or a tie, the earliest). Create state
+///     fewer, keeps the order, which then decides what the contest does not. Outside a contest
+///     the order gives a name to its first committer, so one who learns it from a pending
+///     reveal cannot overtake a delayed one; a contested name is decided by the masternode
+///     vote, and held to the order a create opening or joining its contest would be refused
+///     while any other identity keeps an older valid preorder, so whoever renews early
+///     preorders of a name easy to guess could refuse every rival, leaving the masternodes to
+///     lock the name or hand it over. The create's own commitment is still found and must be
+///     valid and within its `ttl`; `minimumAgeBlocks` and `consume` apply as declared, so a
+///     committer who learns the name from a pending reveal reveals at least a block after its
+///     preorder lands and is a later contender unless that reveal is delayed. No other
+///     commitment is read or billed, and the contest decides between the contenders (with no
+///     votes or a tie, the earliest, as at protocol version 14). On testnet, devnet and regtest
+///     a contest admits joiners for 45 minutes, less than a DPNS preorder's hour, so a preorder
+///     revealed late can miss a contest a rival opened; mainnet's window is a week. Create state
 ///     validation 2 hands the dispatcher whether the create states a fund; replace state
 ///     validation 1 hands it `false`. DPNS v3 (note 3) meets both conditions, its preorders
 ///     committing to the normalized label and parent its contest is over, so a contested name
 ///     is open to every identity holding its own valid preorder; the per-name preorder cap
-///     still holds for every name, since a preorder holds only the name's hash. Protocol v14
-///     and earlier keep document reference validation 0, which holds every create to
-///     `chooseFirst`.
+///     still holds for every name, since a preorder holds only the name's hash, so about a
+///     thousand identities renewing preorders hourly can keep new preorders of a contested
+///     name out, and the masternodes can lock it. Protocol v14 and earlier keep document
+///     reference validation 0, which holds every create to `chooseFirst`.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: insert.add_document_for_contract_operations 2, delete.delete_document_for_contract_operations 1, delete.remove_document_from_primary_storage 1 and its estimate 1, query.fetch_document_lifecycle Some(0), and the erase/lifecycle estimate and erase_refund_recipient_cost selectors Some(0); batch_operations.convert_drive_operations_to_grove_operations 2; state transition method versions v5: document_delete_transition 1 and document_erase_transition Some(0); verify methods v4: single_document.verify_proof 1 extend retained history (note 41); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36); document method versions v5: query.fetch_document_type_sum Some(0) reads the total a document type keeps of its summed property (note 46); vote method versions v4: remove_contested_resource_vote_poll_documents_operations 2 finds a contender's document by its reference (note 45)

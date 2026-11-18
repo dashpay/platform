@@ -76,6 +76,16 @@ The contender with the most votes wins unless the lock tally exceeds it, in whic
 locked and may be contested again later. The contest always runs the full poll duration, even with
 a single contender, so the masternodes may lock the value.
 
+Each contender for a DPNS name reveals a preorder of its own, at least a block old. From protocol
+version 15 (DPNS v3) the vote, not the order of the preorders, decides between them: a create that
+opens or joins a name's contest is not refused because another identity holds an older preorder of
+the name, which would otherwise let whoever keeps early preorders of a name easy to guess refuse
+every rival ([Choosing the first
+commitment](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)). On
+testnet, devnet and regtest a contest admits joiners for 45 minutes, less than a preorder's hour,
+so a preorder revealed late can find a contest a rival opened closed; on mainnet the join window
+is a week.
+
 ## Resolution 1: masternode vote without locking
 
 `ContestedIndexResolution::MasternodeVoteNoLocking`, meta-schema v3 (protocol version 14). The

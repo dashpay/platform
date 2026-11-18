@@ -2021,8 +2021,11 @@ fn validate_choose_first_v1(
         return Ok(not_found());
     }
     // A create that opens or joins a contest, revealing a commitment to the contest's values
-    // alone, is one contender among those the competitors would be, and the contest, not the
-    // order of their commitments, decides: none is read
+    // alone, reads no competitors: the contest decides between its contenders, and held to the
+    // order the create would be refused by anyone keeping an older valid commitment, who would
+    // then face no rival. Its own commitment was checked above, as `minimumAgeBlocks` was
+    // before, so one made after the values leaked reveals later. Check tx, which reads no
+    // contest state, still reserves the scan's budget for such a create
     if opens_or_joins_contest
         && commits_to_its_contest_values(declaring_document_type, choose_first)
     {

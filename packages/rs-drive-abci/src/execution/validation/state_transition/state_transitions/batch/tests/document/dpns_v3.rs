@@ -376,6 +376,28 @@ mod dpns_v3_tests {
             .pop()
         }
 
+        /// The identities contending for `label` under `dash`, by id.
+        fn contenders(&self, label: &str) -> Vec<Identifier> {
+            let platform_state = self.platform.state.load();
+            let (contenders, _, _, _) = get_vote_states(
+                &self.platform,
+                &platform_state,
+                &self.dpns(),
+                label,
+                None,
+                false,
+                None,
+                ResultType::Documents,
+                self.platform_version,
+            );
+            let mut ids: Vec<Identifier> = contenders
+                .iter()
+                .map(|contender| contender.identity_id())
+                .collect();
+            ids.sort();
+            ids
+        }
+
         /// The stored preorder `preorder` is, found by its id.
         fn stored_preorder(&self, preorder: &Document) -> Option<Document> {
             let dpns = self.dpns();
@@ -1439,26 +1461,9 @@ mod dpns_v3_tests {
         assert!(fixture.stored_preorder(&alice_preorder).is_some());
         assert!(fixture.name("quantum").is_none());
 
-        let platform_state = fixture.platform.state.load();
-        let (contenders, _, _, _) = get_vote_states(
-            &fixture.platform,
-            &platform_state,
-            &fixture.dpns(),
-            "quantum",
-            None,
-            false,
-            None,
-            ResultType::Documents,
-            fixture.platform_version,
-        );
-        let mut contender_ids: Vec<Identifier> = contenders
-            .iter()
-            .map(|contender| contender.identity_id())
-            .collect();
-        contender_ids.sort();
         let mut expected = vec![fixture.id(Who::Alice), fixture.id(Who::Bob)];
         expected.sort();
-        assert_eq!(contender_ids, expected);
+        assert_eq!(fixture.contenders("quantum"), expected);
     }
 
     /// Joining a contest reads no other identity's preorder but takes a valid preorder of the
@@ -1492,6 +1497,7 @@ mod dpns_v3_tests {
             ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
             "a join without a preorder is refused"
         );
+        assert_eq!(fixture.contenders("quantum"), vec![fixture.id(Who::Alice)]);
 
         let alice_hashes = dpns_preorder_properties(
             fixture.id(Who::Alice),
@@ -1529,6 +1535,7 @@ mod dpns_v3_tests {
             "a join revealing a copied preorder is refused"
         );
         assert!(fixture.stored_preorder(&copy).is_some());
+        assert_eq!(fixture.contenders("quantum"), vec![fixture.id(Who::Alice)]);
     }
 
     /// Two contenders open a contest on a name at protocol version 15, each
