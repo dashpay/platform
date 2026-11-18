@@ -60,9 +60,12 @@ use super::{
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
 ///   `consume` keeps the commitment it finds in the `ConsumedDocument`, so the create conversion 1
 ///   deletes the commitment from it without reading it again, and a create that opens or joins
-///   a contest reads no competitors of a `chooseFirst` the contest decides: commitments to the
-///   contest's values alone, ranked by creation height alone, at least a block old. Every other
-///   lookup reads as v0's does.
+///   a contest reads no competitors of a `chooseFirst` the contest decides: the contest is
+///   decided by its index values, `validWhen` (as the `findBy` function) reads exactly those
+///   values' properties, `by` is `$createdAtBlockHeight` ascending alone, and the reference
+///   declares `minimumAgeBlocks`, which the writer's own commitment must still meet. A
+///   descending or longer `by`, or no `minimumAgeBlocks`, keeps the scan. Every other lookup
+///   reads as v0's does.
 /// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
 ///   document field change reads the stored document with its stored element's storage flags
 ///   (`query_documents_with_flags`), and the action carries the owner they name, so that the
