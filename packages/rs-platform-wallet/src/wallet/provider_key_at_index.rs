@@ -72,12 +72,21 @@
 //! The seed and any returned scalar are wrapped in [`Zeroizing`] so they
 //! are scrubbed when dropped.
 
+#[cfg(feature = "eddsa")]
+use dashcore::address::Payload;
 use dashcore::bls_sig_utils::BlsScheme;
 use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
+use dashcore::Address;
+#[cfg(feature = "eddsa")]
+use dashcore::PubkeyHash;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
-use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
+use key_wallet::error::Error as KeyWalletError;
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::{AddressInfo, AddressPool, Network};
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -185,7 +194,7 @@ pub enum PlatformNodePoolError {
     #[error("provider platform account derivation path is invalid")]
     InvalidAccountPath {
         #[source]
-        source: key_wallet::error::Error,
+        source: KeyWalletError,
     },
     /// The managed provider-platform account lacks its hardened-only pool.
     #[error("provider platform account has no AbsentHardened pool")]
@@ -195,21 +204,21 @@ pub enum PlatformNodePoolError {
     InvalidChildIndex {
         index: u32,
         #[source]
-        source: key_wallet::error::Error,
+        source: KeyWalletError,
     },
     /// The hardened-only pool refused the entry.
     #[error("platform-node pool refused the entry at index {index}")]
     PoolRefused {
         index: u32,
         #[source]
-        source: key_wallet::error::Error,
+        source: KeyWalletError,
     },
 }
 
 /// Store one platform-node (Ed25519) key in the managed
 /// `ProviderPlatformKeys` pool of `wallet_info` at its hardened `index`, with
 /// its usage state, so it flows out as an ordinary typed
-/// [`PublicKeyType::EdDSA`](key_wallet::managed_account::address_pool::PublicKeyType)
+/// [`PublicKeyType::EdDSA`]
 /// address row.
 ///
 /// `address` is the P2PKH payload of the key's 20-byte platform node id
@@ -223,10 +232,10 @@ pub enum PlatformNodePoolError {
 /// hardened pool, the account path or hardened child cannot be built, or the
 /// pool refuses the entry.
 pub fn insert_platform_node_key(
-    wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
-    network: key_wallet::Network,
+    wallet_info: &mut ManagedWalletInfo,
+    network: Network,
     index: u32,
-    address: dashcore::Address,
+    address: Address,
     public_key: [u8; 32],
     used: bool,
 ) -> Result<(), PlatformNodePoolError> {
@@ -238,10 +247,8 @@ pub fn insert_platform_node_key(
 
 /// The hardened-only pool of the wallet's managed platform-node account.
 fn platform_node_pool(
-    wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
-) -> Result<&mut key_wallet::AddressPool, PlatformNodePoolError> {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
+    wallet_info: &mut ManagedWalletInfo,
+) -> Result<&mut AddressPool, PlatformNodePoolError> {
     wallet_info
         .accounts
         .provider_platform_keys
@@ -256,27 +263,25 @@ fn platform_node_pool(
 
 /// The pool entry of the platform-node key at hardened `index`.
 fn platform_node_entry(
-    network: key_wallet::Network,
+    network: Network,
     index: u32,
-    address: dashcore::Address,
+    address: Address,
     public_key: [u8; 32],
     used: bool,
-) -> Result<key_wallet::AddressInfo, PlatformNodePoolError> {
-    use key_wallet::managed_account::address_pool::{AddressState, PublicKeyType};
-
+) -> Result<AddressInfo, PlatformNodePoolError> {
     let account_path = AccountType::ProviderPlatformKeys
         .derivation_path(network)
         .map_err(|source| PlatformNodePoolError::InvalidAccountPath { source })?;
     let child = ChildNumber::from_hardened_idx(index)
-        .map_err(key_wallet::error::Error::Bip32)
+        .map_err(KeyWalletError::Bip32)
         .map_err(|source| PlatformNodePoolError::InvalidChildIndex { index, source })?;
     let mut children: Vec<ChildNumber> = account_path.as_ref().to_vec();
     children.push(child);
-    Ok(key_wallet::AddressInfo {
+    Ok(AddressInfo {
         address,
         public_key: Some(PublicKeyType::EdDSA(public_key.to_vec())),
         index,
-        path: key_wallet::bip32::DerivationPath::from(children),
+        path: DerivationPath::from(children),
         state: if used {
             AddressState::Used
         } else {
@@ -308,9 +313,9 @@ fn platform_node_entry(
 /// the pool refuses a key whose address it already holds at another index.
 #[cfg(feature = "eddsa")]
 pub fn populate_platform_node_pool(
-    wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+    wallet_info: &mut ManagedWalletInfo,
     keys: &[ProviderPlatformNodePubKey],
-    network: key_wallet::Network,
+    network: Network,
 ) -> Result<(), PlatformWalletError> {
     // No platform-node account or hardened pool: nothing to populate.
     let Ok(pool) = platform_node_pool(wallet_info) else {
@@ -326,10 +331,8 @@ pub fn populate_platform_node_pool(
     let entries = keys
         .iter()
         .map(|key| {
-            let payload = dashcore::address::Payload::PubkeyHash(
-                dashcore::PubkeyHash::from_byte_array(key.node_id),
-            );
-            let address = dashcore::Address::new(network, payload);
+            let payload = Payload::PubkeyHash(PubkeyHash::from_byte_array(key.node_id));
+            let address = Address::new(network, payload);
             platform_node_entry(network, key.index, address, key.public_key, false)
                 .map_err(|error| to_key_derivation(key.index, error))
         })
