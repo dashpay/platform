@@ -281,6 +281,28 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun shouldNotStartClearsRebindOnceAnotherManagerIsBound() {
+        // Clear captured the old manager, then a switch bound the new one.
+        // Clear's re-bind checks the bound manager under the lock that
+        // would start it, so it takes no turn and installs nothing.
+        val turns = BindingTurns()
+        var boundManager = "old"
+        val switch = turns.begin { boundManager = "new" }
+        val clearsBind = turns.beginIf({ boundManager == "old" }) { boundManager = "old" }
+        assertNull(clearsBind)
+        assertEquals("new", boundManager)
+        assertTrue(turns.isLatest(switch))
+
+        // While the cleared manager is still the bound one, the re-bind
+        // starts, and it stops being the latest once another turn begins,
+        // which is what ends Clear's fleet recovery and sync restart.
+        val rebind = turns.beginIf({ boundManager == "new" }) { }
+        assertTrue(rebind != null && turns.isLatest(rebind))
+        turns.begin { }
+        assertFalse(turns.isLatest(rebind!!))
+    }
+
+    @Test
     fun shouldShowNoBalanceAfterUnbind() = runTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
         service.unbind()
