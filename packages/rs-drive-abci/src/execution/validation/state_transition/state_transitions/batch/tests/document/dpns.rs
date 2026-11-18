@@ -3493,10 +3493,11 @@ mod dpns_username_transfer_tests {
         .1
     }
 
-    /// One listing at the largest price a signed 64-bit integer holds fills the sum the
-    /// document history contract keeps of a contract's listed prices. Every later listing
-    /// of any name at a price above zero then passes `check_tx` and ends in the block as an
-    /// internal error: the seller pays nothing, the nonce stays, and the name is not listed.
+    /// Before protocol version 15 the document history contract keeps the sum of a
+    /// contract's listed prices in 64 bits, and one listing at the largest price a signed
+    /// 64-bit integer holds fills it. Every later listing of any name at a price above zero
+    /// then passes `check_tx` and ends in the block as an internal error: the seller pays
+    /// nothing, the nonce stays, and the name is not listed.
     async fn run_listing_after_the_listed_price_sum_is_full(protocol_version: ProtocolVersion) {
         let (platform, platform_version, dpns_contract, holders) =
             three_name_holders(protocol_version).await;
@@ -3575,10 +3576,130 @@ mod dpns_username_transfer_tests {
         assert!(free.charged > 0);
     }
 
+    /// The count and the sum the document history contract keeps of the prices listed for
+    /// `dpns_contract`, read from the tree that holds them: from protocol version 15 one
+    /// with a 128-bit sum, which no sum result carries past 64 bits yet.
+    fn listed_price_total(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> (u64, i128) {
+        let path = [
+            vec![drive::drive::RootTree::DataContractDocuments as u8],
+            SystemDataContract::DocumentHistory.id().to_vec(),
+            vec![1],
+            b"priceUpdate".to_vec(),
+            b"dataContractId".to_vec(),
+            dpns_contract.id().to_vec(),
+        ];
+        let path: Vec<&[u8]> = path.iter().map(Vec::as_slice).collect();
+        let element = platform
+            .drive
+            .grove
+            .get_raw(
+                path.as_slice().into(),
+                b"$createdAt",
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("expected the listed prices of the contract");
+        let drive::grovedb::Element::ProvableCountProvableBigSumTree(_, count, sum, _) = element
+        else {
+            panic!("expected the listed prices in a tree with a 128-bit sum, got {element:?}");
+        };
+        (count, sum)
+    }
+
+    /// From protocol version 15 the document history contract keeps the sum of a contract's
+    /// listed prices in 128 bits. One listing at the largest price a signed 64-bit integer
+    /// holds no longer fills it: a later listing of any name passes `check_tx` and is
+    /// recorded, paid for, with the seller's nonce used and the name listed.
     #[tokio::test]
-    async fn should_end_a_listing_as_an_internal_error_once_the_listed_price_sum_is_full() {
-        run_listing_after_the_listed_price_sum_is_full(PlatformVersion::latest().protocol_version)
-            .await;
+    async fn should_record_a_listing_once_the_listed_prices_pass_64_bits() {
+        let (platform, platform_version, dpns_contract, holders) =
+            three_name_holders(PlatformVersion::latest().protocol_version).await;
+
+        let filling = list_only_domain_at(
+            &platform,
+            &holders[0],
+            &dpns_contract,
+            i64::MAX as u64,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+        assert_eq!(filling.check_tx_valid, Ok(true));
+        assert_matches!(
+            filling.result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // The most a 64-bit sum holds, which a sum result still carries
+        assert_eq!(
+            listed_price_sum(&platform, &dpns_contract, platform_version),
+            i64::MAX
+        );
+
+        let other_seller = &holders[1];
+        let nonce_of_other_seller = || {
+            platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    other_seller.0.id().to_buffer(),
+                    dpns_contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the nonce")
+        };
+        let nonce_before = nonce_of_other_seller();
+
+        let listed = list_only_domain_at(
+            &platform,
+            other_seller,
+            &dpns_contract,
+            1,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+        assert_eq!(listed.check_tx_valid, Ok(true));
+        assert_matches!(
+            listed.result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(listed.charged > 0);
+        assert_ne!(nonce_of_other_seller(), nonce_before);
+        assert_eq!(
+            only_domain_of(&platform, &dpns_contract, other_seller.0.id())
+                .properties()
+                .get("$price"),
+            Some(&Value::U64(1))
+        );
+        assert_eq!(
+            listed_price_total(&platform, &dpns_contract, platform_version),
+            (2, i128::from(i64::MAX) + 1)
+        );
+
+        // And another at the largest price itself
+        let highest = list_only_domain_at(
+            &platform,
+            &holders[2],
+            &dpns_contract,
+            i64::MAX as u64,
+            FIRST_LISTING_NONCE,
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            highest.result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            listed_price_total(&platform, &dpns_contract, platform_version),
+            (3, 2 * i128::from(i64::MAX) + 1)
+        );
     }
 
     #[tokio::test]
