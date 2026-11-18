@@ -1026,33 +1026,38 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     Protocol v14 keeps `validate_shielded_proof` 1 and the unbound preimage.
 ///
 /// 48. **A contest decides between its contenders**: document reference validation 1
-///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) holds no create that opens or joins a contest
-///     (one stating the contest's fund) to the order of a `chooseFirst` whose commitments are
-///     to the contest's values alone: the type's contest is decided by its index values and the
-///     commitment's `validWhen` (as the `findBy` function) reads exactly the properties of the
-///     contested index, so the commitments it would order are those of the contest's would-be
-///     contenders. A commitment to more than those values (an answer beside a name), or to
-///     fewer, keeps the order, which then decides what the contest does not. Outside a contest
-///     the order gives a name to its first committer, so one who learns it from a pending
-///     reveal cannot overtake a delayed one; a contested name is decided by the masternode
-///     vote, and held to the order a create opening or joining its contest would be refused
-///     while any other identity keeps an older valid preorder, so whoever renews early
-///     preorders of a name easy to guess could refuse every rival, leaving the masternodes to
-///     lock the name or hand it over. The create's own commitment is still found and must be
-///     valid and within its `ttl`; `minimumAgeBlocks` and `consume` apply as declared, so a
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) holds no create that opens or joins a contest (one
+///     stating the contest's fund) to the order of a `chooseFirst` the contest decides: the type's
+///     contest is decided by its index values, the commitment's `validWhen` (as the `findBy`
+///     function) reads exactly the properties of the contested index, `by` is
+///     `$createdAtBlockHeight` ascending alone and the reference declares `minimumAgeBlocks`, so
+///     the order would only rank the contest's would-be contenders by how early they committed. A
+///     commitment to more than those values (an answer beside a name) or to fewer, or an order the
+///     contract ranks commitments by (a priority each holds, the newest first, or a last `$id`
+///     deciding within a block), keeps the order, which then decides what the contest does not.
+///     Outside a contest the order gives a name to its first committer, so one who learns it from a
+///     pending reveal cannot overtake a delayed one; a contested name is decided by the masternode
+///     vote, and held to the order a rival's reveal would be refused while any other identity holds
+///     a valid preorder older than the rival's. Renewing preorders cannot keep a rival's landed
+///     preorder behind it, a renewed one being younger, but holding preorders older than any a
+///     rival makes delays the rival's reveal until they expire, leaving it little of its own
+///     preorder's hour, or of the join window, to reveal in. Filling the per-name cap is another
+///     matter: it stops new preorders of the name. The create's own commitment is still found and
+///     must be valid and within its `ttl`; `minimumAgeBlocks` and `consume` apply as declared, so a
 ///     committer who learns the name from a pending reveal reveals at least a block after its
-///     preorder lands and is a later contender unless that reveal is delayed. No other
-///     commitment is read or billed, and the contest decides between the contenders (with no
-///     votes or a tie, the earliest, as at protocol version 14). On testnet, devnet and regtest
-///     a contest admits joiners for 45 minutes, less than a DPNS preorder's hour, so a preorder
-///     revealed late can miss a contest a rival opened; mainnet's window is a week. Create state
-///     validation 2 hands the dispatcher whether the create states a fund; replace state
-///     validation 1 hands it `false`. DPNS v3 (note 3) meets both conditions, its preorders
-///     committing to the normalized label and parent its contest is over, so a contested name
-///     is open to every identity holding its own valid preorder; the per-name preorder cap
-///     still holds for every name, since a preorder holds only the name's hash, so about a
-///     thousand identities renewing preorders hourly can keep new preorders of a contested
-///     name out, and the masternodes can lock it. Protocol v14 and earlier keep document
+///     preorder lands and is a later contender unless that reveal is delayed. No other commitment
+///     is read or billed, and the contest decides between the contenders (with no votes or a tie,
+///     the earliest, as at protocol version 14). On testnet, devnet and regtest a contest admits
+///     joiners for 45 minutes, less than a DPNS preorder's hour, so a preorder revealed late can
+///     miss a contest a rival opened; mainnet's window is a week. Create state validation 2 hands
+///     the dispatcher whether the create states a fund; replace state validation 1 hands it
+///     `false`. Check tx reserves the competitor scan's budget for such a create as for any other
+///     (`choose_first_reservation` 0). DPNS v3 (note 3) meets every condition, its preorders
+///     committing to the normalized label and parent its contest is over and ranked by creation
+///     height, so a contested name is open to every identity holding its own valid preorder; the
+///     per-name preorder cap still holds for every name, since a preorder holds only the name's
+///     hash, so about a thousand identities renewing preorders hourly can keep new preorders of a
+///     contested name out, and the masternodes can lock it. Protocol v14 and earlier keep document
 ///     reference validation 0, which holds every create to `chooseFirst`.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
@@ -1060,7 +1065,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16) and never lowers the Tenderdash consensus version on an emergency update (note 44); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32); check_for_ended_vote_polls 2 leaves open a contest whose winner's document does not decode or cannot be written (note 45)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11) and holds no create opening or joining a contest to a chooseFirst over the contest's values alone (note 48); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle and document_erase_transition_refund_recipient_reservation Some(0) has check tx reserve an erase's refund work (note 41); document create state_validation 3 and document replace state_validation 2 hold a write to the total its type keeps of its summed property, and contract user moderation transform_into_action 1 a moderator's restore (note 46); masternode vote state 2 refuses a vote on a contest its end left open (note 45); validate_shielded_proof 2 verifies the token bundle of a token pool transition paid from the credit pool over its fee bundle's commitment (note 47)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11) and holds no create opening or joining a contest to a chooseFirst the contest decides (note 48); choose_first_reservation 0 versions what check tx reserves for a chooseFirst create, unchanged; document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle and document_erase_transition_refund_recipient_reservation Some(0) has check tx reserve an erase's refund work (note 41); document create state_validation 3 and document replace state_validation 2 hold a write to the total its type keeps of its summed property, and contract user moderation transform_into_action 1 a moderator's restore (note 46); masternode vote state 2 refuses a vote on a contest its end left open (note 45); validate_shielded_proof 2 verifies the token bundle of a token pool transition paid from the credit pool over its fee bundle's commitment (note 47)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: getDocumentHistory accepts V1 only
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

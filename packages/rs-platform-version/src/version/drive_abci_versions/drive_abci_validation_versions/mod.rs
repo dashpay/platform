@@ -294,6 +294,18 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_purchase_transition_state_validation: FeatureVersion,
     pub document_update_price_transition_state_validation: FeatureVersion,
     pub document_reference_validation: FeatureVersion,
+    /// Versions what check tx reserves, for each create of a batch whose state it does not
+    /// validate, for the `chooseFirst` check document reference validation runs in a block
+    /// (`choose_first_reservation`): the `findBy` and `validWhen` hashes and the competitor
+    /// scan's budget.
+    ///
+    /// - `0` (every protocol version): every create of a type declaring `chooseFirst`, one its
+    ///   contest decides included, is reserved both hashes and the scan's budget.
+    ///
+    /// A generation that reserves less for a create than what the block bills it, the work
+    /// `document_reference_validation` does for it included, would admit a signer the block
+    /// then refuses unpaid.
+    pub choose_first_reservation: FeatureVersion,
     pub token_mint_transition_structure_validation: FeatureVersion,
     pub token_burn_transition_structure_validation: FeatureVersion,
     pub token_transfer_transition_structure_validation: FeatureVersion,

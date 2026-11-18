@@ -543,7 +543,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     &action,
                     &mut state_transition_execution_context,
                     platform_version,
-                );
+                )?;
                 // An erase is billed in a block for the work its refunds cause. Inert before
                 // protocol version 15: basic structure validation above refuses the erase kind,
                 // so no action here holds an erase.
@@ -759,7 +759,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         &action,
                         &mut state_transition_execution_context,
                         platform_version,
-                    );
+                    )?;
                     // As on the first check. Inert before protocol version 15: only a
                     // transaction the first check admitted is rechecked, and none holds an erase.
                     reserve_erase_refund_recipient_work(
@@ -795,14 +795,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 /// creates may bill in a block (see `choose_first_reservation`: their two hashes and the
 /// competitor scan's budget), for an action whose state check tx did not validate. Fee
 /// validation then admits only a signer who could pay for them.
+///
+/// Every protocol version selects the reservation's generation 0, which returns no error.
 fn reserve_choose_first_scans(
     action: &StateTransitionAction,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
-) {
-    for operation in choose_first_reservation(action, platform_version) {
-        execution_context.add_operation(operation);
-    }
+) -> Result<(), Error> {
+    execution_context.add_operations(choose_first_reservation(action, platform_version)?);
+    Ok(())
 }
 
 /// Reserves, on top of the estimated fee of `action`, the work the refunds of each of its

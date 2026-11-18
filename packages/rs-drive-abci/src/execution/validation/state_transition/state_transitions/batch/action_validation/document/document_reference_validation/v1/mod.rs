@@ -30,7 +30,7 @@ use dpp::data_contract::document_type::{
     WhereCondition, WhereLiteralKind,
 };
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::{ID, OWNER_ID};
+use dpp::document::property_names::{CREATED_AT_BLOCK_HEIGHT, ID, OWNER_ID};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -91,9 +91,9 @@ use crate::platform_types::platform::PlatformStateRef;
 /// version 15): generation 0's, but a `refersTo` lookup of a reference declaring `consume`
 /// keeps the document it finds in the [`ConsumedDocument`] it records, so the create
 /// conversion 1 deletes the document from it without reading it again, and a create that opens
-/// or joins a contest, its `chooseFirst` commitments holding the contest's values alone, reads
-/// no competitors: the contest decides between its contenders. Every other lookup reads as
-/// generation 0's does.
+/// or joins a contest whose `chooseFirst` the contest decides (commitments to the contest's
+/// values alone, ranked by creation height alone, at least a block old) reads no competitors.
+/// Every other lookup reads as generation 0's does.
 ///
 /// It is intended to be called via the higher-level `DocumentReferenceValidation` dispatcher
 /// that selects the version; `deletable_document_reference_target_is_gone` stays generation
@@ -172,6 +172,16 @@ impl DocumentReferenceValidationV1 for DocumentBaseTransitionAction {
     }
 }
 
+/// The write whose references are checked, as a lookup with a computed key tells them apart: a
+/// replace judges no such lookup, a create judges them, and a create that opens or joins a
+/// contest is left to the contest by a `chooseFirst` the contest decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriteKind {
+    Replace,
+    Create,
+    ContestedCreate,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn validate_document_type_references_v1(
     contract: &DataContract,
@@ -212,7 +222,11 @@ fn validate_document_type_references_v1(
 
     // A create is the one write with no changed fields, and the only one a lookup with a
     // computed key, which reveals a commitment, is judged at
-    let is_create = changed_fields.is_none();
+    let write_kind = match (changed_fields.is_none(), opens_or_joins_contest) {
+        (false, _) => WriteKind::Replace,
+        (true, false) => WriteKind::Create,
+        (true, true) => WriteKind::ContestedCreate,
+    };
 
     // Whether a replace may be written by an owner other than the one who
     // wrote a reference: a transfer or a purchase hands the document on
@@ -366,8 +380,7 @@ fn validate_document_type_references_v1(
                     &mut fetched_documents,
                     platform,
                     block_info,
-                    is_create,
-                    opens_or_joins_contest,
+                    write_kind,
                     consumed_documents,
                     RuleReads::of(&rule_reads, path, referenced_documents),
                     transaction,
@@ -478,8 +491,7 @@ fn validate_document_type_references_v1(
                 &mut fetched_documents,
                 platform,
                 block_info,
-                is_create,
-                opens_or_joins_contest,
+                write_kind,
                 consumed_documents,
                 RuleReads::of(&rule_reads, path, referenced_documents),
                 transaction,
@@ -569,8 +581,7 @@ fn validate_document_type_references_v1(
                     &mut fetched_documents,
                     platform,
                     block_info,
-                    is_create,
-                    opens_or_joins_contest,
+                    write_kind,
                     consumed_documents,
                     None,
                     transaction,
@@ -901,8 +912,7 @@ fn validate_reference_v1(
     fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
-    is_create: bool,
-    opens_or_joins_contest: bool,
+    write_kind: WriteKind,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
     rule_reads: Option<RuleReads<'_>>,
     transaction: TransactionArg,
@@ -925,8 +935,7 @@ fn validate_reference_v1(
             fetched_documents,
             platform,
             block_info,
-            is_create,
-            opens_or_joins_contest,
+            write_kind,
             consumed_documents,
             rule_reads,
             transaction,
@@ -965,8 +974,7 @@ fn validate_reference_v1(
             fetched_documents,
             platform,
             block_info,
-            is_create,
-            opens_or_joins_contest,
+            write_kind,
             consumed_documents,
             None,
             transaction,
@@ -1009,7 +1017,7 @@ fn validate_reference_v1(
 /// of one reference expression.
 ///
 /// A lookup with a computed key reveals a commitment: it is judged on a
-/// create only (`is_create`), and holds on a replace without a read, since
+/// create only (`write_kind`), and holds on a replace without a read, since
 /// registration made everything it reads fixed once written and the
 /// commitment it found may have been consumed or deleted since. On a create
 /// the document it finds must also meet the reference's `minimumAgeBlocks`,
@@ -1038,8 +1046,7 @@ fn validate_reference_target_v1(
     fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
-    is_create: bool,
-    opens_or_joins_contest: bool,
+    write_kind: WriteKind,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
     rule_reads: Option<RuleReads<'_>>,
     transaction: TransactionArg,
@@ -1190,7 +1197,7 @@ fn validate_reference_target_v1(
             };
             // A commitment is revealed once, by the create; nothing the lookup reads can
             // change on a replace
-            if !is_create
+            if write_kind == WriteKind::Replace
                 && lookup.is_some_and(|lookup| {
                     lookup.is_checked_on_create_only(document_type.documents_mutable())
                 })
@@ -1654,7 +1661,7 @@ fn validate_reference_target_v1(
 
             // The commitment a computed key found: it must be old enough, the first valid one
             // among those to the same values when the reference declares `chooseFirst` (valid
-            // alone for a contested create committing to its contest's values alone), and the
+            // alone for a contested create whose `chooseFirst` its contest decides), and the
             // create deletes it when the reference consumes it. Its age is judged in
             // blocks, from its `$createdAtBlockHeight` (registration demands the type record
             // one) to the block of the create, so 1 means an earlier block; a document
@@ -1681,6 +1688,8 @@ fn validate_reference_target_v1(
                 // Judged on the create alone, so here a create: registration admits
                 // `chooseFirst` only beside a `findBy` function
                 if let Some(choose_first) = &lookup.choose_first {
+                    let left_to_its_contest = write_kind == WriteKind::ContestedCreate
+                        && contest_decides_choose_first(document_type, lookup);
                     let result = validate_choose_first_v1(
                         choose_first,
                         found,
@@ -1692,7 +1701,7 @@ fn validate_reference_target_v1(
                         referenced_id,
                         reference_target,
                         path,
-                        opens_or_joins_contest,
+                        left_to_its_contest,
                         platform,
                         block_info,
                         transaction,
@@ -1928,7 +1937,7 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 /// Checks a create's `chooseFirst` (see `LookupChooseFirst`): the commitment `found`, which
 /// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
 /// valid commitment to the values the create reveals, or, for a create opening or joining a
-/// contest whose values alone the commitments hold, a valid one.
+/// contest that decides this `chooseFirst`, a valid one.
 ///
 /// * A commitment past its type's `ttl` at the block time is gone, whether or not the cleanup
 ///   has reached it: `found` past it finds no document (`ReferencedEntityNotFoundError`,
@@ -1948,12 +1957,13 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 ///   competitor's owner as `"$ownerId"` (billed as the double SHA-256 it is): a copy of
 ///   another identity's hash is owned by an identity the hash does not name. The first valid
 ///   competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
-/// * A create that opens or joins a contest (`opens_or_joins_contest`) reads no competitors once
-///   `found` holds, when the commitments are to the contest's values alone
-///   ([`commits_to_its_contest_values`]): the contest decides between its contenders, whoever
-///   committed first.
+/// * A create that opens or joins a contest which decides what the order would
+///   (`left_to_its_contest`, see [`contest_decides_choose_first`]) reads no competitors once
+///   `found` holds: the masternode vote decides between its contenders, whoever committed
+///   first.
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
-///   ([`choose_first_scan_budget`]), which check tx reserves ([`choose_first_reservation`]).
+///   ([`choose_first_scan_budget`]), which check tx reserves (`choose_first_reservation`),
+///   for a create its contest decides too.
 ///
 /// `findBy` finds `found` through the referenced type's unique index over `$ownerId` and
 /// `among`, so each competitor is another identity's: the writer's only document holding the
@@ -1975,7 +1985,7 @@ fn validate_choose_first_v1(
     referenced_id: [u8; 32],
     reference_target: &DocumentPropertyReferenceTarget,
     path: &str,
-    opens_or_joins_contest: bool,
+    left_to_its_contest: bool,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     transaction: TransactionArg,
@@ -2020,15 +2030,12 @@ fn validate_choose_first_v1(
     ) {
         return Ok(not_found());
     }
-    // A create that opens or joins a contest, revealing a commitment to the contest's values
-    // alone, reads no competitors: the contest decides between its contenders, and held to the
-    // order the create would be refused by anyone keeping an older valid commitment, who would
-    // then face no rival. Its own commitment was checked above, as `minimumAgeBlocks` was
-    // before, so one made after the values leaked reveals later. Check tx, which reads no
-    // contest state, still reserves the scan's budget for such a create
-    if opens_or_joins_contest
-        && commits_to_its_contest_values(declaring_document_type, choose_first)
-    {
+    // A create that opens or joins a contest this `chooseFirst` leaves to it reads no
+    // competitors: the masternode vote decides between the contenders, and held to the order
+    // the create could be refused by anyone keeping an older valid commitment of a value easy
+    // to guess. Its own commitment was checked above, as `minimumAgeBlocks` was before, so one
+    // made after the values leaked reveals later and is a later contender
+    if left_to_its_contest {
         return Ok(SimpleConsensusValidationResult::new());
     }
     // The value the commitments to the same values hold, which `findBy` found `found` by
@@ -2140,33 +2147,55 @@ fn validate_choose_first_v1(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// Whether the commitments `choose_first` orders, for a create of `declaring_document_type`,
-/// are to the values of the type's contest and nothing more: the contest is decided by its
-/// index values alone, and `validWhen` reads exactly the properties of the contested index (as
-/// the `findBy` function filling `among` does, which registration holds to the same
-/// properties). A valid competitor holds `validWhen` computed from the create's own values, so
-/// it committed to exactly the create's index values, and the commitments `chooseFirst` would
-/// order are those of the contest's would-be contenders, between whom the contest decides.
-/// A commitment to more than the contest's values (an answer beside a name) is ordered by a
-/// rule of the contract the contest does not decide, one to fewer may be meant for another
-/// contest, and where the contest reads more than its index values a writer could choose
-/// whether its create is contested: each keeps the order.
-fn commits_to_its_contest_values(
+/// Whether a create of `declaring_document_type` that opens or joins a contest is left to the
+/// contest by `lookup`'s `chooseFirst`, rather than held to its order. The order gives the
+/// values a create reveals to their first committer; a contest decides between its contenders
+/// by the masternode vote, and it takes that over when the order ranks nothing but the
+/// contest's would-be contenders by how early they committed:
+///
+/// * the declaring type's contest is decided by its index values, so the values alone make a
+///   create contested, never a choice of its writer;
+/// * `validWhen` reads exactly the properties of the contested index (as the `findBy` function
+///   filling `among` does, which registration holds to the same properties): a valid
+///   competitor holds `validWhen` computed from the create's own values, so it committed to
+///   exactly the create's index values and would be a contender in the same contest;
+/// * `by` is `$createdAtBlockHeight` ascending alone, the commitments' age;
+/// * the lookup declares `minimumAgeBlocks`, so a commitment made once the values leaked from
+///   a pending reveal is revealed in a later block than that reveal, a later contender: without
+///   it the two could land in one block, where a tie falls to the document id.
+///
+/// A commitment to more than the contest's values (an answer beside a name) or to fewer, or an
+/// order the contract ranks commitments by (a priority each holds, the newest first, or a last
+/// `$id` deciding within a block), decides something the contest does not, and keeps the order.
+fn contest_decides_choose_first(
     declaring_document_type: DocumentTypeRef<'_>,
-    choose_first: &LookupChooseFirst,
+    lookup: &DocumentReferenceLookup,
 ) -> bool {
+    let Some(choose_first) = &lookup.choose_first else {
+        return false;
+    };
+    let ordered_by_age = matches!(
+        choose_first.by.as_slice(),
+        [order] if order.property == CREATED_AT_BLOCK_HEIGHT && order.ascending
+    );
+    if !ordered_by_age || lookup.minimum_age_blocks.is_none() {
+        return false;
+    }
     let Some(contested_index) = declaring_document_type.find_contested_index() else {
         return false;
     };
+    if !contested_index
+        .contest_is_decided_by_index_values(declaring_document_type.flattened_properties())
+    {
+        return false;
+    }
     let contested: BTreeSet<&str> = contested_index
         .properties
         .iter()
         .map(|property| property.name.as_str())
         .collect();
     let committed: BTreeSet<&str> = choose_first.valid_when.properties_read().collect();
-    contested_index
-        .contest_is_decided_by_index_values(declaring_document_type.flattened_properties())
-        && committed == contested
+    committed == contested
 }
 
 /// The refusal of a write whose referenced document does not meet the `where`

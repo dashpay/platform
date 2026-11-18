@@ -79,8 +79,8 @@ a single contender, so the masternodes may lock the value.
 Each contender for a DPNS name reveals a preorder of its own, at least a block old. From protocol
 version 15 (DPNS v3) the vote, not the order of the preorders, decides between them: a create that
 opens or joins a name's contest is not refused because another identity holds an older preorder of
-the name, which would otherwise let whoever keeps early preorders of a name easy to guess refuse
-every rival ([Choosing the first
+the name, which would otherwise let whoever holds preorders of a name easy to guess older than a
+rival's delay the rival's reveal ([Choosing the first
 commitment](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)). On
 testnet, devnet and regtest a contest admits joiners for 45 minutes, less than a preorder's hour,
 so a preorder revealed late can find a contest a rival opened closed; on mainnet the join window

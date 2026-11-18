@@ -14,7 +14,7 @@ pub(in crate::execution::validation::state_transition) use state::v0::fetch_docu
 pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id_and_storage_flags;
 // Check tx reserves, for a create it does not validate the state of, what the block's
 // `chooseFirst` check may bill it: its two hashes and the competitor scan's budget.
-pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::v0::choose_first_reservation;
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::choose_first_reservation::choose_first_reservation;
 // Check tx reserves, for an erase it does not validate the state of, the work its refunds cause
 // for other identities, which the block's state validation bills.
 pub(in crate::execution::validation::state_transition) use action_validation::document::document_erase_transition_action::erase_refund_recipient_reservation;
