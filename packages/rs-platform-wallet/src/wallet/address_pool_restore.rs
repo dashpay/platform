@@ -8,17 +8,22 @@ use key_wallet::error::Error as KeyWalletError;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
 use key_wallet::AddressInfo;
 
-/// The most missing addresses one persisted row may derive to close the gap
-/// below it.
+/// The most missing addresses one [`restore_address_rows`] call derives to
+/// close gaps below persisted rows, so a damaged store cannot make load derive
+/// without bound.
+#[cfg(not(test))]
 pub const MAX_RESTORE_GAP_FILL: u32 = 10_000;
+/// The same bound, smaller in unit tests so crossing it derives little.
+#[cfg(test)]
+pub const MAX_RESTORE_GAP_FILL: u32 = 50;
 
 /// Why [`restore_address_rows`] skipped a row; logged, not returned.
 #[derive(Debug, thiserror::Error)]
 enum RowRefusal {
     #[error(
-        "the {gap} addresses missing below it exceed the {MAX_RESTORE_GAP_FILL} a restore derives"
+        "the {gap} addresses missing below it exceed the {budget} the restore may still derive"
     )]
-    GapTooLarge { gap: u32 },
+    GapTooLarge { gap: u32, budget: u32 },
     #[error("the addresses missing below it could not be derived: {0}")]
     GapUnderivable(#[source] KeyWalletError),
     #[error("the address pool refused it: {0}")]
@@ -57,7 +62,7 @@ pub fn derive_through(
 /// operator keys survive a legacy store.
 ///
 /// Rows missing below a row's index (a lost persistence round) are derived
-/// from `key_source` first, at most [`MAX_RESTORE_GAP_FILL`] per row, so the
+/// from `key_source` first, at most [`MAX_RESTORE_GAP_FILL`] per call, so the
 /// row is watched and its index is never handed out again. Hardened pools,
 /// which cannot derive, take rows at any index.
 ///
@@ -72,9 +77,10 @@ pub fn restore_address_rows(
     rows.sort_by_key(|row| row.index);
     let mut outcome = AddressRowsRestore::default();
     let mut first_refusal: Option<(u32, RowRefusal)> = None;
+    let mut budget = MAX_RESTORE_GAP_FILL;
     for mut row in rows {
         let index = row.index;
-        if let Err(error) = fill_gap_below(pool, key_source, index) {
+        if let Err(error) = fill_gap_below(pool, key_source, index, &mut budget) {
             outcome.refused += 1;
             first_refusal.get_or_insert((index, error));
             continue;
@@ -109,16 +115,22 @@ fn fill_gap_below(
     pool: &mut AddressPool,
     key_source: &KeySource,
     index: u32,
+    budget: &mut u32,
 ) -> Result<(), RowRefusal> {
     let next = pool.highest_generated().map_or(0, |highest| highest + 1);
     if pool.pool_type() == AddressPoolType::AbsentHardened || index <= next {
         return Ok(());
     }
     let gap = index - next;
-    if gap > MAX_RESTORE_GAP_FILL {
-        return Err(RowRefusal::GapTooLarge { gap });
+    if gap > *budget {
+        return Err(RowRefusal::GapTooLarge {
+            gap,
+            budget: *budget,
+        });
     }
-    derive_through(pool, key_source, index - 1).map_err(RowRefusal::GapUnderivable)
+    derive_through(pool, key_source, index - 1).map_err(RowRefusal::GapUnderivable)?;
+    *budget -= gap;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -233,6 +245,27 @@ mod tests {
             }
         );
         assert_eq!(pool.highest_generated(), generated);
+    }
+
+    #[test]
+    fn should_refuse_gap_rows_once_the_pools_fill_budget_is_spent() {
+        let (mut pool, key_source) = external_pool();
+        let first = next_index(&pool) + MAX_RESTORE_GAP_FILL;
+        let rows = vec![
+            used_row(&pool, &key_source, first),
+            used_row(&pool, &key_source, first + 2),
+        ];
+
+        let outcome = restore_address_rows(&mut pool, &key_source, rows);
+
+        assert_eq!(
+            outcome,
+            AddressRowsRestore {
+                restored: 1,
+                refused: 1
+            }
+        );
+        assert_eq!(pool.highest_used(), Some(first));
     }
 
     #[test]
