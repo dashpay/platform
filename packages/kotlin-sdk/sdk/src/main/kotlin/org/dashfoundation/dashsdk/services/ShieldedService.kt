@@ -72,11 +72,12 @@ class ShieldedService(private val database: DashDatabase) {
      * Rolling shielded sync state — the Kotlin analogue of Swift's
      * `@Published` shielded scalars.
      *
+     * Carries no balance: a sync result's balance goes stale between
+     * passes (a send, a failed scan, a rebind, a Clear), so the one balance
+     * the service publishes is the one Rust announces, through
+     * [shieldedBalance], [ordinaryBalance] and [accountBalance].
+     *
      * @param isSyncing a pass is currently in flight.
-     * @param shieldedBalance unspent balance of the wallet's ordinary
-     *   accounts (credits) as Rust reported it in the last sync result. The
-     *   balance to show is [shieldedBalance] (the flow), which follows every
-     *   change Rust announces, sends between passes included.
      * @param lastNewNotes new notes in the most recent pass.
      * @param lastNewlySpent notes newly spent in the most recent pass.
      * @param totalScanned cumulative encrypted notes scanned since [bind].
@@ -87,7 +88,6 @@ class ShieldedService(private val database: DashDatabase) {
      */
     data class ShieldedSyncState(
         val isSyncing: Boolean = false,
-        val shieldedBalance: Long = 0,
         val lastNewNotes: Int = 0,
         val lastNewlySpent: Int = 0,
         val totalScanned: Long = 0,
@@ -127,6 +127,9 @@ class ShieldedService(private val database: DashDatabase) {
 
     /** See [withLedgerLifecycle]. */
     private val ledgerLifecycle = Mutex()
+
+    /** A Room wipe a Clear still owes. Touched only inside [withLedgerLifecycle]. */
+    private val pendingHostWipe = PendingHostWipe()
 
     /**
      * Run [step] with no other ledger lifecycle step in flight. Two things
@@ -336,6 +339,10 @@ class ShieldedService(private val database: DashDatabase) {
                 // accounts) is the one that must stand, so this bind leaves
                 // the native side alone.
                 if (bindingTurns.isLatest(turn)) {
+                    // A Clear whose Room wipe failed left rows behind that
+                    // the reset tree no longer matches. The wipe goes first;
+                    // if it fails again this bind fails and restores nothing.
+                    pendingHostWipe.commit()
                     manager.configureShielded(dbPath)
                     manager.bindShielded(walletId, sortedAccounts)
                     true
@@ -455,6 +462,7 @@ class ShieldedService(private val database: DashDatabase) {
         val walletIdHex4 = walletId.take(4).joinToString("") { "%02x".format(it) }
         return try {
             withLedgerLifecycle {
+                pendingHostWipe.commit()
                 manager.configureShielded(dbPath)
                 manager.bindShielded(walletId, sortedAccounts)
             }
@@ -487,7 +495,6 @@ class ShieldedService(private val database: DashDatabase) {
                 if (!event.success) return
                 _state.update { s ->
                     s.copy(
-                        shieldedBalance = event.balance,
                         lastNewNotes = event.newNotes,
                         lastNewlySpent = event.newlySpent,
                         totalScanned = s.totalScanned + event.totalScanned,
@@ -643,7 +650,7 @@ class ShieldedService(private val database: DashDatabase) {
         // The counters belong to the binding that was cleared. If a later
         // bind took over meanwhile, they are that binding's now.
         bindingTurns.finish(startTurn) {
-            _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
+            _state.update { it.copy(totalScanned = 0, totalNewNotes = 0) }
         }
 
         // Re-bind + restart so the cold rebuild runs now, not just after a
@@ -698,12 +705,18 @@ class ShieldedService(private val database: DashDatabase) {
             allWalletIds = mgr.wallets.value.keys,
             mirrorWalletId = mirrorNow?.joinToString("") { "%02x".format(it) }.orEmpty(),
         ) { otherKey ->
-            mgr.wallets.value[otherKey]?.let { other ->
-                bindEngine(mgr, other.walletId, dbPath)
+            // Checked before each wallet: once the service has left this
+            // manager (an unbind, another network), the rest of its fleet
+            // is no longer this Clear's to register.
+            if (bindingTurns.read { manager === mgr }.second) {
+                mgr.wallets.value[otherKey]?.let { other ->
+                    bindEngine(mgr, other.walletId, dbPath)
+                }
             }
         }
+        val stillOnManager = bindingTurns.read { manager === mgr }.second
         val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
-        if (isAvailable && notRunning) {
+        if (isAvailable && notRunning && stillOnManager) {
             runCatching { mgr.startShieldedSync() }.onFailure {
                 android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
             }
@@ -717,6 +730,14 @@ class ShieldedService(private val database: DashDatabase) {
     private suspend fun resetAndWipe(mgr: PlatformWalletManager, db: DashDatabase) {
         mgr.clearShieldedStorage()
         android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
+        // From here the Room wipe is owed. If it fails now, no bind restores
+        // anything until it has gone through (see [PendingHostWipe]).
+        pendingHostWipe.owe { wipeNetworkRows(mgr, db) }
+        pendingHostWipe.commit()
+    }
+
+    /** Delete the shielded Room rows of every wallet on [mgr]'s network. */
+    private suspend fun wipeNetworkRows(mgr: PlatformWalletManager, db: DashDatabase) {
 
         // Wipe every wallet on THIS network, but NOT other networks'. `mgr`
         // is network-scoped and its shielded tree
@@ -754,6 +775,38 @@ class ShieldedService(private val database: DashDatabase) {
 
         /** Times a Clear re-reads the binding when a bind slips in before its re-bind. */
         const val CLEAR_REBIND_ATTEMPTS = 3
+    }
+}
+
+/**
+ * A host persistence wipe that a Clear owes after its Rust reset went
+ * through. Until the wipe commits, the stored notes and watermarks describe a
+ * tree that no longer exists, and restoring them would make the next scan
+ * skip what the tree has lost. So every step that restores from the store
+ * commits the owed wipe first and fails if it cannot.
+ *
+ * Kept in memory: a wipe still owed when the process dies is not remembered
+ * across the restart.
+ */
+internal class PendingHostWipe {
+    private var owed: (suspend () -> Unit)? = null
+
+    /** Whether a wipe is owed. */
+    val isOwed: Boolean get() = owed != null
+
+    /** Record [wipe] as owed, replacing an earlier one. */
+    fun owe(wipe: suspend () -> Unit) {
+        owed = wipe
+    }
+
+    /**
+     * Run the owed wipe, if any, and forget it once it has succeeded. A
+     * failure leaves it owed and is thrown to the caller.
+     */
+    suspend fun commit() {
+        val wipe = owed ?: return
+        wipe()
+        owed = null
     }
 }
 

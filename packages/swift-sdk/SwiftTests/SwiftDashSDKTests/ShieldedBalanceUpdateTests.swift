@@ -141,6 +141,11 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
                     try ShieldedBalanceUpdate.decode($0.pointee)
                 }
             }),
+            ("revision 0", {
+                try self.withNativeUpdate(revision: 0, rows: [self.row(0)]) {
+                    try ShieldedBalanceUpdate.decode($0.pointee)
+                }
+            }),
             ("ready without accounts", {
                 try self.withNativeUpdate(ordinary: 0, established: true) {
                     try ShieldedBalanceUpdate.decode($0.pointee)
