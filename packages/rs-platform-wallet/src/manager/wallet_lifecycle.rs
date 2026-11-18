@@ -320,8 +320,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .iter()
                     .map(|pool| {
                         let infos: Vec<key_wallet::AddressInfo> =
-                            pool.addresses.values().cloned().collect();
-                        (pool.pool_type, infos)
+                            pool.addresses().values().cloned().collect();
+                        (pool.pool_type(), infos)
                     })
                     .collect();
                 (account_type, pools)
@@ -338,8 +338,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 key_class: managed.key_class,
             };
             let pool = &managed.addresses;
-            let infos: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
-            address_snapshots.push((account_type, vec![(pool.pool_type, infos)]));
+            let infos: Vec<key_wallet::AddressInfo> = pool.addresses().values().cloned().collect();
+            address_snapshots.push((account_type, vec![(pool.pool_type(), infos)]));
         }
 
         // Network-INDEPENDENT group id, snapshotted BEFORE `wallet` is

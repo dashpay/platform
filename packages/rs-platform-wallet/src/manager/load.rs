@@ -1683,13 +1683,13 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
 fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
     #[cfg(test)]
     POOL_VALIDATIONS.with(|count| count.set(count.get() + 1));
-    if pool.pool_type == AddressPoolType::AbsentHardened {
-        return pool.addresses.is_empty();
+    if pool.pool_type() == AddressPoolType::AbsentHardened {
+        return pool.addresses().is_empty();
     }
-    pool.addresses.iter().all(|(index, info)| {
+    pool.addresses().iter().all(|(index, info)| {
         account
-            .derive_address_at(pool.pool_type, *index, None)
-            .is_ok_and(|address| address.script_pubkey() == info.script_pubkey)
+            .derive_address_at(pool.pool_type(), *index, None)
+            .is_ok_and(|address| address.script_pubkey() == info.address.script_pubkey())
     })
 }
 
@@ -1942,14 +1942,13 @@ mod tests {
         );
     }
 
-    /// Restored-address validation costs one derivation per restored row: a
-    /// single sparse row at index 1,000,000 is checked directly, not by
-    /// deriving every index below it, and a row another xpub derived is still
-    /// caught. The expected addresses come from key-wallet's own per-index
-    /// derivation, so the validator cannot drift from it unnoticed
-    /// (dashpay/platform#4302 review).
+    /// Restored-address validation catches a row another xpub derived. The
+    /// expected addresses come from key-wallet's own per-index derivation, so
+    /// the validator cannot drift from it unnoticed (dashpay/platform#4302
+    /// review). key-wallet refuses rows past the next index to derive, so a
+    /// restored pool holds no sparse rows.
     #[test]
-    fn restored_address_validation_is_proportional_to_the_restored_rows() {
+    fn restored_address_validation_catches_a_row_another_xpub_derived() {
         use key_wallet::account::derivation::AccountDerivation;
         use key_wallet::account::AccountType;
         use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
@@ -1974,31 +1973,27 @@ mod tests {
         let (current, previous) = (account(1), account(2));
         let managed = ManagedCoreFundsAccount::from_account(&current).expect("managed account");
         let pool = managed.managed_account_type().address_pools()[0].clone();
-        assert_eq!(pool.pool_type, AddressPoolType::Absent);
+        assert_eq!(pool.pool_type(), AddressPoolType::Absent);
         assert!(super::pool_derives_from(&pool, &current));
 
-        let sparse = |from: &key_wallet::Account| {
+        let last = pool.highest_generated().expect("generated window");
+        let with_last_row_from = |from: &key_wallet::Account| {
             let mut pool = pool.clone();
-            let mut info = pool.addresses[&0].clone();
-            info.index = 1_000_000;
+            let mut info = pool.addresses()[&last].clone();
             info.address = from
-                .derive_address_at(AddressPoolType::Absent, 1_000_000, None)
+                .derive_address_at(AddressPoolType::Absent, last, None)
                 .expect("key-wallet derives the row");
-            info.script_pubkey = info.address.script_pubkey();
-            pool.addresses.insert(1_000_000, info);
-            pool.highest_generated = Some(1_000_000);
+            pool.insert(info).expect("replace the last row");
             pool
         };
 
-        let started = std::time::Instant::now();
-        assert!(super::pool_derives_from(&sparse(&current), &current));
+        assert!(super::pool_derives_from(
+            &with_last_row_from(&current),
+            &current
+        ));
         assert!(
-            !super::pool_derives_from(&sparse(&previous), &current),
+            !super::pool_derives_from(&with_last_row_from(&previous), &current),
             "a row the current account does not derive is caught"
-        );
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(5),
-            "validation must not derive every index below the sparse row"
         );
     }
 }

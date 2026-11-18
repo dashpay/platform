@@ -2525,7 +2525,7 @@ impl PlatformWallet {
         let candidate_addresses = merge_platform_payment_candidate_addresses(
             account
                 .addresses
-                .addresses
+                .addresses()
                 .values()
                 .filter_map(|address_info| {
                     PlatformP2PKHAddress::from_address(&address_info.address).ok()

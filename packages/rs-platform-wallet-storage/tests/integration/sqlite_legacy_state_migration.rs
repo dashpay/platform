@@ -3,7 +3,7 @@
 use crate::common;
 
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState};
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -64,9 +64,9 @@ fn legacy_database(
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::External)
+        .find(|pool| pool.pool_type() == AddressPoolType::External)
         .unwrap()
-        .addresses
+        .addresses()
         .values()
         .cloned()
         .collect::<Vec<_>>();
@@ -87,9 +87,54 @@ fn insert_registration(
     ).unwrap();
 }
 
+/// `AddressInfo` in the layout the published V001-V007 writer serialized,
+/// with the per-address counters, label and metadata key-wallet later dropped.
+#[derive(serde::Serialize)]
+struct PublishedAddressInfo<'a> {
+    address: &'a key_wallet::Address,
+    script_pubkey: dashcore::ScriptBuf,
+    public_key: &'a Option<PublicKeyType>,
+    index: u32,
+    path: &'a key_wallet::bip32::DerivationPath,
+    state: AddressState,
+    tx_count: u32,
+    total_received: u64,
+    total_sent: u64,
+    balance: u64,
+    label: Option<String>,
+    metadata: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(serde::Serialize)]
+struct PublishedPoolEntry<'a> {
+    account_type: AccountType,
+    pool_type: AddressPoolType,
+    addresses: Vec<PublishedAddressInfo<'a>>,
+}
+
 fn snapshot_bytes(entry: &AccountAddressPoolEntry) -> Vec<u8> {
     // The base backend encoded this public-only type with bincode-serde.
-    bincode::serde::encode_to_vec(entry, bincode::config::standard()).unwrap()
+    let published = PublishedPoolEntry {
+        account_type: entry.account_type,
+        pool_type: entry.pool_type,
+        addresses: (entry.addresses.iter())
+            .map(|info| PublishedAddressInfo {
+                address: &info.address,
+                script_pubkey: info.address.script_pubkey(),
+                public_key: &info.public_key,
+                index: info.index,
+                path: &info.path,
+                state: info.state,
+                tx_count: 1,
+                total_received: 2,
+                total_sent: 3,
+                balance: 4,
+                label: Some("label".to_string()),
+                metadata: [("key".to_string(), "value".to_string())].into(),
+            })
+            .collect(),
+    };
+    bincode::serde::encode_to_vec(published, bincode::config::standard()).unwrap()
 }
 
 fn insert_pool(conn: &Connection, addresses: Vec<AddressInfo>) -> Vec<u8> {
@@ -217,7 +262,10 @@ fn should_preserve_legacy_used_reserved_public_keys_and_derived_only_rows() {
             ).unwrap();
             assert_eq!(label, "standard_bip44");
             assert_eq!(account, 0);
-            assert_eq!(script, addresses[index as usize].script_pubkey.to_bytes());
+            assert_eq!(
+                script,
+                addresses[index as usize].address.script_pubkey().to_bytes()
+            );
             assert_eq!(used, index != 1);
             if index < 2 {
                 let key_wallet::managed_account::address_pool::PublicKeyType::ECDSA(expected) =
@@ -435,9 +483,9 @@ fn should_preserve_provider_public_key_snapshots_without_ecdsa_registrations() {
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
         .unwrap();
-    let mut addresses = pool.addresses.values().cloned().collect::<Vec<_>>();
+    let mut addresses = pool.addresses().values().cloned().collect::<Vec<_>>();
     addresses.sort_by_key(|info| info.index);
     addresses[0].state = AddressState::Used;
     addresses[1].state = AddressState::Reserved { at: 1_700_000_002 };
