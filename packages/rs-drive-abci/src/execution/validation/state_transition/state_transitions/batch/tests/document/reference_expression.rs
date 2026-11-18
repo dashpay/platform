@@ -734,6 +734,7 @@ mod reference_expression_tests {
                 None,
                 // A create: there is no stored document
                 None,
+                false,
                 &platform_ref,
                 &BlockInfo::default(),
                 &mut Vec::new(),
@@ -903,6 +904,7 @@ mod reference_expression_tests {
                 &DocumentSystemValues::default(),
                 None,
                 None,
+                false,
                 &platform_ref,
                 &BlockInfo::default(),
                 &mut Vec::new(),

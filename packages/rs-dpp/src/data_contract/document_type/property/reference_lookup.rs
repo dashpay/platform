@@ -233,8 +233,9 @@ impl Serialize for DocumentReferenceLookup {
 /// last `$id` may stand outside that index when it is not unique, whose entries are kept by
 /// id in the direction of its last property (ascending under `among` alone), the direction
 /// the last `$id` must run in. A create whose found commitment is preceded by a valid one is refused
-/// (`ReferencedDocumentPrecededError`), and two commitments equal on every `by` property
-/// precede neither other.
+/// (`ReferencedDocumentPrecededError`), unless, from protocol version 15, it opens or joins a
+/// contest taking every competitor, and two commitments equal on every `by` property precede
+/// neither other.
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct LookupChooseFirst {
     /// The property of the referenced document type whose value groups the commitments: the

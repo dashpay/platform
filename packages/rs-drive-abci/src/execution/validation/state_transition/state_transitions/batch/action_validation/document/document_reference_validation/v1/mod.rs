@@ -90,8 +90,9 @@ use crate::platform_types::platform::PlatformStateRef;
 /// Versioned, stateful validation of document references using the v1 rules (protocol
 /// version 15): generation 0's, but a `refersTo` lookup of a reference declaring `consume`
 /// keeps the document it finds in the [`ConsumedDocument`] it records, so the create
-/// conversion 1 deletes the document from it without reading it again. Every lookup reads as
-/// generation 0's does.
+/// conversion 1 deletes the document from it without reading it again, and a create that opens
+/// or joins a contest taking every `chooseFirst` competitor reads none of them: the contest
+/// decides between its contenders. Every other lookup reads as generation 0's does.
 ///
 /// It is intended to be called via the higher-level `DocumentReferenceValidation` dispatcher
 /// that selects the version; `deletable_document_reference_target_is_gone` stays generation
@@ -106,6 +107,7 @@ pub(crate) trait DocumentReferenceValidationV1 {
         referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
+        opens_or_joins_contest: bool,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -126,6 +128,7 @@ impl DocumentReferenceValidationV1 for DocumentBaseTransitionAction {
         referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
+        opens_or_joins_contest: bool,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -155,6 +158,7 @@ impl DocumentReferenceValidationV1 for DocumentBaseTransitionAction {
             referring_system,
             changed_fields,
             stored_values,
+            opens_or_joins_contest,
             platform,
             block_info,
             consumed_documents,
@@ -177,6 +181,7 @@ fn validate_document_type_references_v1(
     referring_system: &DocumentSystemValues,
     changed_fields: Option<&BTreeSet<String>>,
     stored_values: Option<&BTreeMap<String, Value>>,
+    opens_or_joins_contest: bool,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
@@ -361,6 +366,7 @@ fn validate_document_type_references_v1(
                     platform,
                     block_info,
                     is_create,
+                    opens_or_joins_contest,
                     consumed_documents,
                     RuleReads::of(&rule_reads, path, referenced_documents),
                     transaction,
@@ -472,6 +478,7 @@ fn validate_document_type_references_v1(
                 platform,
                 block_info,
                 is_create,
+                opens_or_joins_contest,
                 consumed_documents,
                 RuleReads::of(&rule_reads, path, referenced_documents),
                 transaction,
@@ -562,6 +569,7 @@ fn validate_document_type_references_v1(
                     platform,
                     block_info,
                     is_create,
+                    opens_or_joins_contest,
                     consumed_documents,
                     None,
                     transaction,
@@ -893,6 +901,7 @@ fn validate_reference_v1(
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     is_create: bool,
+    opens_or_joins_contest: bool,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
     rule_reads: Option<RuleReads<'_>>,
     transaction: TransactionArg,
@@ -916,6 +925,7 @@ fn validate_reference_v1(
             platform,
             block_info,
             is_create,
+            opens_or_joins_contest,
             consumed_documents,
             rule_reads,
             transaction,
@@ -955,6 +965,7 @@ fn validate_reference_v1(
             platform,
             block_info,
             is_create,
+            opens_or_joins_contest,
             consumed_documents,
             None,
             transaction,
@@ -1027,6 +1038,7 @@ fn validate_reference_target_v1(
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     is_create: bool,
+    opens_or_joins_contest: bool,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
     rule_reads: Option<RuleReads<'_>>,
     transaction: TransactionArg,
@@ -1640,8 +1652,9 @@ fn validate_reference_target_v1(
             }
 
             // The commitment a computed key found: it must be old enough, the first valid one
-            // among those to the same values when the reference declares `chooseFirst`, and
-            // the create deletes it when the reference consumes it. Its age is judged in
+            // among those to the same values when the reference declares `chooseFirst` (valid
+            // alone for a create a contest taking every competitor decides), and the create
+            // deletes it when the reference consumes it. Its age is judged in
             // blocks, from its `$createdAtBlockHeight` (registration demands the type record
             // one) to the block of the create, so 1 means an earlier block; a document
             // recording none never meets it. Only a lookup the protocol version 14 parser
@@ -1678,6 +1691,7 @@ fn validate_reference_target_v1(
                         referenced_id,
                         reference_target,
                         path,
+                        opens_or_joins_contest,
                         platform,
                         block_info,
                         transaction,
@@ -1912,7 +1926,8 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 
 /// Checks a create's `chooseFirst` (see `LookupChooseFirst`): the commitment `found`, which
 /// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
-/// valid commitment to the values the create reveals.
+/// valid commitment to the values the create reveals, or, for a create opening or joining a
+/// contest that takes every competitor, a valid one.
 ///
 /// * A commitment past its type's `ttl` at the block time is gone, whether or not the cleanup
 ///   has reached it: `found` past it finds no document (`ReferencedEntityNotFoundError`,
@@ -1932,6 +1947,10 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 ///   competitor's owner as `"$ownerId"` (billed as the double SHA-256 it is): a copy of
 ///   another identity's hash is owned by an identity the hash does not name. The first valid
 ///   competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
+/// * A create that opens or joins a contest (`opens_or_joins_contest`) reads no competitors once
+///   `found` holds, when that contest takes every competitor
+///   ([`contest_takes_every_competitor`]): the contest decides between its contenders, whoever
+///   committed first.
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
 ///   ([`choose_first_scan_budget`]), which check tx reserves ([`choose_first_reservation`]).
 ///
@@ -1955,6 +1974,7 @@ fn validate_choose_first_v1(
     referenced_id: [u8; 32],
     reference_target: &DocumentPropertyReferenceTarget,
     path: &str,
+    opens_or_joins_contest: bool,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     transaction: TransactionArg,
@@ -1998,6 +2018,13 @@ fn validate_choose_first_v1(
         &Value::Bytes32(found_digest),
     ) {
         return Ok(not_found());
+    }
+    // A create that opens or joins a contest taking every competitor is one contender among
+    // them, and the contest, not the order of their commitments, decides: none is read
+    if opens_or_joins_contest
+        && contest_takes_every_competitor(declaring_document_type, choose_first)
+    {
+        return Ok(SimpleConsensusValidationResult::new());
     }
     // The value the commitments to the same values hold, which `findBy` found `found` by
     let group = referenced_document_value(found, among)
@@ -2106,6 +2133,30 @@ fn validate_choose_first_v1(
         }
     }
     Ok(SimpleConsensusValidationResult::new())
+}
+
+/// Whether the contest a create of `declaring_document_type` opens or joins takes every
+/// commitment `choose_first` would hold against it: the type's contest is decided by its index
+/// values alone, and `validWhen` reads every property of the contested index. A valid competitor
+/// holds `validWhen` computed from the create's own values, so revealed it carries the same
+/// index values and is a contender in the same contest. Otherwise a competitor may have
+/// committed to values that contest does not decide, or a writer could choose whether its
+/// create is contested, and the create is held to `chooseFirst` as any other.
+fn contest_takes_every_competitor(
+    declaring_document_type: DocumentTypeRef<'_>,
+    choose_first: &LookupChooseFirst,
+) -> bool {
+    let Some(contested_index) = declaring_document_type.find_contested_index() else {
+        return false;
+    };
+    contested_index
+        .contest_is_decided_by_index_values(declaring_document_type.flattened_properties())
+        && contested_index.properties.iter().all(|property| {
+            choose_first
+                .valid_when
+                .properties_read()
+                .any(|read| read == property.name)
+        })
 }
 
 /// The refusal of a write whose referenced document does not meet the `where`
