@@ -20,7 +20,9 @@ use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
 use platform_wallet::registered_collaterals;
 use platform_wallet::wallet::address_pool_restore::derive_through;
 
-use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
+use platform_wallet::wallet::provider_key_at_index::{
+    insert_platform_node_key, PlatformNodePoolError,
+};
 
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
@@ -115,7 +117,7 @@ pub(crate) fn restore_provider_platform_node_pool(
     }
 
     // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-    // restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
+    // restoring it requires widening `platform_wallet::wallet::provider_key_at_index::insert_platform_node_key`.
     for (index, script_bytes, public_key, used) in entries {
         let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(
@@ -154,8 +156,8 @@ pub(crate) fn restore_provider_platform_node_pool(
                 continue;
             }
         };
-        insert_platform_node_pool_entry(wallet_info, network, index, address, public_key, used)
-            .map_err(|error| match error {
+        insert_platform_node_key(wallet_info, network, index, address, public_key, used).map_err(
+            |error| match error {
                 PlatformNodePoolError::NoManagedAccount => {
                     WalletStorageError::blob_decode("provider platform account is not managed")
                 }
@@ -169,7 +171,8 @@ pub(crate) fn restore_provider_platform_node_pool(
                 | PlatformNodePoolError::PoolRefused { source, .. } => {
                     WalletStorageError::AccountRecordInvalid { e: source }
                 }
-            })?;
+            },
+        )?;
     }
     Ok(())
 }
