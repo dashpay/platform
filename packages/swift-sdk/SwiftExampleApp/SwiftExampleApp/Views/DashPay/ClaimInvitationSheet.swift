@@ -234,48 +234,42 @@ struct ClaimInvitationSheet: View {
                 } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
                     // The invitation's identity is this wallet's: one it
                     // records, or one an earlier claim at this index created
-                    // without recording it, which is loaded like any identity
-                    // of this wallet. Only the identity the error names counts.
-                    if let recorded = identities.first(where: {
-                        $0.identityIdBase58 == claimedId && $0.wallet?.walletId == walletId
-                    }) {
-                        newIdentityId = recorded.identityId
-                    } else {
-                        let loaded: Identifier?
-                        do {
-                            loaded = try await wallet.loadIdentity(atIndex: identityIndex)
-                        } catch {
-                            // A failed load says nothing about the identity,
-                            // so it is reported as a failure to retry.
-                            errorMessage = "This invitation already created identity \(claimedId) "
-                                + "in this wallet, but loading it failed: "
-                                + "\(error.localizedDescription). Try again."
-                            return
-                        }
-                        guard let loaded, loaded.toBase58String() == claimedId else {
-                            errorMessage = "This invitation already created identity \(claimedId) "
-                                + "in this wallet. If it is not listed, try Re-scan for Identities."
-                            return
-                        }
-                        newIdentityId = loaded
+                    // without recording it. The wallet records only the
+                    // identity the error names.
+                    let recovered: Bool
+                    do {
+                        recovered = try await recoverClaimed(claimedId, at: identityIndex, in: wallet)
+                    } catch {
+                        // A failed load says nothing about the identity,
+                        // so it is reported as a failure to retry.
+                        errorMessage = "This invitation already created identity \(claimedId) "
+                            + "in this wallet, but loading it failed: "
+                            + "\(error.localizedDescription). Try again."
+                        return
                     }
+                    guard recovered, let claimed = Data.identifier(fromBase58: claimedId) else {
+                        errorMessage = "This invitation already created identity \(claimedId) "
+                            + "in this wallet. If it is not listed, try Re-scan for Identities."
+                        return
+                    }
+                    newIdentityId = claimed
                 } catch let refusal as PlatformWalletError {
                     // The keys at this index belong to an identity. When it is
-                    // this wallet's own, unrecorded one, loading it records it,
-                    // and the next claim takes the next index. Any other owner
-                    // keeps the refusal.
+                    // this wallet's own, unrecorded one, the wallet records
+                    // it, and the next claim takes the next index. Any other
+                    // owner keeps the refusal.
                     guard case .invitationKeysAlreadyRegistered(let ownerId?, _) = refusal else {
                         throw refusal
                     }
-                    let loaded: Identifier?
+                    let recovered: Bool
                     do {
-                        loaded = try await wallet.loadIdentity(atIndex: identityIndex)
+                        recovered = try await recoverClaimed(ownerId, at: identityIndex, in: wallet)
                     } catch {
                         errorMessage = "Identity \(ownerId) holds these keys, but checking whether "
                             + "it is this wallet's failed: \(error.localizedDescription). Try again."
                         return
                     }
-                    guard let loaded, loaded.toBase58String() == ownerId else { throw refusal }
+                    guard recovered else { throw refusal }
                     kickDashPaySync(walletManager)
                     errorMessage = "Identity \(ownerId) of this wallet already used these keys "
                         + "and is now loaded. Claim again once it is listed."
@@ -339,6 +333,17 @@ struct ClaimInvitationSheet: View {
                 }
             }
         }
+    }
+
+    /// Whether `wallet` records the identity a refusal named (base58) as its
+    /// own after asking Rust to recover it at `index`.
+    private func recoverClaimed(
+        _ identityId: String,
+        at index: UInt32,
+        in wallet: ManagedPlatformWallet
+    ) async throws -> Bool {
+        guard let id = Data.identifier(fromBase58: identityId) else { return false }
+        return try await wallet.recoverClaimedIdentity(atIndex: index, identityId: id)
     }
 
     /// One past the highest used registration index on this wallet, else 0.

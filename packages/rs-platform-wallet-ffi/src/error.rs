@@ -660,7 +660,9 @@ pub enum PlatformWalletFFIResultCode {
     /// the DashPay invitation claim is already registered to another
     /// identity (usually one this wallet registered before at the same
     /// index), so Platform would refuse the claim and charge the voucher.
-    /// Definitive for these keys.
+    /// Definitive for these keys. Found by the claim's lookup, nothing was
+    /// broadcast; with a consensus error attached, Platform refused the
+    /// broadcast instead and the voucher may have been charged.
     ///
     /// Message: a STABLE JSON detail object —
     /// `{"identityId":"<base58>"}`, or `{"identityId":null}` when Platform

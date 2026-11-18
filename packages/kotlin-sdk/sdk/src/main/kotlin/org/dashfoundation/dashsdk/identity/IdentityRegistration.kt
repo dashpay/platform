@@ -464,21 +464,31 @@ class IdentityRegistration internal constructor(
     }
 
     /**
-     * Load the identity registered for this wallet at [identityIndex] and
-     * record it like discovery does. Returns its 32-byte id, or `null` when
-     * no identity is registered there; throws when Platform does not
-     * answer. Mirrors Swift `ManagedPlatformWallet.loadIdentity(atIndex:)`.
+     * Record [identityId], the identity a refused invitation claim named
+     * (code 63 or 64), as this wallet's identity at [identityIndex].
+     * Returns `true` when the wallet records it now (it already held it, or
+     * the identity registered with this wallet's master key at
+     * [identityIndex] is [identityId] and was loaded into that slot),
+     * `false` when no identity or another one is registered there; throws
+     * when Platform does not answer. Mirrors Swift
+     * `ManagedPlatformWallet.recoverClaimedIdentity(atIndex:identityId:)`.
      */
-    suspend fun loadIdentityAtIndex(
+    suspend fun recoverClaimedIdentity(
         walletHandle: Long,
         mnemonicResolverHandle: Long,
         identityIndex: Int,
-    ): ByteArray? = gate.op {
+        identityId: ByteArray,
+    ): Boolean = gate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        val id = mapNativeErrors {
-            IdentityNative.loadIdentityAtIndex(walletHandle, mnemonicResolverHandle, identityIndex)
+        require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
+        mapNativeErrors {
+            IdentityNative.recoverClaimedIdentity(
+                walletHandle,
+                mnemonicResolverHandle,
+                identityIndex,
+                identityId,
+            )
         }
-        id.takeIf { it.size == 32 }
     }
 
     /**

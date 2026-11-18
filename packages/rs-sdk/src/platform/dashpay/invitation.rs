@@ -850,8 +850,10 @@ fn validate_claim_keys_structure(
 /// accept yet (a version 1 key or a group-bound key before the version that
 /// introduced them), by DPP's own activation rule for an identity create.
 /// The node would drop such a claim undecoded, so it is refused before the
-/// signer is asked for anything. Without a verified network version
-/// [`claim_keys_platform_version`] has already refused the claim.
+/// signer is asked for anything. The version this SDK builds operations with
+/// (a pin, or what it detected) must accept the format as well. Without a
+/// verified network version [`claim_keys_platform_version`] has already
+/// refused the claim.
 fn validate_claim_keys_active(
     keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
     info: &ProtocolVersionInfo,
@@ -867,16 +869,24 @@ fn validate_claim_keys_active(
         .into(),
     );
     let active = transition.active_version_range();
-    if active.contains(&network) {
-        Ok(())
-    } else {
-        Err(invalid(format!(
+    if !active.contains(&network) {
+        return Err(invalid(format!(
             "the network runs protocol version {network}, but these identity keys \
              need protocol version {} or later; claim with version 0 keys that are \
              not bound to a contract group",
             active.start()
-        )))
+        )));
     }
+    if !active.contains(&info.effective_version) {
+        return Err(invalid(format!(
+            "this SDK builds with protocol version {}, but these identity keys \
+             need protocol version {} or later; claim with version 0 keys that are \
+             not bound to a contract group, or build with the network's version",
+            info.effective_version,
+            active.start()
+        )));
+    }
+    Ok(())
 }
 
 /// Byte-reverse a txid hex string. Old iOS invitation links carry the funding
@@ -1224,9 +1234,10 @@ pub fn identity_holds_master_key(identity: &Identity, master_key: &IdentityPubli
 /// Look the claim up before it is broadcast, so that it is never sent when
 /// Platform would refuse it and charge the voucher.
 ///
-/// Fetches the identity at the invitation's id and the identity under every
-/// submitted key hash, concurrently, and decides from all the answers, the
-/// invitation's identity first:
+/// Fetches the identity at the invitation's id first: a proved identity there
+/// decides the claim alone, so the claim's key hashes are not sent. Otherwise
+/// fetches the identity under every submitted key hash, concurrently, and
+/// decides from all the answers, the invitation's identity first:
 /// 1. it exists and holds `master_key` → [`InvitationError::ClaimedByThisWallet`];
 /// 2. it exists otherwise → [`InvitationError::AlreadyClaimed`];
 /// 3. any key hash names the invitation's identity → as in 1 and 2 (the
@@ -1254,21 +1265,17 @@ where
     FH: Fn([u8; 20]) -> FHFut,
     FHFut: std::future::Future<Output = Result<Option<Identity>, Error>>,
 {
-    let (claimed, by_hash) = futures::future::join(
-        fetch_by_id(),
-        futures::future::join_all(key_hashes.iter().map(|hash| fetch_by_hash(*hash))),
-    )
-    .await;
-
     // A failed lookup by id does not stop the key-hash answers from
     // deciding: one of them may name the invitation's identity or a taken key.
     let mut lookup_error = None;
     let mut foreign_owner = None;
-    match claimed {
+    match fetch_by_id().await {
         Ok(Some(identity)) => return Err(claimed_by(&identity, master_key)),
         Ok(None) => {}
         Err(error) => lookup_error = Some(error),
     }
+    let by_hash =
+        futures::future::join_all(key_hashes.iter().map(|hash| fetch_by_hash(*hash))).await;
     for result in by_hash {
         match result {
             // Each lookup may reach a different node: one that already has
@@ -2792,6 +2799,25 @@ mod tests {
             assert_eq!(looked_up, vec![OUR_HASH, OTHER_HASH]);
         }
 
+        /// A proved identity at the invitation's id decides the claim, so
+        /// none of the claim's key hashes is sent.
+        #[tokio::test]
+        async fn should_send_no_key_hash_once_the_invitations_identity_is_found() {
+            let (result, looked_up) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::AlreadyClaimed { .. })
+            ));
+            assert!(looked_up.is_empty(), "looked up {looked_up:?}");
+
+            let (result, looked_up) = preflight(Ok(Some(ours())), |_| Ok(None)).await;
+            assert!(matches!(
+                result,
+                Err(InvitationError::ClaimedByThisWallet { .. })
+            ));
+            assert!(looked_up.is_empty(), "looked up {looked_up:?}");
+        }
+
         #[tokio::test]
         async fn should_report_our_own_landed_claim_without_adopting_it() {
             let (result, _) = preflight(Ok(Some(ours())), |_| Ok(Some(ours()))).await;
@@ -4101,6 +4127,44 @@ mod tests {
                     Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
                         if message == "not signing in this test"
                 ),
+                "got {result:?}"
+            );
+        }
+
+        /// An SDK pinned to protocol version 13 builds the claim with 13's
+        /// rules even on a newer network: version 0 keys go on to the signer,
+        /// and a version 1 key without a budget or an expiry, which 13 cannot
+        /// carry, is refused before signing.
+        #[tokio::test]
+        async fn should_refuse_a_key_format_the_pinned_sdk_version_cannot_build() {
+            use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+
+            let v13 = PlatformVersion::get(13).expect("v13");
+            let latest = PlatformVersion::latest().protocol_version;
+
+            let (result, _) =
+                claim_on(Some(v13), Some(latest), claim_keys(), |_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
+
+            let mut keys = claim_keys();
+            let IdentityPublicKey::V0(master) = keys[&0].clone() else {
+                panic!("claim_keys() builds V0 keys");
+            };
+            keys.insert(
+                0,
+                IdentityPublicKey::V1(IdentityPublicKeyV1::from_v0_with_limits(master, None, None)),
+            );
+            let (result, _) = claim_on(Some(v13), Some(latest), keys, |_| None, |_, _| None).await;
+            assert!(
+                matches!(&result, Err(InvitationError::Invalid(message))
+                    if message.starts_with("this SDK builds with protocol version 13, but these identity keys need protocol version 14")),
                 "got {result:?}"
             );
         }

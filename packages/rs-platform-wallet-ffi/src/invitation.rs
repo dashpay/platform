@@ -253,16 +253,18 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
 ///
 /// Before broadcasting, the claim looks up the identities that would make
 /// Platform refuse it and charge the voucher. Those outcomes have their own
-/// codes, and none of them broadcast or record anything:
+/// codes, and as preflight refusals none of them broadcast or record anything:
 /// `ErrorInvitationClaimedByThisWallet` (an earlier claim of this wallet
 /// landed, or the invitation's identity is one this wallet already records;
 /// JSON detail names the identity), `ErrorAssetLockAlreadyConsumed` (claimed
 /// by an identity that does not hold the master key at `identity_index` and
 /// that this wallet does not record — usually someone else), `ErrorInvitationKeysAlreadyRegistered` (another
-/// identity holds a submitted key; also returned when Platform refuses the
-/// broadcast for that reason) and `ErrorInvitationNotReady` (the lookups
-/// could not be verified yet). `ErrorAssetLockNotChainLocked` asks to retry
-/// once the funding transaction propagates or is chain-locked.
+/// identity holds a submitted key) and `ErrorInvitationNotReady` (the lookups
+/// could not be verified yet). `ErrorInvitationKeysAlreadyRegistered` is also
+/// returned when a key was registered after the lookup and Platform refused
+/// the broadcast: that one carries the consensus error and an unknown owner,
+/// and the voucher may have been charged. `ErrorAssetLockNotChainLocked` asks
+/// to retry once the funding transaction propagates or is chain-locked.
 ///
 /// On success writes the new identity id to `*out_identity_id` and a handle into
 /// `MANAGED_IDENTITY_STORAGE` to `*out_identity_handle` (release via

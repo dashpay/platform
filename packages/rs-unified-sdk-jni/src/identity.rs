@@ -999,40 +999,41 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_discov
     })
 }
 
-/// Load the identity registered for this wallet at one identity index,
-/// recording it like discovery does. Returns its 32-byte id, or an empty
-/// `byte[]` when no identity is registered at that index.
+/// Record the identity a refused invitation claim named (code 63 or 64) as
+/// this wallet's identity at `identityIndex`. Returns whether the wallet
+/// records it now; `false` when no identity, or another one, is registered
+/// there (nothing is written then).
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_loadIdentityAtIndex(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_recoverClaimedIdentity(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
     resolver_handle: jlong,
     identity_index: jint,
-) -> jbyteArray {
-    guard(&mut env, ptr::null_mut(), |env| {
+    identity_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, 0, |env| {
         if identity_index < 0 {
             throw_sdk_exception(env, 1, "identityIndex must be non-negative");
-            return ptr::null_mut();
+            return 0;
         }
-        let mut found = false;
-        let mut id = [0u8; 32];
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+        let mut recovered = false;
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_load_identity_at_index(
+            platform_wallet_ffi::platform_wallet_recover_claimed_identity(
                 wallet_handle as Handle,
                 resolver_handle as *mut MnemonicResolverHandle,
                 identity_index as u32,
-                &mut found as *mut bool,
-                id.as_mut_ptr(),
+                id.as_ptr(),
+                &mut recovered as *mut bool,
             )
         };
         if take_pwffi_error(env, result) {
-            return ptr::null_mut();
+            return 0;
         }
-        let out: &[u8] = if found { &id } else { &[] };
-        env.byte_array_from_slice(out)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        recovered as jboolean
     })
 }
 

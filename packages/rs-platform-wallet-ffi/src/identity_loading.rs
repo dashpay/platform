@@ -55,6 +55,7 @@
 //! handed back through `out_identity_id` for the caller's convenience.
 
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::Identifier;
 
 use crate::check_ptr;
 use crate::error::*;
@@ -62,7 +63,7 @@ use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::runtime::block_on_worker;
 use crate::types::Network;
-use crate::{unwrap_option_or_return, unwrap_result_or_return};
+use crate::unwrap_result_or_return;
 use rs_sdk_ffi::MnemonicResolverHandle;
 use zeroize::Zeroize;
 
@@ -121,6 +122,94 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
     // read on the flag.
     unsafe { *out_found = false };
 
+    let found = unwrap_result_or_return!(unsafe {
+        probe_identity_index(
+            wallet_handle,
+            mnemonic_resolver_handle,
+            identity_index,
+            IndexProbe::Load,
+        )
+    });
+
+    match found {
+        Some(identity_id) => {
+            let id_bytes = *identity_id.as_bytes();
+            unsafe {
+                std::ptr::copy_nonoverlapping(id_bytes.as_ptr(), out_identity_id, 32);
+                *out_found = true;
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        None => {
+            // `*out_found` is already `false` from the pre-clear above.
+            PlatformWalletFFIResult::ok()
+        }
+    }
+}
+
+/// Record the identity a refused invitation claim named (code 63 or 64)
+/// as this wallet's identity at `identity_index`, through
+/// `IdentityWallet::recover_claimed_identity` (or its `_from_master`
+/// form): `*out_recovered` is `true` when the wallet records it now
+/// (it already held it at some index, or the identity registered with
+/// the wallet's master key at `identity_index` is that identity and was
+/// loaded into the slot), `false` when no identity or another one is
+/// registered there. The id is compared before anything is written. The
+/// key source is chosen as for [`platform_wallet_load_identity_at_index`].
+///
+/// # Safety
+/// As for [`platform_wallet_load_identity_at_index`]; `expected_identity_id`
+/// must point to 32 readable bytes and `out_recovered` must be a valid,
+/// writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_recover_claimed_identity(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_index: u32,
+    expected_identity_id: *const u8,
+    out_recovered: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(expected_identity_id);
+    check_ptr!(out_recovered);
+    unsafe { *out_recovered = false };
+
+    let mut id_bytes = [0u8; 32];
+    unsafe { std::ptr::copy_nonoverlapping(expected_identity_id, id_bytes.as_mut_ptr(), 32) };
+    let expected = Identifier::from(id_bytes);
+
+    let recovered = unwrap_result_or_return!(unsafe {
+        probe_identity_index(
+            wallet_handle,
+            mnemonic_resolver_handle,
+            identity_index,
+            IndexProbe::Recover(expected),
+        )
+    });
+    unsafe { *out_recovered = recovered.is_some() };
+    PlatformWalletFFIResult::ok()
+}
+
+/// What a probe of one identity index does once its key source is chosen.
+#[derive(Clone, Copy)]
+enum IndexProbe {
+    /// Load whatever identity is registered there.
+    Load,
+    /// Record it only when it is this identity.
+    Recover(Identifier),
+}
+
+/// Run `probe` at `identity_index` with the key source the wallet's shape
+/// selects (see the module docs). The id of the identity loaded or
+/// recovered, `None` when there is none.
+///
+/// # Safety
+/// As for [`platform_wallet_load_identity_at_index`].
+unsafe fn probe_identity_index(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_index: u32,
+    probe: IndexProbe,
+) -> Result<Option<Identifier>, PlatformWalletFFIResult> {
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
 
@@ -151,7 +240,16 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
             // mnemonic wallets keep working even when no mnemonic was ever
             // persisted to `WalletStorage`.
             return block_on_worker(async move {
-                identity.load_identity_by_index(identity_index).await
+                match probe {
+                    IndexProbe::Load => identity
+                        .load_identity_by_index(identity_index)
+                        .await
+                        .map(|found| found.map(|identity| identity.id())),
+                    IndexProbe::Recover(expected) => identity
+                        .recover_claimed_identity(identity_index, expected)
+                        .await
+                        .map(|recovered| recovered.then_some(expected)),
+                }
             })
             .map_err(PlatformWalletFFIResult::from);
         }
@@ -164,8 +262,8 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
             return Err(PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "this wallet has no resident private keys (external-signable / \
-                 watch-only); a mnemonic resolver handle is required to load \
-                 its identity",
+             watch-only); a mnemonic resolver handle is required to load \
+             its identity",
             ));
         }
 
@@ -211,29 +309,25 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
         // `resolve_master_from_resolver`.)
         block_on_worker(async move {
             let mut master = master;
-            let load_result = identity
-                .load_identity_by_index_from_master(identity_index, &master)
-                .await;
+            let load_result = match probe {
+                IndexProbe::Load => identity
+                    .load_identity_by_index_from_master(identity_index, &master)
+                    .await
+                    .map(|found| found.map(|identity| identity.id())),
+                IndexProbe::Recover(expected) => identity
+                    .recover_claimed_identity_from_master(identity_index, expected, &master)
+                    .await
+                    .map(|recovered| recovered.then_some(expected)),
+            };
             master.private_key.zeroize();
             load_result
         })
         .map_err(PlatformWalletFFIResult::from)
     });
-    let result = unwrap_option_or_return!(option);
-    let found = unwrap_result_or_return!(result);
-
-    match found {
-        Some(identity) => {
-            let id_bytes = *identity.id().as_bytes();
-            unsafe {
-                std::ptr::copy_nonoverlapping(id_bytes.as_ptr(), out_identity_id, 32);
-                *out_found = true;
-            }
-            PlatformWalletFFIResult::ok()
-        }
-        None => {
-            // `*out_found` is already `false` from the pre-clear above.
-            PlatformWalletFFIResult::ok()
-        }
+    // An unknown handle is reported as the conversion of the empty lookup,
+    // as the other wallet-handle calls report it.
+    match option {
+        Some(result) => result,
+        None => Err(option.into()),
     }
 }

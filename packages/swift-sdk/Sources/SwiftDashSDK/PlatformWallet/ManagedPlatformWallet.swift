@@ -2179,6 +2179,47 @@ extension ManagedPlatformWallet {
             }
         }.value
     }
+
+    /// Record `identityId`, the identity a refused invitation claim named
+    /// (`.invitationClaimedByThisWallet`, or the owner in
+    /// `.invitationKeysAlreadyRegistered`), as this wallet's identity at
+    /// `identityIndex`.
+    ///
+    /// Returns `true` when the wallet records it now: it already held it
+    /// at some index, or the identity registered with this wallet's master
+    /// key at `identityIndex` is `identityId` and was loaded into that
+    /// slot. Returns `false` when no identity or a different one is
+    /// registered there; Rust compares the id before it writes anything.
+    /// Throws when the lookup failed. The key source is chosen as for
+    /// `loadIdentity(atIndex:)`.
+    public func recoverClaimedIdentity(
+        atIndex identityIndex: UInt32,
+        identityId: Identifier,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> Bool {
+        let handle = self.handle
+        let resolver = MnemonicResolver(storage: storage)
+        let idBytes = [UInt8](identityId)
+        guard idBytes.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { () -> Bool in
+            try withExtendedLifetime(resolver) {
+                var recovered = false
+                let result = idBytes.withUnsafeBufferPointer { idBuf -> PlatformWalletFFIResult in
+                    platform_wallet_recover_claimed_identity(
+                        handle,
+                        resolver.handle,
+                        identityIndex,
+                        idBuf.baseAddress!,
+                        &recovered
+                    )
+                }
+                try result.check()
+                return recovered
+            }
+        }.value
+    }
 }
 
 // MARK: - DPNS operations
@@ -2890,8 +2931,13 @@ extension ManagedPlatformWallet {
     /// `.assetLockAlreadyConsumed` (claimed by an identity that does not hold
     /// the master key at `identityIndex` and that the wallet does not record —
     /// usually someone else),
-    /// `.invitationKeysAlreadyRegistered` (another identity holds these keys)
-    /// or `.invitationNotReady` (retry once synced). `.assetLockNotChainLocked`
+    /// `.invitationKeysAlreadyRegistered` with no consensus error (another
+    /// identity holds these keys)
+    /// or `.invitationNotReady` (retry once synced). The same
+    /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
+    /// different: a key was registered after the lookup, Platform refused
+    /// the broadcast, and the voucher may have been charged.
+    /// `.assetLockNotChainLocked`
     /// means retry later. A node that has not seen an earlier landed claim
     /// lets the retry through; Platform then refuses it, and the identity is
     /// returned as the claim's result when it carries exactly these keys, or

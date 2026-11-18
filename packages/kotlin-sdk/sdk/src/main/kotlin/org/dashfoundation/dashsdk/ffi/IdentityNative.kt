@@ -255,15 +255,17 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
-     * Load the identity registered for this wallet at [identityIndex],
-     * recording it like discovery does. Returns its 32-byte id, or an
-     * empty array when no identity is registered at that index.
+     * Record [identityId], the identity a refused invitation claim named
+     * (code 63 or 64), as this wallet's identity at [identityIndex].
+     * Returns whether the wallet records it now; `false` when no identity,
+     * or another one, is registered there.
      */
-    external fun loadIdentityAtIndex(
+    external fun recoverClaimedIdentity(
         walletHandle: Long,
         resolverHandle: Long,
         identityIndex: Int,
-    ): ByteArray
+        identityId: ByteArray,
+    ): Boolean
 
     /**
      * Scan the wallet's identity-authentication tree for registered
