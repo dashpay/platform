@@ -809,12 +809,14 @@ public enum PlatformWalletError: LocalizedError {
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
-    /// Address-nonce race (transfer or withdrawal from Platform addresses, or
-    /// identity registration / top-up from them): Platform rejected the
-    /// transition because the submitted address nonce raced its expected
-    /// value. Safe to retry: the retry re-fetches the address nonce so the
-    /// mismatch self-heals. A shield does not return it. The submitted and
-    /// expected nonce values are in the message.
+    /// Address-nonce race for a transfer, withdrawal, or identity registration
+    /// from Platform addresses: Platform rejected the transition because the
+    /// submitted address nonce raced its expected value. Safe to retry: the
+    /// retry re-fetches the address nonce so the mismatch self-heals. Shields
+    /// and address-funded identity top-ups do not return this error: a top-up
+    /// that cannot be confirmed after a nonce refusal returns
+    /// `transactionBroadcastUnconfirmed` instead. The submitted and expected
+    /// nonce values are in the message.
     case addressNonceMismatch(String)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once

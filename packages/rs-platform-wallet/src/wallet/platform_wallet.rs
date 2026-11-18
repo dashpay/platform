@@ -603,7 +603,10 @@ impl PlatformWallet {
     /// reported as `PlatformWalletError::Sdk` holding
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and neither the identity balance
-    /// nor the addresses are updated from it; the next sync settles them.
+    /// nor the addresses are updated from it. A later sync refreshes those
+    /// balances but does not settle this top-up: the wallet keeps no record
+    /// of it, so an unchanged balance cannot tell a lost broadcast from one
+    /// still pending (a durable pending record is dashpay/platform#4270).
     /// So is a broadcast an endpoint refused once a dispatch may have reached
     /// it, an address-nonce refusal included: such a refusal proves nothing,
     /// so the top-up never reports
@@ -615,6 +618,15 @@ impl PlatformWallet {
     /// taken, or while the host signed, is refused with
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// broadcast. A caller must not hold the gate.
+    ///
+    /// Source compatibility: this method used to take one type parameter
+    /// (`top_up_from_addresses::<S>`) and a concrete
+    /// `BTreeMap<PlatformAddress, Credits>`. It now also takes the funding
+    /// rows' type, `I: IntoIterator<Item = (PlatformAddress, Credits)>`. A
+    /// typed map still compiles; a turbofish needs the second argument
+    /// (`top_up_from_addresses::<MySigner, _>`), and a bare `rows.collect()`
+    /// argument no longer has a target type: pass the iterator itself, or
+    /// collect into an explicit `BTreeMap`.
     ///
     /// Returns the identity's new credit balance.
     pub async fn top_up_from_addresses<S, I>(
@@ -662,8 +674,9 @@ impl PlatformWallet {
     /// `PlatformWalletError::Sdk` holding
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and the addresses are not
-    /// updated from it; the next sync settles them. A refused broadcast reads
-    /// as for [`Self::top_up_from_addresses`].
+    /// updated from it; a later sync refreshes balances but does not settle
+    /// this top-up, as for [`Self::top_up_from_addresses`]. A refused
+    /// broadcast reads as for [`Self::top_up_from_addresses`].
     ///
     /// Returns the identity's new credit balance.
     pub async fn top_up_external_identity_from_addresses<S, I>(

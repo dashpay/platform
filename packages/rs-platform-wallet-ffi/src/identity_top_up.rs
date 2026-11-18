@@ -51,7 +51,8 @@ mod submission_result_tests;
 
 /// What a host should know after an address top-up export panicked.
 const ADDRESS_TOP_UP_PANIC_GUIDANCE: &str = "The top-up may have been signed and broadcast \
-     and may still execute: do NOT submit it again; the next sync settles the outcome.";
+     and may still execute: do NOT submit it again. A later sync refreshes balances but \
+     does not confirm this top-up: the wallet keeps no record of it.";
 
 /// [`catch_panic_to_code`] for the address top-up exports. A panic can strike
 /// in the identity lookup, the signing, after the broadcast or in the

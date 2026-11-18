@@ -230,7 +230,7 @@ struct TopUpIdentityView: View {
                     .accessibilityIdentifier("topup.pending")
                 Text(
                     "The top-up may still complete. Don't send it again; "
-                    + "the next sync settles it."
+                    + "a later sync refreshes the balance but can't confirm this top-up."
                 )
                 .font(.callout)
                 .foregroundColor(.secondary)

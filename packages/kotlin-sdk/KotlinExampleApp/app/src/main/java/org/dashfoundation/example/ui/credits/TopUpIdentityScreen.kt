@@ -123,7 +123,7 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
             if (pending) {
                 Text(
                     "Top-up pending: it may still complete. Don't send it again; " +
-                        "the next sync settles it.",
+                        "a later sync refreshes the balance but can't confirm this top-up.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("topup.pending"),
