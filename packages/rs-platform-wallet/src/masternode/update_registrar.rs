@@ -106,8 +106,13 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
     owner: OwnerSecret,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+    // The payload restates the operator key, the voting key and the payout
+    // of the entry it reads here, so a list behind the chain could put a
+    // since-replaced operator key back (Core then resets and bans the node)
+    // or hide that the entry is version 3 by now. Only a list that follows
+    // the chain is read.
     let summaries = spv
-        .masternode_list_summaries()
+        .current_masternode_list_summaries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
 

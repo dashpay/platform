@@ -866,6 +866,28 @@ impl SpvRuntime {
         )
     }
 
+    /// [`Self::masternode_list_summaries`], but only while the list follows
+    /// the chain ([`Self::is_ready`]). The plain read also returns a list
+    /// restored from disk while sync is still catching up, and a transaction
+    /// that restates an entry's fields must not copy them from such a list.
+    pub(crate) async fn current_masternode_list_summaries(
+        &self,
+    ) -> Option<Vec<MasternodeListSummary>> {
+        if !self.is_ready().await {
+            return None;
+        }
+        self.masternode_list_summaries().await
+    }
+
+    /// [`Self::masternode_list_entries`], but only while the list follows
+    /// the chain, as [`Self::current_masternode_list_summaries`].
+    pub(crate) async fn current_masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
+        if !self.is_ready().await {
+            return None;
+        }
+        self.masternode_list_entries().await
+    }
+
     /// The coinbase payload of the newest block a masternode list diff
     /// proved it in, as the SPV client keeps it. `None` when the client
     /// isn't running, masternode sync is off, or no diff has been validated

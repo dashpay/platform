@@ -168,22 +168,55 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
         wallet.network(),
     )?;
 
-    let placeholder = update_service_placeholder(
+    let placeholder = entry_placeholder(
+        entry,
+        &entries,
+        wallet.network(),
         list_shows_v24,
-        |v24_active| {
-            prepare_update_service_placeholder(
-                entry,
-                wallet.network(),
-                v24_active,
-                params.platform_p2p_port,
-                script_payout.clone(),
-            )
-        },
+        params.platform_p2p_port,
+        script_payout,
         spv.latest_coinbase(),
     )
     .await?;
 
     build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
+}
+
+/// The placeholder that re-asserts `entry`'s own service values, for the
+/// V24 state Core will check it against (see [`update_service_placeholder`]),
+/// with every endpoint it ends up listing checked against the rest of the
+/// masternode list. An entry's own addresses cannot collide, but converting
+/// a legacy evonode to version 3 registers Platform endpoints no list has
+/// held yet (see [`require_unused_endpoints`]).
+async fn entry_placeholder(
+    entry: &MasternodeListEntry,
+    entries: &[MasternodeListEntry],
+    network: Network,
+    list_shows_v24: bool,
+    platform_p2p_port: Option<u16>,
+    script_payout: ScriptBuf,
+    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    let placeholder = update_service_placeholder(
+        list_shows_v24,
+        |v24_active| {
+            prepare_update_service_placeholder(
+                entry,
+                network,
+                v24_active,
+                platform_p2p_port,
+                script_payout.clone(),
+            )
+        },
+        latest_coinbase,
+    )
+    .await?;
+    let summaries: Vec<MasternodeListSummary> = entries
+        .iter()
+        .map(MasternodeListSummary::from_entry)
+        .collect();
+    require_unused_endpoints(&placeholder, &summaries)?;
+    Ok(placeholder)
 }
 
 /// The list entry for `pro_tx_hash` (wire order) and whether the list shows
@@ -345,8 +378,11 @@ pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner 
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+    // Only a list that follows the chain: the values replace whatever the
+    // entry holds, and the V24 reading next to a list behind the chain is
+    // as old as that list.
     let entries = spv
-        .masternode_list_entries()
+        .current_masternode_list_entries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
     let (entry, list_shows_v24) = update_service_target(&entries, &pro_tx_hash)?;
@@ -1914,6 +1950,48 @@ mod tests {
         .await
         .expect("a legacy evonode is converted");
         assert_matches_core_v3_vector(placeholder);
+    }
+
+    /// Converting a legacy evonode to version 3 registers its Platform P2P
+    /// and HTTPS endpoints for the first time, and Core refuses the update
+    /// when another masternode advertises one (`bad-protx-dup-netinfo-entry`).
+    /// The version-2 payload registers the Core address only.
+    #[tokio::test]
+    async fn should_refuse_an_unban_conversion_onto_an_endpoint_another_masternode_advertises() {
+        let target = legacy_core_evonode_entry("68.67.122.237:20001");
+        let neighbour = MasternodeListEntry {
+            service_address: MasternodeNetInfo::Legacy(
+                "68.67.122.237:26656".parse().expect("socket address"),
+            ),
+            ..operator_entry(0x22, false)
+        };
+        let entries = vec![target.clone(), neighbour];
+        let build = |coinbase_version| {
+            entry_placeholder(
+                &target,
+                &entries,
+                Network::Devnet,
+                false,
+                Some(26656),
+                ScriptBuf::new(),
+                async move { Some(coinbase(coinbase_version)) },
+            )
+        };
+
+        let err = build(V24_COINBASE_PAYLOAD_VERSION)
+            .await
+            .expect_err("the platform endpoint is in use");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidParameter(message)
+                if message.contains("68.67.122.237:26656")
+                    && message.contains("bad-protx-dup-netinfo-entry")),
+            "got {err:?}"
+        );
+
+        let before_v24 = build(V24_COINBASE_PAYLOAD_VERSION - 1)
+            .await
+            .expect("a platform port is not a registered address at version 2");
+        assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
     }
 
     /// The version-3 payload is checked again once the coinbase shows V24:
