@@ -114,7 +114,7 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 80**: 27–79 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 82**: 27–81 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
@@ -131,7 +131,9 @@ by open branches with no row here yet
 to 76 proposed for DashPay private contact requests; 77 proposed for a
 shielded spend plan that changed; 78 proposed for a shielded spend of more
 notes than one transition spends; 79 proposed for a shielded withdrawal amount
-outside the protocol bounds; 28, 30,
+outside the protocol bounds; 80 held by #5860 (external identity top-up from
+Platform addresses) with no row here yet; 81 proposed for a network protocol
+version this SDK does not support; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -198,6 +200,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 77 | `ErrorShieldedPlanChanged` | Shielded spend plan | Proposed. Maps `PlatformWalletError::ShieldedPlanChanged`: a shielded spend run against a plan (`platform_wallet_manager_shielded_plan_spend`, then a `_with_plan` transfer, unshield, withdraw or identity top-up export) selected different notes or a different fee than the plan, as the wallet's notes changed since. Nothing was reserved, built or broadcast; plan again and confirm the new fee. Mapped by the blanket conversion and kept by `map_spend_result`. Swift types it (`PlatformWalletError.shieldedPlanChanged`, `ErrorHandlingTests` pin) and wraps the plan (`PlatformWalletManager.shieldedPlanSpend`, overloads of the four spends taking an explicit `plan:`, beside their unchanged originals); Kotlin types it (`DashSdkError.PlatformWallet.ShieldedPlanChanged`, `DashSdkErrorTest` pin) with no JNI binding of the plan |
 | 78 | `ErrorShieldedSpendTooManyNotes` | Shielded spend plan | Proposed. Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's notes cover a shielded spend (transfer, unshield, withdrawal, identity top-up or private document create from the pool) or its plan (`platform_wallet_manager_shielded_plan_spend`) only with more notes than one shielded transition spends (`dpp::shielded::max_shielded_actions_per_transition`, 6 at protocol 14, bounded by the transition size). Nothing was reserved, built or broadcast; a smaller amount fits, or the notes can be merged first. Before, the selection took the notes anyway and Platform rejected the transition. Not a balance shortfall (41 is the Platform-address shield's capacity). Mapped by the blanket conversion and kept by `map_spend_result`. Swift types it (`PlatformWalletError.shieldedSpendTooManyNotes`, `ErrorHandlingTests` pin); Kotlin types it (`DashSdkError.PlatformWallet.ShieldedSpendTooManyNotes`, `DashSdkErrorTest` pin) |
 | 79 | `ErrorShieldedWithdrawalAmountOutOfRange` | Shielded spend plan | Proposed. Maps `PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`: a shielded withdrawal, or its plan (`platform_wallet_manager_shielded_plan_spend`, kind 2), reserves an amount for Core below the protocol minimum for its Core fee rate (`min_withdrawal_amount_with_core_fee` from protocol 14) or above `max_withdrawal_amount`. Nothing was reserved, built or broadcast; another amount fits. Mapped by the blanket conversion and kept by `map_spend_result`. Swift types it (`PlatformWalletError.shieldedWithdrawalAmountOutOfRange`, `ErrorHandlingTests` pin); Kotlin types it (`DashSdkError.PlatformWallet.ShieldedWithdrawalAmountOutOfRange`, `DashSdkErrorTest` pin) |
+| 81 | `ErrorNetworkProtocolVersionUnsupported` | Shielded spend plan | Proposed. Maps `PlatformWalletError::NetworkProtocolVersionUnsupported`: the SDK verified that the network runs a protocol version it has no tables for, so a shielded spend (transfer, unshield, withdrawal, identity top-up or private document create from the pool), with or without a plan, or its plan (`platform_wallet_manager_shielded_plan_spend`) cannot be priced. Nothing was reserved, built or broadcast; a retry does not lift it, only an SDK that knows the version, so a host asks the user to update the app. Before, it was a shielded build error, reported as the generic `ErrorWalletOperation` (6). Takes 81 because 80 is held by #5860. Mapped by the blanket conversion and kept by `map_spend_result`. Swift types it (`PlatformWalletError.networkProtocolVersionUnsupported`, `ErrorHandlingTests` pin); Kotlin types it (`DashSdkError.PlatformWallet.NetworkProtocolVersionUnsupported`, `DashSdkErrorTest` pin) |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged

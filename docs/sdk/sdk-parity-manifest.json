@@ -2007,7 +2007,7 @@
           "sdk": "unsupported",
           "example_app": "unsupported",
           "restart": "not_applicable",
-          "reason": "Code 77 maps to DashSdkError.PlatformWallet.ShieldedPlanChanged, code 78 to DashSdkError.PlatformWallet.ShieldedSpendTooManyNotes and code 79 to DashSdkError.PlatformWallet.ShieldedWithdrawalAmountOutOfRange (DashSdkErrorTest pins), but no JNI wrapper plans a shielded spend or spends against a plan."
+          "reason": "Code 77 maps to DashSdkError.PlatformWallet.ShieldedPlanChanged, code 78 to DashSdkError.PlatformWallet.ShieldedSpendTooManyNotes, code 79 to DashSdkError.PlatformWallet.ShieldedWithdrawalAmountOutOfRange and code 81 to DashSdkError.PlatformWallet.NetworkProtocolVersionUnsupported (DashSdkErrorTest pins), but no JNI wrapper plans a shielded spend or spends against a plan."
         }
       },
       "verification": [

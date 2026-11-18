@@ -652,6 +652,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A network on a protocol version this SDK has no tables for keeps its
+    /// own code and typed case, apart from a generic shielded build error, so
+    /// a host can ask for an app update.
+    func testShouldReportAnUnsupportedNetworkProtocolVersionByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NETWORK_PROTOCOL_VERSION_UNSUPPORTED
+        )
+        XCTAssertEqual(code, .errorNetworkProtocolVersionUnsupported)
+        XCTAssertEqual(code.rawValue, 81)
+        let detail = "The network runs protocol version 16, which this SDK does not support (it supports up to 15); update the app"
+        guard case .networkProtocolVersionUnsupported(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed unsupported-network-version error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

@@ -831,6 +831,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorNetworkProtocolVersionUnsupported` (native code 81). The
+         * network runs a protocol version this SDK has no tables for, so a
+         * shielded spend or its plan cannot be priced. Nothing was reserved,
+         * built or broadcast. A retry does not help: ask the user to update
+         * the app.
+         * ← Swift `PlatformWalletError.networkProtocolVersionUnsupported`.
+         */
+        class NetworkProtocolVersionUnsupported(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1042,6 +1053,7 @@ sealed class DashSdkError(
             77 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
             78 -> PlatformWallet.ShieldedSpendTooManyNotes(message, cause) // ErrorShieldedSpendTooManyNotes
             79 -> PlatformWallet.ShieldedWithdrawalAmountOutOfRange(message, cause) // ErrorShieldedWithdrawalAmountOutOfRange
+            81 -> PlatformWallet.NetworkProtocolVersionUnsupported(message, cause) // ErrorNetworkProtocolVersionUnsupported
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

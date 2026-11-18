@@ -334,7 +334,9 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// returns `ErrorInvalidParameter`; notes that cannot pay the amount and its
 /// fee, or a zero amount, return `ErrorWalletOperation`, and an amount only
 /// more notes than one transition spends would cover returns
-/// `ErrorShieldedSpendTooManyNotes`, as the spends do. A panic inside returns
+/// `ErrorShieldedSpendTooManyNotes`, as the spends do. A network running a
+/// protocol version this SDK has no tables for returns
+/// `ErrorNetworkProtocolVersionUnsupported`, as the spends do. A panic inside returns
 /// `ErrorWalletOperation`: planning reserves and sends nothing.
 ///
 /// # Safety
@@ -982,6 +984,9 @@ pub(crate) fn map_spend_result(
         // A withdrawal amount outside the protocol bounds for its Core fee
         // rate: nothing was reserved or built; another amount fits.
         Err(e @ PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. }) => e.into(),
+        // The network runs a protocol version this SDK cannot price at:
+        // nothing was reserved or built; only an app update lifts it.
+        Err(e @ PlatformWalletError::NetworkProtocolVersionUnsupported { .. }) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -3414,6 +3419,27 @@ mod tests {
             PlatformWalletFFIResult::from(out_of_range()).code as i32,
             79
         );
+    }
+
+    /// A network on a protocol version this SDK has no tables for keeps its own code through
+    /// the spend contract, the planning export and the blanket conversion alike, so a host can
+    /// ask for an app update instead of showing a build failure.
+    #[test]
+    fn should_keep_an_unsupported_network_protocol_version_at_its_own_code() {
+        let unsupported = || PlatformWalletError::NetworkProtocolVersionUnsupported {
+            network: 99,
+            latest_supported: 15,
+        };
+        for operation in ["shielded spend plan", "shielded unshield"] {
+            let result = map_spend_result(Err(unsupported()), operation);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorNetworkProtocolVersionUnsupported
+            );
+            assert_eq!(result.code as i32, 81);
+            assert!(message_of(&result).contains("protocol version 99"));
+        }
+        assert_eq!(PlatformWalletFFIResult::from(unsupported()).code as i32, 81);
     }
 
     /// A panic while planning is caught and reported as a failed read: planning reserves and

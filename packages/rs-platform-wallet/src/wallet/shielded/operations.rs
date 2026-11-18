@@ -3747,7 +3747,8 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
 /// spend is refused instead. With `expected_plan` the refusal is
 /// [`PlatformWalletError::ShieldedPlanChanged`] carrying the fee at the version the network
 /// applies for the same notes; without one, a build error naming both versions. A network
-/// version this SDK has no tables for is a build error either way: it cannot be priced.
+/// version this SDK has no tables for is
+/// [`PlatformWalletError::NetworkProtocolVersionUnsupported`] either way: it cannot be priced.
 fn ensure_version_unchanged(
     sdk: &Arc<dash_sdk::Sdk>,
     platform_version: &PlatformVersion,
@@ -3764,9 +3765,10 @@ fn ensure_version_unchanged(
     // What the network applies: its verified version when the SDK has one, else the SDK's.
     let applied_version = match network {
         Some(n) => PlatformVersion::get(n).map_err(|_| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "the network runs protocol version {n}, which this SDK does not support, so                  the spend built at protocol version {captured} is not priced"
-            ))
+            PlatformWalletError::NetworkProtocolVersionUnsupported {
+                network: n,
+                latest_supported: PlatformVersion::latest().protocol_version,
+            }
         })?,
         None => current,
     };
@@ -3827,6 +3829,12 @@ fn ensure_plan_version_matches_network(
             (sdk.version().protocol_version != version).then(|| sdk.version().protocol_version)
         });
     match network {
+        Some(network) if PlatformVersion::get(network).is_err() => {
+            Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                network,
+                latest_supported: PlatformVersion::latest().protocol_version,
+            })
+        }
         Some(network) => Err(PlatformWalletError::ShieldedBuildError(format!(
             "the SDK builds at protocol version {version} but the network runs {network}, \
              so a spend would be priced at a version the network does not apply"
@@ -10264,6 +10272,41 @@ mod spend_plan_tests {
         let _ = std::fs::remove_file(&case.path);
     }
 
+    /// A network on a protocol version this SDK has no tables for plans nothing, and says so
+    /// with its own error rather than a build error, so a host can ask for an app update.
+    #[tokio::test]
+    async fn should_refuse_to_plan_when_the_verified_network_version_is_unsupported() {
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        let case =
+            VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13).await;
+        case.sdk
+            .mock_verified_protocol_version(unsupported)
+            .expect("a mock SDK");
+
+        let planned = plan_spend(
+            &case.sdk,
+            &case.store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Exact(NOTE),
+        )
+        .await;
+
+        assert!(
+            matches!(
+                &planned,
+                Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                    network,
+                    latest_supported,
+                }) if *network == unsupported
+                    && *latest_supported == PlatformVersion::latest().protocol_version
+            ),
+            "got {planned:?}"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
     /// The network version another task verifies while the plan's store read is suspended is
     /// not planned around: the plan would price a fee at the pinned version that the network
     /// does not apply, which the host would display and confirm but could never use.
@@ -10307,7 +10350,7 @@ mod spend_plan_tests {
     }
 
     /// The network runs a protocol version this SDK has no tables for: the spend cannot be
-    /// priced at it, so it is refused as a build error, planned or not.
+    /// priced at it, so it is refused with its own error, planned or not.
     #[tokio::test]
     async fn should_refuse_a_spend_when_the_verified_network_version_is_unsupported() {
         let unsupported = PlatformVersion::latest().protocol_version + 1;
@@ -10327,9 +10370,14 @@ mod spend_plan_tests {
                 .await;
 
             assert!(
-                matches!(&refused, Err(PlatformWalletError::ShieldedBuildError(message))
-                    if message.contains(&unsupported.to_string())
-                        && message.contains("does not support")),
+                matches!(
+                    &refused,
+                    Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                        network,
+                        latest_supported,
+                    }) if *network == unsupported
+                        && *latest_supported == PlatformVersion::latest().protocol_version
+                ),
                 "planned={planned}: got {refused:?}"
             );
             assert_eq!(

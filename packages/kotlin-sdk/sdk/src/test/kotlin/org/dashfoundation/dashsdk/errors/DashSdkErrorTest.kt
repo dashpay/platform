@@ -448,6 +448,21 @@ class DashSdkErrorTest {
         assertFalse("another amount fits, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * A network on a protocol version this SDK has no tables for has its own
+     * code, apart from a generic build error, so a host can ask for an app
+     * update; a retry does not lift it.
+     */
+    @Test
+    fun shouldReportAnUnsupportedNetworkProtocolVersionByItsOwnCode() {
+        val detail = "The network runs protocol version 16, which this SDK does not support (it supports up to 15); update the app"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 81, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.NetworkProtocolVersionUnsupported)
+        assertEquals(detail, mapped.message)
+        assertFalse("only an app update lifts it, not a retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

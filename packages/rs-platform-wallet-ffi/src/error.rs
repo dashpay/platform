@@ -792,6 +792,13 @@ pub enum PlatformWalletFFIResultCode {
     /// reserved, built or broadcast. Another amount fits.
     ErrorShieldedWithdrawalAmountOutOfRange = 79,
 
+    /// Maps `PlatformWalletError::NetworkProtocolVersionUnsupported`: the
+    /// network runs a protocol version this SDK has no tables for, so a
+    /// shielded spend or its plan cannot be priced. Nothing was reserved, built
+    /// or broadcast. Retrying does not help: the host asks the user to update
+    /// the app. (80 is held by the external identity top-up PR, #5860.)
+    ErrorNetworkProtocolVersionUnsupported = 81,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1137,6 +1144,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedWithdrawalAmountOutOfRange
+            }
+            PlatformWalletError::NetworkProtocolVersionUnsupported { .. } => {
+                PlatformWalletFFIResultCode::ErrorNetworkProtocolVersionUnsupported
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code

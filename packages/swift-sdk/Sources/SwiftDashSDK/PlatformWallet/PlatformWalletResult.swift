@@ -334,6 +334,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the protocol minimum for its Core fee rate or above the maximum.
     /// Nothing was reserved, built or broadcast: another amount fits.
     case errorShieldedWithdrawalAmountOutOfRange = 79
+    /// The network runs a protocol version this SDK has no tables for, so a
+    /// shielded spend or its plan cannot be priced. Nothing was reserved,
+    /// built or broadcast. A retry does not help: ask the user to update the app.
+    case errorNetworkProtocolVersionUnsupported = 81
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -491,6 +495,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedSpendTooManyNotes
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_WITHDRAWAL_AMOUNT_OUT_OF_RANGE:
             self = .errorShieldedWithdrawalAmountOutOfRange
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NETWORK_PROTOCOL_VERSION_UNSUPPORTED:
+            self = .errorNetworkProtocolVersionUnsupported
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -777,6 +783,10 @@ public enum PlatformWalletError: LocalizedError {
     /// the protocol minimum for its Core fee rate or above the maximum (code
     /// 79). Nothing was reserved, built or broadcast: another amount fits.
     case shieldedWithdrawalAmountOutOfRange(String)
+    /// The network runs a protocol version this SDK has no tables for (code
+    /// 81), so a shielded spend or its plan cannot be priced. Nothing was
+    /// reserved, built or broadcast; only an app update lifts it.
+    case networkProtocolVersionUnsupported(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1012,6 +1022,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m), .shieldedPlanChanged(let m),
              .shieldedSpendTooManyNotes(let m), .shieldedWithdrawalAmountOutOfRange(let m),
+             .networkProtocolVersionUnsupported(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1155,6 +1166,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .shieldedSpendTooManyNotes(detail)
         case .errorShieldedWithdrawalAmountOutOfRange:
             self = .shieldedWithdrawalAmountOutOfRange(detail)
+        case .errorNetworkProtocolVersionUnsupported:
+            self = .networkProtocolVersionUnsupported(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

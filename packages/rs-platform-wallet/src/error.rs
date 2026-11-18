@@ -1096,6 +1096,16 @@ pub enum PlatformWalletError {
     #[error("Shielded withdrawal amount {amount} is outside the allowed range {min} to {max}")]
     ShieldedWithdrawalAmountOutOfRange { amount: u64, min: u64, max: u64 },
 
+    /// The network runs a protocol version this SDK has no tables for, so an operation priced
+    /// or built at it (a shielded spend or its plan) cannot be, and is refused before any note
+    /// was reserved or anything built. A retry does not lift it: only an SDK that knows the
+    /// version does, so a host asks the user to update the app.
+    #[error(
+        "The network runs protocol version {network}, which this SDK does not support \
+         (it supports up to {latest_supported}); update the app"
+    )]
+    NetworkProtocolVersionUnsupported { network: u32, latest_supported: u32 },
+
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.
     /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),
