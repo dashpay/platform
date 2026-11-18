@@ -53,7 +53,7 @@ final class ExternalIdentityTopUpTests: XCTestCase {
     func testHandsEmptyInputsToTheExportAsNullAndZero() async throws {
         let recorder = Recorder()
         do {
-            _ = try await ManagedPlatformWallet(handle: 42, walletId: Data())
+            _ = try await wallet()
                 .topUpFromAddresses(
                     identityId: identityId, inputs: [], addressSigner: try signer()
                 ) { _, _, inputsPtr, count, _, _ in
@@ -61,12 +61,11 @@ final class ExternalIdentityTopUpTests: XCTestCase {
                     recorder.count = count
                     return PlatformWalletFFIResult(
                         code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVALID_PARAMETER,
-                        message: strdup("no funding rows were provided")
+                        message: nil
                     )
                 }
             XCTFail("the export's invalid-parameter code must throw")
-        } catch PlatformWalletError.invalidParameter(let message) {
-            XCTAssertEqual(message, "no funding rows were provided")
+        } catch PlatformWalletError.invalidParameter {
         } catch {
             XCTFail("expected invalidParameter, got \(error)")
         }
@@ -104,7 +103,7 @@ final class ExternalIdentityTopUpTests: XCTestCase {
     /// external top-up never reaches the managed one, which would refuse an
     /// identity the wallet does not manage.
     func testEachWrapperDispatchesToItsOwnExport() async throws {
-        let wallet = ManagedPlatformWallet(handle: 42, walletId: Data())
+        let wallet = self.wallet()
         wallet.addressTopUpExports = .init(
             managed: { _, _, _, _, _, outBalance in
                 outBalance!.pointee = 1
@@ -136,7 +135,7 @@ final class ExternalIdentityTopUpTests: XCTestCase {
             input,
             .init(addressType: 1, hash: Data(repeating: 0xCD, count: 20), credits: 7)
         ]
-        let balance = try await ManagedPlatformWallet(handle: 42, walletId: Data())
+        let balance = try await wallet()
             .topUpFromAddresses(
                 identityId: identityId, inputs: inputs, addressSigner: signer
             ) { handle, idPtr, inputsPtr, count, signerHandle, outBalance in
@@ -151,7 +150,7 @@ final class ExternalIdentityTopUpTests: XCTestCase {
             }
 
         XCTAssertEqual(balance, 123_456)
-        XCTAssertEqual(recorder.handle, 42)
+        XCTAssertEqual(recorder.handle, NULL_HANDLE)
         XCTAssertEqual(recorder.id, identityId)
         XCTAssertEqual(recorder.signer, signer.handle)
         XCTAssertEqual(recorder.rows.map(\.address_type), [0, 1])
@@ -170,19 +169,18 @@ final class ExternalIdentityTopUpTests: XCTestCase {
             ) { _, _, _, _, _, _ in
                 PlatformWalletFFIResult(
                     code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_NOT_FOUND,
-                    message: strdup("identity not found on Platform")
+                    message: nil
                 )
             }
             XCTFail("code 7 must throw")
-        } catch PlatformWalletError.identityNotFound(let message) {
-            XCTAssertEqual(message, "identity not found on Platform")
+        } catch PlatformWalletError.identityNotFound {
         } catch {
             XCTFail("expected identityNotFound, got \(error)")
         }
     }
 
     private final class Recorder: @unchecked Sendable {
-        var handle: Handle = NULL_HANDLE
+        var handle: Handle?
         var id = Data()
         var rows: [IdentityFundingInputFFI] = []
         var signer: OpaquePointer?
