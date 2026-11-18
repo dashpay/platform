@@ -437,6 +437,13 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             )
         })
         .and_then(|action| {
+            // A parse that does not validate (check tx) skips the cap on a private type's
+            // entries, whose store the fee estimate prices: held to it here, as registration
+            // holds it. Edited in place: no type is private before protocol version 15, and a
+            // block's parse, which validates, refused any type over the cap already
+            action
+                .data_contract_ref()
+                .ensure_private_entry_sizes(platform_version)?;
             // A contract stored compiled must fit its cap, measured on the action's contract,
             // with the fields the action adds, so check_tx refuses it as a block does. The
             // compile is charged. Edited in place: through protocol version 14, which stores

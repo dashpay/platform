@@ -11,8 +11,10 @@
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::{property_names, DocumentPropertyType, DocumentTypeRef};
+use crate::data_contract::errors::DataContractError;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::DocumentV0;
 use crate::ProtocolError;
@@ -43,6 +45,40 @@ impl PrivateDocumentConfig {
     /// which this does not count.
     pub fn entry_size(&self) -> u32 {
         self.entry_size.get()
+    }
+
+    /// Refuses entries larger than a private document type may declare
+    /// (`max_private_document_entry_size`), with the error registration refuses the type
+    /// `document_type_name` declaring them with.
+    pub(crate) fn ensure_entry_size_within_limit(
+        &self,
+        document_type_name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        let entry_size = self.entry_size();
+        let Some(max_entry_size) = platform_version
+            .system_limits
+            .max_private_document_entry_size
+        else {
+            // A table selecting `parse_private_document` without the limit is a fault of this
+            // build, not of the contract
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "protocol version {} parses private document types but sets no \
+                 max_private_document_entry_size",
+                platform_version.protocol_version,
+            )));
+        };
+        if entry_size > max_entry_size {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "private document type \"{document_type_name}\" declares `{}: {entry_size}`, \
+                     above the largest entry a private document type may declare, \
+                     {max_entry_size} bytes",
+                    property_names::ENTRY_SIZE,
+                )),
+            ));
+        }
+        Ok(())
     }
 }
 
