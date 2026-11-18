@@ -593,47 +593,37 @@ mod dpns_v3_tests {
 
     #[tokio::test]
     async fn should_refuse_a_reveal_in_the_block_of_its_preorder() {
-        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
-        let salt: [u8; 32] = fixture.rng.gen();
-        let preorder = fixture
-            .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
-            .await;
+        // An uncontested name, and a contested one, whose create reads no other preorder but
+        // is still held to its own preorder's age
+        for label in ["quantum7", "quantum"] {
+            let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+            let salt: [u8; 32] = fixture.rng.gen();
+            let preorder = fixture
+                .preorder(Who::Alice, salt, label, "dash", PREORDER_HEIGHT)
+                .await;
 
-        let (_, result) = fixture
-            .domain(
-                Who::Alice,
-                salt,
-                "quantum7",
-                "dash",
-                &[],
-                &[],
-                PREORDER_HEIGHT,
-            )
-            .await;
-        assert_matches!(
-            refusal(&result),
-            ConsensusError::StateError(StateError::ReferencedDocumentRequirementNotMetError(e))
-                if e.field() == "minimumAgeBlocks"
-        );
-        assert!(fixture.name("quantum7").is_none());
-        assert!(fixture.stored_preorder(&preorder).is_some());
+            let (_, result) = fixture
+                .domain(Who::Alice, salt, label, "dash", &[], &[], PREORDER_HEIGHT)
+                .await;
+            assert_matches!(
+                refusal(&result),
+                ConsensusError::StateError(StateError::ReferencedDocumentRequirementNotMetError(e))
+                    if e.field() == "minimumAgeBlocks",
+                "{label}"
+            );
+            assert!(fixture.name(label).is_none());
+            assert!(fixture.stored_preorder(&preorder).is_some());
 
-        // The next block reveals it
-        let (_, result) = fixture
-            .domain(
-                Who::Alice,
-                salt,
-                "quantum7",
-                "dash",
-                &[],
-                &[],
-                REVEAL_HEIGHT,
-            )
-            .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        );
+            // The next block reveals it
+            let (_, result) = fixture
+                .domain(Who::Alice, salt, label, "dash", &[], &[], REVEAL_HEIGHT)
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "{label}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1471,8 +1461,8 @@ mod dpns_v3_tests {
         assert_eq!(contender_ids, expected);
     }
 
-    /// Joining a contest still takes a valid preorder of the joiner's own: only the older
-    /// preorders of other identities are no longer read. Alice opens the contest for
+    /// Joining a contest reads no other identity's preorder but takes a valid preorder of the
+    /// joiner's own. Alice opens the contest for
     /// "quantum". Bob holds no preorder of the name, then a copy of Alice's (its
     /// `ownerNameHash` names Alice): both of his joins are refused (40120), and the copy
     /// stays.

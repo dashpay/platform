@@ -2496,8 +2496,27 @@ mod commit_reveal_lookup_tests {
 
     /// `who`'s valid preorder of the name, made in block `height`.
     async fn commit_name(fixture: &mut CommitRevealFixture, who: Who, height: u64) -> Document {
+        commit_to(fixture, who, &full_name(), height).await
+    }
+
+    /// `who`'s valid commitment to `committed`, the bytes a reveal's `findBy` function joins,
+    /// made in block `height`: it holds the sha256d of `committed`, and of `who`'s id followed
+    /// by `committed`.
+    async fn commit_to(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        committed: &str,
+        height: u64,
+    ) -> Document {
         let owner = fixture.id(who);
-        preorder_name(fixture, who, owner_name_hash(owner), height).await
+        preorder_name_holding(
+            fixture,
+            who,
+            salted_hash(&owner.to_buffer(), committed),
+            Value::Bytes32(hash_double(committed.as_bytes())),
+            height,
+        )
+        .await
     }
 
     /// The values of a `name` for the name.
@@ -2725,51 +2744,118 @@ mod commit_reveal_lookup_tests {
         }
     }
 
-    /// A contest decides between its contenders only when it takes every commitment
-    /// `chooseFirst` would read: here the name's commitments hash its label alone, while its
+    /// A contest decides between its contenders only when the commitments `chooseFirst` orders
+    /// are to its values: here the name's commitments hash its label alone, while its
     /// contest is over the label and the parent, so a preorder of the label may be meant for
     /// another parent's contest. The contested reveal is held to the order as any other: at 15
     /// as at 14, Alice's older valid preorder refuses Mallory's (40149).
     #[tokio::test]
     async fn should_hold_a_contested_reveal_to_the_order_where_its_commitment_misses_a_contested_value(
     ) {
-        let label_only = serde_json::json!(["normalizedLabel"]);
-        let mut fixture =
-            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
                 let name = &mut contract["documentSchemas"]["name"]["creatorRefersTo"];
-                name["findBy"]["nameHash"]["params"] = label_only.clone();
+                name["findBy"]["nameHash"]["params"] = serde_json::json!(["normalizedLabel"]);
                 name["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"]["params"] =
                     serde_json::json!(["$ownerId", "normalizedLabel"]);
             });
-        let label_hash = Value::Bytes32(hash_double(NAME_LABEL.as_bytes()));
-        let alice_id = fixture.id(Who::Alice);
-        let mallory_id = fixture.id(Who::Mallory);
-        let alice = preorder_name_holding(
-            &mut fixture,
-            Who::Alice,
-            salted_hash(&alice_id.to_buffer(), NAME_LABEL),
-            label_hash.clone(),
-            COMMIT_HEIGHT,
-        )
-        .await;
-        let mallory = preorder_name_holding(
-            &mut fixture,
-            Who::Mallory,
-            salted_hash(&mallory_id.to_buffer(), NAME_LABEL),
-            label_hash,
-            REVEAL_HEIGHT,
-        )
-        .await;
+            let alice = commit_to(&mut fixture, Who::Alice, NAME_LABEL, COMMIT_HEIGHT).await;
+            let mallory = commit_to(&mut fixture, Who::Mallory, NAME_LABEL, REVEAL_HEIGHT).await;
 
-        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
-        assert_preceded(result, &mallory, &alice);
-        assert!(fixture.document_exists("namePreorder", mallory.id()));
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when the commitments `chooseFirst` orders
+    /// are to the contest's values and nothing more. Here a name's commitments also hold an
+    /// `answer`: the order of the commitments to the same name and answer is a rule of the
+    /// contract the contest over the name does not decide. The contested reveal is held to it
+    /// as any other: at 15 as at 14, Alice's older valid commitment refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_commitment_holds_more_than_the_contested_values(
+    ) {
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let name = &mut contract["documentSchemas"]["name"];
+                name["properties"]["answer"] = serde_json::json!({
+                    "type": "string", "minLength": 1, "maxLength": 63, "position": 2
+                });
+                name["required"] =
+                    serde_json::json!(["normalizedLabel", "normalizedParentDomainName", "answer"]);
+                let reference = &mut name["creatorRefersTo"];
+                reference["findBy"]["nameHash"]["params"] = serde_json::json!([
+                    "normalizedLabel", { "const": "." }, "normalizedParentDomainName",
+                    { "const": "/" }, "answer"
+                ]);
+                reference["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"]["params"] = serde_json::json!([
+                    "$ownerId", "normalizedLabel", { "const": "." },
+                    "normalizedParentDomainName", { "const": "/" }, "answer"
+                ]);
+            });
+            let committed = format!("{}/42", full_name());
+            let alice = commit_to(&mut fixture, Who::Alice, &committed, COMMIT_HEIGHT).await;
+            let mallory = commit_to(&mut fixture, Who::Mallory, &committed, REVEAL_HEIGHT).await;
+
+            let mut values = name_values();
+            values.push(("answer", "42".into()));
+            let (_, result) = fixture
+                .create(Who::Mallory, "name", &values, &[], REVEAL_HEIGHT + 1)
+                .await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when it is decided by its index values. A
+    /// contract registered at protocol version 14 may hold a contest whose `fieldMatches` read
+    /// a property outside the index, here a `tier`, so its writer chooses whether a create of
+    /// the same values is contested. At 15 such a contested create is held to the order as
+    /// any other: Alice's older valid commitment refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_contest_reads_outside_its_index()
+    {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected the platform version");
+        let mut fixture = contested_choose_first_fixture_with(platform_version_14, |contract| {
+            let name = &mut contract["documentSchemas"]["name"];
+            name["properties"]["tier"] = serde_json::json!({
+                "type": "string", "minLength": 1, "maxLength": 10, "position": 2
+            });
+            name["indices"][0]["contested"]["fieldMatches"] =
+                serde_json::json!([{ "field": "tier", "regexPattern": "^gold$" }]);
+        });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT - 1).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let mut data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+        data.insert("tier".to_string(), "gold".into());
+
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(Who::Mallory),
+            None,
+            true,
+            REVEAL_HEIGHT,
+            PlatformVersion::latest(),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.document_id() == mallory.id() && *e.preceding_document_id() == alice.id()
+        );
     }
 
     /// A create its contest decides reads and bills no competitors: the `findBy` hash, the
-    /// lookup and the found preorder's `validWhen` hash are all it pays for. The same create,
-    /// held to the order, reads Carol's copy and Mallory's older valid preorder, which refuses
-    /// it.
+    /// lookup and the found preorder's `validWhen` hash are all it pays for, though Carol's copy
+    /// and Mallory's older valid preorder of the name are in state.
     #[tokio::test]
     async fn should_bill_no_competitors_for_a_create_its_contest_decides() {
         let mut fixture = contested_choose_first_fixture(PlatformVersion::latest());
@@ -2780,9 +2866,8 @@ mod commit_reveal_lookup_tests {
             COMMIT_HEIGHT - 2,
         )
         .await;
-        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT - 1).await;
+        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT - 1).await;
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
-        let alice_id = fixture.id(Who::Alice);
         let data: BTreeMap<String, Value> = name_values()
             .into_iter()
             .map(|(property, value)| (property.to_string(), value))
@@ -2791,7 +2876,7 @@ mod commit_reveal_lookup_tests {
         let (result, execution_context, consumed) = fixture.validate_references(
             "name",
             &data,
-            alice_id,
+            fixture.id(Who::Alice),
             None,
             true,
             REVEAL_HEIGHT,
@@ -2813,21 +2898,6 @@ mod commit_reveal_lookup_tests {
                 .map(|consumed| consumed.document.document_id)
                 .collect::<Vec<_>>(),
             vec![alice.id()]
-        );
-
-        let (result, _, _) = fixture.validate_references(
-            "name",
-            &data,
-            alice_id,
-            None,
-            false,
-            REVEAL_HEIGHT,
-            PlatformVersion::latest(),
-        );
-        assert_matches!(
-            result.errors.as_slice(),
-            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
-                if *e.preceding_document_id() == mallory.id()
         );
     }
 

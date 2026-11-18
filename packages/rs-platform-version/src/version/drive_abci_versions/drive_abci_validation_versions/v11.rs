@@ -60,8 +60,8 @@ use super::{
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
 ///   `consume` keeps the commitment it finds in the `ConsumedDocument`, so the create conversion 1
 ///   deletes the commitment from it without reading it again, and a create that opens or joins
-///   a contest taking every `chooseFirst` competitor reads none of them. Every other lookup
-///   reads as v0's does.
+///   a contest reads no competitors of a `chooseFirst` whose commitments are to the contest's
+///   values alone. Every other lookup reads as v0's does.
 /// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
 ///   document field change reads the stored document with its stored element's storage flags
 ///   (`query_documents_with_flags`), and the action carries the owner they name, so that the

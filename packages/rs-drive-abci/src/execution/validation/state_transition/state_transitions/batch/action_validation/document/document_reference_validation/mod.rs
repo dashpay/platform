@@ -103,9 +103,9 @@ pub(crate) trait DocumentReferenceValidation {
     /// replace leaves it alone, since nothing it reads can have changed.
     /// `opens_or_joins_contest` is whether the write is a create that opens or joins a contest
     /// (it states the contest's fund): from protocol version 15 such a create reads no
-    /// `chooseFirst` competitors when its contest takes every one of them, the contest deciding
-    /// between its contenders. Generation 0 does not take it, and holds every create to
-    /// `chooseFirst`.
+    /// `chooseFirst` competitors when the commitments hold its contest's values alone, the
+    /// contest deciding between its contenders. Generation 0 does not take it, and holds every
+    /// create to `chooseFirst`.
     ///
     /// When `derived_index_values` is given (a create, protocol version 14), an accepted write
     /// records there the value of each derived index property of the document type, read from

@@ -91,8 +91,9 @@ use crate::platform_types::platform::PlatformStateRef;
 /// version 15): generation 0's, but a `refersTo` lookup of a reference declaring `consume`
 /// keeps the document it finds in the [`ConsumedDocument`] it records, so the create
 /// conversion 1 deletes the document from it without reading it again, and a create that opens
-/// or joins a contest taking every `chooseFirst` competitor reads none of them: the contest
-/// decides between its contenders. Every other lookup reads as generation 0's does.
+/// or joins a contest, its `chooseFirst` commitments holding the contest's values alone, reads
+/// no competitors: the contest decides between its contenders. Every other lookup reads as
+/// generation 0's does.
 ///
 /// It is intended to be called via the higher-level `DocumentReferenceValidation` dispatcher
 /// that selects the version; `deletable_document_reference_target_is_gone` stays generation
@@ -1653,8 +1654,8 @@ fn validate_reference_target_v1(
 
             // The commitment a computed key found: it must be old enough, the first valid one
             // among those to the same values when the reference declares `chooseFirst` (valid
-            // alone for a create a contest taking every competitor decides), and the create
-            // deletes it when the reference consumes it. Its age is judged in
+            // alone for a contested create committing to its contest's values alone), and the
+            // create deletes it when the reference consumes it. Its age is judged in
             // blocks, from its `$createdAtBlockHeight` (registration demands the type record
             // one) to the block of the create, so 1 means an earlier block; a document
             // recording none never meets it. Only a lookup the protocol version 14 parser
@@ -1927,7 +1928,7 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 /// Checks a create's `chooseFirst` (see `LookupChooseFirst`): the commitment `found`, which
 /// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
 /// valid commitment to the values the create reveals, or, for a create opening or joining a
-/// contest that takes every competitor, a valid one.
+/// contest whose values alone the commitments hold, a valid one.
 ///
 /// * A commitment past its type's `ttl` at the block time is gone, whether or not the cleanup
 ///   has reached it: `found` past it finds no document (`ReferencedEntityNotFoundError`,
@@ -1948,8 +1949,8 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 ///   another identity's hash is owned by an identity the hash does not name. The first valid
 ///   competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
 /// * A create that opens or joins a contest (`opens_or_joins_contest`) reads no competitors once
-///   `found` holds, when that contest takes every competitor
-///   ([`contest_takes_every_competitor`]): the contest decides between its contenders, whoever
+///   `found` holds, when the commitments are to the contest's values alone
+///   ([`commits_to_its_contest_values`]): the contest decides between its contenders, whoever
 ///   committed first.
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
 ///   ([`choose_first_scan_budget`]), which check tx reserves ([`choose_first_reservation`]).
@@ -2019,10 +2020,11 @@ fn validate_choose_first_v1(
     ) {
         return Ok(not_found());
     }
-    // A create that opens or joins a contest taking every competitor is one contender among
-    // them, and the contest, not the order of their commitments, decides: none is read
+    // A create that opens or joins a contest, revealing a commitment to the contest's values
+    // alone, is one contender among those the competitors would be, and the contest, not the
+    // order of their commitments, decides: none is read
     if opens_or_joins_contest
-        && contest_takes_every_competitor(declaring_document_type, choose_first)
+        && commits_to_its_contest_values(declaring_document_type, choose_first)
     {
         return Ok(SimpleConsensusValidationResult::new());
     }
@@ -2135,28 +2137,33 @@ fn validate_choose_first_v1(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// Whether the contest a create of `declaring_document_type` opens or joins takes every
-/// commitment `choose_first` would hold against it: the type's contest is decided by its index
-/// values alone, and `validWhen` reads every property of the contested index. A valid competitor
-/// holds `validWhen` computed from the create's own values, so revealed it carries the same
-/// index values and is a contender in the same contest. Otherwise a competitor may have
-/// committed to values that contest does not decide, or a writer could choose whether its
-/// create is contested, and the create is held to `chooseFirst` as any other.
-fn contest_takes_every_competitor(
+/// Whether the commitments `choose_first` orders, for a create of `declaring_document_type`,
+/// are to the values of the type's contest and nothing more: the contest is decided by its
+/// index values alone, and `validWhen` reads exactly the properties of the contested index (as
+/// the `findBy` function filling `among` does, which registration holds to the same
+/// properties). A valid competitor holds `validWhen` computed from the create's own values, so
+/// it committed to exactly the create's index values, and the commitments `chooseFirst` would
+/// order are those of the contest's would-be contenders, between whom the contest decides.
+/// A commitment to more than the contest's values (an answer beside a name) is ordered by a
+/// rule of the contract the contest does not decide, one to fewer may be meant for another
+/// contest, and where the contest reads more than its index values a writer could choose
+/// whether its create is contested: each keeps the order.
+fn commits_to_its_contest_values(
     declaring_document_type: DocumentTypeRef<'_>,
     choose_first: &LookupChooseFirst,
 ) -> bool {
     let Some(contested_index) = declaring_document_type.find_contested_index() else {
         return false;
     };
+    let contested: BTreeSet<&str> = contested_index
+        .properties
+        .iter()
+        .map(|property| property.name.as_str())
+        .collect();
+    let committed: BTreeSet<&str> = choose_first.valid_when.properties_read().collect();
     contested_index
         .contest_is_decided_by_index_values(declaring_document_type.flattened_properties())
-        && contested_index.properties.iter().all(|property| {
-            choose_first
-                .valid_when
-                .properties_read()
-                .any(|read| read == property.name)
-        })
+        && committed == contested
 }
 
 /// The refusal of a write whose referenced document does not meet the `where`
