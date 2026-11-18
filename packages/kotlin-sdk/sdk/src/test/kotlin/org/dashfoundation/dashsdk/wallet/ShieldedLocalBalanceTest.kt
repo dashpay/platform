@@ -2,12 +2,14 @@ package org.dashfoundation.dashsdk.wallet
 
 import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -158,29 +160,61 @@ class ShieldedLocalBalanceTest {
         assertTrue(failure is ShieldedLocalBalanceBindingChanged)
     }
 
+    /** Runs nothing until the test says so, one queued step at a time. */
+    private class StepDispatcher : CoroutineDispatcher() {
+        val queued = ArrayDeque<Runnable>()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            queued.addLast(block)
+        }
+
+        fun runNext() = queued.removeFirst().run()
+    }
+
     @Test
-    fun shouldRefuseAReadWhoseResultWaitsForTheCallerWhileABindOrClearRuns() = runTest {
+    fun shouldRefuseAReadWhoseResultWaitsForTheCallerWhileABindOrClearRuns() {
         val fence = ShieldedBindingFence()
-        val readReturned = CountDownLatch(1)
-        // The caller runs on the test dispatcher, which runs nothing until
-        // this test suspends. The read itself runs on another thread.
-        val outcome = async {
-            runCatching {
-                fence.readingIn(Dispatchers.IO) {
-                    readReturned.countDown()
+        val caller = StepDispatcher()
+        val reader = StepDispatcher()
+        var readRan = false
+        var outcome: Result<Int>? = null
+        CoroutineScope(caller).launch {
+            outcome = runCatching {
+                fence.readingIn(reader) {
+                    readRan = true
                     1
                 }
             }
         }
-        runCurrent()
-        readReturned.await()
-        // The read has its value, and the value cannot reach the caller
-        // before this test suspends. A bind or clear runs to the end in
-        // that window.
+        // The caller starts and hands the read to the other context.
+        caller.runNext()
+        assertEquals(1, reader.queued.size)
+        assertTrue(caller.queued.isEmpty())
+        // The read runs to its end there and queues its result for the
+        // caller. Everything on the reading side is finished at this point.
+        reader.runNext()
+        assertTrue(readRan)
+        assertTrue(reader.queued.isEmpty())
+        assertEquals(1, caller.queued.size)
+        assertNull(outcome)
+        // A bind or clear runs to the end while the result waits.
         fence.changing { }
-        assertTrue(outcome.await().exceptionOrNull() is ShieldedLocalBalanceBindingChanged)
+        caller.runNext()
+        assertTrue(outcome?.exceptionOrNull() is ShieldedLocalBalanceBindingChanged)
+    }
 
-        // Without a bind or clear in the window the value is delivered.
-        assertEquals(2, fence.readingIn(Dispatchers.IO) { 2 })
+    @Test
+    fun shouldDeliverAReadFromAnotherContextThatNothingOverlaps() {
+        val fence = ShieldedBindingFence()
+        val caller = StepDispatcher()
+        val reader = StepDispatcher()
+        var outcome: Result<Int>? = null
+        CoroutineScope(caller).launch {
+            outcome = runCatching { fence.readingIn(reader) { 2 } }
+        }
+        caller.runNext()
+        reader.runNext()
+        caller.runNext()
+        assertEquals(2, outcome?.getOrNull())
     }
 }
