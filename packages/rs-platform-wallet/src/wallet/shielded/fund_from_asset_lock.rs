@@ -285,8 +285,17 @@ impl PlatformWallet {
         // the caller's, as before.
         let recipient = match &funding {
             AssetLockFunding::FromExistingAssetLock { out_point, .. } => {
-                let recorded = self.asset_locks.tracked_shielded_recipient(out_point).await;
-                resume_recipient(*out_point, recorded, requested_recipient)?
+                // Status and recipient from one snapshot: a consumed row is
+                // refused as consumed, never as a mismatch that names it as
+                // a lock to resume.
+                let (consumed, recorded) = self
+                    .asset_locks
+                    .tracked_resume_metadata(out_point)
+                    .await
+                    .map_or((false, None), |(_, _, status, recipient)| {
+                        (status.is_consumed(), recipient)
+                    });
+                resume_recipient(*out_point, consumed, recorded, requested_recipient)?
             }
             _ => requested_recipient,
         };
@@ -980,10 +989,16 @@ where
 /// rather than paid to an address nobody holds.
 pub(super) fn resume_recipient(
     out_point: OutPoint,
+    consumed: bool,
     recorded: Option<ShieldedRecipientRaw>,
     requested: OrchardAddress,
 ) -> Result<OrchardAddress, PlatformWalletError> {
     const _: () = assert!(SHIELDED_RECIPIENT_SIZE == ORCHARD_ADDRESS_SIZE);
+    // A consumed lock is not resumable whatever recipient it recorded: a
+    // mismatch would name it as the lock to resume (`LockHeld`).
+    if consumed {
+        return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+    }
     match recorded {
         None => Ok(requested),
         Some(recorded) if recorded == requested.to_raw_bytes() => Ok(requested),
@@ -1107,12 +1122,15 @@ mod tests {
         let recorded = crate::test_support::orchard_address_fixture(0x61);
         let other = crate::test_support::orchard_address_fixture(0x62);
         assert_eq!(
-            resume_recipient(out_point, Some(recorded.to_raw_bytes()), recorded).unwrap(),
+            resume_recipient(out_point, false, Some(recorded.to_raw_bytes()), recorded).unwrap(),
             recorded
         );
-        assert_eq!(resume_recipient(out_point, None, other).unwrap(), other);
+        assert_eq!(
+            resume_recipient(out_point, false, None, other).unwrap(),
+            other
+        );
         assert!(matches!(
-            resume_recipient(out_point, Some(recorded.to_raw_bytes()), other),
+            resume_recipient(out_point, false, Some(recorded.to_raw_bytes()), other),
             Err(PlatformWalletError::AssetLockRecipientMismatch {
                 out_point: o,
                 recorded: r,
@@ -1121,9 +1139,31 @@ mod tests {
         ));
         // Bytes that are not an address match nothing: refused, not paid.
         assert!(matches!(
-            resume_recipient(out_point, Some([0xff; SHIELDED_RECIPIENT_SIZE]), other),
+            resume_recipient(
+                out_point,
+                false,
+                Some([0xff; SHIELDED_RECIPIENT_SIZE]),
+                other
+            ),
             Err(PlatformWalletError::AssetLockRecipientMismatch { .. })
         ));
+    }
+
+    /// A consumed lock keeps its recorded recipient on the tombstone. A
+    /// resume to another recipient is refused as consumed, so no held lock
+    /// is advertised for it.
+    #[test]
+    fn resume_recipient_refuses_a_consumed_lock_as_consumed_not_as_a_mismatch() {
+        let out_point = OutPoint::null();
+        let recorded = crate::test_support::orchard_address_fixture(0x61);
+        let other = crate::test_support::orchard_address_fixture(0x62);
+        let error = resume_recipient(out_point, true, Some(recorded.to_raw_bytes()), other)
+            .expect_err("a consumed lock is not resumable");
+        assert!(
+            matches!(error, PlatformWalletError::AssetLockAlreadyConsumed(o) if o == out_point),
+            "{error:?}"
+        );
+        assert_eq!(error.held_asset_lock(), None);
     }
 
     #[test]

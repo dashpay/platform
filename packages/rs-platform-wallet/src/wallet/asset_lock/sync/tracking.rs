@@ -101,9 +101,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .contains_key(out_point)
     }
 
-    /// Snapshot the funding role, bound index and status used to authorize an
-    /// existing-lock resume. Taking all three under one read lock avoids a
-    /// role/status time-of-check/time-of-use split in the resolver.
+    /// Snapshot the funding role, bound index, status and recorded shielded
+    /// recipient used to authorize an existing-lock resume. Taking them under
+    /// one read lock avoids a role/status (or recipient/status)
+    /// time-of-check/time-of-use split in the resolver.
     ///
     /// [`AssetLockFundingType`]:
     /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
@@ -114,11 +115,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
         u32,
         AssetLockStatus,
+        Option<crate::changeset::ShieldedRecipientRaw>,
     )> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
+            .map(|lock| {
+                (
+                    lock.funding_type,
+                    lock.identity_index,
+                    lock.status.clone(),
+                    lock.shielded_recipient,
+                )
+            })
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.
@@ -128,19 +137,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
             .and_then(|lock| lock.operation_id)
-    }
-
-    /// The Orchard recipient a tracked shielded funding was built to pay, if
-    /// the row recorded one (see `TrackedAssetLock::shielded_recipient`).
-    #[cfg(any(feature = "shielded", test))]
-    pub(crate) async fn tracked_shielded_recipient(
-        &self,
-        out_point: &OutPoint,
-    ) -> Option<crate::changeset::ShieldedRecipientRaw> {
-        let wm = self.wallet_manager.read().await;
-        wm.get_wallet_info(&self.wallet_id)
-            .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .and_then(|lock| lock.shielded_recipient)
     }
 
     /// Track a new asset lock in memory, returning a changeset describing

@@ -1106,7 +1106,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if local_finality.is_none() {
             if let Some(cap_error) = match status {
                 AssetLockStatus::Built | AssetLockStatus::Broadcast => {
-                    input_cap_violation(&tx, self.sdk.version())
+                    input_cap_violation(&tx, self.sdk.version(), true)
                 }
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
@@ -6337,10 +6337,16 @@ mod tests {
         assert!(
             matches!(
                 error,
-                PlatformWalletError::AssetLockTooManyInputs { count, max: 100 } if count > 100
+                PlatformWalletError::AssetLockTooManyInputs {
+                    count,
+                    max: 100,
+                    resumed: true,
+                } if count > 100
             ),
             "{error:?}"
         );
+        // An earlier attempt may have sent the row: ambiguous, not `NotSent`.
+        assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
         assert_eq!(row.sends(), 0, "nothing may be sent: every peer drops it");
         assert_eq!(
             row.status().await,

@@ -658,9 +658,15 @@ pub enum PlatformWalletError {
     /// reached peers).
     /// Reservations do not survive a restart, so after one the row's inputs
     /// are not held and may be spent elsewhere. Consolidating the coins
-    /// lets a new lock fit.
+    /// lets a new lock fit. `resumed` tells the two apart: `false` for a
+    /// fresh build that never left the wallet, `true` for a resumed tracked
+    /// row an earlier attempt may have sent.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
-    AssetLockTooManyInputs { count: usize, max: usize },
+    AssetLockTooManyInputs {
+        count: usize,
+        max: usize,
+        resumed: bool,
+    },
 
     /// A shielded funding is being resumed to a different Orchard recipient
     /// than the one its tracked asset lock recorded when it was built. The
@@ -676,6 +682,19 @@ pub enum PlatformWalletError {
         out_point: dashcore::OutPoint,
         recorded: crate::changeset::ShieldedRecipientRaw,
         requested: crate::changeset::ShieldedRecipientRaw,
+    },
+
+    /// `source` ended a payment that had already dispatched funds: a Core
+    /// asset lock it broadcast, or seed batches it committed. The diagnostic
+    /// (and the FFI code) stay `source`'s; only the payment class changes, so
+    /// a refusal that followed the dispatch is never reported as `NotSent`.
+    /// `held_lock` names the tracked asset lock the payment holds and goes on
+    /// by resuming, when the caller knows one; `None` when nothing it can
+    /// resume is known.
+    #[error("{source}")]
+    PaymentAlreadyDispatched {
+        held_lock: Option<dashcore::OutPoint>,
+        source: Box<PlatformWalletError>,
     },
 
     #[error("SDK error: {0}")]
@@ -1479,13 +1498,17 @@ impl PlatformWalletError {
             Self::FinalityTimeout(out_point)
             | Self::AssetLockInputContested { out_point, .. }
             | Self::AssetLockRecipientMismatch { out_point, .. } => LockHeld(*out_point),
+            // A fresh build over the input cap was refused before it was
+            // tracked or sent.
+            Self::AssetLockTooManyInputs { resumed: false, .. } => NotSent,
             // An asset lock exists and may be on the network, but the error
             // names no lock this payment can resume: consumed (Platform's
-            // completion is unconfirmed), over the input cap (a resume is
-            // refused), or a proof failure that carries no outpoint.
+            // completion is unconfirmed), a resumed row over the input cap (a
+            // resume is refused, and an earlier attempt may have sent it), or
+            // a proof failure that carries no outpoint.
             Self::AssetLockProofWait(_)
             | Self::AssetLockAlreadyConsumed(_)
-            | Self::AssetLockTooManyInputs { .. }
+            | Self::AssetLockTooManyInputs { resumed: true, .. }
             | Self::AssetLockExpired(_)
             | Self::AssetLockNotChainLocked(_) => MaybeSent,
             // Platform's verdict after a broadcast, which no proof backs: the
@@ -1512,6 +1535,11 @@ impl PlatformWalletError {
             Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
                 sdk_payment_delivery(source)
             }
+            // Funds already left: never `NotSent`, whatever ended the call.
+            Self::PaymentAlreadyDispatched { held_lock, .. } => match held_lock {
+                Some(out_point) => LockHeld(*out_point),
+                None => MaybeSent,
+            },
         }
     }
 
@@ -2459,7 +2487,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 104;
+    const VARIANT_COUNT: usize = 105;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -2572,6 +2600,7 @@ mod payment_delivery_tests {
             E::ShieldedKeyDerivation(_) => 101,
             E::ShieldedNotBound => 102,
             E::DocumentEraseBusy => 103,
+            E::PaymentAlreadyDispatched { .. } => 104,
         }
     }
 
@@ -2737,6 +2766,32 @@ mod payment_delivery_tests {
                 E::AssetLockTooManyInputs {
                     count: 101,
                     max: 100,
+                    resumed: false,
+                },
+                NotSent,
+            ),
+            (
+                E::AssetLockTooManyInputs {
+                    count: 101,
+                    max: 100,
+                    resumed: true,
+                },
+                MaybeSent,
+            ),
+            (
+                E::PaymentAlreadyDispatched {
+                    held_lock: Some(out_point()),
+                    source: Box::new(E::Sdk(sdk_generic())),
+                },
+                LockHeld(out_point()),
+            ),
+            (
+                E::PaymentAlreadyDispatched {
+                    held_lock: None,
+                    source: Box::new(E::AssetLockInsufficientFunds {
+                        available: 1,
+                        required: 2,
+                    }),
                 },
                 MaybeSent,
             ),
@@ -3018,8 +3073,8 @@ mod payment_delivery_tests {
             .collect();
         assert_eq!(
             held.len(),
-            3,
-            "FinalityTimeout, contested, recipient mismatch"
+            4,
+            "FinalityTimeout, contested, recipient mismatch, a refusal after dispatch"
         );
         for (error, _) in held {
             assert!(!error.is_retryable(), "{error:?}");

@@ -1303,18 +1303,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // input, and a fixed amount held only in many small coins selects as
         // many. An oversized lock is abandoned here rather than stranded on
         // the wire; the caller can consolidate the coins and build again.
-        let abandon = input_cap_violation(&tx, self.sdk.version()).or_else(|| match amount {
-            AssetLockBuildAmount::DrainAll {
-                minimum_lock_duffs: Some(minimum),
-            } if locked_amount_duffs < minimum => {
-                Some(PlatformWalletError::AssetLockTransaction(format!(
-                    "drained asset lock of {locked_amount_duffs} duffs is below the required \
+        let abandon =
+            input_cap_violation(&tx, self.sdk.version(), false).or_else(|| match amount {
+                AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(minimum),
+                } if locked_amount_duffs < minimum => {
+                    Some(PlatformWalletError::AssetLockTransaction(format!(
+                        "drained asset lock of {locked_amount_duffs} duffs is below the required \
                      minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
                      nothing was broadcast"
-                )))
-            }
-            _ => None,
-        });
+                    )))
+                }
+                _ => None,
+            });
         if let Some(error) = abandon {
             {
                 // Nothing reached the broadcaster, so the fence has no
@@ -1823,7 +1824,11 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
             }
         }
         AssetLockError::Builder(BuilderError::TooManyInputs { count, max }) => {
-            PlatformWalletError::AssetLockTooManyInputs { count, max }
+            PlatformWalletError::AssetLockTooManyInputs {
+                count,
+                max,
+                resumed: false,
+            }
         }
         AssetLockError::Builder(BuilderError::FundsAwaitingFinality { waiting }) => {
             PlatformWalletError::AssetLockFundsAwaitingFinality { waiting }
@@ -4833,9 +4838,15 @@ mod tests {
                     result,
                     Err(PlatformWalletError::AssetLockTooManyInputs {
                         count: 101,
-                        max: 100
+                        max: 100,
+                        resumed: false,
                     })
                 ));
+                // Refused before it was tracked or sent: nothing left.
+                assert_eq!(
+                    result.as_ref().unwrap_err().payment_delivery(),
+                    crate::PaymentDelivery::NotSent
+                );
                 assert_eq!(manager.broadcaster.calls(), 0);
                 assert!(manager.list_tracked_locks().await.is_empty());
             } else {
@@ -4905,7 +4916,11 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(PlatformWalletError::AssetLockTooManyInputs { count, max: 100 }) if count > 100
+                Err(PlatformWalletError::AssetLockTooManyInputs {
+                    count,
+                    max: 100,
+                    resumed: false,
+                }) if count > 100
             ),
             "{result:?}"
         );

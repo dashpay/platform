@@ -625,7 +625,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point,
                 consume_invitation_voucher,
             } => {
-                let (actual_funding_type, actual_identity_index, status) = self
+                let (actual_funding_type, actual_identity_index, status, _) = self
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;

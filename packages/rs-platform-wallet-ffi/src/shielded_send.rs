@@ -3326,6 +3326,7 @@ mod tests {
             Err(PlatformWalletError::AssetLockTooManyInputs {
                 count: 101,
                 max: 100,
+                resumed: true,
             }),
             "shielded resume fund-from-asset-lock",
         );

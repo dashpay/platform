@@ -242,7 +242,9 @@ impl PlatformWallet {
             // real note lands at ~REAL_NOTE_VALUE_CREDITS and the surplus
             // is structurally zero.
             let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
-            let pool_fee = self.shield_from_asset_lock_pool_fee(num_actions)?;
+            let pool_fee = self
+                .shield_from_asset_lock_pool_fee(num_actions)
+                .map_err(|e| seed_batch_failure(e, batches_submitted))?;
             let lock_credits = pool_fee
                 .checked_add(REAL_NOTE_VALUE_CREDITS)
                 .ok_or_else(|| {
@@ -309,7 +311,7 @@ impl PlatformWallet {
                         };
                         tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => return Err(seed_batch_failure(e, batches_submitted)),
                 }
             }
 
@@ -377,6 +379,25 @@ impl PlatformWallet {
 /// move the pool count from `current` to `target`, given `per_batch` notes
 /// per batch. Returns `0` when already at/above target. Pure arithmetic so
 /// it can be unit-tested without a wallet/SDK.
+/// The error a seed run ends with, classed for the whole run rather than the
+/// last batch alone. After a committed batch the run already moved Core funds
+/// into the pool, so a later refusal is not `NotSent`. A held lock is not
+/// offered for resume either: the generic resume pays a single note, while
+/// this batch carried `dummy_outputs` fillers it cannot preserve. Either way
+/// the run's class is `MaybeSent`, with `error` kept as the diagnostic.
+fn seed_batch_failure(error: PlatformWalletError, batches_submitted: u64) -> PlatformWalletError {
+    use crate::PaymentDelivery;
+    match error.payment_delivery() {
+        PaymentDelivery::LockHeld(_) => {}
+        PaymentDelivery::NotSent if batches_submitted > 0 => {}
+        PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => return error,
+    }
+    PlatformWalletError::PaymentAlreadyDispatched {
+        held_lock: None,
+        source: Box::new(error),
+    }
+}
+
 fn estimate_batches(current: u64, target: u64, per_batch: u64) -> u64 {
     let per_batch = per_batch.max(1);
     target.saturating_sub(current).div_ceil(per_batch)
@@ -385,6 +406,38 @@ fn estimate_batches(current: u64, target: u64, per_batch: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A refusal after a committed batch is not `NotSent` (the run moved Core
+    /// funds), a held batch lock is not offered for the generic resume, and
+    /// a refusal before any batch keeps its own class.
+    #[test]
+    fn should_class_a_seed_failure_for_the_whole_run() {
+        use crate::PaymentDelivery;
+        let refusal = || PlatformWalletError::AssetLockInsufficientFunds {
+            available: 1,
+            required: 2,
+        };
+        let held = || {
+            PlatformWalletError::FinalityTimeout(dashcore::OutPoint::new(
+                dashcore::Txid::from_byte_array([7; 32]),
+                0,
+            ))
+        };
+
+        let first = seed_batch_failure(refusal(), 0);
+        assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
+
+        let after_one = seed_batch_failure(refusal(), 1);
+        assert_eq!(after_one.payment_delivery(), PaymentDelivery::MaybeSent);
+        assert!(!after_one.is_retryable());
+        assert_eq!(after_one.to_string(), refusal().to_string());
+
+        for batches in [0, 3] {
+            let error = seed_batch_failure(held(), batches);
+            assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+            assert_eq!(error.held_asset_lock(), None);
+        }
+    }
 
     #[test]
     fn estimate_batches_rounds_up_and_floors_at_zero() {

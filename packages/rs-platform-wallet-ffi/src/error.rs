@@ -1171,6 +1171,14 @@ impl PlatformWalletFFIResult {
     /// conversion; the caller stamps the error's payment-delivery class on
     /// whichever result this returns.
     fn from_wallet_error_parts(error: PlatformWalletError) -> Self {
+        // A refusal that followed a dispatch keeps its own code, message and
+        // verdict; only its payment class (stamped by the caller) differs.
+        let error = match error {
+            PlatformWalletError::PaymentAlreadyDispatched { source, .. } => {
+                return Self::from_wallet_error_parts(*source);
+            }
+            other => other,
+        };
         // Preserve the SDK's submission phase before any diagnostic can be
         // interpreted as a definitive nonce, balance or marketplace refusal.
         if matches!(
@@ -1834,6 +1842,36 @@ mod tests {
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use std::time::Duration;
+
+    /// A refusal that followed a dispatch keeps its source's code and
+    /// message (here the key-unavailable code 31 the host routes to key
+    /// repair) and carries the held lock of its own class.
+    #[test]
+    fn should_keep_the_source_code_of_a_refusal_after_dispatch() {
+        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([9; 32]), 2);
+        let source = || {
+            PlatformWalletError::Sdk(SdkError::Protocol(ProtocolError::Generic(format!(
+                "{}no private key",
+                platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+            ))))
+        };
+        let mut result: PlatformWalletFFIResult = PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: Some(out_point),
+            source: Box::new(source()),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::LockHeld
+        );
+        assert_eq!(result.held_asset_lock.vout, 2);
+        assert!(!result.retryable);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
 
     /// A panic in a read or another export that sends nothing keeps the
     /// unclassified result of `err`: no wallet error decided its class.
