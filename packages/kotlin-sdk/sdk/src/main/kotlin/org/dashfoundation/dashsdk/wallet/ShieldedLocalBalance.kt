@@ -78,27 +78,30 @@ data class ShieldedLocalBalanceSnapshot(
 
     /**
      * What a send from [account] can spend, or null when the account is not
-     * bound or its amount has no evidence behind it yet.
+     * bound or Rust has not established its amount
+     * ([ShieldedLocalAccountBalance.established]).
      */
     fun accountBalance(account: Int): Long? =
-        accounts[account]
-            ?.takeIf { it.source != ShieldedBalanceSource.NO_HISTORY }
-            ?.spendableCredits
+        accounts[account]?.takeIf { it.established }?.spendableCredits
 }
 
 /**
  * @param spendableCredits credits a send from this account can select now:
  *   unspent notes, leaving out the ones a pending spend has reserved.
+ * @param established whether [spendableCredits] is a known amount for this
+ *   account. Rust decides it and sends the result; nothing on the Kotlin
+ *   side derives it from [source]. When false the amount is not a balance.
  * @param lastScannedIndex the account's scan coverage; null when no completed
  *   scan is known, which is distinct from a scan that ended at index zero.
  */
 data class ShieldedLocalAccountBalance(
     val spendableCredits: Long,
+    val established: Boolean,
     val lastScannedIndex: Long?,
     val source: ShieldedBalanceSource,
 )
 
-/** What backs an account's local balance. */
+/** What backs an account's local balance. For diagnostics; see [ShieldedLocalAccountBalance.established]. */
 enum class ShieldedBalanceSource {
     /** Keys are bound, but no stored ledger or completed scan is known. Zero is not a verdict. */
     NO_HISTORY,
@@ -111,7 +114,7 @@ enum class ShieldedBalanceSource {
 }
 
 /** Number of `long` values per account row in a balance update. */
-private const val ACCOUNT_LONGS = 5
+private const val ACCOUNT_LONGS = 6
 
 /**
  * Build a [ShieldedBalanceUpdate] from the arguments of
@@ -159,22 +162,28 @@ private fun decodeAccounts(values: LongArray): Map<Int, ShieldedLocalAccountBala
     for (at in values.indices step ACCOUNT_LONGS) {
         val index = values[at]
         check(index in 0..Int.MAX_VALUE) { "Shielded account index out of range: $index" }
-        val hasLastScannedIndex = when (values[at + 2]) {
+        val established = when (values[at + 2]) {
             0L -> false
             1L -> true
-            else -> error("Unknown last scanned index flag: ${values[at + 2]}")
+            else -> error("Unknown established flag: ${values[at + 2]}")
         }
-        val source = when (values[at + 4]) {
+        val hasLastScannedIndex = when (values[at + 3]) {
+            0L -> false
+            1L -> true
+            else -> error("Unknown last scanned index flag: ${values[at + 3]}")
+        }
+        val source = when (values[at + 5]) {
             0L -> ShieldedBalanceSource.NO_HISTORY
             1L -> ShieldedBalanceSource.RESTORED
             2L -> ShieldedBalanceSource.SCANNED_THIS_SESSION
-            else -> error("Unknown shielded balance source: ${values[at + 4]}")
+            else -> error("Unknown shielded balance source: ${values[at + 5]}")
         }
         val previous = accounts.put(
             index.toInt(),
             ShieldedLocalAccountBalance(
                 spendableCredits = values[at + 1],
-                lastScannedIndex = if (hasLastScannedIndex) values[at + 3] else null,
+                established = established,
+                lastScannedIndex = if (hasLastScannedIndex) values[at + 4] else null,
                 source = source,
             ),
         )

@@ -12,10 +12,11 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
     private func row(
         _ account: UInt32,
         credits: UInt64 = 0,
+        established: Bool = true,
         source: ShieldedBalanceSourceFFI = SHIELDED_BALANCE_SOURCE_FFI_RESTORED
-    ) -> ShieldedLocalAccountBalanceFFI {
-        ShieldedLocalAccountBalanceFFI(
-            account_index: account, spendable_credits: credits,
+    ) -> ShieldedBalanceAccountFFI {
+        ShieldedBalanceAccountFFI(
+            account_index: account, spendable_credits: credits, established: established,
             last_scanned_index: 5, has_last_scanned_index: true, source: source)
     }
 
@@ -26,7 +27,7 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
         status: ShieldedLocalBalanceStatusFFI = SHIELDED_LOCAL_BALANCE_STATUS_FFI_READY,
         ordinary: UInt64 = 0,
         established: Bool = true,
-        rows: [ShieldedLocalAccountBalanceFFI] = [],
+        rows: [ShieldedBalanceAccountFFI] = [],
         countOverride: UInt? = nil,
         _ body: (UnsafePointer<ShieldedBalanceUpdateFFI>) throws -> T
     ) rethrows -> T {
@@ -52,7 +53,7 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
     private func ready(
         ordinary: UInt64,
         established: Bool,
-        accounts: [UInt32: ShieldedLocalAccountBalance] = [:]
+        accounts: [UInt32: ShieldedBalanceAccount] = [:]
     ) -> ShieldedBalanceState {
         .ready(ShieldedReadyBalance(
             ordinarySpendableCredits: ordinary,
@@ -78,15 +79,20 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
             revision: 4, ordinary: 150, established: true,
             rows: [
                 row(0, credits: 150),
-                row(0x4000_0000, credits: 900, source: SHIELDED_BALANCE_SOURCE_FFI_SCANNED_THIS_SESSION),
+                row(0x4000_0000, credits: 900, established: false,
+                    source: SHIELDED_BALANCE_SOURCE_FFI_SCANNED_THIS_SESSION),
             ]
         ) { try ShieldedBalanceUpdate.decode($0.pointee) }
         XCTAssertEqual(decoded, update(revision: 4, ready(ordinary: 150, established: true, accounts: [
-            0: ShieldedLocalAccountBalance(spendableCredits: 150, lastScannedIndex: 5, source: .restored),
-            0x4000_0000: ShieldedLocalAccountBalance(
-                spendableCredits: 900, lastScannedIndex: 5, source: .scannedThisSession),
+            0: ShieldedBalanceAccount(
+                spendableCredits: 150, established: true, lastScannedIndex: 5, source: .restored),
+            0x4000_0000: ShieldedBalanceAccount(
+                spendableCredits: 900, established: false, lastScannedIndex: 5, source: .scannedThisSession),
         ])))
         XCTAssertEqual(decoded.ordinaryBalance, 150)
+        // The decoded flag, not the source, decides each account.
+        XCTAssertEqual(decoded.accountBalance(0), 150)
+        XCTAssertNil(decoded.accountBalance(0x4000_0000))
     }
 
     func testShouldDecodeAReadyUpdateWhoseBalanceIsZero() throws {
@@ -163,16 +169,27 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
         XCTAssertNil(update(revision: 1, .restoreIncomplete).ordinaryBalance)
     }
 
-    func testShouldReportAnAccountBalanceOnlyForABoundAccountWithHistory() {
+    /// Rust's per-account `established` flag is what counts; `source` is
+    /// diagnostics and does not decide anything.
+    func testShouldReportAnAccountBalanceOnlyWhenRustEstablishedIt() {
         let state = ready(ordinary: 100, established: false, accounts: [
-            0: ShieldedLocalAccountBalance(spendableCredits: 100, lastScannedIndex: 3, source: .scannedThisSession),
-            1: ShieldedLocalAccountBalance(spendableCredits: 0, lastScannedIndex: nil, source: .noHistory),
-            2: ShieldedLocalAccountBalance(spendableCredits: 0, lastScannedIndex: 0, source: .restored),
+            0: ShieldedBalanceAccount(
+                spendableCredits: 100, established: true, lastScannedIndex: 3, source: .scannedThisSession),
+            1: ShieldedBalanceAccount(
+                spendableCredits: 0, established: false, lastScannedIndex: nil, source: .noHistory),
+            2: ShieldedBalanceAccount(
+                spendableCredits: 0, established: true, lastScannedIndex: 0, source: .restored),
+            3: ShieldedBalanceAccount(
+                spendableCredits: 70, established: false, lastScannedIndex: 9, source: .restored),
+            4: ShieldedBalanceAccount(
+                spendableCredits: 0, established: true, lastScannedIndex: nil, source: .noHistory),
         ])
         let held = update(revision: 1, state)
         XCTAssertEqual(held.accountBalance(0), 100)
-        XCTAssertNil(held.accountBalance(1), "a no-history zero is not a known zero")
+        XCTAssertNil(held.accountBalance(1))
         XCTAssertEqual(held.accountBalance(2), 0)
+        XCTAssertNil(held.accountBalance(3), "not established although its source is restored")
+        XCTAssertEqual(held.accountBalance(4), 0, "established although its source is noHistory")
         XCTAssertNil(held.accountBalance(7), "an account that is not bound")
         XCTAssertNil(update(revision: 1, .unbound).accountBalance(0))
         XCTAssertNil(update(revision: 1, .restoreIncomplete).accountBalance(0))
@@ -226,7 +243,7 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
         let manager = makeManager()
         let handler = PlatformWalletEventHandler(manager: manager)
         let context = Unmanaged.passUnretained(handler).toOpaque()
-        var rows: [ShieldedLocalAccountBalanceFFI]? = [row(0, credits: 42)]
+        var rows: [ShieldedBalanceAccountFFI]? = [row(0, credits: 42)]
         rows!.withUnsafeBufferPointer { buffer in
             var native = ShieldedBalanceUpdateFFI()
             withUnsafeMutableBytes(of: &native.wallet_id) { Self.walletId.copyBytes(to: $0) }

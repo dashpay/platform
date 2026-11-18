@@ -613,8 +613,10 @@ snapshot accounts.
   established yet (a wallet restored without history reads 0 before its
   first scan).
 - `update.accountBalance(account)` is what one account can spend, or `nil`
-  when the account is not bound or has no history yet. A screen that spends
-  from one account shows this.
+  when the account is not bound or Rust did not establish its amount. Rust
+  sends that decision per account (`ShieldedBalanceAccount.established`);
+  the account's `source` is for diagnostics only. A screen that spends from
+  one account shows this.
 - `unbound` means Rust read nothing for the wallet; it is not a known zero.
 
 Stopping shielded sync and Clear do not touch the dictionary (Clear's outcome

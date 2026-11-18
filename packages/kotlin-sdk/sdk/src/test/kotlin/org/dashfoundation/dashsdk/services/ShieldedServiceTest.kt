@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -187,6 +188,7 @@ class ShieldedServiceTest {
                 accounts = accounts.associate { (index, spendable) ->
                     index to ShieldedLocalAccountBalance(
                         spendableCredits = spendable,
+                        established = true,
                         lastScannedIndex = 1,
                         source = ShieldedBalanceSource.SCANNED_THIS_SESSION,
                     )
@@ -303,7 +305,7 @@ class ShieldedServiceTest {
     }
 
     @Test
-    fun shouldLeaveTheMirrorAloneOnceAnotherWalletIsBoundOnTheSameManager() {
+    fun shouldRebindTheWalletMirroredNowNotTheOneClearStartedWith() {
         // Clear reads its binding (wallet A on the manager) with its turn.
         val turns = BindingTurns()
         var mirror = "manager" to "A"
@@ -314,23 +316,52 @@ class ShieldedServiceTest {
         // While Clear is suspended, wallet B is bound on the same manager.
         turns.begin { mirror = "manager" to "B" }
 
-        // Clear does not reset the counters, which are B's now...
+        // Clear does not reset the counters, which are B's now.
         var countersReset = false
         assertFalse(turns.finish(startTurn) { countersReset = true })
         assertFalse(countersReset)
-        // ...and its re-bind, which wants the manager AND the wallet it
-        // cleared, takes no turn: B stays the mirror.
+
+        // Its reset dropped B's registration too, so Clear re-binds what is
+        // mirrored now. Binding A again would take the mirror back from B.
+        val (_, current) = turns.read { mirror }
+        assertEquals("manager" to "B", current)
         assertNull(turns.beginIf({ mirror == cleared }) { mirror = cleared })
+        assertTrue(turns.beginIf({ mirror == current }) { mirror = current } != null)
         assertEquals("manager" to "B", mirror)
 
-        // A re-bind of the same wallet on the same manager does not stop
-        // Clear's own re-bind: the reset dropped that registration too.
-        val again = BindingTurns()
-        var sameMirror = "manager" to "A"
-        again.begin { sameMirror = "manager" to "A" }
-        val (_, clearedAgain) = again.read { sameMirror }
-        again.begin { sameMirror = "manager" to "A" }
-        assertTrue(again.beginIf({ sameMirror == clearedAgain }) { } != null)
+        // A switch between that read and the bind stops it: nothing is
+        // installed over the newer binding.
+        val (_, beforeSwitch) = turns.read { mirror }
+        turns.begin { mirror = "other manager" to "C" }
+        assertNull(turns.beginIf({ mirror == beforeSwitch }) { mirror = beforeSwitch })
+        assertEquals("other manager" to "C", mirror)
+    }
+
+    @Test
+    fun shouldMakeABindWaitForAClearsResetAndWipe() = runTest {
+        val order = mutableListOf<String>()
+        val resetDone = CompletableDeferred<Unit>()
+        val wipeMayFinish = CompletableDeferred<Unit>()
+        // A Clear: the Rust reset is done, the Room wipe is still running.
+        val clear = launch(UnconfinedTestDispatcher(testScheduler)) {
+            service.withLedgerLifecycle {
+                order += "reset"
+                resetDone.complete(Unit)
+                wipeMayFinish.await()
+                order += "wiped"
+            }
+        }
+        resetDone.await()
+        // A bind arrives in between. Its native calls would restore the
+        // rows the wipe is about to delete.
+        val bind = launch(UnconfinedTestDispatcher(testScheduler)) {
+            service.withLedgerLifecycle { order += "bind restores" }
+        }
+        assertEquals(listOf("reset"), order)
+        wipeMayFinish.complete(Unit)
+        clear.join()
+        bind.join()
+        assertEquals(listOf("reset", "wiped", "bind restores"), order)
     }
 
     @Test

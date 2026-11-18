@@ -153,10 +153,11 @@ abstract class NativeWalletEventBridge {
      * @param ordinaryBalanceEstablished whether every ordinary account has
      *   evidence behind its amount; when false the credits are not the
      *   wallet's balance.
-     * @param accounts every bound account as rows of five values: account
-     *   index, spendable credits, has last scanned index (0 or 1), last
-     *   scanned index, source (0 no history, 1 restored, 2 scanned this
-     *   session). Empty unless ready.
+     * @param accounts every bound account as rows of six values: account
+     *   index, spendable credits, established (0 or 1: whether Rust takes
+     *   the credits for a known amount), has last scanned index (0 or 1),
+     *   last scanned index, source (0 no history, 1 restored, 2 scanned
+     *   this session). Empty unless ready.
      */
     open fun onShieldedBalanceChanged(
         walletId: ByteArray,
