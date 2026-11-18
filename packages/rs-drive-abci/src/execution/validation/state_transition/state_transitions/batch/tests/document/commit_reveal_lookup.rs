@@ -4279,4 +4279,115 @@ mod commit_reveal_lookup_tests {
             );
         }
     }
+
+    /// Check tx holds a reveal's signer to what it reserves for the reveal's lookup, and reports
+    /// the gas the reveal wants without the part that is a bound: Tenderdash fills a block's gas
+    /// with what transitions want, and the lookup query's allowance bounds what a block may bill
+    /// for the query. The key's double SHA-256 and the consumed commitment's delete, which a
+    /// block bills whenever it accepts the reveal, stay in the gas. So the fee check tx judges
+    /// and the gas it reports differ by the allowance, whatever it is.
+    #[tokio::test]
+    async fn should_report_the_gas_a_reveal_wants_without_the_lookup_querys_allowance() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x11; 32];
+        fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+            .await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(
+                &contract,
+                Who::Alice,
+                "domain",
+                &subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                None,
+            )
+            .await;
+        let raw = reveal
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let check = |platform_version: &PlatformVersion| {
+            let state = fixture.platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &fixture.platform.drive,
+                state: &state,
+                config: &fixture.platform.config,
+                core_rpc: &fixture.platform.core_rpc,
+            };
+            let result = fixture
+                .platform
+                .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
+                .expect("expected to check the transaction");
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
+            let checked = result.data.expect("expected a check tx result");
+            (
+                checked
+                    .fee_result
+                    .expect("expected an estimated fee")
+                    .total_base_fee(),
+                checked.gas_wanted,
+            )
+        };
+
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert!(allowance > 1);
+        let (admitted, gas_wanted) = check(platform_version);
+        assert_eq!(admitted - gas_wanted, allowance);
+
+        // Another allowance moves the fee check tx judges and not the gas it reports
+        let mut small_allowance = platform_version.clone();
+        small_allowance
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved = 1;
+        let (admitted_with_small_allowance, gas_wanted_with_small_allowance) =
+            check(&small_allowance);
+        assert_eq!(gas_wanted_with_small_allowance, gas_wanted);
+        assert_eq!(admitted - admitted_with_small_allowance, allowance - 1);
+    }
+
+    /// A reveal choosing the first of the commitments to its values is reported as wanting no
+    /// gas for the competitor scan's budget, which bounds what the scan may bill, while check tx
+    /// still holds its signer to it.
+    #[tokio::test]
+    async fn should_report_the_gas_a_choose_first_reveal_wants_without_the_scan_budget() {
+        let (mut fixture, _) = preceded_reveal_fixture().await;
+        let platform_version = PlatformVersion::latest();
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        let raw = reveal
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let state = fixture.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &fixture.platform.drive,
+            state: &state,
+            config: &fixture.platform.config,
+            core_rpc: &fixture.platform.core_rpc,
+        };
+        let checked = fixture
+            .platform
+            .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
+            .expect("expected to check the transaction")
+            .data
+            .expect("expected a check tx result");
+        let admitted = checked
+            .fee_result
+            .expect("expected an estimated fee")
+            .total_base_fee();
+        let budget = choose_first_scan_budget(platform_version);
+        assert!(admitted > budget);
+        assert!(
+            admitted - checked.gas_wanted >= budget,
+            "admitted {admitted}, gas wanted {}",
+            checked.gas_wanted
+        );
+    }
 }

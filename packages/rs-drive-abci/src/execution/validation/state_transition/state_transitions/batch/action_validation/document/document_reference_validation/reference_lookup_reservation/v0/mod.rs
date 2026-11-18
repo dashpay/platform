@@ -16,6 +16,7 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::Error;
+use crate::execution::types::check_tx_reservation::CheckTxReservation;
 use crate::execution::types::execution_operation::ValidationOperation;
 
 /// Generation 0: for every lookup leaf of every reference a create's document type declares
@@ -23,8 +24,9 @@ use crate::execution::types::execution_operation::ValidationOperation;
 /// it is checked for (the property's value, each element of a typed array, the writer for
 /// `ownerRefersTo` and `creatorRefersTo`), the double SHA-256 of its computed key by the blocks
 /// the create's values make it (but for a `chooseFirst` lookup, whose `findBy` hash
-/// `choose_first_reservation` reserves), `lookup_query_credits_reserved`, and for a lookup
-/// declaring `consume` Drive's estimated delete of a document of the consumed type
+/// `choose_first_reservation` reserves), billed, `lookup_query_credits_reserved`, a bound, and
+/// for a lookup declaring `consume` Drive's estimated delete of a document of the consumed type,
+/// billed
 /// (see [`super::reference_lookup_reservation`]). An unset property makes no lookup, and a
 /// key whose preimage cannot be assembled is refused by structure validation before any read.
 #[inline(always)]
@@ -33,18 +35,16 @@ pub(super) fn reference_lookup_reservation_v0(
     drive: &Drive,
     block_info: &BlockInfo,
     platform_version: &PlatformVersion,
-) -> Result<Vec<ValidationOperation>, Error> {
+) -> Result<CheckTxReservation, Error> {
     let StateTransitionAction::BatchAction(batch) = action else {
-        return Ok(Vec::new());
+        return Ok(CheckTxReservation::default());
     };
     let writer_id = batch.owner_id();
     let query_allowance = platform_version
         .fee_version
         .document_reference
         .lookup_query_credits_reserved;
-    // The delete of a consumed document is priced once for each consumed type
-    let mut consumed_delete_fees: BTreeMap<&str, Credits> = BTreeMap::new();
-    let mut reservation = Vec::new();
+    let mut reservation = CheckTxReservation::default();
     for transition in batch.transitions() {
         let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(create)) =
             transition
@@ -57,6 +57,9 @@ pub(super) fn reference_lookup_reservation_v0(
             continue;
         };
         let data = create.data();
+        // The delete of a document this create consumes is priced once for each consumed type
+        // of its contract
+        let mut consumed_delete_fees: BTreeMap<&str, Credits> = BTreeMap::new();
         for (holder, reference) in document_type.reference_declarations() {
             let (target, values, reads_an_identifier) = match reference {
                 PropertyReference::KeyId(_) => continue,
@@ -81,21 +84,23 @@ pub(super) fn reference_lookup_reservation_v0(
                 let Some(lookup) = declaration.lookup else {
                     continue;
                 };
-                let mut operations = Vec::new();
+                let mut operations = CheckTxReservation::default();
                 // A key's `"."` reads the identifier the reference holds, any of which is as
                 // long as the writer's id, or names the property carrying the reference
                 let reference_id = reads_an_identifier.then_some(writer_id);
                 if let (None, Some((_, key))) = (&lookup.choose_first, lookup.hash_key()) {
                     if let Ok(preimage) = key.preimage(document_type, reference_id, writer_id, data)
                     {
-                        operations.push(ValidationOperation::DoubleSha256(
+                        operations.billed.push(ValidationOperation::DoubleSha256(
                             key.function.block_count(preimage.len()),
                         ));
                     }
                 }
-                operations.push(ValidationOperation::PrecalculatedOperation(
-                    FeeResult::new_from_processing_fee(query_allowance),
-                ));
+                operations
+                    .bounds
+                    .push(ValidationOperation::PrecalculatedOperation(
+                        FeeResult::new_from_processing_fee(query_allowance),
+                    ));
                 // Registration admits `consume` only beside a `findBy` into the declaring
                 // contract
                 if lookup.consume {
@@ -123,13 +128,15 @@ pub(super) fn reference_lookup_reservation_v0(
                         }
                     };
                     if let Some(delete_fee) = delete_fee {
-                        operations.push(ValidationOperation::PrecalculatedOperation(
-                            FeeResult::new_from_processing_fee(delete_fee),
-                        ));
+                        operations
+                            .billed
+                            .push(ValidationOperation::PrecalculatedOperation(
+                                FeeResult::new_from_processing_fee(delete_fee),
+                            ));
                     }
                 }
                 for _ in 0..values {
-                    reservation.extend(operations.iter().cloned());
+                    reservation.extend(operations.clone());
                 }
             }
         }

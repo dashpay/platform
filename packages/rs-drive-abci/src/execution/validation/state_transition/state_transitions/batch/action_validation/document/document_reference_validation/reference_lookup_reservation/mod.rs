@@ -7,7 +7,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::check_tx_reservation::CheckTxReservation;
 
 /// What check tx reserves, on top of the estimated fee of `action`, for the `refersTo` lookups
 /// of its creates when it does not validate their state. Document reference validation bills a
@@ -26,15 +26,16 @@ use crate::execution::types::execution_operation::ValidationOperation;
 /// * `platform_version`: Selects the method version and prices the reservation.
 ///
 /// # Returns
-/// * `Ok(Vec<ValidationOperation>)`: the operations reserving the lookups of its creates, none
-///   for an action holding no create whose references make one.
+/// * `Ok(CheckTxReservation)`: the operations reserving the lookups of its creates, none for an
+///   action holding no create whose references make one: the keys' hashes and the consumed
+///   documents' deletes are billed, the queries' allowances bounds.
 /// * `Err(Error)` when the method version is unknown, or pricing a delete fails.
 pub(in crate::execution::validation::state_transition) fn reference_lookup_reservation(
     action: &StateTransitionAction,
     drive: &Drive,
     block_info: &BlockInfo,
     platform_version: &PlatformVersion,
-) -> Result<Vec<ValidationOperation>, Error> {
+) -> Result<CheckTxReservation, Error> {
     match platform_version
         .drive_abci
         .validation_and_processing

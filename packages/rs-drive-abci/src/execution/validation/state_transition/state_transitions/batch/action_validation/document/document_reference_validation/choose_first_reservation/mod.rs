@@ -6,7 +6,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::check_tx_reservation::CheckTxReservation;
 
 /// What check tx reserves, on top of the estimated fee of `action`, for the `chooseFirst`
 /// checks of its creates when it does not validate their state: for every create of a
@@ -25,13 +25,14 @@ use crate::execution::types::execution_operation::ValidationOperation;
 /// * `platform_version`: Selects the method version and prices the reservation.
 ///
 /// # Returns
-/// * `Ok(Vec<ValidationOperation>)`: the operations reserving the `chooseFirst` checks of its
-///   creates, none for an action holding no such create.
+/// * `Ok(CheckTxReservation)`: the operations reserving the `chooseFirst` checks of its
+///   creates, none for an action holding no such create: the hashes the check makes for the
+///   create's own commitment are billed, the scan's budget and the competitors' hashes bounds.
 /// * `Err(Error)` when the method version is unknown, or the reservation overflows.
 pub(in crate::execution::validation::state_transition) fn choose_first_reservation(
     action: &StateTransitionAction,
     platform_version: &PlatformVersion,
-) -> Result<Vec<ValidationOperation>, Error> {
+) -> Result<CheckTxReservation, Error> {
     match platform_version
         .drive_abci
         .validation_and_processing

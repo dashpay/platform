@@ -10,10 +10,11 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::check_tx_reservation::CheckTxReservation;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::choose_first_scan_budget;
 
-/// Generation 1: generation 0's reservation, and for each competitor the scan may read
+/// Generation 1: generation 0's reservation, and, a bound, for each competitor the scan may read
 /// (`SystemLimits::max_choose_first_candidates`) the double SHA-256 of the create's `validWhen`
 /// preimage, which document reference validation 1 bills in full for every competitor it
 /// hashes, past the scan's budget too. A competitor's preimage is the writer's with the
@@ -23,13 +24,13 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 pub(super) fn choose_first_reservation_v1(
     action: &StateTransitionAction,
     platform_version: &PlatformVersion,
-) -> Result<Vec<ValidationOperation>, Error> {
+) -> Result<CheckTxReservation, Error> {
     let StateTransitionAction::BatchAction(batch) = action else {
-        return Ok(Vec::new());
+        return Ok(CheckTxReservation::default());
     };
     let writer_id = batch.owner_id();
     let competitors = u64::from(platform_version.system_limits.max_choose_first_candidates);
-    let mut reservation = Vec::new();
+    let mut reservation = CheckTxReservation::default();
     for transition in batch.transitions() {
         let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(create)) =
             transition
@@ -50,7 +51,7 @@ pub(super) fn choose_first_reservation_v1(
         // Neither function reads `"."` beside `chooseFirst`, which registration refuses
         if let Some((_, key)) = lookup.hash_key() {
             if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
-                reservation.push(ValidationOperation::DoubleSha256(
+                reservation.billed.push(ValidationOperation::DoubleSha256(
                     key.function.block_count(preimage.len()),
                 ));
             }
@@ -59,7 +60,9 @@ pub(super) fn choose_first_reservation_v1(
             let key = &choose_first.valid_when;
             if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
                 let blocks = key.function.block_count(preimage.len());
-                reservation.push(ValidationOperation::DoubleSha256(blocks));
+                reservation
+                    .billed
+                    .push(ValidationOperation::DoubleSha256(blocks));
                 let mut one_hash = FeeResult::default();
                 ValidationOperation::add_many_to_fee_result(
                     &[ValidationOperation::DoubleSha256(blocks)],
@@ -73,14 +76,18 @@ pub(super) fn choose_first_reservation_v1(
                         .ok_or(Error::Execution(ExecutionError::Overflow(
                             "chooseFirst competitor hashes reservation overflow",
                         )))?;
-                reservation.push(ValidationOperation::PrecalculatedOperation(
-                    FeeResult::new_from_processing_fee(competitor_hashes),
-                ));
+                reservation
+                    .bounds
+                    .push(ValidationOperation::PrecalculatedOperation(
+                        FeeResult::new_from_processing_fee(competitor_hashes),
+                    ));
             }
         }
-        reservation.push(ValidationOperation::PrecalculatedOperation(
-            FeeResult::new_from_processing_fee(choose_first_scan_budget(platform_version)),
-        ));
+        reservation
+            .bounds
+            .push(ValidationOperation::PrecalculatedOperation(
+                FeeResult::new_from_processing_fee(choose_first_scan_budget(platform_version)),
+            ));
     }
     Ok(reservation)
 }
