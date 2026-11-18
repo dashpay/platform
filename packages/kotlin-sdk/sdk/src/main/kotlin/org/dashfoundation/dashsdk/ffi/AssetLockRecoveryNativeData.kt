@@ -20,8 +20,9 @@ class IdentityRegistrationNativeResult(
  * [identityRecipient] is the 32-byte identity an unbound identity top-up pays
  * (`has_identity_recipient` / `identity_recipient`), null when the row records
  * none. [identityRecipientUnassigned] is `identity_recipient_unassigned`: an
- * unbound top-up, not consumed, recording no identity, which no resume pays
- * until one is assigned.
+ * unbound top-up recording no identity, in a live status (Built through
+ * ChainLocked), which no resume pays until one is assigned. False for a
+ * RecoveredFromChain lock, whose consumption is unknown.
  */
 class TrackedAssetLockNativeData(
     @JvmField val outpointTxid: ByteArray,

@@ -395,10 +395,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
 /// resumes to that identity only (see `resumeTopUpToRecordedRecipient`).
 /// Returns the identity's proved post-transition balance.
 ///
+/// `out_outpoint` (a `byte[36]`) receives the built lock's outpoint
+/// (`txid[32] ‖ vout_le[4]`, the wire order `TrackedAssetLock` carries) on
+/// every outcome, success, error or panic, before any exception is thrown;
+/// all zero means nothing was built and a retry is safe. It is checked before
+/// the call, so a malformed one builds nothing.
+///
 /// Wraps `platform_wallet_top_up_external_identity_with_funding_signer`. Its
 /// errors cross unchanged: `ErrorInvalidParameter` below the top-up minimum,
-/// `ErrorIdentityNotFound` (7) for an identity Platform does not know, and a
-/// persistence error when the host does not keep identity recipients.
+/// `ErrorIdentityNotFound` (7) for an identity Platform does not know, a
+/// persistence error when the host does not keep identity recipients, and
+/// `ErrorTransactionBroadcastUnconfirmed` (20) when the lock may have been
+/// sent or its row may survive: resume that outpoint, never re-send.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpExternalIdentityFromCore(
     mut env: JNIEnv,
@@ -408,6 +416,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpEx
     amount_duffs: jlong,
     account_index: jint,
     core_signer_handle: jlong,
+    out_outpoint: JByteArray,
 ) -> jlong {
     guard(&mut env, 0i64, |env| {
         // Sign errors only: a negative value would bit-cast to a huge
@@ -423,7 +432,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpEx
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return 0;
         };
+        // Checked before the call so the region write after it cannot fail:
+        // a built lock's outpoint must reach Kotlin.
+        if out_outpoint.is_null()
+            || env
+                .get_array_length(&out_outpoint)
+                .map_or(true, |len| len != OUTPOINT_LEN as i32)
+        {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "outOutpoint must be a non-null byte[36]");
+            return 0;
+        }
         let mut out_balance: u64 = 0;
+        let mut built = OutPointFFI {
+            txid: [0; 32],
+            vout: 0,
+        };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_top_up_external_identity_with_funding_signer(
                 wallet_handle as Handle,
@@ -432,8 +456,29 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpEx
                 account_index as u32,
                 core_signer_handle as *mut MnemonicResolverHandle,
                 &mut out_balance,
+                &mut built,
             )
         };
+        // Before the error is raised: no JNI call may run with an exception
+        // pending.
+        let mut raw = [0i8; OUTPOINT_LEN];
+        for (dst, src) in raw
+            .iter_mut()
+            .zip(built.txid.iter().chain(&built.vout.to_le_bytes()))
+        {
+            *dst = *src as i8;
+        }
+        if env.set_byte_array_region(&out_outpoint, 0, &raw).is_err() {
+            // Unreachable after the length check; say a lock may exist so the
+            // caller does not re-send.
+            let _ = env.exception_clear();
+            throw_sdk_exception(
+                env,
+                20,
+                "the top-up's asset lock outpoint could not be returned; do not re-send",
+            );
+            return 0;
+        }
         if take_pwffi_error(env, result) {
             return 0;
         }
@@ -531,6 +576,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_assignT
         take_pwffi_error(env, result);
     })
 }
+
+/// Length of an outpoint as Kotlin carries it: `txid[32] ‖ vout_le[4]`.
+const OUTPOINT_LEN: usize = 36;
 
 /// Read a tracked-lock outpoint (32-byte wire-order txid + non-negative vout);
 /// throws and returns `None` on a malformed one.

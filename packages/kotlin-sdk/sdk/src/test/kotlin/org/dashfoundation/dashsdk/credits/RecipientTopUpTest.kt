@@ -11,10 +11,12 @@ import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.IdentityTopUpNativeResult
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 /**
@@ -47,6 +49,8 @@ class RecipientTopUpTest {
         val resumeResult: IdentityTopUpNativeResult =
             IdentityTopUpNativeResult(ByteArray(32) { 7 }, 4_000L),
         val failure: DashSDKException? = null,
+        /** The 36-byte outpoint the external top-up reports, if it built a lock. */
+        val built: ByteArray? = null,
     ) : UnexpectedTopUpNative() {
         val calls = mutableListOf<List<Any>>()
 
@@ -56,8 +60,10 @@ class RecipientTopUpTest {
             amountDuffs: Long,
             accountIndex: Int,
             coreSignerHandle: Long,
+            outOutpoint: ByteArray,
         ): Long {
             calls += listOf("external", walletHandle, identityId, amountDuffs, accountIndex, coreSignerHandle)
+            built?.copyInto(outOutpoint)
             failure?.let { throw it }
             return 9_000L
         }
@@ -90,7 +96,7 @@ class RecipientTopUpTest {
         val identity = ByteArray(32) { 3 }
 
         val balance = IdentityCredits(native = native)
-            .topUpExternalIdentityFromCore(1L, identity, 60_000L, 0, 2L)
+            .topUpExternalIdentityFromCore(1L, identity, 60_000L, 0, 2L) { fail("nothing was built") }
 
         assertEquals(9_000L, balance)
         val call = native.calls.single()
@@ -99,6 +105,45 @@ class RecipientTopUpTest {
         assertEquals(60_000L, call[3])
         assertEquals(0, call[4])
         assertEquals(2L, call[5])
+    }
+
+    /**
+     * A lock built before the call failed is reported before the error, so the
+     * host resumes that outpoint instead of re-sending with a new lock.
+     */
+    @Test
+    fun shouldReportTheBuiltOutpointBeforeAnUnconfirmedOutcome() = runTest {
+        val raw = ByteArray(36) { (it + 1).toByte() }
+        val native = FakeNative(
+            failure = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 20, "may have been sent"),
+            built = raw,
+        )
+        val reported = mutableListOf<ManagedPlatformWallet.AssetLockBuiltOutPoint>()
+
+        val failure = runCatching {
+            IdentityCredits(native = native)
+                .topUpExternalIdentityFromCore(1L, ByteArray(32) { 3 }, 60_000L, 0, 2L) { reported += it }
+        }.exceptionOrNull()
+
+        assertTrue(failure is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed)
+        assertEquals(listOf(ManagedPlatformWallet.AssetLockBuiltOutPoint.fromRawBytes(raw)), reported)
+        assertArrayEquals(raw.copyOf(32), reported.single().txid)
+        assertEquals(0x24232221, reported.single().vout)
+    }
+
+    @Test
+    fun shouldNotReportAnOutpointWhenNothingWasBuilt() = runTest {
+        val native = FakeNative(
+            failure = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 7, "identity not found"),
+        )
+        val failure = runCatching {
+            IdentityCredits(native = native)
+                .topUpExternalIdentityFromCore(1L, ByteArray(32) { 3 }, 60_000L, 0, 2L) {
+                    fail("nothing was built")
+                }
+        }.exceptionOrNull()
+
+        assertTrue(failure is DashSdkError.NotFound)
     }
 
     @Test
@@ -174,7 +219,7 @@ class RecipientTopUpTest {
 
         assertTrue(
             runCatching {
-                credits.topUpExternalIdentityFromCore(1L, ByteArray(31), 60_000L, 0, 2L)
+                credits.topUpExternalIdentityFromCore(1L, ByteArray(31), 60_000L, 0, 2L) {}
             }.exceptionOrNull() is IllegalArgumentException,
         )
         assertTrue(
@@ -205,6 +250,7 @@ class RecipientTopUpTest {
             amountDuffs: Long,
             accountIndex: Int,
             coreSignerHandle: Long,
+            outOutpoint: ByteArray,
         ): Long {
             block()
             return 9_000L
@@ -236,7 +282,7 @@ class RecipientTopUpTest {
     @Test
     fun shouldReturnACompletedPaymentToACancelledCaller() = runBlocking {
         val payments: List<Pair<Long, suspend (IdentityCredits) -> Long>> = listOf(
-            9_000L to { it.topUpExternalIdentityFromCore(1L, ByteArray(32) { 3 }, 60_000L, 0, 2L) },
+            9_000L to { it.topUpExternalIdentityFromCore(1L, ByteArray(32) { 3 }, 60_000L, 0, 2L) {} },
             4_000L to {
                 it.resumeTopUpToRecordedRecipient(
                     1L,

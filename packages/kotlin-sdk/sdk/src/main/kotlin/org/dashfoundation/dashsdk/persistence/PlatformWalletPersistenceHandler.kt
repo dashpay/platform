@@ -2545,6 +2545,12 @@ class PlatformWalletPersistenceHandler(
      * and fails the commit. An operation UUID another row of the wallet holds
      * is refused the same way. A row that does not exist when the round
      * commits fails it too: an association with nothing would be lost.
+     *
+     * One exception, as the SQLite store's apply makes it: a different
+     * identity recipient for a terminal (Consumed or DrainCompleted) row is
+     * skipped, not refused. Nothing can pay from that lock again, so the
+     * snapshot naming another identity is stale, and refusing it would fail
+     * the whole changeset.
      */
     private fun persistAssetLockSidecar(
         walletId: ByteArray,
@@ -2566,7 +2572,8 @@ class PlatformWalletPersistenceHandler(
         val committed = runBlockingResult {
             val dao = database.assetLockDao()
             val row = dao.getSidecarsByWalletAndOutPointHex(walletId, outPointHex)
-            val conflicting = row != null && sidecar.conflicts(row, stored)
+            val conflicting = row != null && sidecar.conflicts(row, stored) &&
+                !sidecar.staleOnTerminal(row)
             val duplicate = sidecar == AssetLockSidecar.OPERATION_ID &&
                 dao.countOtherRowsWithOperationId(walletId, stored, outPointHex) > 0
             !conflicting && !duplicate
@@ -2581,6 +2588,10 @@ class PlatformWalletPersistenceHandler(
                 "asset-lock ${sidecar.label}: no row for $outPointHex"
             }
             val sidecars = row.sidecars()
+            if (sidecar.conflicts(sidecars, stored) && sidecar.staleOnTerminal(sidecars)) {
+                Log.w(TAG, "asset-lock ${sidecar.label} for consumed $outPointHex differs; skipped")
+                return@add
+            }
             check(!sidecar.conflicts(sidecars, stored)) {
                 "asset lock ${sidecar.label} cannot change ($outPointHex)"
             }
@@ -2645,10 +2656,17 @@ class PlatformWalletPersistenceHandler(
         /** Whether [row] already records a value other than [value]. */
         fun conflicts(row: AssetLockSidecars, value: ByteArray): Boolean =
             read(row)?.contentEquals(value) == false
+
+        /**
+         * Whether a conflicting value for [row] is a stale write to skip
+         * rather than refuse: an identity recipient for a terminal row.
+         */
+        fun staleOnTerminal(row: AssetLockSidecars): Boolean =
+            this == IDENTITY_RECIPIENT && isTerminalAssetLockStatus(row.statusRaw)
     }
 
     private fun AssetLockEntity.sidecars() =
-        AssetLockSidecars(operationId, shieldedRecipientRaw43, identityRecipientId)
+        AssetLockSidecars(operationId, shieldedRecipientRaw43, identityRecipientId, statusRaw)
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 
@@ -2966,7 +2984,7 @@ class PlatformWalletPersistenceHandler(
                 // `unused_asset_locks` map so a registration / top-up
                 // funding flow interrupted mid-flight resumes from its
                 // latest persisted status instead of re-deriving a fresh
-                // lock. ALL rows (Rust drops `Consumed` itself). Mirror of
+                // lock. ALL rows (Rust keeps `Consumed` rows as tombstones). Mirror of
                 // the Swift `buildAssetLockRestoreBuffer` slice.
                 val trackedAssetLocks = buildTrackedAssetLockData(w.walletId)
                 // Funding-tx records for the `statusRaw < 2` locks — re-seed
@@ -3643,9 +3661,10 @@ class PlatformWalletPersistenceHandler(
     /**
      * Assemble the [TrackedAssetLockRestoreData] rows for one wallet: every
      * persisted `asset_locks` row (ALL statuses — the Rust load path
-     * `build_unused_asset_locks` is the sole filter and skips `Consumed`
-     * itself, so this builder emits terminal rows too, matching the Swift
-     * `loadCachedAssetLocksOnQueue`).
+     * `build_unused_asset_locks` keeps `Consumed` rows as recovery
+     * tombstones, so a used lock is not rebuilt from the chain as a fresh,
+     * unassigned one; this builder emits terminal rows too, matching the
+     * Swift `loadCachedAssetLocksOnQueue`).
      *
      * The persisted primary key `outPointHex` is display-order; [decodeOutPointHex]
      * flips it back to the 36-byte wire form the Rust trampoline reads via a
@@ -4444,6 +4463,10 @@ class PlatformWalletPersistenceHandler(
          * stronger terminal state: both project to SQLite's `consumed`.
          */
         private const val ASSET_LOCK_STATUS_DRAIN_COMPLETED = 6
+
+        /** Consumed or DrainCompleted: both project to SQLite's `consumed`. */
+        internal fun isTerminalAssetLockStatus(status: Int): Boolean =
+            status == ASSET_LOCK_STATUS_CONSUMED || status == ASSET_LOCK_STATUS_DRAIN_COMPLETED
 
         /**
          * Whether an upsert carrying [incoming] must leave a row at [stored]

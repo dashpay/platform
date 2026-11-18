@@ -26,11 +26,17 @@ import org.dashfoundation.dashsdk.ffi.TrackedAssetLocksNativeResult
  *   ([org.dashfoundation.dashsdk.credits.IdentityCredits.resumeTopUpToRecordedRecipient])
  *   pays that identity, in this wallet or not, and refuses any other.
  * - [identityRecipientUnassigned]: an unbound top-up recording no identity
- *   (rebuilt from the chain, for example after a restore from the seed). No
- *   resume pays it; list it for the user, who assigns a recipient
+ *   that the wallet knows is not consumed (status [Status.BUILT] through
+ *   [Status.CHAIN_LOCKED]). No resume pays it; list it for the user, who
+ *   assigns a recipient
  *   ([org.dashfoundation.dashsdk.credits.IdentityCredits.assignTopUpRecipient]),
- *   rather than resuming it into one of the wallet's identities. Rust decides
- *   it; this model only carries it.
+ *   rather than resuming it into one of the wallet's identities. False for a
+ *   recipient-less [Status.RECOVERED_FROM_CHAIN] lock, which every past top-up
+ *   rebuilt after a restore from the seed carries: Platform may have used it
+ *   long ago and no query tells the wallet, so do not present it as
+ *   recoverable; assigning one is refused with
+ *   [AssetLockAlreadyConsumed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockAlreadyConsumed].
+ *   Rust decides it; this model only carries it.
  *
  * The shielded recipient a type-5 lock records is not carried: this model
  * admits identity locks only, and the entry it is copied from has no such

@@ -175,7 +175,7 @@ interface AssetLockDao {
      * its transaction and proof blobs; null when there is no such row.
      */
     @Query(
-        "SELECT operationId, shieldedRecipientRaw43, identityRecipientId FROM asset_locks " +
+        "SELECT operationId, shieldedRecipientRaw43, identityRecipientId, statusRaw FROM asset_locks " +
             "WHERE walletId = :walletId AND outPointHex = :outPointHex"
     )
     suspend fun getSidecarsByWalletAndOutPointHex(
@@ -234,9 +234,13 @@ interface AssetLockDao {
     fun countByWallet(walletId: ByteArray): Flow<Long>
 }
 
-/** The sidecar columns of one [AssetLockEntity] row. */
+/**
+ * The sidecar columns of one [AssetLockEntity] row, with its lifecycle
+ * [statusRaw], which decides whether a conflicting recipient is stale.
+ */
 class AssetLockSidecars(
     val operationId: ByteArray?,
     val shieldedRecipientRaw43: ByteArray?,
     val identityRecipientId: ByteArray?,
+    val statusRaw: Int,
 )

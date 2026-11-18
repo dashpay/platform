@@ -122,7 +122,11 @@ internal object CreditsNative {
     /**
      * Top up [identityId] (32 bytes), an identity this wallet does not
      * manage, from a new Core asset lock whose row records the identity.
-     * Returns its proved post-transition balance. Descriptor `(J[BJIJ)J`.
+     * Returns its proved post-transition balance. Descriptor `(J[BJIJ[B)J`.
+     *
+     * [outOutpoint] (36 bytes) receives the built lock's outpoint
+     * (`txid[32] ‖ vout_le[4]`) on every outcome, before any exception is
+     * thrown; all zero means nothing was built.
      *
      * Thinly marshals
      * `platform_wallet_top_up_external_identity_with_funding_signer`.
@@ -133,6 +137,7 @@ internal object CreditsNative {
         amountDuffs: Long,
         accountIndex: Int,
         coreSignerHandle: Long,
+        outOutpoint: ByteArray,
     ): Long
 
     /**

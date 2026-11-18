@@ -146,6 +146,10 @@ sealed class DashSdkError(
          * The one-shot output cannot be reused. This may be a retained local
          * tombstone or an unauthenticated Platform report; operation completion
          * must not be inferred from this signal.
+         *
+         * Also `AssetLockConsumptionUnknown` on the same native code (24):
+         * assigning a recipient to a lock rebuilt from the chain, which
+         * Platform may already have used. Nothing was assigned.
          */
         class AssetLockAlreadyConsumed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

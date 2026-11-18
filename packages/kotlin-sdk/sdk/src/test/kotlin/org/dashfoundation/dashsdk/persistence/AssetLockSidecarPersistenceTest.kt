@@ -175,6 +175,39 @@ class AssetLockSidecarPersistenceTest {
         assertArrayEquals(identityRecipient, requireNotNull(row(op)).identityRecipientId)
     }
 
+    /**
+     * A consumed lock pays no one again, so a snapshot naming another identity
+     * is stale: skipped, as the SQLite store skips it, instead of failing the
+     * round. The shielded recipient keeps the strict rule.
+     */
+    @Test
+    fun shouldSkipADifferentIdentityRecipientForAConsumedRow() = runTest {
+        for (terminal in listOf<Byte>(4, 6)) {
+            val op = outpoint(20 + terminal)
+            round {
+                upsert(op, status = terminal)
+                handler.onPersistAssetLockIdentityRecipient(walletId, op, identityRecipient)
+                handler.onPersistAssetLockShieldedRecipient(walletId, op, shieldedRecipient)
+            }
+
+            assertEquals(
+                0,
+                round {
+                    assertEquals(
+                        0,
+                        handler.onPersistAssetLockIdentityRecipient(walletId, op, ByteArray(32) { 0x0D }),
+                    )
+                },
+            )
+            assertArrayEquals(identityRecipient, requireNotNull(row(op)).identityRecipientId)
+
+            handler.onChangesetBegin(walletId)
+            val refused = handler.onPersistAssetLockShieldedRecipient(walletId, op, ByteArray(43) { 0x0E })
+            handler.onChangesetEnd(walletId, success = false)
+            assertEquals(NativePersistenceBridge.PERSIST_RC_CONSTRAINT, refused)
+        }
+    }
+
     @Test
     fun shouldFailTheRoundWhenItRecordsTwoDifferentValuesForOneRow() = runTest {
         val op = outpoint(7)

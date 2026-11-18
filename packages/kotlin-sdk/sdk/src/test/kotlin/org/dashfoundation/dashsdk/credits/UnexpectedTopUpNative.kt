@@ -22,6 +22,7 @@ internal open class UnexpectedTopUpNative : TopUpNative {
         amountDuffs: Long,
         accountIndex: Int,
         coreSignerHandle: Long,
+        outOutpoint: ByteArray,
     ): Long = throw AssertionError("unexpected topUpExternalIdentityFromCore")
 
     override fun resumeTopUpToRecordedRecipient(

@@ -8,7 +8,11 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.CreditsNative
 import org.dashfoundation.dashsdk.ffi.IdentityTopUpNativeResult
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
+
+/** Bytes of an outpoint as the JNI carries it: `txid[32] ‖ vout_le[4]`. */
+private const val OUTPOINT_SIZE = 36
 
 /**
  * The JNI calls behind [IdentityCredits]' top-ups that resume or pay through
@@ -31,6 +35,7 @@ internal interface TopUpNative {
         amountDuffs: Long,
         accountIndex: Int,
         coreSignerHandle: Long,
+        outOutpoint: ByteArray,
     ): Long
 
     fun resumeTopUpToRecordedRecipient(
@@ -71,12 +76,14 @@ internal interface TopUpNative {
             amountDuffs: Long,
             accountIndex: Int,
             coreSignerHandle: Long,
+            outOutpoint: ByteArray,
         ): Long = CreditsNative.topUpExternalIdentityFromCore(
             walletHandle,
             identityId,
             amountDuffs,
             accountIndex,
             coreSignerHandle,
+            outOutpoint,
         )
 
         override fun resumeTopUpToRecordedRecipient(
@@ -399,10 +406,18 @@ class IdentityCredits internal constructor(
      * minimum (native `ErrorInvalidParameter`), an identity Platform does not
      * know
      * ([DashSdkError.NotFound][org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]),
-     * and a store that does not keep identity recipients. Once the lock is
-     * built a failure may leave it tracked, recording [identityId]: never
-     * retry with a new lock; resume that one with
-     * [resumeTopUpToRecordedRecipient], or the identity may be paid twice.
+     * and a store that does not keep identity recipients.
+     *
+     * [onAssetLockBuilt] receives the outpoint of the lock this call built,
+     * once the native call returns and before its balance is returned or its
+     * error thrown; it is not called when nothing was built, so a failure
+     * without it is safe to retry. After it is called, a failure may leave
+     * the lock tracked, recording [identityId]
+     * ([TransactionBroadcastUnconfirmed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]
+     * says so): never retry with a new lock; resume that outpoint's
+     * [TrackedAssetLock] with [resumeTopUpToRecordedRecipient], or the
+     * identity may be paid twice. It runs off the main thread, inside the
+     * call; an exception it throws replaces the call's outcome.
      *
      * The native call cannot observe cancellation, so a top-up can complete
      * after the caller was cancelled; its balance is then still returned
@@ -416,18 +431,27 @@ class IdentityCredits internal constructor(
         amountDuffs: Long,
         accountIndex: Int,
         coreSignerHandle: Long,
+        onAssetLockBuilt: (AssetLockBuiltOutPoint) -> Unit,
     ): Long = gate.opReturningCompletedResult {
         require(identityId.size == 32) {
             "identityId must be exactly 32 bytes, got ${identityId.size}"
         }
-        mapNativeErrors {
-            native.topUpExternalIdentityFromCore(
-                walletHandle,
-                identityId,
-                amountDuffs,
-                accountIndex,
-                coreSignerHandle,
-            )
+        val outOutpoint = ByteArray(OUTPOINT_SIZE)
+        try {
+            mapNativeErrors {
+                native.topUpExternalIdentityFromCore(
+                    walletHandle,
+                    identityId,
+                    amountDuffs,
+                    accountIndex,
+                    coreSignerHandle,
+                    outOutpoint,
+                )
+            }
+        } finally {
+            if (outOutpoint.any { it != 0.toByte() }) {
+                onAssetLockBuilt(AssetLockBuiltOutPoint.fromRawBytes(outOutpoint))
+            }
         }
     }
 
