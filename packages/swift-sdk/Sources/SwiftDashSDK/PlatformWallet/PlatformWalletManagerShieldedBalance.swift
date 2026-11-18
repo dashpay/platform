@@ -4,17 +4,20 @@ import DashSDKFFI
 /// One wallet's shielded balance state as Rust pushed it through
 /// `on_shielded_balance_changed_fn`. Rust reads the wallet's state at
 /// points such as a first bind, a scan ending or failing, a spend, a
-/// rebind, a Clear or unregister, and sends an update when what it read
-/// differs from what it last delivered. An update therefore carries the
-/// latest state Rust read, not every transition: a spend that reserves
-/// notes and releases them again before Rust next reads produces no
-/// update. The latest update is the wallet's current state as far as
-/// Rust has read it, and a host holds no balance of its own.
+/// rebind, a Clear or unregister, and emits an update when what it read
+/// differs from what it last emitted. Rust counts an update as emitted
+/// once it has called the host callback; it does not know whether the
+/// host accepted it, and it does not resend an unchanged state. An update
+/// therefore carries the latest state Rust read, not every transition: a
+/// spend that reserves notes and releases them again before Rust next
+/// reads produces no update. The latest accepted update is the wallet's
+/// current state as far as Rust has read it, and a host holds no balance
+/// of its own.
 public struct ShieldedBalanceUpdate: Sendable, Equatable {
     public let walletId: Data
     /// Starts at 1 per wallet and strictly increases for the life of the
-    /// native manager. It identifies a delivered state, not a ledger
-    /// change: a higher revision is a newer delivery.
+    /// native manager. It identifies an emitted state, not a ledger
+    /// change: a higher revision was emitted later.
     public let revision: UInt64
     public let state: ShieldedBalanceState
 
@@ -228,9 +231,10 @@ extension PlatformWalletManager {
     ///
     /// A manager is configured once and never again after shutdown, so
     /// its native manager is the only one that can call back. Rust
-    /// delivers nothing after its shutdown returned; an update it
-    /// dispatched before is still queued for the main actor and is
-    /// dropped here because `shutdownRequested` is already set. Stopping
+    /// emits nothing after its shutdown returned; an update it emitted
+    /// before is still queued for the main actor and is dropped here
+    /// because `shutdownRequested` is already set. Rust already counts a
+    /// dropped update as emitted and does not resend it. Stopping
     /// shielded sync and Clear do not filter updates: the balance state
     /// stays Rust's, and Rust sends the post-Clear state itself.
     func handleShieldedBalanceChanged(_ update: ShieldedBalanceUpdate) {

@@ -10,6 +10,8 @@
 //! lock-free `ArcSwap`.
 
 #[cfg(feature = "shielded")]
+use std::any::Any;
+#[cfg(feature = "shielded")]
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
@@ -251,15 +253,40 @@ impl PlatformEventManager {
         for h in handlers.iter() {
             let delivered =
                 catch_unwind(AssertUnwindSafe(|| h.on_shielded_balance_changed(update)));
-            if delivered.is_err() {
+            if let Err(payload) = delivered {
                 tracing::error!(
                     wallet_id = %hex::encode(update.wallet_id),
                     revision = update.revision,
+                    panic = panic_message(payload.as_ref()),
                     "a shielded balance handler panicked; the other handlers still receive \
                      this update and later ones are delivered"
                 );
+                dispose_panic_payload(payload);
             }
         }
+    }
+}
+
+/// The text of a panic payload, for the log: the message of a `panic!` with
+/// a string, a placeholder for any other payload.
+#[cfg(feature = "shielded")]
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
+}
+
+/// Drop a caught panic payload inside the isolation boundary. A payload's
+/// `Drop` is a handler's code too (`std::panic::panic_any`) and may panic;
+/// that panic is caught here, and its own payload is forgotten rather than
+/// dropped, since dropping it could panic again outside any guard.
+#[cfg(feature = "shielded")]
+fn dispose_panic_payload(payload: Box<dyn Any + Send>) {
+    if let Err(second) = catch_unwind(AssertUnwindSafe(move || drop(payload))) {
+        tracing::error!("a shielded balance handler's panic payload panicked when dropped");
+        std::mem::forget(second);
     }
 }
 
@@ -332,6 +359,43 @@ mod tests {
                 .expect("recorder")
                 .push(update.revision);
         }
+    }
+
+    /// A panic payload whose own `Drop` panics.
+    struct PanicOnDrop;
+
+    impl Drop for PanicOnDrop {
+        fn drop(&mut self) {
+            panic!("panic payload dropped");
+        }
+    }
+
+    struct PanicOnDropHandler;
+
+    impl EventHandler for PanicOnDropHandler {}
+
+    impl PlatformEventHandler for PanicOnDropHandler {
+        fn on_shielded_balance_changed(&self, _update: &ShieldedBalanceUpdate) {
+            std::panic::panic_any(PanicOnDrop);
+        }
+    }
+
+    #[test]
+    fn should_keep_delivering_past_a_handler_whose_panic_payload_panics_when_dropped() {
+        let recorder = Arc::new(RecordingHandler::default());
+        let manager = PlatformEventManager::new(vec![
+            Arc::new(PanicOnDropHandler) as Arc<dyn PlatformEventHandler>,
+            Arc::new(PanickingHandler) as Arc<dyn PlatformEventHandler>,
+            Arc::clone(&recorder) as Arc<dyn PlatformEventHandler>,
+        ]);
+        for revision in [1, 2] {
+            manager.on_shielded_balance_changed(&ShieldedBalanceUpdate {
+                wallet_id: [2; 32],
+                revision,
+                state: ShieldedLocalBalanceState::Unbound,
+            });
+        }
+        assert_eq!(*recorder.revisions.lock().expect("recorder"), vec![1, 2]);
     }
 
     #[test]

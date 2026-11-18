@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
@@ -323,10 +325,20 @@ class ShieldedService(private val database: DashDatabase) {
 
         var bound = false
         try {
-            withLedgerLifecycle {
-                manager.configureShielded(dbPath)
-                manager.bindShielded(walletId, sortedAccounts)
+            val ran = withLedgerLifecycle {
+                // A later bind may have gone through here while this one
+                // waited for its turn at the ledger. Its registration (its
+                // accounts) is the one that must stand, so this bind leaves
+                // the native side alone.
+                if (bindingTurns.isLatest(turn)) {
+                    manager.configureShielded(dbPath)
+                    manager.bindShielded(walletId, sortedAccounts)
+                    true
+                } else {
+                    false
+                }
             }
+            if (!ran) return null
             bound = true
         } catch (e: Exception) {
             // Stay resumable: credentials are retained above, so a later
@@ -347,16 +359,25 @@ class ShieldedService(private val database: DashDatabase) {
         // above leaves the service as the later turn set it.
         val finished = bindingTurns.finish(turn) {
             _isBound.value = bound
+            // Both jobs write [state] only while this bind is the latest
+            // turn: cancelling a job does not stop a write it has already
+            // reached, and that write must not land on the state an unbind
+            // or a later bind has reset.
             eventJob = scope.launch {
-                manager.syncEvents.collect { event -> reduce(walletId, event) }
+                manager.syncEvents.collect { event ->
+                    bindingTurns.finish(turn) { reduce(walletId, event) }
+                }
             }
-            pollJob = scope.launch { pollSyncing(manager) }
+            pollJob = scope.launch { pollSyncing(manager, turn) }
         }
         return turn.takeIf { finished }
     }
 
-    /** Mirror whether a sync pass is in flight into [state], once a second. */
-    private suspend fun pollSyncing(manager: PlatformWalletManager) {
+    /**
+     * Mirror whether a sync pass is in flight into [state], once a second,
+     * for as long as [turn] is the latest binding turn.
+     */
+    private suspend fun pollSyncing(manager: PlatformWalletManager, turn: Long) {
         while (true) {
             // Poll the PASS-IN-FLIGHT flag, not the loop-alive flag. The
             // background loop stays alive (isShieldedSyncRunning == true)
@@ -366,8 +387,10 @@ class ShieldedService(private val database: DashDatabase) {
             // same reason.
             val syncing = runCatching { manager.isShieldedSyncing() }
                 .getOrDefault(false)
-            if (syncing != _state.value.isSyncing) {
-                _state.update { it.copy(isSyncing = syncing) }
+            bindingTurns.finish(turn) {
+                if (syncing != _state.value.isSyncing) {
+                    _state.update { it.copy(isSyncing = syncing) }
+                }
             }
             kotlinx.coroutines.delay(POLL_INTERVAL_MS)
         }
@@ -577,6 +600,7 @@ class ShieldedService(private val database: DashDatabase) {
         val startTurn = binding.first
         val walletId = binding.second.walletId ?: return
         val mgr = binding.second.manager
+        val dbPath = binding.second.dbPath
 
         // A bound service must have a manager (both are set together in
         // bind, cleared together in unbind). If it doesn't, the Rust-side
@@ -599,7 +623,13 @@ class ShieldedService(private val database: DashDatabase) {
         // between (see [withLedgerLifecycle]).
         val walletIdHex = walletId.joinToString("") { "%02x".format(it) }
         android.util.Log.i(TAG, "Shielded clear: resetting Rust store for $walletIdHex")
-        withLedgerLifecycle { resetAndWipe(mgr, db) }
+        withLedgerLifecycle {
+            // Once the reset has started, the wipe must follow even if the
+            // caller (a screen that was left) is cancelled: a reset whose
+            // wipe never ran would let the next bind restore the old
+            // watermark into the emptied tree.
+            withContext(NonCancellable) { resetAndWipe(mgr, db) }
+        }
 
         // The counters belong to the binding that was cleared. If a later
         // bind took over meanwhile, they are that binding's now.
@@ -612,58 +642,59 @@ class ShieldedService(private val database: DashDatabase) {
         // + bindShielded (re-registers on the now-empty coordinator; its
         // restore_for_wallet finds no watermark → starts at index 0).
         //
-        // The reset dropped every registration on `mgr`, so the wallet the
-        // service mirrors NOW is the one to bind again: the wallet this
-        // Clear started with, or another one bound on the same manager
-        // while the Clear was suspended (binding the first one again would
-        // take the mirror back from it, and leaving it would leave it
-        // unregistered). If the service follows another manager (another
-        // network) or was unbound, this Clear has nothing to re-bind.
-        val current = bindingTurns.read {
-            ClearedBinding(boundWalletId, manager, boundDbPath, _boundAccounts.value)
-        }.second
-        val currentWallet = current.walletId
-        if (current.manager !== mgr || currentWallet == null) {
-            android.util.Log.i(TAG, "Shielded clear: the service left this manager; no re-bind")
-            return
-        }
-        val currentDbPath = current.dbPath
-        if (currentDbPath == null) {
+        // The reset dropped every registration on `mgr`, so the binding the
+        // service has NOW is the one to bind again, with its own wallet and
+        // accounts: the one this Clear started with, or one made on the same
+        // manager while the Clear was suspended. Each attempt reads the
+        // binding with its turn and starts only if that turn is still the
+        // latest, under the lock that starts the bind, so a bind that slips
+        // in between is never overwritten with what was read before it; the
+        // next attempt reads that newer binding instead. If the service
+        // follows another manager (another network) or was unbound, the
+        // mirror is left alone.
+        if (dbPath == null) {
             android.util.Log.w(TAG, "Shielded clear: no dbPath retained; skipping re-bind (will resync on relaunch)")
             return
         }
-        // Checked again under the lock that starts the bind, so no switch
-        // fits between the read above and the bind.
-        val turn = bindTurn(mgr, currentWallet, currentDbPath, current.accounts.ifEmpty { listOf(0) }) {
-            manager === mgr && boundWalletId?.contentEquals(currentWallet) == true
+        for (attempt in 0 until CLEAR_REBIND_ATTEMPTS) {
+            val (readTurn, current) = bindingTurns.read {
+                ClearedBinding(boundWalletId, manager, boundDbPath, _boundAccounts.value)
+            }
+            val currentWallet = current.walletId
+            if (current.manager !== mgr || currentWallet == null) break
+            val rebound = bindTurn(
+                mgr,
+                currentWallet,
+                current.dbPath ?: dbPath,
+                current.accounts.ifEmpty { listOf(0) },
+            ) { bindingTurns.isLatest(readTurn) }
+            if (rebound != null) break
         }
-        if (turn == null) {
-            // Not started, or another bind or an unbind took over while it
-            // was suspended: the service follows that one, and its own pass
-            // registers the fleet it belongs to.
-            android.util.Log.i(TAG, "Shielded clear: re-bind not current; stopping")
+
+        // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
+        // coordinator registration, and a mirror bind restores only one.
+        // Re-register every other loaded wallet so the next pass scans the
+        // whole fleet (SH-14/15/16 survive an SH-12 run without a
+        // relaunch), and restart the sync loop the reset stopped. This does
+        // not depend on who bound the mirror: a bind that overtook the
+        // re-bind above registers one wallet and restarts nothing, so the
+        // rest is still this Clear's to do. [bindEngine] writes nothing to
+        // the service. Skipped only when the service left this manager.
+        val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
+        if (bindingTurns.read { manager !== mgr }.second) {
+            android.util.Log.i(TAG, "Shielded clear: the service left this manager; no fleet recovery")
             return
         }
-        // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
-        // coordinator registration, and the mirror bind above restores
-        // only one. Re-register every other loaded wallet so the next
-        // pass scans the whole fleet (SH-14/15/16 survive an SH-12 run
-        // without a relaunch). Runs regardless of the mirror bind's
-        // outcome — bind() swallows its errors, and one wallet's
-        // failure must not dark the others (iOS best-effort lesson).
         engineBindOtherWallets(
             allWalletIds = mgr.wallets.value.keys,
-            mirrorWalletId = currentWallet.joinToString("") { "%02x".format(it) },
+            mirrorWalletId = mirrorNow?.joinToString("") { "%02x".format(it) }.orEmpty(),
         ) { otherKey ->
-            // Stops as soon as a later bind or an unbind begins.
-            if (bindingTurns.isLatest(turn)) {
-                mgr.wallets.value[otherKey]?.let { other ->
-                    bindEngine(mgr, other.walletId, currentDbPath)
-                }
+            mgr.wallets.value[otherKey]?.let { other ->
+                bindEngine(mgr, other.walletId, dbPath)
             }
         }
         val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
-        if (isAvailable && notRunning && bindingTurns.isLatest(turn)) {
+        if (isAvailable && notRunning) {
             runCatching { mgr.startShieldedSync() }.onFailure {
                 android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
             }
@@ -711,6 +742,9 @@ class ShieldedService(private val database: DashDatabase) {
     private companion object {
         const val TAG = "ShieldedService"
         const val POLL_INTERVAL_MS = 1_000L
+
+        /** Times a Clear re-reads the binding when a bind slips in before its re-bind. */
+        const val CLEAR_REBIND_ATTEMPTS = 3
     }
 }
 
@@ -735,9 +769,13 @@ internal class BindingTurns {
 
     /** Take the next turn and run [install] as its first, uninterleaved step. */
     fun begin(install: () -> Unit): Long = synchronized(this) {
-        latest += 1
+        // The turn is fixed before [install] runs: an observer that
+        // [install] wakes can take a later turn on this thread (the lock
+        // is reentrant), and this call must still return its own.
+        val turn = latest + 1
+        latest = turn
         install()
-        latest
+        turn
     }
 
     /**
@@ -749,9 +787,10 @@ internal class BindingTurns {
         if (!allowed()) {
             null
         } else {
-            latest += 1
+            val turn = latest + 1
+            latest = turn
             install()
-            latest
+            turn
         }
     }
 

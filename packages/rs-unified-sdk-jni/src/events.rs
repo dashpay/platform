@@ -359,7 +359,8 @@ const SHIELDED_BALANCE_CHANGED_DESCRIPTOR: &str = "([BJIJZ[J)V";
 /// One wallet's shielded balance state after it changed. The update and its
 /// account array are only valid during this call, so the accounts are copied
 /// into a `long[]` (rows of [`SHIELDED_BALANCE_ACCOUNT_LONGS`]) before the
-/// bridge is called; credits and indices are `u64` bit patterns.
+/// bridge is called. Indices are `u64` bit patterns; amounts go through
+/// [`kotlin_amount`].
 unsafe extern "C" fn tramp_shielded_balance_changed(
     context: *mut c_void,
     update: *const ShieldedBalanceUpdateFFI,
@@ -370,6 +371,10 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
     };
     let rows =
         shielded_balance_account_longs(slice_or_empty(update.accounts, update.accounts_count));
+    let (ordinary_credits, ordinary_established) = kotlin_amount(
+        update.ordinary_spendable_credits,
+        update.ordinary_balance_established,
+    );
     with_bridge(context, |env, bridge| {
         env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
             let wid = id32(env, &update.wallet_id)?;
@@ -388,8 +393,8 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
                     (&wid).into(),
                     JValue::Long(update.revision as i64),
                     JValue::Int(update.status as i32),
-                    JValue::Long(update.ordinary_spendable_credits as i64),
-                    JValue::Bool(update.ordinary_balance_established as u8),
+                    JValue::Long(ordinary_credits),
+                    JValue::Bool(ordinary_established as u8),
                     (&accounts).into(),
                 ],
             )?;
@@ -398,13 +403,25 @@ unsafe extern "C" fn tramp_shielded_balance_changed(
     });
 }
 
+/// An amount as Kotlin receives it. Kotlin's `Long` is signed, so credits
+/// past `i64::MAX` cannot be passed on as they are: such an amount goes over
+/// as zero and not established, which a host shows as unknown, in place of a
+/// negative number flagged as a known balance.
+fn kotlin_amount(credits: u64, established: bool) -> (i64, bool) {
+    match i64::try_from(credits) {
+        Ok(credits) => (credits, established),
+        Err(_) => (0, false),
+    }
+}
+
 /// Lay `accounts` out as the flat rows `onShieldedBalanceChanged` documents.
 fn shielded_balance_account_longs(accounts: &[ShieldedBalanceAccountFFI]) -> Vec<i64> {
     let mut values = Vec::with_capacity(accounts.len() * SHIELDED_BALANCE_ACCOUNT_LONGS);
     for account in accounts {
         values.push(i64::from(account.account_index));
-        values.push(account.spendable_credits as i64);
-        values.push(i64::from(account.established));
+        let (credits, established) = kotlin_amount(account.spendable_credits, account.established);
+        values.push(credits);
+        values.push(i64::from(established));
         values.push(i64::from(account.has_last_scanned_index));
         values.push(account.last_scanned_index as i64);
         values.push(account.source as i64);
@@ -486,9 +503,19 @@ mod shielded_balance_tests {
         ];
         assert_eq!(
             shielded_balance_account_longs(&accounts),
-            vec![0, 100, 0, 0, 0, 0, 0x4000_0000, -1, 1, 1, 42, 2]
+            vec![0, 100, 0, 0, 0, 0, 0x4000_0000, 0, 0, 1, 42, 2]
         );
         assert!(shielded_balance_account_longs(&[]).is_empty());
+    }
+
+    #[test]
+    fn should_pass_an_amount_past_a_kotlin_long_as_unknown() {
+        assert_eq!(kotlin_amount(0, true), (0, true));
+        assert_eq!(kotlin_amount(i64::MAX as u64, true), (i64::MAX, true));
+        assert_eq!(kotlin_amount(i64::MAX as u64 + 1, true), (0, false));
+        assert_eq!(kotlin_amount(u64::MAX, true), (0, false));
+        // An amount Rust did not establish stays not established.
+        assert_eq!(kotlin_amount(7, false), (7, false));
     }
 
     #[test]

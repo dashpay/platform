@@ -59,23 +59,35 @@ enum NetworkShieldedTotal: Equatable, Sendable {
     }
 }
 
-/// Text for a lower bound ("At least X DASH") when part of a total is not
-/// known. The figure is rounded DOWN to 8 fraction digits with exact
-/// decimal arithmetic, so it never shows more than the known subtotal.
+/// Text for a lower bound when part of a total is not known. From one
+/// duff up the figure is in DASH, rounded DOWN to 8 fraction digits with
+/// exact decimal arithmetic, so it never shows more than the known
+/// subtotal. A positive subtotal below one duff, which those 8 digits
+/// would floor to 0, is shown as its exact number of credits. A zero
+/// subtotal bounds nothing and reads "Not known yet".
 enum LowerBoundDashText {
     /// Platform and shielded credits per DASH.
     static let creditsPerDash = Decimal(100_000_000_000)
     /// Core duffs per DASH.
     static let duffsPerDash = Decimal(100_000_000)
+    /// Credits per Core duff, the smallest step the DASH figure shows.
+    static let creditsPerDuff = creditsPerDash / duffsPerDash
 
-    /// "At least X DASH" for an amount in credits.
+    /// The lower-bound text for an amount in credits.
     static func atLeast(credits: Decimal) -> String {
-        "At least \(dash(credits / creditsPerDash)) DASH"
+        if credits <= 0 {
+            return "Not known yet"
+        }
+        if credits < creditsPerDuff {
+            let count = NSDecimalNumber(decimal: credits).stringValue
+            return credits == 1 ? "At least 1 credit" : "At least \(count) credits"
+        }
+        return "At least \(dash(credits / creditsPerDash)) DASH"
     }
 
-    /// "At least X DASH" for Core duffs plus credits.
+    /// The lower-bound text for Core duffs plus credits.
     static func atLeast(duffs: UInt64, credits: UInt64) -> String {
-        atLeast(credits: Decimal(duffs) * (creditsPerDash / duffsPerDash) + Decimal(credits))
+        atLeast(credits: Decimal(duffs) * creditsPerDuff + Decimal(credits))
     }
 
     /// `amount` in DASH, rounded down to 8 fraction digits, with "," as

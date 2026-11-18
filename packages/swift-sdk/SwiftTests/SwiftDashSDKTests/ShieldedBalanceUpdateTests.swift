@@ -238,24 +238,38 @@ final class ShieldedBalanceUpdateTests: XCTestCase {
     }
 
     /// The trampoline copies the borrowed account array before its
-    /// main-actor hop: the array is gone when the update is published.
+    /// main-actor hop. The native update and its row stay allocated until
+    /// the assertions, but the row is overwritten as soon as the callback
+    /// returns and before the main actor is yielded, so a copy made later
+    /// from the borrowed pointer would publish the overwritten value.
     func testShouldCopyTheUpdateInsideTheCallback() async throws {
         let manager = makeManager()
         let handler = PlatformWalletEventHandler(manager: manager)
         let context = Unmanaged.passUnretained(handler).toOpaque()
-        var rows: [ShieldedBalanceAccountFFI]? = [row(0, credits: 42)]
-        rows!.withUnsafeBufferPointer { buffer in
-            var native = ShieldedBalanceUpdateFFI()
-            withUnsafeMutableBytes(of: &native.wallet_id) { Self.walletId.copyBytes(to: $0) }
-            native.revision = 1
-            native.status = SHIELDED_LOCAL_BALANCE_STATUS_FFI_READY
-            native.ordinary_spendable_credits = 42
-            native.ordinary_balance_established = true
-            native.accounts = buffer.baseAddress
-            native.accounts_count = 1
-            withUnsafePointer(to: &native) { shieldedBalanceChangedCallback(context: context, update: $0) }
+        let rowStorage = UnsafeMutablePointer<ShieldedBalanceAccountFFI>.allocate(capacity: 1)
+        rowStorage.initialize(to: row(0, credits: 42))
+        let nativeStorage = UnsafeMutablePointer<ShieldedBalanceUpdateFFI>.allocate(capacity: 1)
+        nativeStorage.initialize(to: ShieldedBalanceUpdateFFI())
+        defer {
+            nativeStorage.deinitialize(count: 1)
+            nativeStorage.deallocate()
+            rowStorage.deinitialize(count: 1)
+            rowStorage.deallocate()
         }
-        rows = nil
+        withUnsafeMutableBytes(of: &nativeStorage.pointee.wallet_id) { Self.walletId.copyBytes(to: $0) }
+        nativeStorage.pointee.revision = 1
+        nativeStorage.pointee.status = SHIELDED_LOCAL_BALANCE_STATUS_FFI_READY
+        nativeStorage.pointee.ordinary_spendable_credits = 42
+        nativeStorage.pointee.ordinary_balance_established = true
+        nativeStorage.pointee.accounts = UnsafePointer(rowStorage)
+        nativeStorage.pointee.accounts_count = 1
+
+        shieldedBalanceChangedCallback(context: context, update: UnsafePointer(nativeStorage))
+        // Still on the main actor: the published hop cannot have run yet.
+        rowStorage.pointee = row(0, credits: 999, established: false)
+        nativeStorage.pointee.ordinary_spendable_credits = 999
+        XCTAssertNil(manager.shieldedBalances[Self.walletId])
+
         for _ in 0..<200 where manager.shieldedBalances[Self.walletId] == nil {
             try await Task.sleep(for: .milliseconds(5))
         }

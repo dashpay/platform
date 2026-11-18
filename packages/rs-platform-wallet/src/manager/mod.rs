@@ -104,8 +104,11 @@ pub enum WalletWorker {
     /// a registry worker: a tokio task spawned by `configure_shielded`,
     /// cancelled and joined by [`shutdown`](PlatformWalletManager::shutdown)
     /// under a bounded budget. Its handle stays owned until a join completes,
-    /// so a destroy retry re-joins a straggler. It fires host callbacks, so a
-    /// straggler is reported non-clean.
+    /// so a later `shutdown` on the same manager re-joins a straggler (an FFI
+    /// `destroy` removes the handle before it shuts down, so a repeated
+    /// destroy cannot; there the host context lives until `release_fn` runs,
+    /// after the straggler ends). It fires host callbacks, so a straggler is
+    /// reported non-clean.
     ShieldedBalanceEmitter,
 }
 
@@ -154,8 +157,10 @@ const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
 /// scan holds, so only a host callback it is inside can hold it up; the bound
 /// keeps such a callback from hanging `destroy`. The handle stays in its slot
 /// until a join completes, so a timeout or a dropped `shutdown` future leaves
-/// it for a destroy retry to re-join, and the report carries
-/// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout).
+/// it for a later `shutdown` on the same manager to re-join, and the report
+/// carries [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout). The
+/// FFI context of a straggler stays alive until `release_fn` runs, which is
+/// after the straggler ends.
 #[cfg(feature = "shielded")]
 const SHIELDED_BALANCE_EMITTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
 
@@ -486,6 +491,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) shielded_balance_emitter_cancel: CancellationToken,
     #[cfg(feature = "shielded")]
     pub(super) shielded_balance_emitter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Notified when `shutdown` starts waiting for the emitter's join, so a
+    /// test can drop a `shutdown` future at exactly that point.
+    #[cfg(all(test, feature = "shielded"))]
+    pub(crate) shielded_balance_emitter_join_reached: Notify,
     /// Shared `PlatformEventManager` — held on the manager so
     /// `configure_shielded` can install a per-chunk progress handler
     /// onto the freshly-created `NetworkShieldedCoordinator` that
@@ -749,6 +758,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_balance_emitter_cancel: CancellationToken::new(),
             #[cfg(feature = "shielded")]
             shielded_balance_emitter_join: tokio::sync::Mutex::new(None),
+            #[cfg(all(test, feature = "shielded"))]
+            shielded_balance_emitter_join_reached: Notify::new(),
             #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
@@ -1510,6 +1521,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 match slot.as_mut() {
                     None => WorkerStatus::NotRunning,
                     Some(handle) => {
+                        #[cfg(test)]
+                        self.shielded_balance_emitter_join_reached.notify_one();
                         match tokio::time::timeout(SHIELDED_BALANCE_EMITTER_JOIN_BUDGET, handle)
                             .await
                         {
@@ -1524,7 +1537,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                             Err(_) => {
                                 tracing::warn!(
                                     "shielded balance emitter did not join within {:?}; kept for a \
-                                     retry",
+                                     later shutdown",
                                     SHIELDED_BALANCE_EMITTER_JOIN_BUDGET
                                 );
                                 WorkerStatus::Timeout

@@ -102,7 +102,11 @@ impl ShieldedLocalBalanceSnapshot {
 pub enum ShieldedLocalBalanceState {
     Unbound,
     /// Binding registered the keys, but neither host restoration nor completed
-    /// in-session scans establish the ledger for every account.
+    /// in-session scans establish the ledger for every account. The balance
+    /// emitter also delivers it for a ledger it could not read (one account's
+    /// stored notes past `u64`): that ledger is not established either.
+    /// `NetworkShieldedCoordinator::local_balance_snapshot` itself returns the
+    /// read error in that case.
     RestoreIncomplete,
     Ready(ShieldedLocalBalanceSnapshot),
 }

@@ -150,6 +150,11 @@ class ShieldedLocalBalanceTest {
         assertEquals(second, held[shieldedBalanceKey(walletId)])
         assertEquals(other, held[shieldedBalanceKey(otherWallet)])
 
+        // The published map is shared by every collector: read-only.
+        assertThrows(UnsupportedOperationException::class.java) {
+            (held as MutableMap<String, ShieldedBalanceUpdate>).clear()
+        }
+
         // An update that arrives late, or twice, changes nothing.
         assertSame(held, latestShieldedBalances(held, first))
         assertSame(held, latestShieldedBalances(held, second))

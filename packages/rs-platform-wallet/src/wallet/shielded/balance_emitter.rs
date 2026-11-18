@@ -22,6 +22,10 @@
 //! are no longer registered first: their `Unbound` needs no store read, so it
 //! is not held up behind a bound wallet's read while a scan holds the store.
 //!
+//! A ledger the read cannot sum (one account's stored notes past `u64`) is
+//! delivered as [`ShieldedLocalBalanceState::RestoreIncomplete`]: not an
+//! established ledger. The next successful read replaces it.
+//!
 //! An update carries the latest state the emitter read. Changes that land
 //! between two reads coalesce into one update, or into none when they cancel
 //! out (a reservation taken and released before the next read).
@@ -97,14 +101,16 @@ pub(crate) async fn run_balance_emitter(
                 Ok(state) => state,
                 Err(error) => {
                     // Only a stored balance past `u64` fails the read, which
-                    // valid notes cannot reach. The host keeps the state it
-                    // last received; the next change reads again.
+                    // valid notes cannot reach. The ledger is then not
+                    // established, so it is reported as such: a host showing
+                    // an earlier balance must stop showing it as known. The
+                    // next successful read replaces it with `Ready`.
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         %error,
-                        "shielded balance not readable; no update emitted"
+                        "shielded balance not readable; reported as restore incomplete"
                     );
-                    continue;
+                    ShieldedLocalBalanceState::RestoreIncomplete
                 }
             };
             let revision = match emitted.get(&wallet_id) {

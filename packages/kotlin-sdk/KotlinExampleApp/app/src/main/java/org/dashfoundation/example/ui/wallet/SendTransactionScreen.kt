@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
@@ -687,6 +688,20 @@ fun SendTransactionScreen(
                 isSending = true
                 scope.launch {
                     try {
+                        // The values this handler captured are those of the
+                        // last composition. A balance update can land after
+                        // it and before this tap is handled, so a shielded
+                        // spend reads the balance as it is now.
+                        if (selectedSource == FundSource.SHIELDED) {
+                            val spendableNow = container.shieldedService
+                                .accountBalance(walletId, SHIELDED_SEND_ACCOUNT)
+                                .first()
+                            if (spendableNow == null || spendableNow <= 0L) {
+                                error = "The shielded balance changed. Check the " +
+                                    "source and tap Send again."
+                                return@launch
+                            }
+                        }
                         when (flow) {
                             SendFlow.CORE_TO_CORE -> {
                                 val wallet = managed
