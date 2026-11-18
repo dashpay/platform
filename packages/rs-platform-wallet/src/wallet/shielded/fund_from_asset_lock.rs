@@ -281,11 +281,12 @@ impl PlatformWallet {
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
         // SAME flat fee consensus charges (`transform_into_action` Step 3b).
-        // One protocol-version snapshot sizes a fresh lock, prices the fee,
-        // proves the bundle and assembles every attempt, so a lock cannot be
-        // admitted under one fee schedule and spent under another.
-        let platform_version = self.sdk.version();
-        let pool_fee_credits =
+        // The initial protocol-version snapshot sizes a fresh lock and prices
+        // the speculative proof. After the lock resolves, the version is
+        // checked again and any ratchet refreshes the fee and proof before
+        // submission.
+        let mut platform_version = self.sdk.version();
+        let mut pool_fee_credits =
             Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx (or paying for an Orchard proof
@@ -419,7 +420,7 @@ impl PlatformWallet {
         // Halo 2 work never occupy an async worker. Dropping the handle on
         // any exit cancels a proof that is still queued; a running one can't
         // be interrupted, and its result is dropped.
-        let spawn_proof = |out_point, shield_amount| {
+        let spawn_proof = |out_point, shield_amount, platform_version: &'static PlatformVersion| {
             let sender_ovk = sender_ovk.clone();
             AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
                 ProvedShieldFromAssetLockBundle::prove(
@@ -463,7 +464,7 @@ impl PlatformWallet {
             Some((
                 out_point,
                 shield_amount,
-                spawn_proof(out_point, shield_amount),
+                spawn_proof(out_point, shield_amount, platform_version),
             ))
         };
         let resolve = self.asset_locks.resolve_funding_observing_out_point(
@@ -528,6 +529,20 @@ impl PlatformWallet {
         // builder.
         let asset_lock_value_credits =
             lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
+
+        // The SDK can learn a newer protocol version while the lock's
+        // InstantSend / ChainLock proof is resolving. The lock is already on
+        // chain by this point, so do not strand it by rejecting a bundle
+        // priced under the earlier snapshot: refresh the fee schedule before
+        // deriving the shield amount and re-prove when the version ratcheted.
+        let current_platform_version = self.sdk.version();
+        let version_changed =
+            current_platform_version.protocol_version != platform_version.protocol_version;
+        if version_changed {
+            platform_version = current_platform_version;
+            pool_fee_credits =
+                Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
+        }
         let shield_amount = shield_amount_after_fee(asset_lock_value_credits, pool_fee_credits)?;
 
         // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
@@ -573,7 +588,7 @@ impl PlatformWallet {
         let proof_out_point = out_point_from_proof(&proof);
         let proving = match speculative {
             Some((out_point, amount, proving))
-                if out_point == proof_out_point && amount == shield_amount =>
+                if !version_changed && out_point == proof_out_point && amount == shield_amount =>
             {
                 proving
             }
@@ -582,7 +597,7 @@ impl PlatformWallet {
             // function, so move it out and drop it before the replacement.
             stale => {
                 drop(stale);
-                spawn_proof(proof_out_point, shield_amount)
+                spawn_proof(proof_out_point, shield_amount, platform_version)
             }
         };
         let bundle = join_proof(proving).await?;
