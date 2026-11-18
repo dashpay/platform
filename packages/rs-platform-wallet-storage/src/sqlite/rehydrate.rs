@@ -4501,6 +4501,9 @@ mod tests {
             let deep = utxo(2, &coinjoin_address(&wallet, 100));
             for used in [HashMap::new(), ownerless(&[&placed.address, &deep.address])] {
                 let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                // A coin's lock flag follows the wallet's lock set, so the
+                // lock goes there and not only on the coin.
+                info.lock_outpoint(placed.outpoint);
                 load_into(
                     &mut info,
                     &manifest,
