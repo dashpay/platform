@@ -303,15 +303,6 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             WalletStorageError::RehydrationEnsureDerivedFailed { index: 42 },
         ),
         (
-            "RehydrationGapLimitRefillTooLarge",
-            WalletStorageError::RehydrationGapLimitRefillTooLarge {
-                refill_target: 300_000,
-                already_generated: 20,
-                implied: 299_980,
-                cap: 250_000,
-            },
-        ),
-        (
             "RehydrationGapLimitFailed",
             WalletStorageError::RehydrationGapLimitFailed {
                 source: key_wallet::error::Error::WatchOnly,

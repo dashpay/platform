@@ -58,8 +58,6 @@ pub enum LoadSite {
     AssetLockStatusDrift,
     /// Rehydration could not derive a resolved index into an address pool.
     RehydrationEnsureDerived,
-    /// Rehydration rejected an address pool's oversized gap-limit refill.
-    RehydrationGapLimit,
     /// Rehydration could not maintain an address pool's gap limit.
     RehydrationMaintainGapLimit,
     /// A restored UTXO or used address names an account this wallet lacks.
@@ -116,7 +114,6 @@ impl LoadSite {
             Self::ProviderKeyCurveMismatch => "provider_key_curve_mismatch",
             Self::AssetLockStatusDrift => "asset_lock_status_drift",
             Self::RehydrationEnsureDerived => "rehydration_ensure_derived",
-            Self::RehydrationGapLimit => "rehydration_gap_limit",
             Self::RehydrationMaintainGapLimit => "rehydration_maintain_gap_limit",
             Self::OrphanedUtxoOwner => "orphaned_utxo_owner",
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
@@ -147,9 +144,6 @@ impl LoadSite {
             }
             Self::RehydrationEnsureDerived => {
                 "recovery mode: leaving an address pool short after derivation failed"
-            }
-            Self::RehydrationGapLimit => {
-                "recovery mode: refusing an oversized address-pool gap refill"
             }
             Self::RehydrationMaintainGapLimit => {
                 "recovery mode: leaving an address pool short after gap maintenance failed"
