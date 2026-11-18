@@ -18,6 +18,7 @@ use platform_wallet::changeset::provider_key_account::{
 };
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
 use platform_wallet::registered_collaterals;
+use platform_wallet::wallet::address_pool_restore::derive_through;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -1329,15 +1330,7 @@ fn ensure_derived(
     key_source: &key_wallet::managed_account::address_pool::KeySource,
     index: u32,
 ) -> Option<key_wallet::Address> {
-    let needs_more = match pool.highest_generated() {
-        Some(highest) => highest < index,
-        None => true,
-    };
-    if needs_more {
-        let start = pool.highest_generated().map(|h| h + 1).unwrap_or(0);
-        pool.generate_addresses(index - start + 1, key_source)
-            .ok()?;
-    }
+    derive_through(pool, key_source, index).ok()?;
     pool.address_at_index(index)
 }
 

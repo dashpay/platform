@@ -16,9 +16,7 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
 use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
-use key_wallet::managed_account::address_pool::{
-    AddressPool, AddressPoolType, AddressState, PublicKeyType,
-};
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -37,6 +35,7 @@ use platform_wallet::changeset::{
     PrivateContactRequestsPosition, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
     PERSISTENCE_CAPABILITIES_VERSION,
 };
+use platform_wallet::wallet::address_pool_restore::restore_address_rows;
 use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
 use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -5455,55 +5454,6 @@ unsafe fn address_info_from_ffi(
     })
 }
 
-/// Restore persisted `AddressInfo` rows into a managed account's
-/// `AddressPool`. Upsert: a persisted row overwrites the gap-limit
-/// default `ManagedWalletInfo::from_wallet` pre-derived at the same
-/// index, and rows past that default gap window extend the pool. Rows are
-/// applied in index order; a row the pool refuses (a gap past the next
-/// index to derive, or an address it already holds at another index) is
-/// skipped with a warning. Returns how many rows were refused.
-///
-/// The persisted row is authoritative for its typed public key — the
-/// [`CoreAddressEntryFFI`] row carries the full typed key (ECDSA-33 /
-/// BLS-48 / EdDSA-32) with a [`KeyTypeTagFFI`] discriminator, so BLS
-/// operator and Ed25519 platform-node keys survive the round-trip in the
-/// row itself — with ONE legacy exception: rows persisted before the
-/// typed-key column existed carry an empty key (`public_key: None`).
-/// Overwriting a pre-derived typed entry with such a row would strip the
-/// in-memory BLS operator pubkeys that `from_wallet` derived from the
-/// account xpub, silently breaking operator-ownership matching for every
-/// pre-typed-key store. So when the incoming row has no key but the
-/// pre-derived entry at that index does, the existing typed key is kept
-/// (post-migration rows always carry their key, making this a no-op for
-/// them). Legacy Ed25519 platform-node rows cannot be recovered this way
-/// (hardened-only — no public derivation) nor migrated from the removed
-/// account-level batch (its data was dropped by the schema migration);
-/// per the pre-release convention those stores re-derive on
-/// delete+re-import.
-fn restore_address_pool(pool: &mut AddressPool, mut infos: Vec<AddressInfo>) -> usize {
-    infos.sort_by_key(|info| info.index);
-    let mut refused = 0;
-    for mut info in infos {
-        let idx = info.index;
-        if info.public_key.is_none() {
-            if let Some(existing) = pool.addresses().get(&idx) {
-                if existing.public_key.is_some() {
-                    info.public_key = existing.public_key.clone();
-                }
-            }
-        }
-        if let Err(error) = pool.insert(info) {
-            refused += 1;
-            tracing::warn!(
-                address_index = idx,
-                %error,
-                "load: address pool refused a persisted address row"
-            );
-        }
-    }
-    refused
-}
-
 /// Outcome of [`restore_core_address_pools`]: how many persisted address
 /// rows were routed into a managed pool and how many were skipped
 /// (invalid pool-type tag, no matching account/pool, or un-decodable row).
@@ -5535,6 +5485,7 @@ struct PoolRestoreStats {
 /// failure — a corrupt persisted row — so it surfaces rather than
 /// silently under-restoring.
 unsafe fn restore_core_address_pools(
+    wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
     pool_entries: &[AccountAddressPoolFFI],
     network: Network,
@@ -5731,10 +5682,10 @@ unsafe fn restore_core_address_pools(
             .find(|p| p.pool_type() == pool_type)
         {
             Some(pool) => {
-                let rows = infos.len();
-                let refused = restore_address_pool(pool, infos);
-                pools_routed += rows - refused;
-                pools_dropped += refused;
+                let key_source = wallet.key_source_for_account(account_type);
+                let outcome = restore_address_rows(pool, &key_source, infos);
+                pools_routed += outcome.restored;
+                pools_dropped += outcome.refused;
             }
             None => {
                 pools_dropped += 1;
@@ -6362,7 +6313,13 @@ fn build_wallet_start_state(
         // SAFETY: `pool_entries` is a valid slice (checked above) and each
         // row's `addresses_ptr` follows the load-callback contract.
         unsafe {
-            restore_core_address_pools(&mut wallet_info, pool_entries, network, &entry.wallet_id)?;
+            restore_core_address_pools(
+                &wallet,
+                &mut wallet_info,
+                pool_entries,
+                network,
+                &entry.wallet_id,
+            )?;
         }
     }
 
@@ -8483,6 +8440,7 @@ mod tests {
     }
 
     use super::*;
+    use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
 
     #[test]
     fn should_restore_identity_balance_watermark_without_changing_legacy_rows() {
@@ -13191,6 +13149,10 @@ mod tests {
     /// ends up with a `provider_owner_keys` account carrying its address
     /// pool — the restore target the provider arms route into.
     fn test_managed_wallet_info_with_provider_owner() -> ManagedWalletInfo {
+        ManagedWalletInfo::from_wallet(&test_wallet_with_provider_owner(), 0)
+    }
+
+    fn test_wallet_with_provider_owner() -> Wallet {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
         )
@@ -13206,8 +13168,7 @@ mod tests {
         accounts
             .insert(account)
             .expect("inserting the provider-owner account must succeed");
-        let wallet = Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts);
-        ManagedWalletInfo::from_wallet(&wallet, 0)
+        Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts)
     }
 
     /// Restore-arm coverage (PR #4120): a persisted core-address-pool row
@@ -13221,7 +13182,8 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use std::ffi::CString;
 
-        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+        let wallet = test_wallet_with_provider_owner();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
         // Read the managed provider-owner pool's actual type so the staged
         // FFI pool routes to it regardless of the pool-type convention.
@@ -13269,7 +13231,13 @@ mod tests {
 
         // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
         let stats = unsafe {
-            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+            restore_core_address_pools(
+                &wallet,
+                &mut wallet_info,
+                &pools,
+                Network::Testnet,
+                &[0u8; 32],
+            )
         }
         .expect("restore must succeed for a well-formed provider pool");
         assert_eq!(
@@ -13312,15 +13280,16 @@ mod tests {
         drop(path_c);
     }
 
-    /// A persisted row past the pool's next index to derive (rows missing
-    /// below it) is refused by key-wallet: the restore drops it with a warning
-    /// and counts it, and the pool keeps its pre-derived window.
+    /// A persisted row past the pool's next index to derive is restored with
+    /// the rows below it derived from the account's own key source: the FFI
+    /// load hands each pool the key source of the account it routes to.
     #[test]
-    fn a_persisted_row_leaving_a_gap_is_dropped_and_counted() {
+    fn a_persisted_row_leaving_a_gap_is_restored() {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use std::ffi::CString;
 
-        let mut wallet_info = test_managed_wallet_info_with_provider_owner();
+        let wallet = test_wallet_with_provider_owner();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let (pool_type, generated_before) = {
             let owner = wallet_info
                 .accounts
@@ -13362,14 +13331,20 @@ mod tests {
 
         // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
         let stats = unsafe {
-            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+            restore_core_address_pools(
+                &wallet,
+                &mut wallet_info,
+                &pools,
+                Network::Testnet,
+                &[0u8; 32],
+            )
         }
-        .expect("a refused row must not fail the restore");
+        .expect("restore must succeed for a well-formed provider pool");
         assert_eq!(
             stats,
             PoolRestoreStats {
-                routed: 0,
-                dropped: 1
+                routed: 1,
+                dropped: 0
             }
         );
 
@@ -13379,9 +13354,9 @@ mod tests {
             .as_mut()
             .expect("managed provider-owner account must exist");
         let pool = &owner.managed_account_type_mut().address_pools_mut()[0];
-        assert!(!pool.addresses().contains_key(&sparse_index));
-        assert_eq!(pool.highest_generated(), generated_before);
-        assert_eq!(pool.highest_used(), None);
+        assert!((0..sparse_index).all(|i| pool.addresses().contains_key(&i)));
+        assert!(pool.addresses()[&sparse_index].is_used());
+        assert_eq!(pool.highest_used(), Some(sparse_index));
 
         drop(addr_c);
         drop(path_c);
@@ -13488,7 +13463,7 @@ mod tests {
 
     /// Push `key` at `index` through the full FFI row round-trip
     /// (`build_core_address_entry_ffi` → `address_info_from_ffi` →
-    /// `restore_address_pool`) into `pool`, returning the restored entry's
+    /// `restore_address_rows`) into `pool`, returning the restored entry's
     /// typed key. No pre-seeded entry is needed — the widened row carries
     /// the typed key itself.
     fn round_trip_typed_key_into_pool(
@@ -13509,7 +13484,7 @@ mod tests {
         // until after this decode.
         let restored = unsafe { address_info_from_ffi(&entry, Network::Testnet) }
             .expect("address_info_from_ffi must decode the row");
-        restore_address_pool(pool, vec![restored]);
+        restore_address_rows(pool, &KeySource::NoKeySource, vec![restored]);
         drop(owned);
         pool.addresses()
             .get(&index)
@@ -13636,57 +13611,6 @@ mod tests {
                 state, expected
             );
         }
-    }
-
-    /// A LEGACY row (persisted before the typed-key column: empty key,
-    /// `public_key: None` after decode) must NOT strip the typed key the
-    /// gap-limit prederivation put at the same index — pre-typed-key
-    /// stores otherwise lose their in-memory BLS operator pubkeys at
-    /// load and masternode operator-ownership matching silently breaks
-    /// (post-migration rows always carry their key, so the preservation
-    /// is a no-op for them). Also pins the inverse: a legacy row at an
-    /// index with no prederived entry restores key-less rather than
-    /// inventing anything.
-    #[test]
-    fn legacy_keyless_row_keeps_prederived_typed_key() {
-        let mut pool = AddressPool::new_without_generation(
-            DerivationPath::from_str("m/9'/1'/3'").expect("static path must parse"),
-            AddressPoolType::AbsentHardened,
-            5,
-            Network::Testnet,
-        );
-
-        // Prederived typed entry, as `ManagedWalletInfo::from_wallet`
-        // seeds BLS operator pools from the account xpub.
-        let bls = vec![0xE7u8; 48];
-        let prederived = typed_key_test_address_info(7, Some(PublicKeyType::BLS(bls.clone())));
-        pool.insert(prederived).expect("store the prederived entry");
-
-        // Legacy rows: same index key-less, plus one at a fresh index.
-        let legacy_same_idx = typed_key_test_address_info(7, None);
-        let legacy_fresh_idx = typed_key_test_address_info(9, None);
-        restore_address_pool(&mut pool, vec![legacy_same_idx, legacy_fresh_idx]);
-
-        match &pool
-            .addresses()
-            .get(&7)
-            .expect("entry 7 must exist")
-            .public_key
-        {
-            Some(PublicKeyType::BLS(bytes)) => assert_eq!(
-                bytes, &bls,
-                "legacy key-less row must keep the prederived BLS key"
-            ),
-            other => panic!("prederived BLS key was stripped, got {:?}", other),
-        }
-        assert!(
-            pool.addresses()
-                .get(&9)
-                .expect("entry 9 must exist")
-                .public_key
-                .is_none(),
-            "a legacy row with no prederived counterpart stays key-less"
-        );
     }
 
     /// `account_xpub` must survive the persist→restore byte round-trip — it is
