@@ -47,24 +47,45 @@ pub enum AssetLockPaymentIntent {
 #[error("asset-lock payment intent is malformed: {0}")]
 pub struct AssetLockPaymentIntentDecodeError(&'static str);
 
-/// Why an intent has no stored form: its recipient count does not fit the
-/// format's `u16` count.
+/// Why an intent has no stored form: it is not one
+/// [`AssetLockPaymentIntent::from_bytes`] would read back (not exactly one
+/// remainder recipient), or its stored form is over
+/// [`ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE`] (which also bounds the `u16` count).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("asset-lock payment intent has {0} recipients, more than its stored form can hold")]
-pub struct AssetLockPaymentIntentEncodeError(usize);
+#[error("asset-lock payment intent has no stored form: {0}")]
+pub struct AssetLockPaymentIntentEncodeError(&'static str);
 
 impl AssetLockPaymentIntent {
     /// The stored form: a kind byte, then the kind's body. For Platform
     /// addresses the body is a big-endian `u16` count and, per recipient in
     /// map order, the 21-byte `PlatformAddress::to_bytes` form, a `0`/`1`
     /// amount flag and, after `1`, the big-endian `u64` amount in credits.
-    /// A map with more recipients than the count can hold is refused rather
-    /// than stored as a prefix.
+    /// Only what [`Self::from_bytes`] reads back is encoded, and only within
+    /// [`ASSET_LOCK_PAYMENT_INTENT_MAX_SIZE`]: a map without exactly one
+    /// remainder (`None`) recipient, or one too large to store, is refused
+    /// rather than stored in a form restoration would reject or a host could
+    /// not load.
     pub fn to_bytes(&self) -> Result<Vec<u8>, AssetLockPaymentIntentEncodeError> {
         match self {
             Self::PlatformAddresses(recipients) => {
-                let count = u16::try_from(recipients.len())
-                    .map_err(|_| AssetLockPaymentIntentEncodeError(recipients.len()))?;
+                if recipients
+                    .values()
+                    .filter(|amount| amount.is_none())
+                    .count()
+                    != 1
+                {
+                    return Err(AssetLockPaymentIntentEncodeError(
+                        "not exactly one remainder recipient",
+                    ));
+                }
+                if !self.fits_storage() {
+                    return Err(AssetLockPaymentIntentEncodeError(
+                        "larger than the stored-form limit",
+                    ));
+                }
+                let count = u16::try_from(recipients.len()).map_err(|_| {
+                    AssetLockPaymentIntentEncodeError("larger than the stored-form limit")
+                })?;
                 let mut bytes = Vec::with_capacity(3 + recipients.len() * 30);
                 bytes.push(KIND_PLATFORM_ADDRESSES);
                 bytes.extend_from_slice(&count.to_be_bytes());
@@ -232,23 +253,83 @@ mod tests {
         }
     }
 
+    /// The stored form of `recipients` written by hand, bypassing the
+    /// encoder's shape check.
+    fn raw(recipients: &[(PlatformAddress, Option<Credits>)]) -> Vec<u8> {
+        let mut bytes = vec![KIND_PLATFORM_ADDRESSES];
+        bytes.extend_from_slice(&(recipients.len() as u16).to_be_bytes());
+        for (address, amount) in recipients {
+            bytes.extend_from_slice(&address.to_bytes());
+            match amount {
+                Some(credits) => {
+                    bytes.push(1);
+                    bytes.extend_from_slice(&credits.to_be_bytes());
+                }
+                None => bytes.push(0),
+            }
+        }
+        bytes
+    }
+
     #[test]
     fn should_refuse_a_stored_intent_without_a_remainder_recipient() {
-        let none = AssetLockPaymentIntent::PlatformAddresses(BTreeMap::from([
+        let none = raw(&[
             (PlatformAddress::P2pkh([0x11; 20]), Some(5_000_000)),
             (PlatformAddress::P2pkh([0x22; 20]), Some(7)),
-        ]));
-        assert!(AssetLockPaymentIntent::from_bytes(&none.to_bytes().unwrap()).is_err());
+        ]);
+        assert!(AssetLockPaymentIntent::from_bytes(&none).is_err());
     }
 
     #[test]
     fn should_refuse_a_stored_intent_with_two_remainder_recipients() {
-        let two = AssetLockPaymentIntent::PlatformAddresses(BTreeMap::from([
+        let two = raw(&[
             (PlatformAddress::P2pkh([0x11; 20]), Some(5_000_000)),
             (PlatformAddress::P2pkh([0x22; 20]), None),
             (PlatformAddress::P2pkh([0x33; 20]), None),
-        ]));
-        assert!(AssetLockPaymentIntent::from_bytes(&two.to_bytes().unwrap()).is_err());
+        ]);
+        assert!(AssetLockPaymentIntent::from_bytes(&two).is_err());
+    }
+
+    /// The encoder refuses every shape the decoder refuses, so no stored
+    /// intent fails restoration: an empty map, none or two remainder
+    /// recipients.
+    #[test]
+    fn should_refuse_to_encode_an_intent_its_decoder_would_reject() {
+        for recipients in [
+            BTreeMap::new(),
+            BTreeMap::from([(PlatformAddress::P2pkh([0x11; 20]), Some(5))]),
+            BTreeMap::from([
+                (PlatformAddress::P2pkh([0x11; 20]), None),
+                (PlatformAddress::P2pkh([0x22; 20]), None),
+            ]),
+        ] {
+            let intent = AssetLockPaymentIntent::PlatformAddresses(recipients);
+            assert_eq!(
+                intent.to_bytes(),
+                Err(AssetLockPaymentIntentEncodeError(
+                    "not exactly one remainder recipient"
+                )),
+                "{intent:?}"
+            );
+        }
+    }
+
+    /// An intent whose stored form is over the size a host loads is refused
+    /// by the encoder, so no persistence path can store one.
+    #[test]
+    fn should_refuse_to_encode_an_intent_over_the_stored_size_limit() {
+        let recipients = (0..=136u8)
+            .map(|i| (PlatformAddress::P2pkh([i; 20]), Some(1)))
+            .chain([(PlatformAddress::P2pkh([0xff; 20]), None)])
+            .collect::<BTreeMap<_, _>>();
+        let intent = AssetLockPaymentIntent::PlatformAddresses(recipients);
+        assert!(!intent.fits_storage());
+        assert_eq!(
+            intent.to_bytes(),
+            Err(AssetLockPaymentIntentEncodeError(
+                "larger than the stored-form limit"
+            ))
+        );
     }
 
     #[test]
@@ -270,11 +351,14 @@ mod tests {
                 hash[..4].copy_from_slice(&i.to_be_bytes());
                 (PlatformAddress::P2pkh(hash), Some(1))
             })
+            .chain([(PlatformAddress::P2pkh([0xff; 20]), None)])
             .collect::<BTreeMap<_, _>>();
         let intent = AssetLockPaymentIntent::PlatformAddresses(recipients);
         assert_eq!(
             intent.to_bytes(),
-            Err(AssetLockPaymentIntentEncodeError(usize::from(u16::MAX) + 1))
+            Err(AssetLockPaymentIntentEncodeError(
+                "larger than the stored-form limit"
+            ))
         );
     }
 }
