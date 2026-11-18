@@ -98,6 +98,8 @@ fn total(setup: &Setup, document_type_name: &str, tx: TransactionArg) -> i64 {
         )
         .expect("expected to read the total")
         .0
+        .try_into()
+        .expect("expected a total that fits 64 bits")
 }
 
 fn nonce(setup: &Setup, actor: &Actor, tx: TransactionArg) -> IdentityNonce {

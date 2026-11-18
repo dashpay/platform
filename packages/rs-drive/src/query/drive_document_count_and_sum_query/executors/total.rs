@@ -31,6 +31,7 @@ use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::sum_width::element_count_and_sum;
 use crate::query::ResolvedTimeRange;
 use crate::query::WhereClause;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -145,7 +146,7 @@ impl Drive {
         let mut sum_acc: i64 = 0;
         for elem in results.elements.iter() {
             if let QueryResultElement::ElementResultItem(element) = elem {
-                let (c, s) = element.count_sum_value_or_default();
+                let (c, s) = element_count_and_sum(element)?;
                 count_acc = count_acc.checked_add(c).ok_or_else(|| {
                     Error::Query(QuerySyntaxError::Unsupported(
                         "point-lookup count-and-sum overflowed u64 on the count axis \
@@ -214,6 +215,6 @@ impl Drive {
                      documents_summable and documents_countable are set",
                 ))
             })?;
-        Ok(element.count_sum_value_or_default())
+        element_count_and_sum(&element)
     }
 }

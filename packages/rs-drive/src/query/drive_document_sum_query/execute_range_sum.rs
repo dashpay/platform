@@ -17,10 +17,12 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::sum_width::{element_sum, sum_in_64_bits};
 use crate::query::{
     aggregate_or_zero_when_absent, index_keeps_empty_groups, is_absent_path, WhereClause,
     WhereOperator,
 };
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -28,6 +30,49 @@ use grovedb::TransactionArg;
 use grovedb_costs::CostContext;
 
 impl DriveDocumentSumQuery<'_> {
+    /// The sum the aggregate path query `path_query` selects, read at the width the
+    /// document type keeps its sums in: a type that keeps them in 128 bits is read through
+    /// the entry point that returns one, as the 64-bit one refuses its trees, and the sum
+    /// is returned when it fits the 64 bits a sum result carries. An absent path reads zero
+    /// where the verifier of the same total reads it so (`aggregate_or_zero_when_absent`).
+    fn read_aggregate_sum(
+        &self,
+        drive: &Drive,
+        path_query: &grovedb::PathQuery,
+        range_total_verifier: dpp::version::FeatureVersion,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<i64, Error> {
+        let grove_version = &platform_version.drive.grove_version;
+        if self.document_type.uses_big_sums() {
+            let CostContext { value, cost: _ } =
+                drive
+                    .grove
+                    .query_aggregate_big_sum(path_query, transaction, grove_version);
+            let sum: i128 = aggregate_or_zero_when_absent(
+                drive,
+                &path_query.path,
+                value,
+                range_total_verifier,
+                transaction,
+                platform_version,
+            )?;
+            return sum_in_64_bits(sum);
+        }
+        let CostContext { value, cost: _ } =
+            drive
+                .grove
+                .query_aggregate_sum(path_query, transaction, grove_version);
+        aggregate_or_zero_when_absent(
+            drive,
+            &path_query.path,
+            value,
+            range_total_verifier,
+            transaction,
+            platform_version,
+        )
+    }
+
     /// Range-aware sum walk against a `rangeSummable: true` index.
     ///
     /// Mirror of count's `execute_range_count_no_proof`. Routing:
@@ -117,15 +162,9 @@ impl DriveDocumentSumQuery<'_> {
                         sum_property: self.sum_property.clone(),
                     };
                     let path_query = per_value_query.aggregate_sum_path_query(platform_version)?;
-                    let CostContext { value, cost: _ } = drive.grove.query_aggregate_sum(
-                        &path_query,
-                        transaction,
-                        &drive_version.grove_version,
-                    );
-                    let sum = aggregate_or_zero_when_absent(
+                    let sum = per_value_query.read_aggregate_sum(
                         drive,
-                        &path_query.path,
-                        value,
+                        &path_query,
                         range_total_verifier,
                         transaction,
                         platform_version,
@@ -155,15 +194,9 @@ impl DriveDocumentSumQuery<'_> {
             }
             // Flat summed (no In on prefix): single aggregate read.
             let path_query = self.aggregate_sum_path_query(platform_version)?;
-            let CostContext { value, cost: _ } = drive.grove.query_aggregate_sum(
-                &path_query,
-                transaction,
-                &drive_version.grove_version,
-            );
-            let sum = aggregate_or_zero_when_absent(
+            let sum = self.read_aggregate_sum(
                 drive,
-                &path_query.path,
-                value,
+                &path_query,
                 range_total_verifier,
                 transaction,
                 platform_version,
@@ -207,7 +240,7 @@ impl DriveDocumentSumQuery<'_> {
         let mut entries: Vec<SumEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
-            let sum = element.sum_value_or_default();
+            let sum = element_sum(&element)?;
             // Zero groups are kept where an index can hold empty groups
             // (see the helper), as the distinct proof keeps them: the walk's
             // limit counted them, so leaving them out would shorten the page.

@@ -305,13 +305,16 @@ mod tests {
     #[test]
     fn should_describe_a_summable_index_value_entries_with_their_sum_items_from_protocol_version_15(
     ) {
-        for (platform_version, entries) in [
+        for (platform_version, tree_type, entries) in [
             (
                 PlatformVersion::get(14).expect("expected protocol version 14"),
+                TreeType::SumTree,
                 AllSubtrees(32, NoSumTrees, None),
             ),
             (
                 PlatformVersion::latest(),
+                // The tip jar's amounts may pass 2^27, so its sums are kept in 128 bits
+                TreeType::BigSumTree,
                 AllReferencesWithSumItem(32, 42, None),
             ),
         ] {
@@ -329,7 +332,7 @@ mod tests {
             assert_eq!(
                 layer,
                 EstimatedLayerInformation {
-                    tree_type: TreeType::SumTree,
+                    tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: entries,
                 },

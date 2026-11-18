@@ -1097,7 +1097,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to estimate the create");
-        assert_eq!(estimated_create.processing_fee, 28915680);
+        assert_eq!(estimated_create.processing_fee, 30747120);
 
         drive
             .apply_drive_operations(
@@ -1122,7 +1122,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to estimate the delete");
-        assert_eq!(estimated_delete.processing_fee, 28170620);
+        assert_eq!(estimated_delete.processing_fee, 29925640);
     }
 
     #[test]

@@ -52,6 +52,7 @@ use crate::version::drive_versions::drive_document_method_versions::{
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         document_history_storage_layout: 1,
+        primary_key_tree_type: 2, // changed: the 128-bit counterpart for a type that keeps big sums
         query: DriveDocumentQueryMethodVersions {
             fetch_document_lifecycle: Some(0), // changed: reads the current document or lifecycle record
             fetch_document_type_sum: Some(0), // changed: reads the total a type keeps of its summed property

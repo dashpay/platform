@@ -73,7 +73,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
 use super::dynamic_reference::validate_dynamic_reference_sources;
-#[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
@@ -728,6 +727,11 @@ fn parse_generation_3(
             common::reject_contested_keep_history(&v2, name)?;
         }
     }
+
+    // After every aggregate declaration is applied: the width of the type's sums follows the
+    // bounds of the one property they all sum. In every build and with or without full
+    // validation, since it decides the trees Drive stores and reads.
+    apply_summed_value_width(&mut v2, schema_defs, platform_version)?;
 
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
@@ -1729,13 +1733,55 @@ fn validate_summed_value_bounds(
     ))
 }
 
+/// Records whether `document_type` keeps its sums in 128 bits (`DocumentTypeV2::big_sums` and
+/// the `big_sums` of its summing index levels): it does when its summed property is not
+/// declared within `SystemLimits::max_summed_value_magnitude_in_64_bit_sums` on both sides.
+/// Such a property's values can take a 64-bit sum out of range, and a tree with a 128-bit total
+/// holds any number of them. A property declared within the limit keeps the 64-bit trees.
+///
+/// Does nothing before protocol version 15: the limit is `None` in every earlier limits table,
+/// and the function returns on that before reading anything else, so every type parsed under
+/// those versions keeps `big_sums` false.
+///
+/// The bounds are compared as numbers, as `validate_summed_value_bounds` compares them.
+fn apply_summed_value_width(
+    document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_summed_value_magnitude_in_64_bit_sums
+    else {
+        return Ok(());
+    };
+    let Some((_, property_schema)) = summed_property_schema(document_type, schema_defs)? else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let within_limit = matches!(
+        (bound(property_names::MINIMUM), bound(property_names::MAXIMUM)),
+        (Some(minimum), Some(maximum)) if minimum >= -limit_value && maximum <= limit_value
+    );
+    if !within_limit {
+        document_type.big_sums = true;
+        document_type.index_structure.mark_big_sums();
+    }
+    Ok(())
+}
+
 /// The property a document type sums and its schema, `None` when the type sums nothing. The
 /// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
 /// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
 /// (`apply_doctype_aggregates`). The schema is followed through `$ref`s into `schema_defs`, so
 /// the bounds are read from it rather than from the inferred type, which is `i64` whatever they
 /// are without `sizedIntegerTypes`.
-#[cfg(feature = "validation")]
 #[allow(clippy::type_complexity)]
 fn summed_property_schema<'a>(
     document_type: &'a DocumentTypeV2,
@@ -2249,6 +2295,8 @@ mod refusal_test_support;
 mod summable_off_count_index_tests;
 #[cfg(all(test, feature = "validation"))]
 mod summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod summed_value_width_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod dynamic_reference_tests;

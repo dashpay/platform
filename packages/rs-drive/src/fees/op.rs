@@ -917,7 +917,9 @@ impl LowLevelDriveOperation {
             }
             TreeType::ProvableSumIndexedTree
             | TreeType::ProvableCountIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            | TreeType::ProvableCountProvableSumIndexedTree
+            | TreeType::ProvableBigSumIndexedTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     INDEXED_INNER_UNWRAPPABLE,
                 )));
@@ -974,9 +976,22 @@ impl LowLevelDriveOperation {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
             }
+            // The trees with a 128-bit sum (protocol version 15), wrapped as their 64-bit
+            // counterparts are
+            TreeType::CountBigSumTree => {
+                Element::empty_count_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableBigSumTree => {
+                Element::empty_provable_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountProvableBigSumTree => {
+                Element::empty_provable_count_provable_big_sum_tree_with_flags(element_flags)
+            }
             TreeType::ProvableSumIndexedTree
             | TreeType::ProvableCountIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            | TreeType::ProvableCountProvableSumIndexedTree
+            | TreeType::ProvableBigSumIndexedTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     INDEXED_INNER_UNWRAPPABLE,
                 )));
@@ -1060,18 +1075,25 @@ impl LowLevelDriveOperation {
             TreeType::SumTree
             | TreeType::BigSumTree
             | TreeType::ProvableSumTree
-            | TreeType::ProvableSumIndexedTree => Self::for_known_path_key_empty_not_summed_tree(
-                path,
-                key,
-                inner_tree_type,
-                storage_flags,
-            ),
+            | TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableBigSumTree
+            | TreeType::ProvableBigSumIndexedTree => {
+                Self::for_known_path_key_empty_not_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
+            }
             // Combined count+sum parents — wrap so both axes contribute
             // 0. Inner must be sum-bearing.
             TreeType::CountSumTree
             | TreeType::ProvableCountSumTree
             | TreeType::ProvableCountProvableSumTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            | TreeType::ProvableCountProvableSumIndexedTree
+            | TreeType::CountBigSumTree
+            | TreeType::ProvableCountProvableBigSumTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree => {
                 Self::for_known_path_key_empty_not_counted_or_summed_tree(
                     path,
                     key,
@@ -1112,9 +1134,22 @@ impl LowLevelDriveOperation {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
             }
+            // The trees with a 128-bit sum (protocol version 15), wrapped as their 64-bit
+            // counterparts are
+            TreeType::CountBigSumTree => {
+                Element::empty_count_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableBigSumTree => {
+                Element::empty_provable_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountProvableBigSumTree => {
+                Element::empty_provable_count_provable_big_sum_tree_with_flags(element_flags)
+            }
             TreeType::ProvableSumIndexedTree
             | TreeType::ProvableCountIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            | TreeType::ProvableCountProvableSumIndexedTree
+            | TreeType::ProvableBigSumIndexedTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     INDEXED_INNER_UNWRAPPABLE,
                 )));
@@ -1298,9 +1333,22 @@ impl LowLevelDriveOperation {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
             }
+            // The trees with a 128-bit sum (protocol version 15), wrapped as their 64-bit
+            // counterparts are
+            TreeType::CountBigSumTree => {
+                Element::empty_count_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableBigSumTree => {
+                Element::empty_provable_big_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountProvableBigSumTree => {
+                Element::empty_provable_count_provable_big_sum_tree_with_flags(element_flags)
+            }
             TreeType::ProvableSumIndexedTree
             | TreeType::ProvableCountIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            | TreeType::ProvableCountProvableSumIndexedTree
+            | TreeType::ProvableBigSumIndexedTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     INDEXED_INNER_UNWRAPPABLE,
                 )));
@@ -1668,6 +1716,26 @@ impl LowLevelDriveOperation {
                     axes.iter().map(|axis| (axis.tag(), None)).collect(),
                     storage_flags,
                 )
+            }
+            // The indexed trees with a 128-bit sum (protocol version 15)
+            (TreeType::ProvableBigSumIndexedTree, [IndexAxis::BigSum]) => {
+                Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+                    path,
+                    key,
+                    Element::empty_provable_big_sum_indexed_tree_with_flags(
+                        storage_flags.map(StorageFlags::to_element_flags),
+                    ),
+                ))
+            }
+            (TreeType::ProvableCountProvableBigSumIndexedTree, axes) if !axes.is_empty() => {
+                Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+                    path,
+                    key,
+                    Element::empty_provable_count_provable_big_sum_indexed_tree_with_flags(
+                        axes.iter().map(|axis| (axis.tag(), None)).collect(),
+                        storage_flags.map(StorageFlags::to_element_flags),
+                    )?,
+                ))
             }
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "for_known_path_key_empty_indexed_tree called with a tree type / ranked-axis \

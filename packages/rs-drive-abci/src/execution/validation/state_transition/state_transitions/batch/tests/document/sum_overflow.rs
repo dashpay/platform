@@ -183,6 +183,8 @@ mod sum_overflow_tests {
                 )
                 .expect("expected to fetch the total")
                 .0
+                .try_into()
+                .expect("expected a total that fits 64 bits")
         }
 
         fn take_nonce(&mut self, writer: usize) -> IdentityNonce {
@@ -547,7 +549,7 @@ mod sum_overflow_tests {
         assert_eq!(fixture.total(TIP), i64::MAX);
 
         // Whoever writes it: the other writer's own sum is empty, the type's total is not.
-        for (writer, charge) in [(0, 490_540), (1, 12_172_080)] {
+        for (writer, charge) in [(0, 490_800), (1, 12_172_340)] {
             let stored_before = fixture.stored(TIP);
             let (outcome, _) = fixture.create(writer, TIP, 1).await;
             expect_refused(
@@ -597,7 +599,7 @@ mod sum_overflow_tests {
             TIP,
             i64::MAX,
             &stored_before,
-            532_020,
+            532_880,
         );
         assert_eq!(fixture.total(TIP), i64::MAX - 3);
 
@@ -685,7 +687,7 @@ mod sum_overflow_tests {
             TAGGED,
             limit,
             &stored_before,
-            12_109_960,
+            12_110_100,
         );
 
         let (outcome, _) = fixture.create(0, TAGGED, limit).await;
@@ -701,7 +703,7 @@ mod sum_overflow_tests {
             TAGGED,
             limit,
             &stored_before,
-            12_171_220,
+            12_171_500,
         );
     }
 

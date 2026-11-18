@@ -497,6 +497,25 @@ async fn should_keep_migrated_and_new_history_writable_through_signed_transition
     }
 }
 
+/// The count, when the tree keeps one, and the sum of a `note` type's primary tree. A type
+/// registered at protocol version 15 keeps the sum in 128 bits, as its `amount` may pass
+/// 2^27; one registered at protocol version 14 and upgraded keeps the 64-bit tree it has.
+fn primary_total(
+    primary: &drive::grovedb::Element,
+    registered_before: bool,
+) -> (Option<u64>, i128) {
+    use drive::grovedb::Element;
+    let (big, count, sum) = match primary {
+        Element::CountSumTree(_, count, sum, _) => (false, Some(*count), i128::from(*sum)),
+        Element::SumTree(_, sum, _) => (false, None, i128::from(*sum)),
+        Element::CountBigSumTree(_, count, sum, _) => (true, Some(*count), *sum),
+        Element::BigSumTree(_, sum, _) => (true, None, *sum),
+        other => panic!("expected a sum tree, got {other:?}"),
+    };
+    assert_eq!(big, !registered_before, "{primary:?}");
+    (count, sum)
+}
+
 async fn run_history_write_sequence(migrated: bool, countable: bool) {
     use dpp::data_contract::DataContractFactory;
     use drive::query::document_history_drive_query::{
@@ -748,14 +767,11 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             .value
             .unwrap();
         let expected_sum = if revision == 1 { 100 } else { 250 };
-        if countable {
-            assert!(matches!(primary, drive::grovedb::Element::CountSumTree(_, 1, sum, _) if sum == expected_sum), "one live document contributes its current amount after each signed action: {primary:?}");
-        } else {
-            assert!(
-                matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
-                "only the current revision contributes to the primary sum: {primary:?}"
-            );
-        }
+        assert_eq!(
+            primary_total(&primary, migrated),
+            (countable.then_some(1), expected_sum),
+            "one live document contributes its current amount after each signed action: {primary:?}"
+        );
         if migrated && revision == 1 {
             continue;
         }
@@ -892,17 +908,11 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 .value
                 .unwrap();
             let expected_sum = if revision == 1 { 280 } else { 300 };
-            if countable {
-                assert!(
-                    matches!(primary, drive::grovedb::Element::CountSumTree(_, 2, sum, _) if sum == expected_sum),
-                    "both migrated and new live documents contribute to count and sum: {primary:?}"
-                );
-            } else {
-                assert!(
-                    matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
-                    "both migrated and new current revisions contribute to the primary sum: {primary:?}"
-                );
-            }
+            assert_eq!(
+                primary_total(&primary, migrated),
+                (countable.then_some(2), expected_sum),
+                "both migrated and new live documents contribute to count and sum: {primary:?}"
+            );
 
             let history = platform
                 .drive

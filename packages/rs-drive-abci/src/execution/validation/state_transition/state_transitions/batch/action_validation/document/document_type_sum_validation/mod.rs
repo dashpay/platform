@@ -159,7 +159,7 @@ pub(crate) fn validate_summed_value_within_type_total(
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-    if i128::from(total) - i128::from(removed) + i128::from(added) > i128::from(limit) {
+    if total - i128::from(removed) + i128::from(added) > i128::from(limit) {
         return refusal();
     }
     Ok(SimpleConsensusValidationResult::new())

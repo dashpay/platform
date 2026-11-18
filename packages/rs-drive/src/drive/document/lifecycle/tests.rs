@@ -951,7 +951,8 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
             )
             .value
             .expect("expected the primary-key tree");
-        let Element::CountSumTree(_, count, sum, _) = element else {
+        // The tip jar's amounts may pass 2^27, so the tree keeps its sum in 128 bits
+        let Element::CountBigSumTree(_, count, sum, _) = element else {
             panic!("a countable summable type stores its documents in a count-sum tree");
         };
         (count, sum)

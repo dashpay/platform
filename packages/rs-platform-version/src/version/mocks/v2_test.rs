@@ -680,6 +680,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contested_summed_value_magnitude: None,
         max_expiring_signed_summed_value_magnitude: None,
         max_summed_value_magnitude_without_type_total: None,
+        max_summed_value_magnitude_in_64_bit_sums: None,
         max_indexed_array_items: None,
         max_windowed_indexed_array_items: None,
         max_index_entries_per_document: None,

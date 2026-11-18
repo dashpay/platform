@@ -8,9 +8,9 @@ use crate::data_contract::config::v1::DataContractConfigSettersV1;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use platform_value::platform_value;
 
-const LIMIT: i64 = 1 << 27;
+pub(super) const LIMIT: i64 = 1 << 27;
 
-fn parse_at(
+pub(super) fn parse_at(
     schema: Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
     full_validation: bool,
@@ -33,11 +33,11 @@ fn parse_at(
     )
 }
 
-fn parse(schema: Value) -> Result<DocumentType, ProtocolError> {
+pub(super) fn parse(schema: Value) -> Result<DocumentType, ProtocolError> {
     parse_at(schema, None, true, PlatformVersion::latest())
 }
 
-fn amount(minimum: Option<i64>, maximum: Option<i64>) -> Value {
+pub(super) fn amount(minimum: Option<i64>, maximum: Option<i64>) -> Value {
     let mut amount = platform_value!({ "type": "integer", "position": 1 });
     if let Some(minimum) = minimum {
         amount
@@ -54,7 +54,7 @@ fn amount(minimum: Option<i64>, maximum: Option<i64>) -> Value {
 
 /// A `tip` type of `label` and `amount`, indexed `byLabel`, carrying `type_keywords` and, on
 /// its index, `index_keywords`. `amount` has the schema `amount`.
-fn tip_schema(amount: Value, type_keywords: Value, index_keywords: Value) -> Value {
+pub(super) fn tip_schema(amount: Value, type_keywords: Value, index_keywords: Value) -> Value {
     let mut index = platform_value!({
         "name": "byLabel",
         "properties": [{ "label": "asc" }],
@@ -88,15 +88,15 @@ fn tip_schema(amount: Value, type_keywords: Value, index_keywords: Value) -> Val
     schema
 }
 
-fn summed_by_the_index() -> Value {
+pub(super) fn summed_by_the_index() -> Value {
     platform_value!({ "summable": "amount" })
 }
 
-fn summed_by_the_type() -> Value {
+pub(super) fn summed_by_the_type() -> Value {
     platform_value!({ "documentsSummable": "amount" })
 }
 
-fn nothing() -> Value {
+pub(super) fn nothing() -> Value {
     platform_value!({})
 }
 
