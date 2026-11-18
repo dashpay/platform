@@ -530,29 +530,96 @@ impl Signer<PlatformAddress> for HeldSigner {
     }
 }
 
-/// A removal waits for an external top-up that entered its fenced section,
-/// here held while signing, and completes once the top-up returns.
+/// A removal never waits for a top-up whose host signer is still pending
+/// (an open signing prompt, or a signer that itself awaits the removal): the
+/// signing runs outside the lifecycle gate. A signature returned after the
+/// removal sends nothing: the top-up is refused as removed, on both routes.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_hold_a_wallets_removal_until_its_top_up_returns() {
+async fn should_complete_a_removal_while_the_top_up_signer_is_pending() {
+    for managed in [false, true] {
+        let mut fixture = Fixture::new(true).await;
+        let own = Identifier::from(OWN_IDENTITY);
+        fixture
+            .sdk
+            .mock()
+            .expect_fetch::<IdentityBalance, Identifier>(own, Some(BALANCE))
+            .await
+            .unwrap();
+        let wallet_id = fixture.wallet.wallet_id();
+        let signer = Arc::new(HeldSigner::default());
+        let top_up = {
+            let wallet = Arc::clone(&fixture.wallet);
+            let signer = Arc::clone(&signer);
+            let target = fixture.target;
+            tokio::spawn(async move {
+                let inputs = BTreeMap::from([(ADDRESS, AMOUNT)]);
+                if managed {
+                    wallet
+                        .top_up_from_addresses(&own, inputs, &*signer, settings())
+                        .await
+                } else {
+                    wallet
+                        .top_up_external_identity_from_addresses(
+                            &target,
+                            inputs,
+                            &*signer,
+                            settings(),
+                        )
+                        .await
+                }
+            })
+        };
+        signer.entered.notified().await;
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            fixture.manager.remove_wallet(&wallet_id),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("managed {managed}: the removal waited for the host signer"))
+        .expect("removed");
+        assert!(!fixture.wallet.core().is_current_generation().await);
+
+        signer.release.add_permits(1);
+        let topped_up = top_up.await.expect("top-up task");
+        assert!(
+            matches!(&topped_up, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                if *id == hex::encode(wallet_id)),
+            "managed {managed}: {topped_up:?}"
+        );
+        let (broadcasts, waits, _) = fixture.submissions().await;
+        assert_eq!((broadcasts, waits), (0, 0), "managed {managed}");
+    }
+}
+
+/// A removal waits for a top-up that entered its gated section, here held
+/// in its send step (the broadcast and result wait), and completes once the
+/// top-up returns.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_hold_a_wallets_removal_until_its_top_up_is_sent() {
     let fixture = Fixture::new(true).await;
     let wallet_id = fixture.wallet.wallet_id();
-    let signer = Arc::new(HeldSigner::default());
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Semaphore::new(0));
     let top_up = {
         let wallet = Arc::clone(&fixture.wallet);
-        let signer = Arc::clone(&signer);
-        let target = fixture.target;
+        let entered = Arc::clone(&entered);
+        let release = Arc::clone(&release);
         tokio::spawn(async move {
             wallet
-                .top_up_external_identity_from_addresses(
-                    &target,
-                    BTreeMap::from([(ADDRESS, AMOUNT)]),
-                    &*signer,
-                    settings(),
+                .top_up_identity_with(
+                    async { Ok(()) },
+                    |()| async move {
+                        entered.notify_one();
+                        release.acquire().await.expect("open").forget();
+                        Ok((AddressInfos::default(), BALANCE, 1))
+                    },
+                    "external identity top-up",
                 )
                 .await
         })
     };
-    signer.entered.notified().await;
+    entered.notified().await;
 
     let removal = {
         let manager = Arc::clone(&fixture.manager);
@@ -561,19 +628,13 @@ async fn should_hold_a_wallets_removal_until_its_top_up_returns() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
         !removal.is_finished(),
-        "the removal waits for the top-up being signed"
+        "the removal waits for the top-up being sent"
     );
     assert!(fixture.wallet.core().is_current_generation().await);
 
-    signer.release.add_permits(1);
+    release.add_permits(1);
     let topped_up = top_up.await.expect("top-up task");
-    assert!(
-        !matches!(
-            topped_up,
-            Err(PlatformWalletError::WalletRemovedBeforeSend(_))
-        ),
-        "the wallet was current when it was checked: {topped_up:?}"
-    );
+    assert_eq!(topped_up.expect("sent while current"), BALANCE);
     removal
         .await
         .expect("removal task")
@@ -656,7 +717,8 @@ async fn should_reconcile_the_spent_addresses_of_a_confirmed_top_up() {
     )]);
     let new_balance = wallet
         .top_up_identity_with(
-            async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) },
+            async { Ok(()) },
+            |()| async { Ok((confirmed, NEW_BALANCE, PROOF_HEIGHT)) },
             "external identity top-up",
         )
         .await

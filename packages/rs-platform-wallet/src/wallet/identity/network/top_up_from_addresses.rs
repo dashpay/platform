@@ -19,6 +19,7 @@ use dpp::fee::Credits;
 use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::StateTransition;
 
 use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
 
@@ -36,12 +37,11 @@ mod external_identity_tests;
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Top up an identity by spending platform address balances.
+    /// Build and sign the top-up of an identity this wallet manages from
+    /// platform address balances; [`Self::send_signed_top_up`] sends it.
+    /// Address nonces are looked up automatically.
     ///
-    /// Uses the `TopUpIdentityFromAddresses` SDK trait. Address nonces are
-    /// looked up automatically.
-    ///
-    /// This method owns only the identity-side balance update and returns
+    /// The send owns only the identity-side balance update and returns
     /// the proof-attested post-spend `AddressInfos` alongside the new
     /// identity balance. The composite
     /// [`PlatformWallet::top_up_from_addresses`] feeds the returned
@@ -51,10 +51,10 @@ impl IdentityWallet {
     /// spent address back to its derivation index (including addresses
     /// restored from disk that are no longer in a live derived pool).
     ///
-    /// Crate-private: it does not check the wallet generation or reconcile
-    /// the spent addresses. Callers outside the crate use
-    /// [`PlatformWallet::top_up_from_addresses`], which holds the lifecycle
-    /// gate and reconciles.
+    /// Crate-private: neither step checks the wallet generation or
+    /// reconciles the spent addresses. Callers outside the crate use
+    /// [`PlatformWallet::top_up_from_addresses`], which signs outside the
+    /// lifecycle gate, sends under it and reconciles.
     ///
     /// [`PlatformWallet::top_up_from_addresses`]:
     /// crate::wallet::PlatformWallet::top_up_from_addresses
@@ -80,13 +80,13 @@ impl IdentityWallet {
     ///   [`PlatformAddress`]es. Construction is the caller's concern —
     ///   seed-backed, hardware, FFI trampoline, whatever — the wallet
     ///   struct carries no key material itself.
-    pub(crate) async fn top_up_from_addresses<S, I>(
+    pub(crate) async fn sign_top_up_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
         inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError>
+    ) -> Result<SignedTopUp, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
@@ -118,72 +118,47 @@ impl IdentityWallet {
                 *identity_id,
             ))?;
 
-        let (address_infos, mut new_balance, metadata) = self
-            .submit_top_up_from_addresses(
-                &identity,
-                balance_before,
-                inputs,
-                address_signer,
-                settings,
-            )
-            .await?;
-
-        let proof_height = metadata.height;
-
-        // Reconcile the verified identity snapshot; failed cache writes remain pending.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                new_balance = managed.persist_confirmed_balance(
-                    new_balance,
-                    BlockTime::from(metadata),
-                    &self.persister,
-                );
-            }
-        }
-
-        // The spent platform-address balances are reconciled by the
-        // composite `PlatformWallet::top_up_from_addresses`, which routes
-        // the returned `AddressInfos` through the platform-address wallet's
-        // shared reconciliation seam.
-        Ok((address_infos, new_balance, proof_height))
+        self.sign_top_up(
+            &identity,
+            balance_before,
+            true,
+            inputs,
+            address_signer,
+            settings,
+        )
+        .await
     }
 
-    /// Top up an identity this wallet does not manage by spending platform
-    /// address balances.
+    /// Build and sign the top-up of an identity this wallet does not manage
+    /// from platform address balances; [`Self::send_signed_top_up`] sends it.
     ///
     /// The identity is fetched from Platform (proved) rather than read from
     /// the identity manager, and the identity manager is neither read nor
     /// written: someone else's identity is never recorded as the wallet's
-    /// own. Returns the same proof-attested post-spend `AddressInfos`, new
-    /// identity balance and proof height as
-    /// [`Self::top_up_from_addresses`].
+    /// own. The send returns the same proof-attested post-spend
+    /// `AddressInfos`, new identity balance and proof height as for
+    /// [`Self::sign_top_up_from_addresses`].
     ///
-    /// Crate-private: it does not check the wallet generation or reconcile
-    /// the spent addresses. Callers outside the crate use
+    /// Crate-private: neither step checks the wallet generation or
+    /// reconciles the spent addresses. Callers outside the crate use
     /// [`PlatformWallet::top_up_external_identity_from_addresses`], which
-    /// holds the lifecycle gate and reconciles.
+    /// signs outside the lifecycle gate, sends under it and reconciles.
     ///
     /// Returns [`PlatformWalletError::IdentityNotFound`] before anything is
     /// signed or broadcast when Platform has no identity with this id, and
     /// [`PlatformWalletError::IdentityLookupFailed`], likewise before
     /// anything is signed or broadcast, when the lookup itself fails.
-    /// `inputs` are funding rows as for [`Self::top_up_from_addresses`].
+    /// `inputs` are funding rows as for [`Self::sign_top_up_from_addresses`].
     ///
     /// [`PlatformWallet::top_up_external_identity_from_addresses`]:
     /// crate::wallet::PlatformWallet::top_up_external_identity_from_addresses
-    pub(crate) async fn top_up_external_from_addresses<S, I>(
+    pub(crate) async fn sign_top_up_external_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
         inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError>
+    ) -> Result<SignedTopUp, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
@@ -197,45 +172,28 @@ impl IdentityWallet {
             })?
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        let (address_infos, new_balance, metadata) = self
-            .submit_top_up_from_addresses(
-                &identity,
-                identity.balance(),
-                inputs,
-                address_signer,
-                settings,
-            )
-            .await?;
-        Ok((address_infos, new_balance, metadata.height))
+        self.sign_top_up(
+            &identity,
+            identity.balance(),
+            false,
+            inputs,
+            address_signer,
+            settings,
+        )
+        .await
     }
 
-    /// Build, sign, broadcast and wait for the top-up of `identity` from
-    /// `inputs`, mapping the SDK error the way every address top-up reports it.
-    ///
-    /// The broadcast keeps what every dispatch proved
-    /// ([`broadcast_tracking_delivery`]) and the outcome is settled by
-    /// [`settle_top_up`]: only a top-up refused before anything was sent is
-    /// an ordinary error; once a dispatch may have reached a node, an
-    /// endpoint's refusal included (an address-nonce refusal too), the result
-    /// wait decides, and anything short of a proof bound to this transition
-    /// is the SDK's unconfirmed outcome.
-    ///
-    /// The result proof of this transition authenticates only the state it
-    /// affects (the identity's balance and the input addresses as of the
-    /// proof's block), not that this transition executed. The result stands
-    /// only once the proof shows every input address at or past the nonce
-    /// this transition was signed with and the identity balance above
-    /// `balance_before`, Platform's balance of the identity read before
-    /// signing ([`bind_to_submitted_nonces`]); otherwise the top-up is
-    /// reported unconfirmed and nothing is reconciled from it.
-    async fn submit_top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
+    /// Build and sign the top-up of `identity` from `inputs`, mapping the SDK
+    /// error the way every address top-up reports it. Nothing is sent.
+    async fn sign_top_up<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity: &Identity,
         balance_before: Credits,
+        managed: bool,
         inputs: BTreeMap<PlatformAddress, Credits>,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
+    ) -> Result<SignedTopUp, PlatformWalletError> {
         let inputs = fetch_inputs_with_nonce(&self.sdk, &inputs)
             .await
             .map_err(top_up_error)?
@@ -269,20 +227,106 @@ impl IdentityWallet {
         .map_err(|e| top_up_error(e.into()))?;
         ensure_valid_state_transition_structure(&state_transition, self.sdk.version())
             .map_err(|e| top_up_error(e.into()))?;
-
-        let delivery = broadcast_tracking_delivery(&self.sdk, &state_transition, settings).await;
-        let identity_id = identity.id();
-        settle_top_up(&submitted, balance_before, delivery, || async {
-            let (result, metadata) = state_transition
-                .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
-                    &self.sdk, settings,
-                )
-                .await?;
-            proved_top_up(identity_id, &submitted, result)
-                .map(|(infos, balance)| (infos, balance, metadata))
+        Ok(SignedTopUp {
+            identity_id: identity.id(),
+            managed,
+            balance_before,
+            submitted,
+            state_transition,
+            settings,
         })
-        .await
     }
+
+    /// Broadcast a signed top-up and wait for its result; on the managed
+    /// route, record the identity's proved balance in the identity manager.
+    ///
+    /// Returns the proof-attested post-spend `AddressInfos`, the identity's
+    /// new balance and the proof's height. The spent platform-address
+    /// balances are reconciled by the composite (`PlatformWallet`), which
+    /// routes the returned `AddressInfos` through the platform-address
+    /// wallet's shared reconciliation seam.
+    ///
+    /// The broadcast keeps what every dispatch proved
+    /// ([`broadcast_tracking_delivery`]) and the outcome is settled by
+    /// [`settle_top_up`]: only a top-up refused before anything was sent is
+    /// an ordinary error; once a dispatch may have reached a node, an
+    /// endpoint's refusal included (an address-nonce refusal too), the result
+    /// wait decides, and anything short of a proof bound to this transition
+    /// is the SDK's unconfirmed outcome.
+    ///
+    /// The result proof of this transition authenticates only the state it
+    /// affects (the identity's balance and the input addresses as of the
+    /// proof's block), not that this transition executed. The result stands
+    /// only once the proof shows every input address at or past the nonce
+    /// this transition was signed with and the identity balance above
+    /// `balance_before`, Platform's balance of the identity read before
+    /// signing ([`bind_to_submitted_nonces`]); otherwise the top-up is
+    /// reported unconfirmed and nothing is reconciled from it.
+    pub(crate) async fn send_signed_top_up(
+        &self,
+        signed: SignedTopUp,
+    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError> {
+        let SignedTopUp {
+            identity_id,
+            managed,
+            balance_before,
+            submitted,
+            state_transition,
+            settings,
+        } = signed;
+        let delivery = broadcast_tracking_delivery(&self.sdk, &state_transition, settings).await;
+        let (address_infos, mut new_balance, metadata) =
+            settle_top_up(&submitted, balance_before, delivery, || async {
+                let (result, metadata) = state_transition
+                    .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+                        &self.sdk, settings,
+                    )
+                    .await?;
+                proved_top_up(identity_id, &submitted, result)
+                    .map(|(infos, balance)| (infos, balance, metadata))
+            })
+            .await?;
+        let proof_height = metadata.height;
+
+        if managed {
+            // Reconcile the verified identity snapshot; failed cache writes
+            // remain pending.
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                new_balance = managed.persist_confirmed_balance(
+                    new_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
+            }
+        }
+        Ok((address_infos, new_balance, proof_height))
+    }
+}
+
+/// An identity top-up from platform addresses, built and signed and not yet
+/// sent: the output of [`IdentityWallet::sign_top_up_from_addresses`] or
+/// [`IdentityWallet::sign_top_up_external_from_addresses`], the input of
+/// [`IdentityWallet::send_signed_top_up`]. The split lets the composite sign
+/// (the host's signer may prompt) outside the wallet generation's lifecycle
+/// gate and send under it.
+pub(crate) struct SignedTopUp {
+    identity_id: Identifier,
+    /// The identity manager holds the identity: the send records its proved
+    /// balance there.
+    managed: bool,
+    /// Platform's balance of the identity read before signing, the baseline
+    /// the proof must show growth from ([`bind_to_submitted_nonces`]).
+    balance_before: Credits,
+    /// Each input address with the nonce it was signed with.
+    submitted: BTreeMap<PlatformAddress, AddressNonce>,
+    state_transition: StateTransition,
+    settings: Option<PutSettings>,
 }
 
 /// An SDK error of an address top-up before anything was sent, as the

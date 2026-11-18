@@ -591,7 +591,7 @@ impl PlatformWallet {
     /// `AddressInfos`.
     ///
     /// The identity-side semantics are those of the crate-private
-    /// `IdentityWallet::top_up_from_addresses`. Reconciliation failures are
+    /// `IdentityWallet::sign_top_up_from_addresses`. Reconciliation failures are
     /// logged inside the seam rather than propagated — Platform already
     /// accepted the top-up, and a later sync reconciles.
     ///
@@ -609,10 +609,11 @@ impl PlatformWallet {
     /// so the top-up never reports
     /// [`PlatformWalletError::AddressNonceMismatch`].
     ///
-    /// Holds the wallet generation's lifecycle gate like
-    /// [`Self::top_up_external_identity_from_addresses`]: a wallet removed or
-    /// re-created since this handle was taken is refused with
-    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing signed or
+    /// Takes the wallet generation's lifecycle gate like
+    /// [`Self::top_up_external_identity_from_addresses`]: signed outside it,
+    /// sent under it, so a wallet removed or re-created since this handle was
+    /// taken, or while the host signed, is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// broadcast. A caller must not hold the gate.
     ///
     /// Returns the identity's new credit balance.
@@ -629,7 +630,8 @@ impl PlatformWallet {
     {
         self.top_up_identity_with(
             self.identity
-                .top_up_from_addresses(identity_id, inputs, address_signer, settings),
+                .sign_top_up_from_addresses(identity_id, inputs, address_signer, settings),
+            |signed| self.identity.send_signed_top_up(signed),
             "identity top-up",
         )
         .await
@@ -642,12 +644,15 @@ impl PlatformWallet {
     /// The identity is fetched from Platform and never added to the identity
     /// manager.
     ///
-    /// Holds the wallet generation's lifecycle gate from the liveness check
-    /// through the fetch, signing, broadcast and reconciliation, so a
-    /// removal waits for it. A wallet removed or re-created since this
-    /// handle was taken is refused with
-    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
-    /// fetched, signed or broadcast. A caller must not hold the gate.
+    /// A wallet removed or re-created since this handle was taken is refused
+    /// with [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
+    /// fetched, signed or broadcast. The fetch and the signing run outside
+    /// the wallet generation's lifecycle gate, so a removal never waits for
+    /// the host's signer; the gate is taken once the top-up is signed and
+    /// held from a second liveness check through the broadcast, the result
+    /// wait and the reconciliation, so a removal waits for those. A wallet
+    /// removed while the host signed is refused with the same error, nothing
+    /// broadcast. A caller must not hold the gate.
     ///
     /// The result stands only when its proof shows every input address at or
     /// past the nonce this top-up was signed with AND the identity balance
@@ -673,35 +678,55 @@ impl PlatformWallet {
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
         self.top_up_identity_with(
-            self.identity.top_up_external_from_addresses(
+            self.identity.sign_top_up_external_from_addresses(
                 identity_id,
                 inputs,
                 address_signer,
                 settings,
             ),
+            |signed| self.identity.send_signed_top_up(signed),
             "external identity top-up",
         )
         .await
     }
 
-    /// An address top-up around its submission `top_up` (not yet started):
-    /// the lifecycle gate and liveness check, then the reconciliation of the
-    /// spent addresses at the proof's height (`AddressFunds::as_of_height`,
-    /// so the sync's delta replay never re-applies this transition's ops on
-    /// top of them). A seam so a test can hand in a confirmed result the
-    /// mock SDK cannot prove.
-    pub(crate) async fn top_up_identity_with(
+    /// An address top-up around its two steps, neither started: `sign`
+    /// (build and sign, where the host's signer may prompt) and `send`
+    /// (broadcast and result wait).
+    ///
+    /// A handle no longer current is refused before `sign` runs. `sign` runs
+    /// outside the lifecycle gate, as [`WalletGeneration::teardown_guard`]
+    /// requires of a step awaiting an external signer: an open signing
+    /// prompt, or a signer that awaits this wallet's removal, never holds a
+    /// removal back. The gate is then taken and the liveness checked again
+    /// under it, refusing a wallet removed or re-created while the host
+    /// signed with nothing sent, and held through `send` and the
+    /// reconciliation of the spent addresses at the proof's height
+    /// (`AddressFunds::as_of_height`, so the sync's delta replay never
+    /// re-applies this transition's ops on top of them). A seam so a test
+    /// can hand in a confirmed result the mock SDK cannot prove.
+    ///
+    /// [`WalletGeneration::teardown_guard`]:
+    /// crate::wallet::core::WalletGeneration::teardown_guard
+    pub(crate) async fn top_up_identity_with<T, SendFut>(
         &self,
-        top_up: impl Future<Output = Result<(AddressInfos, Credits, u64), PlatformWalletError>>,
+        sign: impl Future<Output = Result<T, PlatformWalletError>>,
+        send: impl FnOnce(T) -> SendFut,
         label: &'static str,
-    ) -> Result<Credits, PlatformWalletError> {
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        SendFut: Future<Output = Result<(AddressInfos, Credits, u64), PlatformWalletError>>,
+    {
+        let removed = || PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
+        if !self.core().is_current_generation().await {
+            return Err(removed());
+        }
+        let signed = sign.await?;
         let _lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
-                self.wallet_id,
-            )));
+            return Err(removed());
         }
-        let (address_infos, new_balance, proof_height) = top_up.await?;
+        let (address_infos, new_balance, proof_height) = send(signed).await?;
         self.platform
             .reconcile_address_infos(&address_infos, proof_height, label)
             .await;
