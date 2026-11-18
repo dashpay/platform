@@ -1,4 +1,4 @@
-//! The escrow of the token marketplace (protocol version 15).
+//! The escrow of the token marketplace (protocol version 16).
 //!
 //! An open listing holds the tokens it offers in `[Tokens, TOKEN_ORDER_ESCROW_KEY, token id,
 //! order id]`, a SumItem of the token's escrow SumTree, and an open offer holds the credits it
@@ -43,7 +43,15 @@ mod tests {
     use grovedb::EstimatedLayerSizes::AllSubtrees;
     use grovedb::EstimatedSumTrees::AllBigSumTrees;
     use grovedb::{EstimatedLayerInformation, GroveDb, TreeType};
+    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
     use std::collections::BTreeMap;
+
+    /// The token marketplace starts with protocol version 16, which has no tables yet: its
+    /// escrow is tested under the test version that selects it on top of protocol version 15.
+    fn token_marketplace_version() -> &'static PlatformVersion {
+        PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
+            .expect("expected the token marketplace test version")
+    }
 
     fn apply(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
@@ -52,14 +60,14 @@ mod tests {
                 None,
                 operations,
                 &mut vec![],
-                &PlatformVersion::latest().drive,
+                &token_marketplace_version().drive,
             )
             .expect("expected to apply the operations");
     }
 
     #[test]
     fn should_hold_set_and_release_what_a_listing_escrows() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
         let order_id = [9; 32];
@@ -119,7 +127,7 @@ mod tests {
 
     #[test]
     fn should_hold_set_and_release_what_an_offer_escrows() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let order_id = [9; 32];
         let fetch = |drive: &Drive| {
@@ -158,11 +166,11 @@ mod tests {
     }
 
     /// Listing moves tokens from a balance into escrow: the supply is unchanged, and the token
-    /// conservation check of protocol version 15 counts the escrow. The calculator of protocol
+    /// conservation check of protocol version 16 counts the escrow. The calculator of protocol
     /// version 14, which reads no escrow, would see tokens missing.
     #[test]
     fn should_keep_the_token_supply_balanced_when_tokens_move_into_escrow() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
         let identity_id = [6; 32];
@@ -244,14 +252,14 @@ mod tests {
                 order_id,
                 None,
                 &mut vec![],
-                PlatformVersion::latest(),
+                token_marketplace_version(),
             )
             .expect("expected to fetch the escrow")
     }
 
     fn fetch_offer(drive: &Drive, order_id: [u8; 32]) -> Option<u64> {
         drive
-            .fetch_credit_order_escrow(order_id, None, &mut vec![], PlatformVersion::latest())
+            .fetch_credit_order_escrow(order_id, None, &mut vec![], token_marketplace_version())
             .expect("expected to fetch the escrow")
     }
 
@@ -259,7 +267,7 @@ mod tests {
     /// tree the first queues and does not insert it again.
     #[test]
     fn should_insert_a_tokens_escrow_tree_once_for_two_listings_in_one_batch() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
 
@@ -296,7 +304,7 @@ mod tests {
     /// the batch is refused: what the shared operations prevent.
     #[test]
     fn should_refuse_a_batch_inserting_a_tokens_escrow_tree_twice() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
         let mut batch = vec![];
@@ -330,7 +338,7 @@ mod tests {
     /// cost something to apply and change nothing.
     #[test]
     fn should_estimate_every_escrow_write_without_writing_it() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
         let order_id = [9; 32];
@@ -455,7 +463,7 @@ mod tests {
     /// deeper description already registered for the same batch.
     #[test]
     fn should_keep_the_deeper_tokens_layer_estimate() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let tokens_layer_level = |estimation: &EstimatedLayers| match estimation
             .get(&KeyInfoPath::from_known_path(tokens_root_path()))
             .map(|layer| &layer.estimated_layer_count)
@@ -503,7 +511,7 @@ mod tests {
     /// Both escrows hold signed 8-byte values: `i64::MAX` is held, one more is refused.
     #[test]
     fn should_hold_up_to_i64_max_in_either_escrow() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
         let largest = i64::MAX as u64;
@@ -569,11 +577,12 @@ mod tests {
             .is_err());
     }
 
-    /// The escrow methods are active from protocol version 15: at 14 every one of them refuses
-    /// with `VersionNotActive` instead of building operations for trees that do not exist there.
+    /// The escrow methods are active from protocol version 16: at 14 and 15 every one of them
+    /// refuses with `VersionNotActive` instead of building operations for trees that do not
+    /// exist there.
     #[test]
-    fn should_refuse_every_escrow_method_before_protocol_version_15() {
-        let latest = PlatformVersion::latest();
+    fn should_refuse_every_escrow_method_before_protocol_version_16() {
+        let latest = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(latest));
         let token_id = [5; 32];
         let order_id = [9; 32];
@@ -686,20 +695,23 @@ mod tests {
             ]
         };
 
-        let before = PlatformVersion::get(14).expect("expected protocol version 14");
-        for (name, result) in calls(before) {
-            assert!(
-                matches!(
-                    result,
-                    Err(Error::Drive(DriveError::VersionNotActive { .. }))
-                ),
-                "{name} at protocol version 14: expected VersionNotActive, got {result:?}"
-            );
+        for before in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(before).expect("expected the protocol version");
+            for (name, result) in calls(platform_version) {
+                assert!(
+                    matches!(
+                        result,
+                        Err(Error::Drive(DriveError::VersionNotActive { .. }))
+                    ),
+                    "{name} at protocol version {before}: expected VersionNotActive, got {result:?}"
+                );
+            }
         }
         for (name, result) in calls(latest) {
             assert!(
                 result.is_ok(),
-                "{name} at the latest protocol version: {result:?}"
+                "{name} at the token marketplace test version: {result:?}"
             );
         }
     }
@@ -710,7 +722,7 @@ mod tests {
         drive: &Drive,
         build: impl Fn(&mut Option<EstimatedLayers>) -> Vec<LowLevelDriveOperation>,
     ) -> (FeeResult, FeeResult) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let fee = |costs: Vec<LowLevelDriveOperation>| {
             drive
                 .calculate_fee(
@@ -755,7 +767,7 @@ mod tests {
     /// specialized balances Merk and a listing's on the fourth of the Tokens Merk.
     #[test]
     fn should_estimate_at_least_what_an_escrow_write_costs() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
 
@@ -822,11 +834,11 @@ mod tests {
     }
 
     /// The offers' escrow is described at its key's depth in the prefunded specialized balances
-    /// layer, and from protocol version 15 the voting balance and fee pot estimations of the
+    /// layer, and from protocol version 16 the voting balance and fee pot estimations of the
     /// same batch keep that deeper description, whichever registers first.
     #[test]
     fn should_keep_the_deeper_prefunded_balances_layer_estimate() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let prefunded_layer_level = |estimation: &EstimatedLayers| match estimation
             .get(&KeyInfoPath::from_known_path(
                 prefunded_specialized_balances_path(),
@@ -889,7 +901,7 @@ mod tests {
     /// the balance estimation built last lowers it to the balances key, as it always did.
     #[test]
     fn should_keep_the_escrow_depth_whichever_of_balance_and_escrow_is_built_first() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
         let tokens_layer_level = |estimation: &Option<EstimatedLayers>| match estimation
@@ -954,7 +966,7 @@ mod tests {
     /// did.
     #[test]
     fn should_keep_the_credit_escrow_depths_whichever_of_debit_and_escrow_is_built_first() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let level_at = |estimation: &Option<EstimatedLayers>, path: KeyInfoPath| match estimation
             .as_ref()
@@ -1018,7 +1030,7 @@ mod tests {
     /// rebuilds and holds that scale's orders alone.
     #[test]
     fn should_sum_the_depth_of_each_price_scale_apart() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = load_system_data_contract(SystemDataContract::TokenMarket, platform_version)
             .expect("expected the token market contract");

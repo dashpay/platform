@@ -28,7 +28,7 @@ use crate::util::batch::GroveDbOpBatch;
 pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
 
 /// The key for the credits the token marketplace holds in escrow for open offers (protocol
-/// version 15): a SumTree whose SumItems are keyed by order id. It sits under the prefunded
+/// version 16): a SumTree whose SumItems are keyed by order id. It sits under the prefunded
 /// specialized balances root, a SumTree, so the credit conservation check counts it.
 pub const PREFUNDED_BALANCES_FOR_TOKEN_ORDERS: u8 = 32;
 
