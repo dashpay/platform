@@ -1516,9 +1516,11 @@ extension CoreContentView {
 ///   * **Total Shielded Balance**: the sum of the shielded balances Rust
 ///     computed for each wallet on this network (each one's ordinary
 ///     accounts; identity accounts left out), from the service's local
-///     balance cache. A wallet whose balance is not known yet counts as
-///     0; "Not known" means no wallet's balance is known yet, or the sum does not
-///     fit in `UInt64`.
+///     balance cache. A wallet Rust reports as unbound adds nothing. While
+///     any wallet's balance is not known yet the total is shown as partial
+///     ("At least ..." or "Not known yet"); only a total over every wallet
+///     is shown as a plain number. "Too large to show" means the sum does
+///     not fit in `UInt64`.
 ///
 ///   * **Notes Synced**: read from SwiftData, the highest `lastSyncedIndex` across this
 ///     network's `PersistentShieldedSyncState` rows. The Orchard
@@ -1541,11 +1543,21 @@ private struct ShieldedNetworkSummaryRows: View {
     @Query private var syncStates: [PersistentShieldedSyncState]
 
     /// Sum of this network's wallets' Rust-computed shielded balances, in
-    /// credits. `nil` when none is known yet or the sum overflows.
-    private var totalShieldedCredits: UInt64? {
-        ShieldedService.sumKnownBalances(
-            walletIds.map { shieldedService.ordinaryShieldedBalance(walletId: $0) }
-        )
+    /// credits, marked partial while any wallet's balance is not known.
+    private var totalShielded: ShieldedService.NetworkShieldedTotal {
+        shieldedService.networkShieldedTotal(walletIds: walletIds)
+    }
+
+    /// Text for the total, and whether it is a complete non-zero amount.
+    private var totalShieldedText: (text: String, isAmount: Bool) {
+        switch totalShielded {
+        case .complete(let credits):
+            return credits > 0 ? (formatCredits(credits), true) : ("0", false)
+        case .partial(let credits):
+            return credits > 0 ? ("At least \(formatCredits(credits))", false) : ("Not known yet", false)
+        case .overflow:
+            return ("Too large to show", false)
+        }
     }
 
     /// This network's unspent note rows; their identity drives refreshes.
@@ -1584,12 +1596,13 @@ private struct ShieldedNetworkSummaryRows: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
-                if let total = totalShieldedCredits, total > 0 {
-                    Text(formatCredits(total))
+                let total = totalShieldedText
+                if total.isAmount {
+                    Text(total.text)
                         .font(.subheadline)
                         .fontWeight(.medium)
                 } else {
-                    Text(totalShieldedCredits == nil ? "Not known" : "0")
+                    Text(total.text)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

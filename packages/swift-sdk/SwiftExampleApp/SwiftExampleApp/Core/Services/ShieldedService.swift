@@ -88,13 +88,23 @@ class ShieldedService: ObservableObject {
     /// failed to bind.
     @Published var addressesByAccount: [UInt32: String] = [:]
 
-    /// Last `.ready` local balance snapshot per wallet id, as Rust
-    /// computed it (`localShieldedBalanceSnapshot(walletId:)`). Covers
-    /// every engine-bound wallet, not only the mirror wallet. A wallet
-    /// without an entry has no known balance yet. Read it through
+    /// Last known local balance answer per wallet id, as Rust gave it
+    /// (`localShieldedBalanceSnapshot(walletId:)`). Covers every
+    /// engine-bound wallet, not only the mirror wallet. A wallet without
+    /// an entry has no known answer yet. Read balances through
     /// [`ordinaryShieldedBalance(walletId:)`] and
-    /// [`spendableShieldedCredits(walletId:account:)`].
-    @Published private(set) var localBalances: [Data: ShieldedLocalBalanceSnapshot] = [:]
+    /// [`spendableShieldedCredits(walletId:account:)`], and a
+    /// multi-wallet total through [`networkShieldedTotal(walletIds:)`].
+    @Published private(set) var localBalances: [Data: LocalBalanceEntry] = [:]
+
+    /// One wallet's last known local balance answer.
+    enum LocalBalanceEntry: Equatable, Sendable {
+        /// The last `.ready` snapshot.
+        case ready(ShieldedLocalBalanceSnapshot)
+        /// Rust reported no shielded accounts bound for the wallet: a
+        /// known answer with nothing to add, not a missing read.
+        case unbound
+    }
 
     // MARK: - Internals
 
@@ -319,6 +329,7 @@ class ShieldedService: ObservableObject {
             orchardDisplayAddress = addressesByAccount[primary]
             // Read right after bind, before sync holds the store: at
             // launch this is the read that normally succeeds.
+            forgetUnboundAnswerAfterBind(walletId: walletId)
             refreshLocalBalance(walletId: walletId)
 
             SDKLogger.event(
@@ -480,6 +491,7 @@ class ShieldedService: ObservableObject {
                     "wallet_reference": .reference(walletId),
                 ]
             )
+            forgetUnboundAnswerAfterBind(walletId: walletId)
             refreshLocalBalance(walletId: walletId)
             return true
         } catch {
@@ -862,6 +874,10 @@ class ShieldedService: ObservableObject {
             try Self.executeClearPersistenceSequence(
                 resetRustState: {
                     try managerForStop.clearShielded()
+                    // Rust has emptied every wallet's ledger now, so the
+                    // cached balances go before any host persistence
+                    // work, which may still fail.
+                    dropAllLocalBalances()
                 },
                 clearHostState: {
                     // Delete every shielded SwiftData row across all
@@ -910,8 +926,6 @@ class ShieldedService: ObservableObject {
         //    / boundAccounts) so [`manualSync`] can re-bind on
         //    the next Sync Now tap. Bare [`reset`] would nil
         //    them and leave the user stranded on this screen.
-        //    Clear is global, so every wallet's cached balance goes.
-        dropAllLocalBalances()
         shieldedBalance = 0
         lastNewNotes = 0
         lastNewlySpent = 0
@@ -1182,31 +1196,58 @@ class ShieldedService: ObservableObject {
     // MARK: - Local balance cache
 
     /// The wallet's shielded balance as Rust computes it (its ordinary
-    /// accounts; identity accounts left out). `nil` while not known yet.
+    /// accounts; identity accounts left out). `nil` unless the last
+    /// answer is a ready snapshot.
     func ordinaryShieldedBalance(walletId: Data) -> UInt64? {
-        localBalances[walletId]?.ordinarySpendableCredits
+        guard case .ready(let snapshot) = localBalances[walletId] else { return nil }
+        return snapshot.ordinarySpendableCredits
     }
 
     /// What one account of the wallet can spend, as Rust computes it.
-    /// `nil` while not known yet, or when the last snapshot does not
-    /// list that account.
+    /// `nil` unless the last answer is a ready snapshot that lists that
+    /// account.
     func spendableShieldedCredits(walletId: Data, account: UInt32) -> UInt64? {
-        localBalances[walletId]?.accounts[account]?.spendableCredits
+        guard case .ready(let snapshot) = localBalances[walletId] else { return nil }
+        return snapshot.accounts[account]?.spendableCredits
+    }
+
+    /// Total of Rust's per-wallet shielded balances over a set of wallets.
+    enum NetworkShieldedTotal: Equatable, Sendable {
+        /// Every wallet's answer is known; the sum of the ready ones.
+        case complete(UInt64)
+        /// At least one wallet's answer is not known yet; the sum of the
+        /// ready ones known so far. The real total is at least this.
+        case partial(UInt64)
+        /// The known balances do not fit in `UInt64`.
+        case overflow
+    }
+
+    /// The total over `walletIds` from this cache.
+    func networkShieldedTotal(walletIds: some Sequence<Data>) -> NetworkShieldedTotal {
+        Self.networkShieldedTotal(walletIds.map { localBalances[$0] })
     }
 
     /// Adds Rust-computed per-wallet totals for a multi-wallet surface.
-    /// Not-known entries (`nil`) count as 0. Returns `nil` when no entry
-    /// is known, or when the sum does not fit in `UInt64`.
-    nonisolated static func sumKnownBalances(_ balances: some Sequence<UInt64?>) -> UInt64? {
+    /// A ready entry adds its ordinary total, an unbound entry adds
+    /// nothing, and a missing entry (`nil`) makes the total partial.
+    nonisolated static func networkShieldedTotal(
+        _ entries: some Sequence<LocalBalanceEntry?>
+    ) -> NetworkShieldedTotal {
         var total: UInt64 = 0
-        var anyKnown = false
-        for case let balance? in balances {
-            anyKnown = true
-            let (sum, overflow) = total.addingReportingOverflow(balance)
-            guard !overflow else { return nil }
-            total = sum
+        var complete = true
+        for entry in entries {
+            switch entry {
+            case .ready(let snapshot):
+                let (sum, overflow) = total.addingReportingOverflow(snapshot.ordinarySpendableCredits)
+                guard !overflow else { return .overflow }
+                total = sum
+            case .unbound:
+                break
+            case nil:
+                complete = false
+            }
         }
-        return anyKnown ? total : nil
+        return complete ? .complete(total) : .partial(total)
     }
 
     /// Delays before each retry of a refresh whose read threw (for
@@ -1255,20 +1296,41 @@ class ShieldedService: ObservableObject {
     }
 
     /// How one read result changes a wallet's cache entry. `.ready`
-    /// replaces it; `.unbound` removes it (no bound accounts, so no
-    /// balance); `.restoreIncomplete` and every thrown error (busy,
-    /// `CancellationError`, `bindingChanged`) keep the previous entry.
+    /// stores the snapshot; `.unbound` stores the known unbound answer.
+    /// `.restoreIncomplete` keeps a previous snapshot, but not a previous
+    /// unbound answer: accounts are bound now, so that answer is stale
+    /// and the balance is not known. Every thrown error (busy,
+    /// `CancellationError`, `bindingChanged`) keeps the previous entry.
     nonisolated static func cachedLocalBalance(
         after read: Result<ShieldedLocalBalanceState, any Error>,
-        previous: ShieldedLocalBalanceSnapshot?
-    ) -> ShieldedLocalBalanceSnapshot? {
+        previous: LocalBalanceEntry?
+    ) -> LocalBalanceEntry? {
         switch read {
         case .success(.ready(let snapshot)):
-            return snapshot
+            return .ready(snapshot)
         case .success(.unbound):
-            return nil
-        case .success(.restoreIncomplete), .failure:
+            return .unbound
+        case .success(.restoreIncomplete):
+            return previous == .unbound ? nil : previous
+        case .failure:
             return previous
+        }
+    }
+
+    /// The entry left after a successful bind of the wallet: an unbound
+    /// answer is stale once accounts are bound, so it becomes not known
+    /// until the next read; a snapshot stays until that read replaces it.
+    nonisolated static func cachedLocalBalanceAfterBind(
+        previous: LocalBalanceEntry?
+    ) -> LocalBalanceEntry? {
+        previous == .unbound ? nil : previous
+    }
+
+    private func forgetUnboundAnswerAfterBind(walletId: Data) {
+        let previous = localBalances[walletId]
+        let updated = Self.cachedLocalBalanceAfterBind(previous: previous)
+        if updated != previous {
+            localBalances[walletId] = updated
         }
     }
 

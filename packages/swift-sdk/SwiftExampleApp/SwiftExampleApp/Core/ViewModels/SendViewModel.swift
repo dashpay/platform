@@ -111,7 +111,18 @@ class SendViewModel: ObservableObject {
     /// at 32 UTF-8 bytes and does the 36-byte encoding.
     @Published var memoText = ""
     @Published var detectedAddressType: DashAddressType = .unknown
-    @Published var selectedSource: FundSource = .core
+    /// The source the send is funded from. Changed only through
+    /// [`selectSource(_:)`] (the user's tap) and
+    /// [`reconcileSource(available:)`] (the screen's offered sources).
+    @Published private(set) var selectedSource: FundSource = .core
+    /// The sources the screen currently offers, as last passed to
+    /// [`reconcileSource(available:)`]. A send is allowed only from one
+    /// of these.
+    @Published private(set) var offeredSources: [FundSource] = []
+    /// Whether `selectedSource` is the user's explicit choice rather than
+    /// the automatic default. Cleared when the recipient's address type
+    /// changes, and when the chosen source stops being offered.
+    private(set) var sourceChosenByUser = false
     @Published var detectedFlow: SendFlow?
     @Published var estimatedFee: UInt64?
     @Published var isSending = false
@@ -337,6 +348,9 @@ class SendViewModel: ObservableObject {
 
     var canSend: Bool {
         guard let flow = detectedFlow, !isSending else { return false }
+        // A source the screen no longer offers (its balance went away, or
+        // it was never offered) must not be sent from.
+        guard offeredSources.contains(selectedSource) else { return false }
         // An over-limit memo would be rejected by Rust; block here so
         // the user sees the red counter rather than a backend error.
         // Only the shielded → shielded path carries a memo, so a stale
@@ -419,7 +433,40 @@ class SendViewModel: ObservableObject {
         }
 
         let parsed = DashAddress.parse(trimmed, network: network)
+        if parsed.type != detectedAddressType {
+            // A different recipient can offer different sources, so the
+            // next reconcile picks that recipient's default again.
+            sourceChosenByUser = false
+        }
         detectedAddressType = parsed.type
+        updateFlow()
+    }
+
+    // MARK: - Source selection
+
+    /// The user picked `source` from the offered list.
+    func selectSource(_ source: FundSource) {
+        guard offeredSources.contains(source) else { return }
+        selectedSource = source
+        sourceChosenByUser = true
+        updateFlow()
+    }
+
+    /// Apply the screen's currently offered sources (in their default
+    /// order). An explicit user choice that is still offered stays;
+    /// otherwise the first offered source is selected. Call it whenever
+    /// the offered list changes, for example when a balance that gates a
+    /// source arrives after the recipient was typed.
+    func reconcileSource(available: [FundSource]) {
+        offeredSources = available
+        if sourceChosenByUser, available.contains(selectedSource) {
+            updateFlow()
+            return
+        }
+        sourceChosenByUser = false
+        if let first = available.first {
+            selectedSource = first
+        }
         updateFlow()
     }
 
@@ -495,7 +542,7 @@ class SendViewModel: ObservableObject {
         senderAccountIndex: UInt32,
         modelContext: ModelContext
     ) async {
-        guard let flow = detectedFlow else { return }
+        guard let flow = detectedFlow, offeredSources.contains(selectedSource) else { return }
 
         isSending = true
         error = nil
@@ -671,6 +718,10 @@ class SendViewModel: ObservableObject {
                 // Per-operation spend authority: the resolver fires
                 // exactly for this spend (launch binds are
                 // viewing-key only and never read the mnemonic).
+                // The spend reserves notes in Rust without changing any
+                // stored note row, so refresh the cached balance when it
+                // returns, whatever the outcome.
+                defer { shieldedService.refreshLocalBalance(walletId: wallet.walletId) }
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
                     resolver: MnemonicResolver(),
@@ -692,6 +743,10 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                // The spend reserves notes in Rust without changing any
+                // stored note row, so refresh the cached balance when it
+                // returns, whatever the outcome.
+                defer { shieldedService.refreshLocalBalance(walletId: wallet.walletId) }
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
                     resolver: MnemonicResolver(),
@@ -711,6 +766,10 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                // The spend reserves notes in Rust without changing any
+                // stored note row, so refresh the cached balance when it
+                // returns, whatever the outcome.
+                defer { shieldedService.refreshLocalBalance(walletId: wallet.walletId) }
                 try await walletManager.shieldedWithdraw(
                     walletId: wallet.walletId,
                     resolver: MnemonicResolver(),

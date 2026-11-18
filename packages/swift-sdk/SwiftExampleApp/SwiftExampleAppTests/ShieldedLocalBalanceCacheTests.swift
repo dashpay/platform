@@ -3,8 +3,9 @@ import XCTest
 @testable import SwiftExampleApp
 
 /// Coverage for how one local balance read changes `ShieldedService`'s
-/// per-wallet cache, whether a failed read is retried, and how the
-/// network summary adds Rust's per-wallet totals. Pure functions: no
+/// per-wallet cache (a ready snapshot, a known unbound answer, or no
+/// entry), whether a failed read is retried, and how the network summary
+/// adds Rust's per-wallet totals. Pure functions: no
 /// native code runs.
 final class ShieldedLocalBalanceCacheTests: XCTestCase {
 
@@ -19,43 +20,61 @@ final class ShieldedLocalBalanceCacheTests: XCTestCase {
         ])
     }
 
+    private typealias Entry = ShieldedService.LocalBalanceEntry
+
     func testShouldStoreAReadySnapshotOverThePreviousEntry() {
-        let previous = snapshot(ordinary: 10, accountZero: 10)
         let fresh = snapshot(ordinary: 150, accountZero: 100)
-        XCTAssertEqual(
-            ShieldedService.cachedLocalBalance(after: .success(.ready(fresh)), previous: previous),
-            fresh)
-        XCTAssertEqual(
-            ShieldedService.cachedLocalBalance(after: .success(.ready(fresh)), previous: nil),
-            fresh)
+        let previousEntries: [Entry?] = [.ready(snapshot(ordinary: 10, accountZero: 10)), .unbound, nil]
+        for previous in previousEntries {
+            XCTAssertEqual(
+                ShieldedService.cachedLocalBalance(after: .success(.ready(fresh)), previous: previous),
+                .ready(fresh))
+        }
     }
 
-    func testShouldRemoveTheEntryWhenTheWalletIsUnbound() {
-        XCTAssertNil(ShieldedService.cachedLocalBalance(
-            after: .success(.unbound), previous: snapshot(ordinary: 10, accountZero: 10)))
+    func testShouldRememberAnUnboundAnswerAsKnown() {
+        let previousEntries: [Entry?] = [.ready(snapshot(ordinary: 10, accountZero: 10)), .unbound, nil]
+        for previous in previousEntries {
+            XCTAssertEqual(
+                ShieldedService.cachedLocalBalance(after: .success(.unbound), previous: previous),
+                .unbound)
+        }
     }
 
-    func testShouldKeepThePreviousEntryWhenRestoreIsIncomplete() {
-        let previous = snapshot(ordinary: 10, accountZero: 10)
+    func testShouldKeepAPreviousSnapshotWhenRestoreIsIncomplete() {
+        let previous = Entry.ready(snapshot(ordinary: 10, accountZero: 10))
         XCTAssertEqual(
             ShieldedService.cachedLocalBalance(after: .success(.restoreIncomplete), previous: previous),
             previous)
         XCTAssertNil(ShieldedService.cachedLocalBalance(after: .success(.restoreIncomplete), previous: nil))
     }
 
+    func testShouldForgetAnUnboundAnswerWhenRestoreIsIncomplete() {
+        // Accounts are bound now, so "nothing bound" no longer holds.
+        XCTAssertNil(ShieldedService.cachedLocalBalance(after: .success(.restoreIncomplete), previous: .unbound))
+    }
+
     func testShouldKeepThePreviousEntryWhenTheReadThrows() {
-        let previous = snapshot(ordinary: 10, accountZero: 10)
         let errors: [any Error] = [
             PlatformWalletError.walletOperation("busy"),
             CancellationError(),
             ShieldedLocalBalanceReadError.bindingChanged,
         ]
+        let previousEntries: [Entry?] = [.ready(snapshot(ordinary: 10, accountZero: 10)), .unbound, nil]
         for error in errors {
-            XCTAssertEqual(
-                ShieldedService.cachedLocalBalance(after: .failure(error), previous: previous),
-                previous, "\(error)")
-            XCTAssertNil(ShieldedService.cachedLocalBalance(after: .failure(error), previous: nil))
+            for previous in previousEntries {
+                XCTAssertEqual(
+                    ShieldedService.cachedLocalBalance(after: .failure(error), previous: previous),
+                    previous, "\(error)")
+            }
         }
+    }
+
+    func testShouldForgetOnlyAnUnboundAnswerAfterABind() {
+        let ready = Entry.ready(snapshot(ordinary: 10, accountZero: 10))
+        XCTAssertEqual(ShieldedService.cachedLocalBalanceAfterBind(previous: ready), ready)
+        XCTAssertNil(ShieldedService.cachedLocalBalanceAfterBind(previous: .unbound))
+        XCTAssertNil(ShieldedService.cachedLocalBalanceAfterBind(previous: nil))
     }
 
     func testShouldRetryThrownErrorsButNotCancellationOrResults() {
@@ -77,15 +96,40 @@ final class ShieldedLocalBalanceCacheTests: XCTestCase {
             [.milliseconds(300), .seconds(1), .seconds(3)])
     }
 
-    func testShouldAddKnownWalletTotalsAndCountUnknownAsZero() {
-        XCTAssertEqual(ShieldedService.sumKnownBalances([150, nil, 50]), 200)
-        XCTAssertEqual(ShieldedService.sumKnownBalances([0, nil]), 0)
+    func testShouldReportACompleteTotalWhenEveryWalletIsKnown() {
+        XCTAssertEqual(
+            ShieldedService.networkShieldedTotal([
+                .ready(snapshot(ordinary: 150, accountZero: 100)),
+                .ready(snapshot(ordinary: 50, accountZero: 50)),
+            ]),
+            .complete(200))
+        XCTAssertEqual(ShieldedService.networkShieldedTotal([Entry?]()), .complete(0))
     }
 
-    func testShouldReportNoTotalWhenNoWalletIsKnownOrTheSumOverflows() {
-        XCTAssertNil(ShieldedService.sumKnownBalances([UInt64?]()))
-        XCTAssertNil(ShieldedService.sumKnownBalances([nil, nil]))
-        XCTAssertNil(ShieldedService.sumKnownBalances([UInt64.max, 1]))
-        XCTAssertEqual(ShieldedService.sumKnownBalances([UInt64.max, 0]), UInt64.max)
+    func testShouldCountAnUnboundWalletAsKnownWithNothingToAdd() {
+        XCTAssertEqual(
+            ShieldedService.networkShieldedTotal([.ready(snapshot(ordinary: 150, accountZero: 100)), .unbound]),
+            .complete(150))
+        XCTAssertEqual(ShieldedService.networkShieldedTotal([Entry.unbound]), .complete(0))
+    }
+
+    func testShouldMarkTheTotalPartialWhileAWalletIsNotKnown() {
+        XCTAssertEqual(
+            ShieldedService.networkShieldedTotal([.ready(snapshot(ordinary: 150, accountZero: 100)), nil]),
+            .partial(150))
+        XCTAssertEqual(ShieldedService.networkShieldedTotal([nil, .unbound]), .partial(0))
+    }
+
+    func testShouldReportOverflowWhenTheKnownBalancesDoNotFit() {
+        XCTAssertEqual(
+            ShieldedService.networkShieldedTotal([
+                .ready(snapshot(ordinary: UInt64.max, accountZero: 0)),
+                .ready(snapshot(ordinary: 1, accountZero: 0)),
+                nil,
+            ]),
+            .overflow)
+        XCTAssertEqual(
+            ShieldedService.networkShieldedTotal([.ready(snapshot(ordinary: UInt64.max, accountZero: 0)), .unbound]),
+            .complete(UInt64.max))
     }
 }

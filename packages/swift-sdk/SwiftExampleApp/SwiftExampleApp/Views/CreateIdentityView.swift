@@ -1320,6 +1320,7 @@ struct CreateIdentityView: View {
         // another isolation domain (mirrors how the other submit paths
         // capture `managedWallet`).
         let manager = walletManager
+        let service = shieldedService
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
@@ -1330,6 +1331,11 @@ struct CreateIdentityView: View {
                 // `ManagedPlatformWallet` registration methods) and
                 // returns the new identity id directly. Account 0 = the
                 // app's shielded default.
+                //
+                // The spend reserves notes in Rust without changing any
+                // stored note row, so refresh the cached balance when it
+                // returns, whatever the outcome.
+                defer { service.refreshLocalBalance(walletId: walletId) }
                 let identityId = try await manager.shieldedIdentityCreateFromPool(
                     walletId: walletId,
                     resolver: MnemonicResolver(),

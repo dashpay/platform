@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.wallet
 
+import java.util.concurrent.atomic.AtomicLong
+
 /**
  * Availability of a wallet's local shielded ledger, read without contacting
  * the network. Port of Swift `ShieldedLocalBalanceState`
@@ -58,6 +60,26 @@ enum class ShieldedBalanceSource {
 
     /** A complete scan succeeded in this manager session. */
     SCANNED_THIS_SESSION,
+}
+
+/**
+ * A local balance read finished, but a shielded bind or clear of the same
+ * manager ran while it was in flight, so its accounts may belong to the
+ * binding that was replaced. Nothing was changed; read again.
+ */
+class ShieldedLocalBalanceBindingChanged : Exception(
+    "Shielded binding changed during the local balance snapshot; request a fresh read",
+)
+
+/**
+ * Run [read] and return its value only if [generation] did not move while
+ * it ran; otherwise throw [ShieldedLocalBalanceBindingChanged].
+ */
+internal inline fun <T> fencedByShieldedBinding(generation: AtomicLong, read: () -> T): T {
+    val before = generation.get()
+    val value = read()
+    if (before != generation.get()) throw ShieldedLocalBalanceBindingChanged()
+    return value
 }
 
 private const val HEADER_LONGS = 3

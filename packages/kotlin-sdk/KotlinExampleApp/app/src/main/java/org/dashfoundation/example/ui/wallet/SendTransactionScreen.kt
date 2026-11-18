@@ -365,7 +365,12 @@ fun SendTransactionScreen(
     }
     val coreSendTotalDuffs = coreRecipients?.sumOf { it.second } ?: 0L
 
-    val canSend = when (flow) {
+    // A restored form can still name a source that is not offered now (the
+    // shielded source before its balance is known, for one). The flow is
+    // derived from the selection, so it must not be sendable until the
+    // source is offered again.
+    val sourceOffered = selectedSource in availableSources
+    val canSend = sourceOffered && when (flow) {
         SendFlow.CORE_TO_CORE -> coreRecipients != null
         SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
         SendFlow.PLATFORM_TO_SHIELDED,
@@ -627,10 +632,11 @@ fun SendTransactionScreen(
                     .testTag("send.submitButton"),
             ) {
                 val activeManager = manager
-                if (activeManager == null || flow == null) {
+                if (activeManager == null || flow == null || !sourceOffered) {
                     error = "Wallet is not ready. Try again in a moment."
                     return@SubmitButton
                 }
+                val spendsShielded = selectedSource == FundSource.SHIELDED
                 isSending = true
                 scope.launch {
                     try {
@@ -751,6 +757,12 @@ fun SendTransactionScreen(
                         }
                     } finally {
                         isSending = false
+                        // A shielded spend reserves notes in Rust without
+                        // touching the stored ones, so nothing else would
+                        // tell the balance to be read again.
+                        if (spendsShielded) {
+                            container.shieldedService.refreshLocalBalance(walletId)
+                        }
                     }
                 }
             }

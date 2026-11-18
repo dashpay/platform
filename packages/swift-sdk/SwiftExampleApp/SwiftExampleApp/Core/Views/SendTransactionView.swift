@@ -185,8 +185,7 @@ struct SendTransactionView: View {
                     Section("Send From") {
                         ForEach(sources) { source in
                             Button {
-                                viewModel.selectedSource = source
-                                viewModel.updateFlow()
+                                viewModel.selectSource(source)
                             } label: {
                                 HStack {
                                     Image(systemName: source.iconName)
@@ -367,8 +366,11 @@ struct SendTransactionView: View {
                 // deliberately doesn't hold.
                 resolveShieldedFees()
             }
-            .onChange(of: viewModel.detectedAddressType) { _, _ in
-                autoSelectSource()
+            // Covers a recipient change and a balance that gates a source
+            // arriving later (the shielded balance comes from an async
+            // local read), so the selection always matches what is offered.
+            .onChange(of: sources, initial: true) { _, newSources in
+                viewModel.reconcileSource(available: newSources)
             }
             .onChange(of: platformState.platformProtocolVersion) { _, _ in
                 // The SDK learns the network's protocol version on a
@@ -708,17 +710,6 @@ struct SendTransactionView: View {
         case .core: return coreBalance
         case .shielded: return shieldedBalance
         case .platform: return platformBalance
-        }
-    }
-
-    /// Auto-select the first available source when address type changes.
-    /// Snapshots `coreBalance` once for the duration of this call so
-    /// the underlying FFI accessor isn't hit twice.
-    private func autoSelectSource() {
-        let coreBalance = coreBalanceSnapshot()
-        if let first = availableSources(coreBalance: coreBalance).first {
-            viewModel.selectedSource = first
-            viewModel.updateFlow()
         }
     }
 

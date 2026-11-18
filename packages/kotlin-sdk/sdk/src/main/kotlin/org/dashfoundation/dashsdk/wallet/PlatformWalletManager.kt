@@ -1592,15 +1592,28 @@ class PlatformWalletManager(
             "accounts must contain at most 64 entries, got ${accounts.size}"
         }
         require(accounts.all { it >= 0 }) { "accounts must be non-negative" }
-        mapNativeErrors {
-            WalletManagerNative.shieldedBind(
-                managerHandle,
-                walletId,
-                mnemonicResolver.nativeHandle,
-                accounts.toIntArray(),
-            )
+        try {
+            mapNativeErrors {
+                WalletManagerNative.shieldedBind(
+                    managerHandle,
+                    walletId,
+                    mnemonicResolver.nativeHandle,
+                    accounts.toIntArray(),
+                )
+            }
+        } finally {
+            // Whether it succeeded or failed, the binding a local balance
+            // read started under may no longer be the one in force.
+            shieldedBindingGeneration.incrementAndGet()
         }
     }
+
+    /**
+     * Counts the shielded bind and clear calls of this manager. A local
+     * balance read that overlaps one of them is refused; see
+     * [localShieldedBalanceSnapshot].
+     */
+    private val shieldedBindingGeneration = AtomicLong(0)
 
     /**
      * Set the background shielded sync interval — port of Swift's
@@ -1645,6 +1658,9 @@ class PlatformWalletManager(
      * native entry point is absent otherwise and this throws.
      */
     suspend fun clearShieldedStorage() = withContext(Dispatchers.IO) {
+        // Before the native call: a Clear can empty the ledger and still
+        // return an error, so a read that overlaps it is obsolete either way.
+        shieldedBindingGeneration.incrementAndGet()
         mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }
     }
 
@@ -1689,14 +1705,23 @@ class PlatformWalletManager(
      *
      * [ShieldedLocalBalanceState.Unbound] and
      * [ShieldedLocalBalanceState.RestoreIncomplete] carry no numbers.
+     *
+     * Rust reads the ledger under its own locks, but they do not cover the
+     * way back to Kotlin. If a [bindShielded] or [clearShieldedStorage] of
+     * this manager ran while the read was in flight, the snapshot may list
+     * the accounts of the binding it replaced, so it is not returned: the
+     * call throws [ShieldedLocalBalanceBindingChanged] and a new read is
+     * safe (Swift's `ShieldedLocalBalanceReadError.bindingChanged`).
      */
     suspend fun localShieldedBalanceSnapshot(
         walletId: ByteArray,
     ): ShieldedLocalBalanceState = withContext(Dispatchers.IO) {
-        val values = mapNativeErrors {
-            FundingNative.localShieldedBalanceSnapshot(managerHandle, walletId)
-        } ?: error("Local shielded balance snapshot returned nothing")
-        decodeLocalShieldedBalance(values)
+        fencedByShieldedBinding(shieldedBindingGeneration) {
+            val values = mapNativeErrors {
+                FundingNative.localShieldedBalanceSnapshot(managerHandle, walletId)
+            } ?: error("Local shielded balance snapshot returned nothing")
+            decodeLocalShieldedBalance(values)
+        }
     }
 
     /**

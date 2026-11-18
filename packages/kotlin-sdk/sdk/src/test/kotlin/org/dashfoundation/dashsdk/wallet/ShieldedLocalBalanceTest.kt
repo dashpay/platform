@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import java.util.concurrent.atomic.AtomicLong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -80,6 +81,23 @@ class ShieldedLocalBalanceTest {
                 "accepted ${values.toList()}",
                 IllegalStateException::class.java,
             ) { decodeLocalShieldedBalance(values) }
+        }
+    }
+
+    @Test
+    fun shouldRefuseAReadThatOverlapsABindOrClear() {
+        val generation = AtomicLong(0)
+        // No bind or clear while the read ran: the value is returned.
+        assertEquals(7, fencedByShieldedBinding(generation) { 7 })
+        // An earlier bind does not taint a later read.
+        generation.incrementAndGet()
+        assertEquals(8, fencedByShieldedBinding(generation) { 8 })
+        // A bind or clear during the read: the value is not returned.
+        assertThrows(ShieldedLocalBalanceBindingChanged::class.java) {
+            fencedByShieldedBinding(generation) {
+                generation.incrementAndGet()
+                9
+            }
         }
     }
 }

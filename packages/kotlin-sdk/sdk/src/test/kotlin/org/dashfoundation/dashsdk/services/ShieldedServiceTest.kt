@@ -2,8 +2,10 @@ package org.dashfoundation.dashsdk.services
 
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceSource
@@ -263,6 +265,36 @@ class ShieldedServiceTest {
         service.dropLocalBalance(walletId)
         assertNull(service.cachedLocalBalance(walletId).first())
         assertEquals(70L, service.cachedLocalBalance(otherWallet).first()?.ordinarySpendableCredits)
+    }
+
+    @Test
+    fun shouldNotKeepAReadThatStartedBeforeTheCacheWasDropped() = runTest {
+        val key = walletId.joinToString("") { "%02x".format(it) }
+        // A read notes the generation when it starts. This one started
+        // under a generation that is no longer current, as a read against a
+        // replaced manager or a cleared ledger does.
+        service.readLocalBalance(key, emptyList(), generation = -1) { ready(999, 0 to 999) }
+        assertNull(service.cachedLocalBalance(walletId).first())
+
+        // The drop itself moves the generation: a read that began before an
+        // unbind and answers after it is not kept either.
+        val release = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val stale = service.launchLocalBalanceRead(walletId) {
+            started.complete(Unit)
+            // Not cancellable here, like a read already inside native code.
+            withContext(NonCancellable) { release.await() }
+            ready(999, 0 to 999)
+        }
+        started.await()
+        service.unbind()
+        release.complete(Unit)
+        stale.join()
+        assertNull(service.cachedLocalBalance(walletId).first())
+
+        // A read of the current generation is kept.
+        service.readLocalBalance(key, emptyList()) { ready(150, 0 to 150) }
+        assertEquals(150L, service.cachedLocalBalance(walletId).first()?.ordinarySpendableCredits)
     }
 
     @Test
