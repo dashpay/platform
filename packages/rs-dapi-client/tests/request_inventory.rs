@@ -49,8 +49,9 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     ("rpc getContractTeamActionSigners GetContractTeamActionSignersRequest", Verdict::Gate(14)),
     ("rpc getContractModerationActionCounts GetContractModerationActionCountsRequest", Verdict::Gate(14)),
     ("rpc getContractFeePots GetContractFeePotsRequest", Verdict::Gate(14)),
+    // Added in 5.2: protocol-15 nodes do not uniformly implement this method.
+    ("rpc getAssetLockOutpointInfo GetAssetLockOutpointInfoRequest", Verdict::Gate(16)),
     // Added in 5.1: a 5.0 node does not know the methods.
-    ("rpc getAssetLockOutpointInfo GetAssetLockOutpointInfoRequest", Verdict::Gate(15)),
     ("rpc getYesNoVotePollState GetYesNoVotePollStateRequest", Verdict::Gate(15)),
     ("rpc getMasternodeYesNoVote GetMasternodeYesNoVoteRequest", Verdict::Gate(15)),
     ("rpc getPrivateDocumentEntries GetPrivateDocumentEntriesRequest", Verdict::Gate(15)),

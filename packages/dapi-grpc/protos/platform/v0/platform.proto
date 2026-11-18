@@ -610,7 +610,7 @@ message GetDataContractsLatestVersionsRequest {
 
 message GetAssetLockOutpointInfoRequest {
   message GetAssetLockOutpointInfoRequestV0 {
-    bytes outpoint = 1; // 32-byte transaction id followed by a 4-byte little-endian output index
+    bytes outpoint = 1; // 32 raw transaction-ID bytes in Txid::to_byte_array() order, followed by a 4-byte little-endian output index
     bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetAssetLockOutpointInfoRequestV0 v0 = 1; }

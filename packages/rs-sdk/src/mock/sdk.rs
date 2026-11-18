@@ -390,6 +390,9 @@ impl MockDashPlatformSdk {
                 "GetAddressesTrunkStateRequest" => {
                     load_expectation::<proto::GetAddressesTrunkStateRequest>(&mut dapi, filename)?
                 }
+                "GetAssetLockOutpointInfoRequest" => {
+                    load_expectation::<proto::GetAssetLockOutpointInfoRequest>(&mut dapi, filename)?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}, missing match arm in load_expectations?",
