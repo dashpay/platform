@@ -53,10 +53,10 @@ fn wallet_and_gap_limit_edge_address(seed_byte: u8) -> (Wallet, AddressInfo) {
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+            if pool.pool_type() != AddressPoolType::External || pool.addresses().is_empty() {
                 continue;
             }
-            let mut infos: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            let mut infos: Vec<AddressInfo> = pool.addresses().values().cloned().collect();
             infos.sort_by_key(|address| address.index);
             return (wallet, infos.pop().unwrap());
         }

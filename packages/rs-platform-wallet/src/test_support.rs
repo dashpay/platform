@@ -274,7 +274,7 @@ pub mod core_fixtures {
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
         let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
-        let address = account.next_receive_address(Some(&xpub), true).unwrap();
+        let address = account.next_receive_address(Some(&xpub)).unwrap();
         (wallet, info, address)
     }
 
@@ -345,7 +345,7 @@ pub async fn funded_wallet_manager_with_outputs(
             ctx.managed_wallet
                 .first_bip32_managed_account_mut()
                 .expect("bip32 managed account")
-                .next_receive_address(Some(&xpub), true)
+                .next_receive_address(Some(&xpub))
                 .expect("bip32 receive address")
         }
     };
@@ -468,7 +468,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         ctx.managed_wallet
             .first_bip32_managed_account_mut()
             .expect("bip32 managed account")
-            .next_receive_address(Some(&xpub), true)
+            .next_receive_address(Some(&xpub))
             .expect("bip32 receive address")
     };
 
@@ -565,7 +565,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
     // DashPay accounts are non-standard: one external pool via
     // `next_address_with_info`, not the standard receive/change split.
     let contact_address = managed
-        .next_address_with_info(Some(&account_xpub), true)
+        .next_address_with_info(Some(&account_xpub))
         .expect("contact receive address")
         .address;
     ctx.wallet
@@ -655,7 +655,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         .managed_wallet
         .first_coinjoin_managed_account_mut()
         .expect("coinjoin managed account")
-        .next_address_with_info(Some(&coinjoin_xpub), true)
+        .next_address_with_info(Some(&coinjoin_xpub))
         .expect("coinjoin receive address")
         .address;
 
@@ -750,7 +750,7 @@ pub(crate) async fn fund_test_platform_wallet(
         .core_wallet
         .first_bip44_managed_account_mut()
         .expect("bip44 managed account")
-        .next_receive_address(Some(&xpub), true)
+        .next_receive_address(Some(&xpub))
         .expect("bip44 receive address");
     credit_chain_locked(&mut info.core_wallet, wallet, &receive_address, &[value]).await;
 
@@ -1006,7 +1006,7 @@ pub(crate) async fn mnemonic_wallet_manager(
     let receive_address = managed_wallet
         .first_bip44_managed_account_mut()
         .expect("managed BIP44 account 0")
-        .next_receive_address(Some(&xpub), true)
+        .next_receive_address(Some(&xpub))
         .expect("first BIP44 receive address");
 
     let signer = WalletSigner {

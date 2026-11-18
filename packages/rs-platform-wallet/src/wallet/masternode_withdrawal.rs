@@ -197,7 +197,7 @@ impl PlatformWallet {
                     acct.managed_account_type()
                         .address_pools()
                         .iter()
-                        .filter_map(|p| p.highest_generated)
+                        .filter_map(|p| p.highest_generated())
                         .max()
                 })
                 .map(|h| h.saturating_add(1))

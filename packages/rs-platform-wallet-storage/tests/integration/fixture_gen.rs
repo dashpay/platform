@@ -76,10 +76,10 @@ fn first_external_info(byte: u8) -> key_wallet::AddressInfo {
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+            if pool.pool_type() != AddressPoolType::External || pool.addresses().is_empty() {
                 continue;
             }
-            let mut infos: Vec<_> = pool.addresses.values().cloned().collect();
+            let mut infos: Vec<_> = pool.addresses().values().cloned().collect();
             infos.sort_by_key(|a| a.index);
             return infos.first().cloned().unwrap();
         }

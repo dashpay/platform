@@ -777,11 +777,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         // "used" counts only funded addresses; a `Reserved`
                         // address is handed out but not yet used.
                         let pool_used = pool
-                            .addresses
+                            .addresses()
                             .values()
                             .filter(|info| matches!(info.state, AddressState::Used))
                             .count() as u32;
-                        let pool_total = pool.addresses.len() as u32;
+                        let pool_total = pool.addresses().len() as u32;
                         (used + pool_used, total + pool_total)
                     });
                 AccountBalanceRow {
@@ -1338,7 +1338,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     acct.managed_account_type()
                         .address_pools()
                         .iter()
-                        .filter_map(|p| p.highest_generated)
+                        .filter_map(|p| p.highest_generated())
                         .max()
                 })
                 .map(|h| h.saturating_add(1))
@@ -1356,7 +1356,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 std::collections::HashMap::new();
             if let Some(acct) = info.core_wallet.accounts.provider_platform_keys.as_ref() {
                 for pool in acct.managed_account_type().address_pools() {
-                    for entry in pool.addresses.values() {
+                    for entry in pool.addresses().values() {
                         if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
                             if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
                                 let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32))
@@ -1492,30 +1492,30 @@ fn asset_lock_funding_type_to_u8(
 }
 
 fn pool_snapshot(pool: &AddressPool) -> AccountAddressPoolSnapshot {
-    let pool_type: u8 = match pool.pool_type {
+    let pool_type: u8 = match pool.pool_type() {
         AddressPoolType::External => 0,
         AddressPoolType::Internal => 1,
         AddressPoolType::Absent => 2,
         AddressPoolType::AbsentHardened => 3,
     };
-    let last_used_index: i64 = pool.highest_used.map(|i| i as i64).unwrap_or(-1);
-    let addresses = pool.addresses.values().map(addr_info_snapshot).collect();
+    let last_used_index: i64 = pool.highest_used().map(|i| i as i64).unwrap_or(-1);
+    let addresses = pool.addresses().values().map(addr_info_snapshot).collect();
     AccountAddressPoolSnapshot {
         pool_type,
-        gap_limit: pool.gap_limit,
+        gap_limit: pool.gap_limit(),
         last_used_index,
         addresses,
     }
 }
 
 fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
-    // The address pool stores `script_pubkey` directly. P2PKH is the
+    // The pool derives P2PKH addresses. P2PKH is the
     // dominant shape here, so pull the 20-byte HASH160 out via
     // `p2pkh_public_key_hash_bytes`. Non-P2PKH script types simply
     // surface zeroed bytes — the diagnostic surface stays a flat
     // `[u8; 20]` either way.
     let mut pubkey_hash = [0u8; 20];
-    if let Some(bytes) = info.script_pubkey.p2pkh_public_key_hash_bytes() {
+    if let Some(bytes) = info.address.script_pubkey().p2pkh_public_key_hash_bytes() {
         if bytes.len() == 20 {
             pubkey_hash.copy_from_slice(bytes);
         }

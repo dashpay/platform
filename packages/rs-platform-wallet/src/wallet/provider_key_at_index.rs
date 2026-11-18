@@ -199,7 +199,8 @@ pub fn derive_platform_node_public_keys(
 ///
 /// # Errors
 /// [`PlatformWalletError::KeyDerivation`] if the `ProviderPlatformKeys`
-/// account derivation path or a hardened child index cannot be built.
+/// account derivation path or a hardened child index cannot be built, or
+/// the pool refuses a key whose address it already holds at another index.
 #[cfg(feature = "eddsa")]
 pub fn populate_platform_node_pool(
     wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
@@ -233,7 +234,6 @@ pub fn populate_platform_node_pool(
             dashcore::PubkeyHash::from_byte_array(key.node_id),
         );
         let address = dashcore::Address::new(network, payload);
-        let script_pubkey = address.script_pubkey();
         let child = key_wallet::bip32::ChildNumber::from_hardened_idx(key.index).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "failed to build hardened child index {}: {e:?}",
@@ -245,17 +245,10 @@ pub fn populate_platform_node_pool(
         let path = key_wallet::bip32::DerivationPath::from(children);
         infos.push(AddressInfo {
             address,
-            script_pubkey,
             public_key: Some(PublicKeyType::EdDSA(key.public_key.to_vec())),
             index: key.index,
             path,
             state: AddressState::Available,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: std::collections::BTreeMap::new(),
         });
     }
 
@@ -264,15 +257,15 @@ pub fn populate_platform_node_pool(
         .managed_account_type_mut()
         .address_pools_mut()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+        .find(|p| p.pool_type() == AddressPoolType::AbsentHardened)
     {
         for info in infos {
-            let idx = info.index;
-            pool.address_index.insert(info.address.clone(), idx);
-            pool.script_pubkey_index
-                .insert(info.script_pubkey.clone(), idx);
-            pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-            pool.addresses.insert(idx, info);
+            let index = info.index;
+            pool.insert(info).map_err(|e| {
+                PlatformWalletError::KeyDerivation(format!(
+                    "failed to store platform node key {index} in its pool: {e}"
+                ))
+            })?;
         }
     }
     Ok(())
@@ -1018,14 +1011,18 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .iter()
-            .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+            .find(|p| p.pool_type() == AddressPoolType::AbsentHardened)
             .cloned()
             .expect("AbsentHardened pool must exist");
 
-        assert_eq!(pool.addresses.len(), keys.len(), "one row per derived key");
+        assert_eq!(
+            pool.addresses().len(),
+            keys.len(),
+            "one row per derived key"
+        );
         for k in &keys {
             let entry = pool
-                .addresses
+                .addresses()
                 .get(&k.index)
                 .expect("row present at derived index");
             match &entry.public_key {
@@ -1047,7 +1044,7 @@ mod tests {
             );
         }
         assert_eq!(
-            pool.highest_generated,
+            pool.highest_generated(),
             Some(keys.len() as u32 - 1),
             "highest_generated must advance to the last populated index"
         );
@@ -1078,10 +1075,10 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .into_iter()
-            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+            .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
             .expect("AbsentHardened pool");
         assert!(
-            pool.addresses.is_empty(),
+            pool.addresses().is_empty(),
             "an invalid later key must not leave earlier keys inserted"
         );
     }

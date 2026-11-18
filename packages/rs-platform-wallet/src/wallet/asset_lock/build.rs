@@ -11,7 +11,6 @@ use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
 use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
-use key_wallet::managed_account::address_pool::AddressState;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
@@ -295,12 +294,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // 1. Peek at the next unused address from the funding account to
         //    build the credit output P2PKH script.
-        let funding_address = Self::peek_next_funding_address(
-            &mut info.core_wallet,
-            wallet,
-            funding_type,
-            identity_index,
-        )?;
+        let funding_address =
+            Self::peek_next_funding_address(&mut info.core_wallet, funding_type, identity_index)?;
 
         // 2. Build the credit output for the asset lock payload.
         let credit_output = TxOut {
@@ -452,131 +447,80 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// address, derive the private key, and mark it as used.
     fn peek_next_funding_address(
         wallet_info: &mut ManagedWalletInfo,
-        wallet: &Wallet,
         funding_type: AssetLockFundingType,
         identity_index: u32,
     ) -> Result<DashAddress, PlatformWalletError> {
-        let (managed_account, account_xpub) = match funding_type {
-            AssetLockFundingType::IdentityRegistration => {
-                let xpub = wallet
-                    .accounts
-                    .identity_registration
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_registration
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Identity registration account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::IdentityTopUp => {
-                let xpub = wallet
-                    .accounts
-                    .identity_topup
-                    .get(&identity_index)
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_topup
-                    .get_mut(&identity_index)
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(format!(
-                            "Identity top-up account for index {} not found",
-                            identity_index
-                        ))
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::IdentityTopUpNotBound => {
-                let xpub = wallet
-                    .accounts
-                    .identity_topup_not_bound
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_topup_not_bound
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Identity top-up (unbound) account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::IdentityInvitation => {
-                let xpub = wallet
-                    .accounts
-                    .identity_invitation
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_invitation
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Identity invitation account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::AssetLockAddressTopUp => {
-                let xpub = wallet
-                    .accounts
-                    .asset_lock_address_topup
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .asset_lock_address_topup
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Asset lock address top-up account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::AssetLockShieldedAddressTopUp => {
-                let xpub = wallet
-                    .accounts
-                    .asset_lock_shielded_address_topup
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .asset_lock_shielded_address_topup
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Asset lock shielded address top-up account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
+        let managed_account = match funding_type {
+            AssetLockFundingType::IdentityRegistration => wallet_info
+                .accounts
+                .identity_registration
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Identity registration account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::IdentityTopUp => wallet_info
+                .accounts
+                .identity_topup
+                .get_mut(&identity_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "Identity top-up account for index {} not found",
+                        identity_index
+                    ))
+                })?,
+            AssetLockFundingType::IdentityTopUpNotBound => wallet_info
+                .accounts
+                .identity_topup_not_bound
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Identity top-up (unbound) account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::IdentityInvitation => wallet_info
+                .accounts
+                .identity_invitation
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Identity invitation account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::AssetLockAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_address_topup
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Asset lock address top-up account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_shielded_address_topup
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Asset lock shielded address top-up account not found".to_string(),
+                    )
+                })?,
         };
 
         // The first generated, unused address of the pool. It is NOT marked
         // used yet: the builder does that once the signer returns the
         // credit-output key. The builder resolves that key from the pool alone,
         // with no key source, so the pool must already hold an unused address;
-        // `add_to_state = false` does not store one derived here. The window
+        // no key source is passed here either, so nothing is derived. The window
         // moves when a lock is seen on chain; a discarded build hands its
         // index back (`release_discarded_funding_index`).
-        managed_account
-            .next_address(account_xpub.as_ref(), false)
-            .map_err(|e| {
-                PlatformWalletError::AssetLockTransaction(format!(
-                    "Failed to get next funding address: {}",
-                    e
-                ))
-            })
+        managed_account.next_address(None).map_err(|e| {
+            PlatformWalletError::AssetLockTransaction(format!(
+                "Failed to get next funding address: {}",
+                e
+            ))
+        })
     }
 
     /// Hand back the funding-key index a discarded build consumed.
@@ -592,9 +536,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// the first `DEFAULT_SPECIAL_GAP_LIMIT` addresses until one is seen on
     /// chain, so the next lock would not be recovered from the seed. Nothing
     /// was broadcast or exported with this key, so the next build reuses it.
-    ///
-    /// key-wallet has no call that un-marks an index, so this reverts exactly
-    /// what `AddressPool::mark_index_used` sets.
     fn release_discarded_funding_index(
         wallet_info: &mut ManagedWalletInfo,
         funding_type: AssetLockFundingType,
@@ -620,19 +561,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 continue;
             }
             for pool in account.managed_account_type_mut().address_pools_mut() {
-                let Some(index) = pool
-                    .addresses
+                let Some(address) = pool
+                    .addresses()
                     .values()
                     .find(|info| info.path == *path && info.is_used())
-                    .map(|info| info.index)
+                    .map(|info| info.address.clone())
                 else {
                     continue;
                 };
-                if let Some(info) = pool.addresses.get_mut(&index) {
-                    info.state = AddressState::Available;
-                }
-                pool.used_indices.remove(&index);
-                pool.highest_used = pool.used_indices.iter().copied().max();
+                pool.unmark_used(&address);
                 return;
             }
         }
@@ -4977,8 +4914,12 @@ mod tests {
                 .as_ref()
                 .expect("registration funding account");
             let pool = &account.managed_account_type().address_pools()[0];
-            assert_eq!(pool.used_indices, [0].into_iter().collect());
-            assert_eq!(pool.highest_used, Some(0));
+            let used: Vec<u32> = (pool.addresses().values())
+                .filter(|info| info.is_used())
+                .map(|info| info.index)
+                .collect();
+            assert_eq!(used, [0]);
+            assert_eq!(pool.highest_used(), Some(0));
         }
 
         let (next, _) = broadcast_exact_registration_lock(&manager, &signer, 300_000, 62)
