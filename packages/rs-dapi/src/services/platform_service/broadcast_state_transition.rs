@@ -57,6 +57,9 @@ impl PlatformServiceImpl {
         } = request.into_inner();
 
         validate_state_transition_not_empty(&tx)?;
+        // Bytes no known version admits are refused without waiting for the
+        // status lookup.
+        validate_state_transition_bytes_size(&tx, MOST_PERMISSIVE_SIZE_VERSION)?;
         let active_version = self.active_version().await;
         validate_state_transition_bytes_size(
             &tx,

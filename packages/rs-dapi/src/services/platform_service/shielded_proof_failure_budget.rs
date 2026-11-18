@@ -585,27 +585,27 @@ mod tests {
 
     #[test]
     fn should_charge_an_oversized_bundle_as_the_largest_valid_one() {
+        // Above the failure allowance less one two-action bundle, so the
+        // clamped charge alone makes the next bundle wait.
+        let limit: u16 = 3;
         let budget = budget();
         let now = Instant::now();
         let oversized = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
             ShieldedTransferTransitionV0 {
-                actions: actions(usize::from(MAX_SHIELDED_ACTIONS) + 1),
+                actions: actions(usize::from(limit) + 1),
                 value_balance: 1,
                 anchor: [7; 32],
                 proof: vec![0; 100],
                 binding_signature: [0; 64],
             },
         ));
-        let count = orchard_action_count(
-            &oversized.serialize_to_bytes().unwrap(),
-            MAX_SHIELDED_ACTIONS,
-        );
-        assert_eq!(count, 16);
+        let count = orchard_action_count(&oversized.serialize_to_bytes().unwrap(), limit);
+        assert_eq!(count, usize::from(limit));
         broadcast(&budget, SOURCE, count, true, now).expect("a clean source is admitted");
         assert_eq!(
             broadcast(&budget, SOURCE, 2, true, now),
-            Err(ACTION_DRAIN_INTERVAL * 14),
-            "sixteen failed actions, less room for one two-action bundle"
+            Err(ACTION_DRAIN_INTERVAL * (u32::from(limit) + 2 - FAILED_ACTIONS_ALLOWED)),
+            "the clamped failed actions, less room for one two-action bundle"
         );
     }
 
