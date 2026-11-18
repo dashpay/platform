@@ -474,6 +474,24 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertFalse(PlatformWalletError.walletOperation("guard").isRetryable)
     }
 
+    /// The user-facing adapter takes a wallet error's retry from Rust's
+    /// class, not from the category its text suggests: a maybe-sent payment
+    /// whose message says "timeout" is not retryable, a Rust-approved retry
+    /// is not hidden by a "storage" category, and an unclassified wallet
+    /// error stays non-retryable.
+    func testShouldTakeTheUserFacingRetryFromTheWalletErrorsClass() {
+        let maybeSent = PlatformWalletError.shieldedSpendUnconfirmed("timeout", payment: .maybeSent)
+        XCTAssertFalse(ErrorCategorizer.toUserFacingError(maybeSent).isRetryable)
+
+        let safeRetry = PlatformWalletError.walletOperation(
+            "storage busy",
+            payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        )
+        XCTAssertTrue(ErrorCategorizer.toUserFacingError(safeRetry).isRetryable)
+
+        XCTAssertFalse(ErrorCategorizer.toUserFacingError(PlatformWalletError.walletOperation("timeout")).isRetryable)
+    }
+
     /// No class is ever derived from a code: a case Swift throws itself
     /// without a result is unclassified whatever its case, unless the guard
     /// passes one; a result-built case reads the result's class, not one

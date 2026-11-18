@@ -351,7 +351,15 @@ public enum ErrorCategorizer {
         let category = categorize(error)
         let message = ErrorFormatter.userFriendlyMessage(from: error)
         let suggestion = ErrorRecovery.suggestion(for: category)
-        let isRetryable = ErrorRecovery.isRetryable(category: category)
+        // A wallet error carries Rust's retry decision (false when no wallet
+        // error classified it); the category inferred from its text only
+        // shapes the presentation, never whether a payment may run again.
+        let isRetryable: Bool
+        if let walletError = error as? PlatformWalletError {
+            isRetryable = walletError.isRetryable
+        } else {
+            isRetryable = ErrorRecovery.isRetryable(category: category)
+        }
 
         return UserFacingError(
             title: category.rawValue,
