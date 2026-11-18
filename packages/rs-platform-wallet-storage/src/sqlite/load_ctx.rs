@@ -128,7 +128,7 @@ impl LoadSite {
     }
 
     /// Human-readable prose for this site — public so a host application
-    /// can render *what* degraded without re-deriving eighteen strings
+    /// can render *what* degraded without re-deriving twenty-one strings
     /// this crate already holds, or falling back to showing the user
     /// [`as_str`](Self::as_str)'s log tag. This is the text every
     /// `tracing::warn!` emitted for `self` also carries as its `message`

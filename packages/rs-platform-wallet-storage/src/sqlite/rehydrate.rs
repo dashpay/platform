@@ -285,6 +285,16 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// reconstructing a silent zero balance (the no-silent-zero mandate). An
 /// empty UTXO set is always `Ok`.
 ///
+/// # Precondition
+///
+/// `wallet_info` must be built by a key-wallet constructor such as
+/// `ManagedWalletInfo::from_wallet`, never decoded with serde or bincode.
+/// The constructors clamp each pool's gap limit to `1..=MAX_GAP_LIMIT` and
+/// keep its indices contiguous and non-hardened, which bounds every gap
+/// refill to one window; a decoded pool skips those checks, and key-wallet's
+/// `maintain_gap_limit` computes its target with unchecked arithmetic (a gap
+/// limit of 0 panics in debug and derives up to `2^31` addresses in release).
+///
 /// This never touches key material.
 pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
@@ -488,9 +498,9 @@ pub fn apply_persisted_core_state(
         // wallet total is exact either way, except for a coin of ours only a
         // DashPay contact account holds: `restore_utxos` places it there,
         // outside the total. Discovery moves one a funds account derives
-        // within its reach; one past that reach stays, as does one placed
-        // before a failed restore (Recovery only), where discovery is
-        // skipped.
+        // within its reach; one past that reach stays, as does one the first
+        // restore placed when the restore after discovery fails (Recovery
+        // only).
         if unresolved > 0 {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
