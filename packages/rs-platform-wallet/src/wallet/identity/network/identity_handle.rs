@@ -526,6 +526,8 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// signer-generic `PutDocument` trait) behind two by-value methods
     /// so the call sites stay simple.
     pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
+    /// Prevents overlapping erase attempts for a document across cloned handles.
+    pub(crate) document_erase_gate: Arc<super::DocumentEraseGate>,
     /// Serializes DPNS marketplace mutations and sync reconciliation for
     /// this wallet. Every cloned handle shares the same gate.
     pub(crate) dpns_operation_gate: Arc<tokio::sync::Mutex<()>>,
@@ -560,6 +562,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             generation: Arc::clone(&self.generation),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
+            document_erase_gate: Arc::clone(&self.document_erase_gate),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
         }
@@ -579,6 +582,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         wm: &'w mut WalletManager<PlatformWalletInfo>,
     ) -> Result<&'w mut PlatformWalletInfo, PlatformWalletError> {
         wm.get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// [`Self::current_wallet_info_mut`], for a read: under the manager's
+    /// read lock.
+    pub(crate) fn current_wallet_info<'w>(
+        &self,
+        wm: &'w WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info(&self.wallet_id)
             .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
     }

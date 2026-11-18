@@ -3,9 +3,18 @@
 //! low-S twin, the same signature with S negated, so Platform checks S itself, at every protocol
 //! version. Accepting it would fork from nodes that refuse it and change the replay of chain
 //! history.
+//!
+//! A signature checked by recovering its public key ([`verify_hash_signature`]) is the
+//! exception: every released Platform accepts a high-S one there, and one whose header names an
+//! uncompressed key, so refusing them is a rule of protocol version 15, selected by
+//! `verify_hash_signature`.
 
 use dashcore::crypto::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSignature};
 use dashcore::{sign_message, signer};
+
+mod verify_hash_signature;
+
+pub use verify_hash_signature::verify_hash_signature;
 
 /// [`signer::verify_data_signature`], refusing a high-S signature with the error of a signature
 /// that does not verify. Every other input gets the result and the error `dashcore` gives.
