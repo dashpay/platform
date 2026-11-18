@@ -11,7 +11,6 @@ use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::OWNER_ID;
 use crate::ProtocolError;
-use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 
@@ -101,9 +100,9 @@ impl AggregateRead {
                             .get(key)
                             .is_some_and(|property| property.property_type.is_identifier());
                     if identifier_key {
-                        match Identifier::from_string(constant, Encoding::Base58) {
-                            Ok(identifier) => Value::Identifier(identifier.to_buffer()),
-                            Err(_) => return Ok(None),
+                        match Identifier::from_base58_text(constant) {
+                            Some(identifier) => Value::Identifier(identifier.to_buffer()),
+                            None => return Ok(None),
                         }
                     } else {
                         Value::Text(constant.clone())

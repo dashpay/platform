@@ -13,6 +13,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 
 use crate::string_encoding::{Encoding, ALL_ENCODINGS};
+use crate::system_bytes::MAX_BASE58_IDENTIFIER_LENGTH;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
 
@@ -221,6 +222,18 @@ impl Identifier {
         let vec = string_encoding::decode(encoded_value, encoding)?;
 
         Identifier::from_bytes(&vec)
+    }
+
+    /// The identifier a base 58 `text` writes, if it writes one: `None` when it does not
+    /// decode, or decodes to another length than 32 bytes, as `from_string` refuses it. A text
+    /// longer than any identifier's base 58 form ([`MAX_BASE58_IDENTIFIER_LENGTH`]) decodes to
+    /// more than 32 bytes when it decodes at all, so it is `None` without being decoded: base 58
+    /// decoding takes time quadratic in the text's length.
+    pub fn from_base58_text(text: &str) -> Option<Identifier> {
+        if text.len() > MAX_BASE58_IDENTIFIER_LENGTH {
+            return None;
+        }
+        Identifier::from_string(text, Encoding::Base58).ok()
     }
 
     pub fn from_string_try_encodings(
@@ -438,6 +451,32 @@ mod tests {
 
     use super::*;
     use crate::{from_value, to_value, Identifier};
+
+    /// A base 58 text writes the identifier `from_string` reads from it, and nothing when
+    /// `from_string` refuses it: the longest identifier's text, one character more (`2` then
+    /// `1`s, the 45 characters decoding to the fewest bytes), a text outside the alphabet, and
+    /// texts as long as a transition can carry, refused without decoding.
+    #[test]
+    fn should_read_a_base58_text_as_from_string_does() {
+        for text in [
+            bs58::encode([0xFF; 32]).into_string(),
+            bs58::encode([0x00; 32]).into_string(),
+            format!("2{}", "1".repeat(MAX_BASE58_IDENTIFIER_LENGTH)),
+            "a811Ii".to_string(),
+            "a811".to_string(),
+            String::new(),
+            "2".repeat(2_000),
+        ] {
+            assert_eq!(
+                Identifier::from_base58_text(&text),
+                Identifier::from_string(&text, Encoding::Base58).ok(),
+                "{text}"
+            );
+        }
+        let started = std::time::Instant::now();
+        assert_eq!(Identifier::from_base58_text(&"2".repeat(19_500)), None);
+        assert!(started.elapsed() < std::time::Duration::from_millis(10));
+    }
 
     #[test]
     fn test_identifier_value_serialization() {

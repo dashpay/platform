@@ -1546,7 +1546,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
 mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::{DocumentType, CONTRACT_VERSION_STAMP_MAX_SIZE};
+    use crate::data_contract::document_type::{
+        DocumentType, CONTRACT_VERSION_STAMP_MAX_SIZE, MAX_BASE58_INDEX_KEY_LENGTH, MAX_INDEX_SIZE,
+    };
+    use crate::data_contract::errors::DataContractError;
     use platform_value::{platform_value, Identifier};
 
     /// Build a document type from a schema using latest platform version.
@@ -2300,6 +2303,231 @@ mod tests {
             .as_ref()
             .deserialize_value_for_key("grade", &[1, 2], platform_version)
             .is_err());
+    }
+
+    // --------------------------------------------------------------
+    // serialize_value_for_key: identifiers written as base 58 text
+    // --------------------------------------------------------------
+
+    /// A `target` type with an identifier `target` and a list of identifiers `targets`, each
+    /// indexed.
+    fn target_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "indices": [
+                {"name": "byTarget", "properties": [{"target": "asc"}]},
+                {"name": "byTargets", "properties": [{"targets": "asc"}]},
+            ],
+            "properties": {
+                "target": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                    },
+                    "maxItems": 4,
+                    "position": 1,
+                },
+            },
+            "additionalProperties": false,
+        })
+    }
+
+    /// The least time `run` takes over three runs, so a stall of the machine is not counted.
+    fn least_time_of<T>(mut run: impl FnMut() -> T) -> std::time::Duration {
+        (0..3)
+            .map(|_| {
+                let started = std::time::Instant::now();
+                std::hint::black_box(run());
+                started.elapsed()
+            })
+            .min()
+            .expect("three runs")
+    }
+
+    /// The key an identifier index property gives `value` by decoding it in full, refused past
+    /// the longest index key, as every protocol version keyed it before identifier texts were
+    /// bounded.
+    fn decoded_index_key(value: &Value) -> Result<Vec<u8>, ProtocolError> {
+        let key = DocumentPropertyType::Identifier.encode_value_for_tree_keys(value)?;
+        if key.len() > MAX_INDEX_SIZE {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet(
+                    "value must be less than 256 bytes long".to_string(),
+                ),
+            ));
+        }
+        Ok(key)
+    }
+
+    /// The key `$ownerId` gives `value` by decoding it in full, refused unless it is 32 bytes,
+    /// as every protocol version keyed it before identifier texts were bounded.
+    fn decoded_system_identifier_key(value: &Value) -> Result<Vec<u8>, ProtocolError> {
+        let key = value
+            .to_identifier_bytes()
+            .map_err(ProtocolError::ValueError)?;
+        if key.len() != 32 {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet(
+                    "expected system value to be 32 bytes long".to_string(),
+                ),
+            ));
+        }
+        Ok(key)
+    }
+
+    /// Identifier texts as long as a 20 KiB transition can carry: one in base 58, which decodes
+    /// to far more than 255 bytes, and one ending in `0`, which base 58 does not write.
+    fn long_identifier_texts() -> [Value; 2] {
+        [
+            Value::Text("2".repeat(19_500)),
+            Value::Text(format!("{}0", "2".repeat(19_499))),
+        ]
+    }
+
+    /// A text too long to be any index key is refused with the error decoding it gives, by
+    /// every protocol version, without decoding it: base 58 decoding takes time quadratic in a
+    /// text's length, and the refusal is held to a bound no full decode of such a text meets.
+    #[test]
+    fn should_refuse_an_identifier_text_too_long_for_an_index_key_as_decoding_it_does() {
+        let document_type = build_doc_type("target", target_schema());
+        let document_type = document_type.as_ref();
+        for value in long_identifier_texts() {
+            let decoded = format!("{:?}", decoded_index_key(&value));
+            assert!(decoded.starts_with("Err("), "{decoded}");
+            let vote_poll_key =
+                || document_type.serialize_value_for_vote_poll_key("target", &value);
+            assert_eq!(format!("{:?}", vote_poll_key()), decoded);
+            assert!(least_time_of(vote_poll_key) < std::time::Duration::from_millis(10));
+            for protocol_version in [13, 14, PlatformVersion::latest().protocol_version] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("the protocol version");
+                // Generation 1 (protocol version 14) keys a list by each element
+                let names: &[&str] = if protocol_version >= 14 {
+                    &["target", "targets"]
+                } else {
+                    &["target"]
+                };
+                for name in names {
+                    let key =
+                        || document_type.serialize_value_for_key(name, &value, platform_version);
+                    assert_eq!(
+                        format!("{:?}", key()),
+                        decoded,
+                        "{name} at {protocol_version}"
+                    );
+                    assert!(
+                        least_time_of(key) < std::time::Duration::from_millis(10),
+                        "{name} at {protocol_version}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A system identifier (`$ownerId`) keys only 32 bytes, and a text longer than any
+    /// identifier's base 58 form is refused with the error decoding it gives, without decoding
+    /// it.
+    #[test]
+    fn should_refuse_a_system_identifier_text_too_long_to_be_an_identifier_as_decoding_it_does() {
+        let document_type = build_doc_type("target", target_schema());
+        let document_type = document_type.as_ref();
+        for value in long_identifier_texts() {
+            let decoded = format!("{:?}", decoded_system_identifier_key(&value));
+            assert!(decoded.starts_with("Err("), "{decoded}");
+            for protocol_version in [13, 14, PlatformVersion::latest().protocol_version] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("the protocol version");
+                let key =
+                    || document_type.serialize_value_for_key("$ownerId", &value, platform_version);
+                assert_eq!(format!("{:?}", key()), decoded, "at {protocol_version}");
+                assert!(least_time_of(key) < std::time::Duration::from_millis(10));
+            }
+        }
+    }
+
+    /// For each count of leading `1`s, the text decoding to the fewest bytes is `1` that many
+    /// times, `2`, then `1`s (see `MAX_BASE58_INDEX_KEY_LENGTH`): one character past the bound,
+    /// every one of them decodes to more than an index key holds.
+    #[test]
+    fn should_decode_no_text_longer_than_the_bound_to_an_index_key() {
+        let length = MAX_BASE58_INDEX_KEY_LENGTH + 1;
+        for leading_ones in 0..=length {
+            let text = if leading_ones == length {
+                "1".repeat(length)
+            } else {
+                format!(
+                    "{}2{}",
+                    "1".repeat(leading_ones),
+                    "1".repeat(length - leading_ones - 1)
+                )
+            };
+            let decoded = bs58::decode(&text).into_vec().expect("a base 58 text");
+            assert!(
+                decoded.len() > MAX_INDEX_SIZE,
+                "{} leading ones",
+                leading_ones
+            );
+        }
+        let at_the_bound = format!("2{}", "1".repeat(MAX_BASE58_INDEX_KEY_LENGTH - 1));
+        assert_eq!(
+            bs58::decode(at_the_bound).into_vec().map(|key| key.len()),
+            Ok(MAX_INDEX_SIZE)
+        );
+    }
+
+    /// Texts at the bounds key as decoding them in full keys them: the longest a 32-byte
+    /// identifier is written in, one character more, an index key of 255 bytes from a text of
+    /// 349 characters, and one character more.
+    #[test]
+    fn should_key_identifier_texts_at_the_bounds_as_decoding_them_does() {
+        let document_type = build_doc_type("target", target_schema());
+        let document_type = document_type.as_ref();
+        let platform_version = PlatformVersion::latest();
+        let largest_identifier = Value::Text(bs58::encode([0xFF; 32]).into_string());
+        let past_largest_identifier = Value::Text(format!("2{}", "1".repeat(44)));
+        let largest_index_key = Value::Text(format!("2{}", "1".repeat(348)));
+        let past_largest_index_key = Value::Text(format!("2{}", "1".repeat(349)));
+        assert_eq!(
+            decoded_index_key(&largest_index_key)
+                .map(|key| key.len())
+                .ok(),
+            Some(255)
+        );
+        for value in [
+            &largest_identifier,
+            &past_largest_identifier,
+            &largest_index_key,
+            &past_largest_index_key,
+        ] {
+            assert_eq!(
+                format!(
+                    "{:?}",
+                    document_type.serialize_value_for_key("target", value, platform_version)
+                ),
+                format!("{:?}", decoded_index_key(value)),
+                "{value:?}"
+            );
+            assert_eq!(
+                format!(
+                    "{:?}",
+                    document_type.serialize_value_for_key("$ownerId", value, platform_version)
+                ),
+                format!("{:?}", decoded_system_identifier_key(value)),
+                "{value:?}"
+            );
+        }
     }
 
     // --------------------------------------------------------------
