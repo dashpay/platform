@@ -484,6 +484,82 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertFalse(ErrorCategorizer.toUserFacingError(PlatformWalletError.walletOperation("timeout")).isRetryable)
     }
 
+    /// An unconfirmed shielded identity create is thrown as its own error,
+    /// not as a `PlatformWalletError`. A "timeout" diagnostic on it keeps
+    /// Rust's retry (false) and gets no "try again" suggestion: the identity
+    /// may exist, and its slot stays held.
+    func testShouldTakeTheUserFacingRetryOfAnUnconfirmedIdentityCreateFromRust() {
+        let unconfirmed = ShieldedIdentityCreateUnconfirmedError(
+            identityId: Data(repeating: 1, count: 32),
+            message: "timeout",
+            payment: .maybeSent
+        )
+        let userFacing = ErrorCategorizer.toUserFacingError(unconfirmed)
+        XCTAssertFalse(userFacing.isRetryable)
+        XCTAssertNil(userFacing.recoverySuggestion)
+
+        let unclassified = ShieldedIdentityCreateUnconfirmedError(
+            identityId: Data(repeating: 1, count: 32),
+            message: "timeout",
+            payment: nil
+        )
+        XCTAssertFalse(ErrorCategorizer.toUserFacingError(unclassified).isRetryable)
+    }
+
+    /// The throwing Core broadcast throws the error its native result
+    /// builds: a proven rejection keeps Rust's `.notSent`, an unconfirmed
+    /// one Rust's `.maybeSent`, instead of a class Swift picks itself.
+    func testShouldKeepRustsClassOnTheThrowingCoreBroadcast() {
+        func result(
+            _ code: PlatformWalletFFIResultCode,
+            _ delivery: PlatformWalletFFIPaymentDelivery
+        ) -> PlatformWalletResult {
+            PlatformWalletResult(PlatformWalletFFIResult(
+                code: code,
+                message: nil,
+                consensus_code: 0,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE,
+                payment_delivery: delivery,
+                held_asset_lock: OutPointFFI(),
+                retryable: false
+            ))
+        }
+
+        XCTAssertThrowsError(try ManagedCoreWallet.broadcastTxid(
+            result: result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NOT_SENT
+            ),
+            txid: "ab"
+        )) { error in
+            guard case .transactionBroadcastRejected = error as? PlatformWalletError else {
+                return XCTFail("expected transactionBroadcastRejected, got \(error)")
+            }
+            XCTAssertEqual((error as? PlatformWalletError)?.delivery, .notSent)
+        }
+
+        XCTAssertThrowsError(try ManagedCoreWallet.broadcastTxid(
+            result: result(
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED,
+                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_MAYBE_SENT
+            ),
+            txid: "ab"
+        )) { error in
+            XCTAssertEqual((error as? PlatformWalletError)?.delivery, .maybeSent)
+        }
+
+        XCTAssertEqual(
+            try ManagedCoreWallet.broadcastTxid(
+                result: result(
+                    PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS,
+                    PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_NONE
+                ),
+                txid: "ab"
+            ),
+            "ab"
+        )
+    }
+
     /// A held asset lock is not a retry, in the wallet error or in the
     /// generic user-facing one: running the payment again would fund a
     /// second one while the first lock stays resumable. Rust classes it

@@ -347,6 +347,17 @@ public enum ErrorCategorizer {
                 isRetryable: false
             )
         }
+        // The identity may already exist and its slot stays held: Rust's
+        // retry decision, and no generic "try again" suggestion.
+        if let unconfirmed = error as? ShieldedIdentityCreateUnconfirmedError {
+            return UserFacingError(
+                title: "Submission unconfirmed",
+                message: unconfirmed.message,
+                category: .unknown,
+                underlyingError: String(describing: unconfirmed),
+                isRetryable: unconfirmed.isRetryable
+            )
+        }
 
         let category = categorize(error)
         let message = ErrorFormatter.userFriendlyMessage(from: error)
