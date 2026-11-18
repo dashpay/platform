@@ -114,6 +114,26 @@ section that lists each edited generation, the protocol versions that select
 it, and the reason consensus cannot change there. Reviewers read that section
 first.
 
+### When a protocol version counts as shipped
+
+A protocol version is shipped once it is released as a stable version or
+activated on testnet or mainnet, whichever comes first. Alpha, beta and RC
+releases alone do not ship it. Until then, the generations that only the
+unreleased protocol version selects, and its version tables, may still be
+changed in place: a prerelease that contains the earlier behaviour is not by
+itself a reason for a new protocol number or a new `vN`. A generation that a
+shipped protocol version also selects is a shipped generation, and the rule
+above decides whether it may be edited in place.
+
+Check the actual release and activation status rather than assuming it.
+Changing an unreleased version in place does not make different development
+binaries compatible with each other.
+
+Why: a prerelease runs only on devnets and test setups that are reset, so
+freezing its behaviour would add protocol numbers and dead generations without
+protecting any chain history. Activation on a public network or a stable
+release is the point where nodes and clients start to depend on it.
+
 ### A new input changes the signature, not the method count
 
 When the new generation of a method needs something its callers do not pass
