@@ -6,9 +6,11 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::changeset::{
-    ClientStartState, ClientWalletStartState, PersistenceCapabilities, PlatformWalletPersistence,
+    AccountAddressPoolEntry, ClientStartState, ClientWalletStartState, PersistenceCapabilities,
+    PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+use crate::wallet::address_pool_restore::restore_address_rows;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::outpoint_locks::persist_outpoint_locks;
@@ -20,11 +22,15 @@ use std::time::Duration;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use dashcore::OutPoint;
 use dpp::prelude::Identifier;
+use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::account::derivation::AccountDerivation;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::wallet::Wallet;
 
 use super::{run_blocking_load, PlatformWalletManager};
 
@@ -1670,6 +1676,179 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
     cleared
 }
 
+/// Outcome of [`restore_account_address_pools`]: persisted address rows
+/// restored into a managed pool, and rows or whole pools dropped.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AddressPoolRestoreStats {
+    pub routed: usize,
+    pub dropped: usize,
+}
+
+/// Restore persisted address pools onto the matching managed accounts of
+/// `wallet_info`, the skeleton `ManagedWalletInfo::from_wallet(wallet, ..)`
+/// built: every used flag, and every address past the window it pre-derived,
+/// comes from these rows.
+///
+/// Covers the funds-bearing accounts, the asset-lock funding accounts and the
+/// four provider key accounts. Each pool's rows go through
+/// [`restore_address_rows`] with the key source of their account, so rows
+/// missing below a persisted one are derived. A pool whose account or pool
+/// type the wallet does not hold is dropped as a whole and counts once.
+pub fn restore_account_address_pools(
+    wallet: &Wallet,
+    wallet_info: &mut ManagedWalletInfo,
+    entries: Vec<AccountAddressPoolEntry>,
+) -> AddressPoolRestoreStats {
+    let mut stats = AddressPoolRestoreStats::default();
+    for entry in entries {
+        // Funds accounts live in keyed maps and the key accounts in `Option`
+        // fields; both unify to `&mut ManagedAccountType`. One match, since a
+        // fallback could not re-borrow `wallet_info.accounts`.
+        let managed_type = match entry.account_type {
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP44Account,
+            } => wallet_info
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP32Account,
+            } => wallet_info
+                .accounts
+                .standard_bip32_accounts
+                .get_mut(&index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::CoinJoin { index } => wallet_info
+                .accounts
+                .coinjoin_accounts
+                .get_mut(&index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info
+                .accounts
+                .dashpay_receival_accounts
+                .get_mut(&DashpayAccountKey {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                })
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::DashpayExternalAccount {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&DashpayAccountKey {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                })
+                .map(|a| a.managed_account_type_mut()),
+            // Asset-lock funding key-accounts (identity registration / top-up
+            // / invitation / address top-up). These MUST be restored: their
+            // credit outputs are OP_RETURN-payload outputs that never appear
+            // as on-chain UTXOs, so SPV can never rediscover their used
+            // indices — the persisted pool is the ONLY thing that carries the
+            // next-unused index across a restart. Dropping them (an
+            // unmatched `_ => None`) resets the pool to index 0 every launch;
+            // for `IdentityInvitation` that reused the EXPORTED one-time
+            // voucher key across invitations (a bearer-key reuse: one leaked
+            // link could then claim every same-key invite).
+            AccountType::IdentityRegistration => wallet_info
+                .accounts
+                .identity_registration
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::IdentityTopUp { registration_index } => wallet_info
+                .accounts
+                .identity_topup
+                .get_mut(&registration_index)
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::IdentityTopUpNotBoundToIdentity => wallet_info
+                .accounts
+                .identity_topup_not_bound
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::IdentityInvitation => wallet_info
+                .accounts
+                .identity_invitation
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::AssetLockAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_address_topup
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::AssetLockShieldedAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_shielded_address_topup
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            // Masternode provider key-material accounts — dedicated
+            // `Option<ManagedCoreKeysAccount>` fields. Restoring these
+            // rehydrates the used-flags + beyond-gap indices of the
+            // owner / voting / operator / platform-node pools.
+            AccountType::ProviderOwnerKeys => wallet_info
+                .accounts
+                .provider_owner_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::ProviderVotingKeys => wallet_info
+                .accounts
+                .provider_voting_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::ProviderOperatorKeys => wallet_info
+                .accounts
+                .provider_operator_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            AccountType::ProviderPlatformKeys => wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_mut()
+                .map(|a| a.managed_account_type_mut()),
+            _ => None,
+        };
+        let Some(managed_type) = managed_type else {
+            stats.dropped += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet.wallet_id),
+                account_type = ?entry.account_type,
+                "load: skipping persisted address pool with no matching funds, \
+                 asset-lock funding, or provider account"
+            );
+            continue;
+        };
+        let mut pools = managed_type.address_pools_mut();
+        let Some(pool) = pools
+            .iter_mut()
+            .find(|pool| pool.pool_type() == entry.pool_type)
+        else {
+            stats.dropped += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet.wallet_id),
+                pool_type = ?entry.pool_type,
+                "load: persisted address pool has no matching managed pool"
+            );
+            continue;
+        };
+        let key_source = wallet.key_source_for_account(entry.account_type);
+        let outcome = restore_address_rows(pool, &key_source, entry.addresses);
+        stats.routed += outcome.restored;
+        stats.dropped += outcome.refused;
+    }
+    stats
+}
+
 /// Whether every address in `pool` is the one `account` derives at its index.
 ///
 /// Each restored index is derived on its own through key-wallet's
@@ -2397,6 +2576,127 @@ mod masternode_collateral_load_tests {
             *persister.stored_locks.lock().expect("stored locks"),
             vec![(wallet_id, BTreeMap::from([(collateral, true)]))],
             "the load stores the lock it made"
+        );
+    }
+}
+
+#[cfg(test)]
+mod address_pool_restore_tests {
+    use super::*;
+    use crate::wallet::address_pool_restore::derive_through;
+    use key_wallet::managed_account::address_pool::AddressState;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    const BIP44_0: AccountType = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+
+    fn wallet_and_info() -> (Wallet, ManagedWalletInfo) {
+        let wallet = Wallet::from_seed_bytes(
+            [5u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("wallet from seed");
+        let info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        (wallet, info)
+    }
+
+    fn external_pool(info: &mut ManagedWalletInfo) -> &mut AddressPool {
+        info.accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("BIP44 account 0")
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .into_iter()
+            .find(|pool| pool.pool_type() == AddressPoolType::External)
+            .expect("external pool")
+    }
+
+    fn entry(
+        account_type: AccountType,
+        pool_type: AddressPoolType,
+        addresses: Vec<key_wallet::AddressInfo>,
+    ) -> AccountAddressPoolEntry {
+        AccountAddressPoolEntry {
+            account_type,
+            pool_type,
+            addresses,
+        }
+    }
+
+    #[test]
+    fn should_restore_a_row_leaving_a_gap_with_its_accounts_key_source() {
+        let (wallet, mut info) = wallet_and_info();
+        let mut probe = external_pool(&mut info).clone();
+        let index = probe.highest_generated().map_or(0, |h| h + 1) + 5;
+        derive_through(&mut probe, &wallet.key_source_for_account(BIP44_0), index)
+            .expect("derive the persisted row");
+        let mut row = probe.addresses()[&index].clone();
+        row.state = AddressState::Used;
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![entry(BIP44_0, AddressPoolType::External, vec![row])],
+        );
+
+        assert_eq!(
+            stats,
+            AddressPoolRestoreStats {
+                routed: 1,
+                dropped: 0
+            }
+        );
+        let pool = external_pool(&mut info);
+        assert!((0..index).all(|i| pool.addresses().contains_key(&i)));
+        assert_eq!(pool.highest_used(), Some(index));
+    }
+
+    #[test]
+    fn should_drop_a_pool_whose_account_the_wallet_does_not_hold() {
+        let (wallet, mut info) = wallet_and_info();
+        let row = external_pool(&mut info).addresses()[&0].clone();
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![entry(
+                AccountType::CoinJoin { index: 9 },
+                AddressPoolType::External,
+                vec![row],
+            )],
+        );
+
+        assert_eq!(
+            stats,
+            AddressPoolRestoreStats {
+                routed: 0,
+                dropped: 1
+            }
+        );
+    }
+
+    #[test]
+    fn should_drop_a_pool_whose_type_the_account_lacks() {
+        let (wallet, mut info) = wallet_and_info();
+        let row = external_pool(&mut info).addresses()[&0].clone();
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![entry(BIP44_0, AddressPoolType::AbsentHardened, vec![row])],
+        );
+
+        assert_eq!(
+            stats,
+            AddressPoolRestoreStats {
+                routed: 0,
+                dropped: 1
+            }
         );
     }
 }
