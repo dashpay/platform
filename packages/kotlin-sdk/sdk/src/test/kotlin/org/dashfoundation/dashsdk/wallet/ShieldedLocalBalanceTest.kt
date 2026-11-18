@@ -1,8 +1,11 @@
 package org.dashfoundation.dashsdk.wallet
 
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Decoding of the flat `long[]` the native local balance snapshot returns. */
@@ -85,19 +88,69 @@ class ShieldedLocalBalanceTest {
     }
 
     @Test
-    fun shouldRefuseAReadThatOverlapsABindOrClear() {
-        val generation = AtomicLong(0)
-        // No bind or clear while the read ran: the value is returned.
-        assertEquals(7, fencedByShieldedBinding(generation) { 7 })
-        // An earlier bind does not taint a later read.
-        generation.incrementAndGet()
-        assertEquals(8, fencedByShieldedBinding(generation) { 8 })
-        // A bind or clear during the read: the value is not returned.
+    fun shouldReturnAReadThatNoBindOrClearOverlaps() {
+        val fence = ShieldedBindingFence()
+        assertEquals(7, fence.reading { 7 })
+        // A bind or clear that finished earlier does not taint a later read.
+        fence.changing { }
+        assertEquals(8, fence.reading { 8 })
+        // Nor does one that failed.
+        assertThrows(IllegalStateException::class.java) { fence.changing { error("bind failed") } }
+        assertEquals(9, fence.reading { 9 })
+    }
+
+    @Test
+    fun shouldRefuseAReadThatABindOrClearStartsAndFinishesInside() {
+        val fence = ShieldedBindingFence()
         assertThrows(ShieldedLocalBalanceBindingChanged::class.java) {
-            fencedByShieldedBinding(generation) {
-                generation.incrementAndGet()
-                9
+            fence.reading {
+                // The native read captured the old binding; the bind then
+                // replaced it before the read came back.
+                fence.changing { }
+                1
             }
         }
+    }
+
+    @Test
+    fun shouldRefuseAReadThatStartsWhileABindOrClearIsRunning() {
+        val fence = ShieldedBindingFence()
+        var readRan = false
+        fence.changing {
+            // The change has started and has not returned: a read here could
+            // capture either binding, so it is refused before it runs.
+            assertThrows(ShieldedLocalBalanceBindingChanged::class.java) {
+                fence.reading { readRan = true }
+            }
+        }
+        assertFalse(readRan)
+    }
+
+    @Test
+    fun shouldRefuseAReadThatReturnsWhileABindOrClearIsStillRunning() {
+        val fence = ShieldedBindingFence()
+        val readCaptured = CountDownLatch(1)
+        val changeStarted = CountDownLatch(1)
+        val readDelivered = CountDownLatch(1)
+        var failure: Throwable? = null
+        val reader = thread {
+            failure = runCatching {
+                fence.reading {
+                    // Captured the old binding, then the change starts and is
+                    // still in native code when this read returns.
+                    readCaptured.countDown()
+                    changeStarted.await()
+                    1
+                }
+            }.exceptionOrNull()
+            readDelivered.countDown()
+        }
+        readCaptured.await()
+        fence.changing {
+            changeStarted.countDown()
+            readDelivered.await()
+        }
+        reader.join()
+        assertTrue(failure is ShieldedLocalBalanceBindingChanged)
     }
 }

@@ -2,7 +2,6 @@ package org.dashfoundation.dashsdk.services
 
 import androidx.room.withTransaction
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -141,20 +140,15 @@ class ShieldedService(private val database: DashDatabase) {
     /** Whether shielded support is compiled into the native library. */
     val isAvailable: Boolean get() = Sdk.hasShielded()
 
-    /** Last good local snapshot of each wallet, by hex wallet id. */
-    private val localBalances =
-        MutableStateFlow<Map<String, ShieldedLocalBalanceSnapshot>>(emptyMap())
+    /**
+     * Last good local snapshot of each wallet, with the generation that
+     * guards it. One value, so a read's "is my generation still current"
+     * check and its write are a single atomic step against a drop.
+     */
+    private val localBalances = MutableStateFlow(LocalBalanceCache())
 
     /** The read in flight for each wallet, so a newer one replaces it. */
     private val localBalanceReads = ConcurrentHashMap<String, Job>()
-
-    /**
-     * Counts the times every cached snapshot was dropped (another manager,
-     * an unbind, a Clear). A read notes the count when it starts and its
-     * result is kept only if the count is still the same, so a read that
-     * began against an earlier manager or ledger cannot repopulate the cache.
-     */
-    private val localBalanceGeneration = AtomicLong(0)
 
     /**
      * [walletId]'s local shielded balance as Rust computes it, or null while
@@ -198,7 +192,7 @@ class ShieldedService(private val database: DashDatabase) {
     /** The cached snapshot of [walletId], without starting a read. */
     internal fun cachedLocalBalance(walletId: ByteArray): Flow<ShieldedLocalBalanceSnapshot?> {
         val key = walletId.toHexKey()
-        return localBalances.map { it[key] }.distinctUntilChanged()
+        return localBalances.map { it.snapshots[key] }.distinctUntilChanged()
     }
 
     /**
@@ -210,7 +204,7 @@ class ShieldedService(private val database: DashDatabase) {
         // The generation is read before the manager. [bind] assigns a new
         // manager before it bumps the generation, so a read never pairs the
         // new generation with the manager it replaced.
-        val generation = localBalanceGeneration.get()
+        val generation = localBalances.value.generation
         val mgr = manager ?: return
         val id = walletId.copyOf()
         launchLocalBalanceRead(id, generation) { mgr.localShieldedBalanceSnapshot(id) }
@@ -223,7 +217,7 @@ class ShieldedService(private val database: DashDatabase) {
      */
     internal fun launchLocalBalanceRead(
         walletId: ByteArray,
-        generation: Long = localBalanceGeneration.get(),
+        generation: Long = localBalances.value.generation,
         read: suspend () -> ShieldedLocalBalanceState,
     ): Job {
         val key = walletId.toHexKey()
@@ -247,7 +241,7 @@ class ShieldedService(private val database: DashDatabase) {
     internal suspend fun readLocalBalance(
         key: String,
         retryDelaysMs: List<Long>,
-        generation: Long = localBalanceGeneration.get(),
+        generation: Long = localBalances.value.generation,
         read: suspend () -> ShieldedLocalBalanceState,
     ) {
         var attempt = 0
@@ -261,18 +255,10 @@ class ShieldedService(private val database: DashDatabase) {
                 null
             }
             if (state != null) {
-                // Checked inside the update, so a drop that lands between
-                // the read and the write still wins.
-                localBalances.update {
-                    if (localBalanceGeneration.get() == generation) {
-                        applyLocalBalanceRead(it, key, state)
-                    } else {
-                        it
-                    }
-                }
+                localBalances.update { it.afterRead(generation, key, state) }
                 return
             }
-            if (localBalanceGeneration.get() != generation) return
+            if (localBalances.value.generation != generation) return
             if (attempt >= retryDelaysMs.size) return
             delay(retryDelaysMs[attempt])
             attempt += 1
@@ -568,16 +554,16 @@ class ShieldedService(private val database: DashDatabase) {
     internal fun dropLocalBalance(walletId: ByteArray) {
         val key = walletId.toHexKey()
         localBalanceReads.remove(key)?.cancel()
-        localBalances.update { it - key }
+        localBalances.update { it.copy(snapshots = it.snapshots - key) }
     }
 
     /** Forget every cached snapshot and stop the reads in flight. */
     private fun dropLocalBalances() {
-        // First, so a read that is about to write sees the new count.
-        localBalanceGeneration.incrementAndGet()
+        // The generation moves in the same step that empties the cache, so
+        // a read that began earlier cannot write into the emptied cache.
+        localBalances.update { it.dropped() }
         localBalanceReads.values.forEach { it.cancel() }
         localBalanceReads.clear()
-        localBalances.value = emptyMap()
     }
 
     /**
@@ -740,6 +726,35 @@ class ShieldedService(private val database: DashDatabase) {
  */
 internal fun changesLocalBalance(result: WalletSyncEvent.ShieldedResult): Boolean =
     result.success && !result.skipped && !result.cooldownSkip
+
+/**
+ * The cached local snapshots by hex wallet id, and how many times the whole
+ * cache was dropped (another manager, an unbind, a Clear). A read notes
+ * [generation] when it starts and its result is kept only if the cache was
+ * not dropped since, so a read that began against an earlier manager or
+ * ledger cannot repopulate it. Both live in one value: comparing the
+ * generation and writing the snapshot cannot be split by a drop, even when
+ * the snapshots are empty before and after it.
+ */
+internal data class LocalBalanceCache(
+    val generation: Long = 0,
+    val snapshots: Map<String, ShieldedLocalBalanceSnapshot> = emptyMap(),
+) {
+    /** The cache after a read that started at [readGeneration] answered. */
+    fun afterRead(
+        readGeneration: Long,
+        key: String,
+        state: ShieldedLocalBalanceState,
+    ): LocalBalanceCache =
+        if (readGeneration == generation) {
+            copy(snapshots = applyLocalBalanceRead(snapshots, key, state))
+        } else {
+            this
+        }
+
+    /** The cache after every snapshot was dropped. */
+    fun dropped(): LocalBalanceCache = LocalBalanceCache(generation = generation + 1)
+}
 
 /**
  * The cache after one read of the wallet at [key]: a ready snapshot replaces

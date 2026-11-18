@@ -67,13 +67,75 @@ final class SendViewModelSourceSelectionTests: XCTestCase {
         XCTAssertFalse(vm.sourceChosenByUser)
     }
 
-    func testShouldDropAnExplicitChoiceWhenTheRecipientChanges() {
+    private func orchardAddress(_ fill: UInt8) -> String {
+        DashAddress.encodeOrchard(rawBytes: Data(repeating: fill, count: 43), network: .testnet)!
+    }
+
+    private func platformAddress(_ fill: UInt8) -> String {
+        DashAddress.encodePlatform(rawBytes: Data([0xb0]) + Data(repeating: fill, count: 20), network: .testnet)!
+    }
+
+    /// The reviewer's sequence: an Orchard recipient, an explicit Core
+    /// choice, a different Orchard recipient (offered list unchanged), and
+    /// later a balance that changes the offered list. The choice is still
+    /// offered throughout, so it stays.
+    func testShouldKeepAnExplicitChoiceWhenTheRecipientChangesWithinItsKind() {
+        let vm = SendViewModel(network: .testnet)
+        vm.amountString = "0.001"
+        vm.recipientAddress = orchardAddress(0x01)
+        XCTAssertEqual(vm.detectedAddressType.kind, .orchard)
+        vm.reconcileSource(available: [.platform, .core])
+        vm.selectSource(.core)
+        XCTAssertEqual(vm.detectedFlow, .coreToShielded)
+
+        vm.recipientAddress = orchardAddress(0x02)
+        XCTAssertTrue(vm.sourceChosenByUser)
+
+        // The shielded balance arrives and its source now leads the list.
+        vm.reconcileSource(available: [.shielded, .platform, .core])
+        XCTAssertEqual(vm.selectedSource, .core)
+        XCTAssertEqual(vm.detectedFlow, .coreToShielded)
+    }
+
+    /// Editing the address by hand passes through empty and unparsable
+    /// text, which offers nothing; that is not a new kind of recipient.
+    func testShouldKeepAnExplicitChoiceWhileTheRecipientIsBeingEdited() {
+        let vm = SendViewModel(network: .testnet)
+        vm.recipientAddress = orchardAddress(0x01)
+        vm.reconcileSource(available: [.platform, .core])
+        vm.selectSource(.core)
+
+        vm.recipientAddress = ""
+        vm.reconcileSource(available: [])
+        vm.recipientAddress = "tdash1"
+        vm.reconcileSource(available: [])
+        vm.recipientAddress = orchardAddress(0x02)
+        vm.reconcileSource(available: [.shielded, .platform, .core])
+
+        XCTAssertTrue(vm.sourceChosenByUser)
+        XCTAssertEqual(vm.selectedSource, .core)
+    }
+
+    /// A recipient of another kind offers its own default, even when the
+    /// chosen source is offered there too.
+    func testShouldDropAnExplicitChoiceWhenTheRecipientKindChanges() {
+        let vm = makeViewModel()
+        vm.reconcileSource(available: [.core, .shielded])
+        vm.selectSource(.shielded)
+        vm.recipientAddress = platformAddress(0x03)
+        XCTAssertEqual(vm.detectedAddressType.kind, .platform)
+        XCTAssertFalse(vm.sourceChosenByUser)
+        vm.reconcileSource(available: [.platform, .shielded])
+        XCTAssertEqual(vm.selectedSource, .platform)
+    }
+
+    func testShouldKeepAnExplicitChoiceWhenTheRecipientChangesToAnotherCoreAddress() {
         let vm = makeViewModel()
         vm.reconcileSource(available: [.core, .shielded])
         vm.selectSource(.shielded)
         vm.recipientAddress = otherCoreAddress
-        XCTAssertFalse(vm.sourceChosenByUser)
+        XCTAssertTrue(vm.sourceChosenByUser)
         vm.reconcileSource(available: [.core, .shielded])
-        XCTAssertEqual(vm.selectedSource, .core)
+        XCTAssertEqual(vm.selectedSource, .shielded)
     }
 }

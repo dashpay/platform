@@ -134,7 +134,7 @@ struct SendTransactionView: View {
                         )
                         BalanceInfoRow(
                             label: "Shielded:",
-                            amount: shieldedBalance,
+                            amount: knownShieldedBalance,
                             unit: .credits,
                             color: .purple
                         )
@@ -504,7 +504,13 @@ struct SendTransactionView: View {
     /// binding is live but whose UI mirror is pointed elsewhere. Not known
     /// yet counts as 0, so the shielded source is not offered.
     private var shieldedBalance: UInt64 {
-        shieldedService.spendableShieldedCredits(walletId: wallet.walletId, account: 0) ?? 0
+        knownShieldedBalance ?? 0
+    }
+
+    /// Account 0's spendable credits, or `nil` while not known yet. The
+    /// balance row shows nil as not known rather than as a zero.
+    private var knownShieldedBalance: UInt64? {
+        shieldedService.spendableShieldedCredits(walletId: wallet.walletId, account: 0)
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced
@@ -890,7 +896,8 @@ enum SendBalanceUnit {
 
 private struct BalanceInfoRow: View {
     let label: String
-    let amount: UInt64
+    /// `nil` means the balance is not known yet.
+    let amount: UInt64?
     var unit: SendBalanceUnit = .duffs
     var color: Color = .primary
 
@@ -898,8 +905,13 @@ private struct BalanceInfoRow: View {
         HStack {
             Text(label).font(.caption).foregroundColor(.secondary)
             Spacer()
-            Text(formatBalance(amount, unit: unit))
-                .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
+            if let amount {
+                Text(formatBalance(amount, unit: unit))
+                    .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
+            } else {
+                Text("Not known yet")
+                    .font(.caption).foregroundColor(.secondary)
+            }
         }
     }
 

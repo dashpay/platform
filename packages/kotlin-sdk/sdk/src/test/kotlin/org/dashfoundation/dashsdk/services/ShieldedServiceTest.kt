@@ -268,6 +268,26 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun shouldNotLetAReadWriteIntoACacheDroppedAfterItStarted() {
+        // The cache is empty before the drop and empty after it. Only the
+        // generation tells the two apart, and it is part of the same value
+        // the write replaces, so the write cannot land in between.
+        val beforeDrop = LocalBalanceCache()
+        val readGeneration = beforeDrop.generation
+        val afterDrop = beforeDrop.dropped()
+        assertEquals(emptyMap<String, ShieldedLocalBalanceSnapshot>(), afterDrop.snapshots)
+        assertFalse(beforeDrop == afterDrop)
+        assertEquals(afterDrop, afterDrop.afterRead(readGeneration, "aa", ready(999, 0 to 999)))
+
+        // A read that started after the drop is kept, and a later drop
+        // empties the cache again and moves the generation again.
+        val kept = afterDrop.afterRead(afterDrop.generation, "aa", ready(150, 0 to 150))
+        assertEquals(mapOf("aa" to snapshot(150, 0 to 150)), kept.snapshots)
+        assertEquals(afterDrop.generation, kept.generation)
+        assertEquals(LocalBalanceCache(generation = afterDrop.generation + 1), kept.dropped())
+    }
+
+    @Test
     fun shouldNotKeepAReadThatStartedBeforeTheCacheWasDropped() = runTest {
         val key = walletId.joinToString("") { "%02x".format(it) }
         // A read notes the generation when it starts. This one started

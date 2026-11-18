@@ -582,7 +582,8 @@ fun SendTransactionScreen(
                     when (selectedSource) {
                         FundSource.CORE -> balance?.let { formatDuffs(it.confirmed) } ?: "—"
                         FundSource.PLATFORM -> formatCredits(platformBalance)
-                        FundSource.SHIELDED -> formatCredits(shieldedBalance)
+                        FundSource.SHIELDED ->
+                            shieldedSpendable?.let { formatCredits(it) } ?: "—"
                     },
                 )
                 // Multi-output batch total (← the iOS "Outputs" summary's
@@ -611,11 +612,19 @@ fun SendTransactionScreen(
             }
 
             if (trimmedRecipient.isNotEmpty() && recipientKnown && availableSources.isEmpty()) {
+                // The funding advice is for a balance known to be zero. While
+                // the shielded balance has not been read yet, say that.
+                val shieldedNotKnown = hasShielded && shieldedSpendable == null
                 Text(
                     when (addressType) {
                         is DashAddressType.Orchard, is DashAddressType.Platform ->
-                            "No spendable shielded balance to fund this send — " +
-                                "shield funds first (Wallet → Shielded Balance → Fund Shielded)."
+                            if (shieldedNotKnown) {
+                                "The shielded balance is not known yet. It is read " +
+                                    "again when the current sync pass ends."
+                            } else {
+                                "No spendable shielded balance to fund this send — " +
+                                    "shield funds first (Wallet → Shielded Balance → Fund Shielded)."
+                            }
                         else -> "No spendable balance to fund this send."
                     },
                     style = MaterialTheme.typography.bodySmall,

@@ -783,14 +783,22 @@ struct CreateIdentityView: View {
         // which requires a wallet selection, so `selectedWalletId` is
         // non-nil here; the `?? 0` is a defensive fallback that yields an
         // empty `affordable` list rather than a crash.
-        let poolBalance = selectedWalletId.map { shieldedPoolBalance(for: $0) } ?? 0
+        let knownPoolBalance = selectedWalletId.flatMap { knownShieldedPoolBalance(for: $0) }
+        let poolBalance = knownPoolBalance ?? 0
         // Denominations the pool can cover. Computed off the live
         // per-wallet pool balance so the list shrinks as the pool
         // drains (e.g. after a prior shielded spend this session).
         let affordable = shieldedIdentityCreateDenominations
             .filter { $0 <= poolBalance }
         Section {
-            if affordable.isEmpty {
+            if knownPoolBalance == nil {
+                // The balance went out of the cache after the option was
+                // picked (for example a Clear or a failed bind): say so
+                // rather than advising to shield more on an assumed zero.
+                Text("The shielded balance is not known yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if affordable.isEmpty {
                 // Defensive: the option is gated on `shieldedBalance > 0`,
                 // but the smallest denomination can still exceed a
                 // small positive balance. Surface why no denomination
@@ -1843,7 +1851,12 @@ struct CreateIdentityView: View {
     /// loaded wallet, not just the mirror's `firstWallet`. Not known yet
     /// counts as 0, so the shielded option is not offered.
     private func shieldedPoolBalance(for walletId: Data) -> UInt64 {
-        shieldedService.spendableShieldedCredits(walletId: walletId, account: 0) ?? 0
+        knownShieldedPoolBalance(for: walletId) ?? 0
+    }
+
+    /// Account 0's spendable credits, or `nil` while not known yet.
+    private func knownShieldedPoolBalance(for walletId: Data) -> UInt64? {
+        shieldedService.spendableShieldedCredits(walletId: walletId, account: 0)
     }
 
     /// The wallet id currently chosen in the source-wallet picker, or
