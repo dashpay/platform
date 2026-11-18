@@ -3,11 +3,9 @@ import XCTest
 @testable import SwiftDashSDK
 @testable import SwiftExampleApp
 
-/// Coverage for the `PersistentShieldedNote` predicates that load note
-/// rows: the per-wallet and all-wallets unspent filters and the account-0
-/// filters of the send and identity funding screens. The rows mark a
-/// wallet as not empty and drive local balance refreshes; no balance is
-/// computed from them (balances come from Rust's local balance snapshot).
+/// Coverage for the `PersistentShieldedNote` unspent predicates. The rows
+/// mark a wallet as not empty; no balance is computed from them (balances
+/// come from `PlatformWalletManager.shieldedBalances`).
 @MainActor
 final class PersistentShieldedNotePredicateTests: XCTestCase {
 
@@ -73,77 +71,6 @@ final class PersistentShieldedNotePredicateTests: XCTestCase {
             predicate: PersistentShieldedNote.unspentPredicate(walletId: wallet)
         ))
         XCTAssertEqual(nullifiers(notes), [nullifier(0x01), nullifier(0x02), nullifier(0x03)])
-    }
-
-    func testShouldLoadNoSendSourceRowsForIdentityAccountOnlyWallet() throws {
-        let container = try DashModelContainer.createInMemory()
-        let context = ModelContext(container)
-        let wallet = walletId(0xAA)
-        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
-                                nullifier: 0x01, isSpent: false, value: 900))
-        try context.save()
-
-        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
-            predicate: SendTransactionView.shieldedSourcePredicate(walletId: wallet)
-        ))
-        XCTAssertTrue(notes.isEmpty)
-    }
-
-    func testShouldLoadOnlyUnspentAccountZeroSendSourceRowsOfSelectedWallet() throws {
-        let container = try DashModelContainer.createInMemory()
-        let context = ModelContext(container)
-        let wallet = walletId(0xAA)
-        context.insert(makeNote(walletId: wallet, nullifier: 0x01, isSpent: false, value: 100))
-        context.insert(makeNote(walletId: wallet, nullifier: 0x02, isSpent: false, value: 50))
-        context.insert(makeNote(walletId: wallet, nullifier: 0x03, isSpent: true, value: 999))
-        context.insert(makeNote(walletId: wallet, accountIndex: 1,
-                                nullifier: 0x04, isSpent: false, value: 200))
-        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
-                                nullifier: 0x05, isSpent: false, value: 900))
-        context.insert(makeNote(walletId: walletId(0xBB),
-                                nullifier: 0x06, isSpent: false, value: 300))
-        try context.save()
-
-        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
-            predicate: SendTransactionView.shieldedSourcePredicate(walletId: wallet)
-        ))
-        XCTAssertEqual(nullifiers(notes), [nullifier(0x01), nullifier(0x02)])
-    }
-
-    func testShouldLoadNoIdentityFundingRowsForIdentityAccountOnlyWallet() throws {
-        let container = try DashModelContainer.createInMemory()
-        let context = ModelContext(container)
-        let wallet = walletId(0xAA)
-        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
-                                nullifier: 0x01, isSpent: false, value: 900))
-        try context.save()
-
-        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
-            predicate: CreateIdentityView.shieldedFundingPredicate
-        ))
-        XCTAssertTrue(notes.isEmpty)
-    }
-
-    func testShouldLoadOnlyUnspentAccountZeroIdentityFundingRowsOfEveryWallet() throws {
-        let container = try DashModelContainer.createInMemory()
-        let context = ModelContext(container)
-        let wallet = walletId(0xAA)
-        let otherWallet = walletId(0xBB)
-        context.insert(makeNote(walletId: wallet, nullifier: 0x01, isSpent: false, value: 100))
-        context.insert(makeNote(walletId: wallet, nullifier: 0x02, isSpent: false, value: 50))
-        context.insert(makeNote(walletId: wallet, nullifier: 0x03, isSpent: true, value: 999))
-        context.insert(makeNote(walletId: wallet, accountIndex: 1,
-                                nullifier: 0x04, isSpent: false, value: 200))
-        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
-                                nullifier: 0x05, isSpent: false, value: 900))
-        context.insert(makeNote(walletId: otherWallet,
-                                nullifier: 0x06, isSpent: false, value: 300))
-        try context.save()
-
-        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
-            predicate: CreateIdentityView.shieldedFundingPredicate
-        ))
-        XCTAssertEqual(nullifiers(notes), [nullifier(0x01), nullifier(0x02), nullifier(0x06)])
     }
 
     private func makeNote(

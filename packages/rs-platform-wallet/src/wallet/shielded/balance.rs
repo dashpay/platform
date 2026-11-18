@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::platform_wallet::WalletId;
 
 use super::is_shielded_identity_account;
 
@@ -37,24 +38,52 @@ pub struct ShieldedLocalBalanceSnapshot {
     pub accounts: BTreeMap<u32, ShieldedLocalAccountBalance>,
 }
 
+/// The wallet's shielded balance with the evidence behind it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ShieldedOrdinaryBalance {
+    /// Spendable credits of the wallet's ordinary accounts.
+    pub spendable_credits: u64,
+    /// Whether every ordinary account's ledger rests on a restored history or
+    /// a completed scan ([`ShieldedBalanceSource`] other than `NoHistory`).
+    /// When false, `spendable_credits` is what the ledger holds so far, not a
+    /// known balance: a hydrated account with no stored notes and no completed
+    /// scan reads zero without that zero being known. True for a wallet with
+    /// no ordinary account, whose ordinary balance is zero by construction.
+    pub established: bool,
+}
+
 impl ShieldedLocalBalanceSnapshot {
-    /// Spendable credits of the wallet's ordinary accounts: the wallet's
-    /// shielded balance. Identity accounts ([`is_shielded_identity_account`])
-    /// are bound and scanned with the wallet, but an ordinary send cannot
-    /// spend their notes, so they are left out. A host shows this number and
-    /// does not add up accounts or notes itself. Rejects a total that does
-    /// not fit in `u64`.
-    pub fn ordinary_spendable_total(&self) -> Result<u64, PlatformWalletError> {
+    /// The wallet's shielded balance: the spendable credits of its ordinary
+    /// accounts, and whether each of their ledgers is established. Identity
+    /// accounts ([`is_shielded_identity_account`]) are bound and scanned with
+    /// the wallet, but an ordinary send cannot spend their notes, so they are
+    /// left out. A host shows this and does not add up accounts or notes
+    /// itself. Rejects a total that does not fit in `u64`.
+    pub fn ordinary_balance(&self) -> Result<ShieldedOrdinaryBalance, PlatformWalletError> {
         self.accounts
             .iter()
             .filter(|(account, _)| !is_shielded_identity_account(**account))
-            .try_fold(0u64, |total, (_, balance)| {
-                total.checked_add(balance.spendable_credits).ok_or_else(|| {
-                    PlatformWalletError::ShieldedStoreError(
-                        "wallet-wide shielded balance exceeds u64".to_string(),
-                    )
-                })
-            })
+            .try_fold(
+                ShieldedOrdinaryBalance {
+                    spendable_credits: 0,
+                    established: true,
+                },
+                |total, (_, balance)| {
+                    let spendable_credits = total
+                        .spendable_credits
+                        .checked_add(balance.spendable_credits)
+                        .ok_or_else(|| {
+                            PlatformWalletError::ShieldedStoreError(
+                                "wallet-wide shielded balance exceeds u64".to_string(),
+                            )
+                        })?;
+                    Ok(ShieldedOrdinaryBalance {
+                        spendable_credits,
+                        established: total.established
+                            && balance.source != ShieldedBalanceSource::NoHistory,
+                    })
+                },
+            )
     }
 }
 
@@ -66,4 +95,19 @@ pub enum ShieldedLocalBalanceState {
     /// in-session scans establish the ledger for every account.
     RestoreIncomplete,
     Ready(ShieldedLocalBalanceSnapshot),
+}
+
+/// One wallet's local balance state, pushed to the host whenever it differs
+/// from the state last pushed for that wallet
+/// (`PlatformEventHandler::on_shielded_balance_changed`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShieldedBalanceUpdate {
+    pub wallet_id: WalletId,
+    /// Per wallet, starting at 1 and strictly increasing for the life of the
+    /// coordinator. A wallet's updates are delivered in revision order, so a
+    /// host keeps the one with the highest revision.
+    pub revision: u64,
+    /// What `NetworkShieldedCoordinator::local_balance_snapshot` returns for
+    /// the wallet now.
+    pub state: ShieldedLocalBalanceState,
 }

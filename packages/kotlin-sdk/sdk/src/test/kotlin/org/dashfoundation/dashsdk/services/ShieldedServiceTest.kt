@@ -1,30 +1,30 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.test.core.app.ApplicationProvider
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceSource
+import org.dashfoundation.dashsdk.wallet.ShieldedBalanceUpdate
 import org.dashfoundation.dashsdk.wallet.ShieldedLocalAccountBalance
 import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceSnapshot
 import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceState
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
+import org.dashfoundation.dashsdk.wallet.latestShieldedBalances
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Reduction, cumulative counters, the local balance cache, and clear-local-state
+ * Reduction, cumulative counters, balance summing, and clear-local-state
  * for [ShieldedService]. Reduction is exercised directly (bind() is gated on
  * the native `hasShielded()` probe, which is unavailable under Robolectric);
  * balance and teardown use an in-memory [DashDatabase].
@@ -168,170 +168,92 @@ class ShieldedServiceTest {
         assertEquals(3_000L, balance)
     }
 
-    private fun snapshot(ordinary: Long, vararg accounts: Pair<Int, Long>) =
-        ShieldedLocalBalanceSnapshot(
-            ordinarySpendableCredits = ordinary,
-            accounts = accounts.associate { (index, spendable) ->
-                index to ShieldedLocalAccountBalance(
-                    spendableCredits = spendable,
-                    lastScannedIndex = 1,
-                    source = ShieldedBalanceSource.SCANNED_THIS_SESSION,
-                )
+    private fun update(
+        revision: Long,
+        ordinary: Long,
+        established: Boolean = true,
+        wallet: ByteArray = walletId,
+        vararg accounts: Pair<Int, Long>,
+    ) = ShieldedBalanceUpdate(
+        wallet,
+        revision,
+        ShieldedLocalBalanceState.Ready(
+            ShieldedLocalBalanceSnapshot(
+                ordinarySpendableCredits = ordinary,
+                ordinaryBalanceEstablished = established,
+                accounts = accounts.associate { (index, spendable) ->
+                    index to ShieldedLocalAccountBalance(
+                        spendableCredits = spendable,
+                        lastScannedIndex = 1,
+                        source = ShieldedBalanceSource.SCANNED_THIS_SESSION,
+                    )
+                },
+            ),
+        ),
+    )
+
+    private fun announce(vararg updates: ShieldedBalanceUpdate): MutableStateFlow<Map<String, ShieldedBalanceUpdate>> {
+        val announced = MutableStateFlow(
+            updates.fold(emptyMap<String, ShieldedBalanceUpdate>()) { held, next ->
+                latestShieldedBalances(held, next)
             },
         )
-
-    private fun ready(ordinary: Long, vararg accounts: Pair<Int, Long>) =
-        ShieldedLocalBalanceState.Ready(snapshot(ordinary, *accounts))
-
-    @Test
-    fun shouldKeepAReadySnapshotAndDropAnUnboundWallet() {
-        val first = snapshot(150, 0 to 100, 1 to 50)
-        val second = snapshot(70, 0 to 70)
-        var cache = applyLocalBalanceRead(emptyMap(), "aa", ShieldedLocalBalanceState.Ready(first))
-        assertEquals(mapOf("aa" to first), cache)
-        // An incomplete restoration establishes nothing: the entry stays.
-        cache = applyLocalBalanceRead(cache, "aa", ShieldedLocalBalanceState.RestoreIncomplete)
-        assertEquals(mapOf("aa" to first), cache)
-        cache = applyLocalBalanceRead(cache, "bb", ShieldedLocalBalanceState.Ready(second))
-        cache = applyLocalBalanceRead(cache, "aa", ShieldedLocalBalanceState.Ready(second))
-        assertEquals(mapOf("aa" to second, "bb" to second), cache)
-        cache = applyLocalBalanceRead(cache, "aa", ShieldedLocalBalanceState.Unbound)
-        assertEquals(mapOf("bb" to second), cache)
+        service.balanceUpdates.value = announced
+        return announced
     }
 
     @Test
     fun shouldShowRustsTotalAndTheAccountASendSpendsFrom() = runTest {
         val identityAccount = 0x4000_0000
-        // Rust's total leaves the identity account out; the service must
-        // show that number as it is, not a sum over the accounts.
-        service.launchLocalBalanceRead(walletId) {
-            ready(150, 0 to 100, 1 to 50, identityAccount to 900)
-        }.join()
-        val cached = service.cachedLocalBalance(walletId).first()
-        assertEquals(150L, cached?.ordinarySpendableCredits)
-        assertEquals(100L, cached?.accounts?.get(0)?.spendableCredits)
-        assertEquals(900L, cached?.accounts?.get(identityAccount)?.spendableCredits)
-        // Another wallet has no snapshot: not known, which is not zero.
-        assertNull(service.cachedLocalBalance(otherWallet).first())
+        // Rust's total leaves the identity account out; the service shows
+        // that number as it is, not a sum over the accounts or the notes.
+        db.shieldedDao().upsertNote(note(1, 1_050, spent = false))
+        announce(update(1, 150, accounts = arrayOf(0 to 100, 1 to 50, identityAccount to 900)))
+        assertEquals(150L, service.ordinaryBalance(walletId).first())
+        assertEquals(100L, service.accountBalance(walletId, 0).first())
+        assertEquals(900L, service.accountBalance(walletId, identityAccount).first())
+        // An account that is not bound, and a wallet that was not announced:
+        // not known, which is not zero.
+        assertNull(service.accountBalance(walletId, 9).first())
+        assertNull(service.ordinaryBalance(otherWallet).first())
     }
 
     @Test
-    fun shouldReadAgainWhileTheStoreIsBusyAndGiveUpAfterTheLastDelay() = runTest {
-        var reads = 0
-        // Busy twice, then the scan releases the store.
-        service.readLocalBalance("aa", listOf(300L, 1_000L, 3_000L)) {
-            reads += 1
-            if (reads < 3) error("busy") else ready(150, 0 to 150)
+    fun shouldNotShowABalanceThatIsNotEstablishedOrHasNoNumbers() = runTest {
+        // Readable but never scanned: zero credits without evidence.
+        announce(update(1, 0, established = false, accounts = arrayOf(0 to 0)))
+        assertNull(service.ordinaryBalance(walletId).first())
+
+        announce(ShieldedBalanceUpdate(walletId, 2, ShieldedLocalBalanceState.RestoreIncomplete))
+        assertNull(service.ordinaryBalance(walletId).first())
+        assertNull(service.localBalance(walletId).first())
+
+        // An unbound wallet was not read at all: not a known zero.
+        announce(ShieldedBalanceUpdate(walletId, 3, ShieldedLocalBalanceState.Unbound))
+        assertNull(service.ordinaryBalance(walletId).first())
+    }
+
+    @Test
+    fun shouldFollowEveryUpdateAndARebindToAnotherManager() = runTest {
+        val announced = announce(update(1, 150, accounts = arrayOf(0 to 150)))
+        val seen = mutableListOf<Long?>()
+        val collecting = launch(UnconfinedTestDispatcher(testScheduler)) {
+            service.ordinaryBalance(walletId).collect { seen += it }
         }
-        assertEquals(3, reads)
-
-        reads = 0
-        // Busy on every attempt: one read plus one per delay, then give up.
-        service.readLocalBalance("aa", listOf(300L, 1_000L, 3_000L)) {
-            reads += 1
-            error("busy")
-        }
-        assertEquals(4, reads)
+        // A spend reserved notes: Rust announces the lower amount.
+        announced.value = latestShieldedBalances(announced.value, update(2, 40, accounts = arrayOf(0 to 40)))
+        // Another manager (another network) knows nothing of this wallet yet.
+        val other = announce()
+        other.value = latestShieldedBalances(other.value, update(1, 7, accounts = arrayOf(0 to 7)))
+        collecting.cancel()
+        assertEquals(listOf(150L, 40L, null, 7L), seen)
     }
 
     @Test
-    fun shouldKeepTheLastSnapshotOfAWalletWhoseReadFails() = runTest {
-        service.launchLocalBalanceRead(walletId) { ready(150, 0 to 150) }.join()
-        service.readLocalBalance(walletId.joinToString("") { "%02x".format(it) }, emptyList()) {
-            error("busy")
-        }
-        assertEquals(150L, service.cachedLocalBalance(walletId).first()?.ordinarySpendableCredits)
-    }
-
-    @Test
-    fun shouldLetANewerReadReplaceTheOneInFlight() = runTest {
-        val release = CompletableDeferred<Unit>()
-        val older = service.launchLocalBalanceRead(walletId) {
-            release.await()
-            ready(1, 0 to 1)
-        }
-        val newer = service.launchLocalBalanceRead(walletId) { ready(2, 0 to 2) }
-        newer.join()
-        older.join()
-        assertTrue(older.isCancelled)
-        release.complete(Unit)
-        assertEquals(2L, service.cachedLocalBalance(walletId).first()?.ordinarySpendableCredits)
-    }
-
-    @Test
-    fun shouldForgetOnlyTheDroppedWalletsSnapshot() = runTest {
-        service.launchLocalBalanceRead(walletId) { ready(150, 0 to 150) }.join()
-        service.launchLocalBalanceRead(otherWallet) { ready(70, 0 to 70) }.join()
-        service.dropLocalBalance(walletId)
-        assertNull(service.cachedLocalBalance(walletId).first())
-        assertEquals(70L, service.cachedLocalBalance(otherWallet).first()?.ordinarySpendableCredits)
-    }
-
-    @Test
-    fun shouldNotLetAReadWriteIntoACacheDroppedAfterItStarted() {
-        // The cache is empty before the drop and empty after it. Only the
-        // generation tells the two apart, and it is part of the same value
-        // the write replaces, so the write cannot land in between.
-        val beforeDrop = LocalBalanceCache()
-        val readGeneration = beforeDrop.generation
-        val afterDrop = beforeDrop.dropped()
-        assertEquals(emptyMap<String, ShieldedLocalBalanceSnapshot>(), afterDrop.snapshots)
-        assertFalse(beforeDrop == afterDrop)
-        assertEquals(afterDrop, afterDrop.afterRead(readGeneration, "aa", ready(999, 0 to 999)))
-
-        // A read that started after the drop is kept, and a later drop
-        // empties the cache again and moves the generation again.
-        val kept = afterDrop.afterRead(afterDrop.generation, "aa", ready(150, 0 to 150))
-        assertEquals(mapOf("aa" to snapshot(150, 0 to 150)), kept.snapshots)
-        assertEquals(afterDrop.generation, kept.generation)
-        assertEquals(LocalBalanceCache(generation = afterDrop.generation + 1), kept.dropped())
-    }
-
-    @Test
-    fun shouldNotKeepAReadThatStartedBeforeTheCacheWasDropped() = runTest {
-        val key = walletId.joinToString("") { "%02x".format(it) }
-        // A read notes the generation when it starts. This one started
-        // under a generation that is no longer current, as a read against a
-        // replaced manager or a cleared ledger does.
-        service.readLocalBalance(key, emptyList(), generation = -1) { ready(999, 0 to 999) }
-        assertNull(service.cachedLocalBalance(walletId).first())
-
-        // The drop itself moves the generation: a read that began before an
-        // unbind and answers after it is not kept either.
-        val release = CompletableDeferred<Unit>()
-        val started = CompletableDeferred<Unit>()
-        val stale = service.launchLocalBalanceRead(walletId) {
-            started.complete(Unit)
-            // Not cancellable here, like a read already inside native code.
-            withContext(NonCancellable) { release.await() }
-            ready(999, 0 to 999)
-        }
-        started.await()
+    fun shouldShowNoBalanceAfterUnbind() = runTest {
+        announce(update(1, 150, accounts = arrayOf(0 to 150)))
         service.unbind()
-        release.complete(Unit)
-        stale.join()
-        assertNull(service.cachedLocalBalance(walletId).first())
-
-        // A read of the current generation is kept.
-        service.readLocalBalance(key, emptyList()) { ready(150, 0 to 150) }
-        assertEquals(150L, service.cachedLocalBalance(walletId).first()?.ordinarySpendableCredits)
-    }
-
-    @Test
-    fun shouldForgetEverySnapshotOnUnbind() = runTest {
-        service.launchLocalBalanceRead(walletId) { ready(150, 0 to 150) }.join()
-        service.unbind()
-        assertNull(service.cachedLocalBalance(walletId).first())
-    }
-
-    @Test
-    fun shouldReadTheBalanceAgainOnlyAfterAPassThatRan() {
-        fun result(success: Boolean, skipped: Boolean, cooldownSkip: Boolean) =
-            WalletSyncEvent.ShieldedResult(walletId, success, skipped, cooldownSkip, 0, 0, 0, 0, null)
-        assertTrue(changesLocalBalance(result(success = true, skipped = false, cooldownSkip = false)))
-        assertFalse(changesLocalBalance(result(success = true, skipped = false, cooldownSkip = true)))
-        assertFalse(changesLocalBalance(result(success = false, skipped = true, cooldownSkip = false)))
-        assertFalse(changesLocalBalance(result(success = false, skipped = false, cooldownSkip = false)))
+        assertNull(service.ordinaryBalance(walletId).first())
     }
 
     @Test

@@ -56,14 +56,6 @@ pub struct ShieldedLocalAccountBalanceFFI {
 #[derive(Debug)]
 pub struct ShieldedLocalBalanceSnapshotFFI {
     pub status: ShieldedLocalBalanceStatusFFI,
-    /// The wallet's shielded balance: spendable credits of its ordinary
-    /// accounts, as the wallet computes it
-    /// (`ShieldedLocalBalanceSnapshot::ordinary_spendable_total`). Identity
-    /// accounts are in `accounts` but not in this total, since an ordinary
-    /// send cannot spend their notes. Hosts show this number and do not add
-    /// up `accounts` or stored notes themselves. Meaningful only when
-    /// `status` is Ready; zero otherwise.
-    pub ordinary_spendable_credits: u64,
     pub accounts: *const ShieldedLocalAccountBalanceFFI,
     pub accounts_count: usize,
 }
@@ -72,7 +64,52 @@ impl Default for ShieldedLocalBalanceSnapshotFFI {
     fn default() -> Self {
         Self {
             status: ShieldedLocalBalanceStatusFFI::Unbound,
+            accounts: std::ptr::null(),
+            accounts_count: 0,
+        }
+    }
+}
+
+/// One wallet's local shielded balance state, pushed by
+/// `on_shielded_balance_changed_fn` whenever it changes. Valid only for the
+/// duration of the callback: `accounts` is borrowed and must be copied.
+///
+/// `revision` starts at 1 per wallet and strictly increases; a wallet's
+/// updates arrive in revision order, so a host keeps the latest one and holds
+/// no balance of its own.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ShieldedBalanceUpdateFFI {
+    pub wallet_id: [u8; 32],
+    pub revision: u64,
+    pub status: ShieldedLocalBalanceStatusFFI,
+    /// The wallet's shielded balance: spendable credits of its ordinary
+    /// accounts, as the wallet computes it
+    /// (`ShieldedLocalBalanceSnapshot::ordinary_balance`). Identity accounts
+    /// are in `accounts` but not in this total. Ready only; zero otherwise,
+    /// and zero when the total is not known (see
+    /// `ordinary_balance_established`).
+    pub ordinary_spendable_credits: u64,
+    /// Whether `ordinary_spendable_credits` is a known balance: every
+    /// ordinary account's ledger rests on a restored history or a completed
+    /// scan. False for a ledger that holds no history yet (its zero is not a
+    /// known zero) and for a total that does not fit in `u64`. Ready only;
+    /// false otherwise.
+    pub ordinary_balance_established: bool,
+    /// Ready only: every bound account, identity accounts included. Borrowed
+    /// for the callback; null when `accounts_count` is zero.
+    pub accounts: *const ShieldedLocalAccountBalanceFFI,
+    pub accounts_count: usize,
+}
+
+impl Default for ShieldedBalanceUpdateFFI {
+    fn default() -> Self {
+        Self {
+            wallet_id: [0; 32],
+            revision: 0,
+            status: ShieldedLocalBalanceStatusFFI::Unbound,
             ordinary_spendable_credits: 0,
+            ordinary_balance_established: false,
             accounts: std::ptr::null(),
             accounts_count: 0,
         }

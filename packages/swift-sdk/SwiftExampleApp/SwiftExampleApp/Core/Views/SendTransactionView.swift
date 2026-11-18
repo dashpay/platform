@@ -6,7 +6,6 @@ struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
-    @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
     @StateObject private var viewModel: SendViewModel
@@ -52,11 +51,6 @@ struct SendTransactionView: View {
     /// credits".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    /// This wallet's unspent account-0 shielded (Orchard) note rows. Their
-    /// changes (a receive or a spend) trigger a refresh of the Rust local
-    /// balance that `shieldedBalance` below reads.
-    @Query private var shieldedNotes: [PersistentShieldedNote]
-
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
@@ -70,15 +64,6 @@ struct SendTransactionView: View {
                 $0.networkRaw == walletNetworkRaw
             }
         )
-        _shieldedNotes = Query(
-            filter: Self.shieldedSourcePredicate(walletId: walletId)
-        )
-    }
-
-    static func shieldedSourcePredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
-        #Predicate<PersistentShieldedNote> {
-            $0.walletId == walletId && $0.accountIndex == 0 && $0.isSpent == false
-        }
     }
 
     var body: some View {
@@ -207,6 +192,19 @@ struct SendTransactionView: View {
                                 }
                             }
                         }
+                        if viewModel.chosenSourceUnavailable {
+                            // The explicit choice is never swapped for
+                            // another source; the user picks again.
+                            Text("\(viewModel.selectedSource.rawValue) is not available right now. Pick another source to send.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                } else if viewModel.chosenSourceUnavailable {
+                    Section("Send From") {
+                        Text("\(viewModel.selectedSource.rawValue) is not available right now, and no other source is.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
                 }
 
@@ -260,6 +258,10 @@ struct SendTransactionView: View {
                         // guaranteed to agree with the version the
                         // shielded builders carve their fee at.
                         resolveShieldedFees()
+                        // The route the user confirmed by tapping. The
+                        // handler below is asynchronous; `executeSend`
+                        // refuses if the route changed in between.
+                        let tappedFlow = viewModel.detectedFlow
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -313,14 +315,14 @@ struct SendTransactionView: View {
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 walletManager: walletManager,
-                                shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,
                                 platformWallet: managed,
                                 platformAddressWallet: platformAddressWallet,
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
-                                modelContext: modelContext
+                                modelContext: modelContext,
+                                tappedFlow: tappedFlow
                             )
                         }
                     }
@@ -394,8 +396,6 @@ struct SendTransactionView: View {
                     }
                 }
             }
-            .refreshingShieldedLocalBalances(
-                shieldedService, walletIds: [wallet.walletId], noteRows: shieldedNotes)
         }
     }
 
@@ -497,12 +497,11 @@ struct SendTransactionView: View {
     }
 
     /// What a shielded send from this screen can spend: account 0's
-    /// spendable credits as Rust computes them, because the send spends
-    /// from account 0. Read from the service's per-wallet local balance
-    /// cache rather than the single-mirror `shieldedService.shieldedBalance`,
-    /// so it is correct for a non-`firstWallet` wallet whose engine
-    /// binding is live but whose UI mirror is pointed elsewhere. Not known
-    /// yet counts as 0, so the shielded source is not offered.
+    /// spendable credits as Rust pushes them, because the send spends from
+    /// account 0. Read per wallet from `walletManager.shieldedBalances`
+    /// rather than the single-mirror `shieldedService.shieldedBalance`, so
+    /// it is correct for a non-`firstWallet` wallet. Not known yet counts
+    /// as 0, so the shielded source is not offered.
     private var shieldedBalance: UInt64 {
         knownShieldedBalance ?? 0
     }
@@ -510,7 +509,7 @@ struct SendTransactionView: View {
     /// Account 0's spendable credits, or `nil` while not known yet. The
     /// balance row shows nil as not known rather than as a zero.
     private var knownShieldedBalance: UInt64? {
-        shieldedService.spendableShieldedCredits(walletId: wallet.walletId, account: 0)
+        walletManager.spendableShieldedCredits(walletId: wallet.walletId, account: 0)
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced

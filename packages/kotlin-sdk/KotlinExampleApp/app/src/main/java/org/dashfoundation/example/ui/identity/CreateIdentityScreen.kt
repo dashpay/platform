@@ -357,22 +357,14 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                     fundingKind =
                                         IdentityRegistrationController.FundingKind.ShieldedPool,
                                     body = {
-                                        try {
-                                            mgr.shieldedIdentityCreateFromPool(
-                                                walletId = wallet.walletId,
-                                                identityIndex = identityIndex,
-                                                keys = keys,
-                                                denomination = amount
-                                                    ?: error("A shielded denomination is required"),
-                                                fallbackAddress = fallbackAddress,
-                                            )
-                                        } finally {
-                                            // The spend reserved a note in Rust
-                                            // without touching the stored ones:
-                                            // read the balance again.
-                                            container.shieldedService
-                                                .refreshLocalBalance(wallet.walletId)
-                                        }
+                                        mgr.shieldedIdentityCreateFromPool(
+                                            walletId = wallet.walletId,
+                                            identityIndex = identityIndex,
+                                            keys = keys,
+                                            denomination = amount
+                                                ?: error("A shielded denomination is required"),
+                                            fallbackAddress = fallbackAddress,
+                                        )
                                     },
                                     // Ambiguous broadcast: the identity may
                                     // already be live — record Unconfirmed

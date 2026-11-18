@@ -287,6 +287,20 @@ class PlatformWalletManager(
     /** Hot stream of Rust-owned sync events for the services to reduce. */
     val syncEvents: SharedFlow<WalletSyncEvent> = _syncEvents.asSharedFlow()
 
+    private val _shieldedBalances =
+        MutableStateFlow<Map<String, ShieldedBalanceUpdate>>(emptyMap())
+
+    /**
+     * The latest shielded balance update of each wallet, by hex wallet id,
+     * as Rust announced it (`on_shielded_balance_changed_fn`). Rust sends an
+     * update whenever a wallet's balance state changes, so this is the
+     * balance to show: nothing reads or adds one up on the Kotlin side. A
+     * wallet without an entry has not been announced yet. A state, not an
+     * event stream, so a collector that starts late still sees the latest.
+     */
+    val shieldedBalances: StateFlow<Map<String, ShieldedBalanceUpdate>> =
+        _shieldedBalances.asStateFlow()
+
     // ── Children (retained for the manager's lifetime) ────────────────
     //
     // NOTE: [persistenceHandler] is declared below, after [mnemonicResolver],
@@ -413,6 +427,33 @@ class PlatformWalletManager(
 
         override fun onShieldedTreeProgress(leavesCommitted: Long, totalTarget: Long) {
             _syncEvents.tryEmit(WalletSyncEvent.ShieldedTreeProgress(leavesCommitted, totalTarget))
+        }
+
+        override fun onShieldedBalanceChanged(
+            walletId: ByteArray,
+            revision: Long,
+            status: Int,
+            ordinarySpendableCredits: Long,
+            ordinaryBalanceEstablished: Boolean,
+            accounts: LongArray,
+        ) {
+            // Runs on a native thread: an exception must not travel back
+            // into Rust. An update that cannot be read is dropped, and the
+            // wallet keeps the last one that could.
+            val update = try {
+                decodeShieldedBalanceUpdate(
+                    walletId,
+                    revision,
+                    status,
+                    ordinarySpendableCredits,
+                    ordinaryBalanceEstablished,
+                    accounts,
+                )
+            } catch (e: IllegalStateException) {
+                android.util.Log.w("PlatformWalletManager", "Dropped a shielded balance update: ${e.message}")
+                return
+            }
+            _shieldedBalances.update { latestShieldedBalances(it, update) }
         }
     }
 
@@ -1592,26 +1633,15 @@ class PlatformWalletManager(
             "accounts must contain at most 64 entries, got ${accounts.size}"
         }
         require(accounts.all { it >= 0 }) { "accounts must be non-negative" }
-        // Whether it succeeds or fails, the binding a local balance read
-        // started under may no longer be the one in force.
-        shieldedBindingFence.changing {
-            mapNativeErrors {
-                WalletManagerNative.shieldedBind(
-                    managerHandle,
-                    walletId,
-                    mnemonicResolver.nativeHandle,
-                    accounts.toIntArray(),
-                )
-            }
+        mapNativeErrors {
+            WalletManagerNative.shieldedBind(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                accounts.toIntArray(),
+            )
         }
     }
-
-    /**
-     * Tracks the shielded bind and clear calls of this manager. A local
-     * balance read that overlaps one of them is refused; see
-     * [localShieldedBalanceSnapshot].
-     */
-    private val shieldedBindingFence = ShieldedBindingFence()
 
     /**
      * Set the background shielded sync interval — port of Swift's
@@ -1656,11 +1686,7 @@ class PlatformWalletManager(
      * native entry point is absent otherwise and this throws.
      */
     suspend fun clearShieldedStorage() = withContext(Dispatchers.IO) {
-        // A Clear can empty the ledger and still return an error, so a read
-        // that overlaps it is obsolete either way.
-        shieldedBindingFence.changing {
-            mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }
-        }
+        mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }
     }
 
     // ── Shielded funding submits ──────────────────────────────────────
@@ -1687,41 +1713,6 @@ class PlatformWalletManager(
         mapNativeErrors {
             FundingNative.shieldedDefaultAddress(managerHandle, walletId, account)
         }
-    }
-
-    /**
-     * Read [walletId]'s local shielded balance: one coherent snapshot of
-     * every bound account plus the wallet's ordinary total, as Rust computes
-     * them. Port of Swift's `PlatformWalletManager.localShieldedBalanceSnapshot`
-     * (`PlatformWalletManagerShieldedLocalBalance.swift`). No network request
-     * and no mnemonic lookup.
-     *
-     * The native read waits at most 100 ms for the shielded store. A scan
-     * holds that store for its whole download, which can take minutes, and
-     * the read throws (wallet operation, "busy") for that long. Keep the last
-     * balance and read again after the sync pass completes; repeating the
-     * read at once does not get past the scan.
-     *
-     * [ShieldedLocalBalanceState.Unbound] and
-     * [ShieldedLocalBalanceState.RestoreIncomplete] carry no numbers.
-     *
-     * Rust reads the ledger under its own locks, but they do not cover the
-     * way back to Kotlin. If a [bindShielded] or [clearShieldedStorage] of
-     * this manager was running when the read started, or started before it
-     * finished, the snapshot may list the accounts of the binding it
-     * replaced, so it is not returned: the call throws
-     * [ShieldedLocalBalanceBindingChanged] and a new read is safe (Swift's
-     * `ShieldedLocalBalanceReadError.bindingChanged`). The check is made
-     * once the result is back on the caller's dispatcher. A bind or clear
-     * after this returns is the caller's to follow with a new read.
-     */
-    suspend fun localShieldedBalanceSnapshot(
-        walletId: ByteArray,
-    ): ShieldedLocalBalanceState = shieldedBindingFence.readingIn(Dispatchers.IO) {
-        val values = mapNativeErrors {
-            FundingNative.localShieldedBalanceSnapshot(managerHandle, walletId)
-        } ?: error("Local shielded balance snapshot returned nothing")
-        decodeLocalShieldedBalance(values)
     }
 
     /**

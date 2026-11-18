@@ -141,6 +141,34 @@ abstract class NativeWalletEventBridge {
     }
 
     /**
+     * `on_shielded_balance_changed_fn`, one wallet's shielded balance state
+     * after it changed. Descriptor `([BJIJZ[J)V`.
+     *
+     * @param walletId 32-byte wallet id.
+     * @param revision counts this wallet's updates, starting at 1.
+     * @param status 0 unbound, 1 restore incomplete, 2 ready. The remaining
+     *   arguments carry numbers only when ready.
+     * @param ordinarySpendableCredits spendable credits of the wallet's
+     *   ordinary accounts (identity accounts left out), a `u64` bit pattern.
+     * @param ordinaryBalanceEstablished whether every ordinary account has
+     *   evidence behind its amount; when false the credits are not the
+     *   wallet's balance.
+     * @param accounts every bound account as rows of five values: account
+     *   index, spendable credits, has last scanned index (0 or 1), last
+     *   scanned index, source (0 no history, 1 restored, 2 scanned this
+     *   session). Empty unless ready.
+     */
+    open fun onShieldedBalanceChanged(
+        walletId: ByteArray,
+        revision: Long,
+        status: Int,
+        ordinarySpendableCredits: Long,
+        ordinaryBalanceEstablished: Boolean,
+        accounts: LongArray,
+    ) {
+    }
+
+    /**
      * `on_shielded_tree_progress_fn` — descriptor `(JJ)V`. Fires per
      * committed batch as decrypted commitments append to the local Orchard
      * tree. [totalTarget] `== 0` means the on-chain total is indeterminate.

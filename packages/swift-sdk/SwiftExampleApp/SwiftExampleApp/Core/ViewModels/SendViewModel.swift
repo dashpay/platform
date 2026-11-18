@@ -120,11 +120,13 @@ class SendViewModel: ObservableObject {
     /// of these.
     @Published private(set) var offeredSources: [FundSource] = []
     /// Whether `selectedSource` is the user's explicit choice rather than
-    /// the automatic default. Cleared when the recipient changes to a
-    /// different known kind (Core, Orchard, Platform), and when the chosen
-    /// source stops being offered. Another address of the same kind keeps
-    /// it, and so does passing through an unparsable or empty recipient
-    /// while the user edits the address.
+    /// the automatic default. An explicit choice is never replaced by
+    /// another source: when it stops being offered it stays selected and
+    /// Send is disabled until the user picks again. It ends only when the
+    /// user picks another source or the recipient changes to a different
+    /// known kind (Core, Orchard, Platform). Another address of the same
+    /// kind keeps it, and so does passing through an unparsable or empty
+    /// recipient while the user edits the address.
     private(set) var sourceChosenByUser = false
     /// The kind of the last recipient that parsed to a known kind.
     private var lastRecipientKind: DashAddressType.Kind?
@@ -465,31 +467,46 @@ class SendViewModel: ObservableObject {
     }
 
     /// Apply the screen's currently offered sources (in their default
-    /// order). An explicit user choice that is still offered stays;
-    /// otherwise the first offered source is selected. Call it whenever
-    /// the offered list changes, for example when a balance that gates a
-    /// source arrives after the recipient was typed.
+    /// order). Call it whenever the offered list changes, for example when
+    /// a balance that gates a source arrives after the recipient was
+    /// typed. Without an explicit choice the first offered source is
+    /// selected. An explicit choice stays selected whether or not it is
+    /// offered: a send never moves to a source the user did not pick (a
+    /// shielded payment silently becoming a transparent one).
     func reconcileSource(available: [FundSource]) {
         offeredSources = available
-        guard !available.isEmpty else {
-            // Nothing is offered (no parsable recipient yet, or no funds):
-            // nothing can be sent, and there is no source to judge the
-            // explicit choice against, so it stays for the next list.
-            updateFlow()
-            return
-        }
-        if sourceChosenByUser, available.contains(selectedSource) {
-            updateFlow()
-            return
-        }
-        sourceChosenByUser = false
-        if let first = available.first {
+        if !sourceChosenByUser, let first = available.first {
             selectedSource = first
         }
         updateFlow()
     }
 
+    /// Whether the user's explicit choice is not offered right now for a
+    /// recipient the screen understands. The screen says so and Send
+    /// stays disabled until the user picks an offered source.
+    var chosenSourceUnavailable: Bool {
+        sourceChosenByUser
+            && detectedAddressType.kind != .unknown
+            && !offeredSources.contains(selectedSource)
+    }
+
+    /// The flow to send when Send was tapped while `tappedFlow` was shown:
+    /// `nil` unless that is still the current flow and its source is still
+    /// offered, so an asynchronous send never runs a route other than the
+    /// one the user confirmed.
+    func flowToSend(tappedFlow: SendFlow?) -> SendFlow? {
+        guard let tappedFlow, tappedFlow == detectedFlow,
+              offeredSources.contains(selectedSource) else { return nil }
+        return tappedFlow
+    }
+
     func updateFlow() {
+        guard offeredSources.contains(selectedSource) else {
+            // A source that is not offered has no route to show or send.
+            detectedFlow = nil
+            estimatedFee = nil
+            return
+        }
         switch (detectedAddressType, selectedSource) {
         case (.core, .core):
             detectedFlow = .coreToCore
@@ -552,16 +569,19 @@ class SendViewModel: ObservableObject {
     func executeSend(
         sdk: SDK,
         walletManager: PlatformWalletManager,
-        shieldedService: ShieldedService,
         platformState: AppState,
         wallet: PersistentWallet,
         platformWallet: ManagedPlatformWallet?,
         platformAddressWallet: ManagedPlatformAddressWallet?,
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        tappedFlow: SendFlow?
     ) async {
-        guard let flow = detectedFlow, offeredSources.contains(selectedSource) else { return }
+        guard let flow = flowToSend(tappedFlow: tappedFlow) else {
+            error = "The payment route changed after Send was tapped. Review it and tap Send again."
+            return
+        }
 
         isSending = true
         error = nil
@@ -737,10 +757,6 @@ class SendViewModel: ObservableObject {
                 // Per-operation spend authority: the resolver fires
                 // exactly for this spend (launch binds are
                 // viewing-key only and never read the mnemonic).
-                // The spend reserves notes in Rust without changing any
-                // stored note row, so refresh the cached balance when it
-                // returns, whatever the outcome.
-                defer { shieldedService.refreshLocalBalance(walletId: wallet.walletId) }
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
                     resolver: MnemonicResolver(),
@@ -762,10 +778,6 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                // The spend reserves notes in Rust without changing any
-                // stored note row, so refresh the cached balance when it
-                // returns, whatever the outcome.
-                defer { shieldedService.refreshLocalBalance(walletId: wallet.walletId) }
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
                     resolver: MnemonicResolver(),
@@ -785,10 +797,6 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                // The spend reserves notes in Rust without changing any
-                // stored note row, so refresh the cached balance when it
-                // returns, whatever the outcome.
-                defer { shieldedService.refreshLocalBalance(walletId: wallet.walletId) }
                 try await walletManager.shieldedWithdraw(
                     walletId: wallet.walletId,
                     resolver: MnemonicResolver(),
