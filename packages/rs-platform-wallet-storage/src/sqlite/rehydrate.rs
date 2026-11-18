@@ -4016,57 +4016,62 @@ mod tests {
             );
         }
 
-        /// A coin on a pool's address at the last normal child index, whose
-        /// refill target is a hardened index: strict fails the load with the
-        /// derivation error, and recovery counts it once and still holds the
-        /// coin in its account.
+        /// A CoinJoin coin on its pool's address at the last normal child
+        /// index, whose refill target is a hardened index. Strict fails the
+        /// load with the derivation error. Recovery keeps the coin in the
+        /// total through the fallback: in its stored owner's account, else
+        /// the first funds account (BIP44), not the account holding its
+        /// script. Without an owner only the restore reports the failure;
+        /// with one the owner's pool extension reports it too.
         #[test]
-        fn a_coin_whose_refill_passes_the_last_normal_index_is_still_held_in_recovery() {
+        fn a_coin_whose_refill_passes_the_last_normal_index_falls_back_in_recovery() {
             let (wallet, manifest) = fixture(49);
-            let deep_info = || {
+            let coin = utxo(1, &coinjoin_address(&wallet, 0));
+            let load = |ctx: &LoadCtx, utxo_accounts: &HashMap<OutPoint, OwningAccount>| {
                 let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-                let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
+                let funds = info.accounts.funds_account_mut(&cj()).unwrap();
                 let mut pools = funds.managed_account_type_mut().address_pools_mut();
                 let pool = (pools.iter_mut())
                     .find(|p| p.pool_type() == AddressPoolType::External)
                     .unwrap();
                 **pool = at_last_normal_index(pool);
-                info
-            };
-            let coin = utxo(1, &external_address(&wallet, &bip44(), 0));
-            let load = |ctx: &LoadCtx| {
-                let mut info = deep_info();
                 let result = load_into(
                     &mut info,
                     &manifest,
                     vec![coin.clone()],
-                    &HashMap::new(),
+                    utxo_accounts,
                     &HashMap::new(),
                     ctx,
                 );
                 (info, result)
             };
-            let (_, strict) = load(&LoadCtx::strict());
-            assert!(
-                matches!(
-                    strict,
-                    Err(WalletStorageError::RehydrationGapLimitFailed {
-                        source: key_wallet::Error::Bip32(_)
-                    })
-                ),
-                "{strict:?}"
-            );
-            let ctx = LoadCtx::recovery();
-            let (info, recovery) = load(&ctx);
-            recovery.expect("recovery tolerates the failed refill");
-            assert_eq!(
-                ctx.degradation()
-                    .by_site
-                    .get(&LoadSite::RehydrationMaintainGapLimit),
-                Some(&1)
-            );
-            assert_eq!(holders(&info, &coin.outpoint), vec![bip44()]);
-            assert_eq!(info.balance.total(), VALUE);
+            let ownerless = HashMap::new();
+            let owned = HashMap::from([(coin.outpoint, owner(&wallet, &cj()))]);
+            for utxo_accounts in [&ownerless, &owned] {
+                let (_, strict) = load(&LoadCtx::strict(), utxo_accounts);
+                assert!(
+                    matches!(
+                        strict,
+                        Err(WalletStorageError::RehydrationGapLimitFailed {
+                            source: key_wallet::Error::Bip32(_)
+                        })
+                    ),
+                    "{strict:?}"
+                );
+            }
+            for (utxo_accounts, holder, reports) in [(&ownerless, bip44(), 1), (&owned, cj(), 2)] {
+                let ctx = LoadCtx::recovery();
+                let (info, recovery) = load(&ctx, utxo_accounts);
+                recovery.expect("recovery tolerates the failed refill");
+                assert_eq!(
+                    ctx.degradation()
+                        .by_site
+                        .get(&LoadSite::RehydrationMaintainGapLimit),
+                    Some(&reports)
+                );
+                assert_eq!(holders(&info, &coin.outpoint), vec![holder]);
+                assert_eq!(info.balance.total(), VALUE);
+            }
         }
 
         fn contact() -> AccountType {
