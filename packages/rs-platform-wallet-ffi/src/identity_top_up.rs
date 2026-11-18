@@ -99,6 +99,13 @@ fn catch_address_top_up_panic(
 /// `ErrorAddressNonceMismatch` (21). The host must not submit it again; the
 /// next sync settles the outcome.
 ///
+/// The wallet holds the input addresses of a top-up reported 20: until a
+/// platform-address sync (or another proved result) shows the nonces it was
+/// signed with used, a top-up from any of them, on this export or
+/// [`platform_wallet_top_up_external_identity_from_addresses_with_signer`],
+/// is refused with 20 as well, before anything is read, signed or
+/// broadcast. The hold is not persisted: it ends with the process.
+///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
 /// - `identity_id` must point at a 32-byte identity id buffer for
@@ -208,8 +215,10 @@ unsafe fn funding_rows(
 ///
 /// On success `out_new_balance` is populated with the identity's
 /// post-transition credit balance returned by Platform. An identity
-/// Platform does not know returns `ErrorIdentityNotFound` before anything
-/// is signed or broadcast.
+/// Platform does not know returns `ErrorIdentityNotFound` (7) before anything
+/// is signed or broadcast, and a lookup that fails (a transport or proof
+/// failure, not Platform's answer) `ErrorIdentityLookupFailed` (80), likewise
+/// with nothing signed or broadcast, so it may be retried as it is.
 ///
 /// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
 /// executed or may still execute: its result was not proved, or the call
@@ -220,7 +229,10 @@ unsafe fn funding_rows(
 /// 20 and nothing is reconciled from it, and a refused broadcast reads as
 /// for [`platform_wallet_top_up_from_addresses_with_signer`] (20, never
 /// `ErrorAddressNonceMismatch` (21)). The host must not submit it again; the
-/// next sync settles the outcome.
+/// next sync settles the outcome. The input addresses of a top-up reported 20
+/// are held as for [`platform_wallet_top_up_from_addresses_with_signer`]: a
+/// top-up from any of them on either export is refused with 20 until a
+/// platform-address sync shows them settled.
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_top_up_from_addresses_with_signer`].

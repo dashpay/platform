@@ -70,10 +70,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorMasternodeListUnavailable = 46
     /// Address-nonce race: Platform rejected an address-funds transition (a
     /// transfer or withdrawal from Platform addresses, or an identity
-    /// registration or top-up from them) because the submitted address nonce
+    /// registration from them) because the submitted address nonce
     /// raced Platform's expected value (a lagging DAPI replica read). Safe to
     /// retry; the retry re-fetches the nonce and self-heals. A shield does not
-    /// return it (see `errorShieldedSpendUnconfirmed`). The submitted/expected
+    /// return it (see `errorShieldedSpendUnconfirmed`), nor does an identity
+    /// top-up from Platform addresses (its nonce verdict is
+    /// `errorTransactionBroadcastUnconfirmed`, 20). The submitted/expected
     /// nonce values travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
     /// Atomic Core selection found no or insufficient unreserved UTXOs.

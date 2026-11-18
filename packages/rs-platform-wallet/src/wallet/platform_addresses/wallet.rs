@@ -18,7 +18,8 @@ use crate::wallet::persister::WalletPersister;
 
 use super::provider::PlatformPaymentAddressProvider;
 
-use dash_sdk::query_types::AddressInfos;
+use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::{AddressInfo, AddressInfos};
 
 /// Merge transient derived addresses with persisted, hydrated balance keys.
 ///
@@ -323,6 +324,9 @@ impl PlatformAddressWallet {
         if address_infos.is_empty() {
             return (crate::PlatformAddressChangeSet::default(), true);
         }
+        // Proved nonces settle a held address spend whether or not the
+        // address resolves to a slot of this wallet below.
+        self.observe_proved_address_nonces(address_infos).await;
 
         let mut guard = self.provider.write().await;
         let Some(provider) = guard.as_mut() else {
@@ -468,6 +472,63 @@ impl PlatformAddressWallet {
         };
         drop(guard);
         (cs, persisted)
+    }
+
+    /// Release the address spends ([`WalletGeneration::hold_address_spend`])
+    /// whose held nonce `address_infos`, a proved read, shows used.
+    ///
+    /// [`WalletGeneration::hold_address_spend`]:
+    /// crate::wallet::core::WalletGeneration::hold_address_spend
+    async fn observe_proved_address_nonces(&self, address_infos: &AddressInfos) {
+        let generation = self
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .map(|info| Arc::clone(&info.generation));
+        if let Some(generation) = generation {
+            generation.observe_address_nonces(
+                address_infos
+                    .iter()
+                    .filter_map(|(address, info)| info.as_ref().map(|info| (*address, info.nonce))),
+            );
+        }
+    }
+
+    /// Settle the address spends this wallet holds (identity top-ups from
+    /// Platform addresses reported unconfirmed): one proved read of the held
+    /// addresses, reconciled as a transition's proof is, which releases each
+    /// one it shows at or past its held nonce. A held address it shows
+    /// before that nonce stays held: the spend may still execute. A failed
+    /// read keeps every hold, for the next sync. Run by [`Self::sync_balances`],
+    /// as the incremental sync carries no nonces.
+    pub(crate) async fn settle_held_address_spends(&self) {
+        let generation = self
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .map(|info| Arc::clone(&info.generation));
+        let Some(generation) = generation else {
+            return;
+        };
+        let held: BTreeSet<PlatformAddress> =
+            generation.held_address_spends().into_iter().collect();
+        if held.is_empty() {
+            return;
+        }
+        match AddressInfo::fetch_many_with_metadata(self.sdk.as_ref(), held, None).await {
+            Ok((address_infos, metadata)) => {
+                self.reconcile_address_infos(&address_infos, metadata.height, "held address spend")
+                    .await;
+            }
+            Err(error) => tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                %error,
+                "Reading the held platform addresses failed; their spends stay held until the \
+                 next sync"
+            ),
+        }
     }
 
     /// Get the network from the SDK.

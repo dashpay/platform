@@ -869,6 +869,22 @@ pub enum PlatformWalletError {
         expected_nonce: AddressNonce,
     },
 
+    /// An earlier identity top-up from this platform address may have been
+    /// delivered (it was reported unconfirmed, the SDK's
+    /// `StateTransitionResultUnconfirmed`), and no proof has shown the
+    /// address nonce it was signed with used yet: the wallet holds the
+    /// address, and this top-up was refused with nothing signed or
+    /// broadcast. Pending, not failed: the earlier top-up may still execute,
+    /// and a top-up signed after it executed would pay again. A
+    /// platform-address sync releases the hold once a proved read shows the
+    /// nonce used, as does a proved transition result showing it; the hold
+    /// is not persisted, so it ends with the process.
+    #[error(
+        "an earlier top-up from {address:?} may have been delivered and its outcome is not \
+         proved yet; sync platform addresses to settle it before topping up from it again"
+    )]
+    PlatformAddressSpendPending { address: PlatformAddress },
+
     #[error("Address sync failed: {0}")]
     AddressSync(String),
 

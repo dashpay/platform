@@ -92,6 +92,7 @@ impl IdentityWallet {
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
         let inputs = funding_inputs(inputs)?;
+        self.refuse_held_inputs(&inputs)?;
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -189,6 +190,7 @@ impl IdentityWallet {
         I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
     {
         let inputs = funding_inputs(inputs)?;
+        self.refuse_held_inputs(&inputs)?;
         let identity = Identity::fetch(&self.sdk, *identity_id)
             .await
             .map_err(|source| PlatformWalletError::IdentityLookupFailed {
@@ -207,6 +209,20 @@ impl IdentityWallet {
             )
             .await?;
         Ok((address_infos, new_balance, metadata.height))
+    }
+
+    /// Refuse a top-up from `inputs` while an earlier top-up from one of
+    /// them is held unconfirmed
+    /// ([`PlatformWalletError::PlatformAddressSpendPending`]), before
+    /// anything is read, signed or broadcast.
+    fn refuse_held_inputs(
+        &self,
+        inputs: &BTreeMap<PlatformAddress, Credits>,
+    ) -> Result<(), PlatformWalletError> {
+        match self.generation.held_address_spend(inputs.keys()) {
+            Some(address) => Err(PlatformWalletError::PlatformAddressSpendPending { address }),
+            None => Ok(()),
+        }
     }
 
     /// Build, sign, broadcast and wait for the top-up of `identity` from
@@ -228,6 +244,20 @@ impl IdentityWallet {
     /// `balance_before`, Platform's balance of the identity read before
     /// signing ([`bind_to_submitted_nonces`]); otherwise the top-up is
     /// reported unconfirmed and nothing is reconciled from it.
+    ///
+    /// The input addresses are held from the broadcast on
+    /// ([`WalletGeneration::hold_address_spend`]): a second top-up from one
+    /// of them is refused with
+    /// [`PlatformWalletError::PlatformAddressSpendPending`] while this one is
+    /// unconfirmed, as it may still execute and a top-up signed after it
+    /// executed would pay again. Only a top-up never sent, or proved, frees
+    /// them here; an unconfirmed one stays held until a proved read shows
+    /// the nonces used (a platform-address sync, or the proof of another
+    /// transition reconciled through
+    /// `PlatformAddressWallet::reconcile_address_infos`).
+    ///
+    /// [`WalletGeneration::hold_address_spend`]:
+    /// crate::wallet::core::WalletGeneration::hold_address_spend
     async fn submit_top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity: &Identity,
@@ -270,9 +300,15 @@ impl IdentityWallet {
         ensure_valid_state_transition_structure(&state_transition, self.sdk.version())
             .map_err(|e| top_up_error(e.into()))?;
 
+        // Hold the input addresses from here: a broadcast cut short (a
+        // dropped future, a panic) keeps the hold, as it may have delivered.
+        self.generation
+            .hold_address_spend(&submitted)
+            .map_err(|address| PlatformWalletError::PlatformAddressSpendPending { address })?;
         let delivery = broadcast_tracking_delivery(&self.sdk, &state_transition, settings).await;
+        let never_delivered = matches!(delivery, BroadcastDelivery::NeverDelivered(_));
         let identity_id = identity.id();
-        settle_top_up(&submitted, balance_before, delivery, || async {
+        let settled = settle_top_up(&submitted, balance_before, delivery, || async {
             let (result, metadata) = state_transition
                 .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
                     &self.sdk, settings,
@@ -281,7 +317,14 @@ impl IdentityWallet {
             proved_top_up(identity_id, &submitted, result)
                 .map(|(infos, balance)| (infos, balance, metadata))
         })
-        .await
+        .await;
+        // Settled: never sent, or proved with the submitted nonces used. An
+        // unconfirmed top-up keeps its addresses held until a proved read
+        // shows those nonces used.
+        if never_delivered || settled.is_ok() {
+            self.generation.release_address_spend(&submitted);
+        }
+        settled
     }
 }
 
@@ -440,12 +483,12 @@ pub(crate) fn funding_inputs(
 /// the same nonces (which spends them elsewhere) together with an unrelated
 /// credit to the same identity in the same window satisfies both, and an
 /// unexecuted top-up is then reported done. Closing that fully needs an
-/// execution-bound proof of this transition. The wallet does not serialise
-/// address spends per input address in-process: the address top-up holds
-/// only the wallet generation's shared lifecycle gate (a read guard), and
-/// the per-wallet `shield_guard` single-flight covers the shield-class
-/// operations, not this path, so two concurrent spends from one address
-/// in one process can be signed with the same nonce.
+/// execution-bound proof of this transition. Address top-ups from one
+/// address are serialised in-process by the input-address hold
+/// (`WalletGeneration::hold_address_spend`, taken before the broadcast), so
+/// two concurrent ones can be signed with the same nonce but only one is
+/// broadcast; other address spends (transfers, withdrawals, shields) do not
+/// take that hold.
 fn bind_to_submitted_nonces(
     submitted: &BTreeMap<PlatformAddress, AddressNonce>,
     balance_before: Credits,
