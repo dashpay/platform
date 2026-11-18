@@ -277,6 +277,18 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_index_only_delete_transition_state_validation: FeatureVersion,
     /// The erase kind, active from protocol version 15.
     pub document_erase_transition_state_validation: OptionalFeatureVersion,
+    /// Versions what check tx reserves, for each erase of a batch whose state it does not
+    /// validate, for the work the erase's refunds cause for other identities, which erase state
+    /// validation bills in the block (`erase_refund_recipient_reservation`).
+    ///
+    /// It reserves what `document_erase_transition_state_validation` bills, so a state validation
+    /// generation that bills an erase otherwise comes with a reservation generation that
+    /// reserves it.
+    ///
+    /// - `None` (protocol version 14 and below): no erase passes check tx's basic structure
+    ///   validation, so none reaches the reservation.
+    /// - `Some(0)` (protocol version 15+): one `erase_refund_recipient_cost` per erase.
+    pub document_erase_transition_refund_recipient_reservation: OptionalFeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,

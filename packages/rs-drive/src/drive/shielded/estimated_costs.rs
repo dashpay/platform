@@ -58,6 +58,7 @@ impl Drive {
                         provable_count_trees_weight: 0,
                         provable_count_sum_trees_weight: 0,
                         provable_count_provable_sum_trees_weight: 0,
+                        provable_count_provable_big_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -84,6 +85,7 @@ impl Drive {
                         provable_count_trees_weight: 0,
                         provable_count_sum_trees_weight: 0,
                         provable_count_provable_sum_trees_weight: 0,
+                        provable_count_provable_big_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -118,6 +120,7 @@ impl Drive {
                             provable_count_trees_weight: 0,
                             provable_count_sum_trees_weight: 0,
                             provable_count_provable_sum_trees_weight: 0,
+                            provable_count_provable_big_sum_trees_weight: 0,
                         },
                         None,
                         4, // 4 subtrees: notes, permanent nullifiers, anchors, anchors-by-height

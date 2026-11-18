@@ -18,7 +18,7 @@ jobs:
   rehearse:
     name: Sign and notarize without publishing
     # The image of the macOS leg of release-dashmate-packages in release.yml.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 180
     steps:
       # Stops a dispatch from an unreviewed ref by mistake. It cannot stop a

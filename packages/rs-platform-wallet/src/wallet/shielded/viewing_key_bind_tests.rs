@@ -19,7 +19,7 @@ use key_wallet::account::StandardAccountType;
 use crate::changeset::PersistenceError;
 use crate::changeset::PlatformWalletPersistence;
 use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
-use crate::test_support::funded_wallet_manager;
+use crate::test_support::funded_wallet_manager_from_seed;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::wallet::shielded::keys::OrchardKeySet;
@@ -192,12 +192,16 @@ fn coordinator_for(dir: &std::path::Path, network: Network) -> Arc<NetworkShield
 /// Build a `PlatformWallet` over a fresh test wallet manager with the
 /// given persister. Each call mimics one app process: a fresh handle
 /// whose shielded slot starts unbound.
+/// The seed of the wallet [`platform_wallet_with`] builds, the one the tests bind.
+const BIND_SEED: [u8; 64] = [0x42; 64];
+
 async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
 where
     P: PlatformWalletPersistence + 'static,
 {
+    // The wallet of the seed the tests bind: a bind takes no other.
     let (wallet_manager, wallet_id, balance, _signer) =
-        funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        funded_wallet_manager_from_seed(BIND_SEED, StandardAccountType::BIP44Account).await;
     // On the wallet manager's and the coordinators' network: the bare mock
     // SDK is a mainnet one, and a bind refuses a coordinator of another
     // network than the SDK's.
@@ -406,6 +410,71 @@ mod zero_amount_tests {
     }
 }
 
+/// A bind derives the viewing keys every shielded address of the wallet comes from,
+/// so it takes only the seed the wallet was created from: another seed is refused
+/// before anything is derived, stored or registered.
+#[tokio::test]
+async fn should_refuse_a_bind_with_a_seed_that_is_not_the_wallets() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("foreign_seed_bind"));
+    let stored_before = persister.stored_count();
+
+    let err = wallet
+        .bind_shielded(&[0x99u8; 64], &[0], &coordinator)
+        .await
+        .expect_err("a seed of another wallet is refused");
+    assert!(
+        matches!(&err, crate::PlatformWalletError::ShieldedKeyDerivation(message)
+            if message.contains("does not belong to this wallet")),
+        "{err}"
+    );
+    assert!(!wallet.is_shielded_bound().await);
+    assert_eq!(persister.stored_count(), stored_before, "nothing is stored");
+    assert!(persister.captured_viewing_keys().is_empty());
+    assert!(coordinator.registered_subwallets().await.is_empty());
+
+    // The wallet's own seed binds.
+    wallet
+        .bind_shielded(&BIND_SEED, &[0], &coordinator)
+        .await
+        .expect("the wallet's own seed binds");
+}
+
+/// An account added to a bound wallet takes its keys from the seed it is given, as a
+/// bind does, so another seed is refused there too: nothing is stored and the account
+/// is not bound.
+#[tokio::test]
+async fn should_refuse_an_account_add_with_a_seed_that_is_not_the_wallets() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("foreign_seed_add"));
+    wallet
+        .bind_shielded(&BIND_SEED, &[0], &coordinator)
+        .await
+        .expect("bound");
+    let stored_before = persister.stored_count();
+
+    let err = wallet
+        .shielded_add_account(&[0x99u8; 64], 1)
+        .await
+        .expect_err("a seed of another wallet is refused");
+    assert!(
+        matches!(&err, crate::PlatformWalletError::ShieldedKeyDerivation(message)
+            if message.contains("does not belong to this wallet")),
+        "{err}"
+    );
+    assert_eq!(persister.stored_count(), stored_before, "nothing is stored");
+    assert!(!wallet.shielded_account_indices().await.contains(&1));
+
+    // The wallet's own seed adds it.
+    wallet
+        .shielded_add_account(&BIND_SEED, 1)
+        .await
+        .expect("the wallet's own seed adds the account");
+    assert!(wallet.shielded_account_indices().await.contains(&1));
+}
+
 /// A shielded bind must not install ephemeral FVK state when the backend
 /// cannot persist and reload it. The capability gate runs before derivation,
 /// persistence, or coordinator registration.
@@ -433,7 +502,7 @@ async fn local_balance_bind_load_error_surfaces_and_retry_hydrates() {
     let coordinator = coordinator_at(&temp_dir("local_load_retry"));
     *persister.fail_next_load.lock().unwrap() = true;
     let error = wallet
-        .bind_shielded(&[42; 64], &[0], &coordinator)
+        .bind_shielded(&BIND_SEED, &[0], &coordinator)
         .await
         .expect_err("local storage failure must fail binding");
     assert!(error
@@ -449,7 +518,7 @@ async fn local_balance_bind_load_error_surfaces_and_retry_hydrates() {
     assert!(!wallet.is_shielded_bound().await);
 
     wallet
-        .bind_shielded(&[42; 64], &[0], &coordinator)
+        .bind_shielded(&BIND_SEED, &[0], &coordinator)
         .await
         .expect("retry bind");
     let ShieldedLocalBalanceState::Ready(snapshot) = coordinator

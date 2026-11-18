@@ -78,6 +78,8 @@ pub use sighash::{
     token_burn_from_pool_extra_sighash_data, token_burn_from_pool_extra_sighash_data_v0,
     token_pool_fee_bundle_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data_v0,
     token_pool_output_only_extra_sighash_data, token_pool_output_only_extra_sighash_data_v0,
+    token_pool_paid_fee_binding_extra_sighash_data,
+    token_pool_paid_fee_binding_extra_sighash_data_v0,
     token_purchase_from_shielded_pool_extra_sighash_data,
     token_purchase_from_shielded_pool_extra_sighash_data_v0,
     token_shielded_transfer_extra_sighash_data, token_shielded_transfer_extra_sighash_data_v0,

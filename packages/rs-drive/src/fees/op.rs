@@ -1894,6 +1894,9 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
             }
+            TreeType::ProvableCountProvableBigSumTree => {
+                Element::empty_provable_count_provable_big_sum_tree_with_flags(element_flags)
+            }
             TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
             TreeType::CommitmentTree(chunk_power) => {
                 Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)?

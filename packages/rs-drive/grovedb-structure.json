@@ -157,6 +157,12 @@
       "is_tree": false,
       "is_opaque": false,
       "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
     }
   ],
   "flag_kinds": [
@@ -5658,11 +5664,11 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
+                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                "description": "The polls ending at this time.",
+                "description": "The polls ending at this time. The last key, VOTE_POLLS_LEFT_OPEN_END_DATE (i64::MAX), is a time no block reaches: it lists the contests whose end left them open because the winner could not be awarded its document (protocol version 15). Such a contest keeps its contenders, documents, votes, record and prefunded balance.",
                 "children": [
                   {
                     "id": "votes.end_date_queries.end_date.poll",
@@ -5683,7 +5689,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
+                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",

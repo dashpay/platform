@@ -1,79 +1,43 @@
 //! The viewing keys a DashPay contact request's shielded address is derived from.
 //!
-//! The identity wallet sends contact requests and holds no shielded keys. The keys, and
-//! the record of which identity's shielded account was proven against the seed in this
-//! session, live with the platform wallet. [`ContactShieldedAddresses`] is the view of
-//! both that the two share, so the identity wallet can derive the address a request
-//! carries without the platform wallet handing it one.
+//! The identity wallet sends contact requests and holds no shielded keys. The keys live
+//! with the platform wallet. [`ContactShieldedAddresses`] is the view of them that the
+//! two share, so the identity wallet can derive the address a request carries without
+//! the platform wallet handing it one.
 
-use super::tips::PreparedTipAccount;
 use super::AccountViewingKeys;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::Identity;
-use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, PoisonError};
-use tokio::sync::RwLock;
+use std::sync::Arc;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
-/// The bound shielded viewing keys of a wallet and its seed-proven identity accounts.
-/// Cloning shares both; the default holds no keys and no proven account.
+/// The bound shielded viewing keys of a wallet. Cloning shares them; the default holds
+/// no keys.
 #[derive(Clone, Default)]
 pub(crate) struct ContactShieldedAddresses {
     viewing_keys: Arc<RwLock<Option<BTreeMap<u32, AccountViewingKeys>>>>,
-    prepared_accounts: Arc<Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
 }
 
 impl ContactShieldedAddresses {
-    /// A view of the platform wallet's own maps.
+    /// A view of the platform wallet's own key map.
     pub(crate) fn new(
         viewing_keys: Arc<RwLock<Option<BTreeMap<u32, AccountViewingKeys>>>>,
-        prepared_accounts: Arc<Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
     ) -> Self {
-        Self {
-            viewing_keys,
-            prepared_accounts,
-        }
+        Self { viewing_keys }
     }
 
-    /// Whether `account` is prepared for `identity`: the preparation stands, and the
-    /// identity still carries the key the seed proved for it. The preparation is recorded
-    /// by identity id, and an identity removed and added back is another record under
-    /// that id, so the caller asks this under the wallet-manager lock it reads the
-    /// identity with.
-    pub(crate) fn is_prepared_for(&self, identity: &Identity, account: u32) -> bool {
-        self.prepared_accounts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&identity.id())
-            .and_then(|prepared| prepared.standing_account_of(identity))
-            == Some(account)
-    }
-
-    /// The viewing keys of `account`, the shielded account `identity_id` holds now, when
-    /// it is the account prepared for that identity in this session and the preparation
-    /// stands. `None` otherwise.
+    /// The viewing keys of `account`, or `None` when the wallet is not bound or the
+    /// account is not among the bound ones. The keys are read under the guard returned,
+    /// so no bind replaces them while it lives: a bind takes the key map for writing.
     ///
-    /// A recorded identity index is not proof of the account: hosts restore a placeholder
-    /// index, and discovery can move an identity. Preparation proves the index with the
-    /// seed, so only a prepared account's keys derive an address that is given away.
-    pub(crate) async fn proven_account_keys(
+    /// Having the keys of an account proves nothing about which identity it belongs to:
+    /// the caller proves that before it gives away an address derived from them.
+    pub(crate) async fn account_keys(
         &self,
-        identity_id: &Identifier,
         account: u32,
-    ) -> Option<AccountViewingKeys> {
-        // The keys are read first and the preparation checked under their
-        // lock, which a bind takes for writing: the keys returned are the ones
-        // bound while the preparation stood, never those of a later bind.
-        let viewing_keys = self.viewing_keys.read().await;
-        let standing = self
-            .prepared_accounts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(identity_id)
-            .and_then(PreparedTipAccount::standing_account);
-        if standing != Some(account) {
-            return None;
-        }
-        viewing_keys.as_ref()?.get(&account).cloned()
+    ) -> Option<RwLockReadGuard<'_, AccountViewingKeys>> {
+        RwLockReadGuard::try_map(self.viewing_keys.read().await, |keys| {
+            keys.as_ref()?.get(&account)
+        })
+        .ok()
     }
 }

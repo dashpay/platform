@@ -56,11 +56,14 @@ pub enum ElementKind {
     SumItemWithBackwardsReferences,
     /// An item with a sum that records the references pointing at it
     ItemWithSumItemWithBackwardsReferences,
+    /// A count sum tree with an i128 total whose count and sum are part of
+    /// the hashed state
+    ProvableCountProvableBigSumTree,
 }
 
 impl ElementKind {
     /// Every kind, in declaration order
-    pub const ALL: [ElementKind; 26] = [
+    pub const ALL: [ElementKind; 27] = [
         ElementKind::Item,
         ElementKind::Reference,
         ElementKind::Tree,
@@ -87,6 +90,7 @@ impl ElementKind {
         ElementKind::ItemWithBackwardsReferences,
         ElementKind::SumItemWithBackwardsReferences,
         ElementKind::ItemWithSumItemWithBackwardsReferences,
+        ElementKind::ProvableCountProvableBigSumTree,
     ];
 
     /// The kind of an element. Looks through the `NonCounted`, `NotSummed`
@@ -131,6 +135,9 @@ impl ElementKind {
             Element::ItemWithSumItemWithBackwardsReferences(..) => {
                 ElementKind::ItemWithSumItemWithBackwardsReferences
             }
+            Element::ProvableCountProvableBigSumTree(..) => {
+                ElementKind::ProvableCountProvableBigSumTree
+            }
         }
     }
 
@@ -153,7 +160,8 @@ impl ElementKind {
             | ElementKind::ProvableSumIndexedTree
             | ElementKind::ProvableCountIndexedTree
             | ElementKind::ProvableCountProvableSumIndexedTree
-            | ElementKind::PrivateDocumentStore => true,
+            | ElementKind::PrivateDocumentStore
+            | ElementKind::ProvableCountProvableBigSumTree => true,
             ElementKind::Item
             | ElementKind::Reference
             | ElementKind::SumItem

@@ -21,6 +21,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::choose_first_reservation;
+use crate::execution::validation::state_transition::batch::erase_refund_recipient_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -40,6 +41,8 @@ use crate::execution::validation::state_transition::processor::traits::address_b
 use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
 use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_patterns::validate_contract_schema_patterns_for_check_tx;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
@@ -541,6 +544,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     &mut state_transition_execution_context,
                     platform_version,
                 );
+                // An erase is billed in a block for the work its refunds cause. Inert before
+                // protocol version 15: basic structure validation above refuses the erase kind,
+                // so no action here holds an erase.
+                reserve_erase_refund_recipient_work(
+                    &action,
+                    platform,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                )?;
             }
 
             let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -748,6 +760,14 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         &mut state_transition_execution_context,
                         platform_version,
                     );
+                    // As on the first check. Inert before protocol version 15: only a
+                    // transaction the first check admitted is rechecked, and none holds an erase.
+                    reserve_erase_refund_recipient_work(
+                        &action,
+                        platform,
+                        &mut state_transition_execution_context,
+                        platform_version,
+                    )?;
                 }
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -783,6 +803,36 @@ fn reserve_choose_first_scans(
     for operation in choose_first_reservation(action, platform_version) {
         execution_context.add_operation(operation);
     }
+}
+
+/// Reserves, on top of the estimated fee of `action`, the work the refunds of each of its
+/// erases cause for other identities (see `erase_refund_recipient_reservation`), priced at the
+/// epoch check tx estimates in, for an action whose state check tx did not validate. Fee
+/// validation then admits only a signer who could pay for it.
+///
+/// Inert before protocol version 15, where no batch holds an erase: the loop finds none, so
+/// it adds nothing and reaches no versioned method.
+fn reserve_erase_refund_recipient_work<C>(
+    action: &StateTransitionAction,
+    platform: &PlatformRef<C>,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    let StateTransitionAction::BatchAction(batch) = action else {
+        return Ok(());
+    };
+    for transition in batch.transitions() {
+        if let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(_)) =
+            transition
+        {
+            execution_context.add_operation(erase_refund_recipient_reservation(
+                platform.drive,
+                platform.state.last_committed_block_epoch_ref(),
+                platform_version,
+            )?);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

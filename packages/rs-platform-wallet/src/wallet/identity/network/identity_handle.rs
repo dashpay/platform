@@ -536,8 +536,8 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// the source rendered after process restart.
     pub(crate) dpns_sync_progress:
         Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
-    /// The platform wallet's shielded viewing keys and seed-proven identity accounts,
-    /// from which the address a contact request carries is derived
+    /// The platform wallet's shielded viewing keys, from which the address a contact
+    /// request carries is derived
     /// ([`Self::contact_shielded_address`]).
     #[cfg(feature = "shielded")]
     pub(crate) contact_shielded_addresses: crate::wallet::shielded::ContactShieldedAddresses,

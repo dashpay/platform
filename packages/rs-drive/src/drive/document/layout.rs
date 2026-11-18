@@ -294,6 +294,7 @@ fn tree_kind_name(tree_type: TreeType) -> &'static str {
         TreeType::ProvableCountIndexedTree => "ProvableCountIndexedTree",
         TreeType::ProvableCountProvableSumIndexedTree => "ProvableCountProvableSumIndexedTree",
         TreeType::PrivateDocumentStore(_) => "PrivateDocumentStore",
+        TreeType::ProvableCountProvableBigSumTree => "ProvableCountProvableBigSumTree",
     }
 }
 
