@@ -245,6 +245,10 @@ pub fn verify_auto_accept_proof_with_pubkey(
         Ok(s) => s,
         Err(_) => return false,
     };
+    // Core's `verify` accepts a high-S signature like its low-S twin; refuse it.
+    if !signature.is_low_s() {
+        return false;
+    }
 
     pubkey.verify(&msg_hash, signature).is_ok()
 }
@@ -617,6 +621,32 @@ mod tests {
         ));
         assert!(!verify_auto_accept_proof_with_pubkey(
             &pubkey, &proof, &scanner, &owner, 999
+        ));
+    }
+
+    #[test]
+    fn should_reject_the_high_s_twin_of_a_valid_proof() {
+        let wallet = test_wallet();
+        let (scanner, owner) = test_ids();
+        let expiry = 1_700_000_000u32;
+        let key =
+            derive_auto_accept_private_key(&wallet, Network::Testnet, expiry).expect("derive");
+        let proof = sign_auto_accept_proof(&key, &scanner, &owner, 7, expiry);
+        let pubkey = key.public_key();
+        assert!(verify_auto_accept_proof_with_pubkey(
+            &pubkey, &proof, &scanner, &owner, 7
+        ));
+
+        // S -> n - S yields a second signature over the same message that a third party can
+        // derive; the raw backend never accepted it.
+        let mut twin = proof.clone();
+        let s: [u8; 32] = twin[38..70].try_into().expect("32-byte S");
+        let negated = secp256k1::SecretKey::from_secret_bytes(s)
+            .expect("S is a valid scalar")
+            .negate();
+        twin[38..70].copy_from_slice(&negated.to_secret_bytes());
+        assert!(!verify_auto_accept_proof_with_pubkey(
+            &pubkey, &twin, &scanner, &owner, 7
         ));
     }
 
