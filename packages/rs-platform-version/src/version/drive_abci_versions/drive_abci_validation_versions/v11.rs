@@ -83,6 +83,9 @@ use super::{
 ///   `document_erase_transition_structure_validation` and
 ///   `document_erase_transition_state_validation` are `Some(0)`: an erase must name an
 ///   erasable type and a deleted document, with its owner's authorization to begin.
+///   `document_erase_transition_refund_recipient_reservation` is `Some(0)`: check tx reserves,
+///   for each erase of a batch whose state it does not validate, the refund work erase state
+///   validation bills in the block.
 ///
 /// - document create `state_validation` 3 and document replace `state_validation` 2 (1 before)
 ///   hold a write to the total its type keeps of its summed property (`documentsSummable` or
@@ -142,6 +145,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_delete_transition_state_validation: 1, // the upstream owner, nonce and constraint checks also cover a history delete
                 document_erase_transition_structure_validation: Some(0), // an erase requires a permanent erasable history type
                 document_erase_transition_state_validation: Some(0), // a deleted document needs owner authorization to start erasure
+                document_erase_transition_refund_recipient_reservation: Some(0), // check tx reserves the refund work an erase is billed for
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index

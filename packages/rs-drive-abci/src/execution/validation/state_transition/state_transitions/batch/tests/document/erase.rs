@@ -1250,10 +1250,29 @@ async fn should_refuse_an_erase_at_protocol_14_as_an_unsupported_version() {
         "the erase rides in the shipped batch format"
     );
 
-    let result = process(
-        &mut platform,
-        erase.serialize_to_bytes().expect("serialized"),
+    let serialized = erase.serialize_to_bytes().expect("serialized");
+    // Check tx refuses it the same way, before anything that check tx reserves for an erase
+    // from protocol version 15.
+    let state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+    let checked = platform
+        .check_tx(&serialized, FirstTimeCheck, &platform_ref, released)
+        .expect("check tx refuses the erase without an internal error");
+    assert_matches!(
+        checked.errors.as_slice(),
+        [ConsensusError::BasicError(
+            BasicError::UnsupportedVersionError(_)
+        )],
+        "protocol 14 check tx must refuse the erase kind by its version bounds"
     );
+    drop(state);
+
+    let result = process(&mut platform, serialized);
 
     assert_matches!(
         result,

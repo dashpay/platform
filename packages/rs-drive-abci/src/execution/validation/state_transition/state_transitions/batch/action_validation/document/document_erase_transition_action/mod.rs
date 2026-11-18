@@ -12,9 +12,10 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
 
 mod advanced_structure_v0;
+mod erase_refund_recipient_reservation;
 mod state_v0;
 
-pub(in crate::execution::validation::state_transition) use state_v0::erase_refund_recipient_reservation;
+pub(in crate::execution::validation::state_transition) use erase_refund_recipient_reservation::erase_refund_recipient_reservation;
 
 pub trait DocumentEraseTransitionActionValidation {
     fn validate_structure(

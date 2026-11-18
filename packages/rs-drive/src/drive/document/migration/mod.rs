@@ -15,7 +15,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentPropertyType;
-use dpp::document::DocumentV0;
+use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
@@ -292,9 +292,10 @@ impl Drive {
                             };
                             stats.revisions += 1;
                             stats.revision_bytes += bytes.len() as u64;
-                            let (id, revision) = DocumentV0::id_and_revision_from_bytes(
+                            let (id, revision) = Document::id_and_revision_from_bytes(
                                 bytes,
                                 document_type.as_ref(),
+                                platform_version,
                             )
                             .map_err(|error| {
                                 corrupt(format!(

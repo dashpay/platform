@@ -3,7 +3,6 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
-use crate::document::v0::DocumentV0;
 use crate::nft::TradeMode;
 use crate::prelude::Revision;
 use crate::ProtocolError;
@@ -12,88 +11,87 @@ use platform_value::Identifier;
 use platform_version::version::FeatureVersion;
 use std::io::Read;
 
-impl DocumentV0 {
-    /// Reads the id and the revision of a serialized document from the fields
-    /// every serialization format (0 to 3) writes ahead of the document's
-    /// properties, without decoding the properties.
-    ///
-    /// The fields are the format, the contract version stamp (format 3), the
-    /// id, the owner id, the creator id (formats 2 and 3, for a type whose
-    /// documents can change hands) and the revision (for a type whose documents
-    /// carry one). Which of them are present depends on the type's
-    /// configuration, which a contract update cannot change, and never on its
-    /// properties. Bytes stored before an update changed how the properties
-    /// are encoded (the member order of a nested object, an optional member
-    /// added ahead of others) give their id and revision here, although
-    /// [`DocumentV0::from_bytes`] with the updated type no longer reads them.
-    /// For bytes [`DocumentV0::from_bytes`] reads, this returns the id and the
-    /// revision it decodes.
-    ///
-    /// The history migration on the first block of protocol version 15 keys
-    /// every retained revision by what this returns, so what it accepts and
-    /// returns for bytes written in formats 0 to 3 must never change.
-    pub fn id_and_revision_from_bytes(
-        mut serialized_document: &[u8],
-        document_type: DocumentTypeRef,
-    ) -> Result<(Identifier, Option<Revision>), ProtocolError> {
-        let format: FeatureVersion = serialized_document
-            .read_varint()
-            .map_err(|error| header_error("serialization format", error))?;
-        match format {
-            0..=2 => {}
-            3 => {
-                let stamp: u64 = serialized_document
-                    .read_varint()
-                    .map_err(|error| header_error("contract version stamp", error))?;
-                if stamp > u32::MAX as u64 {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::CorruptedSerialization(
-                            "contract version stamp does not fit in a u32".to_string(),
-                        ),
-                    ));
-                }
-            }
-            version => {
-                return Err(ProtocolError::UnknownVersionMismatch {
-                    method: "DocumentV0::id_and_revision_from_bytes".to_string(),
-                    known_versions: vec![0, 1, 2, 3],
-                    received: version,
-                })
+/// Reads the id and the revision of a serialized document from the fields every
+/// serialization format (0 to 3) writes ahead of the document's properties,
+/// without decoding the properties.
+///
+/// The fields are the format, the contract version stamp (format 3), the id,
+/// the owner id, the creator id (formats 2 and 3, for a type whose documents
+/// can change hands) and the revision (for a type whose documents carry one).
+/// Which of them are present depends on the type's configuration, which a
+/// contract update cannot change, and never on its properties. Bytes stored
+/// before an update changed how the properties are encoded (the member order
+/// of a nested object, an optional member added ahead of others) give their id
+/// and revision here, although `DocumentV0::from_bytes` with the updated type
+/// no longer reads them. For bytes `DocumentV0::from_bytes` reads, this returns
+/// the id and the revision it decodes, and it refuses what that refuses in
+/// these fields.
+///
+/// The protocol version 15 migration keys every retained revision by what this
+/// returns, so what it accepts and returns for bytes written in formats 0 to 3
+/// never changes: a different reading is a new generation.
+#[inline(always)]
+pub(super) fn id_and_revision_from_bytes_v0(
+    mut serialized_document: &[u8],
+    document_type: DocumentTypeRef,
+) -> Result<(Identifier, Option<Revision>), ProtocolError> {
+    let format: FeatureVersion = serialized_document
+        .read_varint()
+        .map_err(|error| header_error("serialization format", error))?;
+    match format {
+        0..=2 => {}
+        3 => {
+            let stamp: u64 = serialized_document
+                .read_varint()
+                .map_err(|error| header_error("contract version stamp", error))?;
+            if stamp > u32::MAX as u64 {
+                return Err(ProtocolError::DataContractError(
+                    DataContractError::CorruptedSerialization(
+                        "contract version stamp does not fit in a u32".to_string(),
+                    ),
+                ));
             }
         }
-        let mut id = [0; 32];
-        serialized_document
-            .read_exact(&mut id)
-            .map_err(|error| header_error("id", error))?;
-        let mut identifier = [0; 32];
-        serialized_document
-            .read_exact(&mut identifier)
-            .map_err(|error| header_error("owner id", error))?;
-        if format >= 2
-            && (document_type.trade_mode() != TradeMode::None
-                || document_type.documents_transferable().is_transferable())
-        {
-            let mut has_creator_id = [0];
-            serialized_document
-                .read_exact(&mut has_creator_id)
-                .map_err(|error| header_error("creator id flag", error))?;
-            if has_creator_id[0] > 0 {
-                serialized_document
-                    .read_exact(&mut identifier)
-                    .map_err(|error| header_error("creator id", error))?;
-            }
+        version => {
+            return Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::id_and_revision_from_bytes (serialization format)".to_string(),
+                known_versions: vec![0, 1, 2, 3],
+                received: version,
+            })
         }
-        let revision = if document_type.requires_revision() {
-            Some(
-                serialized_document
-                    .read_varint()
-                    .map_err(|error| header_error("revision", error))?,
-            )
-        } else {
-            None
-        };
-        Ok((Identifier::new(id), revision))
     }
+    let mut id = [0; 32];
+    serialized_document
+        .read_exact(&mut id)
+        .map_err(|error| header_error("id", error))?;
+    let mut identifier = [0; 32];
+    serialized_document
+        .read_exact(&mut identifier)
+        .map_err(|error| header_error("owner id", error))?;
+    if format >= 2
+        && (document_type.trade_mode() != TradeMode::None
+            || document_type.documents_transferable().is_transferable())
+    {
+        let mut has_creator_id = [0];
+        serialized_document
+            .read_exact(&mut has_creator_id)
+            .map_err(|error| header_error("creator id flag", error))?;
+        if has_creator_id[0] > 0 {
+            serialized_document
+                .read_exact(&mut identifier)
+                .map_err(|error| header_error("creator id", error))?;
+        }
+    }
+    let revision = if document_type.requires_revision() {
+        Some(
+            serialized_document
+                .read_varint()
+                .map_err(|error| header_error("revision", error))?,
+        )
+    } else {
+        None
+    };
+    Ok((Identifier::new(id), revision))
 }
 
 fn header_error(field: &str, error: std::io::Error) -> ProtocolError {
@@ -112,8 +110,10 @@ mod tests {
     use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
     use crate::data_contract::document_type::DocumentType;
     use crate::data_contract::errors::DataContractError;
+    use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
     use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use crate::document::v0::DocumentV0;
+    use crate::document::Document;
     use crate::ProtocolError;
     use integer_encoding::VarInt;
     use platform_value::{platform_value, Identifier, Value};
@@ -238,10 +238,10 @@ mod tests {
     fn serialize(document: &DocumentV0, format: u16, document_type: &DocumentType) -> Vec<u8> {
         let document_type = document_type.as_ref();
         match format {
-            0 => document.serialize_v0(document_type),
-            1 => document.serialize_v1(document_type),
-            2 => document.serialize_v2(document_type),
-            3 => document.serialize_v3(document_type),
+            0 => DocumentPlatformSerializationMethodsV0::serialize_v0(document, document_type),
+            1 => DocumentPlatformSerializationMethodsV0::serialize_v1(document, document_type),
+            2 => DocumentPlatformSerializationMethodsV0::serialize_v2(document, document_type),
+            3 => DocumentPlatformSerializationMethodsV0::serialize_v3(document, document_type),
             _ => unreachable!("formats 0 to 3"),
         }
         .expect("a serializable document")
@@ -279,8 +279,12 @@ mod tests {
                         DocumentV0::from_bytes(&bytes, document_type.as_ref(), platform_version)
                             .expect("bytes the type reads");
                     assert_eq!(
-                        DocumentV0::id_and_revision_from_bytes(&bytes, document_type.as_ref())
-                            .expect("a readable header"),
+                        Document::id_and_revision_from_bytes(
+                            &bytes,
+                            document_type.as_ref(),
+                            PlatformVersion::latest()
+                        )
+                        .expect("a readable header"),
                         (decoded.id, decoded.revision),
                         "{name} type, format {format}, creator {creator_id:?}"
                     );
@@ -308,8 +312,12 @@ mod tests {
                         "the {change} type no longer reads the {name} document in format {format}"
                     );
                     assert_eq!(
-                        DocumentV0::id_and_revision_from_bytes(&bytes, updated.as_ref())
-                            .expect("a readable header"),
+                        Document::id_and_revision_from_bytes(
+                            &bytes,
+                            updated.as_ref(),
+                            PlatformVersion::latest()
+                        )
+                        .expect("a readable header"),
                         (Identifier::new([9; 32]), revision),
                         "{name} type, {change}, format {format}"
                     );
@@ -327,13 +335,22 @@ mod tests {
         let bytes = serialize(&document(Some(4), None), 3, &document_type);
         for truncated in [&bytes[..0], &bytes[..1], &bytes[..40], &bytes[..66]] {
             assert!(
-                DocumentV0::id_and_revision_from_bytes(truncated, document_type.as_ref()).is_err(),
+                Document::id_and_revision_from_bytes(
+                    truncated,
+                    document_type.as_ref(),
+                    PlatformVersion::latest()
+                )
+                .is_err(),
                 "{} bytes hold no complete header",
                 truncated.len()
             );
         }
         assert!(matches!(
-            DocumentV0::id_and_revision_from_bytes(&[4, 0], document_type.as_ref()),
+            Document::id_and_revision_from_bytes(
+                &[4, 0],
+                document_type.as_ref(),
+                PlatformVersion::latest()
+            ),
             Err(ProtocolError::UnknownVersionMismatch { received: 4, .. })
         ));
     }
@@ -357,14 +374,22 @@ mod tests {
                 (flag + 33, "before the revision"),
             ] {
                 assert!(
-                    DocumentV0::id_and_revision_from_bytes(&bytes[..end], document_type.as_ref())
-                        .is_err(),
+                    Document::id_and_revision_from_bytes(
+                        &bytes[..end],
+                        document_type.as_ref(),
+                        PlatformVersion::latest()
+                    )
+                    .is_err(),
                     "format {format} cut {cut} holds no complete header"
                 );
             }
             assert_eq!(
-                DocumentV0::id_and_revision_from_bytes(&bytes[..flag + 34], document_type.as_ref())
-                    .expect("a complete header"),
+                Document::id_and_revision_from_bytes(
+                    &bytes[..flag + 34],
+                    document_type.as_ref(),
+                    PlatformVersion::latest()
+                )
+                .expect("a complete header"),
                 (Identifier::new([9; 32]), Some(4)),
                 "format {format}"
             );
@@ -384,8 +409,12 @@ mod tests {
         let largest = with_stamp(u32::MAX as u64);
         assert!(DocumentV0::from_bytes(&largest, document_type.as_ref(), platform_version).is_ok());
         assert_eq!(
-            DocumentV0::id_and_revision_from_bytes(&largest, document_type.as_ref())
-                .expect("a stamp that fits in a u32"),
+            Document::id_and_revision_from_bytes(
+                &largest,
+                document_type.as_ref(),
+                PlatformVersion::latest()
+            )
+            .expect("a stamp that fits in a u32"),
             (Identifier::new([9; 32]), Some(4))
         );
         let too_large = with_stamp(u32::MAX as u64 + 1);
@@ -393,7 +422,11 @@ mod tests {
             DocumentV0::from_bytes(&too_large, document_type.as_ref(), platform_version).is_err()
         );
         assert!(matches!(
-            DocumentV0::id_and_revision_from_bytes(&too_large, document_type.as_ref()),
+            Document::id_and_revision_from_bytes(
+                &too_large,
+                document_type.as_ref(),
+                PlatformVersion::latest()
+            ),
             Err(ProtocolError::DataContractError(
                 DataContractError::CorruptedSerialization(_)
             ))

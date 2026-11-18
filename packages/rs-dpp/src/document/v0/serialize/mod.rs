@@ -25,7 +25,6 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::DataContractConfig;
 
-mod header;
 mod v0;
 mod v1;
 mod v2;

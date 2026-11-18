@@ -41,6 +41,8 @@ use crate::execution::validation::state_transition::processor::traits::address_b
 use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
 use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_patterns::validate_contract_schema_patterns_for_check_tx;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
@@ -534,10 +536,18 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             }
 
             // A create choosing the first of the commitments to its values reads up to its scan's
-            // budget of competitors in a block, and an erase is billed for the work its refunds
-            // cause; their state was not validated here, so the signer is held to both too
+            // budget of competitors in a block; its state was not validated here, so the signer
+            // is held to that budget too
             if !validates_state {
-                reserve_unvalidated_state_work(
+                reserve_choose_first_scans(
+                    &action,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                );
+                // An erase is billed in a block for the work its refunds cause. Inert before
+                // protocol version 15: basic structure validation above refuses the erase kind,
+                // so no action here holds an erase.
+                reserve_erase_refund_recipient_work(
                     &action,
                     platform,
                     &mut state_transition_execution_context,
@@ -743,10 +753,16 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
-                // As on the first check: the budget of a scan and the refund work of an erase
-                // whose state was not validated
+                // As on the first check: the budget of a scan whose state was not validated
                 if !relies_on_gas_sponsor_to_pay {
-                    reserve_unvalidated_state_work(
+                    reserve_choose_first_scans(
+                        &action,
+                        &mut state_transition_execution_context,
+                        platform_version,
+                    );
+                    // As on the first check. Inert before protocol version 15: only a
+                    // transaction the first check admitted is rechecked, and none holds an erase.
+                    reserve_erase_refund_recipient_work(
                         &action,
                         platform,
                         &mut state_transition_execution_context,
@@ -775,25 +791,47 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     }
 }
 
-/// Reserves, on top of the estimated fee of `action`, what state validation bills in a block
-/// for an action whose state check tx did not validate: what the `chooseFirst` checks of its
-/// creates may bill (see `choose_first_reservation`: their two hashes and the competitor scan's
-/// budget) and the work the refunds of its erases cause for other identities (see
-/// `erase_refund_recipient_reservation`), priced at the epoch check tx estimates in. Fee
+/// Reserves, on top of the estimated fee of `action`, what the `chooseFirst` checks of its
+/// creates may bill in a block (see `choose_first_reservation`: their two hashes and the
+/// competitor scan's budget), for an action whose state check tx did not validate. Fee
 /// validation then admits only a signer who could pay for them.
-fn reserve_unvalidated_state_work<C>(
+fn reserve_choose_first_scans(
+    action: &StateTransitionAction,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) {
+    for operation in choose_first_reservation(action, platform_version) {
+        execution_context.add_operation(operation);
+    }
+}
+
+/// Reserves, on top of the estimated fee of `action`, the work the refunds of each of its
+/// erases cause for other identities (see `erase_refund_recipient_reservation`), priced at the
+/// epoch check tx estimates in, for an action whose state check tx did not validate. Fee
+/// validation then admits only a signer who could pay for it.
+///
+/// Inert before protocol version 15, where no batch holds an erase: the loop finds none, so
+/// it adds nothing and reaches no versioned method.
+fn reserve_erase_refund_recipient_work<C>(
     action: &StateTransitionAction,
     platform: &PlatformRef<C>,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
-    execution_context.add_operations(choose_first_reservation(action, platform_version));
-    execution_context.add_operations(erase_refund_recipient_reservation(
-        action,
-        platform.drive,
-        platform.state.last_committed_block_epoch_ref(),
-        platform_version,
-    )?);
+    let StateTransitionAction::BatchAction(batch) = action else {
+        return Ok(());
+    };
+    for transition in batch.transitions() {
+        if let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(_)) =
+            transition
+        {
+            execution_context.add_operation(erase_refund_recipient_reservation(
+                platform.drive,
+                platform.state.last_committed_block_epoch_ref(),
+                platform_version,
+            )?);
+        }
+    }
     Ok(())
 }
 
