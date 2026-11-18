@@ -2335,7 +2335,11 @@ impl StateTransition {
             .await
             .map_err(|e| ProtocolError::ExternalSignerError(format!("signer failed: {}", e)))?;
 
-        // Recover the metadata without changing the signer's compact signature bytes.
+        // The signer returns a non-recoverable signature, but the stored form is the 65-byte
+        // recoverable compact signature, so find the recovery id (0..3) whose recovered key is the
+        // one the signer returned; the signer's `r || s` bytes are kept as they are. Byte parity
+        // with `dashcore::signer::sign` needs the same deterministic nonce without low-R grinding,
+        // plus low-S: Core `sign_recoverable` meets that contract, `sign` grinds low-R.
         let mut found = None;
         for id in 0..4 {
             let candidate = match EcdsaRecSignature::from_parts(signature, id, true) {
