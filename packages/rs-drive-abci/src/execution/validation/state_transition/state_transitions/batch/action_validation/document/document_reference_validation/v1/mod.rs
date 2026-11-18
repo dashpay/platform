@@ -67,8 +67,6 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
-use std::slice;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -1832,46 +1830,6 @@ fn validate_reference_target_v1(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// What a `chooseFirst` competitor scan has billed, against its budget: each operation is
-/// added as it is until the next would pass the budget, which then bills what is left of it,
-/// and the rest of the scan bills nothing.
-struct ChooseFirstScanBill {
-    remaining: Credits,
-}
-
-impl ChooseFirstScanBill {
-    fn new(platform_version: &PlatformVersion) -> Self {
-        Self {
-            remaining: choose_first_scan_budget(platform_version),
-        }
-    }
-
-    fn add(
-        &mut self,
-        operation: ValidationOperation,
-        execution_context: &mut StateTransitionExecutionContext,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        let mut cost = FeeResult::default();
-        ValidationOperation::add_many_to_fee_result(
-            slice::from_ref(&operation),
-            &mut cost,
-            platform_version,
-        )?;
-        let credits = cost.processing_fee;
-        if credits <= self.remaining {
-            self.remaining -= credits;
-            execution_context.add_operation(operation);
-        } else if self.remaining > 0 {
-            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
-                FeeResult::new_from_processing_fee(self.remaining),
-            ));
-            self.remaining = 0;
-        }
-        Ok(())
-    }
-}
-
 /// The keys `document` is held under by each property of `by`, as its index holds them
 /// (its id for `$id`), so comparing them byte by byte orders documents as the index does.
 /// Registration demands every such property be recorded on every document, so one missing is
@@ -1961,9 +1919,10 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 ///   (`left_to_its_contest`, see [`contest_decides_choose_first`]) reads no competitors once
 ///   `found` holds: the masternode vote decides between its contenders, whoever committed
 ///   first.
-/// * The query and the competitors' hashes are billed as they run, up to the scan's budget
-///   ([`choose_first_scan_budget`]), which check tx reserves (`choose_first_reservation`),
-///   for a create its contest decides too.
+/// * The query is billed up to the scan's budget ([`choose_first_scan_budget`]), and each
+///   competitor's hash in full, by the blocks it hashes, past the budget too: a large
+///   `validWhen` preimage costs what it hashes. Check tx reserves both
+///   (`choose_first_reservation` 1), for a create its contest decides too.
 ///
 /// `findBy` finds `found` through the referenced type's unique index over `$ownerId` and
 /// `among`, so each competitor is another identity's: the writer's only document holding the
@@ -2092,15 +2051,16 @@ fn validate_choose_first_v1(
         transaction,
         platform_version,
     )?;
-    // The scan bills as it runs, up to its budget, which check tx reserves for a create whose
-    // state it does not validate: a block never charges the scan more than the signer was
-    // admitted with
-    let mut scan_bill = ChooseFirstScanBill::new(platform_version);
-    scan_bill.add(
-        ValidationOperation::PrecalculatedOperation(query_cost),
-        execution_context,
-        platform_version,
-    )?;
+    // The query bills up to the scan's budget and each competitor's hash in full, which check tx
+    // reserves for a create whose state it does not validate: a block never charges the scan
+    // more than the signer was admitted with
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        FeeResult::new_from_processing_fee(
+            query_cost
+                .processing_fee
+                .min(choose_first_scan_budget(platform_version)),
+        ),
+    ));
     for candidate in &candidates {
         if candidate.id() == found.id() {
             continue;
@@ -2122,11 +2082,7 @@ fn validate_choose_first_v1(
             continue;
         }
         let (digest, blocks) = valid_when_preimage.key_value_for(candidate.owner_id());
-        scan_bill.add(
-            ValidationOperation::DoubleSha256(blocks),
-            execution_context,
-            platform_version,
-        )?;
+        execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
         if holds_key_part(
             referenced_document_type,
             candidate,

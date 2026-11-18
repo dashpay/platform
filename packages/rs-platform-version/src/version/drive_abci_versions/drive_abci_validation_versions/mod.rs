@@ -299,8 +299,10 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// (`choose_first_reservation`): the `findBy` and `validWhen` hashes and the competitor
     /// scan's budget.
     ///
-    /// - `0` (every protocol version): every create of a type declaring `chooseFirst`, one its
-    ///   contest decides included, is reserved both hashes and the scan's budget.
+    /// - `0` (protocol version 14 and below): every create of a type declaring `chooseFirst`, one
+    ///   its contest decides included, is reserved both hashes and the scan's budget.
+    /// - `1` (protocol version 15): also the `validWhen` hash of each competitor the scan may
+    ///   read, which `document_reference_validation` 1 bills in full, past the scan's budget.
     ///
     /// A generation that reserves less for a create than what the block bills it, the work
     /// `document_reference_validation` does for it included, would admit a signer the block

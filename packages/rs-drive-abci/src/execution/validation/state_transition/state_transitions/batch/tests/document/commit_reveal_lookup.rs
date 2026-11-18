@@ -3832,63 +3832,89 @@ mod commit_reveal_lookup_tests {
     /// Check tx reserves the two hashes a reveal's `chooseFirst` check computes as their own
     /// values make them: a transient param, which no stored document keeps and so no write
     /// estimate prices, makes the reservation grow by the double SHA-256 blocks it adds to
-    /// both preimages, and by nothing else.
+    /// both preimages. From protocol version 15, where each competitor's `validWhen` hash bills
+    /// in full, it grows by those blocks for each competitor the scan may read too; at 14, whose
+    /// scan bills hashes within its budget, by nothing else.
     #[tokio::test]
-    async fn should_reserve_the_upfront_hashes_by_the_reveals_own_values() {
-        let mut fixture = CommitRevealFixture::new_with(|contract| {
-            add_name_registration(contract, true);
-            contract["documentSchemas"]["paddedName"] = padded_name_schema();
-        });
-        let platform_version = PlatformVersion::latest();
-        let contract = fixture.contract.clone();
-        let padded = |pad: usize| {
-            let mut values = name_values();
-            values.push(("pad", Value::Bytes(vec![0x07; pad])));
-            values
-        };
-        let (_, small) = fixture
-            .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
-            .await;
-        let (_, large) = fixture
-            .creation_transition(
-                &contract,
-                Who::Mallory,
-                "paddedName",
-                &padded(5_000),
-                &[],
-                None,
-            )
-            .await;
-        let fee = |transition: &StateTransition| {
-            let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
-            assert_eq!(errors, Vec::<u32>::new());
-            estimated.expect("expected an estimated fee")
-        };
-        let (small, large) = (fee(&small), fee(&large));
+    async fn should_reserve_the_hashes_by_the_reveals_own_values() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+                add_name_registration(contract, true);
+                contract["documentSchemas"]["paddedName"] = padded_name_schema();
+            });
+            let contract = fixture.contract.clone();
+            let padded = |pad: usize| {
+                let mut values = name_values();
+                values.push(("pad", Value::Bytes(vec![0x07; pad])));
+                values
+            };
+            let (_, small) = fixture
+                .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
+                .await;
+            let (_, large) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Mallory,
+                    "paddedName",
+                    &padded(5_000),
+                    &[],
+                    None,
+                )
+                .await;
+            let fee = |transition: &StateTransition| {
+                let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
+                assert_eq!(errors, Vec::<u32>::new());
+                estimated.expect("expected an estimated fee")
+            };
+            let (small, large) = (fee(&small), fee(&large));
 
-        // The findBy preimage is the writer's id and the chooseFirst one, `pad | label . parent`
-        let choose_first_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
-        let function = HashFunction::Sha256d;
-        let blocks = |pad: usize| {
-            u64::from(function.block_count(32 + choose_first_len(pad)))
-                + u64::from(function.block_count(choose_first_len(pad)))
-        };
-        assert_eq!(
-            large.processing_fee - small.processing_fee,
-            (blocks(5_000) - blocks(1)) * platform_version.fee_version.hashing.sha256_per_block,
-        );
-        assert_eq!(
-            large.storage_fee, small.storage_fee,
-            "the pad is not stored"
-        );
+            // The findBy preimage is `pad | label . parent`, the validWhen one the writer's
+            // id and the same bytes
+            let find_by_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
+            let function = HashFunction::Sha256d;
+            let valid_when_blocks =
+                |pad: usize| u64::from(function.block_count(32 + find_by_len(pad)));
+            let blocks = |pad: usize| {
+                valid_when_blocks(pad) + u64::from(function.block_count(find_by_len(pad)))
+            };
+            let competitors = if protocol_version >= 15 {
+                u64::from(platform_version.system_limits.max_choose_first_candidates)
+            } else {
+                0
+            };
+            assert_eq!(
+                large.processing_fee - small.processing_fee,
+                (blocks(5_000) - blocks(1)
+                    + competitors * (valid_when_blocks(5_000) - valid_when_blocks(1)))
+                    * platform_version.fee_version.hashing.sha256_per_block,
+                "at {protocol_version}"
+            );
+            assert_eq!(
+                large.storage_fee, small.storage_fee,
+                "the pad is not stored"
+            );
+        }
     }
 
-    /// The competitor scan bills as it runs, up to its budget: past it, it bills what is left
-    /// of the budget and nothing more, and reads on. With one credit per competitor the budget
-    /// is 1,000 credits, less than the competitors query alone.
-    #[tokio::test]
-    async fn should_bill_the_competitor_scan_up_to_its_budget() {
-        let mut fixture = choose_first_fixture(true);
+    /// The competitors of a reveal, the `name` its `chooseFirst` judges, read with one credit
+    /// per competitor, so the scan's budget is 1,000 credits, less than the competitors query
+    /// alone: Carol's commitment, holding a hash of nobody's, then Mallory's valid one, then
+    /// Alice's, which the reveal finds. Returns the reveal's references validated as Alice's at
+    /// `protocol_version`, and Mallory's commitment.
+    async fn competitors_read_on_a_tight_budget(
+        protocol_version: u32,
+    ) -> (
+        SimpleConsensusValidationResult,
+        StateTransitionExecutionContext,
+        Document,
+    ) {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected the platform version");
+        let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+            add_name_registration(contract, true)
+        });
         preorder_name(
             &mut fixture,
             Who::Carol,
@@ -3904,7 +3930,7 @@ mod commit_reveal_lookup_tests {
             .map(|(property, value)| (property.to_string(), value))
             .collect();
 
-        let mut tight_budget = PlatformVersion::latest().clone();
+        let mut tight_budget = platform_version.clone();
         tight_budget
             .fee_version
             .document_reference
@@ -3918,13 +3944,38 @@ mod commit_reveal_lookup_tests {
             REVEAL_HEIGHT,
             &tight_budget,
         );
-
-        // Billing stops at the budget, the scan does not: Mallory's valid preorder refuses
+        // The scan reads on past the budget: Mallory's valid preorder refuses
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
                 if *e.preceding_document_id() == mallory.id()
         );
+        (result, execution_context, mallory)
+    }
+
+    /// From protocol version 15 the competitors query bills up to the scan's budget, and every
+    /// competitor's `validWhen` hash bills in full by the blocks it hashes, past the budget too:
+    /// the reveal pays for each hash it makes, however large its preimage.
+    #[tokio::test]
+    async fn should_bill_every_competitor_hash_past_the_scan_budget() {
+        let (_, execution_context, _) =
+            competitors_read_on_a_tight_budget(PlatformVersion::latest().protocol_version).await;
+        let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan), ValidationOperation::DoubleSha256(2), ValidationOperation::DoubleSha256(2)] =
+            execution_context.operations_slice()
+        else {
+            panic!(
+                "the query bills its budget and each competitor its hash, got {:?}",
+                execution_context.operations_slice()
+            );
+        };
+        assert_eq!(scan.processing_fee, 1_000);
+    }
+
+    /// At protocol version 14 the scan bills as it runs, up to its budget: past it, it bills
+    /// what is left of the budget and nothing more, and reads on.
+    #[tokio::test]
+    async fn should_bill_the_competitor_scan_up_to_its_budget_at_protocol_version_14() {
+        let (_, execution_context, _) = competitors_read_on_a_tight_budget(14).await;
         let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan)] =
             execution_context.operations_slice()
         else {

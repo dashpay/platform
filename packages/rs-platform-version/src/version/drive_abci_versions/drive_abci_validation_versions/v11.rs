@@ -66,6 +66,9 @@ use super::{
 ///   declares `minimumAgeBlocks`, which the writer's own commitment must still meet. A
 ///   descending or longer `by`, or no `minimumAgeBlocks`, keeps the scan. Every other lookup
 ///   reads as v0's does.
+/// - `choose_first_reservation` 1: v0, and for each competitor the `chooseFirst` scan may read,
+///   the double SHA-256 of the create's `validWhen` preimage, which `document_reference_validation`
+///   1 bills in full for every competitor it hashes. Mempool admission only.
 /// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
 ///   document field change reads the stored document with its stored element's storage flags
 ///   (`query_documents_with_flags`), and the action carries the owner they name, so that the
@@ -154,7 +157,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_erase_transition_refund_recipient_reservation: Some(0), // check tx reserves the refund work an erase is billed for
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read; a create its contest decides reads no chooseFirst competitors
-                choose_first_reservation: 0,
+                choose_first_reservation: 1, // also each competitor's validWhen hash, which document_reference_validation 1 bills in full
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide, nor raise the total its type keeps of its summed property past what the type's sums hold
                 document_replace_transition_state_validation: 2, // a replace cannot raise the total its type keeps of its summed property past what the type's sums hold
