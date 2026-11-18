@@ -386,6 +386,9 @@ impl PlatformWallet {
                             .into(),
                     ));
                 }
+                platform_version = self.sdk.version();
+                pool_fee_credits =
+                    Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
                 AssetLockFunding::DrainWalletBalance {
                     account_index,
                     operation,
@@ -601,7 +604,19 @@ impl PlatformWallet {
             }
         };
         let bundle = join_proof(proving).await?;
+        let bundle_state = std::sync::Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
+            bundle,
+            platform_version,
+            pool_fee_credits,
+        }));
         let sdk = self.sdk.clone();
+        let recipient_for_retry = recipient;
+        let sender_ovk_for_retry = sender_ovk.clone();
+        let prover_for_retry = prover;
+        let asset_lock_value_for_retry = asset_lock_value_credits;
+        let num_actions_for_retry = num_actions;
+        let bundle_state_for_submit = std::sync::Arc::clone(&bundle_state);
+        let path_for_retry = path.clone();
         // Serialized actions of the bundle that actually landed — fed to
         // the live activity recorder below. Each attempt re-signs the
         // bundle, so only the landed attempt's actions (signatures
@@ -614,24 +629,86 @@ impl PlatformWallet {
                 settings,
                 cl_wait,
                 "shielded fund-from-asset-lock",
-                |proof, s| {
-                    build_and_broadcast_shielded(
-                        sdk.clone(),
-                        &bundle,
-                        proof,
-                        path.clone(),
-                        asset_lock_signer,
-                        surplus_output,
-                        s,
-                        platform_version,
-                    )
+                move |proof, s| {
+                    let bundle_state = std::sync::Arc::clone(&bundle_state_for_submit);
+                    let sdk = sdk.clone();
+                    let sender_ovk_for_retry = sender_ovk_for_retry.clone();
+                    let path = path_for_retry.clone();
+                    async move {
+                        let mut version_retry = false;
+                        loop {
+                            let mut state = bundle_state.lock().await;
+                            let current_platform_version = sdk.version();
+                            let current_pool_fee = Self::shield_from_asset_lock_pool_fee(
+                                num_actions_for_retry,
+                                current_platform_version,
+                            )
+                            .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
+                            let binding_changed =
+                                dpp::shielded::shield_from_asset_lock_extra_sighash_data(
+                                    &proof,
+                                    current_platform_version,
+                                )? != dpp::shielded::shield_from_asset_lock_extra_sighash_data(
+                                    &proof,
+                                    state.platform_version,
+                                )?;
+                            if current_pool_fee != state.pool_fee_credits || binding_changed {
+                                let shield_amount = shield_amount_after_fee(
+                                    asset_lock_value_for_retry,
+                                    current_pool_fee,
+                                )
+                                .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
+                                let out_point = out_point_from_proof(&proof);
+                                let sender_ovk = sender_ovk_for_retry.clone();
+                                state.bundle = tokio::task::spawn_blocking(move || {
+                                    ProvedShieldFromAssetLockBundle::prove(
+                                        &recipient_for_retry,
+                                        shield_amount,
+                                        out_point,
+                                        &prover_for_retry,
+                                        [0u8; 36],
+                                        sender_ovk,
+                                        dummy_outputs,
+                                        current_platform_version,
+                                    )
+                                })
+                                .await
+                                .map_err(|e| dash_sdk::Error::Generic(e.to_string()))??;
+                                state.pool_fee_credits = current_pool_fee;
+                            }
+                            state.platform_version = current_platform_version;
+                            let result = build_and_broadcast_shielded(
+                                sdk.clone(),
+                                &state.bundle,
+                                proof.clone(),
+                                path.clone(),
+                                asset_lock_signer,
+                                surplus_output,
+                                s,
+                                state.platform_version,
+                            )
+                            .await;
+                            let version_moved = matches!(
+                                &result,
+                                Err(dash_sdk::Error::Generic(message))
+                                    if message.starts_with("protocol version moved")
+                            ) && sdk.version().protocol_version
+                                != state.platform_version.protocol_version;
+                            drop(state);
+                            if version_moved && !version_retry {
+                                version_retry = true;
+                                continue;
+                            }
+                            return result;
+                        }
+                    }
                 },
             )
             .await?;
         // Release the proved bundle's signing secrets
         // (`ProvedShieldFromAssetLockBundle`) before the reconciliation
         // awaits below.
-        drop(bundle);
+        drop(bundle_state);
 
         // Platform's verdict settles the lock. For a wallet drain, an
         // exact-outpoint "already consumed" rejection means an earlier attempt
@@ -983,6 +1060,12 @@ struct LandedShield {
     /// Whether the verified proof result attests the asset lock was
     /// consumed in full (see [`proof_attests_full_consumption`]).
     fully_consumed: bool,
+}
+
+struct ShieldBundleState {
+    bundle: ProvedShieldFromAssetLockBundle,
+    platform_version: &'static PlatformVersion,
+    pool_fee_credits: Credits,
 }
 
 /// Whether a landed Type 18's verified proof result attests that its asset

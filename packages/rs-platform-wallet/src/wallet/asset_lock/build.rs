@@ -2236,6 +2236,12 @@ mod tests {
             let built = Mutex::new(Vec::new());
             let on_built = |out_point| built.lock().unwrap().push(out_point);
             let (dispatch_tx, mut dispatch_rx) = tokio::sync::oneshot::channel();
+            let persisted_at_dispatch = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let drain_out_point_at_dispatch = Arc::new(Mutex::new(None));
+            let persisted_at_dispatch_callback = Arc::clone(&persisted_at_dispatch);
+            let drain_out_point_at_dispatch_callback = Arc::clone(&drain_out_point_at_dispatch);
+            let persistence_for_dispatch = Arc::clone(&persistence);
+            let operation_for_dispatch = operation.clone();
             let resolve = manager.resolve_funding_observing_out_point(
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
@@ -2244,6 +2250,16 @@ mod tests {
                 &signer,
                 Some(&on_built),
                 |out_point| {
+                    persisted_at_dispatch_callback.store(
+                        persistence_for_dispatch
+                            .stored_outpoints()
+                            .contains(&out_point),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
+                    if drain {
+                        *drain_out_point_at_dispatch_callback.lock().unwrap() =
+                            operation_for_dispatch.snapshot().out_point;
+                    }
                     dispatch_tx.send(out_point).unwrap();
                 },
             );
@@ -2257,11 +2273,19 @@ mod tests {
                 .try_recv()
                 .expect("speculation must be notified before network acceptance");
             assert_eq!(*built.lock().unwrap(), vec![out_point]);
+            assert!(
+                persisted_at_dispatch.load(std::sync::atomic::Ordering::SeqCst),
+                "dispatch callback must run after the asset-lock row is persisted"
+            );
             assert!(persistence.stored_outpoints().contains(&out_point));
             let rows = manager.list_tracked_locks().await;
             let row = rows.iter().find(|row| row.out_point == out_point).unwrap();
             assert_eq!(row.status, AssetLockStatus::Built);
             if drain {
+                assert_eq!(
+                    *drain_out_point_at_dispatch.lock().unwrap(),
+                    Some(out_point)
+                );
                 assert_eq!(operation.snapshot().out_point, Some(out_point));
             }
         }
