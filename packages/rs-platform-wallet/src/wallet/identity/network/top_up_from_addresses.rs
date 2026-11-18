@@ -270,7 +270,7 @@ impl IdentityWallet {
         ensure_valid_state_transition_structure(&state_transition, self.sdk.version())
             .map_err(|e| top_up_error(e.into()))?;
 
-        let delivery = broadcast_tracking_delivery(&self.sdk, &state_transition).await;
+        let delivery = broadcast_tracking_delivery(&self.sdk, &state_transition, settings).await;
         let identity_id = identity.id();
         settle_top_up(&submitted, balance_before, delivery, || async {
             let (result, metadata) = state_transition

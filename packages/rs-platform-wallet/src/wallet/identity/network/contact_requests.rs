@@ -1203,7 +1203,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let SignedContactRequest {
             state_transition, ..
         } = signed;
-        let delivery = Box::pin(broadcast_tracking_delivery(&self.sdk, &state_transition)).await;
+        let delivery = Box::pin(broadcast_tracking_delivery(
+            &self.sdk,
+            &state_transition,
+            None,
+        ))
+        .await;
         let confirmed = match delivery {
             BroadcastDelivery::NeverDelivered(error) => {
                 return Err(PlatformWalletError::Sdk(error))
@@ -1598,7 +1603,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 {
                     // The same bytes, so never a second request; an
                     // endpoint's answer proves nothing either way.
-                    let delivery = broadcast_tracking_delivery(&self.sdk, &held.transition).await;
+                    let delivery =
+                        broadcast_tracking_delivery(&self.sdk, &held.transition, None).await;
                     tracing::debug!(
                         sender = %sender,
                         recipient = %recipient,
