@@ -3977,16 +3977,22 @@ mod tests {
 
         /// A failed restore is reported at its site and returns only the
         /// coins no account holds, so a coin an earlier restore of the load
-        /// placed is not placed again by the fallback.
+        /// placed, in a funds or a DashPay contact account, is not placed
+        /// again by the fallback.
         #[test]
         fn a_failed_restore_returns_only_the_coins_no_account_holds() {
-            let (wallet, _) = fixture(48);
-            let placed = utxo(1, &external_address(&wallet, &bip44(), 3));
-            let unplaced = utxo(2, &external_address(&wallet, &bip44(), 4));
+            let (wallet, _, placed) = contact_fixture();
+            let in_contact = utxo(2, &external_address(&wallet, &bip44(), 4));
+            let unplaced = utxo(3, &external_address(&wallet, &bip44(), 5));
             let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
             let funds = info.accounts.funds_account_mut(&bip44()).unwrap();
             funds.utxos.insert(placed.outpoint, placed.clone());
-            let coins = [&placed, &unplaced];
+            let contact = info.accounts.dashpay_external_accounts.values_mut().next();
+            let contact = contact.unwrap();
+            contact
+                .utxos
+                .insert(in_contact.outpoint, in_contact.clone());
+            let coins = [&placed, &in_contact, &unplaced];
             let ctx = LoadCtx::recovery();
             let failure = || key_wallet::Error::WatchOnly;
             let (left, restorable) =
