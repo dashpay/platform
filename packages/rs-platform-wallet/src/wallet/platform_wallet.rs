@@ -876,10 +876,9 @@ impl PlatformWallet {
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
-            contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(
-                Arc::clone(&shielded_keys),
-                Arc::clone(&prepared_tip_accounts),
-            ),
+            contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(Arc::clone(
+                &shielded_keys,
+            )),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -921,7 +920,13 @@ impl PlatformWallet {
     ///
     /// Derives ZIP-32 Orchard keys for every entry of `accounts`
     /// from `seed` (a 32-252 byte BIP-39 seed; see
-    /// [`SpendingKey::from_zip32_seed`]) and installs the
+    /// [`SpendingKey::from_zip32_seed`]), which must be the seed this
+    /// wallet was created from: one whose root public key gives this
+    /// wallet's id. Another seed is refused with
+    /// `ShieldedKeyDerivation("The supplied seed does not belong to this
+    /// wallet")` before anything is stored, as its keys would give out
+    /// addresses a restore from the wallet's own seed never finds. It
+    /// installs the
     /// viewing-grade half (FVK / IVK / OVK / default address) on
     /// this handle and the coordinator's registry. The caller is
     /// responsible for sourcing the seed (e.g. via the host
@@ -1035,6 +1040,9 @@ impl PlatformWallet {
         // dropped must not persist viewing keys the host can no longer
         // delete (see `ensure_shielded_attached`).
         self.ensure_shielded_attached()?;
+        // The keys bound here are the ones every shielded address of the
+        // wallet is derived from, so the seed must be the wallet's own.
+        self.ensure_seed_of_this_wallet(seed)?;
         let network = self.sdk.network;
         let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
         accounts.extend(self.discovered_tip_accounts().await?);
@@ -1460,7 +1468,9 @@ impl PlatformWallet {
 
     /// Add another ZIP-32 account to the already-bound shielded
     /// sub-wallet. Returns `ShieldedNotBound` if `bind_shielded`
-    /// hasn't run yet.
+    /// hasn't run yet. `seed` must be the wallet's own, as for
+    /// [`bind_shielded`](Self::bind_shielded), and is refused with the
+    /// same error otherwise.
     ///
     /// **Caveat**: notes belonging to `account` that already
     /// landed on-chain before the bind call only become spendable
@@ -1489,6 +1499,9 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{OrchardKeySet, SubwalletId};
         ensure_ordinary_shielded_accounts(&[account])?;
+        // The added account's keys are derived from `seed`, as a bind's are, so
+        // it must be the wallet's own (`ensure_seed_of_this_wallet`).
+        self.ensure_seed_of_this_wallet(seed)?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
