@@ -290,6 +290,24 @@ impl DataContract {
         let carried_size = carried_size.unwrap_or(bytes.len());
         Ok((bytes, carried_size))
     }
+
+    /// The bytes [`PlatformSerializableWithPlatformVersion::serialize_to_bytes_with_platform_version`]
+    /// gives for the contract a node stored as `storage_bytes`, read as
+    /// [`PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted::versioned_deserialize_trusted`]
+    /// reads it without full validation, but without parsing the contract: a stored revision in
+    /// schema form would build every document type, its patterns compiled, each time it is
+    /// read. For a query that answers with stored contracts it does not otherwise use.
+    pub fn carried_bytes_from_storage_bytes(
+        storage_bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let (stored, _) =
+            decode_serialization_format_trusted(storage_bytes, no_limit_config(), "DataContract")?;
+        let carried = stored.try_into_carried_format(platform_version)?;
+        bincode::encode_to_vec(carried, PLATFORM_BINCODE_CONFIG).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+        })
+    }
 }
 
 /// Decodes the stored serialization format with the ordinary decoder: bytes
@@ -794,5 +812,123 @@ mod compiled_size_tests {
             .ensure_compiled_size(&mut operations, &platform_version)
             .expect("expected nothing refused at protocol version 14");
         assert!(operations.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod carried_bytes_tests {
+    use super::*;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_value::Value;
+    use platform_version::version::PLATFORM_VERSIONS;
+    use std::collections::BTreeSet;
+
+    fn fixture_contract() -> DataContract {
+        get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+            .data_contract_owned()
+    }
+
+    fn encode(format: DataContractInSerializationFormat) -> Vec<u8> {
+        bincode::encode_to_vec(format, PLATFORM_BINCODE_CONFIG).expect("expected to encode")
+    }
+
+    /// The fixture contract in each format a node has stored a contract in: format versions 0
+    /// and 1 in schema form, 1 with the fields only it holds and keywords to lowercase, and 2,
+    /// compiled.
+    fn stored_forms() -> Vec<(&'static str, Vec<u8>)> {
+        let contract = fixture_contract();
+        let format_v1 = DataContractInSerializationFormatV1::from(contract.clone());
+        let mut format_v1_with_its_fields = format_v1.clone();
+        format_v1_with_its_fields.created_at = Some(1_700_000_000_000);
+        format_v1_with_its_fields.created_at_block_height = Some(12);
+        format_v1_with_its_fields.keywords = vec!["Social".to_string(), "PAY".to_string()];
+        format_v1_with_its_fields.description = Some("A contract".to_string());
+        let compiled = contract
+            .serialize_to_storage_bytes(PlatformVersion::latest())
+            .expect("expected to store the contract");
+        assert!(
+            matches!(
+                decode_serialization_format_trusted(&compiled, no_limit_config(), "DataContract")
+                    .expect("expected to decode")
+                    .0,
+                DataContractInSerializationFormat::V2(_)
+            ),
+            "the latest version stores contracts compiled"
+        );
+        vec![
+            (
+                "format version 0",
+                encode(DataContractInSerializationFormatV0::from(contract).into()),
+            ),
+            ("format version 1", encode(format_v1.into())),
+            (
+                "format version 1 with its own fields",
+                encode(format_v1_with_its_fields.into()),
+            ),
+            ("format version 2", compiled),
+        ]
+    }
+
+    #[test]
+    fn should_carry_a_stored_contract_as_reading_and_serializing_it_does() {
+        let mut compared = BTreeSet::new();
+        for (form, stored) in stored_forms() {
+            for platform_version in PLATFORM_VERSIONS {
+                let version = platform_version.protocol_version;
+                // A version that can not read the contract, or carry it, is not compared
+                let Ok(contract) =
+                    DataContract::versioned_deserialize_trusted(&stored, false, platform_version)
+                else {
+                    continue;
+                };
+                let Ok(expected) =
+                    contract.serialize_to_bytes_with_platform_version(platform_version)
+                else {
+                    continue;
+                };
+                let carried =
+                    DataContract::carried_bytes_from_storage_bytes(&stored, platform_version)
+                        .unwrap_or_else(|e| panic!("{form} at protocol version {version}: {e}"));
+                assert_eq!(carried, expected, "{form} at protocol version {version}");
+                compared.insert((form, version));
+            }
+        }
+        let latest = PlatformVersion::latest().protocol_version;
+        let first = PlatformVersion::first().protocol_version;
+        for (form, _) in stored_forms() {
+            assert!(
+                compared.contains(&(form, latest)),
+                "{form} is compared at the latest version"
+            );
+            assert!(
+                compared.contains(&(form, first)),
+                "{form} is compared at the first version, which carries format version 0"
+            );
+        }
+    }
+
+    #[test]
+    fn should_carry_a_stored_contract_without_parsing_its_schemas() {
+        let latest = PlatformVersion::latest();
+        let mut format_v1 = DataContractInSerializationFormatV1::from(fixture_contract());
+        let broken = Value::Text("not a schema".to_string());
+        format_v1
+            .document_schemas
+            .insert("broken".to_string(), broken.clone());
+        let stored = encode(format_v1.into());
+        assert!(
+            DataContract::versioned_deserialize_trusted(&stored, false, latest).is_err(),
+            "reading the contract parses its schemas"
+        );
+
+        let carried = DataContract::carried_bytes_from_storage_bytes(&stored, latest)
+            .expect("expected to carry the contract without parsing it");
+
+        let (carried, _) =
+            decode_serialization_format_trusted(&carried, no_limit_config(), "DataContract")
+                .expect("expected to decode");
+        assert_eq!(carried.document_schemas().get("broken"), Some(&broken));
     }
 }

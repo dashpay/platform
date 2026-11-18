@@ -1169,7 +1169,7 @@ export default {
                     },
                     maxPacketMsgPayloadSize: {
                       type: 'integer',
-                      minimum: 0,
+                      minimum: 1,
                     },
                     sendRate: {
                       type: 'integer',

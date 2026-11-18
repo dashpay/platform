@@ -193,6 +193,86 @@ pub(in crate::execution) fn add_ref_dag_document_type(
     schemas.insert("item_summed_u64".to_string(), summed_u64_schema());
 }
 
+/// The fragment of the pattern bound's message for a contract holding too many patterns.
+pub(in crate::execution) const TOO_MANY_PATTERNS_MESSAGE: &str = "patterns (`pattern` and";
+
+/// The fragment of the pattern bound's message for a pattern that compiles to too much.
+pub(in crate::execution) const PATTERN_TOO_LARGE_MESSAGE: &str =
+    "is not a regular expression that compiles within";
+
+/// A pattern any limit admits.
+pub(in crate::execution) const SMALL_PATTERN: &str = "^[a-z]{1,20}$";
+
+/// One pattern more than a contract may hold.
+pub(in crate::execution) fn one_pattern_too_many() -> usize {
+    usize::from(
+        PlatformVersion::latest()
+            .system_limits
+            .max_contract_schema_patterns,
+    ) + 1
+}
+
+/// A document type of `count` string properties, each with `pattern`.
+pub(in crate::execution) fn patterned_schema(count: usize, pattern: &str) -> Value {
+    let properties: Vec<(Value, Value)> = (0..count)
+        .map(|position| {
+            (
+                Value::Text(format!("p{position}")),
+                platform_value!({
+                    "type": "string",
+                    "pattern": pattern,
+                    "maxLength": 63,
+                    "position": position as u64,
+                }),
+            )
+        })
+        .collect();
+    platform_value!({
+        "type": "object",
+        "properties": Value::Map(properties),
+        "additionalProperties": false,
+    })
+}
+
+/// A document type whose one index lists `count` contested field matches of `pattern`, then a
+/// key no index has: the non-validating parse compiles every one of them before it refuses the
+/// key, with an error of its own.
+pub(in crate::execution) fn field_matches_before_an_unknown_index_key_schema(
+    count: usize,
+    pattern: &str,
+) -> Value {
+    let field_matches: Vec<Value> = (0..count)
+        .map(|_| platform_value!({ "field": "label", "regexPattern": pattern }))
+        .collect();
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "label": { "type": "string", "maxLength": 63, "position": 0 },
+        },
+        "indices": [{
+            "contested": { "fieldMatches": field_matches },
+            "notAnIndexKey": 1,
+        }],
+        "additionalProperties": false,
+    })
+}
+
+/// A document type with one `format: regex` string property.
+pub(in crate::execution) fn regex_format_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "expression": {
+                "type": "string",
+                "format": "regex",
+                "maxLength": 63,
+                "position": 0,
+            },
+        },
+        "additionalProperties": false,
+    })
+}
+
 /// What `check_tx` and one block made of a transition.
 pub(in crate::execution) struct Outcome {
     /// The consensus errors `check_tx` refused the transition with, or its own error.
@@ -384,6 +464,29 @@ pub(in crate::execution) fn assert_paid_contract_structure_error_in_block(
         "the rejection is charged: {:?} -> {:?}",
         outcome.balance_before,
         outcome.balance_after
+    );
+}
+
+/// A contract mempool policy keeps out and consensus still admits: `check_tx` refuses the
+/// transition with the pattern bound's `InvalidContractStructure`, and a block that holds it
+/// all the same executes it.
+pub(in crate::execution) fn assert_kept_out_of_the_mempool_and_executed_in_block(
+    outcome: &Outcome,
+    needle: &str,
+) {
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(BasicError::ContractError(
+            DataContractError::InvalidContractStructure(message)
+        ))]) if message.contains(needle),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
     );
 }
 

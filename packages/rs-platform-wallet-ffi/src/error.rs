@@ -799,6 +799,9 @@ pub enum PlatformWalletFFIResultCode {
     /// failed: do not submit it again. A public contact request sync settles
     /// it, recording the request once its document is proved on Platform and
     /// freeing the pair once its transition is proved unable to write it.
+    /// Also what a public send or accept gets while another public request
+    /// to that identity is being sent: one public request to an identity is
+    /// sent at a time, and nothing is signed for the second.
     /// A private request pending to the identity is
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
@@ -1107,6 +1110,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
+            PlatformWalletError::DocumentEraseBusy => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             PlatformWalletError::IdentityBalanceUnavailable(_) => {
                 PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
             }

@@ -633,6 +633,53 @@ fn should_reject_missing_selectors_before_reading_state() {
         .is_valid());
 }
 
+/// A contract stored as its schemas is parsed each time it is read from state, every pattern
+/// it holds compiled, so a history query reads it through the contract cache.
+#[test]
+fn should_read_the_contract_through_the_contract_cache() {
+    let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+    let contract = json_document_to_contract(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"
+        ),
+        false,
+        version,
+    )
+    .unwrap();
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let id = contract.id().to_buffer();
+    // What stored the contract cached it
+    let cache = &platform.drive.cache.data_contracts;
+    cache.clear();
+
+    let query = || {
+        let request = GetDocumentHistoryRequestV1 {
+            data_contract_id: id.to_vec(),
+            document_type_name: "profile".into(),
+            document_id: vec![2; 32],
+            filter: Some(Filter::StartAtRevision(1)),
+            limit: None,
+            prove: false,
+        };
+        // The document does not exist; what matters is how the contract was read
+        platform
+            .query_document_history_v1(request, &state, version)
+            .expect("expected the query to run");
+        cache.get(id, false).expect("the query caches the contract")
+    };
+
+    let read_from_state = query();
+    let read_again = query();
+    assert!(
+        Arc::ptr_eq(&read_from_state, &read_again),
+        "the second query is answered with the cached contract"
+    );
+}
+
 #[test]
 fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);

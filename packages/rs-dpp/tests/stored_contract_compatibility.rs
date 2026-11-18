@@ -44,8 +44,9 @@ const UPDATE: &str = "UPDATE_STORED_CONTRACT_FIXTURE";
 
 const FIXTURE: &str = "tests/fixtures/stored_contracts/stored.jsonl";
 
-/// The system contracts protocol version 15 has: every slot but the reserved feature flags.
-const SYSTEM_CONTRACTS: [SystemDataContract; 12] = [
+/// The system contracts protocol version 15 has: every slot but the reserved feature flags and
+/// the token market contract, which arrives with the token marketplace in protocol version 16.
+const SYSTEM_CONTRACTS: [SystemDataContract; 11] = [
     SystemDataContract::Withdrawals,
     SystemDataContract::MasternodeRewards,
     SystemDataContract::DPNS,
@@ -57,7 +58,6 @@ const SYSTEM_CONTRACTS: [SystemDataContract; 12] = [
     SystemDataContract::AppConnect,
     SystemDataContract::ModerationCharters,
     SystemDataContract::DecisionProposals,
-    SystemDataContract::TokenMarket,
 ];
 
 /// Contracts written for the fixture, in JSON, for what neither the system contracts nor the

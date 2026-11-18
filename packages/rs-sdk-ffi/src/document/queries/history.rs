@@ -290,6 +290,38 @@ mod tests {
         assert!(message.contains("document type not found"), "{message}");
     }
 
+    #[test]
+    fn should_classify_invalid_history_limits_as_invalid_parameter() {
+        let contract = create_mock_data_contract();
+        let contract_id = CString::new(contract.id().to_string(Encoding::Base58)).unwrap();
+        let sdk = create_mock_sdk_handle_with_current_contracts(vec![*contract]);
+        let document_id =
+            CString::new(Identifier::from([2; 32]).to_string(Encoding::Base58)).unwrap();
+        let name = CString::new("testDoc").unwrap();
+        let mut codes = Vec::new();
+        for limit in [11, u16::MAX as u32 + 1, u32::MAX] {
+            let result = unsafe {
+                dash_sdk_document_fetch_history(
+                    sdk,
+                    contract_id.as_ptr(),
+                    name.as_ptr(),
+                    document_id.as_ptr(),
+                    0,
+                    0,
+                    0,
+                    limit,
+                )
+            };
+            assert!(!result.error.is_null());
+            unsafe {
+                codes.push((*result.error).code);
+                crate::dash_sdk_error_free(result.error);
+            }
+        }
+        destroy_mock_sdk_handle(sdk);
+        assert_eq!(codes, vec![DashSDKErrorCode::InvalidParameter; 3]);
+    }
+
     fn revision_document(revision: u64) -> Document {
         let mut properties = BTreeMap::new();
         properties.insert(
