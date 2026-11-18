@@ -604,6 +604,10 @@ impl PlatformWallet {
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and neither the identity balance
     /// nor the addresses are updated from it; the next sync settles them.
+    /// So is a broadcast an endpoint refused once a dispatch may have reached
+    /// it, an address-nonce refusal included: such a refusal proves nothing,
+    /// so the top-up never reports
+    /// [`PlatformWalletError::AddressNonceMismatch`].
     ///
     /// Holds the wallet generation's lifecycle gate like
     /// [`Self::top_up_external_identity_from_addresses`]: a wallet removed or
@@ -653,7 +657,8 @@ impl PlatformWallet {
     /// `PlatformWalletError::Sdk` holding
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and the addresses are not
-    /// updated from it; the next sync settles them.
+    /// updated from it; the next sync settles them. A refused broadcast reads
+    /// as for [`Self::top_up_from_addresses`].
     ///
     /// Returns the identity's new credit balance.
     pub async fn top_up_external_identity_from_addresses<S, I>(

@@ -8,19 +8,22 @@ use dpp::identity::Identity;
 use dpp::prelude::{AddressNonce, Identifier};
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
+use dash_sdk::dash_platform_queries::transition::validation::ensure_valid_state_transition_structure;
+use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddressesWithMetadata;
 use dash_sdk::platform::Fetch;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 
-use dash_sdk::query_types::{AddressInfos, IdentityBalance};
+use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
 
-use crate::error::{
-    preserve_signer_key_unavailable_or, promote_address_nonce_error, PlatformWalletError,
-};
+use crate::broadcast_outcome::{broadcast_tracking_delivery, BroadcastDelivery};
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::BlockTime;
 
 use super::*;
@@ -209,6 +212,14 @@ impl IdentityWallet {
     /// Build, sign, broadcast and wait for the top-up of `identity` from
     /// `inputs`, mapping the SDK error the way every address top-up reports it.
     ///
+    /// The broadcast keeps what every dispatch proved
+    /// ([`broadcast_tracking_delivery`]) and the outcome is settled by
+    /// [`settle_top_up`]: only a top-up refused before anything was sent is
+    /// an ordinary error; once a dispatch may have reached a node, an
+    /// endpoint's refusal included (an address-nonce refusal too), the result
+    /// wait decides, and anything short of a proof bound to this transition
+    /// is the SDK's unconfirmed outcome.
+    ///
     /// The result proof of this transition authenticates only the state it
     /// affects (the identity's balance and the input addresses as of the
     /// proof's block), not that this transition executed. The result stands
@@ -242,26 +253,136 @@ impl IdentityWallet {
             .iter()
             .map(|(address, (nonce, _))| (*address, *nonce))
             .collect();
-        let confirmed = identity
-            .top_up_from_addresses_with_nonce_with_metadata(
-                &self.sdk,
-                inputs,
-                address_signer,
-                settings,
-            )
-            .await
-            .map_err(top_up_error)?;
-        bind_to_submitted_nonces(&submitted, balance_before, confirmed)
+        let user_fee_increase = settings
+            .as_ref()
+            .and_then(|settings| settings.user_fee_increase)
+            .unwrap_or_default();
+        let state_transition = IdentityTopUpFromAddressesTransition::try_from_inputs_with_signer(
+            identity,
+            inputs,
+            address_signer,
+            user_fee_increase,
+            self.sdk.version(),
+            None,
+        )
+        .await
+        .map_err(|e| top_up_error(e.into()))?;
+        ensure_valid_state_transition_structure(&state_transition, self.sdk.version())
+            .map_err(|e| top_up_error(e.into()))?;
+
+        let delivery = broadcast_tracking_delivery(&self.sdk, &state_transition).await;
+        let identity_id = identity.id();
+        settle_top_up(&submitted, balance_before, delivery, || async {
+            let (result, metadata) = state_transition
+                .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+                    &self.sdk, settings,
+                )
+                .await?;
+            proved_top_up(identity_id, &submitted, result)
+                .map(|(infos, balance)| (infos, balance, metadata))
+        })
+        .await
     }
 }
 
-/// An SDK error of an address top-up as the wallet reports it: a nonce
-/// race promoted to its own error, every other error kept typed under
-/// [`PlatformWalletError::Sdk`].
+/// An SDK error of an address top-up before anything was sent, as the
+/// wallet reports it: kept typed under [`PlatformWalletError::Sdk`] (a
+/// signer-key marker included). No such error is an address-nonce refusal:
+/// a refusal is an endpoint's answer, which [`settle_top_up`] handles.
 fn top_up_error(e: dash_sdk::Error) -> PlatformWalletError {
-    preserve_signer_key_unavailable_or(e, |e| {
-        promote_address_nonce_error(&e).unwrap_or(PlatformWalletError::Sdk(e))
-    })
+    preserve_signer_key_unavailable_or(e, PlatformWalletError::Sdk)
+}
+
+/// What a signed top-up's broadcast (`delivery`) and result wait (`wait`,
+/// run only when a dispatch may have reached a node) came to, by the rule
+/// every address and credit spend of this crate follows
+/// ([`BroadcastDelivery`]).
+///
+/// Only a transition that never left the wallet
+/// ([`BroadcastDelivery::NeverDelivered`]: refused before anything was sent)
+/// is an ordinary error: nothing holds its bytes but the wallet. Once a
+/// dispatch may have reached a node, an endpoint's refusal of the broadcast
+/// is no proof, whatever it says: an address-nonce refusal can answer a
+/// transition that endpoint kept or forwarded, or whose nonce an earlier
+/// dispatch already used, so it is never reported as
+/// [`PlatformWalletError::AddressNonceMismatch`] (safe to retry). The
+/// result wait decides: a proof bound to this transition
+/// ([`bind_to_submitted_nonces`]) stands, and every other outcome, a failed
+/// wait or a verdict on it included, is the SDK's unconfirmed outcome.
+async fn settle_top_up<W, Fut>(
+    submitted: &BTreeMap<PlatformAddress, AddressNonce>,
+    balance_before: Credits,
+    delivery: BroadcastDelivery,
+    wait: W,
+) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError>
+where
+    W: FnOnce() -> Fut,
+    Fut: std::future::Future<
+        Output = Result<(AddressInfos, Credits, ResponseMetadata), dash_sdk::Error>,
+    >,
+{
+    match delivery {
+        BroadcastDelivery::Admitted => {}
+        BroadcastDelivery::NeverDelivered(e) => return Err(top_up_error(e)),
+        BroadcastDelivery::MaybeDelivered(e) => {
+            tracing::warn!(
+                error = %e,
+                "address top-up broadcast may have been delivered; falling through to the \
+                 result wait"
+            );
+        }
+    }
+    let confirmed = wait().await.map_err(|e| {
+        PlatformWalletError::Sdk(if e.is_state_transition_result_unconfirmed() {
+            e
+        } else {
+            dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(e))
+        })
+    })?;
+    bind_to_submitted_nonces(submitted, balance_before, confirmed)
+}
+
+/// The proved identity balance and input addresses of a top-up's result
+/// proof: the proof must name `identity_id`, carry its balance and show
+/// exactly the `submitted` input addresses.
+fn proved_top_up(
+    identity_id: Identifier,
+    submitted: &BTreeMap<PlatformAddress, AddressNonce>,
+    result: StateTransitionProofResult,
+) -> Result<(AddressInfos, Credits), dash_sdk::Error> {
+    let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(identity, addresses) = result
+    else {
+        return Err(dash_sdk::Error::InvalidProvedResponse(format!(
+            "identity top-up proof was expected for {identity_id}, but received {result:?}"
+        )));
+    };
+    if identity.id != identity_id {
+        return Err(dash_sdk::Error::InvalidProvedResponse(format!(
+            "proof returned identity {} but {identity_id} was topped up",
+            identity.id
+        )));
+    }
+    if !addresses.keys().eq(submitted.keys()) {
+        return Err(dash_sdk::Error::InvalidProvedResponse(
+            "proof returned different addresses than the top-up spent".to_string(),
+        ));
+    }
+    let balance = identity.balance.ok_or_else(|| {
+        dash_sdk::Error::InvalidProvedResponse(
+            "identity proof did not include updated balance".to_string(),
+        )
+    })?;
+    let infos = AddressInfos::from_iter(addresses.into_iter().map(|(address, info)| {
+        (
+            address,
+            info.map(|(nonce, balance)| AddressInfo {
+                address,
+                nonce,
+                balance,
+            }),
+        )
+    }));
+    Ok((infos, balance))
 }
 
 /// The input map of an address-funded top-up from its funding rows: rows
@@ -360,7 +481,12 @@ fn unconfirmed(reason: String) -> PlatformWalletError {
 #[cfg(test)]
 mod nonce_binding_tests {
     use super::*;
-    use dash_sdk::query_types::AddressInfo;
+    use crate::broadcast_outcome::track_delivery;
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use dpp::state_transition::StateTransition;
 
     const FIRST: PlatformAddress = PlatformAddress::P2pkh([1; 20]);
     const SECOND: PlatformAddress = PlatformAddress::P2pkh([2; 20]);
@@ -482,6 +608,97 @@ mod nonce_binding_tests {
                 Err(PlatformWalletError::Sdk(e)) if e.is_state_transition_result_unconfirmed()
             ),
             "{against_cache:?}"
+        );
+    }
+
+    /// The submitted nonces as [`bind`] signs them, as the inputs of a
+    /// signed address spend.
+    fn spend() -> StateTransition {
+        AddressFundsTransferTransitionV0 {
+            inputs: BTreeMap::from([(FIRST, (4, 1_000)), (SECOND, (9, 1_000))]),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// An endpoint's refusal of `FIRST` at the submitted nonce 4, expecting
+    /// `expected`.
+    fn nonce_refusal(expected: AddressNonce) -> dash_sdk::Error {
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            ConsensusError::StateError(StateError::AddressInvalidNonceError(
+                AddressInvalidNonceError::new(FIRST, 4, expected),
+            )),
+        )))
+    }
+
+    /// An endpoint answers the FIRST broadcast dispatch with an address-nonce
+    /// refusal, the nonce already used (expected 5) or ahead of that node
+    /// (expected 3). The answer is unauthenticated and the nonce may have
+    /// been used by this very transition, so the top-up is never reported as
+    /// a safe-to-retry nonce mismatch: it waits for its result, reports a
+    /// failed wait as unconfirmed, and keeps a proof that shows it executed.
+    #[tokio::test]
+    async fn should_not_report_a_nonce_refusal_of_the_first_broadcast_as_safe_to_retry() {
+        let submitted = BTreeMap::from([(FIRST, 4), (SECOND, 9)]);
+        let transition = spend();
+        for expected in [5, 3] {
+            let delivery = || {
+                track_delivery(&transition, 2, || {
+                    std::future::ready(Err(nonce_refusal(expected)))
+                })
+            };
+
+            let mut waited = false;
+            let failed_wait = settle_top_up(&submitted, BALANCE_BEFORE, delivery().await, || {
+                waited = true;
+                std::future::ready(Err(nonce_refusal(expected)))
+            })
+            .await;
+            assert!(waited, "{expected}: the result wait must run");
+            assert!(
+                matches!(
+                    &failed_wait,
+                    Err(PlatformWalletError::Sdk(e)) if e.is_state_transition_result_unconfirmed()
+                ),
+                "{expected}: {failed_wait:?}"
+            );
+
+            let proved = settle_top_up(&submitted, BALANCE_BEFORE, delivery().await, || {
+                std::future::ready(Ok((
+                    proved(&[(FIRST, Some(4)), (SECOND, Some(9))]),
+                    777,
+                    ResponseMetadata::default(),
+                )))
+            })
+            .await;
+            assert!(matches!(&proved, Ok((_, 777, _))), "{expected}: {proved:?}");
+        }
+    }
+
+    /// A top-up refused before anything was sent never left the wallet: it
+    /// is an ordinary error and no result is waited for.
+    #[tokio::test]
+    async fn should_report_a_top_up_refused_before_sending_without_waiting() {
+        use dash_sdk::dapi_client::DapiClientError;
+
+        let submitted = BTreeMap::from([(FIRST, 4), (SECOND, 9)]);
+        let result = settle_top_up(
+            &submitted,
+            BALANCE_BEFORE,
+            BroadcastDelivery::NeverDelivered(dash_sdk::Error::DapiClientError(
+                DapiClientError::NoAvailableAddresses,
+            )),
+            || -> std::future::Ready<Result<_, dash_sdk::Error>> {
+                panic!("a top-up that was never sent must not wait")
+            },
+        )
+        .await;
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::Sdk(e)) if !e.is_state_transition_result_unconfirmed()
+            ),
+            "{result:?}"
         );
     }
 }

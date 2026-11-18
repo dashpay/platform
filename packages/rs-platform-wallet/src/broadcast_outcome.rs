@@ -3,7 +3,8 @@
 //! Shared by every Platform money-moving path that must keep "never left the
 //! wallet, safe to retry" apart from "may have reached a node, may still
 //! execute, do not retry". Shielded spends that consume notes, shields from
-//! Platform addresses and masternode credit withdrawals broadcast through
+//! Platform addresses, identity top-ups from Platform addresses and
+//! masternode credit withdrawals broadcast through
 //! [`broadcast_tracking_delivery`], which keeps every dispatch's outcome so an
 //! earlier dispatch that may have been delivered is never hidden by a later
 //! refusal: only a refusal before anything was sent reads as failed. The
@@ -70,8 +71,9 @@ pub(crate) fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
 /// failed while it may still execute invites a second one, so every path
 /// whose retry signs a new transition classifies with
 /// [`broadcast_tracking_delivery`] instead: shielded spends, shields from
-/// Platform addresses (to the wallet's own notes or to a recipient's) and
-/// masternode credit withdrawals. The one caller left here is the shield
+/// Platform addresses (to the wallet's own notes or to a recipient's),
+/// identity top-ups from Platform addresses and masternode credit
+/// withdrawals. The one caller left here is the shield
 /// from an identity, which holds a durable guard on the exact signed
 /// transition: a refusal only makes it skip the result wait for a proven
 /// read of the identity nonce, and it reports unconfirmed either way.
@@ -201,7 +203,7 @@ pub(crate) async fn broadcast_tracking_delivery(
 /// The classification [`broadcast_tracking_delivery`] makes of
 /// `state_transition`'s broadcast, over the outcomes `dispatch` returns, one
 /// call per single dispatch, at most `dispatches` of them.
-async fn track_delivery<F, Fut>(
+pub(crate) async fn track_delivery<F, Fut>(
     state_transition: &dpp::state_transition::StateTransition,
     dispatches: usize,
     mut dispatch: F,

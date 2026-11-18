@@ -92,8 +92,12 @@ fn catch_address_top_up_panic(
 /// when it shows every input address at or past the nonce this top-up was
 /// signed with AND the identity balance above the balance the top-up started
 /// from, a fresh read from Platform taken before signing; any other proof is
-/// 20 and nothing is reconciled from it. The host must not submit it again;
-/// the next sync settles the outcome.
+/// 20 and nothing is reconciled from it. So is a broadcast an endpoint
+/// refused once a dispatch may have reached it: the refusal is no proof that
+/// the signed top-up was left out of every mempool, so an address-nonce
+/// refusal is 20 too, and this export never returns
+/// `ErrorAddressNonceMismatch` (21). The host must not submit it again; the
+/// next sync settles the outcome.
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -202,8 +206,10 @@ unsafe fn funding_rows(
 /// when it shows every input address at or past the nonce this top-up was
 /// signed with AND the identity balance above the balance the top-up started
 /// from, a fresh read from Platform taken before signing; any other proof is
-/// 20 and nothing is reconciled from it. The host must not submit it again;
-/// the next sync settles the outcome.
+/// 20 and nothing is reconciled from it, and a refused broadcast reads as
+/// for [`platform_wallet_top_up_from_addresses_with_signer`] (20, never
+/// `ErrorAddressNonceMismatch` (21)). The host must not submit it again; the
+/// next sync settles the outcome.
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_top_up_from_addresses_with_signer`].
