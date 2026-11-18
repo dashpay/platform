@@ -2,6 +2,8 @@ package org.dashfoundation.dashsdk.wallet
 
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.withContext
 
 /**
  * Availability of a wallet's local shielded ledger, read without contacting
@@ -101,15 +103,49 @@ internal class ShieldedBindingFence {
     }
 
     /**
+     * A read is about to start. Throws [ShieldedLocalBalanceBindingChanged]
+     * while a bind or clear is in flight; otherwise returns the token to
+     * pass to [readEnds].
+     */
+    fun readStarts(): Long {
+        val started = changesStarted.get()
+        if (changesInFlight.get() != 0) throw ShieldedLocalBalanceBindingChanged()
+        return started
+    }
+
+    /**
+     * The read that got [started] from [readStarts] is about to hand its
+     * value to the caller. Throws [ShieldedLocalBalanceBindingChanged] when
+     * a bind or clear started since.
+     */
+    fun readEnds(started: Long) {
+        if (changesStarted.get() != started) throw ShieldedLocalBalanceBindingChanged()
+    }
+
+    /**
      * Run [read] and return its value, or throw
      * [ShieldedLocalBalanceBindingChanged] when a bind or clear overlapped
      * it. [read] is not run at all while one is in flight.
      */
     fun <T> reading(read: () -> T): T {
-        val before = changesStarted.get()
-        if (changesInFlight.get() != 0) throw ShieldedLocalBalanceBindingChanged()
+        val started = readStarts()
         val value = read()
-        if (changesStarted.get() != before) throw ShieldedLocalBalanceBindingChanged()
+        readEnds(started)
+        return value
+    }
+
+    /**
+     * [reading] for a read that runs in another [context]. The closing
+     * check runs after the value is back in the caller's context, so a bind
+     * or clear that starts while the result waits for the caller's
+     * dispatcher is still seen. Nothing can cover the time after this
+     * returns: a snapshot is as of its delivery, and a caller that keeps it
+     * reads again after a later bind or clear.
+     */
+    suspend fun <T> readingIn(context: CoroutineContext, read: () -> T): T {
+        val started = readStarts()
+        val value = withContext(context) { read() }
+        readEnds(started)
         return value
     }
 }

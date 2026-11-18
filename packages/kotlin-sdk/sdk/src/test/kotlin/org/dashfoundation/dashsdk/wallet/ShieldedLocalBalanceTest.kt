@@ -2,6 +2,10 @@ package org.dashfoundation.dashsdk.wallet
 
 import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -152,5 +156,31 @@ class ShieldedLocalBalanceTest {
         }
         reader.join()
         assertTrue(failure is ShieldedLocalBalanceBindingChanged)
+    }
+
+    @Test
+    fun shouldRefuseAReadWhoseResultWaitsForTheCallerWhileABindOrClearRuns() = runTest {
+        val fence = ShieldedBindingFence()
+        val readReturned = CountDownLatch(1)
+        // The caller runs on the test dispatcher, which runs nothing until
+        // this test suspends. The read itself runs on another thread.
+        val outcome = async {
+            runCatching {
+                fence.readingIn(Dispatchers.IO) {
+                    readReturned.countDown()
+                    1
+                }
+            }
+        }
+        runCurrent()
+        readReturned.await()
+        // The read has its value, and the value cannot reach the caller
+        // before this test suspends. A bind or clear runs to the end in
+        // that window.
+        fence.changing { }
+        assertTrue(outcome.await().exceptionOrNull() is ShieldedLocalBalanceBindingChanged)
+
+        // Without a bind or clear in the window the value is delivered.
+        assertEquals(2, fence.readingIn(Dispatchers.IO) { 2 })
     }
 }

@@ -1711,17 +1711,17 @@ class PlatformWalletManager(
      * finished, the snapshot may list the accounts of the binding it
      * replaced, so it is not returned: the call throws
      * [ShieldedLocalBalanceBindingChanged] and a new read is safe (Swift's
-     * `ShieldedLocalBalanceReadError.bindingChanged`).
+     * `ShieldedLocalBalanceReadError.bindingChanged`). The check is made
+     * once the result is back on the caller's dispatcher. A bind or clear
+     * after this returns is the caller's to follow with a new read.
      */
     suspend fun localShieldedBalanceSnapshot(
         walletId: ByteArray,
-    ): ShieldedLocalBalanceState = withContext(Dispatchers.IO) {
-        shieldedBindingFence.reading {
-            val values = mapNativeErrors {
-                FundingNative.localShieldedBalanceSnapshot(managerHandle, walletId)
-            } ?: error("Local shielded balance snapshot returned nothing")
-            decodeLocalShieldedBalance(values)
-        }
+    ): ShieldedLocalBalanceState = shieldedBindingFence.readingIn(Dispatchers.IO) {
+        val values = mapNativeErrors {
+            FundingNative.localShieldedBalanceSnapshot(managerHandle, walletId)
+        } ?: error("Local shielded balance snapshot returned nothing")
+        decodeLocalShieldedBalance(values)
     }
 
     /**
