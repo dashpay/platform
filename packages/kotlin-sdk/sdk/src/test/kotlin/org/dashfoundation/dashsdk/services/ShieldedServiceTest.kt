@@ -18,7 +18,9 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.dashsdk.wallet.latestShieldedBalances
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -248,6 +250,34 @@ class ShieldedServiceTest {
         other.value = latestShieldedBalances(other.value, update(1, 7, accounts = arrayOf(0 to 7)))
         collecting.cancel()
         assertEquals(listOf(150L, 40L, null, 7L), seen)
+    }
+
+    @Test
+    fun shouldNotLetABindThatWasOvertakenFinish() {
+        // Clear's re-bind of the old manager starts and suspends in native
+        // code; a switch to another manager binds meanwhile; Clear's bind
+        // resumes and must not attach its subscriptions.
+        val turns = BindingTurns()
+        val log = mutableListOf<String>()
+        val clearsBind = turns.begin { log += "old manager installed" }
+        val switch = turns.begin { log += "new manager installed" }
+        assertFalse(turns.finish(clearsBind) { log += "old manager attached" })
+        assertTrue(turns.finish(switch) { log += "new manager attached" })
+        assertEquals(
+            listOf("old manager installed", "new manager installed", "new manager attached"),
+            log,
+        )
+
+        // An unbind takes a turn too: a bind it overtook does not attach.
+        val bind = turns.begin { }
+        turns.begin { log += "unbound" }
+        assertFalse(turns.finish(bind) { log += "attached after unbind" })
+        assertEquals("unbound", log.last())
+
+        // A bind nothing overtook finishes.
+        val alone = turns.begin { }
+        assertTrue(turns.finish(alone) { log += "attached" })
+        assertEquals("attached", log.last())
     }
 
     @Test
