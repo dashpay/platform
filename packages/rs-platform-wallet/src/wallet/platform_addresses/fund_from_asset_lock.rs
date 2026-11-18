@@ -43,8 +43,10 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funding_from_asset_lock_transition::calculate_address_funding_from_asset_lock_min_required_fee;
 use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::StateTransitionStructureValidation;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::PlatformP2PKHAddress;
 use std::collections::BTreeMap;
@@ -648,17 +650,37 @@ fn remainder_fee_strategy(
 /// [`TopUpAddress::top_up_with_signers`] will build from `addresses`
 /// (no inputs, `fee_strategy` as derived), run before the asset lock
 /// exists. The asset-lock proof and witnesses are placeholders: the
-/// structure rules do not read them. A rejection is returned as the
-/// same [`dash_sdk::Error`] the SDK's own pre-broadcast check produces.
+/// structure rules do not read them. The transition generation is the one
+/// the submission's conversion
+/// (`AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signers`)
+/// selects for `platform_version`, and a generation this wallet cannot build
+/// is refused here, before the lock, as that conversion would refuse it
+/// after. A rejection is returned as the same [`dash_sdk::Error`] the SDK's
+/// own pre-broadcast check produces.
 fn validate_funding_transition_structure(
     addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
     fee_strategy: &AddressFundsFeeStrategy,
     platform_version: &PlatformVersion,
 ) -> Result<(), PlatformWalletError> {
-    let transition = AddressFundingFromAssetLockTransitionV0 {
-        outputs: addresses.clone(),
-        fee_strategy: fee_strategy.clone(),
-        ..Default::default()
+    let transition = match platform_version
+        .dpp
+        .state_transition_conversion_versions
+        .address_funding_from_asset_lock_transition
+    {
+        0 => AddressFundingFromAssetLockTransition::V0(AddressFundingFromAssetLockTransitionV0 {
+            outputs: addresses.clone(),
+            fee_strategy: fee_strategy.clone(),
+            ..Default::default()
+        }),
+        version => {
+            return Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                ProtocolError::UnknownVersionMismatch {
+                    method: "validate_funding_transition_structure".to_string(),
+                    known_versions: vec![0],
+                    received: version,
+                },
+            )))
+        }
     };
     let result = transition.validate_structure(platform_version);
     if result.is_valid() {
@@ -1260,6 +1282,37 @@ mod tests {
 
         let keys: Vec<PlatformAddress> = addresses.keys().copied().collect();
         assert_eq!(addresses[&keys[1]], None);
+    }
+
+    /// The preflight validates the transition generation the submission
+    /// would build at `platform_version`; a generation this wallet cannot
+    /// build is refused before the asset lock exists instead of after it.
+    #[test]
+    fn should_refuse_a_funding_transition_generation_the_preflight_cannot_build() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(0x0A), Some(1_000_000));
+        addresses.insert(p2pkh(0xBB), None);
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+
+        let latest = PlatformVersion::latest();
+        validate_funding_transition_structure(&addresses, &strategy, latest)
+            .expect("the generation the latest version selects validates");
+
+        let mut unknown = latest.clone();
+        unknown
+            .dpp
+            .state_transition_conversion_versions
+            .address_funding_from_asset_lock_transition = 1;
+        let refused = validate_funding_transition_structure(&addresses, &strategy, &unknown);
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::UnknownVersionMismatch { received: 1, .. }
+                )))
+            ),
+            "got {refused:?}"
+        );
     }
 
     /// P2SH sorts after every P2PKH (variant discriminant first), which
