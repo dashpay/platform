@@ -415,6 +415,16 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldReportAMissingIdentityBalanceAsRetryable() {
+        val detail = "Platform returned no balance for the identity"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
+        assertEquals(detail, mapped.message)
+        assertTrue("nothing was sent, so the read may be retried", mapped.isRetryable)
+    }
+
+    @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
             "Platform shield capacity exceeded: available 3623849220, required 3623849221"
