@@ -254,19 +254,25 @@ class ShieldedService(private val database: DashDatabase) {
     }
 
     /**
-     * [bind], returning whether this bind is still the service's latest when
-     * it ends. A bind suspends in its native calls; when another bind or an
-     * [unbind] took a later turn meanwhile, this one stops without attaching
-     * its subscriptions, so it cannot point the service back at a manager
-     * that was replaced.
+     * [bind], returning its turn when this bind is still the service's latest
+     * as it ends, and null otherwise. A bind suspends in its native calls;
+     * when another bind or an [unbind] took a later turn meanwhile, this one
+     * stops without attaching its subscriptions, so it cannot point the
+     * service back at a manager that was replaced.
+     *
+     * [onlyIf] is checked under the lock that starts the turn: when it is
+     * false nothing is installed and null is returned. [clearLocalState]
+     * uses it so that its re-bind starts only while the manager it cleared
+     * is still the bound one, with no gap between that check and the bind.
      */
     private suspend fun bindTurn(
         manager: PlatformWalletManager,
         walletId: ByteArray,
         dbPath: String,
         accounts: List<Int>,
-    ): Boolean {
-        if (!isAvailable) return false
+        onlyIf: () -> Boolean = { true },
+    ): Long? {
+        if (!isAvailable) return null
         val sortedAccounts = accounts.distinct().sorted()
 
         // Cancel the prior subscriptions and zero the published mirror, but —
@@ -281,7 +287,7 @@ class ShieldedService(private val database: DashDatabase) {
         // service permanently unbound with no path back, disabling Clear while
         // the coordinator kept syncing. That was the on-device "Clear disabled
         // when needed" defect.
-        val turn = bindingTurns.begin {
+        val turn = bindingTurns.beginIf(onlyIf) {
             eventJob?.cancel()
             eventJob = null
             pollJob?.cancel()
@@ -295,7 +301,7 @@ class ShieldedService(private val database: DashDatabase) {
             _state.value = ShieldedSyncState()
             balanceUpdates.value = manager.shieldedBalances
             _shieldedBalance.value = ordinaryBalance(walletId)
-        }
+        } ?: return null
 
         var bound = false
         try {
@@ -319,13 +325,14 @@ class ShieldedService(private val database: DashDatabase) {
         // whatever rows persist. Only the latest bind attaches them: one
         // that a later bind or an unbind overtook while it was suspended
         // above leaves the service as the later turn set it.
-        return bindingTurns.finish(turn) {
+        val finished = bindingTurns.finish(turn) {
             _isBound.value = bound
             eventJob = scope.launch {
                 manager.syncEvents.collect { event -> reduce(walletId, event) }
             }
             pollJob = scope.launch { pollSyncing(manager) }
         }
+        return turn.takeIf { finished }
     }
 
     /** Mirror whether a sync pass is in flight into [state], once a second. */
@@ -595,21 +602,19 @@ class ShieldedService(private val database: DashDatabase) {
         // relaunch. bind() re-runs configureShielded (idempotent same-path)
         // + bindShielded (re-registers on the now-empty coordinator; its
         // restore_for_wallet finds no watermark → starts at index 0).
-        if (manager !== mgr) {
-            // The service was bound to another manager (another network)
-            // while this Clear was suspended. Its reset and wipe were of
-            // the old network; binding the old manager again now would
-            // point the balances and the events of the active wallet back
-            // at it.
-            android.util.Log.i(TAG, "Shielded clear: bound manager changed; skipping re-bind")
-            return
-        }
         if (dbPath != null) {
-            if (!bindTurn(mgr, walletId, dbPath, accounts)) {
-                // Another bind or an unbind took over while this re-bind was
-                // suspended: the service now follows that one, and its own
-                // pass registers the fleet it belongs to.
-                android.util.Log.i(TAG, "Shielded clear: re-bind was overtaken; stopping")
+            // The re-bind starts only while the manager this Clear reset is
+            // still the bound one. If the service was bound to another
+            // manager (another network) while the Clear was suspended,
+            // binding the old one again would point the balances and the
+            // events of the active wallet back at it. The check runs under
+            // the lock that starts the bind, so no switch fits in between.
+            val turn = bindTurn(mgr, walletId, dbPath, accounts) { manager === mgr }
+            if (turn == null) {
+                // Not started, or another bind or an unbind took over while
+                // it was suspended: the service follows that one, and its
+                // own pass registers the fleet it belongs to.
+                android.util.Log.i(TAG, "Shielded clear: re-bind not current; stopping")
                 return
             }
             // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
@@ -623,12 +628,15 @@ class ShieldedService(private val database: DashDatabase) {
                 allWalletIds = mgr.wallets.value.keys,
                 mirrorWalletId = walletIdHex,
             ) { otherKey ->
-                mgr.wallets.value[otherKey]?.let { other ->
-                    bindEngine(mgr, other.walletId, dbPath)
+                // Stops as soon as a later bind or an unbind begins.
+                if (bindingTurns.isLatest(turn)) {
+                    mgr.wallets.value[otherKey]?.let { other ->
+                        bindEngine(mgr, other.walletId, dbPath)
+                    }
                 }
             }
             val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
-            if (isAvailable && notRunning) {
+            if (isAvailable && notRunning && bindingTurns.isLatest(turn)) {
                 runCatching { mgr.startShieldedSync() }.onFailure {
                     android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
                 }
@@ -666,6 +674,24 @@ internal class BindingTurns {
         install()
         latest
     }
+
+    /**
+     * [begin], but only if [allowed] holds. [allowed] is read under the same
+     * lock, so no other turn can begin between the check and this one; when
+     * it is false no turn is taken and null is returned.
+     */
+    fun beginIf(allowed: () -> Boolean, install: () -> Unit): Long? = synchronized(this) {
+        if (!allowed()) {
+            null
+        } else {
+            latest += 1
+            install()
+            latest
+        }
+    }
+
+    /** Whether no turn began after [turn]. */
+    fun isLatest(turn: Long): Boolean = synchronized(this) { turn == latest }
 
     /**
      * Run [finish] if [turn] is still the latest and say whether it was.
