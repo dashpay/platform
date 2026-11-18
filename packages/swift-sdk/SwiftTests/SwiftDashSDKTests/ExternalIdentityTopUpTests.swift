@@ -48,10 +48,30 @@ final class ExternalIdentityTopUpTests: XCTestCase {
         )
     }
 
-    func testRejectsEmptyInputsBeforeTheFFI() async throws {
-        try await assertInvalidParameter(
-            identityId: identityId, inputs: [], contains: "inputs is empty"
-        )
+    /// An empty input list is not refused in Swift: it goes to the export as
+    /// `(NULL, 0)`, and the export's invalid-parameter code comes back typed.
+    func testHandsEmptyInputsToTheExportAsNullAndZero() async throws {
+        let recorder = Recorder()
+        do {
+            _ = try await ManagedPlatformWallet(handle: 42, walletId: Data())
+                .topUpFromAddresses(
+                    identityId: identityId, inputs: [], addressSigner: try signer()
+                ) { _, _, inputsPtr, count, _, _ in
+                    recorder.inputsWereNull = inputsPtr == nil
+                    recorder.count = count
+                    return PlatformWalletFFIResult(
+                        code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVALID_PARAMETER,
+                        message: strdup("no funding rows were provided")
+                    )
+                }
+            XCTFail("the export's invalid-parameter code must throw")
+        } catch PlatformWalletError.invalidParameter(let message) {
+            XCTAssertEqual(message, "no funding rows were provided")
+        } catch {
+            XCTFail("expected invalidParameter, got \(error)")
+        }
+        XCTAssertTrue(recorder.inputsWereNull)
+        XCTAssertEqual(recorder.count, 0)
     }
 
     func testRejectsMalformedAddressHashBeforeTheFFI() async throws {
@@ -166,6 +186,8 @@ final class ExternalIdentityTopUpTests: XCTestCase {
         var id = Data()
         var rows: [IdentityFundingInputFFI] = []
         var signer: OpaquePointer?
+        var inputsWereNull = false
+        var count: UInt = .max
 
         func record(handle: Handle, id: Data, rows: [IdentityFundingInputFFI], signer: OpaquePointer?) {
             self.handle = handle

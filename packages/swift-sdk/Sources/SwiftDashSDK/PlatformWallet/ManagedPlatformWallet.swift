@@ -849,9 +849,6 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                 "identityId must be 32 bytes, got \(identityId.count)"
             )
         }
-        guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter("inputs is empty")
-        }
         // Reject malformed address hashes up front. Earlier
         // revisions used `.prefix(20)` on the FFI build below,
         // which silently truncates oversize hashes and zero-pads
@@ -909,10 +906,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             let result = withExtendedLifetime((self, addressSigner)) {
                 ffiInputs.withUnsafeBufferPointer { inputsBuf in
                     withUnsafePointer(to: &idTuple) { idPtr in
+                        // An empty list goes over as `(NULL, 0)`; Rust
+                        // refuses it as an invalid parameter.
                         call(
                             handle,
                             idPtr,
-                            inputsBuf.baseAddress,
+                            inputsBuf.isEmpty ? nil : inputsBuf.baseAddress,
                             UInt(inputsBuf.count),
                             addressSignerHandle,
                             &newBalance

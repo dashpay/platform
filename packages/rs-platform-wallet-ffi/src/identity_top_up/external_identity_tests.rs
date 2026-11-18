@@ -195,21 +195,30 @@ fn should_refuse_an_overflowing_funding_sum_on_both_exports() {
     assert_eq!(balance, UNTOUCHED);
 }
 
-/// No funding rows reach the library, which refuses them as an invalid
-/// parameter before looking the identity up.
+/// No funding rows reach the library on both exports, as a list of count 0
+/// or as `(NULL, 0)`, and the library refuses them as an invalid parameter
+/// before looking the identity up.
 #[test]
 fn should_report_empty_inputs_as_an_invalid_parameter() {
     let (handle, signer) = wallet_handle(Some(platform_identity()));
     let id = IDENTITY;
     let mut balance = UNTOUCHED;
+    let row = [input(0)];
 
-    let result = unsafe { top_up(handle, &id, [input(0)].as_ptr(), 0, signer, &mut balance) };
+    let mut results = Vec::new();
+    for export in [top_up, platform_wallet_top_up_from_addresses_with_signer] {
+        for inputs in [row.as_ptr(), std::ptr::null()] {
+            results.push(unsafe { export(handle, &id, inputs, 0, signer, &mut balance) });
+        }
+    }
 
     release(handle, signer);
-    assert_eq!(
-        result.code,
-        PlatformWalletFFIResultCode::ErrorInvalidParameter
-    );
+    for result in results {
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
     assert_eq!(balance, UNTOUCHED);
 }
 

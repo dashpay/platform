@@ -105,7 +105,8 @@ fn catch_address_top_up_panic(
 ///   the duration of the call.
 /// - `inputs` must point at a valid `[IdentityFundingInputFFI;
 ///   inputs_count]` array; each row's `hash` is a 20-byte address
-///   hash.
+///   hash. It may be null when `inputs_count` is 0: no rows is
+///   `ErrorInvalidParameter`, refused by the library.
 /// - `signer_address_handle` must be a valid, non-destroyed
 ///   `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`.
 ///   The caller retains ownership; this function does NOT destroy it.
@@ -122,7 +123,6 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 ) -> PlatformWalletFFIResult {
     catch_address_top_up_panic("platform_wallet_top_up_from_addresses_with_signer", || {
         check_ptr!(identity_id);
-        check_ptr!(inputs);
         check_ptr!(signer_address_handle);
         check_ptr!(out_new_balance);
         let identity_id_bytes: [u8; 32] = *identity_id;
@@ -162,15 +162,26 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 
 /// Marshal the address-input rows of an address-funded top-up into the
 /// funding rows the library takes; the library sums rows naming the same
-/// address and refuses what it cannot act on.
+/// address and refuses what it cannot act on, no rows at all included.
+/// An empty list may be passed as `(NULL, 0)`; a null `inputs` with a
+/// nonzero count is `ErrorNullPointer`.
 ///
 /// # Safety
 /// `inputs` must point at a valid `[IdentityFundingInputFFI; inputs_count]`
-/// array.
+/// array, or be null when `inputs_count` is 0.
 unsafe fn funding_rows(
     inputs: *const IdentityFundingInputFFI,
     inputs_count: usize,
 ) -> Result<Vec<(PlatformAddress, Credits)>, PlatformWalletFFIResult> {
+    if inputs_count == 0 {
+        return Ok(Vec::new());
+    }
+    if inputs.is_null() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "inputs ptr is null",
+        ));
+    }
     slice::from_raw_parts(inputs, inputs_count)
         .iter()
         .map(|entry| match entry.address_type {
@@ -226,7 +237,6 @@ pub unsafe extern "C" fn platform_wallet_top_up_external_identity_from_addresses
         "platform_wallet_top_up_external_identity_from_addresses_with_signer",
         || {
             check_ptr!(identity_id);
-            check_ptr!(inputs);
             check_ptr!(signer_address_handle);
             check_ptr!(out_new_balance);
             let identity_id_bytes: [u8; 32] = *identity_id;
