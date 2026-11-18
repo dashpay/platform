@@ -545,13 +545,18 @@ class ShieldedService(private val database: DashDatabase) {
      * No-op when unbound.
      */
     suspend fun clearLocalState(db: DashDatabase = database) {
-        val walletId = boundWalletId ?: return
-        // Snapshot bind credentials up front so the re-bind at the end is
-        // driven off a stable set (bind() retains credentials across its own
-        // re-entry, but snapshotting keeps this flow independent of that).
-        val mgr = manager
-        val dbPath = boundDbPath
-        val accounts = _boundAccounts.value.ifEmpty { listOf(0) }
+        // The binding this Clear is for: its turn and its credentials, read
+        // together. A bind or unbind that begins later makes the turn stale,
+        // which is how the steps below know the service's mirror has moved
+        // on (to another wallet or another manager) and must not be touched.
+        val binding = bindingTurns.read {
+            ClearedBinding(boundWalletId, manager, boundDbPath, _boundAccounts.value)
+        }
+        val startTurn = binding.first
+        val walletId = binding.second.walletId ?: return
+        val mgr = binding.second.manager
+        val dbPath = binding.second.dbPath
+        val accounts = binding.second.accounts.ifEmpty { listOf(0) }
 
         // A bound service must have a manager (both are set together in
         // bind, cleared together in unbind). If it doesn't, the Rust-side
@@ -596,20 +601,28 @@ class ShieldedService(private val database: DashDatabase) {
                 db.shieldedDao().deleteSyncStatesByWallet(wid)
             }
         }
-        _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
+        // The counters belong to the binding that was cleared. If a later
+        // bind took over meanwhile, they are that binding's now.
+        bindingTurns.finish(startTurn) {
+            _state.update { it.copy(shieldedBalance = 0, totalScanned = 0, totalNewNotes = 0) }
+        }
 
         // Re-bind + restart so the cold rebuild runs now, not just after a
         // relaunch. bind() re-runs configureShielded (idempotent same-path)
         // + bindShielded (re-registers on the now-empty coordinator; its
         // restore_for_wallet finds no watermark → starts at index 0).
         if (dbPath != null) {
-            // The re-bind starts only while the manager this Clear reset is
-            // still the bound one. If the service was bound to another
-            // manager (another network) while the Clear was suspended,
-            // binding the old one again would point the balances and the
-            // events of the active wallet back at it. The check runs under
-            // the lock that starts the bind, so no switch fits in between.
-            val turn = bindTurn(mgr, walletId, dbPath, accounts) { manager === mgr }
+            // The re-bind starts only while the service still mirrors the
+            // wallet and the manager this Clear reset. If it was bound to
+            // another manager (another network) or to another wallet while
+            // the Clear was suspended, binding the old one again would point
+            // the mirror, the balances and the events back at it. The check
+            // runs under the lock that starts the bind, so no switch fits in
+            // between. A re-bind of the same wallet on the same manager does
+            // not stop it: the reset above dropped that registration too.
+            val turn = bindTurn(mgr, walletId, dbPath, accounts) {
+                manager === mgr && boundWalletId?.contentEquals(walletId) == true
+            }
             if (turn == null) {
                 // Not started, or another bind or an unbind took over while
                 // it was suspended: the service follows that one, and its
@@ -657,6 +670,14 @@ class ShieldedService(private val database: DashDatabase) {
     }
 }
 
+/** What [ShieldedService.clearLocalState] reads of the binding it clears. */
+private class ClearedBinding(
+    val walletId: ByteArray?,
+    val manager: PlatformWalletManager?,
+    val dbPath: String?,
+    val accounts: List<Int>,
+)
+
 /**
  * Orders the binds and unbinds of one [ShieldedService]. Each takes a turn.
  * What a turn installs at its start runs under one lock, so two turns never
@@ -692,6 +713,12 @@ internal class BindingTurns {
 
     /** Whether no turn began after [turn]. */
     fun isLatest(turn: Long): Boolean = synchronized(this) { turn == latest }
+
+    /**
+     * The latest turn together with what [read] returns, read in one step so
+     * the value is the one that turn installed.
+     */
+    fun <T> read(read: () -> T): Pair<Long, T> = synchronized(this) { latest to read() }
 
     /**
      * Run [finish] if [turn] is still the latest and say whether it was.

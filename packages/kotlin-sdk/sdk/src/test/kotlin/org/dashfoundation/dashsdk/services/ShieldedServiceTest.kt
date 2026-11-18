@@ -303,6 +303,37 @@ class ShieldedServiceTest {
     }
 
     @Test
+    fun shouldLeaveTheMirrorAloneOnceAnotherWalletIsBoundOnTheSameManager() {
+        // Clear reads its binding (wallet A on the manager) with its turn.
+        val turns = BindingTurns()
+        var mirror = "manager" to "A"
+        turns.begin { mirror = "manager" to "A" }
+        val (startTurn, cleared) = turns.read { mirror }
+        assertEquals("manager" to "A", cleared)
+
+        // While Clear is suspended, wallet B is bound on the same manager.
+        turns.begin { mirror = "manager" to "B" }
+
+        // Clear does not reset the counters, which are B's now...
+        var countersReset = false
+        assertFalse(turns.finish(startTurn) { countersReset = true })
+        assertFalse(countersReset)
+        // ...and its re-bind, which wants the manager AND the wallet it
+        // cleared, takes no turn: B stays the mirror.
+        assertNull(turns.beginIf({ mirror == cleared }) { mirror = cleared })
+        assertEquals("manager" to "B", mirror)
+
+        // A re-bind of the same wallet on the same manager does not stop
+        // Clear's own re-bind: the reset dropped that registration too.
+        val again = BindingTurns()
+        var sameMirror = "manager" to "A"
+        again.begin { sameMirror = "manager" to "A" }
+        val (_, clearedAgain) = again.read { sameMirror }
+        again.begin { sameMirror = "manager" to "A" }
+        assertTrue(again.beginIf({ sameMirror == clearedAgain }) { } != null)
+    }
+
+    @Test
     fun shouldShowNoBalanceAfterUnbind() = runTest {
         announce(update(1, 150, accounts = arrayOf(0 to 150)))
         service.unbind()
