@@ -94,17 +94,18 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun shouldExposeAHeldAssetLockAsResumableWithItsOutpoint() {
+    fun shouldExposeAHeldAssetLockAsResumableWithItsOutpointAndNotRetryable() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
         // A held lock under the shared code (a proof wait that timed out), the
         // contested lock (48) and the recipient mismatch (61): whatever the
-        // type, the native delivery says resume, and names the lock.
+        // type, the native delivery says resume, and names the lock. Not a
+        // retry: running the payment again would fund a second one.
         for (code in listOf(6, 48, 61)) {
             val held = DashSdkError.fromNative(
-                DashSDKException(offset + code, "held", 0, 0, LOCK_HELD, true, heldOutPoint),
+                DashSDKException(offset + code, "held", 0, 0, LOCK_HELD, false, heldOutPoint),
             )
             assertEquals("code $code", PaymentDelivery.LOCK_HELD, held.delivery)
-            assertTrue("code $code resumes the held lock", held.isRetryable)
+            assertFalse("code $code resumes, never retries", held.isRetryable)
             val outPoint = held.heldAssetLock!!
             assertArrayEquals(ByteArray(32) { 7 }, outPoint.txid)
             assertEquals(2, outPoint.vout)

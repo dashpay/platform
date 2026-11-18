@@ -745,7 +745,7 @@ private fun classed(delivery: PaymentDelivery): DashSDKException =
         message = "classed",
         consensusError = null,
         paymentDelivery = delivery,
-        retryable = delivery != PaymentDelivery.MAYBE_SENT,
+        retryable = delivery == PaymentDelivery.NOT_SENT,
     )
 
 /** A read of both holds that found [contacts] held for a private request and none awaiting a public request's outcome. */

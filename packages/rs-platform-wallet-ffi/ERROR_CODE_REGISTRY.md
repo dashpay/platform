@@ -104,8 +104,9 @@ from a code.
 
 `retryable` is the wallet's own retry decision
 (`PlatformWalletError::is_retryable`, next to `payment_delivery`): never under
-`MaybeSent`, always under `LockHeld` (the retry is a resume of
-`held_asset_lock`), and under `NotSent` only for the failures the same call
+`MaybeSent`, never under `LockHeld` (running the operation again would fund a
+second payment; the payment goes on by resuming `held_asset_lock`, which the
+host reads from `payment_delivery`), and under `NotSent` only for the failures the same call
 can get past by running again (no recorded anchor yet, a shielded broadcast
 refused before sending, a drain out of budget, an unfinished private-contact
 store read, a transient persister). `false` on success and under `Unknown`.

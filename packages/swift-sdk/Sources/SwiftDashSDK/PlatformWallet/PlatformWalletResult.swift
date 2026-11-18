@@ -611,8 +611,9 @@ public struct PlatformPaymentClass: Equatable, Sendable {
     /// Whether the failed payment may have left the wallet.
     public let delivery: PlatformPaymentDelivery
     /// Whether the wallet allows running the failed operation again: never
-    /// where the payment may have left the wallet; under `.lockHeld` the
-    /// retry is a resume of that lock, never a new payment. Rust decides it
+    /// where the payment may have left the wallet, and never under
+    /// `.lockHeld`, whose payment goes on only by resuming that lock (running
+    /// the operation again would fund a second payment). Rust decides it
     /// (the result's `retryable`); Swift only reads it.
     public let isRetryable: Bool
 
@@ -978,14 +979,15 @@ public enum PlatformWalletError: LocalizedError {
     /// persists across sessions still does not prove finalized ancestry —
     /// the sighting can even be a block record restored from a previous
     /// session whose block was reorganized out while the wallet was offline.
-    /// Keep the tracked lock and continue treating this result as retryable;
+    /// Keep the tracked lock and resume it later (it is not a retry of the
+    /// operation: `isRetryable` is `false` under `.lockHeld`);
     /// only `assetLockInputConflict`, or an independent finalized-ancestry
     /// proof, may authorize discarding it. No funds move either way: the
     /// confirmed spender is this wallet's own transaction, so the value
     /// behind the contested input lives on in it.
     ///
     /// `payment` is Rust's class: `.lockHeld` with the contested lock's
-    /// outpoint, the lock a retry resumes.
+    /// outpoint, the lock a resume takes.
     case assetLockInputContested(String, payment: PlatformPaymentClass? = nil)
     /// Reading persisted wallet state failed on a store that classified the
     /// failure as retryable. Nothing was mutated — retry later. One of the

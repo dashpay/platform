@@ -100,7 +100,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
 
     private var lockHeld: PlatformPaymentClass {
         let outPoint = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 3, count: 36))!
-        return PlatformPaymentClass(delivery: .lockHeld(outPoint), isRetryable: true)
+        return PlatformPaymentClass(delivery: .lockHeld(outPoint), isRetryable: false)
     }
 
     /// A pending private request (code 71), which a public send or accept

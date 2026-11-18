@@ -139,10 +139,10 @@ sealed class DashSdkError(
         /**
          * The native wallet's retry, read and never decided here: `true`
          * only where Rust allows running the operation again. It is never
-         * `true` where the payment may have left the wallet; under
-         * [PaymentDelivery.LOCK_HELD] it is `true` and the retry is a resume
-         * of [heldAssetLock], never a new payment. `false` when the native
-         * layer reported no retry.
+         * `true` where the payment may have left the wallet, nor under
+         * [PaymentDelivery.LOCK_HELD]: that payment goes on only by resuming
+         * [heldAssetLock], and running the operation again would fund a
+         * second payment. `false` when the native layer reported no retry.
          */
         final override val isRetryable: Boolean
             get() = (cause as? DashSDKException)?.retryable ?: false

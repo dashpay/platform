@@ -396,8 +396,9 @@ final class ErrorHandlingTests: XCTestCase {
             guard PlatformWalletResultCode(ffi: code).rawValue == raw else { continue }
             checked += 1
             for (delivery, expected) in deliveries {
-                // Rust never marks an unclassified failure retryable.
-                for retryable in expected == nil ? [false] : [false, true] {
+                // Rust marks a retry only where nothing left the wallet:
+                // never an unclassified, maybe-sent or held-lock failure.
+                for retryable in expected == .notSent ? [false, true] : [false] {
                     let error = PlatformWalletError(
                         result: Self.result(code, delivery, held: Self.heldOutPoint, retryable: retryable)
                     )
@@ -445,15 +446,6 @@ final class ErrorHandlingTests: XCTestCase {
     /// The retry is the result's own: Swift reads it and decides nothing from
     /// the case or the class.
     func testShouldReadTheRetryFromTheResult() {
-        let held = PlatformWalletError(
-            result: Self.result(
-                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
-                PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD,
-                held: Self.heldOutPoint,
-                retryable: true
-            )
-        )
-        XCTAssertTrue(held.isRetryable)
         let notSent = PlatformWalletError(
             result: Self.result(
                 PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
@@ -490,6 +482,25 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertTrue(ErrorCategorizer.toUserFacingError(safeRetry).isRetryable)
 
         XCTAssertFalse(ErrorCategorizer.toUserFacingError(PlatformWalletError.walletOperation("timeout")).isRetryable)
+    }
+
+    /// A held asset lock is not a retry, in the wallet error or in the
+    /// generic user-facing one: running the payment again would fund a
+    /// second one while the first lock stays resumable. Rust classes it
+    /// `LockHeld` with `retryable == false`; the error keeps the outpoint,
+    /// so the payment goes on only by resuming that lock.
+    func testShouldNotOfferAUserFacingRetryForAHeldAssetLock() {
+        for code in [
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+            PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED,
+        ] {
+            let held = PlatformWalletError(
+                result: Self.result(code, PLATFORM_WALLET_FFI_PAYMENT_DELIVERY_LOCK_HELD, held: Self.heldOutPoint)
+            )
+            XCTAssertEqual(held.delivery, Self.expectedHeldLock, "\(held)")
+            XCTAssertFalse(held.isRetryable, "\(held)")
+            XCTAssertFalse(ErrorCategorizer.toUserFacingError(held).isRetryable, "\(held)")
+        }
     }
 
     /// No class is ever derived from a code: a case Swift throws itself

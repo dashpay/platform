@@ -1535,18 +1535,19 @@ impl PlatformWalletError {
     /// to [`Self::payment_delivery`], so hosts read it instead of deriving it.
     ///
     /// Never where the payment may have left the wallet
-    /// ([`PaymentDelivery::MaybeSent`]). Always where it holds a tracked asset
-    /// lock ([`PaymentDelivery::LockHeld`]): the retry is a resume of
-    /// [`Self::held_asset_lock`], never a second payment. Where nothing left
-    /// the wallet ([`PaymentDelivery::NotSent`]), only for the failures the
+    /// ([`PaymentDelivery::MaybeSent`]). Never where it holds a tracked asset
+    /// lock ([`PaymentDelivery::LockHeld`]) either: running the operation
+    /// again would fund a second payment while the first lock stays
+    /// resumable. That payment goes on only by resuming
+    /// [`Self::held_asset_lock`], which a host reads from the delivery, not
+    /// from this flag. Where nothing left the wallet ([`PaymentDelivery::NotSent`]), only for the failures the
     /// same call can get past by running again: a commitment tree not yet at
     /// a recorded anchor, a shielded broadcast refused before it was sent, a
     /// drain that ran out of budget, a private-contact store read that did
     /// not finish, and a persister the store calls transiently unavailable.
     pub fn is_retryable(&self) -> bool {
         match self.payment_delivery() {
-            PaymentDelivery::MaybeSent => false,
-            PaymentDelivery::LockHeld(_) => true,
+            PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => false,
             PaymentDelivery::NotSent => match self {
                 Self::ShieldedNoRecordedAnchor(_)
                 | Self::ShieldedBroadcastFailed(_)
@@ -1579,7 +1580,8 @@ pub enum PaymentDelivery {
     /// The payment holds the tracked asset lock at this outpoint: the lock
     /// may be on the network and its funds have left the spendable balance.
     /// The payment goes on by resuming this lock, never by funding a new
-    /// one, so a retry is a resume of it.
+    /// one, so the failed operation is not retryable: the resume is the way
+    /// on.
     LockHeld(dashcore::OutPoint),
 }
 
@@ -2991,17 +2993,37 @@ mod payment_delivery_tests {
         )
     }
 
-    /// Every variant's retry follows its class: never `MaybeSent`, always
-    /// `LockHeld` (a resume), and for `NotSent` only the transient kinds.
+    /// Every variant's retry follows its class: never `MaybeSent`, never
+    /// `LockHeld` (it goes on by resuming the held lock), and for `NotSent`
+    /// only the transient kinds.
     #[test]
-    fn should_allow_a_retry_only_where_nothing_left_or_the_lock_resumes() {
+    fn should_allow_a_retry_only_where_nothing_left() {
         for (error, delivery) in table() {
             let expected = match delivery {
-                PaymentDelivery::MaybeSent => false,
-                PaymentDelivery::LockHeld(_) => true,
+                PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => false,
                 PaymentDelivery::NotSent => retryable_when_not_sent(&error),
             };
             assert_eq!(error.is_retryable(), expected, "{error:?}");
+        }
+    }
+
+    /// A held asset lock is not a retry: running the failed operation again
+    /// would fund a second payment while the first lock stays resumable. The
+    /// payment goes on only by resuming the lock the error names.
+    #[test]
+    fn should_not_allow_a_retry_for_a_held_asset_lock() {
+        let held: Vec<_> = table()
+            .into_iter()
+            .filter(|(_, delivery)| matches!(delivery, PaymentDelivery::LockHeld(_)))
+            .collect();
+        assert_eq!(
+            held.len(),
+            3,
+            "FinalityTimeout, contested, recipient mismatch"
+        );
+        for (error, _) in held {
+            assert!(!error.is_retryable(), "{error:?}");
+            assert_eq!(error.held_asset_lock(), Some(out_point()), "{error:?}");
         }
     }
 

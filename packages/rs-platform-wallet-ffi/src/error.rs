@@ -934,8 +934,10 @@ pub struct PlatformWalletFFIResult {
     /// Whether the host may run the failed operation again, as the wallet
     /// error behind the failure decided it
     /// ([`PlatformWalletError::is_retryable`]): never when the payment may
-    /// have left the wallet, always when it holds `held_asset_lock` (the
-    /// retry is a resume of that lock). `false` on success and when no
+    /// have left the wallet, and never when it holds `held_asset_lock`
+    /// (running it again would fund a second payment; the payment goes on by
+    /// resuming that lock, read from `payment_delivery`). `false` on success
+    /// and when no
     /// wallet error is behind the failure. Hosts read it; they never derive
     /// it from the code or from `payment_delivery`.
     ///
