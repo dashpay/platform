@@ -1256,7 +1256,7 @@ struct TransitionDetailView: View {
         documentId: documentId,
         signer: signer
       )
-    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_, _) {
       throw PlatformWalletError.transactionBroadcastUnconfirmed(
         "Erase outcome unknown; do not resubmit automatically; read history first."
       )
