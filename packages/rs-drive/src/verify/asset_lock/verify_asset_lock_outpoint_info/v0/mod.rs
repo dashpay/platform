@@ -42,7 +42,7 @@ impl Drive {
                     StoredAssetLockInfo::FullyConsumed
                 } else {
                     StoredAssetLockInfo::PartiallyConsumed(
-                        AssetLockValue::deserialize_from_bytes_untrusted(&bytes)?,
+                        AssetLockValue::deserialize_from_bytes_untrusted_exact(&bytes)?,
                     )
                 }
             }
