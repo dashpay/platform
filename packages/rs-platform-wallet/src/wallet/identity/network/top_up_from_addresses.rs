@@ -10,6 +10,7 @@ use dpp::prelude::{AddressNonce, Identifier};
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::dash_platform_queries::transition::validation::ensure_valid_state_transition_structure;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::broadcast_request::checked_broadcast_request;
 use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::Fetch;
@@ -185,6 +186,13 @@ impl IdentityWallet {
 
     /// Build and sign the top-up of `identity` from `inputs`, mapping the SDK
     /// error the way every address top-up reports it. Nothing is sent.
+    ///
+    /// A signed transition over `max_state_transition_size` (a host signer's
+    /// witness can be any size) is refused here with the SDK's typed
+    /// `StateTransitionMaxSizeExceededError`, by the same check the SDK's
+    /// broadcast makes before its first dispatch
+    /// ([`checked_broadcast_request`]): the SDK would refuse it unsent, and
+    /// the send could not tell that refusal from an endpoint's answer.
     async fn sign_top_up<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity: &Identity,
@@ -227,6 +235,7 @@ impl IdentityWallet {
         .map_err(|e| top_up_error(e.into()))?;
         ensure_valid_state_transition_structure(&state_transition, self.sdk.version())
             .map_err(|e| top_up_error(e.into()))?;
+        checked_broadcast_request(&state_transition, self.sdk.version()).map_err(top_up_error)?;
         Ok(SignedTopUp {
             identity_id: identity.id(),
             managed,

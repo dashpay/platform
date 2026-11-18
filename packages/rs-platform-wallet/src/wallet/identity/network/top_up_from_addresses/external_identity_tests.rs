@@ -27,6 +27,7 @@ use dash_sdk::dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, Proof, ResponseMetadata,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
+use dash_sdk::platform::transition::asset_lock_submission::as_state_transition_max_size_exceeded;
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
@@ -821,4 +822,99 @@ async fn should_keep_an_unpromoted_sdk_error_typed() {
         "got {error:?}"
     );
     assert_eq!(fixture.submissions().await, (0, 0, 0));
+}
+
+/// Signs with a witness as large as a whole state transition may be, so the
+/// signed top-up is over `max_state_transition_size`.
+#[derive(Debug, Default)]
+struct OversizedSigner(AtomicUsize);
+
+#[async_trait::async_trait]
+impl Signer<PlatformAddress> for OversizedSigner {
+    async fn sign(&self, _: &PlatformAddress, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        let max = PlatformVersion::latest()
+            .system_limits
+            .max_state_transition_size as usize;
+        Ok(vec![7; max].into())
+    }
+
+    async fn sign_create_witness(
+        &self,
+        key: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        Ok(AddressWitness::P2pkh {
+            signature: self.sign(key, data).await?,
+        })
+    }
+
+    fn can_sign_with(&self, _: &PlatformAddress) -> bool {
+        true
+    }
+}
+
+/// A signed top-up over the SDK's size limit never leaves the wallet: the
+/// SDK refuses it before dispatch, so it is reported as the typed size
+/// refusal (not sent), not as the unconfirmed outcome, on both routes, with
+/// no broadcast and no result wait.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_refuse_an_oversized_top_up_as_not_sent_on_both_routes() {
+    for managed in [false, true] {
+        let mut fixture = Fixture::new(true).await;
+        let own = Identifier::from(OWN_IDENTITY);
+        fixture
+            .sdk
+            .mock()
+            .expect_fetch::<IdentityBalance, Identifier>(own, Some(BALANCE))
+            .await
+            .unwrap();
+        let signer = OversizedSigner::default();
+        let inputs = vec![(ADDRESS, AMOUNT)];
+        let result = if managed {
+            fixture
+                .wallet
+                .top_up_from_addresses(&own, inputs, &signer, settings())
+                .await
+        } else {
+            fixture
+                .wallet
+                .top_up_external_identity_from_addresses(
+                    &fixture.target,
+                    inputs,
+                    &signer,
+                    settings(),
+                )
+                .await
+        };
+
+        assert!(
+            matches!(&result, Err(PlatformWalletError::Sdk(e))
+                if as_state_transition_max_size_exceeded(e).is_some()),
+            "managed {managed}: got {result:?}"
+        );
+        assert_eq!(signer.0.load(Ordering::SeqCst), 1, "managed {managed}");
+        let recipient = if managed {
+            identity(OWN_IDENTITY)
+        } else {
+            identity([9; 32])
+        };
+        let transition = IdentityTopUpFromAddressesTransition::try_from_inputs_with_signer(
+            &recipient,
+            BTreeMap::from([(ADDRESS, (1, AMOUNT))]),
+            &OversizedSigner::default(),
+            0,
+            fixture.sdk.version(),
+            None,
+        )
+        .await
+        .unwrap();
+        let broadcast = transition.broadcast_request_for_state_transition().unwrap();
+        let wait = transition
+            .wait_for_state_transition_result_request()
+            .unwrap();
+        let broadcasts = fixture.sdk.mock().request_count(&broadcast).await;
+        let waits = fixture.sdk.mock().request_count(&wait).await;
+        assert_eq!((broadcasts, waits), (0, 0), "managed {managed}");
+    }
 }
