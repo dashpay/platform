@@ -15,10 +15,14 @@
 //! requires. The trees of an index that sums nothing, and the counters of a
 //! `summableOffCountIndex` index, keep the width they have.
 //!
-//! Two trees are left as stored, and counted: a `ProvableCountSumTree`, which has no
-//! counterpart to convert to in place, and a ranked tree GroveDB refuses for a key too long for
-//! the big sum axis. The trees adding their sums to one of them are left too, since a 128-bit
-//! tree adds nothing to a 64-bit parent.
+//! Each tree becomes the tree a write of the type now creates in its place. That is the same
+//! tree with a wider sum, except for a `ProvableCountSumTree`, which becomes a
+//! `ProvableCountProvableBigSumTree`: no tree with a 128-bit sum commits the count alone to its
+//! node hashes, so its sum becomes provable too.
+//!
+//! One tree is left as stored, and counted: a ranked tree GroveDB refuses for a key too long
+//! for the big sum axis. The trees adding their sums to it are left too, since a 128-bit tree
+//! adds nothing to a 64-bit parent.
 //!
 //! Any other error halts the activation block for every validator, as for the other
 //! activation migrations: the writes belong to the activation transaction, and no partial
@@ -44,7 +48,8 @@ pub struct DocumentSumConversionStats {
     pub types: u64,
     /// Trees converted to their 128-bit counterpart.
     pub converted_trees: u64,
-    /// Trees with a 64-bit sum left as stored: no counterpart converts them in place.
+    /// Trees with a 64-bit sum left as stored: ranked trees holding a key too long for the
+    /// big sum axis, and the trees adding their sums to them.
     pub trees_left_as_stored: u64,
 }
 
@@ -282,6 +287,7 @@ impl Drive {
             Element::SumTree(..)
             | Element::CountSumTree(..)
             | Element::ProvableSumTree(..)
+            | Element::ProvableCountSumTree(..)
             | Element::ProvableCountProvableSumTree(..)
             | Element::ProvableSumIndexedTree(..)
             | Element::ProvableCountProvableSumIndexedTree(..) => {
@@ -307,12 +313,6 @@ impl Drive {
                     }
                     Err(error) => Err(Error::GroveDB(Box::new(error))),
                 }
-            }
-            // No tree with a 128-bit sum commits the count alone to its node hashes, so
-            // this one cannot be converted where it stands.
-            Element::ProvableCountSumTree(..) => {
-                stats.trees_left_as_stored += 1;
-                Ok(Outcome::LeftAsStored)
             }
             // Already wide, or an element that holds no sum of its own to widen.
             _ => Ok(Outcome::Settled),

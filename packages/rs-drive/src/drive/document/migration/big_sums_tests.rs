@@ -401,7 +401,8 @@ fn should_refuse_to_convert_under_a_protocol_version_that_keeps_no_big_sums() {
 
 /// A tip jar whose `byRecipient` index also counts with offsets: the entries tree of each
 /// recipient is then a `ProvableCountSumTree`, the one tree with a 64-bit sum that has no
-/// 128-bit counterpart to convert to in place.
+/// counterpart of its own shape. It becomes a `ProvableCountProvableBigSumTree`, the tree a
+/// chain born at protocol version 15 creates for those entries.
 fn tip_jar_counting_with_offsets(platform_version: &PlatformVersion) -> DataContract {
     let mut contract = json_document_to_json_value(TIP_JAR).expect("expected the tip jar");
     contract["documentSchemas"]["tip"]["indices"][0]["countable"] =
@@ -410,68 +411,92 @@ fn tip_jar_counting_with_offsets(platform_version: &PlatformVersion) -> DataCont
         .expect("expected the contract to parse")
 }
 
-#[test]
-fn should_leave_a_tree_without_a_128_bit_counterpart_as_stored() {
-    let drive = setup_drive_with_initial_state_structure(Some(version_14()));
-    let contract = tip_jar_counting_with_offsets(version_14());
+fn drive_with_contract(contract: &DataContract, platform_version: &PlatformVersion) -> Drive {
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     drive
         .apply_contract(
-            &contract,
+            contract,
             BlockInfo::default(),
             true,
             None,
             None,
-            version_14(),
+            platform_version,
         )
         .expect("expected to store the contract");
-    let tips = tips(&contract, version_14());
-    add_tips(&drive, &contract, &tips, version_14());
+    drive
+}
 
-    let type_path = contract_document_type_path_vec(contract.id().as_bytes(), "tip");
-    let kinds = |drive: &Drive| {
-        let rows = subtree_rows(drive, type_path.clone(), None, version_15());
-        let count = |matches: fn(&Element) -> bool| {
-            rows.iter()
-                .filter(|(_, _, element)| matches(element.underlying()))
-                .count()
-        };
-        (
-            count(|element| matches!(element, Element::ProvableCountSumTree(..))),
-            count(|element| {
-                matches!(
-                    element,
-                    Element::SumTree(..)
-                        | Element::CountSumTree(..)
-                        | Element::ProvableSumTree(..)
-                        | Element::ProvableCountProvableSumTree(..)
-                )
-            }),
-        )
+#[test]
+fn should_convert_a_tree_with_a_provable_count_and_a_plain_sum_into_the_tree_a_chain_born_at_protocol_version_15_holds(
+) {
+    let contract_14 = tip_jar_counting_with_offsets(version_14());
+    let upgraded = drive_with_contract(&contract_14, version_14());
+    let tips = tips(&contract_14, version_14());
+    add_tips(&upgraded, &contract_14, &tips, version_14());
+
+    let type_path = contract_document_type_path_vec(contract_14.id().as_bytes(), "tip");
+    let entries_trees = |drive: &Drive, matches: fn(&Element) -> bool| {
+        subtree_rows(drive, type_path.clone(), None, version_15())
+            .iter()
+            .filter(|(_, _, element)| matches(element.underlying()))
+            .count()
     };
     // One entries tree per recipient: three recipients hold the four tips
-    let (entries_trees, other_64_bit_trees) = kinds(&drive);
-    assert_eq!(entries_trees, 3);
-    assert!(other_64_bit_trees > 0);
+    assert_eq!(
+        entries_trees(&upgraded, |element| matches!(
+            element,
+            Element::ProvableCountSumTree(..)
+        )),
+        3
+    );
 
-    let stats = convert(&drive);
-    assert_eq!(stats.trees_left_as_stored, 3);
-    assert_eq!(kinds(&drive), (3, 0), "every other tree is converted");
-    assert_consistent(&drive);
+    let stats = convert(&upgraded);
+    assert_eq!(stats.trees_left_as_stored, 0);
+    assert_eq!(
+        entries_trees(&upgraded, |element| matches!(
+            element,
+            Element::SumTree(..)
+                | Element::CountSumTree(..)
+                | Element::ProvableSumTree(..)
+                | Element::ProvableCountSumTree(..)
+                | Element::ProvableCountProvableSumTree(..)
+        )),
+        0,
+        "no tree of the type keeps a 64-bit sum"
+    );
 
-    // The type goes on taking tips, each entries tree adding its 64-bit sum to the 128-bit
-    // tree of its recipient
-    let contract = drive
-        .fetch_contract(contract.id().to_buffer(), None, None, None, version_15())
+    let contract_15 = tip_jar_counting_with_offsets(version_15());
+    let born = drive_with_contract(&contract_15, version_15());
+    add_tips(&born, &contract_15, &tips, version_15());
+    assert_eq!(
+        subtree_rows(&upgraded, type_path.clone(), None, version_15()),
+        subtree_rows(&born, type_path.clone(), None, version_15()),
+    );
+    assert_consistent(&upgraded);
+
+    // The converted type takes a tip as a chain born at the version does
+    let contract = upgraded
+        .fetch_contract(contract_14.id().to_buffer(), None, None, None, version_15())
         .value
         .expect("expected to fetch the contract")
         .expect("expected the contract");
     let mut another = tips[0].clone();
     another.set_id(Identifier::new([77; 32]));
     add_tips(
-        &drive,
+        &upgraded,
         &contract.contract,
         std::slice::from_ref(&another),
         version_15(),
     );
-    assert_consistent(&drive);
+    add_tips(
+        &born,
+        &contract_15,
+        std::slice::from_ref(&another),
+        version_15(),
+    );
+    assert_eq!(
+        subtree_rows(&upgraded, type_path.clone(), None, version_15()),
+        subtree_rows(&born, type_path.clone(), None, version_15()),
+    );
+    assert_consistent(&upgraded);
 }
