@@ -117,6 +117,9 @@ class ShieldedService(private val database: DashDatabase) {
      */
     private var boundDbPath: String? = null
     private var eventJob: Job? = null
+
+    /** Orders [bind] and [unbind]; see [BindingTurns]. */
+    private val bindingTurns = BindingTurns()
     private var pollJob: Job? = null
 
     private val _boundAccounts = MutableStateFlow<List<Int>>(emptyList())
@@ -247,7 +250,23 @@ class ShieldedService(private val database: DashDatabase) {
         dbPath: String,
         accounts: List<Int> = listOf(0),
     ) {
-        if (!isAvailable) return
+        bindTurn(manager, walletId, dbPath, accounts)
+    }
+
+    /**
+     * [bind], returning whether this bind is still the service's latest when
+     * it ends. A bind suspends in its native calls; when another bind or an
+     * [unbind] took a later turn meanwhile, this one stops without attaching
+     * its subscriptions, so it cannot point the service back at a manager
+     * that was replaced.
+     */
+    private suspend fun bindTurn(
+        manager: PlatformWalletManager,
+        walletId: ByteArray,
+        dbPath: String,
+        accounts: List<Int>,
+    ): Boolean {
+        if (!isAvailable) return false
         val sortedAccounts = accounts.distinct().sorted()
 
         // Cancel the prior subscriptions and zero the published mirror, but —
@@ -262,24 +281,27 @@ class ShieldedService(private val database: DashDatabase) {
         // service permanently unbound with no path back, disabling Clear while
         // the coordinator kept syncing. That was the on-device "Clear disabled
         // when needed" defect.
-        eventJob?.cancel()
-        eventJob = null
-        pollJob?.cancel()
-        pollJob = null
-        this.manager = manager
-        this.boundWalletId = walletId.copyOf()
-        this.boundDbPath = dbPath
-        _boundAccounts.value = sortedAccounts
-        _canResume.value = true
-        _isBound.value = false
-        _state.value = ShieldedSyncState()
-        balanceUpdates.value = manager.shieldedBalances
-        _shieldedBalance.value = ordinaryBalance(walletId)
+        val turn = bindingTurns.begin {
+            eventJob?.cancel()
+            eventJob = null
+            pollJob?.cancel()
+            pollJob = null
+            this.manager = manager
+            this.boundWalletId = walletId.copyOf()
+            this.boundDbPath = dbPath
+            _boundAccounts.value = sortedAccounts
+            _canResume.value = true
+            _isBound.value = false
+            _state.value = ShieldedSyncState()
+            balanceUpdates.value = manager.shieldedBalances
+            _shieldedBalance.value = ordinaryBalance(walletId)
+        }
 
+        var bound = false
         try {
             manager.configureShielded(dbPath)
             manager.bindShielded(walletId, sortedAccounts)
-            _isBound.value = true
+            bound = true
         } catch (e: Exception) {
             // Stay resumable: credentials are retained above, so a later
             // bind() retry (or the Clear→re-bind path) picks up cleanly.
@@ -294,26 +316,33 @@ class ShieldedService(private val database: DashDatabase) {
         // subscribing so a later successful retry / the running loop's events
         // update the mirror). Harmless when unbound: the coordinator emits no
         // events for an unregistered wallet and the balance flow just reflects
-        // whatever rows persist.
-        eventJob = scope.launch {
-            manager.syncEvents.collect { event -> reduce(walletId, event) }
-        }
-
-        pollJob = scope.launch {
-            while (true) {
-                // Poll the PASS-IN-FLIGHT flag, not the loop-alive flag. The
-                // background loop stays alive (isShieldedSyncRunning == true)
-                // for its whole lifetime, so polling that pinned "Syncing…" on
-                // forever and left the Clear button's `!isSyncing` gate never
-                // satisfiable. Swift polls `isShieldedSyncing()` here for the
-                // same reason.
-                val syncing = runCatching { manager.isShieldedSyncing() }
-                    .getOrDefault(false)
-                if (syncing != _state.value.isSyncing) {
-                    _state.update { it.copy(isSyncing = syncing) }
-                }
-                kotlinx.coroutines.delay(POLL_INTERVAL_MS)
+        // whatever rows persist. Only the latest bind attaches them: one
+        // that a later bind or an unbind overtook while it was suspended
+        // above leaves the service as the later turn set it.
+        return bindingTurns.finish(turn) {
+            _isBound.value = bound
+            eventJob = scope.launch {
+                manager.syncEvents.collect { event -> reduce(walletId, event) }
             }
+            pollJob = scope.launch { pollSyncing(manager) }
+        }
+    }
+
+    /** Mirror whether a sync pass is in flight into [state], once a second. */
+    private suspend fun pollSyncing(manager: PlatformWalletManager) {
+        while (true) {
+            // Poll the PASS-IN-FLIGHT flag, not the loop-alive flag. The
+            // background loop stays alive (isShieldedSyncRunning == true)
+            // for its whole lifetime, so polling that pinned "Syncing…" on
+            // forever and left the Clear button's `!isSyncing` gate never
+            // satisfiable. Swift polls `isShieldedSyncing()` here for the
+            // same reason.
+            val syncing = runCatching { manager.isShieldedSyncing() }
+                .getOrDefault(false)
+            if (syncing != _state.value.isSyncing) {
+                _state.update { it.copy(isSyncing = syncing) }
+            }
+            kotlinx.coroutines.delay(POLL_INTERVAL_MS)
         }
     }
 
@@ -438,6 +467,10 @@ class ShieldedService(private val database: DashDatabase) {
      * re-bind (see [bind]).
      */
     fun unbind() {
+        bindingTurns.begin { unbindNow() }
+    }
+
+    private fun unbindNow() {
         eventJob?.cancel()
         eventJob = null
         pollJob?.cancel()
@@ -572,7 +605,13 @@ class ShieldedService(private val database: DashDatabase) {
             return
         }
         if (dbPath != null) {
-            bind(mgr, walletId, dbPath, accounts)
+            if (!bindTurn(mgr, walletId, dbPath, accounts)) {
+                // Another bind or an unbind took over while this re-bind was
+                // suspended: the service now follows that one, and its own
+                // pass registers the fleet it belongs to.
+                android.util.Log.i(TAG, "Shielded clear: re-bind was overtaken; stopping")
+                return
+            }
             // Fleet recovery: clearShieldedStorage dropped EVERY wallet's
             // coordinator registration, and the mirror bind above restores
             // only one. Re-register every other loaded wallet so the next
@@ -607,5 +646,37 @@ class ShieldedService(private val database: DashDatabase) {
     private companion object {
         const val TAG = "ShieldedService"
         const val POLL_INTERVAL_MS = 1_000L
+    }
+}
+
+/**
+ * Orders the binds and unbinds of one [ShieldedService]. Each takes a turn.
+ * What a turn installs at its start runs under one lock, so two turns never
+ * interleave their writes, and what a bind attaches at its end runs only if
+ * no later turn began meanwhile. A bind suspends between the two (it calls
+ * into native code), which is where a later bind or an unbind can overtake
+ * it.
+ */
+internal class BindingTurns {
+    private var latest = 0L
+
+    /** Take the next turn and run [install] as its first, uninterleaved step. */
+    fun begin(install: () -> Unit): Long = synchronized(this) {
+        latest += 1
+        install()
+        latest
+    }
+
+    /**
+     * Run [finish] if [turn] is still the latest and say whether it was.
+     * [finish] runs under the same lock as every turn's first step.
+     */
+    fun finish(turn: Long, finish: () -> Unit): Boolean = synchronized(this) {
+        if (turn != latest) {
+            false
+        } else {
+            finish()
+            true
+        }
     }
 }
