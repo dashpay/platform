@@ -124,6 +124,11 @@ pub struct IdentityManager {
     /// registration or an invitation claim holds before its identity lands
     /// (see [`slots`]).
     slot_leases: BTreeMap<WalletId, BTreeMap<RegistrationIndex, SlotLease>>,
+
+    /// The token the next registration lease gets (see
+    /// [`SlotHolder::Registration`]). Registration leases live in memory
+    /// only, so the counter does not need to survive a restart.
+    next_registration_token: u64,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -161,6 +166,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             identity_scan_states: scan_states,
             retained_private_payment_markers: BTreeSet::new(),
             slot_leases: BTreeMap::new(),
+            next_registration_token: 0,
         };
         for (wallet_id, leases) in claim_leases {
             manager.apply_claim_lease_changeset(

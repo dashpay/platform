@@ -174,6 +174,21 @@ impl IdentityManager {
         })
     }
 
+    /// [`Self::acquire_identity_slot`] for a new registration: it gets a
+    /// token no other registration lease of this manager has.
+    pub fn acquire_registration_slot(
+        &mut self,
+        wallet_id: WalletId,
+        funded_registrations: &BTreeSet<RegistrationIndex>,
+    ) -> Result<(SlotHolder, SlotAcquisition), PlatformWalletError> {
+        let holder = SlotHolder::Registration {
+            token: self.next_registration_token,
+        };
+        let acquisition = self.acquire_identity_slot(wallet_id, holder, funded_registrations)?;
+        self.next_registration_token = self.next_registration_token.wrapping_add(1);
+        Ok((holder, acquisition))
+    }
+
     /// Move `holder`'s lease to `phase`. Returns the leased index, or `None`
     /// when `holder` leases nothing in `wallet_id`.
     pub fn set_slot_lease_phase(
@@ -206,6 +221,20 @@ impl IdentityManager {
             self.slot_leases.remove(wallet_id);
         }
         Some(index)
+    }
+
+    /// Put `lease` back on `wallet_id`'s slot `identity_index`, as it was
+    /// before a release whose store failed.
+    pub(crate) fn restore_slot_lease(
+        &mut self,
+        wallet_id: WalletId,
+        identity_index: RegistrationIndex,
+        lease: SlotLease,
+    ) {
+        self.slot_leases
+            .entry(wallet_id)
+            .or_default()
+            .insert(identity_index, lease);
     }
 
     /// Put a wallet-owned identity into `wallet_id`'s slot `identity_index`,
