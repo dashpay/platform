@@ -49,6 +49,7 @@ pub mod identity_persistence;
 pub mod identity_registration;
 pub mod identity_registration_funded_with_signer;
 pub mod identity_registration_with_signer;
+pub mod identity_slot_lease_persistence;
 pub mod identity_sync;
 pub mod identity_top_up;
 pub mod identity_transfer;
