@@ -8,14 +8,13 @@ use dpp::consensus::signature::{
     PublicKeyExpiredError, PublicKeyIsDisabledError, SignatureError,
 };
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::TokenContractPosition;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::contract_bounds::{
-    BatchedTransitionBoundsCheck, ContractBoundsScope,
+    BatchedTransitionBoundsCheck, ContractBounds, ContractBoundsScope,
 };
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -84,6 +83,12 @@ impl SigningScope<'_> {
                 return BatchedTransitionBoundsCheck::Allowed
             }
             SigningScope::NonBatch => return BatchedTransitionBoundsCheck::Denied,
+            SigningScope::DocumentCreate { document_type } => {
+                return authentication_bounds(key)
+                    .map_or(BatchedTransitionBoundsCheck::Allowed, |bounds| {
+                        bounds.check_document_create(document_type)
+                    })
+            }
             SigningScope::DocumentType {
                 contract_id,
                 document_type_name,
@@ -91,44 +96,22 @@ impl SigningScope<'_> {
                 contract_id,
                 ContractBoundsScope::DocumentType(document_type_name),
             ),
-            SigningScope::DocumentCreate { ref document_type } => (
-                document_type.data_contract_id(),
-                ContractBoundsScope::DocumentType(document_type.name()),
-            ),
             SigningScope::Contract { contract_id } => (contract_id, ContractBoundsScope::Contract),
             SigningScope::Token {
                 contract_id,
                 position,
             } => (contract_id, ContractBoundsScope::Token(position)),
         };
-        let Some(bounds) = key
-            .contract_bounds()
-            .filter(|_| key.purpose() == Purpose::AUTHENTICATION)
-        else {
-            return BatchedTransitionBoundsCheck::Allowed;
-        };
-        let check = bounds.check_scope(contract_id, bounds_scope);
-        let SigningScope::DocumentCreate { ref document_type } = *self else {
-            return check;
-        };
-        if check != BatchedTransitionBoundsCheck::Allowed {
-            return check;
-        }
-        // Drive's batch structure validation: a create deletes the documents it consumes with
-        // the key that signs it, so the bounds must allow each consumed type too.
-        let covers_consumed = document_type
-            .consumable_document_type_names()
-            .into_iter()
-            .all(|consumed| {
-                bounds.check_scope(contract_id, ContractBoundsScope::DocumentType(consumed))
-                    == BatchedTransitionBoundsCheck::Allowed
-            });
-        if covers_consumed {
-            BatchedTransitionBoundsCheck::Allowed
-        } else {
-            BatchedTransitionBoundsCheck::Denied
-        }
+        authentication_bounds(key).map_or(BatchedTransitionBoundsCheck::Allowed, |bounds| {
+            bounds.check_scope(contract_id, bounds_scope)
+        })
     }
+}
+
+/// The contract bounds that limit what `key` signs: bounds limit only AUTHENTICATION keys.
+fn authentication_bounds(key: &IdentityPublicKey) -> Option<&ContractBounds> {
+    key.contract_bounds()
+        .filter(|_| key.purpose() == Purpose::AUTHENTICATION)
 }
 
 /// The key of `identity` that should sign in `scope`: one of `purpose`, at one of
@@ -1200,5 +1183,49 @@ pub(super) mod tests {
             Some(2),
             "the key bound to the created type only is skipped"
         );
+    }
+
+    /// A create signed by a key bound to a contract group needs the group membership of the
+    /// created type, which only Platform can confirm: the explicit check lets it through and
+    /// automatic selection skips it, as before the verdict moved to dpp.
+    #[test]
+    fn should_leave_a_group_bound_create_key_to_platform() {
+        use dpp::contract_group::ContractGroupMember;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("bundled DPNS contract");
+        let scope = SigningScope::DocumentCreate {
+            document_type: dpns.document_type_for_name("domain").expect("domain"),
+        };
+        let group_id = Identifier::from([7; 32]);
+        let group_bound = bound_key(
+            1,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::ContractGroup { id: group_id }),
+        );
+
+        assert_eq!(
+            scope.bounds_check(&group_bound),
+            BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                contract_group_id: group_id,
+                contract_id: dpns.id(),
+                member: ContractGroupMember::DocumentType("domain".to_string()),
+            }
+        );
+        check(&group_bound, scope).expect("only Platform can read the group's memberships");
+        let identity = identity(vec![group_bound]);
+        let picked = usable_signing_key(
+            &identity,
+            &KeyFilter(|_| true),
+            Purpose::AUTHENTICATION,
+            &LEVELS,
+            &TYPES,
+            scope,
+        )
+        .unwrap();
+        assert!(picked.is_none(), "selection skips a group-bound key");
     }
 }
