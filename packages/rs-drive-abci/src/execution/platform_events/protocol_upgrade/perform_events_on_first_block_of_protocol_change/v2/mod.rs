@@ -17,7 +17,9 @@ where
     /// schedule of the protocol version it was read in, and a cache hit bills that fee again. A
     /// protocol change is the only time the schedule can change, and nothing else empties the
     /// cache, so without this a node that stayed up across the change would keep billing reads
-    /// at the old schedule while a node that restarted bills them at the new one.
+    /// at the old schedule while a node that restarted bills them at the new one. A query still
+    /// at the old version can put an entry back during this block; from protocol version 15
+    /// `get_contract_with_fetch_info` 1 never serves such an entry to a reader at the new one.
     ///
     /// The cache is emptied first because v1 then seeds the block cache with the system
     /// contracts the events may have rewritten. `clear` keeps the record of what this block

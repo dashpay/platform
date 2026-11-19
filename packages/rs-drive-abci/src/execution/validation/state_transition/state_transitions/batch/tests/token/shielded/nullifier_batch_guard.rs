@@ -651,6 +651,16 @@ fn cap_two() -> PlatformVersion {
     version
 }
 
+/// How the Debug output of a contract fetch info names the protocol version its contract was
+/// parsed under, for a contract read at `platform_version`. It records which reader parsed the
+/// copy, which the characterizations below do not cover.
+fn parsed_under_debug_field(platform_version: &PlatformVersion) -> String {
+    format!(
+        ", parsed_under_protocol_version: {}",
+        platform_version.protocol_version
+    )
+}
+
 #[tokio::test]
 async fn should_preserve_single_entry_full_processor_fees_and_result() {
     let pool = FundedPool::new().await;
@@ -673,12 +683,15 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 PlatformVersion::latest(),
             )
             .unwrap();
+        // The protocol version the cached contract was parsed under is incidental Debug
+        // output; keep actions, charges and operations in the original pin.
         let snapshot = format!(
             "{:?}/{:?}/{:?}",
             validated,
             context.operations_slice(),
             operations
-        );
+        )
+        .replace(&parsed_under_debug_field(PlatformVersion::latest()), "");
         println!(
             "SINGLE ENTRY VALIDATION {mode:?}/{dry_run}: {}",
             hex::encode(hash_single(snapshot.as_bytes()))
@@ -2145,14 +2158,16 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
         // This non-history fixture cannot erase documents and sums nothing. Its inactive
-        // lifecycle flag and the sum width of its type and index levels are incidental Debug
-        // output; keep actions, charges and operations in the original pin.
+        // lifecycle flag, the sum width of its type and index levels, and the protocol version
+        // its cached contract was parsed under are incidental Debug output; keep actions,
+        // charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
         )
         .replace(", documents_can_be_erased: false", "")
-        .replace(", big_sums: false", "");
+        .replace(", big_sums: false", "")
+        .replace(&parsed_under_debug_field(version), "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
