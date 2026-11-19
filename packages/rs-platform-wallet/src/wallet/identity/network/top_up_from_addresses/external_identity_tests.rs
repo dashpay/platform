@@ -623,24 +623,31 @@ async fn should_hold_a_wallets_removal_until_its_top_up_is_sent() {
                 .await
         })
     };
-    entered.notified().await;
+    tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .expect("the top-up reaches its send step");
 
-    let removal = {
+    let mut removal = {
         let manager = Arc::clone(&fixture.manager);
         tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
     };
-    tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
-        !removal.is_finished(),
+        tokio::time::timeout(Duration::from_millis(200), &mut removal)
+            .await
+            .is_err(),
         "the removal waits for the top-up being sent"
     );
     assert!(fixture.wallet.core().is_current_generation().await);
 
     release.add_permits(1);
-    let topped_up = top_up.await.expect("top-up task");
-    assert_eq!(topped_up.expect("sent while current"), BALANCE);
-    removal
+    let topped_up = tokio::time::timeout(Duration::from_secs(5), top_up)
         .await
+        .expect("the top-up finishes once released")
+        .expect("top-up task");
+    assert_eq!(topped_up.expect("sent while current"), BALANCE);
+    tokio::time::timeout(Duration::from_secs(5), removal)
+        .await
+        .expect("the removal finishes once the send is done")
         .expect("removal task")
         .expect("the removal completes");
     assert!(!fixture.wallet.core().is_current_generation().await);
