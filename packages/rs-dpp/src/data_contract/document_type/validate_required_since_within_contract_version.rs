@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use indexmap::IndexMap;
 
 use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
@@ -12,7 +10,8 @@ use crate::data_contract::document_type::DocumentType;
 /// Runs over the *parsed* properties, the members of objects included, so
 /// annotations reached through `$ref` are covered. Called wherever document
 /// types are built from a contract's serialized form (creates, updates, and
-/// disk loads all pass through there); a no-op for every contract predating
+/// disk loads all pass through there), and by the schema setters under full
+/// validation; a no-op for every contract predating
 /// the keyword, since their properties carry no annotation. Only protocol
 /// version 15 parses one on an object's member, so walking the members finds
 /// nothing at earlier versions.
@@ -22,8 +21,8 @@ use crate::data_contract::document_type::DocumentType;
 /// consensus-invalid (nonce bump), never as an execution error. Callers map
 /// it through
 /// [`class_methods::consensus_or_protocol_required_fields_error`](crate::data_contract::document_type::class_methods).
-pub(crate) fn validate_required_since_within_contract_version(
-    document_types: &BTreeMap<String, DocumentType>,
+pub(crate) fn validate_required_since_within_contract_version<'a>(
+    document_types: impl IntoIterator<Item = (&'a String, &'a DocumentType)>,
     contract_version: u32,
 ) -> Result<(), DataContractInvalidRequiredFieldsUpdateError> {
     for (document_type_name, document_type) in document_types {
@@ -68,6 +67,7 @@ mod tests {
     use crate::data_contract::config::DataContractConfig;
     use platform_value::{platform_value, Identifier};
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     /// A type whose object `meta` holds `x`, required from `required_since`.
     fn document_types(required_since: u32) -> BTreeMap<String, DocumentType> {

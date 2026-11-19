@@ -150,14 +150,30 @@ fn should_hold_an_objects_positions_to_one_after_another_from_its_lowest() {
 #[test]
 fn should_refuse_a_member_position_that_is_not_an_integer_under_full_validation() {
     let latest = PlatformVersion::latest();
+    let with_position = |position: Value| {
+        with_meta(platform_value!({ "a": boolean(0.into()), "b": boolean(position) }))
+    };
+
+    let error = parse_at(with_position(Value::Float(1.0)), None, latest, true)
+        .expect_err("a float position must be refused");
+    assert!(error.to_string().contains("needs a position"), "{error}");
+    // Protocol version 14 never read an object's positions, and its meta-schema counts `1.0`
+    // as an integer
+    parse_at(
+        with_position(Value::Float(1.0)),
+        None,
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        true,
+    )
+    .expect("a float position registers at protocol version 14");
+
+    // The schema check refuses these before the order is read
     for (case, position) in [
-        ("a float", Value::Float(1.0)),
         ("a negative integer", Value::I64(-1)),
         ("a string", Value::Text("1".to_string())),
     ] {
-        let members = platform_value!({ "a": boolean(0.into()), "b": boolean(position) });
         assert!(
-            parse_at(with_meta(members), None, latest, true).is_err(),
+            parse_at(with_position(position), None, latest, true).is_err(),
             "{case}: expected the type to be refused"
         );
     }
@@ -244,13 +260,13 @@ fn should_resolve_a_member_written_twice_as_the_schema_map_order_does() {
 }
 
 /// A member that takes its schema from a `$ref` is placed by the `position` written beside the
-/// `$ref`, never by one its definition carries.
+/// `$ref`, never by one its definition carries: the definition's would put `x` after `y`.
 #[test]
 fn should_place_a_member_by_the_position_written_beside_its_ref() {
     let document_type = parse_at(
         with_meta(platform_value!({
-            "x": { "$ref": "#/$defs/flag", "position": 1 },
-            "y": boolean(0.into()),
+            "y": boolean(1.into()),
+            "x": { "$ref": "#/$defs/flag", "position": 0 },
         })),
         Some(BTreeMap::from([(
             "flag".to_string(),
@@ -260,7 +276,7 @@ fn should_place_a_member_by_the_position_written_beside_its_ref() {
         false,
     )
     .expect("expected the type to parse");
-    assert_eq!(stored_order(&document_type, &[]), ["y", "x"]);
+    assert_eq!(stored_order(&document_type, &[]), ["x", "y"]);
 }
 
 /// A member written twice is parsed in both its schemas, by the flattened walk, whichever one

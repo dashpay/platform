@@ -1767,6 +1767,40 @@ fn should_admit_private_which_the_meta_schema_refuses() {
     }
 }
 
+/// Every deployed contract and fixture passes generation 4's rule on an object's positions, which
+/// every update of a contract from protocol version 15 is parsed under: positions that follow one
+/// another from the object's lowest. A contract failing it could not be updated.
+#[test]
+fn should_hold_every_deployed_object_to_the_nested_position_rule() {
+    let latest = PlatformVersion::latest();
+    let mut refused = Vec::new();
+    for case in written_cases().into_iter().chain(corpus_cases()) {
+        let defs = case.schema_defs().unwrap();
+        let result = DocumentType::try_from_schema(
+            case.contract_id,
+            1,
+            case.config.version(),
+            &case.name,
+            Value::from(case.schema.clone()),
+            defs.as_ref(),
+            &case.tokens,
+            &case.config,
+            true,
+            &mut vec![],
+            latest,
+        );
+        if let Err(error) = result {
+            let message = error.to_string();
+            if message.contains("must take positions one after another")
+                || message.contains("needs a position")
+            {
+                refused.push(format!("{}: {message}", case.origin));
+            }
+        }
+    }
+    assert!(refused.is_empty(), "{refused:#?}");
+}
+
 /// Whether an object of `properties` (a `properties` map, or a `$defs` map), at any depth, writes
 /// its members in its map in an order other than by `position`.
 fn has_object_out_of_position_order(properties: &serde_json::Map<String, JsonValue>) -> bool {
@@ -1786,8 +1820,7 @@ fn has_object_out_of_position_order(properties: &serde_json::Map<String, JsonVal
 /// Parser generation 4 compiles every fixture and deployed contract without the lifecycle
 /// keywords as generation 3 does, but for an object whose map writes its members in an order
 /// other than by `position`: generation 4 stores them by position. Every deployed contract of
-/// the corpus with such an object is one of the three testnet contracts the nested position
-/// census found.
+/// the corpus with such an object is one of the three testnet contracts known to have one.
 #[test]
 fn should_compile_non_lifecycle_fixtures_identically_with_parsers_three_and_four() {
     use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;

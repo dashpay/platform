@@ -1,10 +1,12 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::{
-    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
-    validate_summable_off_count_indexes_lossless,
+    consensus_or_protocol_required_fields_error, resolve_derived_index_properties,
+    validate_preallocated_indexes_kept_on_removal, validate_summable_off_count_indexes_lossless,
 };
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{
+    validate_required_since_within_contract_version, DocumentType,
+};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DefinitionName, DocumentName};
@@ -23,7 +25,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        self.document_types = DocumentType::create_document_types_from_document_schemas(
+        let document_types = DocumentType::create_document_types_from_document_schemas(
             self.id,
             self.system_version_type(),
             self.config.version(),
@@ -36,6 +38,13 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             validation_operations,
             platform_version,
         )?;
+        // A `requiredSince` past the contract's version is refused, as deserializing a contract
+        // refuses it
+        if full_validation {
+            validate_required_since_within_contract_version(&document_types, self.version)
+                .map_err(consensus_or_protocol_required_fields_error)?;
+        }
+        self.document_types = document_types;
 
         Ok(())
     }
@@ -61,6 +70,13 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             validation_operations,
             platform_version,
         )?;
+        if full_validation {
+            validate_required_since_within_contract_version(
+                [(document_type.name(), &document_type)],
+                self.version,
+            )
+            .map_err(consensus_or_protocol_required_fields_error)?;
+        }
 
         self.document_types
             .insert(document_type.name().clone(), document_type);

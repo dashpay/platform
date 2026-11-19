@@ -275,15 +275,6 @@ fn added_member_error(
              member's name as naming the member; rename one of them"
         ));
     }
-    if let Some(required_since) = property
-        .required_since
-        .filter(|required_since| *required_since > new_contract_version)
-    {
-        return Some(format!(
-            "new field '{path}' carries requiredSince {required_since}, a contract version past \
-             the {new_contract_version} this update creates"
-        ));
-    }
     if property.required && in_kept_object {
         if property.required_since != Some(new_contract_version) {
             return Some(format!(
@@ -291,8 +282,8 @@ fn added_member_error(
                  contract version this update creates"
             ));
         }
-        // A document stored before must add the member on replace: everything holding it must
-        // let it do so, as nothing keeps a stored document from adding a new top-level property
+        // A document stored before must add the member on replace, so everything holding it
+        // must let it do so
         if let Some(refusal) = holding_object_refusal(added.new_schema, path) {
             return Some(format!(
                 "new required field '{path}' can not be added: {refusal}; add it as optional"
@@ -464,18 +455,19 @@ fn first_required_list_change(
 
 /// Why an object holding the member at `path` keeps it from being added as required, read in
 /// the type's `schema` as written: one takes its members from a `$ref` (through which members
-/// are added only as optional), or declares a whole-object `const` or `enum`, which a document
-/// holding the new member could not meet.
+/// are added only as optional), or declares a whole-object `const` or `enum`, which these rules
+/// do not check a stored document holding the new member against: it may not meet it.
 fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
     let segments: Vec<&str> = path.split('.').collect();
     let mut current = schema;
     for depth in 0..segments.len().saturating_sub(1) {
-        let holder_path = segments[..=depth].join(".");
         let holder = *inline_member_schemas(current).get(segments[depth])?;
+        let holder_path = || segments[..=depth].join(".");
         if has_ref(holder) {
             return Some(format!(
-                "'{holder_path}' takes its members from a $ref, through which members are added \
-                 only as optional"
+                "'{}' takes its members from a $ref, through which members are added only as \
+                 optional",
+                holder_path()
             ));
         }
         if let Some(keyword) = [CONST, ENUM].into_iter().find(|keyword| {
@@ -484,8 +476,9 @@ fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
                 .is_some_and(|holder| holder.get_optional_key(keyword).is_some())
         }) {
             return Some(format!(
-                "'{holder_path}' declares {keyword} for the whole object, which a document holding \
-                 the member could not meet"
+                "'{}' declares {keyword} for the whole object, which a stored document holding \
+                 the member may not meet",
+                holder_path()
             ));
         }
         current = holder;

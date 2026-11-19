@@ -1,8 +1,10 @@
 use super::*;
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::random_document::CreateRandomDocument;
+use crate::data_contract::document_type::{DocumentPropertyType, DocumentType};
 use crate::tests::json_document::json_document_to_contract;
 use integer_encoding::VarInt;
 use platform_value::{Identifier, Value};
@@ -1987,8 +1989,7 @@ fn meta_document_type(
     meta: Value,
     defs: Option<BTreeMap<String, Value>>,
     platform_version: &PlatformVersion,
-) -> crate::data_contract::document_type::DocumentType {
-    use crate::data_contract::document_type::DocumentType;
+) -> DocumentType {
     use platform_value::platform_value;
 
     let schema = platform_value!({
@@ -2017,13 +2018,7 @@ fn meta_document_type(
 
 /// The member names of the object at `path` (dotted) of `document_type`, in the order it stores
 /// them.
-fn stored_member_order(
-    document_type: &crate::data_contract::document_type::DocumentType,
-    path: &str,
-) -> Vec<String> {
-    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use crate::data_contract::document_type::DocumentPropertyType;
-
+fn stored_member_order(document_type: &DocumentType, path: &str) -> Vec<String> {
     let mut properties = document_type.properties();
     let mut segments = path.split('.').peekable();
     while let Some(segment) = segments.next() {
@@ -2199,26 +2194,30 @@ fn should_read_a_document_stored_before_its_object_gained_a_member_listed_first(
         .expect("expected the document to serialize under the type before the update");
     assert_eq!(meta_bytes(&serialized), [2u8, 1, b'a']);
 
-    for (added, required) in [
-        ("an optional member", platform_value!(["y"])),
+    for (added, x, required) in [
+        (
+            "an optional member",
+            positioned_string(1),
+            platform_value!(["y"]),
+        ),
         (
             "a member required from the new version",
+            platform_value!({
+                "type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 1
+            }),
             platform_value!(["y", "x"]),
         ),
-        ("an object", platform_value!(["y"])),
-    ] {
-        let x = match added {
-            "an object" => platform_value!({
+        (
+            "an object",
+            platform_value!({
                 "type": "object",
                 "position": 1,
                 "properties": { "p": positioned_string(0) },
                 "additionalProperties": false,
             }),
-            "a member required from the new version" => platform_value!({
-                "type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 1
-            }),
-            _ => positioned_string(1),
-        };
+            platform_value!(["y"]),
+        ),
+    ] {
         let after = meta_document_type(
             platform_value!({
                 "type": "object",

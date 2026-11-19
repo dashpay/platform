@@ -1172,10 +1172,9 @@ fn should_refuse_a_member_required_from_the_new_version_under_an_immutable_prope
     run(&cases, PlatformVersion::latest());
 }
 
-/// A member required from the new version is held to what a required top-level property is
-/// held to: no `requiredSince` past the version the update creates, nothing that keeps a
-/// stored document from adding it on replace, and no whole-object `const` or `enum` it could
-/// not meet.
+/// A member required from the new version is refused where a stored document could not be
+/// shown to add it on replace: inside an object declaring a whole-object `const` or `enum`, at
+/// any depth. An update that drops the `const` may add it.
 #[test]
 fn should_refuse_a_member_required_from_the_new_version_that_no_document_could_meet() {
     let since = |version: u32| with(boolean(1), "requiredSince", Value::U32(version));
@@ -1201,20 +1200,42 @@ fn should_refuse_a_member_required_from_the_new_version_that_no_document_could_m
     };
     let cases = vec![
         case(
-            "a member of an object the update adds, required from a later version",
+            "a member required from the new version inside an object declaring const, one level down",
             document_type_schema(
-                platform_value!({ "a": string(0, 10) }),
+                with_meta(object(
+                    platform_value!({
+                        "y": boolean(0),
+                        "inner": with(
+                            object(platform_value!({ "p": boolean(0) }), 1, Some(platform_value!(["p"]))),
+                            "const",
+                            platform_value!({ "p": true }),
+                        ),
+                    }),
+                    1,
+                    None,
+                )),
                 platform_value!(["a"]),
             ),
             document_type_schema(
                 with_meta(object(
-                    platform_value!({ "y": boolean(0), "x": since(3) }),
+                    platform_value!({
+                        "y": boolean(0),
+                        "inner": with(
+                            object(
+                                platform_value!({ "p": boolean(0), "x": since(2) }),
+                                1,
+                                Some(platform_value!(["p", "x"])),
+                            ),
+                            "const",
+                            platform_value!({ "p": true }),
+                        ),
+                    }),
                     1,
-                    Some(platform_value!(["x"])),
+                    None,
                 )),
                 platform_value!(["a"]),
             ),
-            Expected::Refused(10276, "requiredSince 3"),
+            Expected::Refused(10276, "'meta.inner' declares const"),
         ),
         case(
             "a member required from the new version under an object declaring const",
