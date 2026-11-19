@@ -5,7 +5,7 @@ use bincode::Encode;
 use derive_more::From;
 use dpp::platform_serialization::de::Decode;
 
-/// Structure 0 as first shipped.
+/// Structure 0 as first shipped, retired in Platform v5.1.0 by #5323.
 pub mod v0;
 /// Structure 0 with the previous fee versions.
 pub mod v1;
@@ -15,7 +15,7 @@ pub mod v2;
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode, From)]
 pub enum PlatformStateForSaving {
-    /// Version 0
+    /// Retired in Platform v5.1.0 by #5323; its tag remains reserved.
     V0(PlatformStateForSavingV0),
     /// Version 1
     V1(PlatformStateForSavingV1),

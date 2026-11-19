@@ -94,13 +94,13 @@ pub unsafe extern "C" fn dash_sdk_document_erase(
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Parse identifiers (base58 encoded)
         let doc_id = Identifier::from_string(document_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid document ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid document ID: {}", e)))?;
 
         let owner_identifier = Identifier::from_string(owner_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid owner ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid owner ID: {}", e)))?;
 
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid contract ID: {}", e)))?;
 
         // Resolve the contract through the SDK's current context provider.
         let data_contract = wrapper.data_contract(&contract_id)?;
@@ -259,13 +259,13 @@ pub unsafe extern "C" fn dash_sdk_document_erase_and_wait(
     let result: Result<Identifier, FFIError> = wrapper.runtime.block_on(async {
         // Parse identifiers (base58 encoded)
         let doc_id = Identifier::from_string(document_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid document ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid document ID: {}", e)))?;
 
         let owner_identifier = Identifier::from_string(owner_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid owner ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid owner ID: {}", e)))?;
 
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid contract ID: {}", e)))?;
 
         // Resolve the contract through the SDK's current context provider.
         let data_contract = wrapper.data_contract(&contract_id)?;
@@ -348,6 +348,43 @@ mod tests {
 
     use std::ffi::{CStr, CString};
     use std::ptr;
+
+    #[test]
+    fn should_classify_malformed_erase_identifiers_as_invalid_parameter() {
+        let sdk = create_mock_sdk_handle();
+        let valid = CString::new(Identifier::from([1; 32]).to_string(Encoding::Base58)).unwrap();
+        let invalid = CString::new("not-base58-0OIl").unwrap();
+        let name = CString::new("note").unwrap();
+        let key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+        let mut observed = Vec::new();
+        for export in [dash_sdk_document_erase, dash_sdk_document_erase_and_wait] {
+            for malformed in 0..3 {
+                let mut ids = [valid.as_ptr(); 3];
+                ids[malformed] = invalid.as_ptr();
+                let result = unsafe {
+                    export(
+                        sdk,
+                        ids[0],
+                        ids[1],
+                        ids[2],
+                        name.as_ptr(),
+                        ptr::from_ref(key.as_ref()).cast(),
+                        ptr::from_ref(signer.as_ref()).cast(),
+                        ptr::null(),
+                        ptr::null(),
+                    )
+                };
+                assert!(!result.error.is_null());
+                unsafe {
+                    observed.push((*result.error).code);
+                    crate::dash_sdk_error_free(result.error);
+                }
+            }
+        }
+        destroy_mock_sdk_handle(sdk);
+        assert_eq!(observed, vec![DashSDKErrorCode::InvalidParameter; 6]);
+    }
 
     fn assert_erase_uses_current_context_provider(wait_for_result: bool, expected_context: &str) {
         let contract = create_mock_data_contract();

@@ -61,6 +61,7 @@
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_shield_from_identity_to_recipient": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
@@ -2050,6 +2051,39 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "SYS-09",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.shield_from_identity_to_recipient",
+      "title": "Shield an identity's credits to someone else's shielded address",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_shield_from_identity_to_recipient"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentityToRecipient bridges the export; the example app has no screen that pays an identity's credits to another wallet's shielded address."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for shielding an identity's credits to a recipient yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests.swift",
+          "id": "testRecipientNot43BytesThrowsInvalidParameter",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests",
           "covers_restart": false
         }
       ]

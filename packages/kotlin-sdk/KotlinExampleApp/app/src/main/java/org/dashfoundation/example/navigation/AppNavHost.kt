@@ -32,8 +32,11 @@ import org.dashfoundation.example.ui.identity.AddIdentityKeyScreen
 import org.dashfoundation.example.ui.identity.ContestDetailScreen
 import org.dashfoundation.example.ui.identity.CreateDecisionProposalScreen
 import org.dashfoundation.example.ui.identity.CreateIdentityScreen
+import org.dashfoundation.example.ui.identity.CreateMultipleChoiceProposalScreen
 import org.dashfoundation.example.ui.identity.DecisionProposalDetailScreen
 import org.dashfoundation.example.ui.identity.DecisionProposalsScreen
+import org.dashfoundation.example.ui.identity.MultipleChoiceProposalDetailScreen
+import org.dashfoundation.example.ui.identity.MultipleChoiceProposalsScreen
 import org.dashfoundation.example.ui.dashpay.AddContactScreen
 import org.dashfoundation.example.ui.dashpay.ContactDetailScreen
 import org.dashfoundation.example.ui.dashpay.ContactRequestsScreen
@@ -482,6 +485,19 @@ fun AppNavHost(
         composable<DecisionProposalDetail> { entry ->
             DecisionProposalDetailScreen(
                 entry.toRoute<DecisionProposalDetail>().proposalId,
+                navController,
+            )
+        }
+
+        composable<MultipleChoiceProposalsList> { MultipleChoiceProposalsScreen(navController) }
+
+        composable<CreateMultipleChoiceProposal> {
+            CreateMultipleChoiceProposalScreen(navController)
+        }
+
+        composable<MultipleChoiceProposalDetail> { entry ->
+            MultipleChoiceProposalDetailScreen(
+                entry.toRoute<MultipleChoiceProposalDetail>().proposalId,
                 navController,
             )
         }
