@@ -6,6 +6,7 @@ import {
 import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
 import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
 import generateRandomString from '../../../util/generateRandomString.js';
+import getLocalGroupConfigs from './local/getLocalGroupConfigs.js';
 
 const { cloneDeep: lodashCloneDeep } = lodash;
 
@@ -101,16 +102,13 @@ export default function setupLocalPresetTaskFactory(
       {
         title: 'Create local group configs',
         task: async (ctx) => {
-          ctx.configGroup = new Array(ctx.nodeCount)
+          const configNames = new Array(ctx.nodeCount)
             .fill(undefined)
             .map((value, i) => `local_${i + 1}`)
             // we need to add one more node (number of masternodes + 1) as a seed node
-            .concat(['local_seed'])
-            .map((configName) => (
-              configFile.isConfigExists(configName)
-                ? configFile.getConfig(configName)
-                : configFile.createConfig(configName, PRESET_LOCAL)
-            ));
+            .concat(['local_seed']);
+
+          ctx.configGroup = getLocalGroupConfigs(configFile, configNames);
 
           ctx.configGroup.forEach((config) => config.set('group', 'local'));
 
