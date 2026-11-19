@@ -58,11 +58,11 @@
 
 use std::collections::BTreeMap;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyID;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
@@ -72,14 +72,34 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
+use crate::changeset::KeyWithBreadcrumb;
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
+use crate::wallet::platform_wallet::WalletId;
 use crate::BlockTime;
 
 use super::*;
+
+/// Every key of an identity this wallet registered (or claimed) at
+/// `identity_index`, each with its derivation breadcrumb: the host derived
+/// them there, key id = key index.
+pub(super) fn derived_keys(
+    identity: &Identity,
+    wallet_id: WalletId,
+    identity_index: u32,
+) -> Vec<KeyWithBreadcrumb> {
+    identity
+        .public_keys()
+        .iter()
+        .map(|(key_id, key)| KeyWithBreadcrumb {
+            key: key.clone(),
+            breadcrumb: Some((wallet_id, identity_index, *key_id)),
+        })
+        .collect()
+}
 
 // ---------------------------------------------------------------------------
 // register
@@ -270,59 +290,29 @@ impl IdentityWallet {
         // rejection. A missed local add self-heals on the next identity
         // re-sync. This mirrors `register_from_addresses` Step 3.
         {
-            use dpp::identity::accessors::IdentityGettersV0;
-
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => match info.identity_manager.add_identity(
-                    identity.clone(),
-                    identity_index,
-                    self.wallet_id,
-                    &self.persister,
-                ) {
-                    Ok(()) => {
-                        let wallet_id = self.wallet_id;
-                        let identity_id = identity.id();
-                        let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
-                            .public_keys()
-                            .iter()
-                            .map(|(k, v)| (*k, v.clone()))
-                            .collect();
-
-                        if let Some(managed) =
-                            info.identity_manager.managed_identity_mut(&identity_id)
-                        {
-                            managed.wallet_id = Some(wallet_id);
-                            for (key_id, pub_key) in public_keys {
-                                let key_index = key_id;
-                                managed
-                                    .add_key(
-                                        pub_key,
-                                        Some((wallet_id, identity_index, key_index)),
-                                        &self.persister,
-                                    )
-                                    .map_err(|e| {
-                                        PlatformWalletError::Persistence(format!(
-                                            "identity key not persisted after registration: {e}"
-                                        ))
-                                    })?;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Breadcrumbs are skipped too: `IdentityAlreadyExists`
-                        // can mean an out-of-wallet entry, and stamping
-                        // `wallet_id` on one without moving buckets would
-                        // contradict the manager's location index.
+                Some(info) => {
+                    // The identity, its keys with their breadcrumbs, in one
+                    // durable write; memory holds it only once stored.
+                    let keys = derived_keys(&identity, self.wallet_id, identity_index);
+                    if let Err(e) = info.identity_manager.place_in_slot(
+                        identity.clone(),
+                        identity_index,
+                        self.wallet_id,
+                        None,
+                        keys,
+                        &self.persister,
+                    ) {
                         tracing::warn!(
                             error = %e,
                             identity_id = %identity.id(),
                             "register_identity_with_funding: identity registered on \
-                             Platform but local add_identity failed; continuing so \
+                             Platform but not recorded in its slot; continuing so \
                              the spent asset lock is still consumed"
                         );
                     }
-                },
+                }
                 None => {
                     tracing::warn!(
                         identity_id = %identity.id(),

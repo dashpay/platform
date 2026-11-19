@@ -14,9 +14,12 @@
 //! [`IdentityManager::acquire_identity_slot`].
 
 use super::{IdentityLocation, IdentityManager, RegistrationIndex};
-use crate::changeset::{IdentitySlotLeaseChangeSet, IdentitySlotLeaseEntry};
+use crate::changeset::{
+    IdentitySlotLeaseChangeSet, IdentitySlotLeaseEntry, KeyWithBreadcrumb, PlatformWalletChangeSet,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::OutPoint;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -70,6 +73,14 @@ pub struct SlotAcquisition {
     /// keeps the phase it had.
     pub reentered: bool,
     pub phase: SlotLeasePhase,
+}
+
+/// What [`IdentityManager::place_in_slot`] restores when its store fails.
+struct PlacementUndo {
+    prior_location: Option<IdentityLocation>,
+    prior: Option<ManagedIdentity>,
+    lease: Option<SlotLease>,
+    marker: bool,
 }
 
 /// Result of [`IdentityManager::place_in_slot_unstored`].
@@ -271,6 +282,100 @@ impl IdentityManager {
         Ok(SlotPlacement::Placed)
     }
 
+    /// [`Self::place_in_slot_unstored`], with `keys` layered onto the
+    /// identity, stored durably as one changeset: the identity, `keys` with
+    /// their breadcrumbs and, when `releasing` is a claim, its lease as it now
+    /// stands. Memory keeps the placement only once the store is durable; on a
+    /// failed store it is undone and the store's error returned, so no caller
+    /// reports an identity as placed that a restart would not find.
+    pub(crate) fn place_in_slot(
+        &mut self,
+        identity: Identity,
+        identity_index: RegistrationIndex,
+        wallet_id: WalletId,
+        releasing: Option<&SlotHolder>,
+        keys: Vec<KeyWithBreadcrumb>,
+        persister: &WalletPersister,
+    ) -> Result<SlotPlacement, PlatformWalletError> {
+        let identity_id = identity.id();
+        let undo = PlacementUndo {
+            prior_location: self.location_index().get(&identity_id).copied(),
+            prior: self.managed_identity(&identity_id).cloned(),
+            lease: self
+                .slot_leases
+                .get(&wallet_id)
+                .and_then(|leases| leases.get(&identity_index))
+                .copied(),
+            marker: self.retained_private_payment_markers.contains(&identity_id),
+        };
+        let placement =
+            self.place_in_slot_unstored(identity, identity_index, wallet_id, releasing)?;
+
+        let managed = self
+            .managed_identity_mut(&identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
+        let keys_cs = managed.layer_keys(keys);
+        let mut changeset = PlatformWalletChangeSet {
+            identities: Some(managed.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        if let Some(SlotHolder::InvitationClaim { invitation }) = releasing {
+            changeset.identity_slot_leases =
+                Some(self.claim_lease_changeset(&wallet_id, *invitation));
+        }
+
+        if let Err(not_durable) = persister.store_durably(changeset) {
+            self.undo_placement(identity_id, wallet_id, identity_index, undo);
+            return Err(persister.classify_not_durable(not_durable));
+        }
+        Ok(placement)
+    }
+
+    /// Put memory back as it was before a [`Self::place_in_slot`] whose
+    /// store failed.
+    fn undo_placement(
+        &mut self,
+        identity_id: Identifier,
+        wallet_id: WalletId,
+        identity_index: RegistrationIndex,
+        undo: PlacementUndo,
+    ) {
+        if let Some(slots) = self.wallet_identities.get_mut(&wallet_id) {
+            slots.remove(&identity_index);
+            if slots.is_empty() {
+                self.wallet_identities.remove(&wallet_id);
+            }
+        }
+        self.location_index_remove(&identity_id);
+        if let (Some(prior), Some(location)) = (undo.prior, undo.prior_location) {
+            match location {
+                IdentityLocation::InWallet {
+                    wallet_id,
+                    registration_index,
+                } => {
+                    self.wallet_identities
+                        .entry(wallet_id)
+                        .or_default()
+                        .insert(registration_index, prior);
+                }
+                IdentityLocation::OutOfWallet => {
+                    self.out_of_wallet_identities.insert(identity_id, prior);
+                }
+            }
+            self.location_index_insert(identity_id, location);
+        }
+        if let Some(lease) = undo.lease {
+            self.slot_leases
+                .entry(wallet_id)
+                .or_default()
+                .insert(identity_index, lease);
+        }
+        if undo.marker {
+            self.retained_private_payment_markers.insert(identity_id);
+        }
+    }
+
     fn release_matching_lease(
         &mut self,
         wallet_id: &WalletId,
@@ -376,6 +481,202 @@ mod tests {
 
     fn none() -> BTreeSet<RegistrationIndex> {
         BTreeSet::new()
+    }
+
+    /// A backend whose store commits inline, recording each changeset, or
+    /// failing every store when `fail` is set.
+    #[derive(Default)]
+    struct Recording {
+        fail: bool,
+        stored: std::sync::Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for Recording {
+        fn store_commits_inline(&self) -> bool {
+            true
+        }
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if self.fail {
+                return Err(crate::changeset::PersistenceError::backend(
+                    "the host refused the write",
+                ));
+            }
+            self.stored.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
+    }
+
+    fn persister_of(backend: std::sync::Arc<Recording>) -> WalletPersister {
+        WalletPersister::new(WALLET, backend)
+    }
+
+    fn identity_with_key(byte: u8) -> Identity {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: vec![byte; 20].into(),
+            disabled_at: None,
+        });
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([byte; 32]),
+            public_keys: BTreeMap::from([(0, key)]),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    fn keys_of(identity: &Identity, index: RegistrationIndex) -> Vec<KeyWithBreadcrumb> {
+        identity
+            .public_keys()
+            .iter()
+            .map(|(key_id, key)| KeyWithBreadcrumb {
+                key: key.clone(),
+                breadcrumb: Some((WALLET, index, *key_id)),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn should_store_the_identity_its_keys_and_the_claim_release_in_one_write() {
+        let backend = std::sync::Arc::new(Recording::default());
+        let persister = persister_of(backend.clone());
+        let mut manager = IdentityManager::new();
+        let acquired = manager
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        let landed = identity_with_key(1);
+        let keys = keys_of(&landed, acquired.identity_index);
+
+        manager
+            .place_in_slot(
+                landed,
+                acquired.identity_index,
+                WALLET,
+                Some(&claim(1)),
+                keys,
+                &persister,
+            )
+            .unwrap();
+
+        let stored = backend.stored.lock().unwrap();
+        assert_eq!(stored.len(), 1);
+        let write = &stored[0];
+        let id = Identifier::from([1u8; 32]);
+        assert!(write
+            .identities
+            .as_ref()
+            .unwrap()
+            .identities
+            .contains_key(&id));
+        let key_row = &write.identity_keys.as_ref().unwrap().upserts[&(id, 0)];
+        assert_eq!(key_row.wallet_id, Some(WALLET));
+        assert_eq!(
+            key_row.derivation_indices.as_ref().unwrap().identity_index,
+            acquired.identity_index
+        );
+        let SlotHolder::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        assert_eq!(
+            write.identity_slot_leases.as_ref().unwrap().released,
+            [invitation].into()
+        );
+    }
+
+    #[test]
+    fn should_publish_nothing_when_the_placement_is_not_stored() {
+        let persister = persister_of(std::sync::Arc::new(Recording {
+            fail: true,
+            ..Default::default()
+        }));
+        let mut manager = IdentityManager::new();
+        let id = Identifier::from([1u8; 32]);
+        manager.retain_private_payment_markers([id]);
+        let acquired = manager
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        let landed = identity_with_key(1);
+        let keys = keys_of(&landed, acquired.identity_index);
+
+        let placed = manager.place_in_slot(
+            landed,
+            acquired.identity_index,
+            WALLET,
+            Some(&claim(1)),
+            keys,
+            &persister,
+        );
+
+        assert!(placed.is_err());
+        assert!(manager.identity(&id).is_none());
+        assert_eq!(manager.identity_index(&id), None);
+        // The claim still holds its slot, and the hold still waits for the
+        // identity, so a retry finds both as they were.
+        assert_eq!(
+            manager
+                .leased_slot(&WALLET, &claim(1))
+                .map(|slot| slot.identity_index),
+            Some(acquired.identity_index)
+        );
+        manager
+            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .unwrap();
+        assert!(manager
+            .managed_identity(&id)
+            .unwrap()
+            .dashpay()
+            .private_payments_unrestored());
+    }
+
+    #[test]
+    fn should_leave_an_observed_identity_observed_when_its_placement_is_not_stored() {
+        let persister = persister_of(std::sync::Arc::new(Recording {
+            fail: true,
+            ..Default::default()
+        }));
+        let mut manager = IdentityManager::new();
+        let observer = WalletPersister::new(
+            WALLET,
+            std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
+        );
+        manager
+            .add_out_of_wallet_identity(identity(1), &observer)
+            .unwrap();
+        let landed = identity_with_key(1);
+        let keys = keys_of(&landed, 2);
+
+        let placed = manager.place_in_slot(landed, 2, WALLET, None, keys, &persister);
+
+        assert!(placed.is_err());
+        let id = Identifier::from([1u8; 32]);
+        assert!(manager.out_of_wallet_identities.contains_key(&id));
+        assert_eq!(manager.identity_index(&id), None);
+        assert_eq!(manager.slot_state(&WALLET, 2), SlotState::Free);
+        assert!(manager
+            .managed_identity(&id)
+            .unwrap()
+            .identity
+            .public_keys()
+            .is_empty());
     }
 
     #[test]
