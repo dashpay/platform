@@ -110,7 +110,19 @@ async fn track_chain_locked_lock(
     funding_type: AssetLockFundingType,
     identity_index: u32,
 ) -> OutPoint {
-    let (transaction, _path) = wallet
+    track_chain_locked_lock_at(wallet, signer, funding_type, identity_index)
+        .await
+        .0
+}
+
+/// [`track_chain_locked_lock`], also returning the lock's credit-output path.
+async fn track_chain_locked_lock_at(
+    wallet: &PlatformWallet,
+    signer: &WalletSigner,
+    funding_type: AssetLockFundingType,
+    identity_index: u32,
+) -> (OutPoint, key_wallet::bip32::DerivationPath) {
+    let (transaction, path) = wallet
         .asset_locks
         .build_asset_lock_transaction(1_000_000, 0, funding_type, identity_index, signer)
         .await
@@ -138,7 +150,7 @@ async fn track_chain_locked_lock(
                 })),
             },
         );
-    out_point
+    (out_point, path)
 }
 
 fn resume(out_point: OutPoint) -> AssetLockFunding {
@@ -351,6 +363,85 @@ async fn should_name_only_a_tracked_unconsumed_lock() {
             "{status:?}"
         );
     }
+}
+
+/// A persister that refuses to store an invitation record and accepts
+/// everything else.
+struct InvitationRecordRefused;
+
+impl crate::changeset::PlatformWalletPersistence for InvitationRecordRefused {
+    fn store(
+        &self,
+        _wallet_id: crate::wallet::platform_wallet::WalletId,
+        changeset: crate::changeset::PlatformWalletChangeSet,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        if changeset.invitations.is_some() {
+            return Err(crate::changeset::PersistenceError::backend(
+                "simulated invitation store failure",
+            ));
+        }
+        Ok(())
+    }
+
+    fn flush(
+        &self,
+        _wallet_id: crate::wallet::platform_wallet::WalletId,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        Ok(())
+    }
+
+    fn load(
+        &self,
+    ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError> {
+        Ok(crate::changeset::ClientStartState::default())
+    }
+}
+
+/// The invitation's steps after its voucher lock is broadcast go through the
+/// funded-lock seam: here the invitation record cannot be stored
+/// (`AssetLockTransaction`, `MaybeSent` on its own), and the error names the
+/// voucher lock as held, so the way on is its reclaim, not a new invitation.
+#[tokio::test]
+async fn should_hold_the_voucher_lock_when_an_invitation_fails_after_its_broadcast() {
+    use crate::wallet::identity::network::SeedCryptoProvider;
+
+    let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager_with(
+        std::sync::Arc::new(InvitationRecordRefused),
+    )
+    .await;
+    let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+    let signer = fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 50_000_000).await;
+    let (out_point, path) = track_chain_locked_lock_at(
+        &wallet,
+        &signer,
+        AssetLockFundingType::IdentityInvitation,
+        0,
+    )
+    .await;
+
+    let error = wallet
+        .identity()
+        .funded_invitation_uri(
+            &path,
+            out_point,
+            1_000_000,
+            1,
+            1,
+            None,
+            0,
+            &SeedCryptoProvider::from_seed([0; 64], dashcore::Network::Testnet),
+        )
+        .await
+        .expect_err("the invitation record cannot be stored");
+
+    assert!(
+        matches!(
+            error.dispatched_source(),
+            PlatformWalletError::AssetLockTransaction(_)
+        ),
+        "{error:?}"
+    );
+    assert_holds(&error, out_point);
 }
 
 /// Once a shielded funding holds its Core lock, a refusal before any Platform

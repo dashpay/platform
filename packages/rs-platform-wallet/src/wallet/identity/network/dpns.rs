@@ -611,4 +611,136 @@ mod tests {
             PlatformWalletError::InvalidIdentityData(_)
         ));
     }
+
+    /// A signer with no key for anything it is asked to sign: the SDK's
+    /// "key unavailable" refusal, `NotSent` on its own.
+    #[derive(Debug)]
+    struct KeylessSigner;
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for KeylessSigner {
+        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+            Err(ProtocolError::Generic(format!(
+                "{}no key for the domain",
+                crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+            )))
+        }
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            unreachable!("a DPNS registration signs no witness")
+        }
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// The wallet's registration watches the SDK's preorder callback: here
+    /// the SDK finds the identity's pending preorder of the name (on Platform,
+    /// paid for earlier) and reveals it, then the signer refuses the domain.
+    /// That refusal ends a registration already under way, so it is not
+    /// `NotSent`; a registration that stopped watching the callback would
+    /// report the bare signer refusal as `NotSent`.
+    #[tokio::test]
+    async fn should_class_a_domain_refusal_after_a_revealed_preorder_as_dispatched() {
+        use super::super::signing_key::tests::wallet_with_signing_keys_on;
+        use crate::wallet::persister::NoPlatformPersistence;
+        use dash_sdk::drive::query::{SelectProjection, WhereClause, WhereOperator};
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
+        use dash_sdk::query_types::IdentityContractNonceFetcher;
+        use dashcore::hashes::sha256d;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contracts::SystemDataContract;
+        use dpp::document::DocumentV0;
+        use dpp::document::DocumentV0Getters;
+        use dpp::platform_value::Value;
+        use dpp::system_data_contracts::load_system_data_contract;
+        use dpp::version::PlatformVersion;
+        use std::collections::BTreeMap;
+
+        let contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("the DPNS contract loads");
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("the mock SDK builds");
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .expect("the DPNS fetch is expected");
+
+        // The identity `wallet_with_signing_keys_on` registers, and a label
+        // that is not contested (it holds a digit other than 0 and 1).
+        let owner = Identifier::default();
+        let name_hash = Value::Bytes32(sha256d::Hash::hash(b"abc2025.dash").to_byte_array());
+        let pending = dpp::document::Document::V0(DocumentV0 {
+            id: Identifier::new([7u8; 32]),
+            owner_id: owner,
+            properties: BTreeMap::from([("nameHash".to_string(), name_hash.clone())]),
+            ..Default::default()
+        });
+        let dpns_id = contract.id();
+        let query = DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: Arc::new(contract),
+            document_type_name: "preorder".to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(owner.to_buffer()),
+                },
+                WhereClause {
+                    field: "nameHash".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: name_hash,
+                },
+            ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: 1,
+            offset: None,
+            start: None,
+        };
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(pending.id(), Some(pending));
+        sdk.mock()
+            .expect_fetch_many::<Identifier, dpp::document::Document, _, dash_sdk::query_types::Documents>(
+                query,
+                Some(documents),
+            )
+            .await
+            .expect("the pending-preorder query is expected");
+        // The domain's create transition is built at the next identity
+        // contract nonce, then signed.
+        sdk.mock()
+            .expect_fetch((owner, dpns_id), Some(IdentityContractNonceFetcher(1)))
+            .await
+            .expect("the nonce read is expected");
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
+
+        let error = wallet
+            .identity()
+            .register_name_with_external_signer(&owner, "abc2025", None, &KeylessSigner)
+            .await
+            .expect_err("the signer refuses the domain");
+
+        assert!(
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(m)))
+                    if m.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "{error:?}"
+        );
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+        assert!(!error.is_retryable());
+    }
 }

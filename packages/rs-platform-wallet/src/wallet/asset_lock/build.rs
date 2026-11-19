@@ -5946,4 +5946,103 @@ mod tests {
             snapshot
         );
     }
+
+    /// A persister whose Core-record fallback answers the first read with
+    /// the lock's transaction InstantSend-locked, then fails every later read.
+    struct RecordThenFailPersistence {
+        record: Mutex<Option<TransactionRecord>>,
+    }
+
+    impl PlatformWalletPersistence for RecordThenFailPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            match self.record.lock().unwrap().take() {
+                Some(record) => Ok(Some(record)),
+                None => Err(PersistenceError::backend("simulated backend failure")),
+            }
+        }
+    }
+
+    /// The proof half runs after the lock's broadcast, so a failure inside it
+    /// goes through the funded-lock seam: here the proof wait finds the
+    /// InstantSend lock, and the proof check that follows fails to read the
+    /// record (`AssetLockProofWait`, `MaybeSent` on its own). The lock is
+    /// tracked and unconsumed, so the error names it as held. Without the
+    /// seam the error would be the bare `MaybeSent`.
+    #[tokio::test]
+    async fn should_hold_the_lock_when_the_proof_half_fails_after_the_broadcast() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+
+        let persistence = Arc::new(RecordThenFailPersistence {
+            record: Mutex::new(None),
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(AlwaysOkBroadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let (_path, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("broadcast half should succeed");
+        let transaction = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm.get_wallet_and_info(&manager.wallet_id).unwrap();
+            info.tracked_asset_locks[&out_point].transaction.clone()
+        };
+        *persistence.record.lock().unwrap() = Some(TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InstantSend(InstantLock::default()),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        ));
+
+        let error = manager
+            .wait_for_funded_asset_lock_proof(&out_point, 0)
+            .await
+            .expect_err("the proof check cannot read the record");
+
+        assert!(
+            matches!(
+                error.dispatched_source(),
+                PlatformWalletError::AssetLockProofWait(_)
+            ),
+            "{error:?}"
+        );
+        assert_eq!(
+            error.payment_delivery(),
+            crate::PaymentDelivery::LockHeld(out_point),
+            "{error:?}"
+        );
+        assert!(!error.is_retryable());
+    }
 }

@@ -181,11 +181,49 @@ impl IdentityWallet {
             )
             .await?;
 
+        let uri = self
+            .funded_invitation_uri(
+                &path,
+                out_point,
+                amount_duffs,
+                expiry_unix,
+                created_at_secs,
+                inviter.as_ref(),
+                funding_account_index,
+                crypto_provider,
+            )
+            .await?;
+
+        Ok(Invitation {
+            uri,
+            out_point,
+            amount_duffs,
+            expiry_unix,
+        })
+    }
+
+    /// The part of [`Self::create_invitation`] that follows the voucher
+    /// lock's broadcast: record the invitation, wait for the lock's proof,
+    /// and encode the link. The lock at `out_point` is tracked from here on.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn funded_invitation_uri<CP>(
+        &self,
+        path: &DerivationPath,
+        out_point: dashcore::OutPoint,
+        amount_duffs: u64,
+        expiry_unix: u32,
+        created_at_secs: u32,
+        inviter: Option<&InviterInfo>,
+        funding_account_index: u32,
+        crypto_provider: &CP,
+    ) -> Result<String, PlatformWalletError>
+    where
+        CP: ContactCryptoProvider + Send + Sync,
+    {
         // The voucher lock is broadcast and tracked from here on, so every
         // later failure goes through the funded-lock seam: it names the lock
         // as held (the reclaim resumes it), never `NotSent`.
-        let uri = self
-            .asset_locks
+        self.asset_locks
             .with_funded_lock(Some(out_point), async {
                 // Persist the inviter-side invitation record NOW — immediately after the
                 // broadcast succeeds, BEFORE every later fallible or slow step (the proof
@@ -203,7 +241,7 @@ impl IdentityWallet {
                 // the funding path carries no u32 index tail (a structural can't-happen
                 // for the invitation account), warn-skip: an untrackable row can't be
                 // reclaimed either way.
-                if let Some(funding_index) = funding_index_from_path(&path) {
+                if let Some(funding_index) = funding_index_from_path(path) {
                     let mut inv_cs = InvitationChangeSet::default();
                     inv_cs.invitations.insert(
                         out_point,
@@ -265,7 +303,7 @@ impl IdentityWallet {
                 // Export the one-time voucher private key at the funding path. This is
                 // the one deliberate raw-key export (the whole point of an invitation);
                 // it is path-gated to the invitation sub-feature inside the provider.
-                let mut voucher_key = crypto_provider.export_invitation_private_key(&path).await?;
+                let mut voucher_key = crypto_provider.export_invitation_private_key(path).await?;
 
                 // Build the (secret) URI, then scrub the exported scalar on BOTH the
                 // success and the encode-error path. `secp256k1::SecretKey` has no
@@ -275,19 +313,11 @@ impl IdentityWallet {
                 // The link carries the funding txid + islock (legacy query form), not
                 // the embedded proof; the invitee refetches the tx at claim.
                 let network = self.sdk.network;
-                let uri_result =
-                    encode_invitation_uri(&voucher_key, network, &proof, inviter.as_ref());
+                let uri_result = encode_invitation_uri(&voucher_key, network, &proof, inviter);
                 voucher_key.non_secure_erase();
                 Ok(uri_result?)
             })
-            .await?;
-
-        Ok(Invitation {
-            uri,
-            out_point,
-            amount_duffs,
-            expiry_unix,
-        })
+            .await
     }
 
     /// The identity id this invitation WOULD create, without claiming it.
