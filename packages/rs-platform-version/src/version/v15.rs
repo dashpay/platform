@@ -1088,9 +1088,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// 49. **An object's members follow the update rules of the type's own properties**:
 ///     document type `validate_update` 2 (`DPP_VALIDATION_VERSIONS_V6`) holds every object of
 ///     every document type a contract has, private ones included, at every depth and through
-///     `$ref`, to what the type's own properties are held to. An object's members keep their order (the
-///     schema's map order, in which they are stored) and their requiredness as the type parses
-///     it, and members are added only after them; a member added to an object the type already
+///     `$ref`, to what the type's own properties are held to. `try_from_schema` 4
+///     (`CONTRACT_VERSIONS_V7`) stores an object's members by `position`, as the type's own
+///     properties are stored, instead of the schema's map order, and under full validation holds
+///     an object's positions to one after another from its lowest (unique, no gap; an object may
+///     start above 0, as DPNS `records` does); a stored object whose positions are not all
+///     integers keeps its map order. An object's members keep their order and their
+///     requiredness as the type parses it, and members are added only after them, at the next
+///     free positions; a member added to an object the type already
 ///     has is optional, or required with `requiredSince` equal to the version the update
 ///     creates; a member the update adds is required exactly when a `required` list names it;
 ///     an object's `required` loses no name, gains only members the same update adds, and does
@@ -1109,8 +1114,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     names, stored with
 ///     a presence byte at every contract version, and `validate_schema_compatibility` 2, which
 ///     leaves the objects' `required` lists out of the JSON-schema diff for `validate_update` 2
-///     to judge. Protocol v14 keeps `validate_update` 1, `apply_required_since` 0 and
-///     `validate_schema_compatibility` 1.
+///     to judge. Protocol v14 keeps `validate_update` 1, `apply_required_since` 0,
+///     `validate_schema_compatibility` 1 and `try_from_schema` 3, which stores an object's
+///     members in the schema's map order and reads no nested position.
 ///
 /// 50. **A `chooseFirst` competitor's hash is billed by its blocks**: document reference
 ///     validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) bills the competitors query up to the

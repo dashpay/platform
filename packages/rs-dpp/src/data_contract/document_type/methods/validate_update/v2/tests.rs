@@ -177,7 +177,7 @@ fn member_cases() -> Vec<Case> {
     let required = |names: Value| document_type_schema(with_meta(meta_yz()), names);
     vec![
         case(
-            "an object's members reordered",
+            "an object's members written in another map order, their positions kept",
             required(platform_value!(["a"])),
             document_type_schema(
                 with_meta(object(
@@ -187,10 +187,10 @@ fn member_cases() -> Vec<Case> {
                 )),
                 platform_value!(["a"]),
             ),
-            ORDER,
+            Expected::Accepted,
         ),
         case(
-            "a member put before an object's existing ones",
+            "a member written first in an object's map, at a position after its existing ones",
             required(platform_value!(["a"])),
             document_type_schema(
                 with_meta(object(
@@ -200,7 +200,39 @@ fn member_cases() -> Vec<Case> {
                 )),
                 platform_value!(["a"]),
             ),
+            Expected::Accepted,
+        ),
+        case(
+            "a member written last in an object's map, at a position before an existing one",
+            document_type_schema(
+                with_meta(object(platform_value!({ "z": integer(1) }), 1, None)),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "z": integer(1), "x": boolean(0) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
             ORDER,
+        ),
+        case(
+            "a member added at the next position of an object whose positions start at 1",
+            document_type_schema(
+                with_meta(object(platform_value!({ "z": integer(1) }), 1, None)),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "z": integer(1), "x": boolean(2) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Accepted,
         ),
         case(
             "a member added after an object's existing ones",
@@ -216,12 +248,12 @@ fn member_cases() -> Vec<Case> {
             Expected::Accepted,
         ),
         case(
-            "an object inside an object with its members reordered",
+            "a member added to an object inside an object, at a position before its existing one",
             document_type_schema(
                 with_meta(object(
                     platform_value!({
                         "y": boolean(0),
-                        "inner": object(platform_value!({ "p": boolean(0), "q": integer(1) }), 1, None),
+                        "inner": object(platform_value!({ "q": integer(1) }), 1, None),
                     }),
                     1,
                     None,
@@ -438,7 +470,7 @@ fn member_cases() -> Vec<Case> {
             Expected::Accepted,
         ),
         Case {
-            name: "a definition's members reordered",
+            name: "a definition's members written in another map order, their positions kept",
             old: document_type_schema(
                 platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
                 platform_value!(["a"]),
@@ -449,10 +481,10 @@ fn member_cases() -> Vec<Case> {
             ),
             old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
             new_defs: definitions(platform_value!({ "z": integer(1), "y": boolean(0) })),
-            expected: ORDER,
+            expected: Expected::Accepted,
         },
         Case {
-            name: "a member put before a definition's existing ones",
+            name: "a member written first in a definition's map, at a position after its existing ones",
             old: document_type_schema(
                 platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
                 platform_value!(["a"]),
@@ -465,6 +497,20 @@ fn member_cases() -> Vec<Case> {
             new_defs: definitions(
                 platform_value!({ "x": boolean(2), "y": boolean(0), "z": integer(1) }),
             ),
+            expected: Expected::Accepted,
+        },
+        Case {
+            name: "a member written last in a definition's map, at a position before an existing one",
+            old: document_type_schema(
+                platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
+                platform_value!(["a"]),
+            ),
+            old_defs: definitions(platform_value!({ "z": integer(1) })),
+            new_defs: definitions(platform_value!({ "z": integer(1), "x": boolean(0) })),
             expected: ORDER,
         },
         Case {

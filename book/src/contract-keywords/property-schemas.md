@@ -78,14 +78,14 @@ An array that is neither is refused.
 | **Value** | An integer, 0 or more |
 | **Since** | protocol version 1 |
 | **On update** | Fixed (10246) |
-| **Errors** | `MissingPositionsInDocumentTypePropertiesError` (10411) at registration |
+| **Errors** | `MissingPositionsInDocumentTypePropertiesError` (10411) at registration; for an object's members, `InvalidContractStructure` (10231) from protocol version 15 |
 
 A document is stored with its values one after another and no property names. `position` is the property's place in that sequence.
 
 - The top-level properties of a document type must use the positions 0, 1, 2 and so on, with no gap and no number used twice (10411). A top-level property without a `position` is refused.
-- The members of an object need a `position` too. Number them from 0 within the object; only the top level is checked for gaps. Inside an object, though, the stored order is the order of the object's `properties` map, not `position`.
-- A property that takes its schema from a [`$ref`](#ref) writes its `position` next to the `$ref`.
-- A property added by a contract update takes the next free position. An existing position can never change, or stored documents would be read in the wrong order. A member added to an object also goes after the object's existing members in its `properties` map (from protocol version 15 an update that reorders them, or puts a member before them, is refused: `DocumentTypeUpdateError`, 40212).
+- The members of an object need a `position` too. From protocol version 15 they are stored in `position` order, as the top level is, whatever order the object's `properties` map lists them in. An object's positions must follow one another from its lowest, with no gap and no number used twice (10231). Number them from 0; an object whose positions start higher, as DPNS's `records` (`identity` at 1), is accepted. Before protocol version 15 an object's members were stored in the order of its `properties` map, and nested positions were not checked beyond being there.
+- A property that takes its schema from a [`$ref`](#ref) writes its `position` next to the `$ref`. A position inside the definition is not read for it.
+- A property added by a contract update takes the next free position. An existing position can never change, or stored documents would be read in the wrong order. A member added to an object takes the object's next free position too, after its existing members (from protocol version 15 an update that puts a member before them, at a free position below theirs, is refused: `DocumentTypeUpdateError`, 40212).
 
 ## Strings
 

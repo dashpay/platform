@@ -29,7 +29,7 @@ use platform_version::version::PlatformVersion;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::{json, Value as JsonValue};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 // ---- what the comparisons run ----
@@ -1767,6 +1767,27 @@ fn should_admit_private_which_the_meta_schema_refuses() {
     }
 }
 
+/// Whether an object of `properties` (a `properties` map, or a `$defs` map), at any depth, writes
+/// its members in its map in an order other than by `position`.
+fn has_object_out_of_position_order(properties: &serde_json::Map<String, JsonValue>) -> bool {
+    properties.values().any(|schema| {
+        let Some(JsonValue::Object(members)) = schema.get("properties") else {
+            return false;
+        };
+        let positions: Vec<Option<u64>> = members
+            .values()
+            .map(|member| member.get("position").and_then(JsonValue::as_u64))
+            .collect();
+        positions.windows(2).any(|pair| pair[0] > pair[1])
+            || has_object_out_of_position_order(members)
+    })
+}
+
+/// Parser generation 4 compiles every fixture and deployed contract without the lifecycle
+/// keywords as generation 3 does, but for an object whose map writes its members in an order
+/// other than by `position`: generation 4 stores them by position. Every deployed contract of
+/// the corpus with such an object is one of the three testnet contracts the nested position
+/// census found.
 #[test]
 fn should_compile_non_lifecycle_fixtures_identically_with_parsers_three_and_four() {
     use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
@@ -1780,10 +1801,21 @@ fn should_compile_non_lifecycle_fixtures_identically_with_parsers_three_and_four
         .class_method_versions
         .try_from_schema = 3;
     let mut count = 0;
+    let mut out_of_position_order = BTreeSet::new();
     for case in written_cases().into_iter().chain(corpus_cases()) {
         if case.schema.get("canBeErased").is_some() {
             continue;
         }
+        let in_position_order = !case
+            .schema
+            .get("properties")
+            .and_then(JsonValue::as_object)
+            .is_some_and(has_object_out_of_position_order)
+            && !case
+                .defs
+                .as_ref()
+                .and_then(JsonValue::as_object)
+                .is_some_and(has_object_out_of_position_order);
         let defs = case.schema_defs().unwrap();
         let parse = |version| {
             DocumentType::try_from_schema(
@@ -1813,13 +1845,32 @@ fn should_compile_non_lifecycle_fixtures_identically_with_parsers_three_and_four
                     .serialize_to_bytes()
                     .unwrap()
                 };
-                assert_eq!(compile(&old), compile(&current), "{}", case.origin);
+                if in_position_order {
+                    assert_eq!(compile(&old), compile(&current), "{}", case.origin);
+                } else {
+                    assert_ne!(
+                        compile(&old),
+                        compile(&current),
+                        "{}: generation 4 stores an object's members by position",
+                        case.origin
+                    );
+                    out_of_position_order.insert(case.contract_id.to_string(Encoding::Base58));
+                }
                 count += 1;
             }
             (Err(_), Err(_)) => {}
             (old, current) => panic!("{}: parser mismatch: {old:?} vs {current:?}", case.origin),
         }
     }
+    let census = BTreeSet::from([
+        "5hr7uQGA8WQpQS1WzgBKg9vKHjsRxuTBzmP7xsPmnuPP".to_string(),
+        "HnNVSS2byYwjH2BmoTLUJG94xtoDNihBBzWVvh8c5TGD".to_string(),
+        "XJMWN5fHC8p2BjHbWJvyBegj575DNhQTGSghpN2ToFk".to_string(),
+    ]);
+    assert!(
+        !out_of_position_order.is_empty() && out_of_position_order.is_subset(&census),
+        "the deployed contracts with an object out of position order: {out_of_position_order:?}"
+    );
     assert!(
         count > 100,
         "expected the fixture and deployed-contract corpus, got {count}"

@@ -1947,3 +1947,296 @@ fn should_keep_the_protocol_version_14_layout_of_an_object() {
         assert_eq!(deserialized, document);
     }
 }
+
+/// A required string member of an object, at `position`.
+fn positioned_string(position: u32) -> Value {
+    platform_value::platform_value!({"type": "string", "position": position, "maxLength": 60_u32})
+}
+
+/// An object at `position` holding `members` (name and position, in map order), every member a
+/// required string.
+fn positioned_object(members: &[(&str, u32)], position: u32) -> Value {
+    let properties = members
+        .iter()
+        .map(|(name, position)| (Value::Text(name.to_string()), positioned_string(*position)))
+        .collect();
+    let required = members
+        .iter()
+        .map(|(name, _)| Value::Text(name.to_string()))
+        .collect();
+    Value::Map(vec![
+        (
+            Value::Text("type".to_string()),
+            Value::Text("object".to_string()),
+        ),
+        (Value::Text("position".to_string()), Value::U32(position)),
+        (
+            Value::Text("properties".to_string()),
+            Value::Map(properties),
+        ),
+        (Value::Text("required".to_string()), Value::Array(required)),
+        (
+            Value::Text("additionalProperties".to_string()),
+            Value::Bool(false),
+        ),
+    ])
+}
+
+/// A type whose only property is `meta`, as written, with `$defs` `defs`.
+fn meta_document_type(
+    meta: Value,
+    defs: Option<BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> crate::data_contract::document_type::DocumentType {
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+
+    let schema = platform_value!({
+        "type": "object",
+        "properties": { "meta": meta },
+        "required": ["meta"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        defs.as_ref(),
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type")
+}
+
+/// The member names of the object at `path` (dotted) of `document_type`, in the order it stores
+/// them.
+fn stored_member_order(
+    document_type: &crate::data_contract::document_type::DocumentType,
+    path: &str,
+) -> Vec<String> {
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::DocumentPropertyType;
+
+    let mut properties = document_type.properties();
+    let mut segments = path.split('.').peekable();
+    while let Some(segment) = segments.next() {
+        let Some(DocumentPropertyType::Object(members)) = properties
+            .get(segment)
+            .map(|property| &property.property_type)
+        else {
+            panic!("expected an object at {segment}");
+        };
+        if segments.peek().is_none() {
+            return members.keys().cloned().collect();
+        }
+        properties = members;
+    }
+    unreachable!("a path has at least one segment")
+}
+
+/// From protocol version 15 an object stores its members by `position`, as a document type stores
+/// its own properties; protocol version 14 keeps the schema's map order it always stored them in.
+#[test]
+fn should_store_an_objects_members_in_position_order_from_protocol_version_15() {
+    let latest = PlatformVersion::latest();
+    let v14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let members = [("slug", 2), ("title", 0), ("description", 1)];
+    let values = meta_properties(&[("slug", "s"), ("title", "t"), ("description", "d")]);
+
+    for (platform_version, order, expected) in [
+        (
+            v14,
+            ["slug", "title", "description"],
+            [6u8, 1, b's', 1, b't', 1, b'd'],
+        ),
+        (
+            latest,
+            ["title", "description", "slug"],
+            [6u8, 1, b't', 1, b'd', 1, b's'],
+        ),
+    ] {
+        // An object reads back with its members in the order it stores them
+        let stored = meta_properties(&order.map(|name| (name, &name[..1])));
+        let version = platform_version.protocol_version;
+        let document_type =
+            meta_document_type(positioned_object(&members, 0), None, platform_version);
+        assert_eq!(
+            stored_member_order(&document_type, "meta"),
+            order,
+            "protocol version {version}"
+        );
+
+        let document = stamped_document(Some(1), values.clone(), document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected the document to serialize");
+        assert_eq!(
+            meta_bytes(&serialized),
+            expected,
+            "protocol version {version}"
+        );
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected the document to deserialize");
+        assert_eq!(
+            deserialized.properties, stored,
+            "protocol version {version}"
+        );
+    }
+}
+
+/// The members a `$ref` brings and those of an object inside an object are stored by `position`
+/// too.
+#[test]
+fn should_store_members_in_position_order_through_a_ref_and_inside_an_object() {
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+    let members = [("slug", 2), ("title", 0), ("description", 1)];
+    let members_value = |members: &[(&str, &str)]| {
+        meta_properties(members)
+            .remove("meta")
+            .expect("expected the members")
+    };
+    let inner = members_value(&[("slug", "s"), ("title", "t"), ("description", "d")]);
+    let stored = members_value(&[("title", "t"), ("description", "d"), ("slug", "s")]);
+
+    let through_ref = meta_document_type(
+        platform_value!({ "$ref": "#/$defs/page", "position": 0 }),
+        Some(BTreeMap::from([(
+            "page".to_string(),
+            positioned_object(&members, 0),
+        )])),
+        platform_version,
+    );
+    let mut nested = positioned_object(&[], 0);
+    if let Value::Map(map) = &mut nested {
+        for (key, value) in map.iter_mut() {
+            match key.as_text() {
+                Some("properties") => {
+                    *value = Value::Map(vec![(
+                        Value::Text("page".to_string()),
+                        positioned_object(&members, 0),
+                    )])
+                }
+                Some("required") => *value = Value::Array(vec![Value::Text("page".to_string())]),
+                _ => {}
+            }
+        }
+    }
+    let inside_an_object = meta_document_type(nested, None, platform_version);
+
+    // A definition's own `required` is not read for storage, so the members a `$ref` brings
+    // carry the presence byte of optional members
+    for (document_type, path, properties, stored_properties, expected) in [
+        (
+            &through_ref,
+            "meta",
+            BTreeMap::from([("meta".to_string(), inner.clone())]),
+            BTreeMap::from([("meta".to_string(), stored.clone())]),
+            vec![9u8, 1, 1, b't', 1, 1, b'd', 1, 1, b's'],
+        ),
+        (
+            &inside_an_object,
+            "meta.page",
+            BTreeMap::from([(
+                "meta".to_string(),
+                Value::Map(vec![(Value::Text("page".to_string()), inner.clone())]),
+            )]),
+            BTreeMap::from([(
+                "meta".to_string(),
+                Value::Map(vec![(Value::Text("page".to_string()), stored.clone())]),
+            )]),
+            vec![7u8, 6, 1, b't', 1, b'd', 1, b's'],
+        ),
+    ] {
+        assert_eq!(
+            stored_member_order(document_type, path),
+            ["title", "description", "slug"],
+            "{path}"
+        );
+        let document = stamped_document(Some(1), properties, document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected the document to serialize");
+        assert_eq!(meta_bytes(&serialized), expected.as_slice(), "{path}");
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected the document to deserialize");
+        assert_eq!(deserialized.properties, stored_properties, "{path}");
+    }
+}
+
+/// A member an update adds at the object's next position reads as absent in a document stored
+/// before, wherever the map lists it: an optional member, one required from the new version, and
+/// an object.
+#[test]
+fn should_read_a_document_stored_before_its_object_gained_a_member_listed_first() {
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+    let before = meta_document_type(
+        platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": { "y": positioned_string(0) },
+            "required": ["y"],
+            "additionalProperties": false,
+        }),
+        None,
+        platform_version,
+    );
+    let document = stamped_document(Some(1), meta_properties(&[("y", "a")]), before.as_ref());
+    let serialized = document
+        .serialize_v3(before.as_ref())
+        .expect("expected the document to serialize under the type before the update");
+    assert_eq!(meta_bytes(&serialized), [2u8, 1, b'a']);
+
+    for (added, required) in [
+        ("an optional member", platform_value!(["y"])),
+        (
+            "a member required from the new version",
+            platform_value!(["y", "x"]),
+        ),
+        ("an object", platform_value!(["y"])),
+    ] {
+        let x = match added {
+            "an object" => platform_value!({
+                "type": "object",
+                "position": 1,
+                "properties": { "p": positioned_string(0) },
+                "additionalProperties": false,
+            }),
+            "a member required from the new version" => platform_value!({
+                "type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 1
+            }),
+            _ => positioned_string(1),
+        };
+        let after = meta_document_type(
+            platform_value!({
+                "type": "object",
+                "position": 0,
+                "properties": { "x": x, "y": positioned_string(0) },
+                "required": required,
+                "additionalProperties": false,
+            }),
+            None,
+            platform_version,
+        );
+        assert_eq!(stored_member_order(&after, "meta"), ["y", "x"], "{added}");
+        let deserialized = DocumentV0::from_bytes(&serialized, after.as_ref(), platform_version)
+            .unwrap_or_else(|error| panic!("{added}: the stored document must read: {error}"));
+        assert_eq!(
+            deserialized.properties,
+            meta_properties(&[("y", "a")]),
+            "{added}: the member the update added reads as absent"
+        );
+    }
+}

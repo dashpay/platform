@@ -41,7 +41,7 @@ From protocol version 14, every create and replace stamps the document with the 
 
 ## Members of an object
 
-From protocol version 15 an update may also add a required member to an object the type already has and writes inline. The member goes after the object's existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required`. An object that takes its members from a `$ref` gains them only as optional: the `required` beside the `$ref` stays as it is, since the definition may be shared, and the definition's own lists are fixed:
+From protocol version 15 an update may also add a required member to an object the type already has and writes inline. The member takes the object's next free position, after its existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required`. An object that takes its members from a `$ref` gains them only as optional: the `required` beside the `$ref` stays as it is, since the definition may be shared, and the definition's own lists are fixed:
 
 ```json
 "post": {

@@ -86,7 +86,7 @@ use indexmap::IndexMap;
 
 #[cfg(feature = "validation")]
 use super::native_schema;
-use super::{insert_values, insert_values_nested};
+use super::{insert_values, insert_values_nested, NestedMemberOrder};
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
@@ -210,6 +210,10 @@ pub(super) fn no_ranked_index_structure_check(
 #[derive(Clone, Copy)]
 pub(super) struct ParserGeneration {
     pub admit_lifecycle: bool,
+    /// Whether an object's members are stored in `position` order, as the type's own
+    /// properties are, instead of the order its `properties` map writes them in. Read by
+    /// [`parse_document_properties`] into the [`NestedMemberOrder`] it parses with.
+    pub nested_members_by_position: bool,
     // ---- present in every generation ----
     /// The `document_type_schema` table value to select the document
     /// meta-schema with. Read by the *driver*, not down here.
@@ -1047,6 +1051,14 @@ fn parse_document_properties(
         property_names::TRANSIENT,
     );
 
+    let nested_member_order = if ctx.generation.nested_members_by_position {
+        NestedMemberOrder::Position {
+            full_validation: cfg!(feature = "validation") && ctx.full_validation,
+        }
+    } else {
+        NestedMemberOrder::SchemaMap
+    };
+
     // Based on the property name, determine the type
     for (property_key, property_value) in property_values {
         // TODO: It's very inefficient. It must be done in one iteration and flattened properties
@@ -1073,6 +1085,7 @@ fn parse_document_properties(
             property_value,
             root_schema,
             &mut Vec::new(),
+            nested_member_order,
             ctx.data_contact_config,
             ctx.platform_version,
         )

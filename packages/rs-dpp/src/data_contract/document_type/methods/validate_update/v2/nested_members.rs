@@ -1,10 +1,13 @@
 //! What an update keeps of every object of a document type, at every depth.
 //!
 //! A stored document is read with the type as it is now. Inside an object the members are
-//! stored one after another in the order the type parses them (the schema's map order, not
-//! `position`), a member required at every contract version without the presence byte an
+//! stored one after another in the order the type parses them (by `position`, as the type's own
+//! properties), a member required at every contract version without the presence byte an
 //! optional one (or one required from a contract version) carries, so an object's members must
-//! keep their place and their requiredness, and a member may only be added after them. Its requiredness is what the type's parse makes of it, whatever made it so: the
+//! keep their place and their requiredness, and a member may only be added after them. Positions
+//! never change on update, and the parse holds an object's positions to one after another from
+//! its lowest, so a member added after them takes the next free position. Its requiredness is
+//! what the type's parse makes of it, whatever made it so: the
 //! object's own `required`, a `required` beside its `$ref`, a dotted name in an enclosing
 //! `required`, or the parser reading a required name of an enclosing property as naming it (a
 //! name made of the object's name, any one character and the member's name). These rules compare
@@ -31,10 +34,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeRef<'_> {
     /// Every object of the type keeps its members in their order, and the members an update adds
-    /// come after them: a document stored before reads the added members as absent. The type's
-    /// own properties are held by their frozen, gapless positions, and are checked here too. A
-    /// member removed after the others is left to the schema compatibility check, which refuses
-    /// every removal.
+    /// come after them: a document stored before reads the added members as absent. Positions are
+    /// frozen and the parse holds them to one after another (from 0 for the type's own
+    /// properties, from an object's lowest inside it), so this refuses a member added at a
+    /// position before the existing ones, which only an object whose positions start above 0
+    /// leaves free. A member removed after the others is left to the schema compatibility check,
+    /// which refuses every removal.
     pub(super) fn validate_member_order_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -51,8 +56,9 @@ impl DocumentTypeRef<'_> {
                 format!(
                     "a document type can only add properties after its existing ones: {} would \
                      no longer start with its existing properties in their order ({}), so the \
-                     documents stored before would read wrong; inside an object the stored order \
-                     is the schema's map order, so an added member goes after the others there",
+                     documents stored before would read wrong; inside an object, as in the type, \
+                     the stored order is position order, so an added member takes a position \
+                     after the others",
                     reordered.place, reordered.stored_order
                 ),
             )
