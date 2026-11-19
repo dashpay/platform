@@ -1922,7 +1922,8 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 /// * The query is billed up to the scan's budget ([`choose_first_scan_budget`]), and each
 ///   competitor's hash in full, by the blocks it hashes, past the budget too: a large
 ///   `validWhen` preimage costs what it hashes. Check tx reserves both
-///   (`choose_first_reservation` 1), for a create its contest decides too.
+///   (`choose_first_reservation` 1), but for a create its contest decides only the budget, as
+///   no competitor is read for it.
 ///
 /// `findBy` finds `found` through the referenced type's unique index over `$ownerId` and
 /// `among`, so each competitor is another identity's: the writer's only document holding the
