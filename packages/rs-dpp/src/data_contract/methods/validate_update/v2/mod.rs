@@ -1,5 +1,4 @@
 use crate::block::block_info::BlockInfo;
-use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,16 +6,11 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::{
     first_repeated_key_of_definitions, first_repeated_key_of_schema,
 };
-use crate::data_contract::document_type::property_names::{
-    MAX_PROPERTIES, PROPERTIES, REF, REQUIRED,
-};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::{Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
-use std::collections::{BTreeMap, BTreeSet};
 
 impl DataContract {
     /// Generation 2 (protocol version 15): generation 1, once no document type of the stored
@@ -31,11 +25,6 @@ impl DataContract {
     ///
     /// The rule is about an update that submits schemas. A token configuration update submits
     /// none and stores the stored schemas and `$defs` as they are, so it does not come here.
-    ///
-    /// Once generation 1 accepts the update, it is refused when it makes the `required` of an
-    /// object of a type the contract keeps name more members than the object may hold
-    /// (`maxProperties`): document type update generation 2 lets such a list gain the members
-    /// the update adds, and only the contract holds the `$defs` whose caps also bind.
     ///
     /// Delegating to generation 1 is safe because that generation is shipped and therefore
     /// frozen. The checks are independent and short-circuiting, so running the extra one first
@@ -53,52 +42,7 @@ impl DataContract {
             return Ok(result);
         }
 
-        let result = self.validate_update_v1(new_data_contract, block_info, platform_version)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        Ok(self.validate_update_required_lists_fit(new_data_contract))
-    }
-
-    /// Refuses the update when the `required` of an object of a document type the contract
-    /// keeps names more members than the object may hold: `maxProperties`, written on the
-    /// object, beside its `$ref`, or on the definition the `$ref` names. No update can change
-    /// one, and no document could then hold the object. Only a list the update makes longer is
-    /// judged, so a type stored with such a list stays updatable.
-    fn validate_update_required_lists_fit(
-        &self,
-        new_data_contract: &DataContract,
-    ) -> SimpleConsensusValidationResult {
-        let definitions = new_data_contract.schema_defs();
-        for (document_type_name, old_document_type) in self.document_types() {
-            let Some(new_document_type) =
-                new_data_contract.document_type_optional_for_name(document_type_name)
-            else {
-                continue;
-            };
-            if let Some(overfull) = first_overfull_required_list(
-                old_document_type.schema(),
-                new_document_type.schema(),
-                definitions,
-                None,
-            ) {
-                return SimpleConsensusValidationResult::new_with_error(
-                    DataContractInvalidRequiredFieldsUpdateError::new(
-                        document_type_name.clone(),
-                        format!(
-                            "the required of '{}' would name {} members, more than the {} its \
-                             object may hold (maxProperties), so no document could hold the \
-                             object",
-                            overfull.path, overfull.required, overfull.max_properties
-                        ),
-                    )
-                    .into(),
-                );
-            }
-        }
-
-        SimpleConsensusValidationResult::new()
+        self.validate_update_v1(new_data_contract, block_info, platform_version)
     }
 
     /// Refuses the update when an object of a stored document type's schema, or of the
@@ -145,92 +89,6 @@ impl DataContract {
 
         SimpleConsensusValidationResult::new()
     }
-}
-
-/// An object whose `required` names more members than it may hold.
-struct OverfullRequiredList {
-    path: String,
-    required: usize,
-    max_properties: u64,
-}
-
-/// The first object below `new` (a schema of an object, or of the document type when `path` is
-/// `None`) that the old schema `old` also holds, whose `required` the update lengthened past the
-/// object's `maxProperties`. The walk follows the objects written inline; a `$ref` member is
-/// judged with the definition it names, whose own lists an update can not change.
-fn first_overfull_required_list(
-    old: &Value,
-    new: &Value,
-    definitions: Option<&BTreeMap<String, Value>>,
-    path: Option<&str>,
-) -> Option<OverfullRequiredList> {
-    let (old_members, new_members) = (inline_members(old)?, inline_members(new)?);
-    new_members.iter().find_map(|(name, new_member)| {
-        let name = name.as_text()?;
-        let old_member = old_members.get_optional_key(name)?;
-        let member_path = path.map_or_else(|| name.to_string(), |path| format!("{path}.{name}"));
-        let required = required_count(new_member);
-        if required > required_count(old_member) {
-            let max_properties = [
-                max_properties(new_member),
-                referenced_definition(new_member, definitions).and_then(max_properties),
-            ]
-            .into_iter()
-            .flatten()
-            .min();
-            if let Some(max_properties) = max_properties {
-                if required as u64 > max_properties {
-                    return Some(OverfullRequiredList {
-                        path: member_path,
-                        required,
-                        max_properties,
-                    });
-                }
-            }
-        }
-        first_overfull_required_list(old_member, new_member, definitions, Some(&member_path))
-    })
-}
-
-/// The `properties` of the object `schema` describes inline, `None` for a `$ref`.
-fn inline_members(schema: &Value) -> Option<&Vec<(Value, Value)>> {
-    let schema = schema.as_map()?;
-    if schema.get_optional_key(REF).is_some() {
-        return None;
-    }
-    schema.get_optional_key(PROPERTIES)?.as_map()
-}
-
-/// How many distinct names the `required` of `schema` holds.
-fn required_count(schema: &Value) -> usize {
-    schema
-        .as_map()
-        .and_then(|schema| schema.get_optional_key(REQUIRED))
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(Value::as_text)
-                .collect::<BTreeSet<_>>()
-                .len()
-        })
-        .unwrap_or_default()
-}
-
-fn max_properties(schema: &Value) -> Option<u64> {
-    schema
-        .as_map()?
-        .get_optional_key(MAX_PROPERTIES)?
-        .as_integer::<u64>()
-}
-
-/// The definition of `definitions` the `$ref` of `schema` names (`#/$defs/<name>`).
-fn referenced_definition<'a>(
-    schema: &Value,
-    definitions: Option<&'a BTreeMap<String, Value>>,
-) -> Option<&'a Value> {
-    let reference = schema.as_map()?.get_optional_key(REF)?.as_text()?;
-    definitions?.get(reference.strip_prefix("#/$defs/")?)
 }
 
 #[cfg(test)]
@@ -510,216 +368,51 @@ mod tests {
         }
     }
 
-    /// A definition's member required from the contract version an update creates, through the
-    /// `required` beside a `$ref`, passes the contract's `$defs` compatibility as an added
-    /// member; and a document type added later may take the definition whatever version its
-    /// member names, since no stored document holds the new type.
+    /// A definition whose member is required from an earlier contract version, through the
+    /// `required` beside a `$ref`, may be taken by a document type an update adds: no stored
+    /// document holds the new type, and the member is stored with a presence byte whatever
+    /// version it names.
     #[test]
-    fn should_admit_a_definition_member_required_from_the_version_an_update_creates() {
+    fn should_admit_a_new_document_type_taking_a_definition_whose_member_is_required_from_an_earlier_version(
+    ) {
         let platform_version = PlatformVersion::latest();
-        let definition = |with_x: bool| {
-            let mut members = platform_value!({
-                "y": { "type": "boolean", "position": 0 },
-            });
-            if with_x {
-                members
-                    .set_value(
-                        "x",
-                        platform_value!({ "type": "boolean", "position": 1, "requiredSince": 2 }),
-                    )
-                    .expect("expected a map");
-            }
-            BTreeMap::from([(
-                "m".to_string(),
-                platform_value!({
-                    "type": "object",
-                    "properties": members,
-                    "additionalProperties": false,
-                }),
-            )])
-        };
-        let referencing = |required: Value| {
+        let definition = BTreeMap::from([(
+            "m".to_string(),
             platform_value!({
                 "type": "object",
                 "properties": {
-                    "meta": { "$ref": "#/$defs/m", "position": 0, "required": required },
+                    "y": { "type": "boolean", "position": 0 },
+                    "x": { "type": "boolean", "position": 1, "requiredSince": 1 },
                 },
                 "additionalProperties": false,
-            })
-        };
-
-        // The stored contract, and its update: the new schema is placed before the new `$defs`,
-        // which a parse of the old schema with the new definition would refuse
-        let (stored, _) = stored_and_updated(
-            referencing(platform_value!(["y"])),
-            Some(definition(false)),
-            referencing(platform_value!(["y"])),
-            Some(definition(false)),
+            }),
+        )]);
+        let referencing = platform_value!({
+            "type": "object",
+            "properties": {
+                "meta": { "$ref": "#/$defs/m", "position": 0, "required": ["y", "x"] },
+            },
+            "additionalProperties": false,
+        });
+        let (stored, mut updated) = stored_and_updated(
+            referencing.clone(),
+            Some(definition.clone()),
+            referencing.clone(),
+            Some(definition),
             platform_version,
         );
-        let mut updated = stored.clone();
-        updated.set_version(stored.version() + 1);
         updated
-            .set_document_schema(
-                TYPE_NAME,
-                referencing(platform_value!(["y", "x"])),
-                false,
-                &mut Vec::new(),
-                platform_version,
-            )
-            .expect("expected the new schema to be placed");
-        let mut defs = updated.schema_defs().cloned().unwrap_or_default();
-        defs.extend(definition(true));
-        updated
-            .set_schema_defs(Some(defs), true, &mut Vec::new(), platform_version)
-            .expect("expected the new $defs to register");
-        let result = stored
-            .validate_update(&updated, &BlockInfo::default(), platform_version)
-            .expect("expected the update to be judged");
-        assert!(result.is_valid(), "{:?}", result.errors);
-
-        let mut with_new_type = updated.clone();
-        with_new_type.set_version(updated.version() + 1);
-        with_new_type
             .set_document_schema(
                 "other",
-                referencing(platform_value!(["y", "x"])),
+                referencing,
                 true,
                 &mut Vec::new(),
                 platform_version,
             )
             .expect("expected the new type to register");
-        let result = updated
-            .validate_update(&with_new_type, &BlockInfo::default(), platform_version)
+        let result = stored
+            .validate_update(&updated, &BlockInfo::default(), platform_version)
             .expect("expected the update to be judged");
         assert!(result.is_valid(), "{:?}", result.errors);
-    }
-
-    /// An object may hold at most `maxProperties` members, which an update can not change: an
-    /// update that makes its `required` name more members than that is refused, since no
-    /// document could then hold the object. The cap is the object's own, the one beside its
-    /// `$ref`, or its definition's.
-    #[test]
-    fn should_refuse_a_required_list_growing_past_its_object_s_max_properties() {
-        use crate::consensus::basic::BasicError;
-
-        let platform_version = PlatformVersion::latest();
-        let inline = |max_properties: u32, with_x: bool| {
-            let mut members = platform_value!({ "y": { "type": "boolean", "position": 0 } });
-            let mut required = vec![text("y")];
-            if with_x {
-                members
-                    .set_value(
-                        "x",
-                        platform_value!({ "type": "boolean", "position": 1, "requiredSince": 2 }),
-                    )
-                    .expect("expected a map");
-                required.push(text("x"));
-            }
-            platform_value!({
-                "type": "object",
-                "properties": {
-                    "meta": {
-                        "type": "object",
-                        "position": 0,
-                        "properties": members,
-                        "required": required,
-                        "maxProperties": max_properties,
-                        "additionalProperties": false,
-                    },
-                },
-                "required": ["meta"],
-                "additionalProperties": false,
-            })
-        };
-        let judge = |stored: &DataContract, updated: &DataContract| {
-            stored
-                .validate_update(updated, &BlockInfo::default(), platform_version)
-                .expect("expected the update to be judged")
-        };
-
-        let (stored, updated) = stored_and_updated(
-            inline(1, false),
-            None,
-            inline(1, true),
-            None,
-            platform_version,
-        );
-        assert_matches!(
-            judge(&stored, &updated).errors.as_slice(),
-            [ConsensusError::BasicError(
-                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
-            )] if e.details().contains("meta") && e.details().contains("maxProperties")
-        );
-
-        let (stored, updated) = stored_and_updated(
-            inline(2, false),
-            None,
-            inline(2, true),
-            None,
-            platform_version,
-        );
-        let result = judge(&stored, &updated);
-        assert!(result.is_valid(), "{:?}", result.errors);
-
-        // The cap of the definition a `$ref` names
-        let definition = |with_x: bool| {
-            let mut members = platform_value!({ "y": { "type": "boolean", "position": 0 } });
-            if with_x {
-                members
-                    .set_value(
-                        "x",
-                        platform_value!({ "type": "boolean", "position": 1, "requiredSince": 2 }),
-                    )
-                    .expect("expected a map");
-            }
-            BTreeMap::from([(
-                "m".to_string(),
-                platform_value!({
-                    "type": "object",
-                    "properties": members,
-                    "maxProperties": 1,
-                    "additionalProperties": false,
-                }),
-            )])
-        };
-        let referencing = |required: Value| {
-            platform_value!({
-                "type": "object",
-                "properties": {
-                    "meta": { "$ref": "#/$defs/m", "position": 0, "required": required },
-                },
-                "additionalProperties": false,
-            })
-        };
-        let (stored, _) = stored_and_updated(
-            referencing(platform_value!(["y"])),
-            Some(definition(false)),
-            referencing(platform_value!(["y"])),
-            Some(definition(false)),
-            platform_version,
-        );
-        let mut updated = stored.clone();
-        updated.set_version(stored.version() + 1);
-        updated
-            .set_document_schema(
-                TYPE_NAME,
-                referencing(platform_value!(["y", "x"])),
-                false,
-                &mut Vec::new(),
-                platform_version,
-            )
-            .expect("expected the new schema to be placed");
-        let mut defs = updated.schema_defs().cloned().unwrap_or_default();
-        defs.extend(definition(true));
-        updated
-            .set_schema_defs(Some(defs), true, &mut Vec::new(), platform_version)
-            .expect("expected the new $defs to register");
-        assert_matches!(
-            judge(&stored, &updated).errors.as_slice(),
-            [ConsensusError::BasicError(
-                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
-            )] if e.details().contains("maxProperties")
-        );
     }
 }

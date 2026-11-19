@@ -1,19 +1,19 @@
 //! Protocol v15 generation of the JSON-schema compatibility check.
 //!
-//! v2 is v1 with the `required` lists of a document type's object properties
-//! left out of the diff, as v1 leaves out the type's own `required`: the list
-//! of an inline object, and the list written beside a `$ref`, at every depth of
-//! the inline objects below the root `properties`. Document type `validate_update` v2 judges them
+//! v2 is v1 with the `required` lists of a document type's inline object
+//! properties left out of the diff, as v1 leaves out the type's own `required`,
+//! at every depth of the inline objects below the root `properties`. Document
+//! type `validate_update` v2 judges them
 //! against the parsed types instead (its member rules): an object's list may
 //! gain a member the same update adds with `requiredSince`, which the differ's
 //! frozen `required` rule cannot express, and may lose nothing.
 //!
 //! Only the keyword is removed, at the schema positions that hold one: a
 //! member named `required` is a property schema like any other and is still
-//! diffed. A `required` on a property schema that is neither an object nor a
-//! `$ref` stays in the diff, frozen as before, and so does every list below a
-//! `$ref` (in `properties` written beside it), which `validate_update` 2 does
-//! not walk: the type's parse reads its members from the definition. The
+//! diffed. The list written beside a `$ref`, and every list below one (in
+//! `properties` written beside it), stays in the diff, frozen as before: the
+//! object takes its members from a definition, and gains them only as optional.
+//! So does a `required` on a property schema that is not an object. The
 //! contract's `$defs` are
 //! diffed through a wrapper with no root `properties`, so the lists of a
 //! definition stay frozen: the parser never reads them.
@@ -55,16 +55,15 @@ fn without_object_required_lists(schema: &JsonValue) -> Cow<'_, JsonValue> {
     Cow::Owned(schema)
 }
 
-/// Removes the `required` keyword of every object property of `properties` (a `properties`
-/// map: member name to property schema), and of the inline objects inside them. Below a
-/// `$ref` nothing more is removed.
+/// Removes the `required` keyword of every inline object property of `properties` (a
+/// `properties` map: member name to property schema), and of the inline objects inside them.
+/// A `$ref` keeps its list.
 fn remove_member_required_lists(properties: &mut Map<String, JsonValue>) {
     for property in properties.values_mut() {
         let JsonValue::Object(property) = property else {
             continue;
         };
         if property.contains_key(REF) {
-            property.remove(REQUIRED);
             continue;
         }
         if property.get(TYPE).and_then(JsonValue::as_str) == Some("object") {
@@ -135,6 +134,7 @@ mod tests {
                     "shared": {
                         "$ref": "#/$defs/m",
                         "position": 1,
+                        "required": ["y"],
                         "properties": {
                             "q": { "type": "object", "position": 0, "properties": {}, "required": ["a"] },
                         },
@@ -143,9 +143,9 @@ mod tests {
                 },
                 "required": ["meta"],
             }),
-            "only the lists of inline objects and $ref properties go; a member named \
-             `required`, a scalar's list, a list below a $ref and the type's own list (v1 \
-             strips that) stay"
+            "only the lists of inline objects go; a member named `required`, a scalar's list, \
+             the list beside a $ref and below one, and the type's own list (v1 strips that) \
+             stay"
         );
     }
 

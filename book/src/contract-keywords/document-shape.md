@@ -100,7 +100,7 @@ On a contract update, from protocol version 14:
 
 Each of these is refused with `DataContractInvalidRequiredFieldsUpdateError` (10276).
 
-The `required` list of an object property follows the same rules from protocol version 15: it may gain only a member the same update adds to that object, annotated with `requiredSince`, and may lose nothing (10276). Up to protocol version 14 it is fixed (`IncompatibleDocumentTypeSchemaError`, 10246).
+The `required` list of an object property written inline follows the same rules from protocol version 15: it may gain only a member the same update adds to that object, annotated with `requiredSince`, and may lose nothing (10276). The `required` written beside a `$ref` can not change. Up to protocol version 14 it is fixed (`IncompatibleDocumentTypeSchemaError`, 10246).
 
 A dotted name (`"records.identity"`) in a `required` list is read by the document type parser as a requirement on the nested member, but the document validator reads it as a property named with a dot, which no document can hold: a type whose `required` holds one accepts no document. From protocol version 15 an update cannot add a dotted name to the type's `required`, to the `required` of an object the type has, or to that of an object the update adds, nor remove one unless another list still requires the member it names (10276). Require a nested member through its object's own `required`.
 

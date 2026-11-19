@@ -298,7 +298,7 @@ An object groups members under one property, as DPNS groups a name's records.
 - An object declares `properties`, 1 to 100 members each with a `position`, and `additionalProperties: false`, unless it takes its schema from a [`$ref`](#ref).
 - Its `required` names the members every value of the object must hold. A member the object's `required` names is stored without a presence byte (unless it carries `requiredSince`), so on update, as for the type's own properties, a member keeps its requiredness and nothing leaves the list. From protocol version 15 a member added by an update may join the list with [`requiredSince`](required-since.md#members-of-an-object); before, the list is fixed and an added member is optional.
 - The members are stored in the order of the object's `properties` map. An update adds members after the existing ones; from protocol version 15 one that reorders them or puts a member before them is refused (40212). Tools that rewrite a schema's maps in another key order (sorting them, or putting integer-like keys first) produce such an update.
-- Under an [immutable](mutability.md) object, a member required from the new version leaves older documents unable to be replaced: a replace must add the member, and may not change the object.
+- Under an [immutable](mutability.md) property a member is added only as optional: a document stored before would have to add a required one on replace, which changes the property (10276).
 - An object is stored with its members inline. An object cannot be indexed, but a member can: an index names it by its dotted path, such as `records.identity`.
 
 ## `$ref`
@@ -334,7 +334,7 @@ A property of any document type of the contract then reads `"shippingAddress": {
 - The property keeps its own `position`; the definition supplies everything else.
 - A definition may be written with a [shorthand](#shorthands-identifier-and-bytes): `"schemaDefs": { "owner": { "type": "identifier" } }`.
 - The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213). An object definition's members follow the rules of [Objects](#objects) in every type that references it: members only after the existing ones.
-- Requiredness through a `$ref` comes from the `required` written beside it, which follows the rules of [Objects](#objects). A definition's own `required` lists, at any depth of the definition, are not read for storage (a member only they list is stored as optional) and are fixed, and so are the `required` lists in `properties` written beside a `$ref`. So inside a definition, a member can be added as required only directly to the definition a `$ref` names, through the `required` beside that `$ref`; the members of the objects inside a definition can only be added as optional.
+- Requiredness through a `$ref` comes from the `required` written beside it. On update that list can not change (10276), nor can the `required` lists in `properties` written beside a `$ref` (10246). A definition's own `required` lists, at any depth of the definition, are not read for storage (a member only they list is stored as optional) and are fixed. So through a `$ref`, members can only be added as optional.
 
 ## Annotations
 

@@ -515,7 +515,7 @@ fn member_cases() -> Vec<Case> {
             ),
             old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
             new_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
-            expected: Expected::Refused(10276, "meta.q"),
+            expected: Expected::Refused(10276, "beside the $ref"),
         },
     ]
 }
@@ -767,7 +767,7 @@ fn should_admit_a_member_required_from_the_version_the_update_creates() {
             Expected::Refused(10276, "meta.x"),
         ),
         Case {
-            name: "a definition's member required from the new version beside its $ref",
+            name: "a definition's member required beside its $ref, whose list stays as it is",
             old: document_type_schema(
                 platform_value!({
                     "a": string(0, 10),
@@ -786,7 +786,7 @@ fn should_admit_a_member_required_from_the_version_the_update_creates() {
             new_defs: definitions(
                 platform_value!({ "y": boolean(0), "z": integer(1), "x": since(2) }),
             ),
-            expected: Expected::Accepted,
+            expected: Expected::Refused(10276, "beside the $ref"),
         },
         case(
             "a member named required whose type changes",
@@ -982,10 +982,11 @@ fn should_refuse_a_dotted_name_in_the_required_of_an_object_the_update_adds() {
     run(&cases, PlatformVersion::latest());
 }
 
-/// Through a `$ref` an object gains a required member as an inline one does, in the `required`
-/// written beside the `$ref`, at any depth of the type's own schema.
+/// The `required` written beside a `$ref` stays as it is, at any depth of the type's own schema:
+/// the object takes its members from a definition other types share, so it gains members only as
+/// optional. On a `$ref` to a scalar the list stays frozen too.
 #[test]
-fn should_admit_a_member_required_beside_a_ref_inside_an_object() {
+fn should_keep_the_required_beside_a_ref_as_it_is() {
     let with_q = |q_required: Value| {
         document_type_schema(
             with_meta(object(
@@ -1003,17 +1004,124 @@ fn should_admit_a_member_required_beside_a_ref_inside_an_object() {
             platform_value!(["a"]),
         )
     };
-    let cases = vec![Case {
-        name: "a definition's member required beside a $ref inside an object",
-        old: with_q(platform_value!(["y"])),
-        new: with_q(platform_value!(["y", "x"])),
-        old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
-        new_defs: definitions(platform_value!({
-            "y": boolean(0),
-            "z": integer(1),
-            "x": with(boolean(2), "requiredSince", Value::U32(2)),
-        })),
-        expected: Expected::Accepted,
-    }];
+    let scalar = |required: Option<Value>| {
+        let reference = platform_value!({ "$ref": "#/$defs/s", "position": 1 });
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "label": match required {
+                    Some(required) => with(reference, "required", required),
+                    None => reference,
+                },
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    let scalar_definition =
+        || Some(platform_value!({ "s": { "type": "string", "maxLength": 10 } }));
+    let cases = vec![
+        Case {
+            name: "a definition's member required beside a $ref inside an object",
+            old: with_q(platform_value!(["y"])),
+            new: with_q(platform_value!(["y", "x"])),
+            old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
+            new_defs: definitions(platform_value!({
+                "y": boolean(0),
+                "z": integer(1),
+                "x": with(boolean(2), "requiredSince", Value::U32(2)),
+            })),
+            expected: Expected::Refused(10276, "beside the $ref"),
+        },
+        Case {
+            name: "a definition's member added as optional beside a $ref inside an object",
+            old: with_q(platform_value!(["y"])),
+            new: with_q(platform_value!(["y"])),
+            old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
+            new_defs: definitions(
+                platform_value!({ "y": boolean(0), "z": integer(1), "x": boolean(2) }),
+            ),
+            expected: Expected::Accepted,
+        },
+        Case {
+            name: "a required list added beside a $ref to a scalar",
+            old: scalar(None),
+            new: scalar(Some(platform_value!(["x"]))),
+            old_defs: scalar_definition(),
+            new_defs: scalar_definition(),
+            expected: Expected::Refused(10246, "required"),
+        },
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// An object holds at most `maxProperties` members, which an update can not change: its
+/// `required` may not grow past that, or no document could hold the object.
+#[test]
+fn should_refuse_a_required_list_growing_past_its_object_s_max_properties() {
+    let capped = |max_properties: u32, with_x: bool| {
+        let mut members = platform_value!({ "y": boolean(0) });
+        let mut required = vec![Value::Text("y".to_string())];
+        if with_x {
+            members
+                .set_value("x", with(boolean(1), "requiredSince", Value::U32(2)))
+                .expect("expected a map");
+            required.push(Value::Text("x".to_string()));
+        }
+        let meta = with(
+            object(members, 1, Some(Value::Array(required))),
+            "maxProperties",
+            Value::U32(max_properties),
+        );
+        document_type_schema(with_meta(meta), platform_value!(["a", "meta"]))
+    };
+    let cases = vec![
+        case(
+            "a required list growing past maxProperties",
+            capped(1, false),
+            capped(1, true),
+            Expected::Refused(10276, "maxProperties"),
+        ),
+        case(
+            "a required list growing within maxProperties",
+            capped(2, false),
+            capped(2, true),
+            Expected::Accepted,
+        ),
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// A replace sends the whole document again, so a document stored before an object gained a
+/// required member must add it; under an immutable property it can not change the object, so
+/// such a member is refused there. An optional member may still be added.
+#[test]
+fn should_refuse_a_member_required_from_the_new_version_under_an_immutable_property() {
+    let immutable_meta = |members: Value, required: Option<Value>| {
+        with(
+            document_type_schema(
+                with_meta(object(members, 1, required)),
+                platform_value!(["a"]),
+            ),
+            "immutable",
+            platform_value!(["meta"]),
+        )
+    };
+    let cases = vec![
+        case(
+            "a member required from the new version under an immutable property",
+            immutable_meta(platform_value!({ "y": boolean(0) }), None),
+            immutable_meta(
+                platform_value!({ "y": boolean(0), "x": with(boolean(1), "requiredSince", Value::U32(2)) }),
+                Some(platform_value!(["x"])),
+            ),
+            Expected::Refused(10276, "immutable"),
+        ),
+        case(
+            "an optional member under an immutable property",
+            immutable_meta(platform_value!({ "y": boolean(0) }), None),
+            immutable_meta(platform_value!({ "y": boolean(0), "x": boolean(1) }), None),
+            Expected::Accepted,
+        ),
+    ];
     run(&cases, PlatformVersion::latest());
 }

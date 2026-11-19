@@ -16,14 +16,18 @@
 
 use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
-use crate::data_contract::document_type::property_names::{PROPERTIES, REF, REQUIRED};
+use crate::data_contract::document_type::property_names::{
+    MAX_PROPERTIES, PROPERTIES, REF, REQUIRED,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
 use indexmap::IndexMap;
 use platform_value::{Value, ValueMapHelper};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeRef<'_> {
     /// Every object of the type keeps its members in their order, and the members an update adds
@@ -93,7 +97,10 @@ impl DocumentTypeRef<'_> {
     /// adds, no stored document holds the object, so its members may be required outright, or
     /// from any version the contract has reached (as a member of a shared `$defs` definition
     /// carries it): a member with `requiredSince` is stored with a presence byte at every version,
-    /// so the version it names never decides how a document is read.
+    /// so the version it names never decides how a document is read. Under a property the type
+    /// lists as `immutable`, with a condition or without, a member added to an existing object is
+    /// optional: a replace sends the whole document again, so a document stored before would
+    /// have to add the member, which changes the property it may not change.
     pub(super) fn validate_member_requiredness_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -101,6 +108,12 @@ impl DocumentTypeRef<'_> {
     ) -> SimpleConsensusValidationResult {
         let added = AddedMembers {
             required_fields: new_document_type.required_fields(),
+            immutable: new_document_type
+                .immutable_fields()
+                .iter()
+                .chain(new_document_type.immutable_field_conditions().keys())
+                .map(String::as_str)
+                .collect(),
             new_contract_version,
         };
         match first_requiredness_change(
@@ -171,6 +184,8 @@ struct AddedMembers<'a> {
     /// holds a document to, and what the parser reads except where it reads a required name of
     /// an enclosing property as naming a member.
     required_fields: &'a BTreeSet<String>,
+    /// The type's own properties the new type lists as `immutable`, with a condition or without.
+    immutable: BTreeSet<&'a str>,
     new_contract_version: u32,
 }
 
@@ -244,12 +259,21 @@ fn added_member_error(
              member's name as naming the member; rename one of them"
         ));
     }
-    if property.required && in_kept_object && property.required_since != Some(new_contract_version)
-    {
-        return Some(format!(
-            "new required field '{path}' must carry requiredSince {new_contract_version}, the \
-             contract version this update creates"
-        ));
+    if property.required && in_kept_object {
+        if property.required_since != Some(new_contract_version) {
+            return Some(format!(
+                "new required field '{path}' must carry requiredSince {new_contract_version}, the \
+                 contract version this update creates"
+            ));
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        if added.immutable.contains(top_level) {
+            return Some(format!(
+                "new required field '{path}' can not be added under the immutable property \
+                 '{top_level}': a document stored before would have to add it on replace, which \
+                 changes '{top_level}'; add it as optional"
+            ));
+        }
     }
     match &property.property_type {
         DocumentPropertyType::Object(members) => first_added_members_error(members, path, added),
@@ -271,9 +295,11 @@ fn first_added_members_error(
 /// The first change to a `required` list of an object the old type has, below the object at
 /// `path` (`None`: the type itself, whose dotted names only are judged here). `old_schema` and
 /// `new_schema` are the schemas of that object as the document type schema writes them; the
-/// walk stops at a `$ref`, whose definition's own lists the parser does not read and the
-/// contract's `$defs` compatibility freezes. `new_required_fields` holds every path the new
-/// type's lists require.
+/// walk stops at a `$ref`: the list written beside it stays as it is, since the object takes its
+/// members from a definition that other types may share, and the definition's own lists are not
+/// read for storage and are frozen by the contract's `$defs` compatibility. A list may also not
+/// grow past the object's `maxProperties`, which no update can change. `new_required_fields`
+/// holds every path the new type's lists require.
 fn first_required_list_change(
     old: &IndexMap<String, DocumentProperty>,
     new: &IndexMap<String, DocumentProperty>,
@@ -283,6 +309,14 @@ fn first_required_list_change(
     new_required_fields: &BTreeSet<String>,
 ) -> Option<String> {
     let (old_names, new_names) = (required_names(old_schema), required_names(new_schema));
+    if let Some(path) = path {
+        if (has_ref(old_schema) || has_ref(new_schema)) && old_names != new_names {
+            return Some(format!(
+                "the required written beside the $ref of '{path}' can not change: the object takes \
+                 its members from a definition, which it gains only as optional"
+            ));
+        }
+    }
     let list = path.map_or_else(
         || "the document type's required".to_string(),
         |path| format!("the required of '{path}'"),
@@ -325,7 +359,23 @@ fn first_required_list_change(
                 ));
             }
         }
+        if new_names.len() > old_names.len() {
+            if let Some(max_properties) = max_properties(new_schema) {
+                if new_names.len() as u64 > max_properties {
+                    return Some(format!(
+                        "the required of '{path}' would name {} members, more than the \
+                         {max_properties} its object may hold (maxProperties), so no document \
+                         could hold the object",
+                        new_names.len()
+                    ));
+                }
+            }
+        }
     }
+    let (old_member_schemas, new_member_schemas) = (
+        inline_member_schemas(old_schema),
+        inline_member_schemas(new_schema),
+    );
     for (name, old_property) in old {
         let (
             DocumentPropertyType::Object(old_members),
@@ -338,8 +388,8 @@ fn first_required_list_change(
             continue;
         };
         let (Some(old_member_schema), Some(new_member_schema)) = (
-            member_schema(old_schema, name),
-            member_schema(new_schema, name),
+            old_member_schemas.get(name.as_str()),
+            new_member_schemas.get(name.as_str()),
         ) else {
             continue;
         };
@@ -362,7 +412,7 @@ fn first_required_list_change(
         {
             continue;
         }
-        if let Some(added_schema) = member_schema(new_schema, name) {
+        if let Some(added_schema) = new_member_schemas.get(name.as_str()) {
             if let Some(change) =
                 first_dotted_name_in_added_object(added_schema, &member_path(path, name))
             {
@@ -400,19 +450,40 @@ fn member_path(path: Option<&str>, name: &str) -> String {
     path.map_or_else(|| name.to_string(), |path| format!("{path}.{name}"))
 }
 
-/// The schema of the member `name` of the object `schema` describes inline, `None` when it
-/// describes none or takes its members from a `$ref`. A key named twice reads its first entry:
-/// a contract updated from protocol version 15 names no key twice in either schema (contract
-/// update generation 2 and the registration check refuse it).
-fn member_schema<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
-    let schema = schema.as_map()?;
-    if schema.get_optional_key(REF).is_some() {
-        return None;
+/// The schemas of the members of the object `schema` describes inline, by name, read once per
+/// object; none when it describes none or takes its members from a `$ref`. A key named twice
+/// keeps its first entry: a contract updated from protocol version 15 names no key twice in
+/// either schema (contract update generation 2 and the registration check refuse it).
+fn inline_member_schemas(schema: &Value) -> BTreeMap<&str, &Value> {
+    let mut members = BTreeMap::new();
+    if has_ref(schema) {
+        return members;
     }
+    if let Some(properties) = schema
+        .as_map()
+        .and_then(|schema| schema.get_optional_key(PROPERTIES))
+        .and_then(Value::as_map)
+    {
+        for (name, member) in properties {
+            if let Some(name) = name.as_text() {
+                members.entry(name).or_insert(member);
+            }
+        }
+    }
+    members
+}
+
+fn has_ref(schema: &Value) -> bool {
     schema
-        .get_optional_key(PROPERTIES)?
+        .as_map()
+        .is_some_and(|schema| schema.get_optional_key(REF).is_some())
+}
+
+fn max_properties(schema: &Value) -> Option<u64> {
+    schema
         .as_map()?
-        .get_optional_key(name)
+        .get_optional_key(MAX_PROPERTIES)?
+        .as_integer::<u64>()
 }
 
 /// The names of the `required` list of `schema`, entries that are not text left out as the

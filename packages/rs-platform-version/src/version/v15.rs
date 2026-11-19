@@ -1094,14 +1094,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     has is optional, or required with `requiredSince` equal to the version the update
 ///     creates; a member the update adds is required exactly when a `required` list names it;
 ///     an object's `required` loses no name, gains only members the same update adds, and does
-///     not grow past the object's `maxProperties` (contract `validate_update` 2, which holds the
-///     `$defs`); and no `required` list, the type's own and those of objects the update adds
-///     included, gains a dotted name, or loses one no other list still requires
-///     (`DocumentTypeUpdateError`, `DataContractInvalidRequiredFieldsUpdateError`). Requiredness
-///     through a `$ref` comes from the `required` beside it; a definition's own lists are not
-///     read for storage and stay fixed, as do the lists below a `$ref`.
+///     not grow past the object's `maxProperties`; a member is not added as required under a
+///     property listed in `immutable`; and no `required` list, the type's own and those of
+///     objects the update adds included, gains a dotted name, or loses one no other list still
+///     requires (`DocumentTypeUpdateError`, `DataContractInvalidRequiredFieldsUpdateError`).
+///     Through a `$ref` members are added only as optional: the `required` beside a `$ref`
+///     stays as it is, a definition's own lists are not read for storage and stay fixed, and so
+///     do the lists below a `$ref`.
 ///     `CONTRACT_VERSIONS_V7` selects `apply_required_since` 1, which admits `requiredSince` on
-///     a member its object's `required` (or the `required` beside its `$ref`) names, stored with
+///     a member its object's `required` (or, at registration, the `required` beside its `$ref`)
+///     names, stored with
 ///     a presence byte at every contract version, and `validate_schema_compatibility` 2, which
 ///     leaves the objects' `required` lists out of the JSON-schema diff for `validate_update` 2
 ///     to judge. Protocol v14 keeps `validate_update` 1, `apply_required_since` 0 and

@@ -41,7 +41,7 @@ From protocol version 14, every create and replace stamps the document with the 
 
 ## Members of an object
 
-From protocol version 15 an update may also add a required member to an object the type already has, an inline object or one a `$ref` names. The member goes after the object's existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required` (for a `$ref`, the `required` beside it). An object inside a `$defs` definition has only the definition's own `required`, which is fixed, so its members can only be added as optional:
+From protocol version 15 an update may also add a required member to an object the type already has and writes inline. The member goes after the object's existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required`. An object that takes its members from a `$ref` gains them only as optional: the `required` beside the `$ref` stays as it is, since the definition may be shared, and the definition's own lists are fixed:
 
 ```json
 "post": {
@@ -67,9 +67,9 @@ From protocol version 15 an update may also add a required member to an object t
 - **New writes are held to it, older documents are left alone,** as for a top-level property: every `meta` created or replaced under version 3 or later must hold a `language`, and documents written earlier may lack it.
 - **Storage does not follow the stamp.** Such a member is stored with the presence byte an optional member carries, in every document whatever its stamp, so a document written before the update reads with the member absent.
 - **Listed in the object's own `required`.** A dotted name in the type's `required` (`"meta.language"`) cannot carry it: no `required` list gains or loses a dotted name on update (see [Document Shape](document-shape.md#required)).
-- **Not inside a definition's own lists.** A `$defs` definition's own `required`, at any depth, is not read for storage, so a member it alone lists cannot carry `requiredSince` (10231), and the members of the objects inside a definition can only be added as optional.
-- **Not past `maxProperties`.** An object's `required` may not name more members than the object may hold (`maxProperties`, on the object, beside its `$ref`, or on its definition), which no update can change: such an update is refused (10276).
-- **A shared definition.** A member of a `$defs` definition is required through the `required` beside each `$ref` that uses it. Every property that references the definition must list the member there, or its parse refuses the `requiredSince`. A property an update adds may reference such a definition whatever version its member names, since no stored document holds the property.
+- **Not through a `$ref`.** On update the `required` beside a `$ref` can not change (10276), and a `$defs` definition's own `required`, at any depth, is not read for storage, so a member it alone lists cannot carry `requiredSince` (10231). Through a `$ref` members can only be added as optional. At registration a definition's member may be required through the `required` beside each `$ref` that uses it; every property that references the definition must then list the member there, or its parse refuses the `requiredSince`, and a property an update adds may reference such a definition whatever version its member names, since no stored document holds the property.
+- **Not past `maxProperties`.** An object's `required` may not name more members than its `maxProperties` allows, which no update can change: such an update is refused (10276).
+- **Not under an immutable property.** A replace sends the whole document again, so a document stored before the update would have to add the member, which changes a property listed in [`immutable`](mutability.md) (with a condition or without). Such a member can only be added as optional (10276).
 
 ## Rules at registration
 
