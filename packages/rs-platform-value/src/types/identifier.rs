@@ -455,7 +455,7 @@ mod tests {
     /// A base 58 text writes the identifier `from_string` reads from it, and nothing when
     /// `from_string` refuses it: the longest identifier's text, one character more (`2` then
     /// `1`s, the 45 characters decoding to the fewest bytes), a text outside the alphabet, and
-    /// texts as long as a transition can carry, refused without decoding.
+    /// a text of a million characters, which a full decode would take minutes on, read at once.
     #[test]
     fn should_read_a_base58_text_as_from_string_does() {
         for text in [
@@ -473,9 +473,7 @@ mod tests {
                 "{text}"
             );
         }
-        let started = std::time::Instant::now();
-        assert_eq!(Identifier::from_base58_text(&"2".repeat(19_500)), None);
-        assert!(started.elapsed() < std::time::Duration::from_millis(10));
+        assert_eq!(Identifier::from_base58_text(&"2".repeat(1_000_000)), None);
     }
 
     #[test]

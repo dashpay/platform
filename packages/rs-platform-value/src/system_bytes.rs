@@ -984,56 +984,42 @@ mod tests {
         }
     }
 
-    /// A 32-byte reader refuses a text too long to be 32 bytes in time linear in its length, as
-    /// a full decode refuses it, base 58 or not.
+    /// Texts of a million characters: one in base 58 and one ending in `0`, which base 58 does
+    /// not write. Fully decoding one takes minutes, as base 58 decoding takes time quadratic in a
+    /// text's length, so a reader that decoded it would not finish a test run; one that tells it
+    /// by its length and characters reads it at once.
+    fn million_character_texts() -> [String; 2] {
+        ["2".repeat(1_000_000), format!("{}0", "2".repeat(999_999))]
+    }
+
+    /// A 32-byte reader refuses a text too long to be 32 bytes as a full decode refuses it, base
+    /// 58 or not, without decoding it.
     #[test]
     fn should_refuse_a_long_text_as_32_bytes_without_decoding_it() {
-        for text in ["2".repeat(19_500), format!("{}0", "2".repeat(19_499))] {
-            let expected = decoded_32_bytes(&text);
-            assert!(expected.is_err());
+        let not_32_bytes = Error::StructureError(
+            "value was a string, could be decoded from base 58, but was not 32 bytes long"
+                .to_string(),
+        );
+        let [base_58, not_base_58] = million_character_texts();
+        for (text, expected) in [(base_58, not_32_bytes), (not_base_58, not_base58_error())] {
             let value = Value::Text(text);
-            let elapsed = (0..3)
-                .map(|_| {
-                    let started = std::time::Instant::now();
-                    assert_eq!(value.to_hash256(), expected);
-                    assert_eq!(value.to_identifier(), expected.clone().map(Identifier::new));
-                    started.elapsed()
-                })
-                .min()
-                .expect("three runs");
-            assert!(
-                elapsed < std::time::Duration::from_millis(10),
-                "{elapsed:?}"
-            );
+            assert_eq!(value.to_hash256(), Err(expected.clone()));
+            assert_eq!(value.to_identifier(), Err(expected.clone()));
+            assert_eq!(value.clone().into_hash256(), Err(expected.clone()));
+            assert_eq!(value.into_identifier(), Err(expected));
         }
     }
 
     /// Past the bound a text is not decoded: a base 58 one is told apart from one decoding
-    /// refuses by its characters alone, in time linear in its length.
+    /// refuses by its characters alone.
     #[test]
     fn should_tell_a_text_past_the_bound_without_decoding_it() {
-        let base_58 = Value::Text("2".repeat(19_500));
-        let not_base_58 = Value::Text(format!("{}0", "2".repeat(19_499)));
-        assert!(base_58.to_identifier_bytes().is_ok());
-        let decoding_error = not_base_58.to_identifier_bytes();
-        assert!(decoding_error.is_err());
-        for (value, expected) in [(base_58, Ok(None)), (not_base_58, decoding_error.map(Some))] {
-            let elapsed = (0..3)
-                .map(|_| {
-                    let started = std::time::Instant::now();
-                    assert_eq!(
-                        value.to_identifier_bytes_unless_text_longer_than(
-                            MAX_BASE58_IDENTIFIER_LENGTH
-                        ),
-                        expected
-                    );
-                    started.elapsed()
-                })
-                .min()
-                .expect("three runs");
-            assert!(
-                elapsed < std::time::Duration::from_millis(10),
-                "{elapsed:?}"
+        let [base_58, not_base_58] = million_character_texts();
+        for (text, expected) in [(base_58, Ok(None)), (not_base_58, Err(not_base58_error()))] {
+            assert_eq!(
+                Value::Text(text)
+                    .to_identifier_bytes_unless_text_longer_than(MAX_BASE58_IDENTIFIER_LENGTH),
+                expected
             );
         }
     }

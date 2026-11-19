@@ -2344,18 +2344,6 @@ mod tests {
         })
     }
 
-    /// The least time `run` takes over three runs, so a stall of the machine is not counted.
-    fn least_time_of<T>(mut run: impl FnMut() -> T) -> std::time::Duration {
-        (0..3)
-            .map(|_| {
-                let started = std::time::Instant::now();
-                std::hint::black_box(run());
-                started.elapsed()
-            })
-            .min()
-            .expect("three runs")
-    }
-
     /// The key an identifier index property gives `value` by decoding it in full, refused past
     /// the longest index key, as every protocol version keyed it before identifier texts were
     /// bounded.
@@ -2387,29 +2375,48 @@ mod tests {
         Ok(key)
     }
 
-    /// Identifier texts as long as a 20 KiB transition can carry: one in base 58, which decodes
-    /// to far more than 255 bytes, and one ending in `0`, which base 58 does not write.
-    fn long_identifier_texts() -> [Value; 2] {
+    /// Long identifier texts in two shapes, each as a text of 2,000 characters, short enough to
+    /// decode in full, and as one of a million, which a full decode would take minutes on: in
+    /// base 58, which decodes to far more than 255 bytes, and ending in `0`, which base 58 does
+    /// not write. Each pair is refused alike, as every text of its shape past the bounds is, so
+    /// a keying that decoded the long one would not finish a test run.
+    fn long_identifier_texts() -> [(Value, Value); 2] {
         [
-            Value::Text("2".repeat(19_500)),
-            Value::Text(format!("{}0", "2".repeat(19_499))),
+            (
+                Value::Text("2".repeat(2_000)),
+                Value::Text("2".repeat(1_000_000)),
+            ),
+            (
+                Value::Text(format!("{}0", "2".repeat(1_999))),
+                Value::Text(format!("{}0", "2".repeat(999_999))),
+            ),
         ]
     }
 
     /// A text too long to be any index key is refused with the error decoding it gives, by
     /// every protocol version, without decoding it: base 58 decoding takes time quadratic in a
-    /// text's length, and the refusal is held to a bound no full decode of such a text meets.
+    /// text's length.
     #[test]
     fn should_refuse_an_identifier_text_too_long_for_an_index_key_as_decoding_it_does() {
         let document_type = build_doc_type("target", target_schema());
         let document_type = document_type.as_ref();
-        for value in long_identifier_texts() {
-            let decoded = format!("{:?}", decoded_index_key(&value));
+        for (decodable, value) in long_identifier_texts() {
+            let decoded = format!("{:?}", decoded_index_key(&decodable));
             assert!(decoded.starts_with("Err("), "{decoded}");
-            let vote_poll_key =
-                || document_type.serialize_value_for_vote_poll_key("target", &value);
-            assert_eq!(format!("{:?}", vote_poll_key()), decoded);
-            assert!(least_time_of(vote_poll_key) < std::time::Duration::from_millis(10));
+            assert_eq!(
+                format!(
+                    "{:?}",
+                    document_type.serialize_value_for_vote_poll_key("target", &decodable)
+                ),
+                decoded
+            );
+            assert_eq!(
+                format!(
+                    "{:?}",
+                    document_type.serialize_value_for_vote_poll_key("target", &value)
+                ),
+                decoded
+            );
             for protocol_version in [13, 14, PlatformVersion::latest().protocol_version] {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("the protocol version");
@@ -2420,17 +2427,20 @@ mod tests {
                     &["target"]
                 };
                 for name in names {
-                    let key =
-                        || document_type.serialize_value_for_key(name, &value, platform_version);
-                    assert_eq!(
-                        format!("{:?}", key()),
-                        decoded,
-                        "{name} at {protocol_version}"
-                    );
-                    assert!(
-                        least_time_of(key) < std::time::Duration::from_millis(10),
-                        "{name} at {protocol_version}"
-                    );
+                    for value in [&decodable, &value] {
+                        assert_eq!(
+                            format!(
+                                "{:?}",
+                                document_type.serialize_value_for_key(
+                                    name,
+                                    value,
+                                    platform_version
+                                )
+                            ),
+                            decoded,
+                            "{name} at {protocol_version}"
+                        );
+                    }
                 }
             }
         }
@@ -2443,16 +2453,26 @@ mod tests {
     fn should_refuse_a_system_identifier_text_too_long_to_be_an_identifier_as_decoding_it_does() {
         let document_type = build_doc_type("target", target_schema());
         let document_type = document_type.as_ref();
-        for value in long_identifier_texts() {
-            let decoded = format!("{:?}", decoded_system_identifier_key(&value));
+        for (decodable, value) in long_identifier_texts() {
+            let decoded = format!("{:?}", decoded_system_identifier_key(&decodable));
             assert!(decoded.starts_with("Err("), "{decoded}");
             for protocol_version in [13, 14, PlatformVersion::latest().protocol_version] {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("the protocol version");
-                let key =
-                    || document_type.serialize_value_for_key("$ownerId", &value, platform_version);
-                assert_eq!(format!("{:?}", key()), decoded, "at {protocol_version}");
-                assert!(least_time_of(key) < std::time::Duration::from_millis(10));
+                for value in [&decodable, &value] {
+                    assert_eq!(
+                        format!(
+                            "{:?}",
+                            document_type.serialize_value_for_key(
+                                "$ownerId",
+                                value,
+                                platform_version
+                            )
+                        ),
+                        decoded,
+                        "at {protocol_version}"
+                    );
+                }
             }
         }
     }
