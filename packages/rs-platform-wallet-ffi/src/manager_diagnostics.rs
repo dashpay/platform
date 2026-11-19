@@ -1135,7 +1135,7 @@ mod tests {
     use std::mem::{align_of, size_of};
 
     #[test]
-    fn diagnostics_getters_preserve_legacy_output_layouts_and_clear_reserved_slots() {
+    fn should_preserve_legacy_diagnostics_output_layouts_and_clear_reserved_slots() {
         assert_eq!(size_of::<CoreWalletStateFFI>(), 16);
         assert_eq!(size_of::<AccountMetadataFFI>(), 24);
         assert_eq!(align_of::<CoreWalletStateFFI>(), align_of::<u64>());
