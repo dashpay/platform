@@ -242,6 +242,14 @@ impl Identifier {
     ) -> Result<Identifier, Error> {
         let mut tried = vec![];
         for encoding in encodings {
+            // A base 58 text longer than any identifier's decodes to more than 32 bytes when it
+            // decodes at all, so it is passed over as such a decode is, without decoding it
+            let too_long = matches!(encoding, Encoding::Base58)
+                && encoded_value.len() > MAX_BASE58_IDENTIFIER_LENGTH;
+            if too_long {
+                tried.push(encoding.to_string());
+                continue;
+            }
             if let Ok(vec) = string_encoding::decode(encoded_value, *encoding) {
                 if vec.len() == 32 {
                     return Identifier::from_bytes(&vec);
@@ -458,6 +466,17 @@ mod tests {
     /// a text of a million characters, which a full decode would take minutes on, read at once.
     #[test]
     fn should_read_a_base58_text_as_from_string_does() {
+        // Trying every encoding, a text too long for an identifier's base 58 form is refused as
+        // a full decode refuses it
+        for (decodable, long) in [
+            ("2".repeat(2_000), "2".repeat(1_000_000)),
+            ("2".repeat(2_001), "2".repeat(1_000_001)),
+        ] {
+            assert_eq!(
+                format!("{:?}", Identifier::from_string_unknown_encoding(&long)),
+                format!("{:?}", Identifier::from_string_unknown_encoding(&decodable)),
+            );
+        }
         for text in [
             bs58::encode([0xFF; 32]).into_string(),
             bs58::encode([0x00; 32]).into_string(),
