@@ -8,7 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Codes 77-78 from the identity-slot lease (`rs-platform-wallet-ffi/src/error.rs`). */
+/** Codes 77-79 from the identity-slot lease (`rs-platform-wallet-ffi/src/error.rs`). */
 @RunWith(RobolectricTestRunner::class)
 class IdentitySlotErrorTest {
     private fun map(code: Int, message: String) =
@@ -34,8 +34,17 @@ class IdentitySlotErrorTest {
     }
 
     @Test
+    fun shouldReportASubmittedClaimsRefusedReleaseWithItsIndex() {
+        val submitted = map(79, "{\"identityIndex\":5}")
+        assertTrue(submitted is DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted)
+        assertEquals(5, (submitted as DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted).identityIndex)
+        assertFalse(submitted.isRetryable)
+    }
+
+    @Test
     fun shouldKeepAMalformedSlotPayloadGeneric() {
         assertTrue(map(77, "not json") is DashSdkError.PlatformWallet.Generic)
+        assertTrue(map(79, "not json") is DashSdkError.PlatformWallet.Generic)
         assertTrue(map(77, "{\"identityIndex\":4294967295}") is DashSdkError.PlatformWallet.Generic)
         assertTrue(map(78, "{\"identityIndex\":2}") is DashSdkError.PlatformWallet.Generic)
         assertTrue(map(78, "{\"identityIndex\":2,\"identityId\":null}") is DashSdkError.PlatformWallet.Generic)

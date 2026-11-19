@@ -883,6 +883,21 @@ sealed class DashSdkError(
         )
 
         /**
+         * `ErrorIdentitySlotClaimSubmitted` (native code 79): the release of
+         * the invitation claim's slot [identityIndex] was refused because the
+         * claim may have reached Platform; only its outcome frees the slot.
+         * Retry the claim, which gets the same slot, instead of abandoning it.
+         */
+        class IdentitySlotClaimSubmitted(
+            val identityIndex: Int,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "The invitation claim at identity index $identityIndex may have reached Platform; " +
+                "its slot is freed only by the claim's outcome.",
+            cause,
+        )
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1122,6 +1137,14 @@ sealed class DashSdkError(
                     PlatformWallet.IdentitySlotTakenOnChain(
                         identityIndex = detail.requiredIndex("identityIndex"),
                         identityId = requireNotNull(detail.optionalString("identityId")),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            79 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.IdentitySlotClaimSubmitted(
+                        identityIndex = detail.requiredIndex("identityIndex"),
                         cause = cause,
                     )
                 }.getOrNull()

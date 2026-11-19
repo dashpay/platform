@@ -155,8 +155,10 @@ class IdentityRegistration internal constructor(
 
     /**
      * Give up [slot] of an invitation claim abandoned before it was sent.
-     * Rust refuses while the claim may have reached Platform (only its
-     * outcome frees the slot then); a caller treats that refusal as "keep it".
+     * Rust refuses with
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted]
+     * while the claim may have reached Platform (only its outcome frees the
+     * slot then); a caller treats that refusal as "keep it".
      */
     suspend fun releaseInvitationClaimSlot(walletHandle: Long, slot: InvitationClaimSlot): Unit =
         gate.op {
