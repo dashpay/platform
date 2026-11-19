@@ -83,7 +83,8 @@ impl DriveHighLevelBatchOperationConverter for TokenConfigUpdateTransitionAction
                     // of the cached contract: one stored before then in format version 1 is
                     // re-stored compiled here, and this transition's sender pays its growth
                     // (v15 note 8). The compiled bytes follow the version that parsed the
-                    // cache entry, which compiles a contract the same at 14 and 15. The same
+                    // cache entry, which from protocol version 15 is always the block's: the
+                    // cache serves no copy parsed under another version (v15 note 51). The same
                     // contract the update's validation held to its compiled size cap.
                     let contract = self.updated_contract()?;
                     ops.push(DataContractOperation(

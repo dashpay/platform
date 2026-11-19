@@ -25,6 +25,7 @@ use dpp::system_data_contracts::SystemDataContract;
 use dpp::tests::json_document::json_document_to_json_value;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use std::sync::Arc;
 
 const SOURCE_CONTRACT: [u8; 32] = [9; 32];
 const TIP_JAR: &str = "tests/supporting_files/contract/tip-jar/tip-jar-contract.json";
@@ -552,4 +553,92 @@ fn should_serve_the_block_the_reading_of_protocol_version_15() {
         .get(id, true)
         .expect("expected the block to be seeded with its reading");
     assert!(uses_big_sums(&cached));
+}
+
+/// After the activation block converted the sums and promoted its reading of the contract, a
+/// query still at protocol version 14 (it loaded the platform state before the block's) finds
+/// the contract evicted and caches its own reading again. The next block at protocol version
+/// 15 adds a tip with the contract the cache serves it. The state it leaves must be the one a
+/// node without that query leaves, or the two nodes' app hashes split.
+#[test]
+fn should_write_a_tip_after_the_activation_as_a_node_without_a_lagging_query_does() {
+    let run = |lagging_query: bool| -> Result<[u8; 32], String> {
+        let drive = setup_drive_with_initial_state_structure(Some(version_14()));
+        let contract = setup_contract(
+            &drive,
+            TIP_JAR,
+            Some([7; 32]),
+            Some([8; 32]),
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(version_14()),
+        );
+        let id = contract.id().to_buffer();
+        let tips = tips(&contract, version_14());
+        add_tips(&drive, &contract, &tips[..2], version_14());
+
+        // The activation block: empties the cache, converts, commits, promotes.
+        drive.cache.data_contracts.clear_block_cache();
+        convert(&drive);
+        drive.cache.data_contracts.merge_and_clear_block_cache();
+
+        if lagging_query {
+            drive.cache.data_contracts.remove(id);
+            let queried = drive
+                .get_contract_with_fetch_info(id, true, None, version_14())
+                .expect("expected the query to succeed")
+                .expect("expected the contract");
+            let cached = drive
+                .cache
+                .data_contracts
+                .get(id, false)
+                .expect("precondition: the query cached its reading");
+            assert!(
+                Arc::ptr_eq(&cached, &queried),
+                "precondition: the next block finds the query's reading in the cache"
+            );
+        }
+
+        // The next block adds a tip with the contract the cache serves it.
+        drive.cache.data_contracts.clear_block_cache();
+        let transaction = drive.grove.start_transaction();
+        let served = drive
+            .get_contract_with_fetch_info(id, true, Some(&transaction), version_15())
+            .map_err(|error| format!("{error:?}"))?
+            .ok_or("expected the contract")?;
+        let document_type = served
+            .contract
+            .document_type_for_name("tip")
+            .map_err(|error| format!("{error:?}"))?;
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&tips[2], None)),
+                        owner_id: None,
+                    },
+                    contract: &served.contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default_with_time(2_000),
+                true,
+                Some(&transaction),
+                version_15(),
+            )
+            .map_err(|error| format!("{error:?}"))?;
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .value
+            .map_err(|error| format!("{error:?}"))?;
+        drive
+            .grove
+            .root_hash(None, &version_15().drive.grove_version)
+            .unwrap()
+            .map_err(|error| format!("{error:?}"))
+    };
+
+    let without_the_query = run(false).expect("expected a node without the query to add the tip");
+    assert_eq!(run(true), Ok(without_the_query));
 }
