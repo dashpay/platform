@@ -134,9 +134,10 @@ impl IdentityManager {
     /// Lease a slot of `wallet_id` for `holder`, in memory only.
     ///
     /// A holder that already leases a slot gets it back (`reentered`).
-    /// Otherwise the lowest index that holds no identity, no lease and no
+    /// Otherwise the lowest index that holds no identity, no lease, no
     /// index in `funded_registrations` (the indices of unconsumed
-    /// `IdentityRegistration` asset locks) is leased in the `Reserved` phase.
+    /// `IdentityRegistration` asset locks) and no shielded identity create
+    /// ([`Self::hold_for_shielded_create`]) is leased in the `Reserved` phase.
     /// The lowest one rather than one past the highest, so an abandoned
     /// registration leaves no hole the identity discovery gap limit could
     /// stop at; an on-chain identity this wallet does not know at that index
@@ -150,9 +151,11 @@ impl IdentityManager {
         if let Some(existing) = self.leased_slot(&wallet_id, &holder) {
             return Ok(existing);
         }
+        let shielded_creates = self.shielded_create_holds.get(&wallet_id);
         let identity_index = (0..=RegistrationIndex::MAX)
             .find(|index| {
                 !funded_registrations.contains(index)
+                    && !shielded_creates.is_some_and(|held| held.contains(index))
                     && self.slot_state(&wallet_id, *index) == SlotState::Free
             })
             .ok_or_else(|| {
@@ -172,6 +175,36 @@ impl IdentityManager {
             reentered: false,
             phase: SlotLeasePhase::Reserved,
         })
+    }
+
+    /// Hold `wallet_id`'s slot `identity_index` for an identity create from
+    /// the shielded pool that may still execute: no slot is leased there
+    /// until [`Self::release_shielded_create_hold`]. The create's saved
+    /// record keeps the index across a restart, which holds it again.
+    pub fn hold_for_shielded_create(
+        &mut self,
+        wallet_id: WalletId,
+        identity_index: RegistrationIndex,
+    ) {
+        self.shielded_create_holds
+            .entry(wallet_id)
+            .or_default()
+            .insert(identity_index);
+    }
+
+    /// Drop the hold [`Self::hold_for_shielded_create`] put on `wallet_id`'s
+    /// slot `identity_index`.
+    pub fn release_shielded_create_hold(
+        &mut self,
+        wallet_id: &WalletId,
+        identity_index: RegistrationIndex,
+    ) {
+        if let Some(held) = self.shielded_create_holds.get_mut(wallet_id) {
+            held.remove(&identity_index);
+            if held.is_empty() {
+                self.shielded_create_holds.remove(wallet_id);
+            }
+        }
     }
 
     /// [`Self::acquire_identity_slot`] for a new registration: it gets a
@@ -755,6 +788,20 @@ mod tests {
 
         assert!(stored.leases.is_empty());
         assert_eq!(stored.released, [invitation].into());
+    }
+
+    #[test]
+    fn should_skip_a_slot_a_shielded_identity_create_holds_until_it_is_dropped() {
+        let mut manager = IdentityManager::new();
+        manager.hold_for_shielded_create(WALLET, 0);
+        manager.hold_for_shielded_create([8u8; 32], 1);
+
+        let (_, first) = manager.acquire_registration_slot(WALLET, &none()).unwrap();
+        assert_eq!(first.identity_index, 1, "index 0 is held for the create");
+
+        manager.release_shielded_create_hold(&WALLET, 0);
+        let (_, second) = manager.acquire_registration_slot(WALLET, &none()).unwrap();
+        assert_eq!(second.identity_index, 0);
     }
 
     #[test]

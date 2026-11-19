@@ -16,7 +16,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
-use super::identity::{IdentityManager, IdentityWallet};
+use super::identity::{IdentityManager, IdentityWallet, SlotHolder};
 #[cfg(feature = "shielded")]
 use super::persister::PrivatePaymentRestoreRetry;
 use super::persister::WalletPersister;
@@ -24,7 +24,7 @@ use super::persister::WalletPersister;
 use super::platform_addresses::merge_platform_payment_candidate_addresses;
 use super::platform_addresses::PlatformAddressWallet;
 #[cfg(feature = "shielded")]
-use super::shielded::note_selection::ensure_positive_amount;
+use super::shielded::note_selection::{ensure_allowed_denomination, ensure_positive_amount};
 #[cfg(feature = "shielded")]
 use super::shielded::operations::shield_fee_reserve_credits;
 #[cfg(feature = "shielded")]
@@ -41,6 +41,8 @@ use crate::error::PlatformWalletError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+#[cfg(feature = "shielded")]
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
@@ -633,6 +635,7 @@ impl PlatformWallet {
         inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
         identity_index: u32,
+        holder: SlotHolder,
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
@@ -653,6 +656,7 @@ impl PlatformWallet {
                 inputs,
                 output,
                 identity_index,
+                holder,
                 identity_signer,
                 input_address_signer,
                 settings,
@@ -1246,7 +1250,10 @@ impl PlatformWallet {
         }
 
         match install.restore(&start.shielded).await {
-            Ok(()) => install.mark_hydrated(true).await,
+            Ok(()) => {
+                install.mark_hydrated(true).await;
+                self.hold_shielded_create_slots(coordinator).await;
+            }
             Err(e) => {
                 install.mark_hydrated(false).await;
                 tracing::warn!(
@@ -2031,6 +2038,47 @@ impl PlatformWallet {
                 .await
     }
 
+    /// Hold the identity slot of each identity create from this wallet's
+    /// notes that `coordinator`'s store keeps as possibly executing, as it
+    /// was held before a restart (`PendingRedrive::identity_index`). A store
+    /// that does not read holds nothing here: the slot is then held by the
+    /// identity once it lands, and the pre-funding check of a registration
+    /// at that index finds it.
+    #[cfg(feature = "shielded")]
+    async fn hold_shielded_create_slots(&self, coordinator: &Arc<NetworkShieldedCoordinator>) {
+        let indices: Vec<u32> = {
+            let store = coordinator.store().read().await;
+            match store.pending_redrives_for_wallet(self.wallet_id) {
+                Ok(redrives) => redrives
+                    .iter()
+                    .filter_map(|(_, redrive)| redrive.identity_index)
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(self.wallet_id),
+                        error = %e,
+                        "could not read the shielded identity creates that may still execute; \
+                         their identity slots are not held"
+                    );
+                    return;
+                }
+            }
+        };
+        for identity_index in indices {
+            if let Err(e) = self
+                .identity
+                .set_shielded_create_hold(identity_index, true)
+                .await
+            {
+                tracing::warn!(
+                    identity_index,
+                    error = %e,
+                    "could not hold the identity slot of a shielded identity create"
+                );
+            }
+        }
+    }
+
     /// The entries of the private contact requests whose payment from this
     /// wallet's notes `coordinator`'s store holds as unconfirmed.
     #[cfg(feature = "shielded")]
@@ -2211,12 +2259,19 @@ impl PlatformWallet {
     /// proof-of-possession signature. The Orchard spend authority is re-derived from `seed` for
     /// this call only (the ASK never crosses to the coordinator and is not retained).
     ///
-    /// `identity_index` is the DIP-9 identity-registration slot the new identity occupies in the
-    /// local `IdentityManager`; on a successful broadcast the proof-verified identity is registered
-    /// there (mirroring `register_from_addresses`) so the host persister emits the
-    /// `IdentityChangeSet` / `IdentityKeysChangeSet` that creates the app's identity row. A failed
-    /// registration after a successful broadcast is logged and swallowed — the identity already
-    /// exists on chain, so the next sync heals the local row. Returns the new identity's id.
+    /// `identity_index` is the identity slot `holder` leases
+    /// ([`IdentityWallet::acquire_identity_slot`]), where `public_keys` were derived. Anything else
+    /// is refused with [`PlatformWalletError::IdentitySlotNotHeld`] before a note is spent, and an
+    /// identity Platform already holds under the master key is recorded in the slot and
+    /// [`PlatformWalletError::IdentitySlotTakenOnChain`] returned, for the caller to acquire
+    /// another slot. On a successful broadcast the proof-verified identity is recorded in the slot,
+    /// releasing the lease, so the host persister emits the `IdentityChangeSet` /
+    /// `IdentityKeysChangeSet` that creates the app's identity row. A failed recording after a
+    /// successful broadcast is logged and swallowed — the identity already exists on chain, so the
+    /// next sync heals the local row. A create reported unconfirmed
+    /// ([`PlatformWalletError::ShieldedBroadcastUnconfirmed`]) holds the slot while it may still
+    /// execute, across a restart too (its saved record keeps the index), whatever becomes of the
+    /// lease. Returns the new identity's id.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
@@ -2225,6 +2280,7 @@ impl PlatformWallet {
         seed: &[u8],
         account: u32,
         identity_index: u32,
+        holder: SlotHolder,
         public_keys: Vec<(
             dpp::identity::IdentityPublicKey,
             dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
@@ -2238,7 +2294,34 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
-        let (identity_id, identity) = {
+        // Input first, before the network is asked anything.
+        ensure_allowed_denomination(denomination, self.sdk.version())?;
+        // The slot: only the registration leasing `identity_index` spends notes for keys derived
+        // there, and an identity already registered with these keys would make Platform refuse
+        // this one after its notes are spent.
+        match holder {
+            SlotHolder::Registration { .. } => {
+                self.identity
+                    .require_slot_lease(identity_index, &holder)
+                    .await?;
+                let keys_map: BTreeMap<dpp::identity::KeyID, IdentityPublicKey> = public_keys
+                    .iter()
+                    .map(|(key, _)| (key.id(), key.clone()))
+                    .collect();
+                if let Some(taken) = self
+                    .identity
+                    .slot_taken_on_chain(identity_index, &keys_map, &holder, None)
+                    .await?
+                {
+                    return Err(taken);
+                }
+            }
+            SlotHolder::InvitationClaim { .. } => {
+                return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
+            }
+        }
+
+        let created = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
             // registration step.
@@ -2250,48 +2333,55 @@ impl PlatformWallet {
                 self.wallet_id,
                 &keyset,
                 account,
+                identity_index,
                 public_keys,
                 denomination,
                 send_to_address_on_creation_failure,
                 identity_signer,
                 &prover,
             )
-            .await?
+            .await
         };
-
-        // Register the proof-verified identity in the local manager at its HD slot, exactly like
-        // `register_from_addresses`' Step 3 — this drives the host persister's
-        // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
-        // The broadcast already succeeded; a registration failure here (e.g. the slot is already
-        // occupied locally) is logged and swallowed rather than surfaced as an error, since the
-        // identity exists on chain and the next sync heals the local view.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity,
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            identity_index,
-                            error = %e,
-                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
-                             identity in the local manager failed; the on-chain identity exists and \
-                             the next sync will heal the local row"
-                        );
-                    }
-                }
-                None => {
+        let (identity_id, identity) = match created {
+            Ok(created) => created,
+            Err(error @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => {
+                // It may still execute: hold the slot for it, as its saved record does after a
+                // restart.
+                if let Err(e) = self
+                    .identity
+                    .set_shielded_create_hold(identity_index, true)
+                    .await
+                {
                     tracing::warn!(
                         identity_index,
-                        "IdentityCreateFromShieldedPool broadcast succeeded but the wallet info was \
-                         not found in the manager; skipping local registration (heals on next sync)"
+                        error = %e,
+                        "IdentityCreateFromShieldedPool unconfirmed but its slot could not be held \
+                         in memory; its saved record holds it after a restart"
                     );
                 }
+                return Err(error);
             }
+            Err(error) => return Err(error),
+        };
+
+        // Record the proof-verified identity in its slot, releasing the lease, exactly like
+        // `register_from_addresses`' Step 3 — this drives the host persister's
+        // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
+        // The broadcast already succeeded; a failure here is logged and swallowed rather than
+        // surfaced as an error, since the identity exists on chain and the next sync heals the
+        // local view.
+        if let Err(e) = self
+            .identity
+            .record_registered_identity(identity, identity_index, &holder)
+            .await
+        {
+            tracing::warn!(
+                identity_index,
+                error = %e,
+                "IdentityCreateFromShieldedPool broadcast succeeded but recording the identity in \
+                 its slot failed; the on-chain identity exists and the next sync will heal the \
+                 local row"
+            );
         }
 
         Ok(identity_id)
@@ -3592,6 +3682,7 @@ mod private_contact_request_redrive_tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         }
     }
 

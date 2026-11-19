@@ -1041,6 +1041,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_releas
 /// `VTableSigner` dispatches by key-type byte, so one handle serves both
 /// (the platform-address signing path is the same one ID-06 top-up drives).
 ///
+/// `identityIndex` and `slotToken` come from `acquireRegistrationSlot`, and
+/// the identity keys are derived at that index.
+///
 /// Returns the 32-byte identity id. The standalone `ManagedIdentity` handle
 /// the FFI produces is destroyed here — Room learns of the new identity
 /// through the persistence changeset, not through this handle.
@@ -1050,6 +1053,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     _class: JClass,
     wallet_handle: jlong,
     identity_index: jint,
+    slot_token: jlong,
     pubkeys_blob: JByteArray,
     signer_handle: jlong,
     inputs_blob: JByteArray,
@@ -1095,6 +1099,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
             platform_wallet_ffi::platform_wallet_register_identity_with_signer(
                 wallet_handle as Handle,
                 identity_index as u32,
+                slot_token as u64,
                 ffi_rows.as_ptr(),
                 ffi_rows.len(),
                 signer_handle as *mut SignerHandle,

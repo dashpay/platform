@@ -129,6 +129,12 @@ pub struct IdentityManager {
     /// [`SlotHolder::Registration`]). Registration leases live in memory
     /// only, so the counter does not need to survive a restart.
     next_registration_token: u64,
+
+    /// The slots identity creates from the shielded pool hold while they may
+    /// still execute, `shielded_create_holds[wallet_id]`: their saved records
+    /// keep the index durably, and these mirror them (see
+    /// [`Self::hold_for_shielded_create`]).
+    shielded_create_holds: BTreeMap<WalletId, BTreeSet<RegistrationIndex>>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -167,6 +173,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             retained_private_payment_markers: BTreeSet::new(),
             slot_leases: BTreeMap::new(),
             next_registration_token: 0,
+            shielded_create_holds: BTreeMap::new(),
         };
         for (wallet_id, leases) in claim_leases {
             manager.apply_claim_lease_changeset(

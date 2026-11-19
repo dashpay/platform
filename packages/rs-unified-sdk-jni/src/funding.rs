@@ -984,7 +984,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_abandon
 /// `shielded_identity_create_denominations` set: 0.1 / 0.3 / 0.5 / 1.0 DASH
 /// through PV12, 0.03 / 0.1 / 0.25 / 0.5 / 1.0 DASH from PV13; a non-member
 /// is rejected at validation) from the wallet's bound Orchard pool
-/// (`account`) to fund a new identity at `identity_index`. `pubkeys_blob` is the SAME shared rich
+/// (`account`) to fund a new identity at `identity_index`, the slot `slot_token` leases
+/// (`IdentityNative.acquireRegistrationSlot`). `pubkeys_blob` is the SAME shared rich
 /// registration key-row blob ID-08 uses (built by `IdentityPubkeyCodec`,
 /// decoded by `decode_registration_pubkeys_blob` exactly like
 /// [`Java_..._registerIdentityFromAddresses`]). `fallback_address` is the
@@ -1004,6 +1005,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     resolver_handle: jlong,
     account: jint,
     identity_index: jint,
+    slot_token: jlong,
     pubkeys_blob: JByteArray,
     denomination: jlong,
     fallback_address: JByteArray,
@@ -1065,6 +1067,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 identity_index as u32,
+                slot_token as u64,
                 ffi_rows.as_ptr(),
                 ffi_rows.len(),
                 denomination as u64,

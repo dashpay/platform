@@ -63,6 +63,7 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::derive_identity_auth_keypair;
+use platform_wallet::wallet::identity::SlotHolder;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -433,6 +434,13 @@ pub(crate) unsafe fn decode_identity_pubkeys(
 /// `Signer<IdentityPublicKey>` AND `Signer<PlatformAddress>` and
 /// dispatches by `key_type` byte.
 ///
+/// `identity_index` and `slot_token` come from
+/// [`crate::identity_slot::platform_wallet_identity_slot_acquire_registration`], and the
+/// identity pubkeys are derived at that index. A slot the token does not
+/// lease is refused with `ErrorIdentitySlotNotHeld` before anything is
+/// spent; `ErrorIdentitySlotTakenOnChain` means an identity already holds
+/// these keys, now recorded in that slot: acquire another one.
+///
 /// On success both `out_identity_id` (32 bytes) and
 /// `out_identity_handle` are populated. The returned handle points at
 /// a freshly-inserted `ManagedIdentity` in `MANAGED_IDENTITY_STORAGE`
@@ -442,6 +450,7 @@ pub(crate) unsafe fn decode_identity_pubkeys(
 pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     wallet_handle: Handle,
     identity_index: u32,
+    slot_token: u64,
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     signer_identity_handle: *mut SignerHandle,
@@ -544,6 +553,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
                     input_map,
                     output_map,
                     identity_index,
+                    SlotHolder::Registration { token: slot_token },
                     identity_signer,
                     address_signer,
                     None,

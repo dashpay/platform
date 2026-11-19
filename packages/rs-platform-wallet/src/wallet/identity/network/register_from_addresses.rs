@@ -14,6 +14,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::SlotHolder;
 
 use super::*;
 
@@ -65,9 +66,15 @@ impl IdentityWallet {
     ///   explicit platform address. `None` means no refund (any
     ///   residual goes into the new identity's balance).
     /// * `identity_index` — BIP-9 identity index (hardened) in the
-    ///   key tree. Recorded on the `ManagedIdentity` stored in the
-    ///   local `IdentityManager`; the caller's signer is expected to
-    ///   have already bound it when deriving auth keys.
+    ///   key tree, the slot `holder` leases
+    ///   ([`IdentityWallet::acquire_identity_slot`]): the auth keys are
+    ///   derived there. Anything else is refused with
+    ///   [`PlatformWalletError::IdentitySlotNotHeld`] before anything is
+    ///   spent. An identity Platform already holds under the master key
+    ///   is recorded in the slot and
+    ///   [`PlatformWalletError::IdentitySlotTakenOnChain`] returned, for
+    ///   the caller to acquire another slot.
+    /// * `holder` — the registration's slot holder.
     /// * `identity_signer` — produces ECDSA signatures for keys that
     ///   appear on `identity.public_keys()`. Construction is the
     ///   caller's concern — seed-backed, hardware, remote signer,
@@ -84,6 +91,7 @@ impl IdentityWallet {
         inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
         identity_index: u32,
+        holder: SlotHolder,
         identity_signer: &IS,
         input_address_signer: &AS,
         settings: Option<PutSettings>,
@@ -92,6 +100,24 @@ impl IdentityWallet {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),
             ));
+        }
+
+        // The slot: only the registration leasing `identity_index` spends
+        // anything at it, and an identity already registered with these keys
+        // would make Platform refuse this one after its inputs are spent.
+        match holder {
+            SlotHolder::Registration { .. } => {
+                self.require_slot_lease(identity_index, &holder).await?;
+                if let Some(taken) = self
+                    .slot_taken_on_chain(identity_index, identity.public_keys(), &holder, None)
+                    .await?
+                {
+                    return Err(taken);
+                }
+            }
+            SlotHolder::InvitationClaim { .. } => {
+                return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
+            }
         }
 
         // Route through the auto-fetching SDK variant so the caller
@@ -140,8 +166,8 @@ impl IdentityWallet {
         }
         let identity = registered_identity;
 
-        // Step 3 (best-effort): add the identity to the local manager
-        // (with its HD index) so subsequent operations route through it.
+        // Step 3 (best-effort): record the identity in its slot, releasing
+        // the registration's lease, so subsequent operations route through it.
         //
         // Platform has ALREADY accepted the registration, so a local
         // persistence failure must NOT propagate as `Err` — that would
@@ -152,33 +178,17 @@ impl IdentityWallet {
         // the sibling `transfer_credits_to_addresses` / top-up flows,
         // which likewise treat post-acceptance local bookkeeping as
         // best-effort.
+        if let Err(e) = self
+            .record_registered_identity(identity.clone(), identity_index, &holder)
+            .await
         {
-            let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity.clone(),
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            error = %e,
-                            identity_id = %identity.id(),
-                            "register_from_addresses: identity registered on Platform but \
-                             local add_identity failed; returning the registered identity \
-                             anyway so address balances can reconcile"
-                        );
-                    }
-                }
-                None => {
-                    tracing::warn!(
-                        identity_id = %identity.id(),
-                        "register_from_addresses: identity registered on Platform but wallet \
-                         info was not found locally; skipping local persistence"
-                    );
-                }
-            }
+            tracing::warn!(
+                error = %e,
+                identity_id = %identity.id(),
+                "register_from_addresses: identity registered on Platform but not recorded in \
+                 its slot; returning the registered identity anyway so address balances can \
+                 reconcile"
+            );
         }
 
         // The spent platform-address balances are reconciled by the

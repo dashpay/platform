@@ -31,6 +31,7 @@ use crate::wallet::identity::state::{
 };
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
+use super::registration::derived_keys;
 use super::*;
 
 /// The operation asking for a slot.
@@ -311,6 +312,52 @@ impl IdentityWallet {
             identity_index,
             identity_id,
         }))
+    }
+
+    /// Record `identity`, registered at `identity_index` with keys derived
+    /// there, in that slot, releasing `holder`'s lease in the same durable
+    /// write ([`IdentityManager::place_in_slot`](crate::wallet::identity::IdentityManager::place_in_slot)).
+    pub(crate) async fn record_registered_identity(
+        &self,
+        identity: Identity,
+        identity_index: RegistrationIndex,
+        holder: &SlotHolder,
+    ) -> Result<(), PlatformWalletError> {
+        let keys = derived_keys(&identity, self.wallet_id, identity_index);
+        let mut wm = self.wallet_manager.write().await;
+        let info = self.current_wallet_info_mut(&mut wm)?;
+        info.identity_manager.place_in_slot(
+            identity,
+            identity_index,
+            self.wallet_id,
+            Some(holder),
+            keys,
+            &self.persister,
+        )?;
+        Ok(())
+    }
+
+    /// Hold slot `identity_index` for an identity create from the shielded
+    /// pool that may still execute
+    /// ([`IdentityManager::hold_for_shielded_create`](crate::wallet::identity::IdentityManager::hold_for_shielded_create)),
+    /// or drop that hold
+    /// once it resolved.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn set_shielded_create_hold(
+        &self,
+        identity_index: RegistrationIndex,
+        held: bool,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = self.current_wallet_info_mut(&mut wm)?;
+        if held {
+            info.identity_manager
+                .hold_for_shielded_create(self.wallet_id, identity_index);
+        } else {
+            info.identity_manager
+                .release_shielded_create_hold(&self.wallet_id, identity_index);
+        }
+        Ok(())
     }
 
     /// Refuse an invitation claim's slot when the persister cannot keep its
@@ -707,6 +754,59 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> for UnusedSigner {
+        async fn sign(
+            &self,
+            _key: &dpp::address_funds::PlatformAddress,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("refused before signing")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &dpp::address_funds::PlatformAddress,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("refused before signing")
+        }
+
+        fn can_sign_with(&self, _key: &dpp::address_funds::PlatformAddress) -> bool {
+            false
+        }
+    }
+
+    /// Register at `identity_index` with `holder`, funded from a Platform
+    /// address.
+    async fn register_from_addresses_at(
+        wallet: &PlatformWallet,
+        identity_index: RegistrationIndex,
+        holder: SlotHolder,
+    ) -> Result<dpp::identity::Identity, PlatformWalletError> {
+        let placeholder = Identity::V0(dpp::identity::v0::IdentityV0 {
+            id: Identifier::default(),
+            public_keys: master_keys(),
+            balance: 0,
+            revision: 0,
+        });
+        wallet
+            .register_from_addresses(
+                &placeholder,
+                std::collections::BTreeMap::from([(
+                    dpp::address_funds::PlatformAddress::P2pkh([0x11; 20]),
+                    1_000_000,
+                )]),
+                None,
+                identity_index,
+                holder,
+                &UnusedSigner,
+                &UnusedSigner,
+                None,
+            )
+            .await
+    }
+
     fn master_keys() -> std::collections::BTreeMap<u32, dpp::identity::IdentityPublicKey> {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{KeyType, Purpose, SecurityLevel};
@@ -787,6 +887,68 @@ mod tests {
             );
         }
         assert_eq!(tracked_locks(&wallet).await, 0);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_address_registration_without_its_slot_before_spending() {
+        // The node is given no answers: a refusal here never reached it.
+        let wallet = wallet(Backend::new(full())).await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        let other = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        let invitation = OutPoint::new(Txid::from_byte_array([1; 32]), 0);
+
+        for (index, holder) in [
+            (slot.identity_index, other.holder),
+            (
+                slot.identity_index,
+                SlotHolder::InvitationClaim { invitation },
+            ),
+            (5, slot.holder),
+        ] {
+            let refused = register_from_addresses_at(&wallet, index, holder).await;
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::IdentitySlotNotHeld { identity_index }) if identity_index == index
+                ),
+                "index {index}, holder {holder:?}: {refused:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_send_an_address_registration_elsewhere_when_its_keys_are_taken() {
+        let wallet = wallet_answering(
+            Backend::new(full()),
+            Some(Some(registered_with_our_master())),
+        )
+        .await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+
+        let refused = register_from_addresses_at(&wallet, slot.identity_index, slot.holder).await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::IdentitySlotTakenOnChain {
+                    identity_index: 0,
+                    ..
+                })
+            ),
+            "{refused:?}"
+        );
     }
 
     #[tokio::test]

@@ -191,8 +191,8 @@ impl FileBackedShieldedStore {
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             tx.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment, anchor_height) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment, anchor_height, identity_index) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -209,6 +209,7 @@ impl FileBackedShieldedStore {
                     redrive
                         .anchor_height
                         .and_then(|height| i64::try_from(height).ok()),
+                    redrive.identity_index,
                 ],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
@@ -465,6 +466,19 @@ impl FileBackedShieldedStore {
                     FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
                 })?;
         }
+        // The identity slot an identity create holds (`PendingRedrive::
+        // identity_index`): NULL for every other spend, and for a create
+        // saved before it was kept.
+        if !columns.iter().any(|existing| existing == "identity_index") {
+            pending_conn
+                .execute(
+                    "ALTER TABLE shielded_pending_spends ADD COLUMN identity_index INTEGER",
+                    [],
+                )
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
+                })?;
+        }
         // The private contact request a record pays for, when it does.
         if !columns
             .iter()
@@ -576,7 +590,8 @@ impl FileBackedShieldedStore {
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
                  attempts, identity_nonce_finalized, identity_user_abandoned, \
-                 private_contact_payment, anchor_height FROM shielded_pending_spends",
+                 private_contact_payment, anchor_height, identity_index \
+                 FROM shielded_pending_spends",
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
@@ -611,6 +626,13 @@ impl FileBackedShieldedStore {
                     .ok()
                     .flatten()
                     .and_then(|height| u64::try_from(height).ok());
+                // An index that does not read is not known: the slot is then
+                // held only by the identity once it lands.
+                let identity_index = row
+                    .get::<_, Option<i64>>(11)
+                    .ok()
+                    .flatten()
+                    .and_then(|index| u32::try_from(index).ok());
                 let decoded: rusqlite::Result<_> = (|| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -629,6 +651,7 @@ impl FileBackedShieldedStore {
                     readable_wallet_id,
                     private_contact_payment,
                     anchor_height,
+                    identity_index,
                     decoded,
                 ))
             })
@@ -639,6 +662,7 @@ impl FileBackedShieldedStore {
                 readable_wallet_id,
                 private_contact_payment,
                 anchor_height,
+                identity_index,
                 decoded,
             ) = row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
                 account_index: None,
@@ -732,6 +756,7 @@ impl FileBackedShieldedStore {
                         anchor_height,
                         identity_nonce_finalized,
                         identity_user_abandoned,
+                        identity_index,
                     },
                 ))
             })();
@@ -1775,6 +1800,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -1837,6 +1863,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         let payment = PrivateContactPayment {
             sender: [0xB1; 32],
@@ -1910,6 +1937,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         let payment = PrivateContactPayment {
             sender: [0xB1; 32],
@@ -1990,6 +2018,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -2043,6 +2072,7 @@ mod tests {
                 !record.identity_user_abandoned,
                 "legacy guards require explicit recovery"
             );
+            assert_eq!(record.identity_index, None, "no slot was kept for it");
             record.identity_nonce_finalized = true;
             record.identity_user_abandoned = true;
             store.arm_redrive(id, record).unwrap();
@@ -2058,6 +2088,38 @@ mod tests {
             assert!(records[0].identity_nonce_finalized);
             assert!(records[0].identity_user_abandoned);
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn should_keep_the_identity_slot_of_an_identity_create_across_a_reopen() {
+        let path = temp_tree_path("identity_create_slot");
+        let id = SubwalletId::new([0x92; 32], 0);
+        let record = |activity: u8, identity_index| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [0x23; 32],
+            nullifiers: vec![[activity; 32]],
+            st_bytes: vec![0x34; 24],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            anchor_height: None,
+            identity_index,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            store.arm_redrive(id, record(1, Some(3))).unwrap();
+            store.arm_redrive(id, record(2, None)).unwrap();
+        }
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let mut indices: Vec<_> = store
+            .pending_redrives(id)
+            .unwrap()
+            .into_iter()
+            .map(|redrive| (redrive.activity_id[0], redrive.identity_index))
+            .collect();
+        indices.sort();
+        assert_eq!(indices, vec![(1, Some(3)), (2, None)]);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -2088,6 +2150,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .unwrap();
@@ -2146,6 +2209,7 @@ mod tests {
             identity_user_abandoned: false,
             // As a spend saved by this build keeps it.
             anchor_height: Some(5),
+            identity_index: None,
         };
         let payment = PrivateContactPayment {
             sender: [0xB1; 32],
@@ -2259,6 +2323,7 @@ mod tests {
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
                 anchor_height: None,
+                identity_index: None,
             };
             {
                 let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
@@ -2274,6 +2339,7 @@ mod tests {
                             identity_nonce_finalized: false,
                             identity_user_abandoned: false,
                             anchor_height: None,
+                            identity_index: None,
                         },
                     )
                     .unwrap();
@@ -2340,6 +2406,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .unwrap();
@@ -2394,6 +2461,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .unwrap();
@@ -2428,6 +2496,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
@@ -2456,6 +2525,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -2506,6 +2576,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x48; 32],
@@ -2516,6 +2587,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -2562,6 +2634,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
 
         // purge_wallet is scoped: it drops A's rows, keeps B's.
@@ -2640,6 +2713,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .expect("arm");
@@ -3064,6 +3138,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         let expected = PrivatePaymentRecord {
             account_index: 1,
@@ -3218,6 +3293,7 @@ mod tests {
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
                 anchor_height: None,
+                identity_index: None,
             };
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
             store.mark_pending(id, &[0x33; 32]).expect("reserved");
@@ -3319,6 +3395,7 @@ mod tests {
                             identity_nonce_finalized: false,
                             identity_user_abandoned: false,
                             anchor_height: None,
+                            identity_index: None,
                         },
                         payment,
                         &[PrivatePaymentEntry::for_commitment([0xD4; 32])],
@@ -3384,6 +3461,7 @@ mod tests {
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
                         anchor_height: None,
+                        identity_index: None,
                     },
                 )
                 .expect("armed");
