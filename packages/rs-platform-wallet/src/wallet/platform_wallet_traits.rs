@@ -45,6 +45,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         }
     }
 
@@ -62,6 +63,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         }
     }
 
@@ -359,10 +361,16 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_balance: bool,
     ) -> TransactionCheckResult {
         // TODO: some logic must here - restore
-        let result = self
+        let mut result = self
             .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
             .await;
+        // A tracked masternode's collateral that this transaction pays the
+        // wallet arrives locked. The lock is reported like one the check
+        // itself made, so the wallet event carries it to the persister.
+        if update_state {
+            self.lock_arrived_tracked_collaterals(tx, &mut result);
+        }
         // A transaction first seen, or confirmed, in a ChainLocked block is
         // dropped on the spot: keep what it spent, as `apply_chain_lock`
         // does for the records it promotes. Gate on each record's own
