@@ -191,8 +191,9 @@ class DashSdkErrorTest {
 
     @Test
     fun retryabilityFollowsErrorClass() {
-        assertTrue(DashSdkError.NetworkError("x").isRetryable)
-        assertTrue(DashSdkError.Timeout("x").isRetryable)
+        // No payment class, so nothing proves the request never left.
+        assertFalse(DashSdkError.NetworkError("x").isRetryable)
+        assertFalse(DashSdkError.Timeout("x").isRetryable)
         assertFalse(DashSdkError.InvalidParameter("x").isRetryable)
     }
 
@@ -550,7 +551,8 @@ class DashSdkErrorTest {
         // be described to a person as a failed read.
         val chain = "failed to persist wallet registration changeset: " +
             "persistence backend error (Transient): database is locked"
-        val busy = "The wallet database is busy. Try again in a moment."
+        // Unclassified (no native retry): no retry is invited.
+        val busy = "The wallet database is busy."
         val unreadable = "The wallet data could not be read and may need to be restored."
         val unsaved = "The wallet data could not be saved and may need to be restored."
         val expected = mapOf(

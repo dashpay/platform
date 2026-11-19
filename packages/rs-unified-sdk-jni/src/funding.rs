@@ -655,11 +655,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 // so — unlike the shield / fund paths — NO host signer or mnemonic-resolver
 // handle crosses the boundary; the host only supplies recipient + amount.
 // Each is a single blocking FFI call that runs the ~30s Halo 2 proof on a
-// Rust worker thread and returns only a status code. The retry-semantics-
-// bearing error codes (`ErrorShieldedSpendUnconfirmed` = do NOT retry,
-// `ErrorShieldedNoRecordedAnchor` / `ErrorShieldedBroadcastFailed` =
-// retryable) surface through `take_pwffi_error`'s offset codes and map to
-// the dedicated `DashSdkError.PlatformWallet` types on the Kotlin side.
+// Rust worker thread and returns only a status code. Errors surface through
+// `take_pwffi_error`'s offset codes and map to the dedicated
+// `DashSdkError.PlatformWallet` types on the Kotlin side; whether one may be
+// retried is the result's payment class and `retryable` flag, which
+// `take_pwffi_error` carries across, never the code.
 
 /// Shield from Platform balance (Type 15) — bridges
 /// `platform_wallet_manager_shielded_shield`.

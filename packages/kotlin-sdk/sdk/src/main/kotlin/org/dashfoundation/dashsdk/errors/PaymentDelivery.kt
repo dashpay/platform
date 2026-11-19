@@ -9,7 +9,11 @@ package org.dashfoundation.dashsdk.errors
  * `PlatformWalletFFIPaymentDelivery` in `rs-platform-wallet-ffi/src/error.rs`.
  */
 enum class PaymentDelivery {
-    /** The payment never left the wallet and can never execute: a retry may be offered. */
+    /**
+     * The payment never left the wallet and can never execute. A retry may be
+     * offered only where [DashSdkError.isRetryable] allows it; otherwise an
+     * earlier payment may still be settling, so wait for it.
+     */
     NOT_SENT,
 
     /**

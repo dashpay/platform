@@ -8,7 +8,10 @@ import org.json.JSONObject
 // Rust error chain (operation, backend classification, the store's own
 // phrasing) that no user can act on. One string per outcome a person can
 // distinguish; a failed read and a failed write must not describe each other.
-private const val PERSISTER_BUSY_USER_MESSAGE =
+// The busy text invites a retry only where the native wallet allowed one
+// (`isRetryable`); see [busyUserMessage].
+private const val PERSISTER_BUSY_USER_MESSAGE = "The wallet database is busy."
+private const val PERSISTER_BUSY_RETRY_USER_MESSAGE =
     "The wallet database is busy. Try again in a moment."
 private const val PERSISTER_UNREADABLE_USER_MESSAGE =
     "The wallet data could not be read and may need to be restored."
@@ -80,10 +83,13 @@ sealed class DashSdkError(
     class InvalidState(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
+    /**
+     * Not retryable by itself: an rs-sdk-ffi error carries no payment class,
+     * so nothing proves the request did not reach the network. Retry only
+     * where a class allows it ([delivery], [isRetryable]).
+     */
     class NetworkError(message: String, cause: Throwable? = null) :
-        DashSdkError(message, cause) {
-        override val isRetryable: Boolean get() = true
-    }
+        DashSdkError(message, cause)
 
     class SerializationError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
@@ -97,10 +103,9 @@ sealed class DashSdkError(
     class NotFound(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
+    /** Not retryable by itself, for the reason [NetworkError] gives. */
     class Timeout(message: String, cause: Throwable? = null) :
-        DashSdkError(message, cause) {
-        override val isRetryable: Boolean get() = true
-    }
+        DashSdkError(message, cause)
 
     class NotImplemented(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
@@ -230,10 +235,11 @@ sealed class DashSdkError(
          * sent the transaction.
          *
          * The ONLY double-spend verdict the native side emits, and it is
-         * PROVISIONAL. NO discard licence: keep the tracked lock and retry
-         * later (next launch, or after the next chainlock) — but note a
-         * chainlock does NOT upgrade this to code 47 today; what a retry can
-         * resolve is a reorg dropping the sibling. Repetition does not
+         * PROVISIONAL. NO discard licence: keep the tracked lock and resume
+         * it later ([heldAssetLock]; next launch, or after the next
+         * chainlock) — it is not a retry of the operation ([isRetryable] is
+         * `false`). Note a chainlock does NOT upgrade this to code 47 today;
+         * what a later resume can resolve is a reorg dropping the sibling. Repetition does not
          * license a discard either: a conflict that survives session after
          * session still proves nothing about finalized ancestry — the
          * sighting can be a block record restored from a previous session
@@ -278,15 +284,18 @@ sealed class DashSdkError(
 
         /**
          * Code 60: the asset lock exceeds the input cap, either a full drain or a fixed
-         * amount held only in many small coins. Nothing was submitted, and no partial drain.
+         * amount held only in many small coins. A fresh build submitted nothing; a resumed
+         * lock over the cap may have been sent by an earlier attempt, so read [delivery]
+         * rather than this type.
          */
         class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
          * Code 61: a shielded fund-from-asset-lock resume named a different Orchard
-         * recipient than the one the tracked lock recorded when it was built. Nothing
-         * was submitted or paid; resume with the recorded recipient. Locks tracked
+         * recipient than the one the tracked lock recorded when it was built. This call
+         * submitted nothing new, but the lock is held ([PaymentDelivery.LOCK_HELD],
+         * [heldAssetLock]): resume it with the recorded recipient. Locks tracked
          * before the recipient was recorded carry none and accept the caller's.
          */
         class AssetLockRecipientMismatch(message: String, cause: Throwable? = null) :
@@ -345,7 +354,8 @@ sealed class DashSdkError(
          * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
          * non-execution outcome: the transition never left the wallet
          * (refused before anything was sent), so it can never execute, and
-         * any note reservations were released. Safe to retry (the opposite
+         * any note reservations were released. Retry only where [isRetryable]
+         * (the native wallet's) allows it (the opposite
          * of the ambiguous [ShieldedSpendUnconfirmed]).
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
@@ -535,8 +545,9 @@ sealed class DashSdkError(
             val actualCredits: ULong,
             cause: Throwable? = null,
         ) : PlatformWallet(
-            "The DPNS price changed from $expectedCredits to $actualCredits credits. " +
-                "Nothing was purchased.",
+            // Whether anything was purchased is [delivery]'s to say: the
+            // verdict may follow an earlier dispatch.
+            "The DPNS price changed from $expectedCredits to $actualCredits credits.",
             cause,
         )
 
@@ -575,7 +586,7 @@ sealed class DashSdkError(
          */
         class PersisterLoadTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
+            override val userMessage: String get() = busyUserMessage(isRetryable)
         }
 
         /**
@@ -607,7 +618,7 @@ sealed class DashSdkError(
          */
         class PersisterStoreTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
+            override val userMessage: String get() = busyUserMessage(isRetryable)
         }
 
         /**
@@ -1039,6 +1050,9 @@ sealed class DashSdkError(
                     PlatformWallet.Generic(code, message, cause)
                 }
         }
+
+        private fun busyUserMessage(retryable: Boolean): String =
+            if (retryable) PERSISTER_BUSY_RETRY_USER_MESSAGE else PERSISTER_BUSY_USER_MESSAGE
 
         private fun isSigningKeyUnavailable(message: String): Boolean =
             message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
