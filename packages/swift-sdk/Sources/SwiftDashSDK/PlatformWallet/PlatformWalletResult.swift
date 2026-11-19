@@ -344,6 +344,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// released the lease; nothing was funded. Acquire a slot again and
     /// derive the keys at the new index. The message is a JSON detail.
     case errorIdentitySlotTakenOnChain = 78
+    /// The release of an invitation claim's slot was refused: the claim may
+    /// have reached Platform, and only its outcome frees the slot. Retry the
+    /// claim (it gets the same slot). The message is a JSON detail naming
+    /// the index.
+    case errorIdentitySlotClaimSubmitted = 79
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -507,6 +512,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorIdentitySlotNotHeld
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_TAKEN_ON_CHAIN:
             self = .errorIdentitySlotTakenOnChain
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_CLAIM_SUBMITTED:
+            self = .errorIdentitySlotClaimSubmitted
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -810,6 +817,10 @@ public enum PlatformWalletError: LocalizedError {
     /// retry, at most `ManagedPlatformWallet.identitySlotTakenRetryLimit`
     /// times in a row.
     case identitySlotTakenOnChain(identityIndex: UInt32, identityId: String)
+    /// The invitation claim holding slot `identityIndex` may have reached
+    /// Platform, so its slot was not given up (code 79); only the claim's
+    /// outcome frees it. Retry the claim, which gets the same slot.
+    case identitySlotClaimSubmitted(identityIndex: UInt32)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1108,6 +1119,10 @@ public enum PlatformWalletError: LocalizedError {
         case .identitySlotTakenOnChain(let identityIndex, let identityId):
             return "Identity index \(identityIndex) already holds identity \(identityId), "
                 + "which this wallet now records. Nothing was funded."
+        case .identitySlotClaimSubmitted(let identityIndex):
+            return "The invitation claim at identity index \(identityIndex) may already have "
+                + "reached Platform, so its slot stays reserved until the claim settles. "
+                + "Retry the claim instead."
         case .contestedNameNotTradable(let label, let endsAtMs):
             if endsAtMs == 0 {
                 return "\"\(label)\" is in an active contested-name vote and cannot be traded "
@@ -1219,7 +1234,7 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
-        // Codes 77/78 carry a stable JSON detail naming the index (and the
+        // Codes 77-79 carry a stable JSON detail naming the index (and the
         // identity for 78); a payload that does not decode degrades to
         // `.unknown(detail)`.
         case .errorIdentitySlotNotHeld:
@@ -1233,6 +1248,12 @@ public enum PlatformWalletError: LocalizedError {
                 self = .identitySlotTakenOnChain(
                     identityIndex: d.identityIndex, identityId: identityId
                 )
+            } else {
+                self = .unknown(detail)
+            }
+        case .errorIdentitySlotClaimSubmitted:
+            if let d = IdentitySlotErrorDetail.decode(detail) {
+                self = .identitySlotClaimSubmitted(identityIndex: d.identityIndex)
             } else {
                 self = .unknown(detail)
             }
@@ -1413,7 +1434,7 @@ private enum InvitationErrorDetail {
 
 // MARK: - Identity-slot error detail decoding
 
-/// Decoder for the JSON detail FFI result codes 77/78 put in the result
+/// Decoder for the JSON detail FFI result codes 77-79 put in the result
 /// `message`: `{"identityIndex":<u32>}`, plus `"identityId":"<base58>"` for 78.
 private enum IdentitySlotErrorDetail {
     struct Detail: Decodable {

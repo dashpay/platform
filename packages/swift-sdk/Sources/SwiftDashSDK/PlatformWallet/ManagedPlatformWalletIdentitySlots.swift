@@ -104,8 +104,9 @@ extension ManagedPlatformWallet {
     }
 
     /// Give up the slot of an invitation claim abandoned before it was
-    /// sent. Refused when the claim may have reached Platform: its outcome
-    /// frees the slot then, so a caller keeps the slot on that refusal.
+    /// sent. Refused with `PlatformWalletError.identitySlotClaimSubmitted`
+    /// when the claim may have reached Platform: its outcome frees the slot
+    /// then, so a caller keeps the slot on that refusal.
     public func releaseInvitationClaimSlot(_ slot: InvitationClaimSlot) async throws {
         guard slot.invitationOutPoint.count == 36 else {
             throw PlatformWalletError.invalidParameter(

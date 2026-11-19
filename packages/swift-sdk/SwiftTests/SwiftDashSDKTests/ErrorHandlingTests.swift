@@ -513,6 +513,8 @@ final class ErrorHandlingTests: XCTestCase {
              .errorIdentitySlotNotHeld, 77),
             (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_TAKEN_ON_CHAIN,
              .errorIdentitySlotTakenOnChain, 78),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_CLAIM_SUBMITTED,
+             .errorIdentitySlotClaimSubmitted, 79),
         ]
         for (ffi, code, raw) in codes {
             XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), code)
@@ -523,6 +525,11 @@ final class ErrorHandlingTests: XCTestCase {
             code: .errorIdentitySlotNotHeld, message: "{\"identityIndex\":3}"
         ) else { return XCTFail("lost typed slot-not-held error") }
         XCTAssertEqual(notHeldIndex, 3)
+
+        guard case .identitySlotClaimSubmitted(let submittedIndex) = PlatformWalletError(
+            code: .errorIdentitySlotClaimSubmitted, message: "{\"identityIndex\":5}"
+        ) else { return XCTFail("lost typed submitted-claim error") }
+        XCTAssertEqual(submittedIndex, 5)
 
         let id = "8eTDkBhpQjHeqgbVeriwLeZr1tCa6yBGw76SckvD1cwc"
         let taken = PlatformWalletError(
@@ -549,6 +556,9 @@ final class ErrorHandlingTests: XCTestCase {
         ) else { return XCTFail("a taken slot with no identity must not be typed") }
         guard case .unknown = PlatformWalletError(
             code: .errorIdentitySlotNotHeld, message: "not json"
+        ) else { return XCTFail("a prose payload must not be typed") }
+        guard case .unknown = PlatformWalletError(
+            code: .errorIdentitySlotClaimSubmitted, message: "not json"
         ) else { return XCTFail("a prose payload must not be typed") }
     }
 
