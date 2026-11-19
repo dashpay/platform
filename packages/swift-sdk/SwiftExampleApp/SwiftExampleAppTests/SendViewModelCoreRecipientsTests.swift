@@ -219,8 +219,13 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
         )
 
         XCTAssertNil(vm.successMessage)
-        XCTAssertTrue(vm.error?.contains("do not retry") == true)
-        XCTAssertTrue(vm.error?.contains("abc") == true)
+        let failure = vm.paymentFailure
+        XCTAssertTrue(failure?.message.contains("do not retry") == true)
+        XCTAssertTrue(failure?.message.contains("abc") == true)
+        // An unverified broadcast holds the form like any maybe-sent payment.
+        XCTAssertTrue(vm.isHeldByPaymentFailure)
+        XCTAssertFalse(vm.canSend)
+        XCTAssertTrue(vm.acknowledgePaymentFailure())
     }
 
     // MARK: - A failed payment's hold on the form

@@ -895,9 +895,14 @@ class SendViewModel: ObservableObject {
             successMessage = nil
             error = "Payment rejected by Dash Core: \(reason)"
         case .unknown(let txid, let reason):
+            // The broadcast may have reached the network: the same hold as
+            // any other maybe-sent payment, so the form refuses a second one.
             successMessage = nil
-            error = "Payment status could not be verified (\(txid)). "
-                + "It may already have been accepted; do not retry. \(reason)"
+            paymentFailure = PaymentFailure(
+                payment: .maybeSent,
+                detail: "Payment status could not be verified (\(txid)). "
+                    + "It may already have been accepted; do not retry. \(reason)"
+            )
         }
     }
 }
