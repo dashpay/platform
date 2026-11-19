@@ -180,7 +180,8 @@ fn should_count_by_the_elements_of_an_array_in_a_delete_rule() {
 }
 
 /// The read takes one total from state per distinct element of the list, and none for a list
-/// the document leaves out or empties; it has no single set of values.
+/// the document leaves out or empties, or for one longer than the array's `maxItems` (four),
+/// which the schema refuses only after the totals are read; it has no single set of values.
 #[test]
 fn should_give_one_set_of_values_per_distinct_element() {
     let platform_version = PlatformVersion::latest();
@@ -195,9 +196,11 @@ fn should_give_one_set_of_values_per_distinct_element() {
     let banned_tag = contract
         .document_type_for_name("bannedTag")
         .expect("bannedTag");
+    let post = contract.document_type_for_name("post").expect("post");
     let read = banned_among_tags();
     let sets = |tags: Option<&[&str]>| {
         read.filter_value_sets(
+            post,
             banned_tag,
             Identifier::from([5; 32]),
             &post_tagged(tags),
@@ -213,6 +216,9 @@ fn should_give_one_set_of_values_per_distinct_element() {
         [of("dash"), of("news")]
     );
     assert_eq!(sets(Some(&["dash"])), [of("dash")]);
+    assert_eq!(sets(Some(&["a", "b", "c", "d"])).len(), 4);
+    assert!(sets(Some(&["a", "b", "c", "d", "e"])).is_empty());
+    assert!(sets(Some(&["a", "a", "a", "a", "a"])).is_empty());
     assert!(sets(Some(&[])).is_empty());
     assert!(sets(None).is_empty());
     assert_eq!(
@@ -269,6 +275,7 @@ fn should_give_the_one_set_of_values_of_a_filter_without_an_array() {
                 .expect("reads");
             let sets = read
                 .filter_value_sets(
+                    post,
                     banned_tag,
                     Identifier::from([5; 32]),
                     &data,
@@ -280,6 +287,7 @@ fn should_give_the_one_set_of_values_of_a_filter_without_an_array() {
         }
         assert_eq!(
             read.filter_value_sets(
+                post,
                 banned_tag,
                 Identifier::from([5; 32]),
                 &post_tagged(None),

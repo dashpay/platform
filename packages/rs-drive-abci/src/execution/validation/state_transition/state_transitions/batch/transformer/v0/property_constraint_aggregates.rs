@@ -325,6 +325,7 @@ fn read_property_constraint_aggregates(
     read_aggregates(
         drive,
         contract,
+        document_type,
         reads,
         Some(VersionData {
             id: written.id,
@@ -383,6 +384,7 @@ pub(crate) fn read_delete_constraint_aggregates(
     read_aggregates(
         drive,
         contract,
+        document_type,
         reads,
         None,
         Some(VersionData {
@@ -401,11 +403,13 @@ pub(crate) fn read_delete_constraint_aggregates(
 /// of `stored` is done (`stored` `None` for a create, `written` `None` for a delete): the total
 /// the count or sum tree keeps now, less what `stored` adds to it, plus what `written` adds. A
 /// filter reads its values from the document the write leaves, `written`, or from `stored` for a
-/// delete. The reads are billed to `execution_context`.
+/// delete. `document_type` is the type declaring the rules. The reads are billed to
+/// `execution_context`.
 #[allow(clippy::too_many_arguments)]
 fn read_aggregates(
     drive: &Drive,
     contract: &DataContract,
+    document_type: DocumentTypeRef,
     reads: BTreeSet<&AggregateRead>,
     written: Option<VersionData>,
     stored: Option<VersionData>,
@@ -435,9 +439,12 @@ fn read_aggregates(
         // this loop reads there exactly what it read before; from protocol version 15 a
         // filter may match a key by any element of an array of the document
         // (`AggregateBinding::Elements`, which `parse_property_constraints` 0 never
-        // parses), and then one set per distinct element, added up
+        // parses), and then one set per distinct element, added up, and none for a list
+        // longer than the array's `maxItems`, which `document_type` holds: the document
+        // is refused when its schema is validated, after this
         let mut total = 0i128;
         for filter_values in read.filter_value_sets(
+            document_type,
             counted,
             bound.id,
             bound.data,

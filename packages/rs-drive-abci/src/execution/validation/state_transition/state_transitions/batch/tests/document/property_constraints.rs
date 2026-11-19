@@ -3320,6 +3320,110 @@ mod property_constraints_tests {
         );
     }
 
+    /// A list longer than the array's `maxItems` reads no total: the totals are
+    /// read before the schema refuses the document, so five distinct tags are
+    /// refused for the same fee as one tag held five times, stored in as many
+    /// bytes, and by the schema, whatever the tags are.
+    #[tokio::test]
+    async fn should_read_no_total_for_a_list_longer_than_the_array_holds() {
+        let refusal_fee = |result: StateTransitionExecutionResult| {
+            let StateTransitionExecutionResult::PaidConsensusError {
+                error, actual_fees, ..
+            } = result
+            else {
+                panic!("expected a paid consensus error, got {result:?}");
+            };
+            assert!(
+                !matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::DocumentPropertyConstraintViolatedError(_)
+                    )
+                ),
+                "expected the schema to refuse the list, got {error:?}"
+            );
+            actual_fees.processing_fee
+        };
+        let rules = || {
+            platform_value!({
+                "noBannedTags": {
+                    "equal": [{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }, 0]
+                }
+            })
+        };
+        let mut repeated = offers_with_banned_tags(rules(), ["aaa"]).await;
+        let mut distinct = offers_with_banned_tags(rules(), ["aaa"]).await;
+        let repeated_fee = refusal_fee(
+            repeated
+                .create(tagged(["aaa", "aaa", "aaa", "aaa", "aaa"]))
+                .await,
+        );
+        let distinct_fee = refusal_fee(
+            distinct
+                .create(tagged(["aaa", "bbb", "ccc", "ddd", "eee"]))
+                .await,
+        );
+        assert_eq!(distinct_fee, repeated_fee);
+        assert!(repeated.stored_offers().is_empty());
+        assert!(distinct.stored_offers().is_empty());
+    }
+
+    /// `sumOf` matching a key by any element of an array of the document: the
+    /// fees of an offer's distinct tags total at most 100.
+    #[tokio::test]
+    async fn should_sum_the_documents_matching_each_distinct_element() {
+        let mut fixture = OfferFixture::with_schemas(
+            tagged_offer_schema(platform_value!({
+                "tagFeesCapped": {
+                    "lessThanOrEqual": [
+                        { "sumOf": ["tagFee", "amount", { "tag": { "in": "tags" } }] },
+                        100
+                    ]
+                }
+            })),
+            [(
+                "tagFee",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "tag": { "type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61, "position": 0 },
+                        "amount": { "type": "integer", "minimum": 0, "maximum": 100000000, "position": 1 }
+                    },
+                    "required": ["tag", "amount"],
+                    "indices": [{
+                        "name": "byTag",
+                        "properties": [{ "tag": "asc" }],
+                        "summable": "amount"
+                    }],
+                    "additionalProperties": false
+                }),
+            )],
+        );
+        for (tag, amount) in [("dash", 60), ("news", 30), ("news", 20)] {
+            assert_matches!(
+                fixture
+                    .create_of("tagFee", |document| {
+                        document.set("tag", Value::Text(tag.to_string()));
+                        document.set("amount", Value::U64(amount));
+                    })
+                    .await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        // 60, then 50 for a tag held twice, then nothing for a tag without fees
+        for tags in [["dash", "dash"], ["news", "news"], ["free", "gift"]] {
+            assert_matches!(
+                fixture.create(tagged(tags)).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        // 60 + 50
+        let result = fixture.create(tagged(["dash", "news"])).await;
+        expect_violated(result, "tagFeesCapped", PropertyConstraintViolation::NotMet);
+        assert_eq!(fixture.stored_offers().len(), 3);
+    }
+
     /// The totals a rule reads leave out the other writes of its batch, which is
     /// sound only while a document batch carries one transition: raising the
     /// limit needs the batch's own writes added to them.

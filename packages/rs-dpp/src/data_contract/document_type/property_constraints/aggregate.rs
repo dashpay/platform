@@ -8,7 +8,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::document::property_names::OWNER_ID;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -98,8 +98,16 @@ impl AggregateRead {
     /// can hold, so none for a list the document leaves out or empties.
     /// Elements are told apart as the key's index tells them apart, by their
     /// serialized key, so a list repeating an element reads its total once.
+    ///
+    /// `declaring` is the type whose rule reads the total, which holds the
+    /// array. A list longer than the array's `maxItems` gives no set: the
+    /// read is built before the document's schema is validated, which refuses
+    /// such a document, and the totals a write reads from state stay within
+    /// what registration counted for the rule, one per element the array may
+    /// hold (`SystemLimits::max_property_constraint_aggregates`).
     pub fn filter_value_sets(
         &self,
+        declaring: DocumentTypeRef,
         counted: DocumentTypeRef,
         document_id: Identifier,
         data: &Value,
@@ -118,6 +126,18 @@ impl AggregateRead {
         let Ok(Some(Value::Array(elements))) = data.get_optional_value_at_path(path) else {
             return Ok(Vec::new());
         };
+        let most_elements = match declaring
+            .flattened_properties()
+            .get(path)
+            .map(|property| &property.property_type)
+        {
+            Some(DocumentPropertyType::TypedArray(array)) => usize::from(array.max_items),
+            // Registration refuses a path naming no typed array
+            _ => 0,
+        };
+        if elements.len() > most_elements {
+            return Ok(Vec::new());
+        }
         let mut seen = BTreeSet::new();
         let mut sets = Vec::new();
         for element in elements {
