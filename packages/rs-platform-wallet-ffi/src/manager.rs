@@ -15,9 +15,9 @@ use crate::persistence::{
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetTruncationsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -407,6 +407,10 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
+        wallet_changeset_truncations: slot!(
+            on_persist_wallet_changeset_truncations_fn,
+            PersistWalletChangesetTruncationsFn
         ),
     }
 }
@@ -1867,47 +1871,34 @@ mod tests {
         assert!(parsed.load_private_contact_scan_state_free.is_none());
     }
 
+    /// A host whose `struct_size` stops before the truncations slot keeps
+    /// its earlier slots and never has this one read.
     #[test]
-    fn should_size_gate_asset_lock_operation_id_slots_independently() {
-        unsafe extern "C" fn persist(
+    fn should_read_the_truncations_slot_only_from_an_extension_that_covers_it() {
+        unsafe extern "C" fn persist_truncations(
             _: *mut c_void,
             _: *const u8,
-            _: *const u8,
-            _: *const u8,
+            _: *const crate::core_wallet_types::ChainTruncationFFI,
+            _: usize,
         ) -> i32 {
             0
         }
-        unsafe extern "C" fn load(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *mut bool,
-            _: *mut u8,
-        ) -> i32 {
-            0
-        }
+        let slot_offset = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_wallet_changeset_truncations_fn
+        );
         let mut ext = PersistenceCallbacksExtension {
-            on_persist_asset_lock_operation_id_fn: Some(persist),
-            on_load_asset_lock_operation_id_fn: Some(load),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            on_persist_wallet_changeset_truncations_fn: Some(persist_truncations),
             ..Default::default()
         };
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
-        assert!(parsed.persist_asset_lock_operation_id.is_some());
-        assert!(parsed.load_asset_lock_operation_id.is_some());
-        ext.struct_size = std::mem::offset_of!(
-            PersistenceCallbacksExtension,
-            on_load_asset_lock_operation_id_fn
-        );
+        assert!(parsed.wallet_changeset_truncations.is_some());
+
+        ext.struct_size = slot_offset;
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
-        assert!(parsed.persist_asset_lock_operation_id.is_some());
-        assert!(parsed.load_asset_lock_operation_id.is_none());
-        ext.struct_size = std::mem::offset_of!(
-            PersistenceCallbacksExtension,
-            on_persist_asset_lock_operation_id_fn
-        );
-        let parsed = unsafe { persistence_extension_callbacks(&ext) };
-        assert!(parsed.persist_asset_lock_operation_id.is_none());
-        assert!(parsed.load_asset_lock_operation_id.is_none());
+        assert!(parsed.wallet_changeset_sweeps.is_some());
+        assert!(parsed.wallet_changeset_truncations.is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height
@@ -2747,5 +2738,47 @@ mod remove_wallet_lifecycle_tests {
 
             drop(in_flight_a);
         });
+    }
+    #[test]
+    fn should_size_gate_asset_lock_operation_id_slots_independently() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_asset_lock_operation_id_fn: Some(persist),
+            on_load_asset_lock_operation_id_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_none());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
     }
 }

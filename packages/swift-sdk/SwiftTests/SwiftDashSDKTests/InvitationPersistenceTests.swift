@@ -75,6 +75,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // persist/load/free trio onto `PersistentPrivateContactRequestsPosition`
             // and `PersistentPrivateShieldedAddress`.
             | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+            // Chain truncations: the handler wires
+            // `on_persist_wallet_changeset_truncations_fn` and cuts the
+            // mirror back in the round that carries them.
+            | PlatformWalletPersistenceCapabilities.coreChainTruncation
 
         XCTAssertEqual(
             capabilities.version,

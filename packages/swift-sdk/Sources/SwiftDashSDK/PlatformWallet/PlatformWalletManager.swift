@@ -126,6 +126,12 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// only honours the declaration when the extension carries the five
     /// scan-state callbacks.
     public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// A round's chain truncations — delivered through the persistence
+    /// extension's size-negotiated truncations callback — are durably
+    /// applied before the rest of their round. Mirrors
+    /// `PersistenceCapabilities::CORE_CHAIN_TRUNCATION`; Rust only honours
+    /// the declaration when the extension actually carries the callback.
+    public static let coreChainTruncation: UInt64 = 1 << 17
 
     public let version: UInt32
     public let bits: UInt64

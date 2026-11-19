@@ -126,6 +126,13 @@ abstract class NativePersistenceBridge {
         const val PRIVATE_ADDRESS_ENTRY_SIZE: Int = 32 + 32 + 43
         const val PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE: Int = 32 + 32
         const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32
+
+        /**
+         * `PersistenceCapabilities::CORE_CHAIN_TRUNCATION` (bit 17,
+         * `0x20000`). The one Kotlin home of this bit, like
+         * [CAPABILITY_CORE_SWEEP_REMOVAL].
+         */
+        const val CAPABILITY_CORE_CHAIN_TRUNCATION: Long = 0x20000
     }
 
     /**
@@ -446,6 +453,47 @@ abstract class NativePersistenceBridge {
         releasedOutpointCount: Int,
         hasWinnerMinedHeight: Boolean,
         winnerMinedHeight: Int,
+    ): Int = 0
+
+    /**
+     * One chain truncation: a fork replaced the chain above [height] and
+     * the wallet dropped what it recorded from the blocks above it.
+     * Descriptor `([BI[BI[BI[BI)I`.
+     *
+     * [txids] packs [txidCount] raw 32-byte txids of removed transactions,
+     * [unconfirmedTxids] packs [unconfirmedTxidCount] txids of
+     * InstantSend-locked transactions kept as unconfirmed, and
+     * [restoredOutpoints] packs [restoredOutpointCount] 36-byte outpoint
+     * keys (raw txid followed by a little-endian vout) of coins the removed
+     * transactions spent.
+     *
+     * Fired before every other core callback of the round, once per
+     * truncation and in order: the rest of the round describes the wallet
+     * after the last one, so a removed transaction can be stored again, in
+     * its new block, by the callbacks that follow. Applying one means
+     * deleting every UTXO a removed transaction created for this wallet,
+     * and the transaction itself unless another wallet of the same store
+     * still has a part in it, keeping each unconfirmed one in the
+     * InstantSend context with no block and this wallet's outputs of it
+     * unconfirmed and InstantSend-locked, marking each restored outpoint
+     * unspent, and lowering a stored sync height above [height] to it. A
+     * transaction or outpoint never stored is a no-op.
+     *
+     * The JNI layer wires the slot only when the concrete bridge OVERRIDES
+     * this method, and Rust attests the capability only for slot present
+     * AND [CAPABILITY_CORE_CHAIN_TRUNCATION] declared through
+     * [persistenceCapabilitiesBits]. Without that, native never sends a
+     * truncation, so this default is never reached for a wired slot.
+     */
+    open fun onWalletChangesetChainTruncated(
+        walletId: ByteArray,
+        height: Int,
+        txids: ByteArray,
+        txidCount: Int,
+        unconfirmedTxids: ByteArray,
+        unconfirmedTxidCount: Int,
+        restoredOutpoints: ByteArray,
+        restoredOutpointCount: Int,
     ): Int = 0
 
     /**
