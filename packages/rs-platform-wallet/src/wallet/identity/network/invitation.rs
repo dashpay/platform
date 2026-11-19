@@ -622,13 +622,33 @@ impl IdentityWallet {
             invitation: out_point,
         };
 
+        let our_keys = keys_map.clone();
         let identity = match self
             .sdk
             .claim_invitation(invitation, keys_map, identity_signer, settings)
             .await
         {
             Ok(identity) => identity,
-            Err(error) => return Err(self.claim_refusal(error).await),
+            Err(error) => {
+                let refusal = self.claim_refusal(error).await;
+                // Refused before sending because an identity already holds
+                // the master key derived at this index: it is this wallet's,
+                // so it is recorded in the slot (releasing the claim's lease)
+                // and the host retries at another index.
+                if let PlatformWalletError::InvitationKeysAlreadyRegistered {
+                    identity_id: Some(owner),
+                    ..
+                } = &refusal
+                {
+                    if let Some(taken) = self
+                        .slot_taken_on_chain(identity_index, &our_keys, &holder, Some(*owner))
+                        .await?
+                    {
+                        return Err(taken);
+                    }
+                }
+                return Err(refusal);
+            }
         };
 
         // Best-effort local bookkeeping — Platform has already accepted the

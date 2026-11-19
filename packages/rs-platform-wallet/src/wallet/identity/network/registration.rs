@@ -198,6 +198,16 @@ impl IdentityWallet {
             match holder {
                 Some(holder @ SlotHolder::Registration { .. }) => {
                     self.require_slot_lease(identity_index, &holder).await?;
+                    // An identity already registered with these keys would
+                    // make Platform refuse this one after its funding is
+                    // spent: record it in the slot and send the host to
+                    // another index instead.
+                    if let Some(taken) = self
+                        .slot_taken_on_chain(identity_index, &keys_map, &holder, None)
+                        .await?
+                    {
+                        return Err(taken);
+                    }
                 }
                 Some(SlotHolder::InvitationClaim { .. }) | None => {
                     return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });

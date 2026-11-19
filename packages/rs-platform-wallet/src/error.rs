@@ -113,6 +113,20 @@ pub enum PlatformWalletError {
     #[error("identity index {identity_index} is not leased to this operation")]
     IdentitySlotNotHeld { identity_index: u32 },
 
+    /// The identity keys derived at `identity_index` already belong to
+    /// `identity_id` on Platform, an identity this wallet did not hold there.
+    /// It is now recorded in that slot and the operation's lease is released;
+    /// nothing was funded. Acquire a slot again and derive the keys at the
+    /// new index.
+    #[error(
+        "identity index {identity_index} already holds identity {identity_id} on Platform; \
+         it is recorded there, acquire another slot"
+    )]
+    IdentitySlotTakenOnChain {
+        identity_index: u32,
+        identity_id: Identifier,
+    },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

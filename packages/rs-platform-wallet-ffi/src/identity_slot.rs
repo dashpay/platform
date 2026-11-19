@@ -18,6 +18,12 @@ use crate::identity_slot_lease_persistence::outpoint_from_bytes;
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
+/// How many times in a row a host acquires a new slot after
+/// `ErrorIdentitySlotTakenOnChain` before giving up: the identity discovery
+/// gap limit (`IDENTITY_GAP_LIMIT`). Each refusal records one identity in its
+/// slot, so a retry never meets the same one.
+pub const IDENTITY_SLOT_TAKEN_RETRY_LIMIT: u32 = 5;
+
 /// Lease an identity slot for a new registration.
 ///
 /// Writes the index to derive the identity keys at to `*out_identity_index`,
@@ -143,4 +149,17 @@ fn release(wallet_handle: Handle, holder: SlotHolder) -> PlatformWalletFFIResult
         identity_wallet.release_identity_slot(holder).await
     }));
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_retry_a_taken_slot_as_often_as_discovery_looks_past_a_gap() {
+        assert_eq!(
+            IDENTITY_SLOT_TAKEN_RETRY_LIMIT,
+            platform_wallet::wallet::identity::network::IDENTITY_GAP_LIMIT
+        );
+    }
 }

@@ -9,12 +9,20 @@
 //! registration's lease lives in memory until its asset lock is tracked,
 //! whose index then keeps the slot.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::platform::Fetch;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::prelude::Identifier;
 
 use dashcore::OutPoint;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::changeset::{PersistenceCapabilities, PlatformWalletChangeSet};
+use crate::changeset::{KeyWithBreadcrumb, PersistenceCapabilities, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::identity::crypto::ParsedInvitation;
@@ -230,6 +238,81 @@ impl IdentityWallet {
         Ok(())
     }
 
+    /// Before anything is funded at `identity_index`: the identity Platform
+    /// holds under `keys_map[0]` (the master key derived there), if any.
+    /// Found, and `expected` (when given) is its id, it is recorded in slot
+    /// `identity_index`, releasing `holder`'s lease in the same write, and
+    /// [`PlatformWalletError::IdentitySlotTakenOnChain`] is returned for the
+    /// caller to hand back. A failed lookup fails closed.
+    ///
+    /// Each key of the found identity whose id and data match `keys_map` is
+    /// stored with its derivation breadcrumb: those are the keys derived at
+    /// this index. Any other key is stored watch-only.
+    pub(crate) async fn slot_taken_on_chain(
+        &self,
+        identity_index: RegistrationIndex,
+        keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
+        holder: &SlotHolder,
+        expected: Option<Identifier>,
+    ) -> Result<Option<PlatformWalletError>, PlatformWalletError> {
+        let Some(master) = keys_map.get(&0) else {
+            return Ok(None);
+        };
+        let hash = master.public_key_hash().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "the master key derived at identity index {identity_index} has no key hash: {e}"
+            ))
+        })?;
+        let found = Identity::fetch(&self.sdk, PublicKeyHash(hash))
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "could not check Platform for an identity at identity index \
+                     {identity_index}: {e}"
+                ))
+            })?;
+        let Some(found) = found else {
+            return Ok(None);
+        };
+        let identity_id = found.id();
+        if expected.is_some_and(|expected| expected != identity_id) {
+            return Ok(None);
+        }
+        let keys = found
+            .public_keys()
+            .iter()
+            .map(|(key_id, key)| {
+                let derived = keys_map.get(key_id).is_some_and(|ours| {
+                    ours.data() == key.data() && ours.key_type() == key.key_type()
+                });
+                KeyWithBreadcrumb {
+                    key: key.clone(),
+                    breadcrumb: derived.then_some((self.wallet_id, identity_index, *key_id)),
+                }
+            })
+            .collect();
+        let mut wm = self.wallet_manager.write().await;
+        let info = self.current_wallet_info_mut(&mut wm)?;
+        info.identity_manager.place_in_slot(
+            found,
+            identity_index,
+            self.wallet_id,
+            Some(holder),
+            keys,
+            &self.persister,
+        )?;
+        tracing::warn!(
+            identity_index,
+            %identity_id,
+            "the identity keys derived at this index already belong to an identity on \
+             Platform; recorded it in the slot"
+        );
+        Ok(Some(PlatformWalletError::IdentitySlotTakenOnChain {
+            identity_index,
+            identity_id,
+        }))
+    }
+
     /// Refuse an invitation claim's slot when the persister cannot keep its
     /// lease across a restart.
     fn require_slot_lease_persistence(&self) -> Result<(), PlatformWalletError> {
@@ -331,10 +414,25 @@ mod tests {
     }
 
     async fn wallet(backend: Arc<Backend>) -> Arc<PlatformWallet> {
+        wallet_answering(backend, None).await
+    }
+
+    /// A wallet whose node answers a lookup of the master key hash
+    /// [`master_keys`] holds with `registered`, when given.
+    async fn wallet_answering(
+        backend: Arc<Backend>,
+        registered: Option<Option<Identity>>,
+    ) -> Arc<PlatformWallet> {
         struct Events;
         impl EventHandler for Events {}
         impl PlatformEventHandler for Events {}
-        let sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        if let Some(registered) = registered {
+            sdk.mock()
+                .expect_fetch(PublicKeyHash([1; 20]), registered)
+                .await
+                .unwrap();
+        }
         let manager = PlatformWalletManager::new(Arc::new(sdk), backend, Arc::new(Events));
         manager
             .create_wallet_from_seed_bytes(
@@ -769,5 +867,167 @@ mod tests {
             refused,
             Err(PlatformWalletError::IdentitySlotNotHeld { identity_index: 0 })
         ));
+    }
+
+    /// An identity on Platform holding [`master_keys`]'s master key, plus a
+    /// key this wallet did not derive.
+    fn registered_with_our_master() -> Identity {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        let mut keys = master_keys();
+        keys.insert(
+            1,
+            IdentityPublicKeyV0 {
+                id: 1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                key_type: KeyType::ECDSA_HASH160,
+                data: vec![2; 20].into(),
+                ..Default::default()
+            }
+            .into(),
+        );
+        Identity::V0(dpp::identity::v0::IdentityV0 {
+            id: Identifier::from([5; 32]),
+            public_keys: keys,
+            balance: 0,
+            revision: 1,
+        })
+    }
+
+    #[tokio::test]
+    async fn should_record_an_identity_already_at_the_slot_and_send_the_host_elsewhere() {
+        let backend = Backend::new(full());
+        let wallet =
+            wallet_answering(backend.clone(), Some(Some(registered_with_our_master()))).await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+
+        let refused = register_at(&wallet, slot.identity_index, Some(slot.holder)).await;
+
+        let id = Identifier::from([5; 32]);
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::IdentitySlotTakenOnChain { identity_index: 0, identity_id }) if identity_id == id
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(tracked_locks(&wallet).await, 0);
+        {
+            let wm = wallet.identity().wallet_manager.read().await;
+            let manager = &wm
+                .get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager;
+            assert_eq!(
+                manager.slot_state(&wallet.wallet_id(), 0),
+                SlotState::Occupied(id)
+            );
+            assert!(manager
+                .leased_slot(&wallet.wallet_id(), &slot.holder)
+                .is_none());
+        }
+        // The derived master key carries its breadcrumb; the other is
+        // watch-only.
+        {
+            let stored = backend.stores.lock().unwrap();
+            let rows = stored
+                .iter()
+                .filter_map(|cs| cs.identity_keys.as_ref())
+                .next_back()
+                .unwrap();
+            assert!(rows.upserts[&(id, 0)].derivation_indices.is_some());
+            assert!(rows.upserts[&(id, 1)].derivation_indices.is_none());
+        }
+        // The next slot is the one past it.
+        let next = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(next.identity_index, 1);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_registration_when_platform_cannot_be_asked_about_its_slot() {
+        // The node is given no answer for the lookup: the check fails closed.
+        let wallet = wallet(Backend::new(full())).await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+
+        let refused = register_at(&wallet, slot.identity_index, Some(slot.holder)).await;
+
+        assert!(
+            matches!(refused, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{refused:?}"
+        );
+        assert_eq!(tracked_locks(&wallet).await, 0);
+    }
+
+    #[tokio::test]
+    async fn should_record_nothing_when_the_found_identity_is_not_the_expected_one() {
+        let wallet = wallet_answering(
+            Backend::new(full()),
+            Some(Some(registered_with_our_master())),
+        )
+        .await;
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+
+        let taken = wallet
+            .identity()
+            .slot_taken_on_chain(
+                slot.identity_index,
+                &master_keys(),
+                &slot.holder,
+                Some(Identifier::from([6; 32])),
+            )
+            .await
+            .unwrap();
+
+        assert!(taken.is_none());
+        let wm = wallet.identity().wallet_manager.read().await;
+        let manager = &wm
+            .get_wallet_info(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager;
+        assert!(manager
+            .leased_slot(&wallet.wallet_id(), &slot.holder)
+            .is_some());
+        assert_eq!(
+            manager.slot_state(&wallet.wallet_id(), 0),
+            SlotState::Leased(SlotLease {
+                holder: slot.holder,
+                phase: SlotLeasePhase::Reserved,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn should_go_on_when_no_identity_holds_the_slots_keys() {
+        let wallet = wallet_answering(Backend::new(full()), Some(None)).await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+
+        let taken = wallet
+            .identity()
+            .slot_taken_on_chain(slot.identity_index, &master_keys(), &slot.holder, None)
+            .await
+            .unwrap();
+
+        assert!(taken.is_none());
     }
 }
