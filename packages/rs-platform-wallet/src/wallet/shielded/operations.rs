@@ -53,7 +53,7 @@ use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
 use dash_sdk::platform::Fetch;
-use dash_sdk::query_types::IdentityNonceFetcher;
+use dash_sdk::query_types::{IdentityBalance, IdentityNonceFetcher};
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
@@ -77,7 +77,7 @@ use dpp::shielded::builder::{
     build_shielded_transfer_transition, build_shielded_withdrawal_transition,
     build_unshield_transition, OrchardProver, SpendableNote,
 };
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::{compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
@@ -1113,6 +1113,29 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         },
         other => other,
     };
+
+    // Refuse before the redrive guard is armed or anything is broadcast: consensus
+    // refuses a debit the identity cannot cover (amount plus the admission floor)
+    // at CheckTx, and a guard armed for a debit that never executes can never be
+    // resolved by the scan. The caller's managed identity may be stale, so read the
+    // proved balance.
+    let fee = compute_shielded_identity_balance_write_fee(2, sdk.version()).map_err(|e| {
+        PlatformWalletError::ShieldedBuildError(format!("compute identity shield fee: {e}"))
+    })?;
+    let required = amount.saturating_add(fee);
+    let available = IdentityBalance::fetch(sdk, identity_id)
+        .await
+        .map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!("fetch identity balance: {e}"))
+        })?
+        .ok_or(PlatformWalletError::IdentityBalanceUnavailable(identity_id))?;
+    if available < required {
+        return Err(PlatformWalletError::InsufficientIdentityCredits {
+            identity_id,
+            required,
+            available,
+        });
+    }
 
     let nonce = sdk
         .get_identity_nonce(identity_id, true, None)
@@ -4864,6 +4887,149 @@ mod redrive_tests {
             signature: BinaryData::new(vec![]),
         }
         .into()
+    }
+
+    /// Signer and prover for the pre-broadcast refusals: neither is reached.
+    #[derive(Debug)]
+    struct UnreachableIdentitySigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for UnreachableIdentitySigner {
+        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+            unreachable!("nothing is signed")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, ProtocolError> {
+            unreachable!("nothing is signed")
+        }
+
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    struct UnreachableIdentityProver;
+    impl OrchardProver for UnreachableIdentityProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    /// Run `shield_from_identity_to` to a third party against a mock whose
+    /// proved balance for the identity is `proved_balance`, while the managed
+    /// identity (the caller's possibly stale copy) claims a huge balance.
+    /// Returns the result and the store, to inspect what was armed or recorded.
+    async fn identity_shield_with_proved_balance(
+        proved_balance: u64,
+        amount: u64,
+    ) -> (
+        Result<(Credits, ResponseMetadata), PlatformWalletError>,
+        Arc<RwLock<InMemoryShieldedStore>>,
+        SubwalletId,
+    ) {
+        use dash_sdk::query_types::IdentityBalance;
+        use dpp::identity::v0::IdentityV0;
+
+        let identity_id = Identifier::from([0x71; 32]);
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        sdk.mock()
+            .expect_fetch::<IdentityBalance, Identifier>(identity_id, Some(proved_balance))
+            .await
+            .expect("balance expectation");
+        let sdk = Arc::new(sdk);
+        let wallet_id = [0x72; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("keys")
+            .viewing_keys();
+        let recipient = OrchardKeySet::from_seed(&[0x24; 32], Network::Testnet, 0)
+            .expect("recipient keys")
+            .default_address;
+        let identity = Identity::V0(IdentityV0 {
+            id: identity_id,
+            public_keys: Default::default(),
+            balance: u64::MAX / 2,
+            revision: 0,
+        });
+        let result = shield_from_identity_to(
+            &sdk,
+            &store,
+            None,
+            wallet_id,
+            &keys,
+            0,
+            Some(&recipient),
+            &identity,
+            amount,
+            [0u8; 36],
+            &UnreachableIdentitySigner,
+            &UnreachableIdentityProver,
+        )
+        .await;
+        (result, store, id)
+    }
+
+    async fn assert_nothing_armed_or_recorded(
+        store: &Arc<RwLock<InMemoryShieldedStore>>,
+        id: SubwalletId,
+    ) {
+        let store = store.read().await;
+        assert!(store.pending_redrives(id).unwrap().is_empty(), "no guard");
+        assert!(store.get_activity_ids(id).unwrap().is_empty(), "no row");
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_identity_shield_whose_balance_is_one_credit_short() {
+        let amount = 1_000_000;
+        let fee = dpp::shielded::compute_shielded_identity_balance_write_fee(
+            2,
+            PlatformVersion::latest(),
+        )
+        .expect("fee");
+
+        let (result, store, id) =
+            identity_shield_with_proved_balance(amount + fee - 1, amount).await;
+
+        match result {
+            Err(PlatformWalletError::InsufficientIdentityCredits {
+                required,
+                available,
+                ..
+            }) => {
+                assert_eq!(required, amount + fee);
+                assert_eq!(available, amount + fee - 1);
+            }
+            other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
+        }
+        assert_nothing_armed_or_recorded(&store, id).await;
+    }
+
+    #[tokio::test]
+    async fn should_pass_the_balance_check_when_it_covers_the_amount_and_fee_exactly() {
+        let amount = 1_000_000;
+        let fee = dpp::shielded::compute_shielded_identity_balance_write_fee(
+            2,
+            PlatformVersion::latest(),
+        )
+        .expect("fee");
+
+        let (result, _store, _id) = identity_shield_with_proved_balance(amount + fee, amount).await;
+
+        // The unconfigured mock refuses the nonce fetch that follows the check.
+        match result {
+            Err(PlatformWalletError::ShieldedBuildError(reason)) => {
+                assert!(reason.contains("fetch identity nonce"), "{reason}")
+            }
+            other => panic!("expected to reach the nonce fetch, got {other:?}"),
+        }
     }
 
     #[tokio::test]
