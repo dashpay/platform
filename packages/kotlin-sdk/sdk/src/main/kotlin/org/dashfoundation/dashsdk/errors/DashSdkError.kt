@@ -511,7 +511,12 @@ sealed class DashSdkError(
             cause,
         )
 
-        /** The purchasing identity cannot cover price plus the fee reserve. */
+        /**
+         * `ErrorInsufficientIdentityCredits` (native code 39). The identity
+         * cannot cover the amount plus the fee: a DPNS purchase's price plus
+         * its fee reserve, or an identity-funded shield's amount plus its
+         * fee. Nothing was signed or broadcast.
+         */
         class InsufficientIdentityCredits(
             val identityId: String,
             val requiredCredits: ULong,

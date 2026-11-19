@@ -1919,6 +1919,13 @@ class PlatformWalletManager(
      * default Orchard address, so there is no recipient parameter). Blocks for
      * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
      *
+     * Refused before anything is signed or broadcast, so nothing was debited:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
+     *    the identity's proved balance cannot cover [amount] plus the fee;
+     *    the error carries the required and available credits.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *    Platform has no balance for the identity yet; retry later.
+     *
      * @param walletId the 32-byte wallet id.
      * @param identityId the 32-byte funding identity id.
      * @param amount credits to shield (1 DASH = 1e11).
@@ -1971,6 +1978,13 @@ class PlatformWalletManager(
      * byte length must be at most 32. Rust owns these rules, as it owns the
      * zero-amount rejection, so a violation surfaces as a native error, not a
      * Kotlin precondition.
+     *
+     * Refused before anything is signed or broadcast, so nothing was debited:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
+     *    the identity's proved balance cannot cover [amount] plus the fee;
+     *    the error carries the required and available credits.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *    Platform has no balance for the identity yet; retry later.
      *
      * Do NOT retry on either of these; a retry could debit the identity
      * twice, and the next sync reconciles the outcome:
