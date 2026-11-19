@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **31**
+Capabilities tracked: **32**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 18 | 11 | 1 | 1 |
-| Swift | Example app | 5 | 14 | 2 | 10 |
-| Kotlin | SDK | 14 | 14 | 2 | 1 |
-| Kotlin | Example app | 6 | 13 | 1 | 11 |
+| Swift | SDK | 19 | 11 | 1 | 1 |
+| Swift | Example app | 5 | 15 | 2 | 10 |
+| Kotlin | SDK | 15 | 14 | 2 | 1 |
+| Kotlin | Example app | 6 | 14 | 1 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 19 |
-| Kotlin | 5 | 8 | 18 |
+| Swift | 2 | 11 | 19 |
+| Kotlin | 5 | 9 | 18 |
 
 ## Capability status
 
@@ -55,6 +55,7 @@ Capabilities tracked: **31**
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
+| `identity.slot_leases` | supported / partial / required | supported / partial / required |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.
