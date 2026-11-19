@@ -5910,6 +5910,9 @@ fn decode_dashpay_backfill(
     )
 }
 
+/// Build wallet state, skipping address rows refused during pool restoration.
+/// UTXOs and the sync cursor still restore, so the balance may include coins
+/// whose signing paths are unavailable until their address rows are recovered.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
