@@ -439,6 +439,41 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(keyMessage, detail)
     }
 
+    func testShouldPreserveShieldedTreeInconsistentFromFFI() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TREE_INCONSISTENT
+        )
+        XCTAssertEqual(code, .errorShieldedTreeInconsistent)
+        XCTAssertEqual(code.rawValue, 67)
+        let detail = "Shielded commitment tree has 3 leaves, but a sufficiently fresh sync reports only 2"
+        guard case .shieldedTreeInconsistent(let message) = PlatformWalletError(
+            code: code, message: detail
+        ) else { return XCTFail("lost typed tree-inconsistent error") }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// The background sync callback carries the same code, so a host can
+    /// offer the rebuild without parsing the message.
+    func testShouldTypeShieldedSyncCallbackResultFromItsErrorCode() {
+        let detail = "Shielded commitment tree has 3 leaves, but a sufficiently fresh sync reports only 2"
+        detail.withCString { cString in
+            var ffi = ShieldedSyncWalletResultFFI()
+            ffi.error_message = cString
+            ffi.error_code = PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TREE_INCONSISTENT
+            let result = ShieldedWalletSyncResult(ffi: ffi)
+            XCTAssertEqual(result.errorCode, .errorShieldedTreeInconsistent)
+            guard case .shieldedTreeInconsistent(let message)? = result.error else {
+                return XCTFail("callback result lost the typed tree-inconsistent error")
+            }
+            XCTAssertEqual(message, detail)
+
+            var ok = ShieldedSyncWalletResultFFI()
+            ok.success = true
+            ok.error_code = PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
+            XCTAssertNil(ShieldedWalletSyncResult(ffi: ok).error)
+        }
+    }
+
     func testShouldPreserveSpvProcessRestartRequiredFromFFI() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SPV_PROCESS_RESTART_REQUIRED
