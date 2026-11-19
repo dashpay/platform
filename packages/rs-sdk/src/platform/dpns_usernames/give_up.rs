@@ -44,6 +44,17 @@ const TOMBSTONE: &str = "tombstone";
 /// numbers them, that declares the `tombstone` type.
 const FIRST_DPNS_VERSION_WITH_TOMBSTONES: FeatureVersion = 3;
 
+/// What the network holds of a DPNS name ([`Sdk::dpns_name_state`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DpnsNameState {
+    /// An identity holds the name: its `domain` document exists.
+    Registered,
+    /// The name was given up for good: its `tombstone` document exists, and no `domain`.
+    Tombstoned,
+    /// Neither exists: anybody may register the name.
+    Free,
+}
+
 /// How many times a read is made when a node behind what the SDK has already verified
 /// answers it: another node usually answers the next one.
 const READ_ATTEMPTS: usize = 3;
@@ -159,10 +170,9 @@ where
 /// its own block, so a domain absent at one block and a tombstone absent at an earlier one
 /// can be a name that was registered then and is tombstoned now, never free. An absence
 /// proved earlier is read again, [`READ_ATTEMPTS`] times at most, and is then the last one's
-/// [`StaleNodeError::Height`], which a caller may retry: never "not tombstoned". Without a
-/// `not_before_height` the first answer is taken.
+/// [`StaleNodeError::Height`], which a caller may retry: never "not tombstoned".
 pub(super) async fn name_tombstoned_not_before<F, R>(
-    not_before_height: Option<u64>,
+    not_before_height: u64,
     mut read: F,
 ) -> Result<bool, Error>
 where
@@ -175,12 +185,11 @@ where
         if tombstone.is_some() {
             return Ok(true);
         }
-        let Some(expected_height) = not_before_height.filter(|height| metadata.height < *height)
-        else {
+        if metadata.height >= not_before_height {
             return Ok(false);
-        };
+        }
         behind = Some(StaleNodeError::Height {
-            expected_height,
+            expected_height: not_before_height,
             received_height: metadata.height,
             tolerance_blocks: 0,
         });
@@ -320,26 +329,22 @@ impl Sdk {
     /// still hold from before the upgrade to DPNS v3 (a known-contracts cache warmed earlier).
     /// Such a contract declares no tombstone while the network stores them, so a tombstoned
     /// name would read as free. A contract without the type is therefore taken as the
-    /// network's only when a verified response of this call
-    /// (`verified_response_in_this_call`) proved that the network runs a protocol version
-    /// before DPNS v3. In every other case what the network runs is not known from the
-    /// contract in hand (the response may be older than an upgrade, the SDK's version may be
-    /// pinned, or proofs may be off), so the network is asked for its contract, which is
-    /// handed to the provider when it declares tombstones, as a registration does. A failed
-    /// fetch is an error, never "no tombstone", and so is a fetched contract declaring none
-    /// once a verified response shows the network past the upgrade
+    /// network's only when a verified response has shown nothing past a protocol version
+    /// before DPNS v3. The caller has just read the name's domain, so one such response is of
+    /// this call: the SDK's own version, which may be pinned or stale, decides nothing. In
+    /// every other case the network is asked for its contract, which is handed to the
+    /// provider when it declares tombstones, as a registration does. A failed fetch is an
+    /// error, never "no tombstone", and so is a fetched contract declaring none once a
+    /// verified response shows the network past the upgrade
     /// ([`Sdk::fetch_network_dpns_contract_declaring_tombstones`]).
     async fn dpns_contract_declaring_tombstones(
         &self,
         dpns_contract: Arc<DataContract>,
-        verified_response_in_this_call: bool,
     ) -> Result<Option<Arc<DataContract>>, Error> {
         if dpns_contract.has_document_type_for_name(TOMBSTONE) {
             return Ok(Some(dpns_contract));
         }
-        if verified_response_in_this_call
-            && self.verified_network_declares_tombstones() == Some(false)
-        {
+        if self.verified_network_declares_tombstones() == Some(false) {
             return Ok(None);
         }
         let Some(network_contract) = self
@@ -355,23 +360,20 @@ impl Sdk {
         Ok(Some(network_contract))
     }
 
-    /// Whether the name `normalized_label` under `dash` is tombstoned, read under
-    /// `dpns_contract` or, when that one declares no tombstone, under the contract the
-    /// network stores ([`Sdk::dpns_contract_declaring_tombstones`]). Never before DPNS v3,
-    /// whose contract declares no tombstone.
-    ///
-    /// `domain_absent_at_height` is the block a verified response of this call proved the
-    /// name's domain absent at, `None` when the call read no domain. It says a response of
-    /// this call showed what the network runs, and holds the tombstone's absence to a block
-    /// no earlier ([`name_tombstoned_not_before`]).
+    /// Whether the name `normalized_label` under `dash` is tombstoned, once a verified
+    /// response of this call has proved its domain absent at block `domain_absent_at_height`.
+    /// Read under `dpns_contract` or, when that one declares no tombstone, under the contract
+    /// the network stores ([`Sdk::dpns_contract_declaring_tombstones`]); never before DPNS v3,
+    /// whose contract declares no tombstone. The tombstone's absence is held to the domain's
+    /// block or a later one ([`name_tombstoned_not_before`]).
     pub(super) async fn dpns_name_tombstoned_under(
         &self,
         dpns_contract: Arc<DataContract>,
         normalized_label: String,
-        domain_absent_at_height: Option<u64>,
+        domain_absent_at_height: u64,
     ) -> Result<bool, Error> {
         let Some(dpns_contract) = self
-            .dpns_contract_declaring_tombstones(dpns_contract, domain_absent_at_height.is_some())
+            .dpns_contract_declaring_tombstones(dpns_contract)
             .await?
         else {
             return Ok(false);
@@ -386,8 +388,45 @@ impl Sdk {
         .await
     }
 
+    /// What the network holds of the name `normalized_label` under `dash`: the one read
+    /// behind [`Sdk::is_dpns_name_available`] and [`Sdk::is_dpns_name_tombstoned`].
+    ///
+    /// The name's domain is read first. Found, the name is registered, and no tombstone is
+    /// read: a tombstone create deletes the domain, so a name never has both. Proved absent,
+    /// its verified response says what the network runs and at which block the domain was
+    /// absent, and the tombstone is read against both
+    /// ([`Sdk::dpns_name_tombstoned_under`]). Before DPNS v3 an absent domain is a free name:
+    /// at a block of such a protocol version no name was ever deleted or tombstoned.
+    pub(super) async fn dpns_name_state(
+        &self,
+        normalized_label: String,
+    ) -> Result<DpnsNameState, Error> {
+        let dpns_contract = self.fetch_dpns_contract().await?;
+        // A proven absence comes back as entries holding `None`, which the read takes as no
+        // document
+        let (domain, domain_metadata) = self
+            .dpns_name_document_with_metadata(
+                dpns_contract.clone(),
+                DOMAIN,
+                normalized_label.clone(),
+            )
+            .await?;
+        if domain.is_some() {
+            return Ok(DpnsNameState::Registered);
+        }
+        let tombstoned = self
+            .dpns_name_tombstoned_under(dpns_contract, normalized_label, domain_metadata.height)
+            .await?;
+        Ok(if tombstoned {
+            DpnsNameState::Tombstoned
+        } else {
+            DpnsNameState::Free
+        })
+    }
+
     /// Whether a DPNS name is tombstoned: its owner gave it up for good, and nobody can
-    /// register it while the tombstone exists.
+    /// register it while the tombstone exists. `false` for a registered name, whose domain
+    /// is read first, and for a free one.
     ///
     /// # Arguments
     ///
@@ -396,16 +435,14 @@ impl Sdk {
     /// # Errors
     ///
     /// Returns an error, never `false`, when the SDK resolves a DPNS contract declaring no
-    /// tombstone and the contract the network stores can not be read.
+    /// tombstone and the contract the network stores can not be read, or when every node
+    /// answering about the tombstone is behind the one that answered about the domain.
     pub async fn is_dpns_name_tombstoned(&self, name: &str) -> Result<bool, Error> {
         let normalized_label = normalize_dpns_label(name);
         if normalized_label.is_empty() {
             return Ok(false);
         }
-        let dpns_contract = self.fetch_dpns_contract().await?;
-        // Nothing this call has read says what the network runs
-        self.dpns_name_tombstoned_under(dpns_contract, normalized_label, None)
-            .await
+        Ok(self.dpns_name_state(normalized_label).await? == DpnsNameState::Tombstoned)
     }
 
     /// Deletes a DPNS name its owner no longer wants. The name is free again: anybody may
@@ -668,11 +705,11 @@ mod tests {
         expect_name_document(&mut sdk, TOMBSTONE, "a11ce", None).await;
 
         assert!(sdk
-            .dpns_name_tombstoned_under(dpns_v3(), "b0b".to_string(), None)
+            .dpns_name_tombstoned_under(dpns_v3(), "b0b".to_string(), 0)
             .await
             .expect("the query answers"));
         assert!(!sdk
-            .dpns_name_tombstoned_under(dpns_v3(), "a11ce".to_string(), None)
+            .dpns_name_tombstoned_under(dpns_v3(), "a11ce".to_string(), 0)
             .await
             .expect("the query answers"));
     }

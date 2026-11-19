@@ -666,32 +666,7 @@ impl Sdk {
             return Ok(false);
         }
 
-        let dpns_contract = self.fetch_dpns_contract().await?;
-
-        // A proven absence comes back as entries holding `None`, which the read below
-        // takes as no document: the name is taken only when the network holds its domain
-        let (domain, domain_metadata) = self
-            .dpns_name_document_with_metadata(
-                dpns_contract.clone(),
-                "domain",
-                normalized_label.clone(),
-            )
-            .await?;
-        if domain.is_some() {
-            return Ok(false);
-        }
-
-        // The domain query above was answered by the network: its verified response says
-        // what the network runs, and at which block the domain was absent. The tombstone's
-        // absence is held to that block or a later one, as a tombstone create deletes the
-        // domain in its own block
-        Ok(!self
-            .dpns_name_tombstoned_under(
-                dpns_contract,
-                normalized_label,
-                Some(domain_metadata.height),
-            )
-            .await?)
+        Ok(self.dpns_name_state(normalized_label).await? == give_up::DpnsNameState::Free)
     }
 
     /// Resolve a DPNS name to an identity ID
@@ -1209,6 +1184,7 @@ mod tests {
         let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
         expect_network_dpns(&mut sdk, dpns_v3()).await;
         expect_bobs_tombstone(&mut sdk, seeded_at_13, Some(bob_tombstone())).await;
+        expect_no_domain_of_bob(&mut sdk).await;
         assert!(!resolves_dpns_with_tombstones(&provider));
         assert_eq!(sdk.protocol_version_number(), 13);
 
@@ -1238,29 +1214,53 @@ mod tests {
     }
 
     /// An SDK with a pinned version never raises it from a response, so it does not learn
-    /// what the network runs from what it reads. Pinned to the network's version by its
+    /// what the network runs from its own version. Pinned to the network's version by its
     /// host, it still reads the tombstone under the contract the network stores when its
-    /// provider holds DPNS v2. (Pinned below the network's version it can not parse the
-    /// network's contract, and the reads fail.)
+    /// provider holds DPNS v2: the domain read's verified response shows the network past the
+    /// upgrade. (Pinned below the network's version it can not parse the network's contract,
+    /// and the reads fail.)
     #[tokio::test]
     async fn should_find_a_tombstone_with_a_pinned_version() {
-        let provider = DpnsV2ContextProvider::default();
-        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, pinned_at_latest);
-        expect_network_dpns(&mut sdk, dpns_v3()).await;
-        expect_bobs_tombstone(&mut sdk, pinned_at_latest, Some(bob_tombstone())).await;
-        expect_no_domain_of_bob(&mut sdk).await;
+        // Each read starts from a provider holding DPNS v2, which the read replaces
+        for read in ["available", "tombstoned"] {
+            let provider = DpnsV2ContextProvider::default();
+            let mut sdk = sdk_with_a_dpns_v2_provider(&provider, pinned_at_latest);
+            expect_network_dpns(&mut sdk, dpns_v3()).await;
+            expect_bobs_tombstone(&mut sdk, pinned_at_latest, Some(bob_tombstone())).await;
+            expect_no_domain_of_bob(&mut sdk).await;
 
-        // The availability read comes first: its domain query is read under the DPNS v2 the
-        // provider holds, which the tombstone read then replaces with the network's
+            if read == "available" {
+                assert!(!sdk
+                    .is_dpns_name_available("Bob")
+                    .await
+                    .expect("the name is judged"));
+            } else {
+                assert!(sdk
+                    .is_dpns_name_tombstoned("Bob")
+                    .await
+                    .expect("the tombstone is read"));
+            }
+            assert!(resolves_dpns_with_tombstones(&provider), "{read}");
+        }
+    }
+
+    /// A registered name is not tombstoned, and its tombstone is not read: the domain found
+    /// answers, as a tombstone create deletes the domain. The mock holds no other
+    /// expectation, so neither the network's contract nor a tombstone is asked for.
+    #[tokio::test]
+    async fn should_not_read_a_tombstone_of_a_registered_name() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob", Identifier::new([1u8; 32])).await;
+
         assert!(!sdk
-            .is_dpns_name_available("Bob")
+            .is_dpns_name_tombstoned("Bob.dash")
             .await
-            .expect("the name is judged"));
-        assert!(resolves_dpns_with_tombstones(&provider));
-        assert!(sdk
-            .is_dpns_name_tombstoned("Bob")
+            .expect("the domain answers"));
+        assert!(!sdk
+            .is_dpns_name_available("Bob.dash")
             .await
-            .expect("the tombstone is read"));
+            .expect("the domain answers"));
     }
 
     /// When the network's DPNS contract can not be read (here no fetch is answered, as when
@@ -1314,30 +1314,37 @@ mod tests {
         }
     }
 
-    /// An SDK pinned to protocol version 14 that a verified response has shown a network at
-    /// the latest version, with a provider holding DPNS v2, answered with DPNS v2 again (a
-    /// node behind the network, whose response a pinned SDK takes as proved at its own
-    /// version): the reads fail instead of answering "not tombstoned" or "available".
+    /// A freshly built SDK pinned to protocol version 14, which has verified nothing yet,
+    /// with a provider holding DPNS v2, on a network at the latest version. Its pinned
+    /// version says nothing of the network. The domain read of the same call does: its
+    /// verified response shows the network past the upgrade, so the provider's DPNS v2 is not
+    /// taken as the network's and the network is asked for its contract. Answered with DPNS
+    /// v2 again (a node behind the network), the reads fail instead of answering "not
+    /// tombstoned" or "available".
+    ///
+    /// The mock SDK does not count a scripted answer as verified, so what the domain read's
+    /// verified response shows on a network is recorded here by hand.
     #[tokio::test]
-    async fn should_fail_a_pinned_sdk_read_answered_with_the_contract_the_upgrade_replaced() {
+    async fn should_fail_a_fresh_pinned_sdk_read_answered_with_the_contract_the_upgrade_replaced() {
         let provider = DpnsV2ContextProvider::default();
         let mut sdk = sdk_with_a_dpns_v2_provider(&provider, |builder| {
             builder.with_version(PlatformVersion::get(14).expect("protocol version 14"))
         });
+        assert_eq!(sdk.protocol_version_info().verified_version, None);
         sdk.accept_verified_metadata("getDocuments", &proved_at(LATEST_VERSION), None)
             .expect("the metadata is accepted");
-        assert_eq!(sdk.protocol_version_number(), 14);
         expect_network_dpns(&mut sdk, dpns_v2()).await;
         expect_no_domain_of_bob(&mut sdk).await;
 
         assert!(sdk.is_dpns_name_tombstoned("Bob").await.is_err());
         assert!(sdk.is_dpns_name_available("Bob").await.is_err());
+        assert_eq!(sdk.protocol_version_number(), 14);
         assert!(!resolves_dpns_with_tombstones(&provider));
     }
 
-    /// A verified response of the same call that proves the network runs protocol version
-    /// 14 settles it without another read: the mock SDK holds no expectation. The same
-    /// evidence from before the call does not, as the network may have upgraded since.
+    /// A verified response that shows the network at protocol version 14, as the domain read
+    /// of a call on such a network is, settles it without another read: at a block of that
+    /// version no name was ever tombstoned. The mock SDK holds no expectation.
     #[tokio::test]
     async fn should_read_nothing_more_once_a_verified_response_proves_a_network_before_dpns_v3() {
         let provider = DpnsV2ContextProvider::default();
@@ -1353,13 +1360,9 @@ mod tests {
         .expect("the metadata is accepted");
 
         assert!(!sdk
-            .dpns_name_tombstoned_under(Arc::new(dpns_v2()), "b0b".to_string(), Some(0))
+            .dpns_name_tombstoned_under(Arc::new(dpns_v2()), "b0b".to_string(), 0)
             .await
             .expect("nothing is read"));
-        assert!(sdk
-            .dpns_name_tombstoned_under(Arc::new(dpns_v2()), "b0b".to_string(), None)
-            .await
-            .is_err());
     }
 
     /// The domain of `label.dash` held by `owner`, as a proof returns it under DPNS v2.
@@ -2165,7 +2168,7 @@ mod tests {
             )),
             no_tombstone_at(100),
         ]);
-        let tombstoned = give_up::name_tombstoned_not_before(Some(101), || {
+        let tombstoned = give_up::name_tombstoned_not_before(101, || {
             ready(
                 responses
                     .borrow_mut()
@@ -2185,7 +2188,7 @@ mod tests {
     #[tokio::test]
     async fn should_fail_when_every_tombstone_absence_is_older_than_the_domains() {
         let reads = Cell::new(0);
-        let result = give_up::name_tombstoned_not_before(Some(101), || {
+        let result = give_up::name_tombstoned_not_before(101, || {
             reads.set(reads.get() + 1);
             ready(no_tombstone_at(100))
         })
@@ -2208,16 +2211,13 @@ mod tests {
         );
     }
 
-    /// An absence proved at the domain's block or a later one answers at once, and so does
-    /// any absence when the call read no domain. A tombstone found answers whatever block it
-    /// was read at, as a tombstone never leaves.
+    /// An absence proved at the domain's block or a later one answers at once. A tombstone
+    /// found answers whatever block it was read at, as a tombstone never leaves.
     #[tokio::test]
     async fn should_take_a_tombstone_absence_no_older_than_the_domains() {
-        for (not_before_height, proved_at_height) in
-            [(Some(101), 101), (Some(101), 102), (None, 100)]
-        {
+        for proved_at_height in [101, 102] {
             let reads = Cell::new(0);
-            let tombstoned = give_up::name_tombstoned_not_before(not_before_height, || {
+            let tombstoned = give_up::name_tombstoned_not_before(101, || {
                 reads.set(reads.get() + 1);
                 ready(no_tombstone_at(proved_at_height))
             })
@@ -2228,7 +2228,7 @@ mod tests {
             assert!(!tombstoned);
         }
 
-        let tombstoned = give_up::name_tombstoned_not_before(Some(101), || {
+        let tombstoned = give_up::name_tombstoned_not_before(101, || {
             ready(Ok((
                 Some(bob_tombstone()),
                 ResponseMetadata {
