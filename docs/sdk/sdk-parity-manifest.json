@@ -67,11 +67,13 @@
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_identity_create_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_register_identity_with_funding_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_register_identity_with_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_with_signer.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_sync_private_contact_requests": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
@@ -2104,7 +2106,7 @@
     },
     {
       "id": "identity.slot_leases",
-      "title": "Wallet-owned identity slots for registration, invitation claim and voucher reclaim",
+      "title": "Wallet-owned identity slots for registration (asset lock, platform address, shielded pool), invitation claim and voucher reclaim",
       "area": "shared_policy",
       "shared_apis": [
         "platform_wallet_identity_slot_acquire_registration",
@@ -2112,6 +2114,8 @@
         "platform_wallet_identity_slot_release_registration",
         "platform_wallet_identity_slot_release_invitation_claim",
         "platform_wallet_register_identity_with_funding_signer",
+        "platform_wallet_register_identity_with_signer",
+        "platform_wallet_manager_shielded_identity_create_from_pool",
         "platform_wallet_resume_identity_with_existing_asset_lock_signer",
         "platform_wallet_claim_invitation"
       ],
@@ -2125,13 +2129,13 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "SDK wraps acquire/release and types codes 77/78; SwiftExampleApp takes every index from the wallet. Platform-address and shielded registrations take no slot holder in Rust yet, and no restart or on-chain-taken retry was executed."
+          "reason": "SDK wraps acquire/release and types codes 77/78; SwiftExampleApp takes every index from the wallet on every registration path. No restart or on-chain-taken retry was executed."
         },
         "kotlin": {
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "JNI + SDK wrap acquire/release and type codes 77/78; KotlinExampleApp takes every index from the wallet. Instrumented JNI smoke not run; platform-address and shielded registrations take no slot holder in Rust yet; no restart executed."
+          "reason": "JNI + SDK wrap acquire/release and type codes 77/78; KotlinExampleApp takes every index from the wallet on every registration path. Instrumented JNI smoke not run; no restart executed."
         }
       },
       "verification": [
