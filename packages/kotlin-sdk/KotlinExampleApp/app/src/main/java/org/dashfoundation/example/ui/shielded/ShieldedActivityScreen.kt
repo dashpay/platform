@@ -131,6 +131,7 @@ private fun statusLabel(status: Int): String = when (status) {
     0 -> "Pending"
     1 -> "Confirmed"
     2 -> "Failed"
+    4 -> "Failed, inputs spent"
     else -> "Unknown"
 }
 

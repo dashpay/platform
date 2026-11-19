@@ -47,6 +47,8 @@
 
 use crate::credits::parse_credit_rows;
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
+#[cfg(feature = "shielded")]
+use crate::persistence::restrict_shielded_settlement_writers;
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
 };
@@ -269,6 +271,8 @@ fn bridge_persistence(env: &mut JNIEnv, persistence_bridge: &JObject) -> Option<
     let context = Box::into_raw(Box::new(KotlinPersistenceCtx::new(global)));
     let mut callbacks: PersistenceCallbacks = build_vtable(context as *mut c_void);
     restrict_account_writers(env, persistence_bridge, &mut callbacks);
+    #[cfg(feature = "shielded")]
+    restrict_shielded_settlement_writers(env, persistence_bridge, &mut callbacks);
     let extension = build_extension(env, persistence_bridge);
     Some(BridgePersistence {
         context,

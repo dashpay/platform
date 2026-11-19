@@ -604,6 +604,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A shielded identity create proven unable to execute without its
+    /// identity keeps its own code and typed case, apart from an unconfirmed
+    /// create (17).
+    func testShouldReportAConsumedShieldedIdentityCreateByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_CREATE_INPUTS_CONSUMED
+        )
+        XCTAssertEqual(code, .errorShieldedIdentityCreateInputsConsumed)
+        XCTAssertEqual(code.rawValue, 77)
+        let detail = "Shielded identity create did not create its identity"
+        guard case .shieldedIdentityCreateInputsConsumed(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed inputs-consumed identity create error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
