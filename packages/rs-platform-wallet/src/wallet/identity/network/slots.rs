@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use dash_sdk::platform::dashpay::identity_id_for_out_point;
 use dash_sdk::platform::types::identity::PublicKeyHash;
 use dash_sdk::platform::Fetch;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -31,6 +32,7 @@ use crate::wallet::identity::state::{
 };
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
+use super::invitation::InvitationClaimantKey;
 use super::registration::derived_keys;
 use super::*;
 
@@ -49,6 +51,20 @@ pub enum SlotRequest<'a> {
 pub(crate) enum ResolvedSlotRequest {
     Registration,
     InvitationClaim { invitation: OutPoint },
+}
+
+/// What [`IdentityWallet::resolve_submitted_claim_leases`] did.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ClaimLeaseResolution {
+    /// Claims found landed: their identity now holds the slot.
+    pub(crate) landed: usize,
+    /// Leases ended: the claim can never execute, or its slot was filled.
+    pub(crate) ended: usize,
+    /// Leases left held: the claim may still execute, or it is unknown.
+    pub(crate) held: usize,
+    /// An identity was found whose owner only this wallet's master key could
+    /// tell, and none was given.
+    pub(crate) needs_key: bool,
 }
 
 /// A slot leased to an operation.
@@ -376,6 +392,195 @@ impl IdentityWallet {
                 .release_shielded_create_hold(&self.wallet_id, identity_index);
         }
         Ok(())
+    }
+
+    /// Settle this wallet's invitation claim leases whose claim may have
+    /// reached Platform (`Submitted`), from what Platform holds at each
+    /// claim's identity id (derived from its invitation outpoint alone), and
+    /// end every claim lease restored for a slot an identity has filled
+    /// since. Run at startup: a claim interrupted or left unanswered by an
+    /// earlier process otherwise holds its slot for good.
+    ///
+    /// Per `Submitted` lease:
+    /// - no identity at the id, or Platform not answering: it may still
+    ///   execute, so the slot stays held;
+    /// - an identity holding this wallet's master key at the slot: the claim
+    ///   landed; the identity is recorded in the slot, ending the lease;
+    /// - an identity that does not hold it: the invitation was claimed
+    ///   otherwise (by another wallet, or by this one at another slot), so
+    ///   this claim can never execute; the lease ends;
+    /// - whose identity it is cannot be told (`key` is
+    ///   [`InvitationClaimantKey::Unavailable`], or the derivation fails):
+    ///   the slot stays held, and [`ClaimLeaseResolution::needs_key`] says a
+    ///   key would settle it.
+    ///
+    /// Every end is stored durably; a failed store keeps the lease. A lease
+    /// that stays is left `Submitted` for a later start (or a retried claim)
+    /// to settle.
+    pub(crate) async fn resolve_submitted_claim_leases(
+        &self,
+        key: InvitationClaimantKey<'_>,
+    ) -> Result<ClaimLeaseResolution, PlatformWalletError> {
+        let leases = {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?
+                .identity_manager
+                .claim_leases(&self.wallet_id)
+        };
+        let mut resolution = ClaimLeaseResolution::default();
+        for lease in leases {
+            if lease.slot_occupied {
+                if self.end_claim_lease(lease.invitation).await {
+                    resolution.ended += 1;
+                }
+                continue;
+            }
+            if lease.phase != SlotLeasePhase::Submitted {
+                continue;
+            }
+            let identity_id = identity_id_for_out_point(lease.invitation);
+            let found = match Identity::fetch(&self.sdk, identity_id).await {
+                Ok(Some(found)) => found,
+                Ok(None) => {
+                    resolution.held += 1;
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        identity_index = lease.identity_index,
+                        error = %e,
+                        "could not ask Platform whether an invitation claim landed; its \
+                         slot stays held"
+                    );
+                    resolution.held += 1;
+                    continue;
+                }
+            };
+            match self
+                .invitation_claimed_by_this_wallet(Some(&found), lease.identity_index, key)
+                .await
+            {
+                Some(true) => {
+                    let recovered = self
+                        .record_found_identity(lease.identity_index, identity_id, key)
+                        .await;
+                    match recovered {
+                        // Placing the identity in the slot ended the lease in
+                        // memory, which is stored here; an identity this
+                        // wallet held at another slot leaves it to end.
+                        Ok(true) => {
+                            if !self.end_claim_lease(lease.invitation).await {
+                                self.store_claim_lease(lease.invitation).await;
+                            }
+                            resolution.landed += 1;
+                        }
+                        Ok(false) => resolution.held += 1,
+                        Err(e) => {
+                            tracing::warn!(
+                                identity_index = lease.identity_index,
+                                error = %e,
+                                "an invitation claim landed but its identity could not be \
+                                 recorded; its slot stays held"
+                            );
+                            resolution.held += 1;
+                        }
+                    }
+                }
+                Some(false) => {
+                    if self.end_claim_lease(lease.invitation).await {
+                        resolution.ended += 1;
+                    } else {
+                        resolution.held += 1;
+                    }
+                }
+                None => {
+                    resolution.held += 1;
+                    resolution.needs_key |= matches!(key, InvitationClaimantKey::Unavailable);
+                }
+            }
+        }
+        Ok(resolution)
+    }
+
+    /// Record `identity_id`, found holding this wallet's master key at
+    /// `identity_index`, in that slot by loading the identity registered
+    /// there. `Ok(true)` once this wallet holds it in one of its slots;
+    /// `Ok(false)` when it does not, without `key`, or when it is only an
+    /// observed identity (moving one of those into its slot is left to
+    /// claim recovery).
+    async fn record_found_identity(
+        &self,
+        identity_index: u32,
+        identity_id: Identifier,
+        key: InvitationClaimantKey<'_>,
+    ) -> Result<bool, PlatformWalletError> {
+        if self.holds_identity(&identity_id).await {
+            return Ok(true);
+        }
+        match key {
+            InvitationClaimantKey::Master(master) => {
+                self.load_identity_by_index_from_master(identity_index, master)
+                    .await?;
+            }
+            InvitationClaimantKey::ResidentWallet => {
+                self.load_identity_by_index(identity_index).await?;
+            }
+            InvitationClaimantKey::Unavailable => return Ok(false),
+        }
+        Ok(self.holds_identity(&identity_id).await)
+    }
+
+    /// End `invitation`'s claim lease, stored durably. `false` when it
+    /// leases nothing, when this handle's wallet is no longer the one the
+    /// manager holds, or when the store fails (the lease is put back).
+    async fn end_claim_lease(&self, invitation: OutPoint) -> bool {
+        let mut wm = self.wallet_manager.write().await;
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
+            return false;
+        };
+        let manager = &mut info.identity_manager;
+        let Some((identity_index, lease, ended)) =
+            manager.end_claim_lease(&self.wallet_id, invitation)
+        else {
+            return false;
+        };
+        let changeset = PlatformWalletChangeSet {
+            identity_slot_leases: Some(ended),
+            ..Default::default()
+        };
+        if let Err(not_durable) = self.persister.store_durably(changeset) {
+            manager.restore_slot_lease(self.wallet_id, identity_index, lease);
+            tracing::warn!(
+                identity_index,
+                error = %self.persister.classify_not_durable(not_durable),
+                "the end of an invitation claim's lease was not stored; it stays held"
+            );
+            return false;
+        }
+        true
+    }
+
+    /// Store `invitation`'s claim lease as it now stands in memory. A failed
+    /// store leaves the stored lease behind, for the next start to end.
+    async fn store_claim_lease(&self, invitation: OutPoint) {
+        let wm = self.wallet_manager.read().await;
+        let Ok(info) = self.current_wallet_info(&wm) else {
+            return;
+        };
+        let changeset = PlatformWalletChangeSet {
+            identity_slot_leases: Some(
+                info.identity_manager
+                    .claim_lease_changeset(&self.wallet_id, invitation),
+            ),
+            ..Default::default()
+        };
+        if let Err(not_durable) = self.persister.store_durably(changeset) {
+            tracing::warn!(
+                error = %self.persister.classify_not_durable(not_durable),
+                "the end of a landed invitation claim's lease was not stored; the next \
+                 start ends it"
+            );
+        }
     }
 
     /// Refuse an invitation claim's slot when the persister cannot keep its
@@ -1353,5 +1558,327 @@ mod tests {
             "{:?}",
             refusals[1]
         );
+    }
+
+    /// [`IdentityWallet::resolve_submitted_claim_leases`]: what Platform holds
+    /// at a claim's identity id decides its lease. The node is a mock that
+    /// answers only what each test gives it.
+    mod claim_lease_resolution {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+
+        use key_wallet::bip32::ExtendedPrivKey;
+
+        use super::*;
+        use crate::wallet::identity::network::identity_handle::{
+            derive_ecdsa_identity_auth_keypair_from_master, MASTER_KEY_INDEX,
+        };
+
+        fn invitation() -> OutPoint {
+            OutPoint::new(Txid::from_byte_array([1; 32]), 0)
+        }
+
+        /// The identity a claim of [`invitation`] creates, with `master_key`
+        /// as its key 0.
+        fn claimed(master_key: Vec<u8>) -> Identity {
+            Identity::V0(dpp::identity::v0::IdentityV0 {
+                id: identity_id_for_out_point(invitation()),
+                public_keys: [(
+                    0,
+                    IdentityPublicKeyV0 {
+                        id: 0,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::MASTER,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        data: BinaryData::new(master_key),
+                        ..Default::default()
+                    }
+                    .into(),
+                )]
+                .into(),
+                balance: 0,
+                revision: 1,
+            })
+        }
+
+        /// The master xpriv of the wallet from `[9; 64]`. Its seed is not in
+        /// process (as in the hosts), so the host resolves this.
+        fn master() -> ExtendedPrivKey {
+            ExtendedPrivKey::new_master(Network::Testnet, &[9; 64]).unwrap()
+        }
+
+        /// The master key that wallet derives at index 0.
+        fn our_master_key() -> Vec<u8> {
+            derive_ecdsa_identity_auth_keypair_from_master(
+                &master(),
+                Network::Testnet,
+                0,
+                MASTER_KEY_INDEX,
+            )
+            .unwrap()
+            .public_key
+            .to_vec()
+        }
+
+        /// A wallet whose node holds `at_claim_id` at the claim's identity id
+        /// (and answers the load's master-key lookup with it), with
+        /// [`invitation`]'s claim leasing slot 0 in `phase`.
+        async fn wallet_with_claim(
+            backend: Arc<Backend>,
+            at_claim_id: Option<Option<Identity>>,
+            phase: SlotLeasePhase,
+        ) -> (Arc<PlatformWallet>, IdentitySlot) {
+            struct Events;
+            impl EventHandler for Events {}
+            impl PlatformEventHandler for Events {}
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+            if let Some(at_claim_id) = at_claim_id {
+                sdk.mock()
+                    .expect_fetch(identity_id_for_out_point(invitation()), at_claim_id.clone())
+                    .await
+                    .unwrap();
+                if let Some(found) = at_claim_id {
+                    let hash = found.public_keys()[&0].public_key_hash().unwrap();
+                    sdk.mock()
+                        .expect_fetch(PublicKeyHash(hash), Some(found))
+                        .await
+                        .unwrap();
+                }
+            }
+            let manager = PlatformWalletManager::new(Arc::new(sdk), backend, Arc::new(Events));
+            let wallet = manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &[9; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .unwrap();
+            let slot = wallet
+                .identity()
+                .acquire_resolved_slot(ResolvedSlotRequest::InvitationClaim {
+                    invitation: invitation(),
+                })
+                .await
+                .unwrap();
+            if phase == SlotLeasePhase::Submitted {
+                wallet
+                    .identity()
+                    .submit_claim_lease(slot.identity_index, invitation())
+                    .await
+                    .unwrap();
+            }
+            (wallet, slot)
+        }
+
+        async fn slot_state(wallet: &PlatformWallet, identity_index: u32) -> SlotState {
+            let wm = wallet.identity().wallet_manager.read().await;
+            wm.get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .slot_state(&wallet.wallet_id(), identity_index)
+        }
+
+        fn ended_last(backend: &Backend) -> bool {
+            backend
+                .lease_writes()
+                .last()
+                .is_some_and(|last| last.released.contains(&invitation()))
+        }
+
+        #[tokio::test]
+        async fn should_record_a_landed_claim_and_store_the_end_of_its_lease() {
+            let backend = Backend::new(full());
+            let landed = claimed(our_master_key());
+            let (wallet, slot) = wallet_with_claim(
+                backend.clone(),
+                Some(Some(landed.clone())),
+                SlotLeasePhase::Submitted,
+            )
+            .await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution.landed, 1, "{resolution:?}");
+            assert_eq!(
+                slot_state(&wallet, 0).await,
+                SlotState::Occupied(landed.id())
+            );
+            assert!(ended_last(&backend));
+            assert_eq!(
+                wallet
+                    .identity()
+                    .release_identity_slot(slot.holder)
+                    .await
+                    .unwrap(),
+                None
+            );
+        }
+
+        #[tokio::test]
+        async fn should_end_the_lease_of_a_claim_another_claimant_won() {
+            let backend = Backend::new(full());
+            let (wallet, _) = wallet_with_claim(
+                backend.clone(),
+                Some(Some(claimed(vec![2; 33]))),
+                SlotLeasePhase::Submitted,
+            )
+            .await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution.ended, 1, "{resolution:?}");
+            assert_eq!(slot_state(&wallet, 0).await, SlotState::Free);
+            assert!(ended_last(&backend));
+        }
+
+        #[tokio::test]
+        async fn should_hold_a_claim_with_no_identity_yet_or_no_answer() {
+            for at_claim_id in [Some(None), None] {
+                let backend = Backend::new(full());
+                let (wallet, _) = wallet_with_claim(
+                    backend.clone(),
+                    at_claim_id.clone(),
+                    SlotLeasePhase::Submitted,
+                )
+                .await;
+                let writes = backend.lease_writes().len();
+
+                let resolution = wallet
+                    .identity()
+                    .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                    .await
+                    .unwrap();
+
+                assert_eq!(resolution.held, 1, "{at_claim_id:?}: {resolution:?}");
+                assert!(matches!(
+                    slot_state(&wallet, 0).await,
+                    SlotState::Leased(SlotLease {
+                        phase: SlotLeasePhase::Submitted,
+                        ..
+                    })
+                ));
+                assert_eq!(backend.lease_writes().len(), writes, "nothing stored");
+            }
+        }
+
+        #[tokio::test]
+        async fn should_hold_a_found_claim_it_has_no_key_to_tell_the_owner_of() {
+            let backend = Backend::new(full());
+            let (wallet, _) = wallet_with_claim(
+                backend.clone(),
+                Some(Some(claimed(our_master_key()))),
+                SlotLeasePhase::Submitted,
+            )
+            .await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Unavailable)
+                .await
+                .unwrap();
+
+            assert_eq!(resolution.held, 1);
+            assert!(resolution.needs_key);
+            assert!(matches!(slot_state(&wallet, 0).await, SlotState::Leased(_)));
+        }
+
+        #[tokio::test]
+        async fn should_keep_the_lease_when_its_end_is_not_stored() {
+            let backend = Backend::new(full());
+            let (wallet, _) = wallet_with_claim(
+                backend.clone(),
+                Some(Some(claimed(vec![2; 33]))),
+                SlotLeasePhase::Submitted,
+            )
+            .await;
+            *backend.fail.lock().unwrap() = true;
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution.held, 1, "{resolution:?}");
+            assert!(matches!(slot_state(&wallet, 0).await, SlotState::Leased(_)));
+        }
+
+        #[tokio::test]
+        async fn should_leave_a_reserved_claim_alone() {
+            let backend = Backend::new(full());
+            let (wallet, _) =
+                wallet_with_claim(backend.clone(), None, SlotLeasePhase::Reserved).await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution, ClaimLeaseResolution::default());
+            assert!(matches!(
+                slot_state(&wallet, 0).await,
+                SlotState::Leased(SlotLease {
+                    phase: SlotLeasePhase::Reserved,
+                    ..
+                })
+            ));
+        }
+
+        /// A lease restored from the store for a slot an identity filled
+        /// since it was stored ends, whatever its phase.
+        #[tokio::test]
+        async fn should_end_a_restored_lease_whose_slot_is_filled() {
+            let backend = Backend::new(full());
+            let (wallet, slot) =
+                wallet_with_claim(backend.clone(), None, SlotLeasePhase::Submitted).await;
+            {
+                let mut wm = wallet.identity().wallet_manager.write().await;
+                let manager = &mut wm
+                    .get_wallet_info_mut(&wallet.wallet_id())
+                    .unwrap()
+                    .identity_manager;
+                manager
+                    .place_in_slot_unstored(registered_with_our_master(), 0, wallet.wallet_id())
+                    .unwrap();
+                // As a restore replays the stored lease onto the filled slot.
+                manager.restore_slot_lease(
+                    wallet.wallet_id(),
+                    0,
+                    SlotLease {
+                        holder: slot.holder,
+                        phase: SlotLeasePhase::Submitted,
+                    },
+                );
+            }
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution.ended, 1, "{resolution:?}");
+            assert!(ended_last(&backend));
+            assert_eq!(
+                wallet
+                    .identity()
+                    .release_identity_slot(slot.holder)
+                    .await
+                    .unwrap(),
+                None
+            );
+        }
     }
 }

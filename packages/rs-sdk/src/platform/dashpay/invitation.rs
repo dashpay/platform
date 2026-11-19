@@ -1557,7 +1557,7 @@ fn ensure_invitation_network(
 /// The identity id Platform derives from an asset-lock outpoint. Both proof
 /// kinds hash only the outpoint, so the ChainLock derivation (which ignores
 /// its height) gives the id for either.
-fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
+pub fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
     ChainAssetLockProof::new(0, out_point.into()).create_identifier()
 }
 

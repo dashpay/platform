@@ -127,6 +127,10 @@ pub use identity_handle::{
     identity_auth_derivation_path_for_type, ConnectKey, DerivedIdentityAuthKey, IdentityWallet,
     IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
+pub(crate) use invitation::InvitationClaimantKey;
+pub(crate) use slots::ClaimLeaseResolution;
+#[cfg(test)]
+pub(crate) use slots::ResolvedSlotRequest;
 pub use slots::{IdentitySlot, SlotRequest};
 pub use state_transition_summary::{
     check_document_type_name, decode_state_transition, summarize_state_transition,

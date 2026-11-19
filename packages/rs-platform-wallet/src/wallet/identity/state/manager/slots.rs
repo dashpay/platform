@@ -83,6 +83,15 @@ struct PlacementUndo {
     marker: bool,
 }
 
+/// An invitation claim's lease ([`IdentityManager::claim_leases`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ClaimLease {
+    pub(crate) identity_index: RegistrationIndex,
+    pub(crate) invitation: OutPoint,
+    pub(crate) phase: SlotLeasePhase,
+    pub(crate) slot_occupied: bool,
+}
+
 /// Result of [`IdentityManager::place_in_slot_unstored`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotPlacement {
@@ -451,6 +460,52 @@ impl IdentityManager {
         if leases.is_empty() {
             self.slot_leases.remove(wallet_id);
         }
+    }
+
+    /// `wallet_id`'s invitation claim leases: each one's slot, invitation and
+    /// phase, and whether an identity occupies its slot (a lease restored
+    /// from the store for a slot filled since it was stored).
+    pub(crate) fn claim_leases(&self, wallet_id: &WalletId) -> Vec<ClaimLease> {
+        let Some(leases) = self.slot_leases.get(wallet_id) else {
+            return Vec::new();
+        };
+        leases
+            .iter()
+            .filter_map(|(identity_index, lease)| match lease.holder {
+                SlotHolder::InvitationClaim { invitation } => Some(ClaimLease {
+                    identity_index: *identity_index,
+                    invitation,
+                    phase: lease.phase,
+                    slot_occupied: self
+                        .wallet_identities
+                        .get(wallet_id)
+                        .is_some_and(|slots| slots.contains_key(identity_index)),
+                }),
+                SlotHolder::Registration { .. } => None,
+            })
+            .collect()
+    }
+
+    /// End `invitation`'s claim lease, whatever its phase, and return the
+    /// stored form of its end with the lease as it was (to put back when the
+    /// store fails). `None` when the claim leases nothing in `wallet_id`.
+    pub(crate) fn end_claim_lease(
+        &mut self,
+        wallet_id: &WalletId,
+        invitation: OutPoint,
+    ) -> Option<(RegistrationIndex, SlotLease, IdentitySlotLeaseChangeSet)> {
+        let holder = SlotHolder::InvitationClaim { invitation };
+        let leased = self.leased_slot(wallet_id, &holder)?;
+        self.release_identity_slot(wallet_id, &holder);
+        let lease = SlotLease {
+            holder,
+            phase: leased.phase,
+        };
+        Some((
+            leased.identity_index,
+            lease,
+            self.claim_lease_changeset(wallet_id, invitation),
+        ))
     }
 
     /// The stored form of `invitation`'s claim lease as it is now: its entry,

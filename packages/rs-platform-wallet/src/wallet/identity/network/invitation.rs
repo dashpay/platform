@@ -478,7 +478,7 @@ impl IdentityWallet {
     /// even when stored under this wallet's id. A wallet re-created under
     /// this handle's id since it was taken is not this wallet: its
     /// identities say nothing about this handle's claims.
-    async fn holds_identity(&self, identity_id: &Identifier) -> bool {
+    pub(super) async fn holds_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
         self.current_wallet_and_info(&wm).is_some_and(|(_, info)| {
             let manager = &info.identity_manager;

@@ -47,7 +47,9 @@ use key_wallet::bip32::ExtendedPrivKey;
 use crate::changeset::PlatformWalletPersistence;
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
-use crate::wallet::identity::network::{ContactCryptoProvider, IdentityDiscoveryOptions};
+use crate::wallet::identity::network::{
+    ClaimLeaseResolution, ContactCryptoProvider, IdentityDiscoveryOptions, InvitationClaimantKey,
+};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Whole-sequence budget when the caller does not name one.
@@ -139,6 +141,39 @@ impl std::ops::Deref for ScanKeyGuard {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+/// A [`ScanKeyResolver`] asked at most once: every later call is answered
+/// from the first answer, so the steps of one start that each need the key
+/// cost one Keychain read between them. The key it keeps zeroizes when it is
+/// dropped, at the end of the start.
+struct MemoScanKey<'a> {
+    resolve: ScanKeyResolver<'a>,
+    answer: std::sync::Mutex<Option<Result<ScanKeyGuard, ScanKeyError>>>,
+}
+
+impl<'a> MemoScanKey<'a> {
+    fn new(resolve: ScanKeyResolver<'a>) -> Self {
+        Self {
+            resolve,
+            answer: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn get(&self) -> Result<ExtendedPrivKey, ScanKeyError> {
+        let mut answer = self
+            .answer
+            .lock()
+            .map_err(|_| ScanKeyError::Unavailable("the scan key memo is poisoned".to_string()))?;
+        let answer = answer.get_or_insert_with(|| (self.resolve)().map(ScanKeyGuard));
+        match answer {
+            Ok(master) => Ok(master.0.clone()),
+            Err(ScanKeyError::Unavailable(detail)) => {
+                Err(ScanKeyError::Unavailable(detail.clone()))
+            }
+            Err(ScanKeyError::Invalid(detail)) => Err(ScanKeyError::Invalid(detail.clone())),
+        }
     }
 }
 
@@ -522,12 +557,25 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             ))
         })?;
         let mut tally = StartupTally::default();
+        // Discovery and the claim-lease step may both need the key; it is
+        // read once between them, and only by the one that needs it first.
+        let memo = scan_key.map(MemoScanKey::new);
+        let memo_get = memo.as_ref().map(|memo| move || memo.get());
+        let scan_key: Option<ScanKeyResolver<'_>> =
+            memo_get.as_ref().map(|get| get as ScanKeyResolver<'_>);
 
         let wallet = self
             .get_wallet(wallet_id)
             .await
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
         let identity_wallet = wallet.identity();
+
+        // 0. Claims an earlier process left unsettled hold their slots until
+        //    their outcome is read. First, so discovery's retries cannot spend
+        //    the budget it needs, and so a landed claim is a local identity
+        //    by the time step 1 asks whether there is one.
+        self.resolve_claim_leases(identity_wallet, scan_key, deadline)
+            .await;
 
         // 1. Local identities first. A warm launch must not pay for a network
         //    scan it does not need — unless the scan that produced those
@@ -809,6 +857,85 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// cannot overturn. Only [`PlatformWalletError::IdentityDiscoveryIncomplete`]
     /// — the error for a scan that never got through — is worth another
     /// attempt.
+    /// Settle the wallet's invitation claim leases an earlier process left
+    /// `Submitted` ([`IdentityWallet::resolve_submitted_claim_leases`]),
+    /// within the budget. The key is resolved only when an identity was found
+    /// whose owner only it can tell. Every failure is logged and leaves the
+    /// leases held: a later start settles them.
+    ///
+    /// [`IdentityWallet::resolve_submitted_claim_leases`]:
+    /// crate::wallet::identity::IdentityWallet
+    async fn resolve_claim_leases(
+        &self,
+        identity_wallet: &crate::wallet::identity::IdentityWallet,
+        scan_key: Option<ScanKeyResolver<'_>>,
+        deadline: Instant,
+    ) {
+        let first_key = match scan_key {
+            None => InvitationClaimantKey::ResidentWallet,
+            Some(_) => InvitationClaimantKey::Unavailable,
+        };
+        let resolution = match within_budget(
+            deadline,
+            identity_wallet.resolve_submitted_claim_leases(first_key),
+        )
+        .await
+        {
+            Some(Ok(resolution)) => resolution,
+            Some(Err(e)) => {
+                tracing::warn!(error = %e, "startup: invitation claim leases not settled");
+                return;
+            }
+            None => {
+                tracing::warn!("startup: no budget left to settle invitation claim leases");
+                return;
+            }
+        };
+        let resolution = match (resolution.needs_key, scan_key) {
+            (true, Some(resolve)) => {
+                let master = match resolve() {
+                    Ok(master) => ScanKeyGuard(master),
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "startup: no key to tell whose invitation claims landed; their \
+                             slots stay held"
+                        );
+                        return;
+                    }
+                };
+                match within_budget(
+                    deadline,
+                    identity_wallet
+                        .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master)),
+                )
+                .await
+                {
+                    Some(Ok(keyed)) => ClaimLeaseResolution {
+                        landed: resolution.landed + keyed.landed,
+                        ended: resolution.ended + keyed.ended,
+                        held: keyed.held,
+                        needs_key: false,
+                    },
+                    Some(Err(e)) => {
+                        tracing::warn!(error = %e, "startup: invitation claim leases not settled");
+                        resolution
+                    }
+                    None => resolution,
+                }
+            }
+            (_, _) => resolution,
+        };
+        if resolution != ClaimLeaseResolution::default() {
+            tracing::info!(
+                landed = resolution.landed,
+                ended = resolution.ended,
+                held = resolution.held,
+                "startup: settled invitation claim leases"
+            );
+        }
+    }
+
     async fn discover_identity_with_backoff(
         &self,
         wallet_id: &WalletId,
@@ -2320,5 +2447,119 @@ mod tests {
             "there is no identity to report, and none may be invented"
         );
         assert_eq!(tally.status(), WalletStartupStatus::DiscoveryFailed);
+    }
+
+    /// The memo asks its resolver once and answers every later call from
+    /// that answer, a failure included.
+    #[test]
+    fn the_scan_key_memo_asks_its_resolver_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let master = ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &[7; 64]).unwrap();
+        let calls = AtomicUsize::new(0);
+        let resolve = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(master.clone())
+        };
+        let memo = MemoScanKey::new(&resolve);
+        assert_eq!(memo.get().unwrap(), master);
+        assert_eq!(memo.get().unwrap(), master);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let failures = AtomicUsize::new(0);
+        let refuse = || {
+            failures.fetch_add(1, Ordering::SeqCst);
+            Err(ScanKeyError::Unavailable("locked".to_string()))
+        };
+        let memo = MemoScanKey::new(&refuse);
+        assert!(matches!(memo.get(), Err(ScanKeyError::Unavailable(_))));
+        assert!(matches!(memo.get(), Err(ScanKeyError::Unavailable(_))));
+        assert_eq!(failures.load(Ordering::SeqCst), 1);
+    }
+
+    /// A claim an earlier process left `Submitted` is settled at startup:
+    /// Platform holds another claimant's identity at its id, so its lease
+    /// ends. The wallet's seed is not in process, so the key is resolved —
+    /// once, though discovery runs in the same start.
+    #[tokio::test(start_paused = true)]
+    async fn a_claim_left_submitted_is_settled_at_startup() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use dashcore::{OutPoint, Txid};
+
+        use crate::wallet::identity::network::ResolvedSlotRequest;
+        use crate::wallet::identity::state::SlotState;
+
+        let backend = std::sync::Arc::new(DurableStartupBackend::default());
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(backend).await;
+        let invitation = OutPoint::new(Txid::from_byte_array([1; 32]), 0);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(ResolvedSlotRequest::InvitationClaim { invitation })
+            .await
+            .expect("leased");
+        wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await
+            .expect("submitted");
+        // Another claimant's identity holds the invitation's id.
+        let theirs = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0 {
+            id: dash_sdk::platform::dashpay::identity_id_for_out_point(invitation),
+            public_keys: [(
+                0,
+                dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: dpp::identity::Purpose::AUTHENTICATION,
+                    security_level: dpp::identity::SecurityLevel::MASTER,
+                    key_type: dpp::identity::KeyType::ECDSA_SECP256K1,
+                    data: vec![2; 33].into(),
+                    ..Default::default()
+                }
+                .into(),
+            )]
+            .into(),
+            balance: 0,
+            revision: 1,
+        });
+        let mut sdk = (*manager.sdk).clone();
+        sdk.mock()
+            .expect_fetch(theirs.id(), Some(theirs))
+            .await
+            .unwrap();
+
+        let master = ExtendedPrivKey::new_master(
+            key_wallet::Network::Testnet,
+            &*seed_for(crate::test_support::TEST_PLATFORM_WALLET_MNEMONIC),
+        )
+        .unwrap();
+        let calls = AtomicUsize::new(0);
+        let resolve = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(master.clone())
+        };
+        manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                Some(&resolve),
+                None::<&crate::wallet::identity::network::SeedCryptoProvider>,
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        let wm = manager.wallet_manager.read().await;
+        let manager_state = &wm.get_wallet_info(&wallet_id).unwrap().identity_manager;
+        assert!(manager_state
+            .leased_slot(&wallet_id, &slot.holder)
+            .is_none());
+        assert_eq!(
+            manager_state.slot_state(&wallet_id, slot.identity_index),
+            SlotState::Free
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "the key is read once");
     }
 }
