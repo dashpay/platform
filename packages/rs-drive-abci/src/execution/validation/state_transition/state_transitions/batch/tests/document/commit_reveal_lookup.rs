@@ -53,6 +53,11 @@ mod commit_reveal_lookup_tests {
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use crate::execution::types::execution_event::ExecutionEvent;
+    use crate::execution::validation::state_transition::check_tx_verification::{
+        state_transition_to_execution_event_for_check_tx, CheckTxExecutionEvent,
+    };
+    use dpp::prelude::UserFeeIncrease;
     use dpp::fee::fee_result::FeeResult;
     use dpp::fee::Credits;
     use dpp::data_contract::document_type::HashFunction;
@@ -275,6 +280,30 @@ mod commit_reveal_lookup_tests {
             absent: &[&str],
             token_payment_info: Option<TokenPaymentInfo>,
         ) -> (Document, StateTransition) {
+            self.creation_transition_raising_fees(
+                contract,
+                who,
+                type_name,
+                values,
+                absent,
+                token_payment_info,
+                0,
+            )
+            .await
+        }
+
+        /// [`Self::creation_transition`] with the fees raised by `user_fee_increase` percent.
+        #[allow(clippy::too_many_arguments)]
+        async fn creation_transition_raising_fees(
+            &mut self,
+            contract: &DataContract,
+            who: Who,
+            type_name: &str,
+            values: &[(&str, Value)],
+            absent: &[&str],
+            token_payment_info: Option<TokenPaymentInfo>,
+            user_fee_increase: UserFeeIncrease,
+        ) -> (Document, StateTransition) {
             let platform_version = self.platform_version;
             let owner_id = self.id(who);
             let document_type = contract
@@ -309,7 +338,7 @@ mod commit_reveal_lookup_tests {
                 entropy.0,
                 &writer.key,
                 nonce,
-                0,
+                user_fee_increase,
                 token_payment_info,
                 &writer.signer,
                 platform_version,
@@ -333,7 +362,17 @@ mod commit_reveal_lookup_tests {
             transition: &StateTransition,
             level: CheckTxLevel,
         ) -> (Vec<u32>, Option<FeeResult>) {
-            let platform_version = self.platform_version;
+            self.check_tx_at_version(transition, level, self.platform_version)
+        }
+
+        /// [`Self::check_tx_at`] at `platform_version`, which may differ from the chain's in a
+        /// value only check tx reads.
+        fn check_tx_at_version(
+            &self,
+            transition: &StateTransition,
+            level: CheckTxLevel,
+            platform_version: &PlatformVersion,
+        ) -> (Vec<u32>, Option<FeeResult>) {
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
                 drive: &self.platform.drive,
@@ -4174,35 +4213,91 @@ mod commit_reveal_lookup_tests {
         assert!(execution_context.operations_slice().is_empty());
     }
 
-    /// Holds `who` to `transition`'s check tx estimate on the first check and on a recheck,
-    /// each judged on its own: one credit short of a level's estimate is refused there and its
-    /// estimate admitted. Leaves `who` holding the smaller of the two, the least a signer whose
-    /// transaction check tx keeps can hold, and returns it.
+    /// Holds `who` to `transition`'s check tx estimate at `platform_version` on the first check
+    /// and on a recheck, each judged on its own: one credit short of a level's estimate is
+    /// refused there and its estimate admitted. Leaves `who` holding the smaller of the two, the
+    /// least a signer whose transaction check tx keeps can hold, and returns it. What the
+    /// reservation holds shows only in what the block does with that balance.
     fn hold_to_the_check_tx_estimate(
         fixture: &CommitRevealFixture,
         who: Who,
         transition: &StateTransition,
+        platform_version: &PlatformVersion,
     ) -> Credits {
         const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
         let mut least = Credits::MAX;
         for level in [FirstTimeCheck, Recheck] {
             fixture.set_balance(who, dash_to_credits!(0.5));
-            let (errors, estimated) = fixture.check_tx_at(transition, level);
+            let (errors, estimated) =
+                fixture.check_tx_at_version(transition, level, platform_version);
             assert_eq!(errors, Vec::<u32>::new());
             let estimated = estimated
                 .expect("expected an estimated fee")
                 .total_base_fee();
             fixture.set_balance(who, estimated - 1);
             assert_eq!(
-                fixture.check_tx_at(transition, level).0,
+                fixture
+                    .check_tx_at_version(transition, level, platform_version)
+                    .0,
                 vec![IDENTITY_INSUFFICIENT_BALANCE]
             );
             fixture.set_balance(who, estimated);
-            assert_eq!(fixture.check_tx_at(transition, level).0, Vec::<u32>::new());
+            assert_eq!(
+                fixture
+                    .check_tx_at_version(transition, level, platform_version)
+                    .0,
+                Vec::<u32>::new()
+            );
             least = least.min(estimated);
         }
         fixture.set_balance(who, least);
         least
+    }
+
+    /// `platform_version` with the lookup query's allowance at `query`, the most one lookup
+    /// query a test's create makes costs in a block, so that check tx reserves no margin beyond
+    /// what the block bills for the query: whatever else the block bills the create must then
+    /// be reserved too.
+    fn with_tight_lookup_allowance(
+        platform_version: &PlatformVersion,
+        query: Credits,
+    ) -> PlatformVersion {
+        let mut tight = platform_version.clone();
+        tight
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved = query;
+        tight
+    }
+
+    /// What a block bills `data`, a `type_name` create by `writer`, for its lookup queries: the
+    /// sum of the queries' processing fees document reference validation adds, at
+    /// `platform_version`.
+    fn lookup_query_cost(
+        fixture: &CommitRevealFixture,
+        type_name: &str,
+        data: &BTreeMap<String, Value>,
+        writer: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        let (result, execution_context, _) = fixture.validate_references(
+            type_name,
+            data,
+            writer,
+            None,
+            false,
+            REVEAL_HEIGHT,
+            platform_version,
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+        execution_context
+            .operations_slice()
+            .iter()
+            .map(|operation| match operation {
+                ValidationOperation::PrecalculatedOperation(fee) => fee.processing_fee,
+                _ => 0,
+            })
+            .sum()
     }
 
     /// Check tx does not validate the state of a reveal, so its fee estimate held none of what
@@ -4210,21 +4305,23 @@ mod commit_reveal_lookup_tests {
     /// and the lookup query, and the delete of the commitment it consumes, which the block
     /// prices with the create. It reserves them on the first check and on a recheck: a signer
     /// holding exactly the smaller of the two estimates is charged for the reveal in the block,
-    /// at protocol version 14 and 15, and the consumed commitment is gone.
+    /// at protocol version 14 and 15, and the consumed commitment is gone. The query's
+    /// allowance is held to what the block bills for the query, so it leaves no margin to cover
+    /// a delete the reservation missed (the key's hash, a few thousand credits, is pinned by
+    /// `should_report_the_gas_a_reveal_wants_with_its_billed_reservation_in`).
     #[tokio::test]
     async fn should_reserve_the_lookup_and_the_consumed_commitments_delete_when_admitting_a_reveal()
     {
         for protocol_version in CONSUME_PROTOCOL_VERSIONS {
-            let mut fixture = CommitRevealFixture::new_at(
-                PlatformVersion::get(protocol_version).expect("expected the platform version"),
-                |_| {},
-            );
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
             let salt = [0x11; 32];
             let preorder = fixture
                 .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
                 .await;
             let contract = fixture.contract.clone();
-            let (_, reveal) = fixture
+            let (document, reveal) = fixture
                 .creation_transition(
                     &contract,
                     Who::Alice,
@@ -4234,7 +4331,19 @@ mod commit_reveal_lookup_tests {
                     None,
                 )
                 .await;
-            hold_to_the_check_tx_estimate(&fixture, Who::Alice, &reveal);
+            let query = lookup_query_cost(
+                &fixture,
+                "domain",
+                document.properties(),
+                fixture.id(Who::Alice),
+                platform_version,
+            );
+            hold_to_the_check_tx_estimate(
+                &fixture,
+                Who::Alice,
+                &reveal,
+                &with_tight_lookup_allowance(platform_version, query),
+            );
 
             let result = fixture.process(&reveal, REVEAL_HEIGHT);
             assert_matches!(
@@ -4269,7 +4378,12 @@ mod commit_reveal_lookup_tests {
                     None,
                 )
                 .await;
-            hold_to_the_check_tx_estimate(&fixture, Who::Mallory, &post);
+            hold_to_the_check_tx_estimate(
+                &fixture,
+                Who::Mallory,
+                &post,
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+            );
 
             let result = fixture.process(&post, REVEAL_HEIGHT);
             assert_matches!(
@@ -4326,50 +4440,212 @@ mod commit_reveal_lookup_tests {
         fee.processing_fee
     }
 
-    /// Check tx holds a reveal's signer to what it reserves for the reveal's lookup, and reports
-    /// the gas the reveal wants without the part that is a bound: Tenderdash fills a block's gas
-    /// with what transitions want, and the lookup query's allowance bounds what a block may bill
-    /// for the query. The key's double SHA-256 and the consumed commitment's delete, which a
-    /// block bills whenever it accepts the reveal, stay in the gas. So the fee check tx judges
-    /// and the gas it reports differ by the allowance, whatever it is.
+    /// The fee check tx judges `transition` by at `level` and `platform_version`, the gas it
+    /// reports, and, from the event it builds: the operations it reserved, those a block bills
+    /// whenever it accepts the transition and the bounds, and the fee of the event without the
+    /// bounds and without every reserved operation.
+    struct ReservedGas {
+        admitted: Credits,
+        gas_wanted: Credits,
+        billed: Vec<ValidationOperation>,
+        bounds: Vec<ValidationOperation>,
+        without_bounds: Credits,
+        without_reservations: Credits,
+    }
+
+    /// [`ReservedGas`] of `transition` at `level`, `billed` the count of reserved operations a
+    /// block bills, which check tx adds right before its bounds, last.
+    fn reserved_gas(
+        fixture: &CommitRevealFixture,
+        transition: &StateTransition,
+        level: CheckTxLevel,
+        billed: usize,
+        platform_version: &PlatformVersion,
+    ) -> ReservedGas {
+        let raw = transition
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let state = fixture.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &fixture.platform.drive,
+            state: &state,
+            config: &fixture.platform.config,
+            core_rpc: &fixture.platform.core_rpc,
+        };
+        let checked = fixture
+            .platform
+            .check_tx(&raw, level, &platform_ref, platform_version)
+            .expect("expected to check the transaction");
+        assert!(checked.errors.is_empty(), "{:?}", checked.errors);
+        let checked = checked.data.expect("expected a check tx result");
+        let CheckTxExecutionEvent {
+            event,
+            reserved_bounds,
+        } = state_transition_to_execution_event_for_check_tx(
+            &platform_ref,
+            transition,
+            level,
+            &fixture.platform.check_tx_proof_verifier,
+            platform_version,
+        )
+        .expect("expected to build the event")
+        .into_data()
+        .expect("expected the event to be valid")
+        .expect("expected an event");
+        let ExecutionEvent::Paid {
+            execution_operations,
+            ..
+        } = &event
+        else {
+            panic!("expected a paid event");
+        };
+        let reserved = billed + reserved_bounds.len();
+        let operations = execution_operations.len();
+        assert_eq!(
+            &execution_operations[operations - reserved_bounds.len()..],
+            reserved_bounds.as_slice(),
+            "the bounds come last"
+        );
+        let billed_operations = execution_operations
+            [operations - reserved..operations - reserved_bounds.len()]
+            .to_vec();
+        let fee_without_last = |dropped: usize| {
+            let mut event = event.clone();
+            let ExecutionEvent::Paid {
+                execution_operations,
+                ..
+            } = &mut event
+            else {
+                panic!("expected a paid event");
+            };
+            execution_operations.truncate(operations - dropped);
+            fixture
+                .platform
+                .validate_fees_of_event(&event, state.last_block_info(), None, platform_version)
+                .expect("expected to validate the fees")
+                .data
+                .expect("expected a fee")
+                .total_base_fee()
+        };
+        ReservedGas {
+            admitted: checked
+                .fee_result
+                .expect("expected an estimated fee")
+                .total_base_fee(),
+            gas_wanted: checked.gas_wanted,
+            billed: billed_operations,
+            bounds: reserved_bounds.clone(),
+            without_bounds: fee_without_last(reserved_bounds.len()),
+            without_reservations: fee_without_last(reserved),
+        }
+    }
+
+    /// Check tx holds a reveal's signer to what it reserves for the reveal's lookup and reports
+    /// the gas the reveal wants with the part a block bills whenever it accepts the reveal: the
+    /// key's double SHA-256 and the consumed commitment's delete are the billed reservation and
+    /// stay in the gas, raised by the user fee increase as the rest of the estimate is; the lookup
+    /// query's allowance is the bound and is left out. The gas is the estimate without the bound,
+    /// exactly or one credit above it (the increase rounds down over the whole fee), at protocol
+    /// version 14 and 15, on the first check and on a recheck, with no increase and with one of
+    /// 100%. Another allowance moves the fee check tx judges and not the gas it reports.
     #[tokio::test]
-    async fn should_report_the_gas_a_reveal_wants_without_the_lookup_querys_allowance() {
-        let mut fixture = CommitRevealFixture::new();
-        let platform_version = PlatformVersion::latest();
-        let salt = [0x11; 32];
-        fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
-            .await;
-        let contract = fixture.contract.clone();
-        let (_, reveal) = fixture
-            .creation_transition(
-                &contract,
-                Who::Alice,
-                "domain",
-                &subdomain("Alice", "al1ce", "dash", salt),
-                &[],
-                None,
-            )
-            .await;
-
-        let allowance = platform_version
-            .fee_version
-            .document_reference
-            .lookup_query_credits_reserved;
-        assert!(allowance > 1);
-        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &reveal, platform_version);
-        assert_eq!(admitted - gas_wanted, allowance);
-
-        // Another allowance moves the fee check tx judges and not the gas it reports
-        let mut small_allowance = platform_version.clone();
-        small_allowance
-            .fee_version
-            .document_reference
-            .lookup_query_credits_reserved = 1;
-        let (admitted_with_small_allowance, gas_wanted_with_small_allowance) =
-            admitted_and_gas_wanted(&fixture, &reveal, &small_allowance);
-        assert_eq!(gas_wanted_with_small_allowance, gas_wanted);
-        assert_eq!(admitted - admitted_with_small_allowance, allowance - 1);
+    async fn should_report_the_gas_a_reveal_wants_with_its_billed_reservation_in() {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
+            let salt = [0x11; 32];
+            fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let contract = fixture.contract.clone();
+            let block_info = *fixture.platform.state.load().last_block_info();
+            let delete = fixture
+                .platform
+                .drive
+                .consumed_document_delete_cost(
+                    &contract,
+                    contract
+                        .document_type_for_name("preorder")
+                        .expect("expected the preorder type"),
+                    &block_info,
+                    platform_version,
+                )
+                .expect("expected to price the delete")
+                .processing_fee;
+            let key_blocks = HashFunction::Sha256d.block_count(32 + "al1ce.dash".len());
+            let allowance = platform_version
+                .fee_version
+                .document_reference
+                .lookup_query_credits_reserved;
+            for user_fee_increase in [0, 100] {
+                let (_, reveal) = fixture
+                    .creation_transition_raising_fees(
+                        &contract,
+                        Who::Alice,
+                        "domain",
+                        &subdomain("Alice", "al1ce", "dash", salt),
+                        &[],
+                        None,
+                        user_fee_increase,
+                    )
+                    .await;
+                for level in [FirstTimeCheck, Recheck] {
+                    let at = format!(
+                        "at {protocol_version}, {level:?}, an increase of {user_fee_increase}%"
+                    );
+                    let gas = reserved_gas(&fixture, &reveal, level, 2, platform_version);
+                    assert_eq!(
+                        gas.billed,
+                        vec![
+                            ValidationOperation::DoubleSha256(key_blocks),
+                            ValidationOperation::PrecalculatedOperation(
+                                FeeResult::new_from_processing_fee(delete)
+                            ),
+                        ],
+                        "{at}"
+                    );
+                    assert_eq!(
+                        gas.bounds,
+                        vec![ValidationOperation::PrecalculatedOperation(
+                            FeeResult::new_from_processing_fee(allowance)
+                        )],
+                        "{at}"
+                    );
+                    assert!(
+                        gas.gas_wanted == gas.without_bounds
+                            || gas.gas_wanted == gas.without_bounds + 1,
+                        "{at}: gas wanted {}, estimate without the bound {}",
+                        gas.gas_wanted,
+                        gas.without_bounds
+                    );
+                    if user_fee_increase == 0 {
+                        assert_eq!(gas.gas_wanted, gas.without_bounds, "{at}");
+                    }
+                    let billed =
+                        double_sha256_fee(32 + "al1ce.dash".len(), platform_version) + delete;
+                    assert_eq!(
+                        gas.without_bounds - gas.without_reservations,
+                        billed * (100 + u64::from(user_fee_increase)) / 100,
+                        "{at}: the billed reservation is in the gas"
+                    );
+                    assert!(gas.admitted > gas.gas_wanted, "{at}");
+                }
+                if user_fee_increase == 0 {
+                    let mut small_allowance = platform_version.clone();
+                    small_allowance
+                        .fee_version
+                        .document_reference
+                        .lookup_query_credits_reserved = 1;
+                    let (admitted, gas_wanted) =
+                        admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+                    let (admitted_small, gas_wanted_small) =
+                        admitted_and_gas_wanted(&fixture, &reveal, &small_allowance);
+                    assert_eq!(gas_wanted_small, gas_wanted);
+                    assert_eq!(admitted - admitted_small, allowance - 1);
+                }
+            }
+        }
     }
 
     /// The fixture contract with `memberOrReveal`: a claim whose `ownerRefersTo` is an `anyOf`
