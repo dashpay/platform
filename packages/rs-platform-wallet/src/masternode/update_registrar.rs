@@ -43,8 +43,8 @@ use super::locator::p2pkh_script_hash;
 use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload;
 
 use super::update_service::{
-    display_hex, fetch_registration_transaction, fetch_transaction_checked,
-    payout_script_for_address, registration_payload,
+    broadcast_special_transaction_guarded, display_hex, fetch_registration_transaction,
+    fetch_transaction_checked, payout_script_for_address, registration_payload,
 };
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -92,12 +92,14 @@ pub async fn execute_masternode_update_registrar<S: TransactionSigner + ?Sized +
     signer: &S,
 ) -> Result<Txid, PlatformWalletError> {
     let signed = prepare_masternode_update_registrar(wallet, spv, params, owner, signer).await?;
-    super::update_service::broadcast_special_transaction_guarded(wallet.core(), &signed).await
+    broadcast_special_transaction_guarded(wallet.core(), &signed).await
 }
 
 /// Everything [`execute_masternode_update_registrar`] does except the
 /// broadcast, for hosts that show the transaction first. The returned
-/// transaction holds its funding inputs reserved; broadcast or abandon it.
+/// transaction holds its funding inputs reserved; broadcast it with
+/// [`broadcast_special_transaction_guarded`] or abandon it with
+/// `CoreWallet::abandon_transaction`.
 pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized + Sync>(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
