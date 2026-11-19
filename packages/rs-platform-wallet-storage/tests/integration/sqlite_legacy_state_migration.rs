@@ -112,7 +112,7 @@ struct PublishedPoolEntry<'a> {
     addresses: Vec<PublishedAddressInfo<'a>>,
 }
 
-fn snapshot_bytes(entry: &AccountAddressPoolEntry) -> Vec<u8> {
+pub(crate) fn snapshot_bytes(entry: &AccountAddressPoolEntry) -> Vec<u8> {
     // The base backend encoded this public-only type with bincode-serde.
     let published = PublishedPoolEntry {
         account_type: entry.account_type,
