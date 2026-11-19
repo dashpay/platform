@@ -334,6 +334,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// A registration or an invitation claim named an identity index its
+    /// slot does not lease (never acquired, or released). Nothing was funded
+    /// or sent. The message is a JSON detail naming the index.
+    case errorIdentitySlotNotHeld = 77
+    /// The identity keys derived at the slot already belong to an identity
+    /// on Platform. The wallet recorded that identity in the slot and
+    /// released the lease; nothing was funded. Acquire a slot again and
+    /// derive the keys at the new index. The message is a JSON detail.
+    case errorIdentitySlotTakenOnChain = 78
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -493,6 +502,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_NOT_HELD:
+            self = .errorIdentitySlotNotHeld
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_TAKEN_ON_CHAIN:
+            self = .errorIdentitySlotTakenOnChain
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -785,6 +798,17 @@ public enum PlatformWalletError: LocalizedError {
     /// or accept made while another public request to that identity is being
     /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String)
+    /// A registration or an invitation claim named an identity index its
+    /// slot does not lease (code 77): never acquired, or released. Nothing
+    /// was funded or sent. Acquire a slot and derive the keys there.
+    case identitySlotNotHeld(identityIndex: UInt32)
+    /// The identity keys derived at `identityIndex` already belong to the
+    /// identity `identityId` (base58) on Platform (code 78). The wallet
+    /// recorded it in that slot and released the operation's lease; nothing
+    /// was funded. Acquire a slot again, derive the keys at the new index and
+    /// retry, at most `ManagedPlatformWallet.identitySlotTakenRetryLimit`
+    /// times in a row.
+    case identitySlotTakenOnChain(identityIndex: UInt32, identityId: String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1078,6 +1102,11 @@ public enum PlatformWalletError: LocalizedError {
             return "A key of this invitation claim is already registered to identity \(identityId)."
         case .invitationClaimedByThisWallet(let identityId):
             return "This invitation was already claimed by this wallet as identity \(identityId)."
+        case .identitySlotNotHeld(let identityIndex):
+            return "Identity index \(identityIndex) is not reserved for this operation. Nothing was sent."
+        case .identitySlotTakenOnChain(let identityIndex, let identityId):
+            return "Identity index \(identityIndex) already holds identity \(identityId), "
+                + "which this wallet now records. Nothing was funded."
         case .contestedNameNotTradable(let label, let endsAtMs):
             if endsAtMs == 0 {
                 return "\"\(label)\" is in an active contested-name vote and cannot be traded "
@@ -1189,6 +1218,23 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
+        // Codes 77/78 carry a stable JSON detail naming the index (and the
+        // identity for 78); a payload that does not decode degrades to
+        // `.unknown(detail)`.
+        case .errorIdentitySlotNotHeld:
+            if let d = IdentitySlotErrorDetail.decode(detail) {
+                self = .identitySlotNotHeld(identityIndex: d.identityIndex)
+            } else {
+                self = .unknown(detail)
+            }
+        case .errorIdentitySlotTakenOnChain:
+            if let d = IdentitySlotErrorDetail.decode(detail), let identityId = d.identityId {
+                self = .identitySlotTakenOnChain(
+                    identityIndex: d.identityIndex, identityId: identityId
+                )
+            } else {
+                self = .unknown(detail)
+            }
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
@@ -1355,6 +1401,22 @@ private enum TradeErrorDetail {
 /// name the identity.
 private enum InvitationErrorDetail {
     struct Detail: Decodable {
+        let identityId: String?
+    }
+
+    static func decode(_ message: String?) -> Detail? {
+        guard let data = message?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(Detail.self, from: data)
+    }
+}
+
+// MARK: - Identity-slot error detail decoding
+
+/// Decoder for the JSON detail FFI result codes 77/78 put in the result
+/// `message`: `{"identityIndex":<u32>}`, plus `"identityId":"<base58>"` for 78.
+private enum IdentitySlotErrorDetail {
+    struct Detail: Decodable {
+        let identityIndex: UInt32
         let identityId: String?
     }
 

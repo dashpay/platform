@@ -229,15 +229,6 @@ struct CreateIdentityView: View {
     /// re-fire a SwiftData query.
     @Query private var allAccounts: [PersistentAccount]
 
-    /// All persisted identities. Used by `unusedIdentityIndices(for:)`
-    /// as the truth source for which identity-registration slots are
-    /// already taken — the per-`PersistentCoreAddress.isUsed` flag can
-    /// be stale for *discovered* identities (gap-limit scan finds an
-    /// existing identity on Platform; the persister callback writes
-    /// `PersistentIdentity` but doesn't currently flip the matching
-    /// Core-address `isUsed` flag).
-    @Query private var allIdentities: [PersistentIdentity]
-
     /// All tracked asset locks across wallets. Used here only to
     /// resolve `selectedAssetLockId` (the resume-flow init seed
     /// from Path B) back to a concrete row so the submit gate can
@@ -269,9 +260,10 @@ struct CreateIdentityView: View {
     /// Chosen funding source when a wallet is selected.
     @State private var fundingSelection: FundingSelection? = nil
 
-    /// Identity registration key slot to consume (for wallet-backed
-    /// paths). `nil` until a wallet selection populates it with the
-    /// first unused index; the user can override via the picker.
+    /// Identity registration index of the resume path: the tracked
+    /// lock's own index, seeded in `init`. A new registration does not
+    /// pick one: the wallet leases it at submit
+    /// (`acquireRegistrationSlot`).
     @State private var identityIndex: UInt32? = nil
 
     /// Register the optional pair of DashPay encryption/decryption
@@ -540,23 +532,13 @@ struct CreateIdentityView: View {
                     .accessibilityIdentifier("createIdentity.sourceWallet.walletless")
             }
             .accessibleFormPicker("createIdentity.sourceWalletPicker")
-            .onChange(of: walletSelection) { _, newValue in
+            .onChange(of: walletSelection) { _, _ in
                 // Reset downstream selection whenever the wallet
                 // changes so a stale account / proof / denomination
                 // can't leak through.
                 fundingSelection = nil
                 walletlessProof = ""
                 selectedDenomination = nil
-                // Default the identity-registration index to one
-                // past the highest already-used slot on the newly-
-                // selected wallet (identities aren't gap-limited; we
-                // can derive any index N from the mnemonic on demand).
-                // Walletless / no-selection branches clear it.
-                if case .wallet(let walletId) = newValue {
-                    identityIndex = nextUnusedIdentityIndex(for: walletId)
-                } else {
-                    identityIndex = nil
-                }
             }
         } header: {
             Text("Source Wallet")
@@ -847,7 +829,7 @@ struct CreateIdentityView: View {
         // Only relevant when a wallet is the source. Walletless
         // creations don't burn an identity-registration slot off our
         // HD tree.
-        if case .wallet(let walletId) = walletSelection {
+        if case .wallet = walletSelection {
             // Resume path: the lock fixes the slot. Render a read-
             // only summary so the user can confirm which slot the
             // tracked lock is anchored to, but the stepper is
@@ -875,28 +857,12 @@ struct CreateIdentityView: View {
                     )
                 }
             } else {
-                let used = usedIdentityIndices(for: walletId)
-                let collision = identityIndex.map { used.contains($0) } ?? false
                 Section {
-                    Stepper(value: Binding(
-                        get: { identityIndex ?? 0 },
-                        set: { identityIndex = $0 }
-                    ), in: 0...UInt32.max) {
-                        HStack {
-                            Text("Identity Registration Index")
-                            Spacer()
-                            Text("#\(identityIndex ?? 0)")
-                                .foregroundColor(collision ? .red : .secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                    if collision {
-                        Text(
-                            "Index #\(identityIndex ?? 0) is already taken on "
-                            + "this wallet. Pick a different index."
-                        )
-                        .font(.caption)
-                        .foregroundColor(.red)
+                    HStack {
+                        Text("Identity Registration Index")
+                        Spacer()
+                        Text("Chosen by the wallet")
+                            .foregroundColor(.secondary)
                     }
                 } header: {
                     Text("Identity Registration Index")
@@ -904,9 +870,8 @@ struct CreateIdentityView: View {
                     Text(
                         "The DIP-9 identity-registration slot the new identity "
                         + "will consume "
-                        + "(`m/9'/coin'/5'/0'/0'/N'/0'`). Defaults to one past "
-                        + "the highest index already used on this wallet; "
-                        + "override to pick any other unused index."
+                        + "(`m/9'/coin'/5'/0'/0'/N'/0'`). The wallet reserves "
+                        + "the lowest free index when you create the identity."
                     )
                 }
             }
@@ -1002,18 +967,16 @@ struct CreateIdentityView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
         case (.wallet(let walletId), .some):
-            guard let identityIndex = identityIndex else { return false }
             // The resume path is bound to the lock's original
-            // identity-index slot. Path B's init seeds
-            // `identityIndex` to the lock's `identityIndexRaw`,
-            // so the collision check below would always trip
-            // (the lock's slot has been "taken" by the lock
-            // itself). Resume specifically needs the slot to NOT
+            // identity-index slot, which Path B's init seeds into
+            // `identityIndex`. Resume specifically needs the slot to NOT
             // have a `PersistentIdentity` — the cross-wallet
             // anti-join in `IdentitiesContentView` already filtered
             // for that on the row the user tapped Resume on, so
-            // we trust the seed.
+            // we trust the seed. Every other path gets its index from
+            // the wallet at submit.
             if fundingSelection == .unusedAssetLock {
+                guard identityIndex != nil else { return false }
                 // Resolve the id to a live row before enabling
                 // submit — the row could have been deleted between
                 // Path B's init-seed and now (e.g. another flow
@@ -1022,13 +985,6 @@ struct CreateIdentityView: View {
                 // fall into the dispatch's "not yet supported"
                 // branch and show a confusing error.
                 return selectedAssetLock != nil
-            }
-            // Block submit on collision with an existing identity's
-            // registration index. The picker shows a red collision
-            // hint, but the button stays disabled regardless so the
-            // user can't punch through.
-            if usedIdentityIndices(for: walletId).contains(identityIndex) {
-                return false
             }
             if let account = selectedPlatformAccount {
                 guard let credits = parsedAmountCredits else { return false }
@@ -1044,9 +1000,7 @@ struct CreateIdentityView: View {
                 // have changed since the option was rendered), require a
                 // chosen denomination still in the live version-gated set
                 // (a protocol-version refresh can retire the picked value
-                // mid-session), and that the pool still covers it. The
-                // slot-collision check above already applies (the
-                // shielded path isn't `.unusedAssetLock`).
+                // mid-session), and that the pool still covers it.
                 guard shieldedOptionAvailable(for: walletId) else { return false }
                 guard let denomination = selectedDenomination,
                       shieldedIdentityCreateDenominations.contains(denomination)
@@ -1070,11 +1024,13 @@ struct CreateIdentityView: View {
     /// (Type-20, spends a fixed denomination from the Orchard pool).
     /// The walletless raw-proof branch stays disabled via `canSubmit`
     /// until its FFI entry point lands.
-    private func submit() {
-        guard
-            let identityIndex = identityIndex,
-            case .wallet(let walletId) = walletSelection
-        else {
+    ///
+    /// Resume keeps the tracked lock's own index. Every other path asks
+    /// the wallet for the index (`acquireRegistrationSlot`) and derives
+    /// the keys there; `slotTakenRetries` counts the slots found already
+    /// taken on chain in a row (see `observeController`).
+    private func submit(slotTakenRetries: Int = 0) {
+        guard case .wallet(let walletId) = walletSelection else {
             submitError = .init(message: "Selection is incomplete.")
             return
         }
@@ -1105,6 +1061,99 @@ struct CreateIdentityView: View {
         // buffers immediately. The mnemonic stays in Keychain; the
         // derivation path lives on `PersistentPlatformAddress`.
         let signer = KeychainSigner(modelContainer: modelContext.container)
+        let network: Network = platformState.currentNetwork
+
+        if fundingSelection == .unusedAssetLock {
+            guard let lock = selectedAssetLock, let identityIndex else {
+                submitError = .init(message: "Selection is incomplete.")
+                return
+            }
+            guard let identityPubkeys = deriveRegistrationKeys(
+                managedWallet: managedWallet,
+                walletId: walletId,
+                identityIndex: identityIndex
+            ) else { return }
+            submitResumed(
+                lock: lock,
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
+            return
+        }
+
+        isCreating = true
+        Task { @MainActor in
+            let slot: ManagedPlatformWallet.RegistrationSlot
+            do {
+                slot = try await managedWallet.acquireRegistrationSlot()
+            } catch {
+                submitError = .init(
+                    message: "Could not reserve an identity index: \(error.localizedDescription)"
+                )
+                isCreating = false
+                return
+            }
+            guard let identityPubkeys = deriveRegistrationKeys(
+                managedWallet: managedWallet,
+                walletId: walletId,
+                identityIndex: slot.identityIndex
+            ) else {
+                abandon(slot, in: managedWallet, message: nil)
+                return
+            }
+
+            // Dispatch by funding source.
+            if let account = selectedPlatformAccount {
+                submitPlatformPayment(
+                    account: account,
+                    walletId: walletId,
+                    slot: slot,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer,
+                    managedWallet: managedWallet,
+                    network: network
+                )
+            } else if let account = selectedCoreAccount {
+                submitCoreFunded(
+                    account: account,
+                    walletId: walletId,
+                    slot: slot,
+                    slotTakenRetries: slotTakenRetries,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer,
+                    managedWallet: managedWallet,
+                    network: network
+                )
+            } else if fundingSelection == .shieldedBalance {
+                submitShieldedFunded(
+                    walletId: walletId,
+                    slot: slot,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer,
+                    managedWallet: managedWallet,
+                    network: network
+                )
+            } else {
+                abandon(
+                    slot,
+                    in: managedWallet,
+                    message: "Selected funding source is not yet supported."
+                )
+            }
+        }
+    }
+
+    /// Derive and pre-persist the identity keys at `identityIndex`.
+    /// Returns `nil` after surfacing the failure in `submitError`.
+    private func deriveRegistrationKeys(
+        managedWallet: ManagedPlatformWallet,
+        walletId: Data,
+        identityIndex: UInt32
+    ) -> [ManagedPlatformWallet.IdentityPubkey]? {
         var identityPubkeys: [ManagedPlatformWallet.IdentityPubkey]
         do {
             // Single-FFI derive + persist. The Rust side owns the
@@ -1124,7 +1173,7 @@ struct CreateIdentityView: View {
             submitError = .init(
                 message: "Could not pre-derive identity keys: \(error.localizedDescription)"
             )
-            return
+            return nil
         }
 
         // Optional DashPay key pair — Encryption (kid=N) + Decryption
@@ -1157,55 +1206,36 @@ struct CreateIdentityView: View {
                 submitError = .init(
                     message: "Could not derive DashPay keys: \(error.localizedDescription)"
                 )
-                return
+                return nil
             }
         }
+        return identityPubkeys
+    }
 
-        let network: Network = platformState.currentNetwork
+    /// Give up a registration before its register call: release the
+    /// wallet's lease on the slot and surface `message`, if any.
+    private func abandon(
+        _ slot: ManagedPlatformWallet.RegistrationSlot,
+        in managedWallet: ManagedPlatformWallet,
+        message: String?
+    ) {
+        releaseSlot(slot, in: managedWallet)
+        if let message {
+            submitError = .init(message: message)
+        }
+        isCreating = false
+    }
 
-        // Dispatch by funding source.
-        if let account = selectedPlatformAccount {
-            submitPlatformPayment(
-                account: account,
-                walletId: walletId,
-                identityIndex: identityIndex,
-                identityPubkeys: identityPubkeys,
-                signer: signer,
-                managedWallet: managedWallet,
-                network: network
-            )
-        } else if let account = selectedCoreAccount {
-            submitCoreFunded(
-                account: account,
-                walletId: walletId,
-                identityIndex: identityIndex,
-                identityPubkeys: identityPubkeys,
-                signer: signer,
-                managedWallet: managedWallet,
-                network: network
-            )
-        } else if fundingSelection == .unusedAssetLock,
-                  let lock = selectedAssetLock {
-            submitResumed(
-                lock: lock,
-                walletId: walletId,
-                identityIndex: identityIndex,
-                identityPubkeys: identityPubkeys,
-                signer: signer,
-                managedWallet: managedWallet,
-                network: network
-            )
-        } else if fundingSelection == .shieldedBalance {
-            submitShieldedFunded(
-                walletId: walletId,
-                identityIndex: identityIndex,
-                identityPubkeys: identityPubkeys,
-                signer: signer,
-                managedWallet: managedWallet,
-                network: network
-            )
-        } else {
-            submitError = .init(message: "Selected funding source is not yet supported.")
+    /// Release the wallet's lease on a registration slot. A slot the
+    /// wallet no longer holds (the identity landed in it, or it was found
+    /// taken on chain) is not an error; any other failure only leaves the
+    /// in-memory lease until the app restarts.
+    private func releaseSlot(
+        _ slot: ManagedPlatformWallet.RegistrationSlot,
+        in managedWallet: ManagedPlatformWallet
+    ) {
+        Task {
+            try? await managedWallet.releaseRegistrationSlot(slot)
         }
     }
 
@@ -1241,6 +1271,8 @@ struct CreateIdentityView: View {
             walletId: walletId,
             identityIndex: identityIndex,
             body: {
+                // The tracked lock holds its own index, so no slot is
+                // leased: the token stays 0.
                 let (identityId, _) = try await managedWallet.resumeIdentityWithAssetLock(
                     outPointTxid: txidRaw,
                     outPointVout: vout,
@@ -1255,8 +1287,9 @@ struct CreateIdentityView: View {
         self.activeController = controller
         observeController(
             controller,
-            walletId: walletId,
-            identityIndex: identityIndex,
+            slot: nil,
+            managedWallet: managedWallet,
+            slotTakenRetries: 0,
             network: network
         )
     }
@@ -1269,7 +1302,7 @@ struct CreateIdentityView: View {
     /// `submitResumed`: the body closure runs
     /// `walletManager.shieldedIdentityCreateFromPool` (returns the new
     /// identity id directly) and `observeController` drives the shared
-    /// `persistCreatedIdentity` + `markIdentitySlotUsed` side-effects.
+    /// `persistCreatedIdentity` side-effect and the slot's release.
     /// The coordinator host matters MORE here than the other paths — the
     /// Halo 2 proof takes tens of seconds, so a controller that survives
     /// sheet dismissal (and shows under Pending Registrations) is the
@@ -1282,14 +1315,14 @@ struct CreateIdentityView: View {
     /// patches its UI-only fields — same as the address-funded path.
     private func submitShieldedFunded(
         walletId: Data,
-        identityIndex: UInt32,
+        slot: ManagedPlatformWallet.RegistrationSlot,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner,
         managedWallet: ManagedPlatformWallet,
         network: Network
     ) {
         guard let denomination = selectedDenomination else {
-            submitError = .init(message: "Pick a shielded denomination first.")
+            abandon(slot, in: managedWallet, message: "Pick a shielded denomination first.")
             return
         }
         // The fallback failure address is REQUIRED for Type-20. Visibility
@@ -1297,13 +1330,14 @@ struct CreateIdentityView: View {
         // (`shieldedOptionAvailable`), but re-resolve + guard here so the
         // submit path is force-unwrap-free if state shifted underneath us.
         guard let fallbackAddressBytes = shieldedFallbackAddressBytes(for: walletId) else {
-            submitError = .init(
+            abandon(
+                slot,
+                in: managedWallet,
                 message: "No Platform Payment address is available on this wallet to use as the required shielded creation-failure fallback. Generate one first."
             )
             return
         }
-
-        isCreating = true
+        let identityIndex = slot.identityIndex
 
         let coordinator = walletManager.registrationCoordinator
         // Captured locally so the escaping body holds its own reference
@@ -1338,8 +1372,9 @@ struct CreateIdentityView: View {
         self.activeController = controller
         observeController(
             controller,
-            walletId: walletId,
-            identityIndex: identityIndex,
+            slot: slot,
+            managedWallet: managedWallet,
+            slotTakenRetries: 0,
             network: network
         )
     }
@@ -1349,14 +1384,14 @@ struct CreateIdentityView: View {
     private func submitPlatformPayment(
         account: PersistentAccount,
         walletId: Data,
-        identityIndex: UInt32,
+        slot: ManagedPlatformWallet.RegistrationSlot,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner,
         managedWallet: ManagedPlatformWallet,
         network: Network
     ) {
         guard let targetCredits = parsedAmountCredits, targetCredits > 0 else {
-            submitError = .init(message: "Enter a positive amount.")
+            abandon(slot, in: managedWallet, message: "Enter a positive amount.")
             return
         }
         // Greedy-select addresses to cover `targetCredits`. The
@@ -1367,31 +1402,31 @@ struct CreateIdentityView: View {
             targetCredits: targetCredits
         )
         guard !inputs.isEmpty else {
-            submitError = .init(message: "No funded Platform addresses available on this account.")
+            abandon(
+                slot,
+                in: managedWallet,
+                message: "No funded Platform addresses available on this account."
+            )
             return
         }
-
-        isCreating = true
 
         Task {
             do {
                 let created = try await managedWallet.registerIdentityFromAddresses(
                     inputs: inputs,
                     output: nil,
-                    identityIndex: identityIndex,
+                    identityIndex: slot.identityIndex,
                     identityPubkeys: identityPubkeys,
                     identitySigner: signer,
                     addressSigner: signer
                 )
 
                 try await MainActor.run {
+                    // The identity holds the slot now; the lease is done.
+                    releaseSlot(slot, in: managedWallet)
                     try persistCreatedIdentity(
                         identityId: created.identityId,
                         network: network
-                    )
-                    markIdentitySlotUsed(
-                        walletId: walletId,
-                        identityIndex: identityIndex
                     )
                     try modelContext.save()
                     self.createdIdentityId = created.identityId
@@ -1399,6 +1434,13 @@ struct CreateIdentityView: View {
                 }
             } catch {
                 await MainActor.run {
+                    // A registration that may have reached Platform keeps
+                    // its slot leased until the app restarts; any other
+                    // failure gives it back.
+                    if case PlatformWalletError.transactionBroadcastUnconfirmed = error {
+                    } else {
+                        releaseSlot(slot, in: managedWallet)
+                    }
                     self.submitError = .init(
                         message: error.localizedDescription
                     )
@@ -1426,14 +1468,15 @@ struct CreateIdentityView: View {
     private func submitCoreFunded(
         account: PersistentAccount,
         walletId: Data,
-        identityIndex: UInt32,
+        slot: ManagedPlatformWallet.RegistrationSlot,
+        slotTakenRetries: Int,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner,
         managedWallet: ManagedPlatformWallet,
         network: Network
     ) {
         guard let amountDuffs = parsedAmountDuffs, amountDuffs > 0 else {
-            submitError = .init(message: "Enter a positive amount.")
+            abandon(slot, in: managedWallet, message: "Enter a positive amount.")
             return
         }
 
@@ -1442,13 +1485,11 @@ struct CreateIdentityView: View {
         // row from another isolation domain.
         let accountIndex = account.accountIndex
 
-        isCreating = true
-
         // Reuse an existing controller for this slot if one is in
         // flight (the coordinator's single-flight gate makes the
         // re-submit a no-op at the controller layer), otherwise
-        // spawn a fresh one. The persistence side-effects
-        // (`persistCreatedIdentity`, `markIdentitySlotUsed`) live
+        // spawn a fresh one. The persistence side-effect
+        // (`persistCreatedIdentity`) lives
         // here in the view so we still have access to
         // `modelContext` / `platformState`; the controller's body
         // is responsible only for the FFI call + the success
@@ -1456,12 +1497,12 @@ struct CreateIdentityView: View {
         let coordinator = walletManager.registrationCoordinator
         let controller = coordinator.startRegistration(
             walletId: walletId,
-            identityIndex: identityIndex,
+            identityIndex: slot.identityIndex,
             body: {
                 let (identityId, _) = try await managedWallet.registerIdentityWithFunding(
                     amountDuffs: amountDuffs,
                     accountIndex: accountIndex,
-                    identityIndex: identityIndex,
+                    slot: slot,
                     identityPubkeys: identityPubkeys,
                     signer: signer
                 )
@@ -1485,8 +1526,9 @@ struct CreateIdentityView: View {
         // `RegistrationProgressView` after dismissal.
         observeController(
             controller,
-            walletId: walletId,
-            identityIndex: identityIndex,
+            slot: slot,
+            managedWallet: managedWallet,
+            slotTakenRetries: slotTakenRetries,
             network: network
         )
     }
@@ -1496,24 +1538,31 @@ struct CreateIdentityView: View {
     /// The observer task auto-cancels when this view deallocates
     /// (Swift task lifecycle on the captured `self`), but the
     /// controller itself outlives the view.
+    ///
+    /// `slot` is the wallet's lease for a new registration (`nil` on the
+    /// resume path, whose lock holds its index). A completed or failed
+    /// registration gives it back; an unconfirmed one keeps it. A Core
+    /// registration that found its slot already taken on chain starts
+    /// over at a new slot, at most
+    /// `ManagedPlatformWallet.identitySlotTakenRetryLimit` times in a row.
     private func observeController(
         _ controller: IdentityRegistrationController,
-        walletId: Data,
-        identityIndex: UInt32,
+        slot: ManagedPlatformWallet.RegistrationSlot?,
+        managedWallet: ManagedPlatformWallet,
+        slotTakenRetries: Int,
         network: Network
     ) {
         Task {
             for await phase in phaseStream(controller: controller) {
                 switch phase {
                 case .completed(let identityId):
+                    if let slot {
+                        releaseSlot(slot, in: managedWallet)
+                    }
                     do {
                         try persistCreatedIdentity(
                             identityId: identityId,
                             network: network
-                        )
-                        markIdentitySlotUsed(
-                            walletId: walletId,
-                            identityIndex: identityIndex
                         )
                         try modelContext.save()
                         self.createdIdentityId = identityId
@@ -1534,6 +1583,22 @@ struct CreateIdentityView: View {
                     // ~30 s post-completion retention.
                     return
                 case .failed(let message):
+                    // The wallet recorded the identity it found at this
+                    // slot and released the lease; nothing was funded.
+                    // Start over at the next slot it hands out.
+                    if case .identitySlotTakenOnChain? = controller.failure as? PlatformWalletError,
+                       slotTakenRetries < ManagedPlatformWallet.identitySlotTakenRetryLimit {
+                        walletManager.registrationCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            identityIndex: controller.identityIndex
+                        )
+                        self.activeController = nil
+                        submit(slotTakenRetries: slotTakenRetries + 1)
+                        return
+                    }
+                    if let slot {
+                        releaseSlot(slot, in: managedWallet)
+                    }
                     self.submitError = .init(message: message)
                     self.isCreating = false
                     // Same rationale as `.completed`: keep the
@@ -1542,24 +1607,13 @@ struct CreateIdentityView: View {
                     return
                 case .unconfirmed:
                     // The transition may have reached a node; its result is not
-                    // proved, and the identity may already be live on chain. Mark the
-                    // slot used (same as `.completed`) — `usedIdentityIndices`
-                    // unions the persisted `isUsed` reservation with the
-                    // `PersistentIdentity` rows, so this is the reservation
-                    // that holds the slot across app restarts until the next
-                    // sync writes the identity row. It is best-effort (silent
-                    // no-op when the slot row is beyond the derived
-                    // lookahead), so the live `.unconfirmed` controller and
-                    // the dismissibility gate in `PendingRegistrationsList`
-                    // remain as defense in depth. We do NOT persist a
+                    // proved, and the identity may already be live on chain.
+                    // The slot stays leased (in memory, until the app
+                    // restarts), so the wallet hands it to no other
+                    // registration. We do NOT persist a
                     // `PersistentIdentity` row here — the proof-verified
                     // identity wasn't returned; the next sync writes the row
                     // once the identity is confirmed on chain.
-                    markIdentitySlotUsed(
-                        walletId: walletId,
-                        identityIndex: identityIndex
-                    )
-                    try? modelContext.save()
                     self.isCreating = false
                     return
                 default:
@@ -1688,29 +1742,6 @@ struct CreateIdentityView: View {
         row.network = network
         row.identityType = SwiftDashSDK.IdentityType.user.rawValue
         row.lastUpdated = Date()
-    }
-
-    /// Flip `isUsed` on the consumed identity-registration slot so
-    /// `usedIdentityIndices` (which unions the flag with the
-    /// `PersistentIdentity` rows) skips it. For confirmed registrations
-    /// this is redundant with the identity row, but for `.unconfirmed`
-    /// Type-20 broadcasts it is the ONLY persisted reservation holding
-    /// the slot until the next sync writes the identity row — losing it
-    /// would offer the same index for a duplicate submission. Silent
-    /// no-op if the slot row isn't found (an index beyond the derived
-    /// lookahead); the Rust side remains the on-chain source of truth.
-    private func markIdentitySlotUsed(
-        walletId: Data,
-        identityIndex: UInt32
-    ) {
-        guard let account = identityRegistrationAccount(for: walletId) else {
-            return
-        }
-        if let slot = account.coreAddresses.first(where: {
-            $0.addressIndex == identityIndex
-        }) {
-            slot.isUsed = true
-        }
     }
 
     /// The currently-selected Platform Payment account, if any.
@@ -2124,64 +2155,6 @@ struct CreateIdentityView: View {
             }
             let duffs = (match?.confirmed ?? 0) + (match?.unconfirmed ?? 0)
             return duffs > 0 ? formatDash(raw: duffs, divisor: 100_000_000.0) : "empty"
-        }
-    }
-
-    /// Identity-registration indices that must not be offered for a new
-    /// registration on this wallet: every index claimed by an existing
-    /// `PersistentIdentity`, UNIONED with the persisted
-    /// `PersistentCoreAddress.isUsed` reservations on the
-    /// identity-registration account.
-    ///
-    /// The union matters for `.unconfirmed` Type-20 registrations: the
-    /// transition may have reached a node, yet no `PersistentIdentity` row
-    /// exists until the next sync confirms it, so `markIdentitySlotUsed`'s
-    /// persisted `isUsed` flag is the ONLY artifact holding the slot once
-    /// the in-memory controller is gone. Without it the same index would
-    /// be offered again and a duplicate submission would burn funds
-    /// against the registered-key-hash stateful check.
-    ///
-    /// Identity rows stay authoritative for confirmed identities; the flag
-    /// is monotonic extra coverage. Its historical drift (discovered
-    /// identities never flipped it) only under-reports, which the identity
-    /// rows cover, and over-reporting merely skips an index — registration
-    /// indices aren't gap-limited, so a skipped index costs nothing.
-    private func usedIdentityIndices(for walletId: Data) -> Set<UInt32> {
-        var used = Set(
-            allIdentities
-                .filter { $0.wallet?.walletId == walletId }
-                .map { $0.identityIndex }
-        )
-        if let account = identityRegistrationAccount(for: walletId) {
-            used.formUnion(
-                account.coreAddresses
-                    .filter(\.isUsed)
-                    .map(\.addressIndex)
-            )
-        }
-        return used
-    }
-
-    /// One past the highest used registration index on this wallet,
-    /// or `0` for a wallet that has never registered an identity.
-    /// Identity-registration keys aren't gap-limited — any `N` is
-    /// derivable from the mnemonic at `m/9'/coin'/5'/0'/0'/N'/0'` —
-    /// so "next unused" is just `max + 1`.
-    ///
-    /// Uses checked addition: at `UInt32.max` we leave the picker at
-    /// `UInt32.max` rather than wrapping to `0` (which would silently
-    /// pre-fill a colliding slot). The user can still adjust the
-    /// stepper, and `canSubmit` keeps the button disabled until the
-    /// chosen index isn't already taken.
-    private func nextUnusedIdentityIndex(for walletId: Data) -> UInt32 {
-        let used = usedIdentityIndices(for: walletId)
-        guard let highest = used.max() else { return 0 }
-        return highest == UInt32.max ? UInt32.max : highest + 1
-    }
-
-    private func identityRegistrationAccount(for walletId: Data) -> PersistentAccount? {
-        allAccounts.first { account in
-            account.wallet.walletId == walletId && account.accountType == 2
         }
     }
 
