@@ -29,6 +29,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
+use platform_wallet::wallet::asset_lock::orchestration::handoff_failure_source;
 use platform_wallet::wallet::identity::crypto::{
     parse_invitation_uri, InviterInfo, ParsedInvitation,
 };
@@ -257,8 +258,11 @@ unsafe fn platform_wallet_create_invitation_inner(
     let c_uri = match std::ffi::CString::new(invitation.uri) {
         Ok(c) => c,
         Err(_) => {
-            return PlatformWalletFFIResult::from(
-                "invitation URI contained an interior NUL".to_string(),
+            return voucher_handoff_failure(
+                invitation.out_point,
+                PlatformWalletFFIResult::from(
+                    "invitation URI contained an interior NUL".to_string(),
+                ),
             )
         }
     };
@@ -266,6 +270,22 @@ unsafe fn platform_wallet_create_invitation_inner(
         *out_uri = c_uri.into_raw();
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// Stamp `failure`, an invitation whose voucher was funded and recorded but
+/// whose link could not be handed back, with the wallet's class for it: the
+/// voucher's lock is held (`LockHeld` on `out_point`, not retryable), so the
+/// host reclaims that voucher from its Sent invitations instead of funding a
+/// new one. Code and message stay `failure`'s.
+fn voucher_handoff_failure(
+    out_point: dashcore::OutPoint,
+    failure: PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    let held = PlatformWalletError::PaymentAlreadyDispatched {
+        held_lock: Some(out_point),
+        source: Box::new(handoff_failure_source()),
+    };
+    failure.with_payment_class(payment_class(&held))
 }
 
 /// Claim a DashPay invitation: register a NEW identity for the invitee, funded
@@ -725,6 +745,30 @@ mod tests {
     // are pinned library-side in `dash_sdk::platform::dashpay`'s invitation
     // module and `platform_wallet`'s `network::invitation`; these tests only
     // exercise the FFI's null/parameter guards and the wallet-lookup miss path.
+
+    /// A created invitation whose link cannot be handed back names its
+    /// voucher's lock as held, not retryable, so the host reclaims that
+    /// voucher instead of funding another invitation.
+    #[test]
+    fn should_name_the_voucher_lock_when_the_link_cannot_be_handed_back() {
+        let out_point = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([5; 32]),
+            vout: 2,
+        };
+        let mut result = voucher_handoff_failure(
+            out_point,
+            PlatformWalletFFIResult::from("invitation URI contained an interior NUL".to_string()),
+        );
+
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::LockHeld
+        );
+        assert_eq!(result.held_asset_lock.txid, [5; 32]);
+        assert_eq!(result.held_asset_lock.vout, 2);
+        assert!(!result.retryable);
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+    }
 
     /// A null `core_signer_handle` is rejected with `ErrorNullPointer` before
     /// any wallet lookup (the `check_ptr!` contract).
