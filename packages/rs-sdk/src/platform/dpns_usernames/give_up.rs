@@ -43,6 +43,10 @@ const TOMBSTONE: &str = "tombstone";
 /// numbers them, that declares the `tombstone` type.
 const FIRST_DPNS_VERSION_WITH_TOMBSTONES: FeatureVersion = 3;
 
+/// How many times a read is made when a node behind what the SDK has already verified
+/// answers it: another node usually answers the next one.
+const READ_ATTEMPTS: usize = 3;
+
 /// The query for the `document_type_name` document (a `domain` or a `tombstone`) of the name
 /// `normalized_label` under `dash`: at most one exists.
 pub(super) fn dpns_name_query(
@@ -78,37 +82,82 @@ pub(super) fn dpns_name_query(
     }
 }
 
-/// The network's DPNS contract from `fetch`, unless its response fails or is proved by a node
-/// behind the network: then from `fetch_as_a_registration`, whose error is returned when it
-/// fails too.
+/// The network's DPNS contract from `fetch`, asked again, [`READ_ATTEMPTS`] times at most,
+/// while a node behind the network answers, and an error when only such nodes do. When
+/// `fetch` fails, the contract comes from `fetch_as_a_registration`, whose error is returned
+/// when it fails too.
 ///
 /// A node that has not yet reached an upgrade still proves the contract the upgrade replaced,
 /// at its own, older protocol version. Its response is behind the network when that version
 /// is below `verified_version`, the highest a verified response has reported, read once the
 /// fetch has answered. Taken as the network's, a DPNS v2 from such a node would say the
-/// network stores no tombstone. A registration's fetch takes only a response proved at the
-/// version the SDK parsed it under, asking again when it gets another
+/// network stores no tombstone. Every response is judged by that version alone, never by the
+/// version the SDK is pinned to: a response at the network's version is taken by an SDK
+/// pinned below it too.
+///
+/// A fetch fails when the contract can not be parsed under the SDK's version, among other
+/// causes. A registration's fetch first learns the network's version and takes only a
+/// response proved at the version the SDK parsed it under
 /// ([`super::dpns_contract_proved_at_parsed_version`]).
 pub(super) async fn network_dpns_contract<V, F, R, C, RC>(
     verified_version: V,
-    fetch: F,
+    mut fetch: F,
     fetch_as_a_registration: C,
 ) -> Result<DataContract, Error>
 where
     V: Fn() -> Option<u32>,
-    F: FnOnce() -> R,
+    F: FnMut() -> R,
     R: Future<Output = Result<(Option<DataContract>, ResponseMetadata), Error>>,
     C: FnOnce() -> RC,
     RC: Future<Output = Result<DataContract, Error>>,
 {
-    match fetch().await {
-        Ok((dpns_contract, metadata))
-            if !verified_version().is_some_and(|verified| metadata.protocol_version < verified) =>
-        {
-            dpns_contract.ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
+    for _ in 0..READ_ATTEMPTS {
+        let Ok((dpns_contract, metadata)) = fetch().await else {
+            return fetch_as_a_registration().await;
+        };
+        if verified_version().is_some_and(|verified| metadata.protocol_version < verified) {
+            continue;
         }
-        _ => fetch_as_a_registration().await,
+        return dpns_contract.ok_or_else(|| Error::Generic("DPNS contract not found".to_string()));
     }
+    Err(Error::Generic(
+        "every response holding the DPNS contract was proved by a node behind the network"
+            .to_string(),
+    ))
+}
+
+/// Whether a name is tombstoned, from `read`: the query for its tombstone, answered with the
+/// tombstone, if any, and the metadata of the response.
+///
+/// A tombstone found is the answer whatever block it was read at, as a tombstone never
+/// leaves. Its absence is the answer only when proved at `not_before_height` or later, the
+/// block the name's domain was proved absent at: a tombstone create deletes the domain in
+/// its own block, so a domain absent at one block and a tombstone absent at an earlier one
+/// can be a name that was registered then and is tombstoned now, never free. An absence
+/// proved earlier is read again, [`READ_ATTEMPTS`] times at most, and is then an error:
+/// never "not tombstoned". Without a `not_before_height` the first answer is taken.
+pub(super) async fn name_tombstoned_not_before<F, R>(
+    not_before_height: Option<u64>,
+    mut read: F,
+) -> Result<bool, Error>
+where
+    F: FnMut() -> R,
+    R: Future<Output = Result<(Option<Document>, ResponseMetadata), Error>>,
+{
+    for _ in 0..READ_ATTEMPTS {
+        let (tombstone, metadata) = read().await?;
+        if tombstone.is_some() {
+            return Ok(true);
+        }
+        if !not_before_height.is_some_and(|height| metadata.height < height) {
+            return Ok(false);
+        }
+    }
+    Err(Error::Generic(
+        "every response proving the name has no tombstone was older than the one proving it \
+         has no domain"
+            .to_string(),
+    ))
 }
 
 /// Whether the DPNS contract of `protocol_version` declares tombstones. A version this build
@@ -155,7 +204,7 @@ pub(super) async fn network_dpns_contract_declaring_tombstones<V, F, R, C, RC>(
 ) -> Result<Option<DataContract>, Error>
 where
     V: Fn() -> Option<u32>,
-    F: FnOnce() -> R,
+    F: FnMut() -> R,
     R: Future<Output = Result<(Option<DataContract>, ResponseMetadata), Error>>,
     C: FnOnce() -> RC,
     RC: Future<Output = Result<DataContract, Error>>,
@@ -178,12 +227,22 @@ impl Sdk {
         document_type_name: &str,
         normalized_label: String,
     ) -> Result<Option<Document>, Error> {
+        self.dpns_name_document_with_metadata(dpns_contract, document_type_name, normalized_label)
+            .await
+            .map(|(document, _metadata)| document)
+    }
+
+    /// [`Sdk::dpns_name_document`], with the metadata of the response: the block the
+    /// document, or its absence, was proved at.
+    pub(super) async fn dpns_name_document_with_metadata(
+        &self,
+        dpns_contract: Arc<DataContract>,
+        document_type_name: &str,
+        normalized_label: String,
+    ) -> Result<(Option<Document>, ResponseMetadata), Error> {
         let query = dpns_name_query(dpns_contract, document_type_name, normalized_label);
-        Ok(Document::fetch_many(self, query)
-            .await?
-            .into_values()
-            .flatten()
-            .next())
+        let (documents, metadata) = Document::fetch_many_with_metadata(self, query, None).await?;
+        Ok((documents.into_values().flatten().next(), metadata))
     }
 
     /// Whether the DPNS contract of the highest protocol version a verified response ever
@@ -202,12 +261,11 @@ impl Sdk {
     /// The SDK first learns the network's protocol version where it can (a proven refresh,
     /// which does nothing on an SDK with a pinned version or with proofs off), so a contract
     /// stored at a newer version is not parsed under an older one. The contract is then
-    /// fetched as any contract is, and taken unless the fetch fails or a node behind the
-    /// network answered it: then it is fetched as a registration fetches it
-    /// ([`Sdk::fetch_current_dpns_contract`]), whose error is returned when that fails too. An
-    /// SDK whose version stays below the network's can not parse the network's contract, and
-    /// is told so. Whichever fetch answered, a contract declaring no tombstone is an error
-    /// once a verified response shows the network past the upgrade
+    /// fetched as any contract is, again while a node behind the network answers; when the
+    /// fetch fails it is fetched as a registration fetches it
+    /// ([`Sdk::fetch_current_dpns_contract`]), whose error is returned when that fails too.
+    /// Whichever fetch answered, a contract declaring no tombstone is an error once a
+    /// verified response shows the network past the upgrade
     /// ([`network_dpns_contract_declaring_tombstones`]).
     pub(super) async fn fetch_network_dpns_contract_declaring_tombstones(
         &self,
@@ -266,25 +324,33 @@ impl Sdk {
 
     /// Whether the name `normalized_label` under `dash` is tombstoned, read under
     /// `dpns_contract` or, when that one declares no tombstone, under the contract the
-    /// network stores ([`Sdk::dpns_contract_declaring_tombstones`], which
-    /// `verified_response_in_this_call` is for). Never before DPNS v3, whose contract
-    /// declares no tombstone.
+    /// network stores ([`Sdk::dpns_contract_declaring_tombstones`]). Never before DPNS v3,
+    /// whose contract declares no tombstone.
+    ///
+    /// `domain_absent_at_height` is the block a verified response of this call proved the
+    /// name's domain absent at, `None` when the call read no domain. It says a response of
+    /// this call showed what the network runs, and holds the tombstone's absence to a block
+    /// no earlier ([`name_tombstoned_not_before`]).
     pub(super) async fn dpns_name_tombstoned_under(
         &self,
         dpns_contract: Arc<DataContract>,
         normalized_label: String,
-        verified_response_in_this_call: bool,
+        domain_absent_at_height: Option<u64>,
     ) -> Result<bool, Error> {
         let Some(dpns_contract) = self
-            .dpns_contract_declaring_tombstones(dpns_contract, verified_response_in_this_call)
+            .dpns_contract_declaring_tombstones(dpns_contract, domain_absent_at_height.is_some())
             .await?
         else {
             return Ok(false);
         };
-        Ok(self
-            .dpns_name_document(dpns_contract, TOMBSTONE, normalized_label)
-            .await?
-            .is_some())
+        name_tombstoned_not_before(domain_absent_at_height, || {
+            self.dpns_name_document_with_metadata(
+                dpns_contract.clone(),
+                TOMBSTONE,
+                normalized_label.clone(),
+            )
+        })
+        .await
     }
 
     /// Whether a DPNS name is tombstoned: its owner gave it up for good, and nobody can
@@ -305,7 +371,7 @@ impl Sdk {
         }
         let dpns_contract = self.fetch_dpns_contract().await?;
         // Nothing this call has read says what the network runs
-        self.dpns_name_tombstoned_under(dpns_contract, normalized_label, false)
+        self.dpns_name_tombstoned_under(dpns_contract, normalized_label, None)
             .await
     }
 
@@ -569,11 +635,11 @@ mod tests {
         expect_name_document(&mut sdk, TOMBSTONE, "a11ce", None).await;
 
         assert!(sdk
-            .dpns_name_tombstoned_under(dpns_v3(), "b0b".to_string(), false)
+            .dpns_name_tombstoned_under(dpns_v3(), "b0b".to_string(), None)
             .await
             .expect("the query answers"));
         assert!(!sdk
-            .dpns_name_tombstoned_under(dpns_v3(), "a11ce".to_string(), false)
+            .dpns_name_tombstoned_under(dpns_v3(), "a11ce".to_string(), None)
             .await
             .expect("the query answers"));
     }
