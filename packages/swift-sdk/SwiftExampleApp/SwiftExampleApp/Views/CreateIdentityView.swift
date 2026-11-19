@@ -58,6 +58,44 @@ protocol AssetLockResumeRow {
 
 extension PersistentAssetLock: AssetLockResumeRow {}
 
+/// What `CreateIdentityView` does after a registration fails.
+///
+/// A fresh registration whose slot was taken on chain starts over at a
+/// new slot. A resumed asset lock keeps its own index, so retrying it
+/// only fails again: the wallet already recorded the identity found
+/// there, and the lock (still unspent) can top that identity up.
+enum RegistrationFailureNextStep: Equatable {
+    case retryAtNewSlot
+    case offerLockTopUp(identityIndex: UInt32, identityId: String)
+    case showFailure
+
+    static func after(
+        _ failure: Error?,
+        isResume: Bool,
+        slotTakenRetries: Int
+    ) -> RegistrationFailureNextStep {
+        guard case .identitySlotTakenOnChain(let identityIndex, let identityId)? =
+            failure as? PlatformWalletError
+        else { return .showFailure }
+        if isResume {
+            return .offerLockTopUp(identityIndex: identityIndex, identityId: identityId)
+        }
+        return slotTakenRetries < ManagedPlatformWallet.identitySlotTakenRetryLimit
+            ? .retryAtNewSlot
+            : .showFailure
+    }
+}
+
+/// A resumed registration lock whose index already holds an identity of
+/// this wallet: the lock can top that identity up instead.
+private struct LockTopUpOffer {
+    let walletId: Data
+    let identityIndex: UInt32
+    let identityId: Data
+    let outPointTxid: Data
+    let outPointVout: UInt32
+}
+
 struct CreateIdentityView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -323,6 +361,13 @@ struct CreateIdentityView: View {
     /// on the Identities tab after this sheet dismisses.
     @State private var activeController: IdentityRegistrationController? = nil
 
+    /// Set when a resumed lock's index already holds an identity of this
+    /// wallet (`.identitySlotTakenOnChain`); offers topping it up instead.
+    @State private var lockTopUpOffer: LockTopUpOffer? = nil
+    @State private var isToppingUp: Bool = false
+    /// The identity's credit balance after the offered top-up succeeded.
+    @State private var lockTopUpBalance: UInt64? = nil
+
     /// Optional pre-pick wired up by the Identities-tab "Resumable
     /// Registrations" section. When non-nil, the four selection
     /// `@State`s below are seeded in `init` so the form opens
@@ -376,6 +421,9 @@ struct CreateIdentityView: View {
                     // continues to run if this sheet is dismissed.
                     RegistrationProgressSection(controller: controller)
                     terminalSection(for: controller)
+                    if let offer = lockTopUpOffer {
+                        lockTopUpSection(offer, controller: controller)
+                    }
                 } else if let lock = preselectedAssetLock {
                     // Path B (Resumable Registrations → Resume):
                     // wallet + lock + slot are all pinned by the
@@ -404,7 +452,7 @@ struct CreateIdentityView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
-                        .disabled(isCreating)
+                        .disabled(isCreating || isToppingUp)
                 }
             }
             .alert(item: $submitError) { err in
@@ -510,6 +558,88 @@ struct CreateIdentityView: View {
             }
         default:
             EmptyView()
+        }
+    }
+
+    /// Shown under the failure banner when a resumed lock's index already
+    /// holds an identity of this wallet. The lock was not spent; it can
+    /// top that identity up.
+    @ViewBuilder
+    private func lockTopUpSection(
+        _ offer: LockTopUpOffer,
+        controller: IdentityRegistrationController
+    ) -> some View {
+        let identityIdBase58 = offer.identityId.toBase58String()
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(
+                    "Identity index \(offer.identityIndex) already holds identity "
+                    + "\(identityIdBase58), which is now in this wallet. This asset "
+                    + "lock was not spent and can top that identity up instead."
+                )
+                .font(.callout)
+                .textSelection(.enabled)
+                if let balance = lockTopUpBalance {
+                    Label(
+                        "Topped up. New balance: \(balance) credits",
+                        systemImage: "checkmark.seal.fill"
+                    )
+                    .foregroundColor(.green)
+                    Button {
+                        walletManager.registrationCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            identityIndex: controller.identityIndex
+                        )
+                        dismiss()
+                    } label: {
+                        Text("Done")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        topUpWithResumedLock(offer)
+                    } label: {
+                        if isToppingUp {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Top up \(identityIdBase58.prefix(8))… with this asset lock")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isToppingUp)
+                }
+            }
+        }
+    }
+
+    /// Spend the resumed registration lock on a top-up of the identity at
+    /// its index (`resumeTopUpWithAssetLock`; Rust accepts a registration
+    /// lock for the identity in its own slot).
+    private func topUpWithResumedLock(_ offer: LockTopUpOffer) {
+        guard let managedWallet = walletManager.wallet(for: offer.walletId) else {
+            submitError = .init(message: "The selected wallet isn't loaded.")
+            return
+        }
+        isToppingUp = true
+        Task { @MainActor in
+            do {
+                let balance = try await managedWallet.resumeTopUpWithAssetLock(
+                    identityId: offer.identityId,
+                    outPointTxid: offer.outPointTxid,
+                    outPointVout: offer.outPointVout
+                )
+                PersistentIdentity.updateBalance(
+                    in: modelContext, identityId: offer.identityId, balance: balance
+                )
+                try? modelContext.save()
+                lockTopUpBalance = balance
+            } catch {
+                submitError = .init(message: error.localizedDescription)
+            }
+            isToppingUp = false
         }
     }
 
@@ -1292,7 +1422,8 @@ struct CreateIdentityView: View {
             slot: nil,
             managedWallet: managedWallet,
             slotTakenRetries: 0,
-            network: network
+            network: network,
+            resumedOutPoint: (txid: txidRaw, vout: vout)
         )
     }
 
@@ -1558,12 +1689,15 @@ struct CreateIdentityView: View {
     /// registration that found its slot already taken on chain starts
     /// over at a new slot, at most
     /// `ManagedPlatformWallet.identitySlotTakenRetryLimit` times in a row.
+    /// A resumed lock (`resumedOutPoint`) keeps its index, so it does not
+    /// retry: it offers to top up the identity found there instead.
     private func observeController(
         _ controller: IdentityRegistrationController,
         slot: ManagedPlatformWallet.RegistrationSlot?,
         managedWallet: ManagedPlatformWallet,
         slotTakenRetries: Int,
-        network: Network
+        network: Network,
+        resumedOutPoint: (txid: Data, vout: UInt32)? = nil
     ) {
         Task {
             for await phase in phaseStream(controller: controller) {
@@ -1596,11 +1730,15 @@ struct CreateIdentityView: View {
                     // ~30 s post-completion retention.
                     return
                 case .failed(let message):
-                    // The wallet recorded the identity it found at this
-                    // slot and released the lease; nothing was funded.
-                    // Start over at the next slot it hands out.
-                    if case .identitySlotTakenOnChain? = controller.failure as? PlatformWalletError,
-                       slotTakenRetries < ManagedPlatformWallet.identitySlotTakenRetryLimit {
+                    switch RegistrationFailureNextStep.after(
+                        controller.failure,
+                        isResume: resumedOutPoint != nil,
+                        slotTakenRetries: slotTakenRetries
+                    ) {
+                    case .retryAtNewSlot:
+                        // The wallet recorded the identity it found at this
+                        // slot and released the lease; nothing was funded.
+                        // Start over at the next slot it hands out.
                         walletManager.registrationCoordinator.dismiss(
                             walletId: controller.walletId,
                             identityIndex: controller.identityIndex
@@ -1608,6 +1746,24 @@ struct CreateIdentityView: View {
                         self.activeController = nil
                         submit(slotTakenRetries: slotTakenRetries + 1)
                         return
+                    case .offerLockTopUp(let identityIndex, let identityIdBase58):
+                        // The wallet recorded the identity at the lock's
+                        // index; the lock was not spent. Keep the failure
+                        // banner and offer the top-up below it.
+                        if let resumedOutPoint,
+                           let identityId = Data.identifier(fromBase58: identityIdBase58) {
+                            self.lockTopUpOffer = LockTopUpOffer(
+                                walletId: controller.walletId,
+                                identityIndex: identityIndex,
+                                identityId: identityId,
+                                outPointTxid: resumedOutPoint.txid,
+                                outPointVout: resumedOutPoint.vout
+                            )
+                            self.isCreating = false
+                            return
+                        }
+                    case .showFailure:
+                        break
                     }
                     if let slot {
                         releaseSlot(slot, in: managedWallet)
