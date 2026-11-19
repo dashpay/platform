@@ -146,10 +146,10 @@ fn identity_entry() -> IdentityEntry {
 ///
 /// Raw SQL against the V001-V006 schema: the branch's writers target tables
 /// that do not exist yet at this point in history (`wallets`,
-/// `core_address_pool`), so they cannot be used. The blob encoders CAN --
-/// `key-wallet` is pinned to the same revision on both sides and
-/// `AccountRegistrationEntry` is unchanged, so these bytes are exactly what a
-/// `v4.2-dev` build would have written.
+/// `core_address_pool`), so they cannot be used. `AccountRegistrationEntry`
+/// is unchanged, so its blob is what a `v4.2-dev` build would have written.
+/// The pool snapshot is encoded in the published `v4.2-dev` layout through
+/// `snapshot_bytes`, with synthetic per-address counters.
 fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
     use rusqlite::params;
 
