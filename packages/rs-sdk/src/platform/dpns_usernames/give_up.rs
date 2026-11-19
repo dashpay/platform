@@ -11,6 +11,7 @@
 //!   will of the DAO.
 
 use super::normalize_dpns_label;
+use crate::error::StaleNodeError;
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::documents::transitions::{
     DocumentDeleteResult, DocumentDeleteTransitionBuilder,
@@ -82,6 +83,19 @@ pub(super) fn dpns_name_query(
     }
 }
 
+/// The normalized label of `name`, a name to give up, refused when it is empty (`""`,
+/// `".dash"`): no name is registered under it, and a write of it would be refused by the
+/// network only once it is broadcast and paid for.
+fn registered_dpns_label(name: &str) -> Result<String, Error> {
+    let normalized_label = normalize_dpns_label(name);
+    if normalized_label.is_empty() {
+        return Err(Error::InvalidRequest(
+            "the DPNS name is empty after normalization".to_string(),
+        ));
+    }
+    Ok(normalized_label)
+}
+
 /// The network's DPNS contract from `fetch`, asked again, [`READ_ATTEMPTS`] times at most,
 /// while a node behind the network answers, and an error when only such nodes do. When
 /// `fetch` fails, the contract comes from `fetch_as_a_registration`, whose error is returned
@@ -93,7 +107,8 @@ pub(super) fn dpns_name_query(
 /// fetch has answered. Taken as the network's, a DPNS v2 from such a node would say the
 /// network stores no tombstone. Every response is judged by that version alone, never by the
 /// version the SDK is pinned to: a response at the network's version is taken by an SDK
-/// pinned below it too.
+/// pinned below it too. When only such nodes answer, the error is the last one's
+/// [`StaleNodeError::BehindProtocolUpgrade`], which a caller may retry.
 ///
 /// A fetch fails when the contract can not be parsed under the SDK's version, among other
 /// causes. A registration's fetch first learns the network's version and takes only a
@@ -111,18 +126,27 @@ where
     C: FnOnce() -> RC,
     RC: Future<Output = Result<DataContract, Error>>,
 {
+    let mut behind = None;
     for _ in 0..READ_ATTEMPTS {
         let Ok((dpns_contract, metadata)) = fetch().await else {
             return fetch_as_a_registration().await;
         };
-        if verified_version().is_some_and(|verified| metadata.protocol_version < verified) {
+        if let Some(verified) =
+            verified_version().filter(|verified| metadata.protocol_version < *verified)
+        {
+            behind = Some(StaleNodeError::BehindProtocolUpgrade {
+                required: verified,
+                signed: metadata.protocol_version,
+            });
             continue;
         }
         return dpns_contract.ok_or_else(|| Error::Generic("DPNS contract not found".to_string()));
     }
-    Err(Error::Generic(
-        "every response holding the DPNS contract was proved by a node behind the network"
-            .to_string(),
+    // Every response was proved by a node behind the network: a stale node error, which a
+    // caller may retry, naming the last one
+    Err(behind.map_or_else(
+        || Error::Generic("the DPNS contract was not fetched".to_string()),
+        Error::StaleNode,
     ))
 }
 
@@ -134,8 +158,9 @@ where
 /// block the name's domain was proved absent at: a tombstone create deletes the domain in
 /// its own block, so a domain absent at one block and a tombstone absent at an earlier one
 /// can be a name that was registered then and is tombstoned now, never free. An absence
-/// proved earlier is read again, [`READ_ATTEMPTS`] times at most, and is then an error:
-/// never "not tombstoned". Without a `not_before_height` the first answer is taken.
+/// proved earlier is read again, [`READ_ATTEMPTS`] times at most, and is then the last one's
+/// [`StaleNodeError::Height`], which a caller may retry: never "not tombstoned". Without a
+/// `not_before_height` the first answer is taken.
 pub(super) async fn name_tombstoned_not_before<F, R>(
     not_before_height: Option<u64>,
     mut read: F,
@@ -144,19 +169,27 @@ where
     F: FnMut() -> R,
     R: Future<Output = Result<(Option<Document>, ResponseMetadata), Error>>,
 {
+    let mut behind = None;
     for _ in 0..READ_ATTEMPTS {
         let (tombstone, metadata) = read().await?;
         if tombstone.is_some() {
             return Ok(true);
         }
-        if !not_before_height.is_some_and(|height| metadata.height < height) {
+        let Some(expected_height) = not_before_height.filter(|height| metadata.height < *height)
+        else {
             return Ok(false);
-        }
+        };
+        behind = Some(StaleNodeError::Height {
+            expected_height,
+            received_height: metadata.height,
+            tolerance_blocks: 0,
+        });
     }
-    Err(Error::Generic(
-        "every response proving the name has no tombstone was older than the one proving it \
-         has no domain"
-            .to_string(),
+    // Every absence was proved at a block before the domain's: a stale node error, which a
+    // caller may retry, naming the last one
+    Err(behind.map_or_else(
+        || Error::Generic("the name's tombstone was not read".to_string()),
+        Error::StaleNode,
     ))
 }
 
@@ -399,7 +432,7 @@ impl Sdk {
         identity_public_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
-        let normalized_label = normalize_dpns_label(name);
+        let normalized_label = registered_dpns_label(name)?;
         let dpns_contract = self.fetch_dpns_contract().await?;
         let Some(domain) = self
             .dpns_name_document(dpns_contract.clone(), DOMAIN, normalized_label.clone())
@@ -463,7 +496,7 @@ impl Sdk {
         identity_public_key: IdentityPublicKey,
         signer: &S,
     ) -> Result<Document, Error> {
-        let normalized_label = normalize_dpns_label(name);
+        let normalized_label = registered_dpns_label(name)?;
         // The contract the network stores now, as for a registration: one cached before the
         // upgrade to DPNS v3 declares no tombstone
         let dpns_contract = self.fetch_current_dpns_contract().await?;

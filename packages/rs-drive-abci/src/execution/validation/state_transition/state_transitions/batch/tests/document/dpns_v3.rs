@@ -454,6 +454,43 @@ mod dpns_v3_tests {
             self.process(&transition, height)
         }
 
+        /// A price of `price` credits set by `who` in block `height` on the name
+        /// `name`, stored at `revision`: the name is then for sale to anybody.
+        async fn set_price(
+            &mut self,
+            who: Who,
+            name: &Document,
+            revision: u64,
+            price: Credits,
+            height: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = self.platform_version;
+            let dpns = self.dpns();
+            let domain = dpns
+                .document_type_for_name("domain")
+                .expect("expected the domain document type");
+            let mut name = name.clone();
+            name.set_revision(Some(revision + 1));
+            let writer = self.writer(who);
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            let transition = BatchTransition::new_document_update_price_transition_from_document(
+                name,
+                domain,
+                price,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the update price transition");
+            self.process(&transition, height)
+        }
+
         /// A tombstone by `who` in block `height` of `label` under `dash`.
         async fn tombstone(
             &mut self,
@@ -2086,6 +2123,74 @@ mod dpns_v3_tests {
                 .owner_id(),
             bob
         );
+    }
+
+    /// A name its owner listed for sale is still the owner's to give up: the delete and the
+    /// tombstone go through, and the name leaves state with its price. The deleted name is
+    /// then registered anew, at no price, and the tombstoned one by nobody.
+    #[tokio::test]
+    async fn should_delete_or_tombstone_a_name_listed_for_sale() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let bob = fixture.id(Who::Bob);
+        let mut names = vec![];
+        for (label, height) in [
+            ("quantum7", PREORDER_HEIGHT),
+            ("quantum8", PREORDER_HEIGHT + 2),
+        ] {
+            let (name, result) = fixture.register_at(Who::Alice, label, height).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            names.push(name);
+        }
+        let height = PREORDER_HEIGHT + 4;
+        for name in &names {
+            let result = fixture
+                .set_price(Who::Alice, name, 1, dash_to_credits!(0.1), height)
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        for label in ["quantum7", "quantum8"] {
+            let listed = fixture.name(label).expect("expected the name");
+            assert_eq!(
+                listed.get("$price"),
+                Some(&Value::U64(dash_to_credits!(0.1))),
+                "{label} is listed for sale"
+            );
+        }
+
+        let result = fixture
+            .delete(Who::Alice, "domain", &names[0], height + 1)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let (_, result) = fixture.tombstone(Who::Alice, "quantum8", height + 1).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum7").is_none());
+        assert!(fixture.name("quantum8").is_none());
+        assert!(fixture.tombstone_of("quantum8").is_some());
+
+        // The deleted name is free, and comes back without the price it left with
+        let (_, result) = fixture.register_at(Who::Bob, "quantum7", height + 2).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let registered = fixture.name("quantum7").expect("expected the name");
+        assert_eq!(registered.owner_id(), bob);
+        assert_eq!(registered.get("$price"), None);
+        // The tombstoned one is nobody's to register
+        let (_, result) = fixture.register_at(Who::Bob, "quantum8", height + 4).await;
+        assert_rule_refusal(&result, "nameIsNotTombstoned");
     }
 
     /// A contested name, awarded by the masternode vote, can not be deleted: the delete

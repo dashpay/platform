@@ -51,7 +51,7 @@ pub(super) fn delete_domain_data_trigger_v0(
     let DocumentTransitionAction::DeleteAction(_) = document_transition else {
         return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
             format!(
-                "the Document Transition {} isn't 'DELETE",
+                "the Document Transition {} isn't 'DELETE'",
                 document_transition.base().id()
             ),
         )));

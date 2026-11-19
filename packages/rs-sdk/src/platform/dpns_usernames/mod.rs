@@ -784,6 +784,7 @@ fn identity_from_domain_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::StaleNodeError;
     use crate::query_types::Documents;
     use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
@@ -796,6 +797,7 @@ mod tests {
     };
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::{PlatformVersion, LATEST_VERSION};
+    use rs_dapi_client::CanRetry;
     use std::cell::{Cell, RefCell};
     use std::future::ready;
 
@@ -1360,6 +1362,216 @@ mod tests {
             .is_err());
     }
 
+    /// The domain of `label.dash` held by `owner`, as a proof returns it under DPNS v2.
+    fn stored_domain(label: &str, owner: Identifier) -> Document {
+        let mut properties = bob_domain_properties();
+        properties.insert("label".to_string(), Value::Text(label.to_string()));
+        properties.insert(
+            "normalizedLabel".to_string(),
+            Value::Text(convert_to_homograph_safe_chars(label)),
+        );
+        properties.insert(
+            "records".to_string(),
+            Value::Map(vec![(
+                Value::Text("identity".to_string()),
+                Value::Identifier(owner.to_buffer()),
+            )]),
+        );
+        properties.insert(
+            "subdomainRules".to_string(),
+            Value::Map(vec![(
+                Value::Text("allowSubdomains".to_string()),
+                Value::Bool(false),
+            )]),
+        );
+        Document::V0(DocumentV0 {
+            contract_version: None,
+            id: Identifier::new([9u8; 32]),
+            owner_id: owner,
+            properties,
+            revision: Some(1),
+            created_at: Some(1_700_000_000_000),
+            updated_at: Some(1_700_000_000_000),
+            transferred_at: Some(1_700_000_000_000),
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+        })
+    }
+
+    /// Answers the query for the domain of `label.dash`, read under DPNS v2, with it.
+    async fn expect_domain_of(sdk: &mut Sdk, label: &str, owner: Identifier) {
+        let domain = stored_domain(label, owner);
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                give_up::dpns_name_query(
+                    Arc::new(dpns_v2()),
+                    "domain",
+                    convert_to_homograph_safe_chars(label),
+                ),
+                Some([(domain.id(), Some(domain))].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+    }
+
+    /// A key the writes below are asked to sign with, and never do.
+    fn signing_key() -> IdentityPublicKey {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![1; 33]),
+            disabled_at: None,
+        })
+    }
+
+    /// An empty name (`""`, `".dash"`) is given up by nobody: both writes refuse it before
+    /// they read anything, where the network would refuse it only once broadcast and paid for.
+    /// The mock SDK holds no expectation.
+    #[tokio::test]
+    async fn should_refuse_to_give_up_an_empty_name_before_reading_anything() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        let owner = Identifier::new([1u8; 32]);
+
+        for name in ["", ".dash", ".DASH"] {
+            let deleted = sdk
+                .delete_dpns_name(name, &signing_key(), &UnusedSigner)
+                .await;
+            assert!(
+                matches!(deleted, Err(Error::InvalidRequest(_))),
+                "{name:?}: {deleted:?}"
+            );
+            let tombstoned = sdk
+                .tombstone_dpns_name(name, owner, signing_key(), &UnusedSigner)
+                .await;
+            assert!(
+                matches!(tombstoned, Err(Error::InvalidRequest(_))),
+                "{name:?}: {tombstoned:?}"
+            );
+        }
+    }
+
+    /// A name nobody holds is not deleted: the delete stops at the proven absence of its
+    /// domain, before anything is signed.
+    #[tokio::test]
+    async fn should_refuse_to_delete_a_name_that_is_not_registered() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_no_domain_of_bob(&mut sdk).await;
+
+        let error = sdk
+            .delete_dpns_name("Bob.dash", &signing_key(), &UnusedSigner)
+            .await
+            .expect_err("no domain to delete");
+        assert!(error.to_string().contains("is not registered"), "{error}");
+    }
+
+    /// A contested name (`b0b` matches the contest's pattern) can only be tombstoned. The
+    /// network would refuse its delete once broadcast and paid for, so the delete refuses it
+    /// from the stored name: nothing else is read and nothing is signed.
+    #[tokio::test]
+    async fn should_refuse_to_delete_a_contested_name_before_anything_is_broadcast() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob", Identifier::new([1u8; 32])).await;
+
+        let error = sdk
+            .delete_dpns_name("Bob", &signing_key(), &UnusedSigner)
+            .await
+            .expect_err("a contested name is not deleted");
+        assert!(error.to_string().contains("only tombstoned"), "{error}");
+    }
+
+    /// An uncontested name (`b0b7` holds a digit the contest's pattern does not) passes both
+    /// checks, and the delete starts: it stops at the first request the mock leaves
+    /// unanswered, the nonce of the transition it is about to sign.
+    #[tokio::test]
+    async fn should_start_the_delete_of_an_uncontested_name() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Bob7", Identifier::new([1u8; 32])).await;
+
+        let error = sdk
+            .delete_dpns_name("Bob7.dash", &signing_key(), &UnusedSigner)
+            .await
+            .expect_err("the unanswered nonce fetch stops the delete");
+        let message = error.to_string();
+        assert!(
+            message.contains("GetIdentityContractNonceRequest"),
+            "expected the delete to stop at its nonce fetch, got {message}"
+        );
+        assert!(!message.contains("only tombstoned"), "{message}");
+        assert!(!message.contains("is not registered"), "{message}");
+    }
+
+    /// On a network whose DPNS contract declares no tombstone (before protocol version 15) a
+    /// name can not be tombstoned: the tombstone stops with that reason once it has fetched
+    /// the contract the network stores, before anything is signed.
+    #[tokio::test]
+    async fn should_refuse_to_tombstone_on_a_network_whose_contract_declares_no_tombstone() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_network_dpns(&mut sdk, dpns_v2()).await;
+
+        let error = sdk
+            .tombstone_dpns_name(
+                "Bob",
+                Identifier::new([1u8; 32]),
+                signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("DPNS v2 has no tombstone");
+        assert!(
+            error.to_string().contains("declares no tombstone"),
+            "{error}"
+        );
+    }
+
+    /// A tombstone is built against the DPNS v3 the network stores, whatever the provider
+    /// held, and that contract is handed to the provider so the confirmation decodes under
+    /// it. The write then starts: it stops at the first request the mock leaves unanswered,
+    /// the nonce of the transition it is about to sign.
+    #[tokio::test]
+    async fn should_build_a_tombstone_against_the_network_contract_and_start_the_write() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_network_dpns(&mut sdk, dpns_v3()).await;
+        assert!(!resolves_dpns_with_tombstones(&provider));
+
+        let error = sdk
+            .tombstone_dpns_name(
+                "Bob.dash",
+                Identifier::new([1u8; 32]),
+                signing_key(),
+                &UnusedSigner,
+            )
+            .await
+            .expect_err("the unanswered nonce fetch stops the tombstone");
+        let message = error.to_string();
+        assert!(
+            message.contains("GetIdentityContractNonceRequest"),
+            "expected the tombstone to stop at its nonce fetch, got {message}"
+        );
+        assert!(!message.contains("declares no tombstone"), "{message}");
+        assert_eq!(sdk.protocol_version_number(), LATEST_VERSION);
+        assert!(resolves_dpns_with_tombstones(&provider));
+    }
+
     /// A signer the tests never reach: each registration below stops before it signs.
     #[derive(Debug)]
     struct UnusedSigner;
@@ -1862,7 +2074,19 @@ mod tests {
         .await;
 
         assert_eq!(fetches.get(), 3);
-        assert!(result.is_err());
+        // A stale node error, which a caller may retry, naming the versions
+        let error = result.expect_err("no response at the network's version came");
+        assert!(error.can_retry(), "{error}");
+        assert!(
+            matches!(
+                error,
+                Error::StaleNode(StaleNodeError::BehindProtocolUpgrade {
+                    required: LATEST_VERSION,
+                    signed: 14,
+                })
+            ),
+            "{error}"
+        );
     }
 
     /// A fetch that fails is made as a registration makes it. For an SDK pinned to protocol
@@ -1968,7 +2192,20 @@ mod tests {
         .await;
 
         assert_eq!(reads.get(), 3);
-        assert!(result.is_err());
+        // A stale node error, which a caller may retry, naming the blocks
+        let error = result.expect_err("no absence at the domain's block came");
+        assert!(error.can_retry(), "{error}");
+        assert!(
+            matches!(
+                error,
+                Error::StaleNode(StaleNodeError::Height {
+                    expected_height: 101,
+                    received_height: 100,
+                    tolerance_blocks: 0,
+                })
+            ),
+            "{error}"
+        );
     }
 
     /// An absence proved at the domain's block or a later one answers at once, and so does
