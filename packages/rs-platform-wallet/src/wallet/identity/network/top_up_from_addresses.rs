@@ -1,6 +1,7 @@
 //! Top-up an identity from platform addresses.
 
 use std::collections::BTreeMap;
+use std::future::Future;
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
@@ -95,10 +96,10 @@ impl IdentityWallet {
         let inputs = funding_inputs(inputs)?;
         let identity = {
             let wm = self.wallet_manager.read().await;
+            // Read outside the lifecycle gate: a wallet gone by now was
+            // removed after the liveness check, before anything was sent.
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
+                PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
             })?;
             let manager = &info.identity_manager;
             manager
@@ -302,7 +303,7 @@ impl IdentityWallet {
             // remain pending.
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
+                PlatformWalletError::WalletNotFound(
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
@@ -370,9 +371,7 @@ async fn settle_top_up<W, Fut>(
 ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError>
 where
     W: FnOnce() -> Fut,
-    Fut: std::future::Future<
-        Output = Result<(AddressInfos, Credits, ResponseMetadata), dash_sdk::Error>,
-    >,
+    Fut: Future<Output = Result<(AddressInfos, Credits, ResponseMetadata), dash_sdk::Error>>,
 {
     match delivery {
         BroadcastDelivery::Admitted => {}
