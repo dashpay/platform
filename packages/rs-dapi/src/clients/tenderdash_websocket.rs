@@ -143,7 +143,7 @@ impl TenderdashWebSocketClient {
         });
 
         ws_sender
-            .send(Message::Text(subscribe_msg.to_string()))
+            .send(Message::Text(subscribe_msg.to_string().into()))
             .await?;
 
         // Subscribe to new block events
@@ -156,7 +156,7 @@ impl TenderdashWebSocketClient {
             }
         });
         ws_sender
-            .send(Message::Text(subscribe_block_msg.to_string()))
+            .send(Message::Text(subscribe_block_msg.to_string().into()))
             .await?;
 
         debug!("Subscribed to Tenderdash transaction events");

@@ -1,10 +1,14 @@
-//! A data contract update whose document type schema names `properties` twice,
-//! run through block execution. From protocol version 15 registration refuses a
-//! key a document type schema repeats, at its root or below it.
+//! A data contract create or update whose document type schema names `properties`
+//! twice, run through block execution. From protocol version 15 registration refuses
+//! a key a document type schema repeats, at its root or below it, and an update of a
+//! contract stored with such a schema is refused.
 
 use super::*;
+use crate::platform_types::platform_state::PlatformState;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
+use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::document::{Document, DocumentV0};
@@ -12,11 +16,15 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::platform_value;
 use dpp::prelude::DataContract;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use simple_signer::signer::SimpleSigner;
+use std::sync::Arc;
 
 const TYPE_NAME: &str = "t";
 
@@ -61,11 +69,28 @@ struct Fixture {
 }
 
 impl Fixture {
+    /// A platform storing the contract whose type `t` names `properties` once, registered
+    /// under full validation.
     fn new(version: &'static PlatformVersion) -> Self {
+        Self::with_stored(version, schema(vec![integer_properties()]), true)
+    }
+
+    /// A platform storing the contract whose type `t` has `stored_schema`, placed
+    /// unvalidated, as a contract stored before the schema checks it misses.
+    fn storing(version: &'static PlatformVersion, stored_schema: Value) -> Self {
+        Self::with_stored(version, stored_schema, false)
+    }
+
+    fn with_stored(
+        version: &'static PlatformVersion,
+        stored_schema: Value,
+        full_validation: bool,
+    ) -> Self {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(version.protocol_version)
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .with_no_core_masternodes()
+            .set_genesis_state();
         let (identity, signer, key) = setup_identity(&mut platform, 977, dash_to_credits!(1.0));
         let mut contract =
             get_data_contract_fixture(Some(identity.id()), 0, version.protocol_version)
@@ -73,8 +98,8 @@ impl Fixture {
         contract
             .set_document_schema(
                 TYPE_NAME,
-                schema(vec![integer_properties()]),
-                true,
+                stored_schema,
+                full_validation,
                 &mut Vec::new(),
                 version,
             )
@@ -145,18 +170,18 @@ impl Fixture {
     /// An update to version 2 naming `properties` twice: first with `a` a
     /// string, then as stored.
     async fn update_repeating_properties(&mut self) -> StateTransition {
+        self.update_to(schema(vec![string_properties(), integer_properties()]))
+            .await
+    }
+
+    /// An update to version 2 giving the type `t` the schema `new_schema`.
+    async fn update_to(&mut self, new_schema: Value) -> StateTransition {
         let mut contract = self.contract.clone();
         contract.set_version(2);
         // Placed unvalidated: the transition carries the schema as written, and
         // the platform validates it
         contract
-            .set_document_schema(
-                TYPE_NAME,
-                schema(vec![string_properties(), integer_properties()]),
-                false,
-                &mut Vec::new(),
-                self.version,
-            )
+            .set_document_schema(TYPE_NAME, new_schema, false, &mut Vec::new(), self.version)
             .expect("schema placed");
         let transition = DataContractUpdateTransition::new_from_data_contract(
             contract,
@@ -172,6 +197,91 @@ impl Fixture {
         .expect("update transition");
         self.nonce += 1;
         transition
+    }
+
+    /// A create of a new contract whose type `t` has `new_schema`, placed
+    /// unvalidated, as the transition carries it.
+    async fn contract_creation(&self, new_schema: Value) -> StateTransition {
+        let identity_nonce = 1;
+        let mut contract = get_data_contract_fixture(
+            Some(self.identity.id()),
+            identity_nonce,
+            self.version.protocol_version,
+        )
+        .data_contract_owned();
+        contract
+            .set_document_schema(TYPE_NAME, new_schema, false, &mut Vec::new(), self.version)
+            .expect("schema placed");
+        DataContractCreateTransition::new_from_data_contract(
+            contract,
+            identity_nonce,
+            &self.identity.clone().into_partial_identity_info(),
+            self.key.id(),
+            &self.signer,
+            self.version,
+            None,
+        )
+        .await
+        .expect("create transition")
+    }
+
+    /// Registers, through a contract create executed in a block, a new contract whose type
+    /// `t` has `new_schema`, and makes it the contract the fixture updates.
+    async fn register(&mut self, new_schema: Value) {
+        let create = self.contract_creation(new_schema).await;
+        let StateTransition::DataContractCreate(create_transition) = &create else {
+            panic!("expected a contract create");
+        };
+        let contract_id = create_transition.data_contract().id();
+        assert_matches!(
+            self.process(&create),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // The create spent the nonce an update of the contract would open with
+        self.nonce += 1;
+        self.contract = self
+            .platform
+            .drive
+            .get_contract_with_fetch_info(contract_id.to_buffer(), false, None, self.version)
+            .expect("contract fetch")
+            .expect("contract exists")
+            .contract
+            .clone();
+    }
+
+    /// Runs the first block of the latest protocol version, and moves the chain to it.
+    fn upgrade_to_the_latest_protocol_version(&mut self) {
+        let latest = PlatformVersion::latest();
+        let transaction = self.platform.drive.grove.start_transaction();
+        let platform_state = self.platform.state.load();
+        let mut block_platform_state = PlatformState::clone(&platform_state);
+        block_platform_state.set_current_protocol_version_in_consensus(latest.protocol_version);
+        self.platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &mut block_platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                self.version.protocol_version,
+                latest,
+            )
+            .expect("expected the protocol change to run");
+        self.platform
+            .drive
+            .commit_transaction(transaction, &latest.drive)
+            .expect("expected to commit the protocol change");
+        self.platform.state.store(Arc::new(block_platform_state));
+        self.version = latest;
+    }
+
+    /// The parsed type of `a` in the contract as Drive has it now.
+    fn stored_type_of_a(&self) -> DocumentPropertyType {
+        self.current_contract()
+            .document_type_for_name(TYPE_NAME)
+            .expect("the type exists")
+            .flattened_properties()["a"]
+            .property_type
+            .clone()
     }
 
     /// Executes `transition` as a validator executes a received block, and
@@ -266,4 +376,122 @@ async fn should_refuse_a_contract_update_repeating_properties() {
         before,
         "the stored documents read as they were written"
     );
+}
+
+/// Whichever entry comes first, an update repeating `properties` is refused in the
+/// block, paid, and the stored type of `a` stays as it was.
+#[tokio::test]
+async fn should_refuse_a_contract_update_repeating_properties_in_either_order() {
+    for properties in [
+        vec![string_properties(), integer_properties()],
+        vec![integer_properties(), string_properties()],
+    ] {
+        let mut fixture = Fixture::new(PlatformVersion::latest());
+        let before = fixture.stored_type_of_a();
+        let update = fixture.update_to(schema(properties)).await;
+        assert_matches!(
+            fixture.process(&update),
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(ref message)
+                )),
+                ..
+            } if message.contains("declares `properties` more than once at its root")
+        );
+        assert_eq!(fixture.current_contract().version(), 1);
+        assert_eq!(fixture.stored_type_of_a(), before);
+    }
+}
+
+/// A contract create repeating `properties` is refused in the block, paid, and no
+/// contract is stored.
+#[tokio::test]
+async fn should_refuse_a_contract_create_repeating_properties() {
+    let fixture = Fixture::new(PlatformVersion::latest());
+    let create = fixture
+        .contract_creation(schema(vec![string_properties(), integer_properties()]))
+        .await;
+    let StateTransition::DataContractCreate(create_transition) = &create else {
+        panic!("expected a contract create");
+    };
+    let contract_id = create_transition.data_contract().id();
+    assert_matches!(
+        fixture.process(&create),
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(ref message)
+            )),
+            ..
+        } if message.contains("declares `properties` more than once at its root")
+    );
+    assert!(fixture
+        .platform
+        .drive
+        .get_contract_with_fetch_info(contract_id.to_buffer(), false, None, fixture.version)
+        .expect("contract fetch")
+        .is_none());
+}
+
+/// A contract stored with a schema naming `properties` twice can not be updated, in
+/// particular not to the one entry the stored type did not read: the update is refused
+/// in the block, paid, and the stored type of `a` stays as it was.
+#[tokio::test]
+async fn should_refuse_an_update_of_a_contract_stored_with_repeated_properties() {
+    for (stored, kept) in [
+        (
+            vec![string_properties(), integer_properties()],
+            integer_properties(),
+        ),
+        (
+            vec![integer_properties(), string_properties()],
+            string_properties(),
+        ),
+    ] {
+        let mut fixture = Fixture::storing(PlatformVersion::latest(), schema(stored));
+        let before = fixture.stored_type_of_a();
+        let update = fixture.update_to(schema(vec![kept])).await;
+        assert_matches!(
+            fixture.process(&update),
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentTypeUpdateError(ref e)),
+                ..
+            } if e.additional_message().contains("declares `properties` more than once at its root")
+        );
+        assert_eq!(fixture.current_contract().version(), 1);
+        assert_eq!(fixture.stored_type_of_a(), before);
+    }
+}
+
+/// The same for a contract registered in a block before protocol version 15 and read
+/// back after the upgrade: its update is refused in the block, paid, and the stored type
+/// of `a` stays as it was.
+#[tokio::test]
+async fn should_refuse_an_update_of_a_contract_registered_with_repeated_properties_before_the_upgrade(
+) {
+    for (registered, kept) in [
+        (
+            vec![string_properties(), integer_properties()],
+            integer_properties(),
+        ),
+        (
+            vec![integer_properties(), string_properties()],
+            string_properties(),
+        ),
+    ] {
+        let mut fixture = Fixture::new(PlatformVersion::get(14).expect("protocol version 14"));
+        fixture.register(schema(registered)).await;
+        fixture.upgrade_to_the_latest_protocol_version();
+        let before = fixture.stored_type_of_a();
+
+        let update = fixture.update_to(schema(vec![kept])).await;
+        assert_matches!(
+            fixture.process(&update),
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentTypeUpdateError(ref e)),
+                ..
+            } if e.additional_message().contains("declares `properties` more than once at its root")
+        );
+        assert_eq!(fixture.current_contract().version(), 1);
+        assert_eq!(fixture.stored_type_of_a(), before);
+    }
 }
