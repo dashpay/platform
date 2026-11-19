@@ -281,11 +281,11 @@ unsafe fn asset_lock_manager_resume_inner(
     // is written, so a failure leaves nothing for the host to free.
     let bytes = match dpp::bincode::encode_to_vec(&proof, dpp::bincode::config::standard()) {
         Ok(bytes) => bytes,
-        Err(e) => return super::lock_held_handoff_failure(out_point, e.into()),
+        Err(e) => return super::lock_handoff_failure(handle, out_point, e.into()),
     };
     let path_c = match CString::new(path.to_string()) {
         Ok(path_c) => path_c,
-        Err(e) => return super::lock_held_handoff_failure(out_point, e.into()),
+        Err(e) => return super::lock_handoff_failure(handle, out_point, e.into()),
     };
     let len = bytes.len();
     let boxed = bytes.into_boxed_slice();
