@@ -21,11 +21,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorArithmeticOverflow = 13
     case errorNoSelectableInputs = 14
     case errorWalletAlreadyExists = 15
-    /// Definitive shielded-broadcast failure: the shielded transition never
-    /// left the wallet (refused before anything was sent: no node address, or
-    /// the SDK's own refusal), so it can never execute. Any reserved notes
-    /// were released and the caller may retry. A node's refusal or consensus
-    /// verdict is unconfirmed instead (18, or 17 for identity-create).
+    /// Shielded-broadcast failure, typically refused before anything was
+    /// sent (no node address, or the SDK's own refusal). Whether it may run
+    /// again is the result's payment class (`PlatformPaymentRecovery`), not
+    /// this code. A node's refusal or consensus verdict is unconfirmed
+    /// instead (18, or 17 for identity-create).
     case errorShieldedBroadcastFailed = 16
     /// An identity create from the pool may have reached a node (accepted, a
     /// send attempt that may have delivered it, a node's refusal or verdict),
@@ -71,8 +71,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Address-nonce race: Platform rejected an address-funds transition (a
     /// transfer or withdrawal from Platform addresses, or an identity
     /// registration or top-up from them) because the submitted address nonce
-    /// raced Platform's expected value (a lagging DAPI replica read). Safe to
-    /// retry; the retry re-fetches the nonce and self-heals. A shield does not
+    /// raced Platform's expected value (a lagging DAPI replica read). Not a
+    /// retry signal: the verdict may follow an earlier dispatch that landed,
+    /// so Rust classes it `.maybeSent` and not retryable. A shield does not
     /// return it (see `errorShieldedSpendUnconfirmed`). The submitted/expected
     /// nonce values travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
@@ -166,18 +167,19 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     // 34-36 trio moved there.
     /// The document carries no `$price`, so it cannot be purchased (and a
     /// DPNS delist has nothing to clear). Raised by the wallet's pre-flight
-    /// read and by the consensus `DocumentNotForSaleError` (40108). The
-    /// transition did NOT execute.
+    /// read and by the consensus `DocumentNotForSaleError` (40108). A verdict
+    /// may follow an earlier dispatch, so whether anything executed is the
+    /// result's payment class, not this code.
     case errorDocumentNotForSale = 37
     /// The listing no longer matches the price the user confirmed — either
     /// the pre-flight read disagreed, or consensus rejected the broadcast
-    /// (40109) because the listing changed in between. The purchase did NOT
-    /// execute; re-confirm at the new price. The message is a stable JSON
+    /// (40109) because the listing changed in between. Whether anything was
+    /// purchased is the result's payment class, not this code. The message is a stable JSON
     /// detail object carrying both prices.
     case errorDocumentPriceChanged = 38
     /// The identity's credit balance cannot cover the operation (purchase
-    /// price + fee reserve, or Platform's own arithmetic). Nothing executed;
-    /// top the identity up and retry. The message is a stable JSON detail
+    /// price + fee reserve, or Platform's own arithmetic). Whether anything
+    /// executed is the result's payment class. The message is a stable JSON detail
     /// object carrying the required and available amounts.
     case errorInsufficientIdentityCredits = 39
     /// The DPNS name is inside an active contested-name vote, so its domain
@@ -572,7 +574,8 @@ public struct PlatformConsensusError: Equatable, Sendable {
 /// classified it.
 ///
 /// Decide "retry", "wait" or "resume" from this, never from lists of error
-/// cases: `.notSent` may offer a retry, `.maybeSent` waits for sync and never
+/// cases (`PlatformPaymentRecovery` does it): `.notSent` offers a retry only
+/// where `isRetryable` allows it, `.maybeSent` waits for sync and never
 /// offers a second payment, `.lockHeld` resumes the named asset lock and never
 /// pays again. Mirror of `PlatformWalletFFIPaymentDelivery`, with the held
 /// lock's outpoint from the result's `held_asset_lock`.
@@ -625,6 +628,58 @@ public struct PlatformPaymentClass: Equatable, Sendable {
     /// The class a Swift-side guard passes when it throws without a result
     /// after the payment may have left, so no second one is offered.
     public static let maybeSent = PlatformPaymentClass(delivery: .maybeSent, isRetryable: false)
+}
+
+/// What a host may offer a person after a failed payment, read from Rust's
+/// class alone (`delivery`, `isRetryable` and the held lock), never from the
+/// error's case, code or text. Build it with `init(_:)` and show
+/// `suggestion`; offer a retry only under `.retry`, and a resume only under
+/// `.resume` with its outpoint.
+public enum PlatformPaymentRecovery: Equatable, Sendable {
+    /// Nothing left the wallet and Rust allows running the operation again.
+    case retry
+    /// Nothing left the wallet, and Rust does not allow running it again as
+    /// it is: an earlier payment may still be settling. Offer no retry.
+    case wait
+    /// The payment holds the tracked asset lock at this outpoint: resume it,
+    /// never fund a new one.
+    case resume(AssetLockBuiltOutPoint)
+    /// The payment may have left the wallet: let sync settle it and never
+    /// offer a second one.
+    case reconcile
+    /// No wallet error classified the failure: unconfirmed, never retried.
+    case unconfirmed
+
+    public init(_ payment: PlatformPaymentClass?) {
+        guard let payment else {
+            self = .unconfirmed
+            return
+        }
+        switch payment.delivery {
+        case .notSent: self = payment.isRetryable ? .retry : .wait
+        case .maybeSent: self = .reconcile
+        case .lockHeld(let outPoint): self = .resume(outPoint)
+        }
+    }
+
+    /// Text fit to show a person: what happened to the payment and the one
+    /// action the class allows.
+    public var suggestion: String {
+        switch self {
+        case .retry:
+            return "Nothing was sent. You can try again."
+        case .wait:
+            return "Nothing was sent. An earlier payment may still be settling; wait for it to finish."
+        case .resume:
+            return "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."
+        case .reconcile:
+            return "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
+                + "do not send it again."
+        case .unconfirmed:
+            return "Submission result is unconfirmed. Check history and reconcile the original operation "
+                + "before submitting again."
+        }
+    }
 }
 
 // MARK: - Class wrapper
@@ -835,7 +890,8 @@ public enum PlatformWalletError: LocalizedError {
     case walletAlreadyExists(String, payment: PlatformPaymentClass? = nil)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
-    /// execute; any reserved notes were released and a retry is safe.
+    /// execute; any reserved notes were released. Retry only where
+    /// `isRetryable` (Rust's) says so.
     case shieldedBroadcastFailed(String, payment: PlatformPaymentClass? = nil)
     /// An identity create from the pool may have reached a node (a node's
     /// refusal or verdict included), its result is not proved and a direct
@@ -881,7 +937,7 @@ public enum PlatformWalletError: LocalizedError {
     /// masternode sync completes.
     case masternodeListUnavailable(String, payment: PlatformPaymentClass? = nil)
     /// Core definitively rejected the transaction and its input reservation
-    /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
+    /// was released. Retry only where `isRetryable` (Rust's) says so.
     case transactionBroadcastRejected(String, payment: PlatformPaymentClass? = nil)
     /// Address-nonce race (transfer or withdrawal from Platform addresses, or
     /// identity registration / top-up from them): Platform rejected the
@@ -928,19 +984,19 @@ public enum PlatformWalletError: LocalizedError {
     case reservationWalletMismatch(String, payment: PlatformPaymentClass? = nil)
     /// The DPNS name / document is not listed for sale, so it cannot be
     /// purchased and has no price to clear. Raised by the wallet's
-    /// pre-flight read and by the consensus not-for-sale rejection; the
-    /// transition did NOT execute.
+    /// pre-flight read and by the consensus not-for-sale rejection; whether
+    /// anything executed is `payment`'s to say.
     case notForSale(String, payment: PlatformPaymentClass? = nil)
     /// The listing no longer matches the price the user confirmed. Rebuilt
     /// from the FFI's JSON detail, so the UI can show both numbers and
-    /// re-prompt at `actual`. Nothing was purchased — a purchase is only
-    /// ever broadcast at the confirmed price, and consensus rejects it if
-    /// the listing moved.
+    /// re-prompt at `actual`. Whether anything was purchased is `payment`'s
+    /// to say: the verdict may follow an earlier dispatch, so Rust classes
+    /// it `.maybeSent`.
     case priceChanged(documentId: String, expected: UInt64, actual: UInt64, payment: PlatformPaymentClass? = nil)
     /// The identity's credit balance cannot cover the operation. Both
     /// amounts are in credits (1 duff = 1000 credits) and include the fee
-    /// reserve the wallet requires on top of a purchase price. Nothing
-    /// executed; top the identity up and retry.
+    /// reserve the wallet requires on top of a purchase price. Whether
+    /// anything executed is `payment`'s to say.
     case insufficientIdentityCredits(
         identityId: String, required: UInt64, available: UInt64, payment: PlatformPaymentClass? = nil
     )
@@ -1198,8 +1254,11 @@ public enum PlatformWalletError: LocalizedError {
         // `failureReason`. Which text applies is the CASE's meaning: a
         // transient is worth retrying, a read failure and a write failure
         // must not be described to a user as each other.
-        case .persisterLoadTransient, .persisterStoreTransient:
-            return "The wallet database is busy. Try again in a moment."
+        // A busy store is worth retrying only where Rust allowed it.
+        case .persisterLoadTransient(_, let payment), .persisterStoreTransient(_, let payment):
+            return payment?.isRetryable == true
+                ? "The wallet database is busy. Try again in a moment."
+                : "The wallet database is busy."
         case .persisterLoadFatal, .persisterRestore:
             return "The wallet data could not be read and may need to be restored."
         case .persisterStoreFatal, .persisterStoreConstraint:
@@ -1210,9 +1269,11 @@ public enum PlatformWalletError: LocalizedError {
         // description from the typed values, because their FFI message is
         // the machine-readable JSON detail — showing that raw would be
         // gibberish in a UI alert.
+        // Whether anything was purchased is the payment class's to say
+        // (`PlatformPaymentRecovery`), not this text's.
         case .priceChanged(_, let expected, let actual, _):
             return "The price changed from \(expected) to \(actual) credits before the purchase "
-                + "could be confirmed. Nothing was purchased."
+                + "could be confirmed."
         case .insufficientIdentityCredits(let identityId, let required, let available, _):
             return "Identity \(identityId) has \(available) credits but \(required) are required."
         case .contestedNameNotTradable(let label, let endsAtMs, _):

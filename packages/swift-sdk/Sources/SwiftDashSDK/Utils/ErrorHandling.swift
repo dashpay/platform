@@ -127,8 +127,12 @@ public enum ErrorFormatter {
         if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
             return sdkError.localizedDescription
         }
-        if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
-            return "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again. \(walletError.localizedDescription)"
+        // A wallet error leads with what its payment class allows (retry,
+        // wait, resume, reconcile, or unconfirmed) and never goes through the
+        // text matching below, which would print the case's `payment:` tail.
+        if let walletError = error as? PlatformWalletError {
+            let recovery = PlatformPaymentRecovery(walletError.payment)
+            return "\(recovery.suggestion) \(walletError.localizedDescription)"
         }
         // Handle specific SDK error types
         let errorString = String(describing: error)
@@ -196,7 +200,19 @@ public enum ErrorFormatter {
 // MARK: - Error Recovery
 
 /// Provides recovery suggestions for common error types.
+///
+/// The category-based answers are for errors that move no money. A wallet
+/// error's suggestion and retry come from Rust's payment class instead:
+/// `suggestion(for:)` taking a `PlatformPaymentClass?`, and
+/// `PlatformWalletError.isRetryable`.
 public enum ErrorRecovery {
+
+    /// The suggestion Rust's payment class allows (`PlatformPaymentRecovery`):
+    /// a retry only where it is retryable, otherwise wait, resume or
+    /// reconcile. `nil` reads as unconfirmed, never as a retry.
+    public static func suggestion(for payment: PlatformPaymentClass?) -> String {
+        PlatformPaymentRecovery(payment).suggestion
+    }
 
     /// Get recovery suggestion for an error category
     public static func suggestion(for category: ErrorCategory) -> String {
@@ -338,13 +354,16 @@ public enum ErrorCategorizer {
                 isRetryable: false
             )
         }
-        if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
+        // A wallet error: Rust's class decides the title, the guidance (which
+        // leads the message) and the retry. No category suggestion is added:
+        // one inferred from the text would offer a retry Rust did not allow.
+        if let walletError = error as? PlatformWalletError {
             return UserFacingError(
-                title: "Submission unconfirmed",
+                title: title(for: PlatformPaymentRecovery(walletError.payment)),
                 message: ErrorFormatter.userFriendlyMessage(from: walletError),
-                category: .unknown,
+                category: categorize(walletError),
                 underlyingError: String(describing: walletError),
-                isRetryable: false
+                isRetryable: walletError.isRetryable
             )
         }
         // The identity may already exist and its slot stays held: Rust's
@@ -362,15 +381,6 @@ public enum ErrorCategorizer {
         let category = categorize(error)
         let message = ErrorFormatter.userFriendlyMessage(from: error)
         let suggestion = ErrorRecovery.suggestion(for: category)
-        // A wallet error carries Rust's retry decision (false when no wallet
-        // error classified it); the category inferred from its text only
-        // shapes the presentation, never whether a payment may run again.
-        let isRetryable: Bool
-        if let walletError = error as? PlatformWalletError {
-            isRetryable = walletError.isRetryable
-        } else {
-            isRetryable = ErrorRecovery.isRetryable(category: category)
-        }
 
         return UserFacingError(
             title: category.rawValue,
@@ -378,8 +388,16 @@ public enum ErrorCategorizer {
             category: category,
             recoverySuggestion: suggestion,
             underlyingError: String(describing: error),
-            isRetryable: isRetryable
+            isRetryable: ErrorRecovery.isRetryable(category: category)
         )
+    }
+
+    private static func title(for recovery: PlatformPaymentRecovery) -> String {
+        switch recovery {
+        case .retry, .wait: return "Not sent"
+        case .resume: return "Payment held"
+        case .reconcile, .unconfirmed: return "Submission unconfirmed"
+        }
     }
 }
 

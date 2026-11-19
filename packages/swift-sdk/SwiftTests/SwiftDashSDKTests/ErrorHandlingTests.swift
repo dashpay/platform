@@ -167,8 +167,9 @@ final class ErrorHandlingTests: XCTestCase {
         let busy = "failed to persist wallet registration changeset: "
             + "persistence backend error (Transient): database is locked"
         let expected: [(PlatformWalletResultCode, String)] = [
-            (.errorPersisterLoadTransient, "The wallet database is busy. Try again in a moment."),
-            (.errorPersisterStoreTransient, "The wallet database is busy. Try again in a moment."),
+            // Unclassified (no payment class): no retry is invited.
+            (.errorPersisterLoadTransient, "The wallet database is busy."),
+            (.errorPersisterStoreTransient, "The wallet database is busy."),
             (
                 .errorPersisterLoadFatal,
                 "The wallet data could not be read and may need to be restored."
@@ -1464,5 +1465,86 @@ final class ErrorHandlingTests: XCTestCase {
                 reason: "invalid handle"
             )
         )
+    }
+
+    // MARK: - Recovery follows Rust's payment class
+
+    /// Every class maps to one recovery and one displayed suggestion: a retry
+    /// only for a retryable `.notSent`, a wait for a non-retryable one, a
+    /// resume naming the held lock, a reconcile for `.maybeSent`, and an
+    /// unconfirmed outcome (never a retry) when nothing classified it.
+    func testShouldDecideTheRecoveryFromThePaymentClassAlone() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
+        let cases: [(PlatformPaymentClass?, PlatformPaymentRecovery, String)] = [
+            (PlatformPaymentClass(delivery: .notSent, isRetryable: true), .retry,
+             "Nothing was sent. You can try again."),
+            (PlatformPaymentClass(delivery: .notSent, isRetryable: false), .wait,
+             "Nothing was sent. An earlier payment may still be settling; wait for it to finish."),
+            (PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false), .resume(held),
+             "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."),
+            (.maybeSent, .reconcile,
+             "The payment may have gone through. Wait for the wallet to sync before doing anything else; "
+                + "do not send it again."),
+            (nil, .unconfirmed,
+             "Submission result is unconfirmed. Check history and reconcile the original operation "
+                + "before submitting again."),
+        ]
+        for (payment, recovery, text) in cases {
+            XCTAssertEqual(PlatformPaymentRecovery(payment), recovery, "\(String(describing: payment))")
+            XCTAssertEqual(PlatformPaymentRecovery(payment).suggestion, text)
+            XCTAssertEqual(ErrorRecovery.suggestion(for: payment), text)
+        }
+    }
+
+    /// The displayed text of a wallet error leads with its class's
+    /// suggestion and adds no category suggestion, whatever its message
+    /// says: a "network timeout" that may have been sent never reads
+    /// "try again", and its message does not leak the case's `payment:` tail.
+    func testShouldDisplayTheClassSuggestionNotOneInferredFromTheText() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
+        let cases: [(PlatformWalletError, String, String)] = [
+            (.walletOperation("network timeout", payment: .maybeSent), "Submission unconfirmed",
+             PlatformPaymentRecovery.reconcile.suggestion),
+            (.invalidParameter("invalid input", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)),
+             "Not sent", PlatformPaymentRecovery.wait.suggestion),
+            (.walletOperation("connection lost", payment: PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false)),
+             "Payment held", PlatformPaymentRecovery.resume(held).suggestion),
+            (.shieldedBroadcastFailed("network refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)),
+             "Not sent", PlatformPaymentRecovery.retry.suggestion),
+            (.notFound("not found"), "Submission unconfirmed", PlatformPaymentRecovery.unconfirmed.suggestion),
+        ]
+        for (error, title, suggestion) in cases {
+            let shown = ErrorCategorizer.toUserFacingError(error)
+            XCTAssertEqual(shown.title, title, "\(error)")
+            XCTAssertEqual(shown.message, "\(suggestion) \(error.localizedDescription)")
+            XCTAssertNil(shown.recoverySuggestion, "no category suggestion for \(error)")
+            XCTAssertFalse(shown.fullDescription.contains("payment:"), shown.fullDescription)
+            XCTAssertEqual(shown.isRetryable, error.isRetryable)
+            if !error.isRetryable {
+                XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
+            }
+        }
+    }
+
+    /// The marketplace and persister texts do not claim an outcome the class
+    /// does not: a changed price says nothing about whether anything was
+    /// purchased, and a busy store invites a retry only where Rust allowed it.
+    func testShouldNotClaimAnOutcomeInTheCasesOwnText() {
+        let changed = PlatformWalletError.priceChanged(
+            documentId: "d", expected: 1, actual: 2, payment: .maybeSent
+        )
+        XCTAssertFalse(changed.errorDescription!.contains("Nothing was purchased"))
+
+        let retryable = PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        XCTAssertEqual(
+            PlatformWalletError.persisterStoreTransient("busy", payment: retryable).errorDescription,
+            "The wallet database is busy. Try again in a moment."
+        )
+        for busy in [
+            PlatformWalletError.persisterStoreTransient("busy", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false)),
+            PlatformWalletError.persisterLoadTransient("busy"),
+        ] {
+            XCTAssertEqual(busy.errorDescription, "The wallet database is busy.")
+        }
     }
 }
