@@ -64,6 +64,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.DashAddress
 import org.dashfoundation.example.util.DashAddressType
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.ScannedPayment
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDuffs
@@ -159,6 +160,9 @@ fun SendTransactionScreen(
     var isSending by remember { mutableStateOf(false) }
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
+    // A send that failed in the SDK, presented by its payment class: never
+    // shown as a success, and "failed" only where nothing was sent.
+    var paymentFailure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     // Result hand-back from the QR scanner (← QRScannerView's onScan).
     val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
@@ -630,6 +634,7 @@ fun SendTransactionScreen(
                     return@SubmitButton
                 }
                 isSending = true
+                paymentFailure = null
                 scope.launch {
                     try {
                         when (flow) {
@@ -731,16 +736,12 @@ fun SendTransactionScreen(
                             }
                         }
                     } catch (t: Throwable) {
-                        if (shieldedOperationMayHaveGoneThrough(t)) {
-                            // It may have reached a node and its result is not
-                            // proved (a node's refusal or verdict included,
-                            // code 18), or the SDK could not confirm a
-                            // transition it may have accepted (code 20), so it
-                            // may already be on chain and a retry signs a
-                            // second transition: this must NOT read as a
-                            // retryable failure (← SendViewModel.swift).
-                            successMessage = "Transaction may have gone through — waiting for " +
-                                "the next shielded sync to confirm. Do not retry."
+                        // Every flow (Core, Platform, shielded) presents an SDK
+                        // failure by its payment class (← SendViewModel.swift);
+                        // anything else is this screen's own input check.
+                        val failure = PaymentFailure.ofPayment(t)
+                        if (failure != null) {
+                            paymentFailure = failure
                         } else {
                             error = t.message ?: "Failed to send the transaction."
                         }
@@ -795,6 +796,19 @@ fun SendTransactionScreen(
                         navController.popBackStack()
                     },
                 ) { Text("Done") }
+            },
+        )
+    }
+
+    paymentFailure?.let { failure ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { paymentFailure = null },
+            title = { Text(failure.title) },
+            text = {
+                Text(failure.message, modifier = Modifier.testTag("send.paymentFailure"))
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { paymentFailure = null }) { Text("OK") }
             },
         )
     }

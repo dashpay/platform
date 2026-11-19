@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 
 /**
  * Hub for in-flight "shield funds from an asset lock" attempts — 1:1 port
@@ -105,6 +106,7 @@ class ShieldedFundFromAssetLockCoordinator(
         walletId: ByteArray,
         recipientRaw43: ByteArray,
         operationId: String,
+        resuming: AssetLockBuiltOutPoint? = null,
         body: suspend () -> Unit,
     ): StartFundingResult {
         val key = key(walletId, recipientRaw43)
@@ -143,7 +145,11 @@ class ShieldedFundFromAssetLockCoordinator(
                 is ShieldedFundFromAssetLockController.Phase.Idle,
                 is ShieldedFundFromAssetLockController.Phase.Failed,
                 -> {
-                    existing.submit(operationId, body)
+                    // The failure's class forbids this operation (the payment
+                    // may have left, or it holds a lock this call does not
+                    // resume): re-present the failed state instead of paying again.
+                    if (!phase.permitsSubmit(resuming)) return StartFundingResult.Started(existing)
+                    existing.submit(operationId, body, resuming)
                     scheduleRetentionSweep(key, existing)
                     return StartFundingResult.Started(existing)
                 }
@@ -151,7 +157,7 @@ class ShieldedFundFromAssetLockCoordinator(
         }
         val controller = ShieldedFundFromAssetLockController(walletId, recipientRaw43, scope, now)
         _controllers.update { it + (key to controller) }
-        controller.submit(operationId, body)
+        controller.submit(operationId, body, resuming)
         scheduleRetentionSweep(key, controller)
         return StartFundingResult.Started(controller)
     }

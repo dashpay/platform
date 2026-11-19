@@ -40,6 +40,7 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
@@ -83,6 +84,10 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
     var recoveryLocks by remember { mutableStateOf(emptyList<TrackedAssetLock>()) }
     var selectedRecoveryLock by remember { mutableStateOf<TrackedAssetLock?>(null) }
     var recoveryLoadError by remember { mutableStateOf<String?>(null) }
+    // The last failed top-up, presented by its payment class: it decides
+    // whether anything may be submitted again (a new lock only after a
+    // retryable failure, a resume only of the lock it holds).
+    var failure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     LaunchedEffect(manager, wallet, identity?.identityIndex, mode) {
         recoveryLoadError = null
@@ -100,14 +105,22 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
             recoveryLoadError = e.message ?: "Failed to load tracked identity top-up locks"
             emptyList()
         }
-        selectedRecoveryLock = recoveryLocks.firstOrNull()
+        // A failure holding a lock preselects that lock for its resume.
+        val held = failure?.heldLock
+        selectedRecoveryLock = recoveryLocks.firstOrNull {
+            held != null && PaymentFailure.outPoint(it.outpointTxid, it.outpointVout) == held
+        } ?: recoveryLocks.firstOrNull()
     }
 
     val amount = amountText.toLongOrNull()
+    val resuming = selectedRecoveryLock
+        ?.takeIf { mode == TopUpCoreMode.EXISTING_LOCK }
+        ?.let { PaymentFailure.outPoint(it.outpointTxid, it.outpointVout) }
     val canSubmit = wallet != null && manager != null &&
         ((mode == TopUpCoreMode.NEW_LOCK && amount != null && amount > 0) ||
             (mode == TopUpCoreMode.EXISTING_LOCK && selectedRecoveryLock != null)) &&
-        !isSubmitting && newBalance == null
+        !isSubmitting && newBalance == null &&
+        failure?.permitsRestart(resuming) != false
 
     Scaffold(
         topBar = {
@@ -229,8 +242,14 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
                             )
                         }
                         newBalance = balance
+                        failure = null
                     } catch (e: Exception) {
-                        error = e.message ?: "Top up failed"
+                        val paymentFailure = PaymentFailure.ofPayment(e)
+                        error = paymentFailure?.message ?: e.message ?: "Top up failed"
+                        failure = paymentFailure
+                        // A held lock goes on through the existing-lock
+                        // resume, preselected above; never a new lock.
+                        if (paymentFailure?.heldLock != null) mode = TopUpCoreMode.EXISTING_LOCK
                     } finally {
                         isSubmitting = false
                     }

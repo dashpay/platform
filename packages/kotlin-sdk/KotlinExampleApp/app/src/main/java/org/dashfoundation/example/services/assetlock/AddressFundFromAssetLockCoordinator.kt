@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 
 /**
  * Hub for in-flight "fund a Platform address from an asset lock" attempts
@@ -81,6 +82,7 @@ class AddressFundFromAssetLockCoordinator(
         platformAccountIndex: Int,
         recipientHash: ByteArray,
         recipientType: Int,
+        resuming: AssetLockBuiltOutPoint? = null,
         body: suspend () -> Long,
     ): AddressFundFromAssetLockController {
         val key = key(walletId, platformAccountIndex, recipientHash)
@@ -93,7 +95,11 @@ class AddressFundFromAssetLockCoordinator(
                 is AddressFundFromAssetLockController.Phase.Idle,
                 is AddressFundFromAssetLockController.Phase.Failed,
                 -> {
-                    existing.submit(body)
+                    // The failure's class forbids this operation (the payment
+                    // may have left, or it holds a lock this call does not
+                    // resume): keep the failed state instead of paying again.
+                    if (!existing.phase.value.permitsSubmit(resuming)) return existing
+                    existing.submit(body, resuming)
                     scheduleRetentionSweep(key, existing)
                     return existing
                 }
@@ -108,7 +114,7 @@ class AddressFundFromAssetLockCoordinator(
             now,
         )
         _controllers.update { it + (key to controller) }
-        controller.submit(body)
+        controller.submit(body, resuming)
         scheduleRetentionSweep(key, controller)
         return controller
     }

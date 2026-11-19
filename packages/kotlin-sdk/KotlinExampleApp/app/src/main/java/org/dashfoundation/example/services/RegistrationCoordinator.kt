@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 
 /**
  * Hub for in-flight identity registrations — 1:1 port of
@@ -74,6 +75,7 @@ class RegistrationCoordinator(
         body: suspend () -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
+        resuming: AssetLockBuiltOutPoint? = null,
     ): IdentityRegistrationController {
         val key = SlotKey(walletId.toHex(), identityIndex)
         val existing = _controllers.value[key]
@@ -87,9 +89,14 @@ class RegistrationCoordinator(
                 is IdentityRegistrationController.Phase.Idle,
                 is IdentityRegistrationController.Phase.Failed,
                 -> {
-                    // Legitimate restart: a fresh idle controller, or a retry after failure.
+                    // The failure's class forbids this operation (the payment
+                    // may have left, or it holds a lock this call does not
+                    // resume): keep the failed state instead of paying again.
+                    if (!existing.phase.value.permitsSubmit(resuming)) return existing
+                    // Legitimate restart: a fresh idle controller, a retry the
+                    // failure's class allows, or the resume of the lock it holds.
                     existing.enterPreparingKeys()
-                    existing.submit(body, isUnconfirmed, isBroadcastNotSent)
+                    existing.submit(body, isUnconfirmed, isBroadcastNotSent, resuming)
                     scheduleRetentionSweep(key, existing)
                     return existing
                 }
@@ -98,7 +105,7 @@ class RegistrationCoordinator(
         val controller = IdentityRegistrationController(walletId, identityIndex, fundingKind, scope, now)
         _controllers.update { it + (key to controller) }
         controller.enterPreparingKeys()
-        controller.submit(body, isUnconfirmed, isBroadcastNotSent)
+        controller.submit(body, isUnconfirmed, isBroadcastNotSent, resuming)
         scheduleRetentionSweep(key, controller)
         return controller
     }

@@ -39,6 +39,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.util.PaymentFailure
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -69,10 +70,13 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    // The last failed top-up, presented by its payment class; only a
+    // retryable one lets the button run it again.
+    var failure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     val amount = amountText.toLongOrNull()
     val canSubmit = wallet != null && manager != null && amount != null && amount > 0 &&
-        !isSubmitting
+        !isSubmitting && failure?.allowsRetry != false
 
     Scaffold(
         topBar = {
@@ -147,7 +151,9 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                         )
                         done = true
                     } catch (e: Exception) {
-                        error = e.message ?: "Top up failed"
+                        val paymentFailure = PaymentFailure.ofPayment(e)
+                        failure = paymentFailure
+                        error = paymentFailure?.message ?: e.message ?: "Top up failed"
                     } finally {
                         isSubmitting = false
                     }

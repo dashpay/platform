@@ -214,6 +214,6 @@ private fun phaseLabel(phase: Phase): String = when (phase) {
     is Phase.PreparingKeys -> "Preparing keys"
     is Phase.InFlight -> "In flight"
     is Phase.Completed -> "Registered"
-    is Phase.Failed -> "Failed"
+    is Phase.Failed -> phase.failure.title
     is Phase.Unconfirmed -> "Confirmation pending"
 }
