@@ -8,6 +8,7 @@ use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 /// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
@@ -61,11 +62,12 @@ pub(super) const MASTER_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::MAS
 
 /// The key that signs a contract create or update: an AUTHENTICATION ECDSA key at one of
 /// `security_levels`, [`CONTRACT_CREATE_SIGNING_LEVELS`] or [`CONTRACT_UPDATE_SIGNING_LEVELS`].
-/// These are not batches, so a contract-bound key cannot sign them.
+/// Chosen in [`SigningScope::ContractCreateOrUpdate`] at `platform_version`.
 pub(super) fn contract_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
     security_levels: &[SecurityLevel],
+    platform_version: &PlatformVersion,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     usable_signing_key(
         identity,
@@ -73,8 +75,22 @@ pub(super) fn contract_signing_key<'a>(
         Purpose::AUTHENTICATION,
         security_levels,
         &WALLET_SIGNING_KEY_TYPES,
-        SigningScope::NonBatch,
+        SigningScope::ContractCreateOrUpdate { platform_version },
     )
+}
+
+/// The `transition` a [`crate::PlatformWalletError::NoUsableSigningKey`] names for a contract
+/// `action` ("create" or "update") at `platform_version`, saying when keys with limits are
+/// excluded.
+pub(super) fn contract_transition(action: &str, platform_version: &PlatformVersion) -> String {
+    if (SigningScope::ContractCreateOrUpdate { platform_version }).refuses_keys_with_limits() {
+        format!(
+            "a contract-{action} state transition, which no key with a budget or an expiry can \
+             sign"
+        )
+    } else {
+        format!("a contract-{action} state transition")
+    }
 }
 
 /// The MASTER key that authorizes an identity update. Platform refuses a disabled signing key.
@@ -151,14 +167,18 @@ pub(crate) fn credit_signing_key<'a>(
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::super::key_selection::tests::{refused_purposes, signature_refusal_of};
+    use super::super::key_selection::tests::{
+        bound_key, identity as identity_of, key, refused_purposes, signature_refusal_of,
+    };
     use super::*;
+    use crate::util::now_ms;
     use crate::{PlatformWallet, PlatformWalletError};
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
     use dpp::consensus::signature::SignatureError;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::KeyType;
     use dpp::platform_value::BinaryData;
@@ -451,9 +471,6 @@ pub(super) mod tests {
 
     #[test]
     fn should_sign_a_contract_transition_only_with_a_key_free_of_contract_bounds() {
-        use super::super::key_selection::tests::{bound_key, identity as identity_of, key};
-        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
-
         let identity = identity_of(vec![
             bound_key(
                 1,
@@ -469,6 +486,7 @@ pub(super) mod tests {
             &identity,
             &KeyFilter(|_| true),
             &CONTRACT_UPDATE_SIGNING_LEVELS,
+            PlatformVersion::latest(),
         )
         .unwrap();
         assert_eq!(
@@ -480,13 +498,86 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn should_create_a_contract_with_the_high_key_and_update_it_only_with_a_critical_one() {
-        use super::super::key_selection::tests::{identity as identity_of, key};
+    fn should_not_sign_a_contract_transition_with_a_key_with_limits() {
+        let far_future = now_ms() + 1_000_000;
+        let budgeted = || key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None);
+        let expiring = || key(2, SecurityLevel::HIGH).with_limits(None, Some(far_future));
+        let pick = |keys: Vec<IdentityPublicKey>, levels: &[SecurityLevel], ids: &[u32]| {
+            contract_signing_key(
+                &identity_of(keys),
+                &available(ids),
+                levels,
+                PlatformVersion::latest(),
+            )
+            .map(|key| key.map(|key| key.id()))
+        };
+        assert_eq!(
+            pick(vec![budgeted()], &CONTRACT_UPDATE_SIGNING_LEVELS, &[1]).unwrap(),
+            None,
+            "Platform refuses a contract update signed by a key with a budget"
+        );
+        assert_eq!(
+            pick(
+                vec![budgeted(), expiring()],
+                &CONTRACT_CREATE_SIGNING_LEVELS,
+                &[1, 2]
+            )
+            .unwrap(),
+            None,
+            "Platform refuses a contract create signed by a key with a budget or an expiry"
+        );
+        assert_eq!(
+            pick(
+                vec![budgeted(), key(3, SecurityLevel::CRITICAL)],
+                &CONTRACT_UPDATE_SIGNING_LEVELS,
+                &[1, 3]
+            )
+            .unwrap(),
+            Some(3)
+        );
+        let error = pick(
+            vec![budgeted(), key(3, SecurityLevel::CRITICAL)],
+            &CONTRACT_UPDATE_SIGNING_LEVELS,
+            &[1],
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("Signing key 3 is unavailable"),
+            "the unlimited key is the only one that can sign, so its absence is the error: \
+             {error}"
+        );
+    }
 
+    #[test]
+    fn should_sign_a_contract_transition_with_a_key_with_limits_before_protocol_version_15() {
+        let identity = identity_of(vec![
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None)
+        ]);
+        let chosen = contract_signing_key(
+            &identity,
+            &KeyFilter(|_| true),
+            &CONTRACT_UPDATE_SIGNING_LEVELS,
+            PlatformVersion::get(14).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            chosen.map(|key| key.id()),
+            Some(1),
+            "protocol version 14 accepts a key with limits on a contract transition"
+        );
+    }
+
+    #[test]
+    fn should_create_a_contract_with_the_high_key_and_update_it_only_with_a_critical_one() {
         let pick = |keys: Vec<IdentityPublicKey>, levels: &[SecurityLevel]| {
-            contract_signing_key(&identity_of(keys), &KeyFilter(|_| true), levels)
-                .unwrap()
-                .map(|key| key.id())
+            contract_signing_key(
+                &identity_of(keys),
+                &KeyFilter(|_| true),
+                levels,
+                PlatformVersion::latest(),
+            )
+            .unwrap()
+            .map(|key| key.id())
         };
         let layout = || {
             vec![
@@ -947,6 +1038,69 @@ pub(super) mod tests {
                     if security_levels == &[SecurityLevel::CRITICAL, SecurityLevel::HIGH]
             ),
             "a contract create accepts HIGH or stronger: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_no_usable_contract_key_when_every_eligible_key_has_limits() {
+        let identity = identity_of(vec![
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None)
+        ]);
+        let identity_id = identity.id();
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        let wallet = wallet_with_identity_on(sdk, identity).await;
+        let error = wallet
+            .identity()
+            .update_data_contract_with_signer(
+                &identity_id,
+                &Identifier::from([0x0C; 32]),
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("no key with a budget or an expiry can sign"),
+            "explain why the limited key was excluded: {error}"
+        );
+        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+        let error = wallet
+            .identity()
+            .create_data_contract_with_signer(
+                &identity_id,
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey { identity_id: id, .. }
+                    if *id == identity_id
+            ),
+            "Platform refuses a contract create signed by a key with a budget: {error:?}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("no key with a budget or an expiry can sign"),
+            "explain why the limited key was excluded: {error}"
         );
     }
 
