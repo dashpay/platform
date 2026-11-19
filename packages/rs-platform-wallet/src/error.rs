@@ -98,6 +98,14 @@ pub enum PlatformWalletError {
     #[error("Identity already exists: {0}")]
     IdentityAlreadyExists(Identifier),
 
+    /// The wallet slot an identity was to be placed in already holds another
+    /// identity; nothing was changed.
+    #[error("identity index {identity_index} of this wallet already holds identity {occupant}")]
+    IdentitySlotOccupied {
+        identity_index: u32,
+        occupant: Identifier,
+    },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

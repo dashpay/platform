@@ -29,6 +29,9 @@
 mod accessors;
 mod apply;
 mod lifecycle;
+mod slots;
+
+pub use slots::{SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement, SlotState};
 
 use super::managed_identity::ManagedIdentity;
 use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
@@ -114,6 +117,11 @@ pub struct IdentityManager {
     /// (`ClientStartState::retained_private_contact_scan_states`): each is held
     /// as it is added ([`Self::retain_private_payment_markers`]).
     retained_private_payment_markers: BTreeSet<Identifier>,
+
+    /// Slot leases, `slot_leases[wallet_id][identity_index]`: the slots a
+    /// registration or an invitation claim holds before its identity lands
+    /// (see [`slots`]).
+    slot_leases: BTreeMap<WalletId, BTreeMap<RegistrationIndex, SlotLease>>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -149,6 +157,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             location_index,
             identity_scan_states: scan_states,
             retained_private_payment_markers: BTreeSet::new(),
+            slot_leases: BTreeMap::new(),
         }
     }
 }
