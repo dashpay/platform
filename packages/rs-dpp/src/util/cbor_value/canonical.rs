@@ -9,6 +9,7 @@ use ciborium::value::Value as CborValue;
 use serde::Serialize;
 
 use crate::ProtocolError;
+use platform_value::system_bytes::MAX_BASE58_IDENTIFIER_LENGTH;
 
 use super::{
     convert::convert_to, get_from_cbor_map, to_path_of_cbors, FieldType, ReplacePaths,
@@ -326,6 +327,11 @@ pub fn value_to_hash(value: &CborValue) -> Result<[u8; 32], ProtocolError> {
             .clone()
             .try_into()
             .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+        // A text longer than any 32 bytes' base 58 form decodes to more than 32 bytes when it
+        // decodes at all, so it is refused as such a decode is, without decoding it
+        CborValue::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LENGTH => Err(
+            ProtocolError::DecodingError("expected 32 bytes".to_string()),
+        ),
         CborValue::Text(text) => match bs58::decode(text).into_vec() {
             Ok(bytes) => bytes
                 .try_into()
@@ -1014,6 +1020,27 @@ mod test {
     }
 
     // value_to_hash tests
+
+    /// A text too long to be a 32-byte hash's base 58 form is refused as one a full decode
+    /// refuses, base 58 or not, without decoding it: a full decode of a text of a million
+    /// characters takes minutes, as base 58 decoding takes time quadratic in a text's length.
+    #[test]
+    fn should_refuse_a_long_hash_text_as_decoding_it_does() {
+        for (decodable, long) in [
+            ("2".repeat(2_000), "2".repeat(1_000_000)),
+            (
+                format!("{}0", "2".repeat(1_999)),
+                format!("{}0", "2".repeat(999_999)),
+            ),
+        ] {
+            let decoded = format!("{:?}", value_to_hash(&CborValue::Text(decodable)));
+            assert!(decoded.starts_with("Err("), "{decoded}");
+            assert_eq!(
+                format!("{:?}", value_to_hash(&CborValue::Text(long))),
+                decoded
+            );
+        }
+    }
 
     #[test]
     fn value_to_hash_from_32_bytes() {

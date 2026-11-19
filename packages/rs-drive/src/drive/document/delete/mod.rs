@@ -44,6 +44,10 @@ mod delete_document_for_contract_with_named_type_operations;
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
 mod delete_index_only_document_for_contract_operations;
+
+// Module: consumed_document_delete_cost
+// This module prices, by estimation, the delete of a document a create consumes
+mod consumed_document_delete_cost;
 mod erase_document_for_contract_operations;
 
 mod internal;

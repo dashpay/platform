@@ -299,13 +299,29 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// (`choose_first_reservation`): the `findBy` and `validWhen` hashes and the competitor
     /// scan's budget.
     ///
-    /// - `0` (every protocol version): every create of a type declaring `chooseFirst`, one its
-    ///   contest decides included, is reserved both hashes and the scan's budget.
+    /// - `0` (protocol version 14 and below): every create of a type declaring `chooseFirst`, one
+    ///   its contest decides included, is reserved both hashes and the scan's budget.
+    /// - `1` (protocol version 15): also the `validWhen` hash of each competitor the scan may
+    ///   read, which `document_reference_validation` 1 bills in full, past the scan's budget.
     ///
     /// A generation that reserves less for a create than what the block bills it, the work
     /// `document_reference_validation` does for it included, would admit a signer the block
     /// then refuses unpaid.
     pub choose_first_reservation: FeatureVersion,
+    /// Versions what check tx reserves, for each create of a batch whose state it does not
+    /// validate, for the `refersTo` lookups document reference validation runs in a block
+    /// (`reference_lookup_reservation`): the computed key's hash, the lookup query and, for a
+    /// lookup declaring `consume`, the delete of the document it consumes.
+    ///
+    /// - `0` (every protocol version): for each lookup its references may make, the key's
+    ///   double SHA-256 (but for a `chooseFirst` lookup's, which `choose_first_reservation`
+    ///   reserves), `lookup_query_credits_reserved`, and Drive's estimated delete of one
+    ///   document of a consumed type. No lookup parses before protocol version 14, so it
+    ///   reserves nothing there.
+    ///
+    /// Mempool admission only: a block runs document reference validation and bills what it
+    /// reads.
+    pub reference_lookup_reservation: FeatureVersion,
     pub token_mint_transition_structure_validation: FeatureVersion,
     pub token_burn_transition_structure_validation: FeatureVersion,
     pub token_transfer_transition_structure_validation: FeatureVersion,

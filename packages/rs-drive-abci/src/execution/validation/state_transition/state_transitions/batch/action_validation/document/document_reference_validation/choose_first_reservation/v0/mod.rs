@@ -8,22 +8,23 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
+use crate::execution::types::check_tx_reservation::CheckTxReservation;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::choose_first_scan_budget;
 
 /// Generation 0: for every create of a document type declaring `chooseFirst`, the double
-/// SHA-256s of its `findBy` and `validWhen` preimages and the competitor scan's whole budget
-/// (see [`super::choose_first_reservation`]).
+/// SHA-256s of its `findBy` and `validWhen` preimages, billed, and the competitor scan's whole
+/// budget, a bound (see [`super::choose_first_reservation`]).
 #[inline(always)]
 pub(super) fn choose_first_reservation_v0(
     action: &StateTransitionAction,
     platform_version: &PlatformVersion,
-) -> Vec<ValidationOperation> {
+) -> CheckTxReservation {
     let StateTransitionAction::BatchAction(batch) = action else {
-        return Vec::new();
+        return CheckTxReservation::default();
     };
     let writer_id = batch.owner_id();
-    let mut reservation = Vec::new();
+    let mut reservation = CheckTxReservation::default();
     for transition in batch.transitions() {
         let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(create)) =
             transition
@@ -49,14 +50,16 @@ pub(super) fn choose_first_reservation_v0(
                 .map(|choose_first| &choose_first.valid_when),
         ) {
             if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
-                reservation.push(ValidationOperation::DoubleSha256(
+                reservation.billed.push(ValidationOperation::DoubleSha256(
                     key.function.block_count(preimage.len()),
                 ));
             }
         }
-        reservation.push(ValidationOperation::PrecalculatedOperation(
-            FeeResult::new_from_processing_fee(choose_first_scan_budget(platform_version)),
-        ));
+        reservation
+            .bounds
+            .push(ValidationOperation::PrecalculatedOperation(
+                FeeResult::new_from_processing_fee(choose_first_scan_budget(platform_version)),
+            ));
     }
     reservation
 }

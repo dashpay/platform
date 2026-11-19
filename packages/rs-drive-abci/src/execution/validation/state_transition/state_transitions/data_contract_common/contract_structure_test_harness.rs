@@ -61,6 +61,25 @@ pub(in crate::execution) fn summed_u64_schema() -> Value {
     })
 }
 
+/// What registration refuses a private type declaring entries larger than
+/// `max_private_document_entry_size` with.
+pub(in crate::execution) const PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE: &str =
+    "above the largest entry a private document type may declare";
+
+/// A private document type (protocol version 15) whose entries take `entry_size` bytes.
+pub(in crate::execution) fn private_schema(entry_size: u64) -> Value {
+    platform_value!({
+        "type": "object",
+        "private": { "entrySize": entry_size },
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "properties": {
+            "note": { "type": "string", "maxLength": 63, "position": 0 },
+        },
+        "additionalProperties": false,
+    })
+}
+
 /// The fragment of the parser's message for a contested type summing a property whose values
 /// are not bounded within ±2^27.
 pub(in crate::execution) const CONTESTED_UNBOUNDED_SUM_MESSAGE: &str =

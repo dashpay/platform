@@ -15,7 +15,8 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef, Index,
-    CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+    CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_BASE58_INDEX_KEY_LENGTH,
+    MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::decision_proposal::{
@@ -40,6 +41,7 @@ use itertools::Itertools;
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
 };
+use platform_value::system_bytes::MAX_BASE58_IDENTIFIER_LENGTH;
 use platform_value::{Identifier, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
@@ -775,18 +777,17 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
             "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
+                // A text longer than any identifier's base 58 form is refused as decoding it
+                // refuses it, without decoding it. In place: the same result for every value
                 let bytes = value
-                    .to_identifier_bytes()
-                    .map_err(ProtocolError::ValueError)?;
-                if bytes.len() != DEFAULT_HASH_SIZE {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet(
-                            "expected system value to be 32 bytes long".to_string(),
-                        ),
+                    .to_identifier_bytes_unless_text_longer_than(MAX_BASE58_IDENTIFIER_LENGTH)
+                    .map_err(ProtocolError::ValueError)?
+                    .filter(|bytes| bytes.len() == DEFAULT_HASH_SIZE);
+                bytes.ok_or_else(|| {
+                    ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
+                        "expected system value to be 32 bytes long".to_string(),
                     ))
-                } else {
-                    Ok(bytes)
-                }
+                })
             }
             "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                 Ok(DocumentPropertyType::encode_date_timestamp(
@@ -812,16 +813,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                         DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
                     })?,
                 };
-                let bytes = property_type.encode_value_for_tree_keys(value)?;
-                if bytes.len() > MAX_INDEX_SIZE {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet(
-                            "value must be less than 256 bytes long".to_string(),
-                        ),
-                    ))
-                } else {
-                    Ok(bytes)
-                }
+                index_key(property_type, value)
             }
         }
     }
@@ -886,16 +878,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let Some(typed_array) = typed_array_property(self.flattened_properties(), key) else {
             return self.serialize_value_for_key_v0(key, value);
         };
-        let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
-        if bytes.len() > MAX_INDEX_SIZE {
-            Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet(
-                    "value must be less than 256 bytes long".to_string(),
-                ),
-            ))
-        } else {
-            Ok(bytes)
-        }
+        index_key(&typed_array.item_type, value)
     }
 
     /// Reads a key [`Self::serialize_value_for_key_v1`] wrote, a typed array
@@ -1240,3 +1223,29 @@ impl DocumentTypeV0MethodsVersioned for DocumentTypeV2 {}
 impl DocumentTypeV0MethodsVersioned for DocumentType {}
 
 impl DocumentTypeV0MethodsVersioned for DocumentTypeRef<'_> {}
+
+/// The key a property of `property_type` gives `value` in an index, refused when longer than an
+/// index key may be ([`MAX_INDEX_SIZE`]). An identifier written as a base 58 text longer than
+/// [`MAX_BASE58_INDEX_KEY_LENGTH`] decodes to more bytes than that, so it is refused as decoding
+/// it refuses it, without decoding it, which takes time quadratic in the text's length. The
+/// result is the same as decoding it for every value, at every protocol version.
+fn index_key(
+    property_type: &DocumentPropertyType,
+    value: &Value,
+) -> Result<Vec<u8>, ProtocolError> {
+    let key = match (property_type, value) {
+        (
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_),
+            Value::Text(_),
+        ) => value
+            .to_identifier_bytes_unless_text_longer_than(MAX_BASE58_INDEX_KEY_LENGTH)
+            .map_err(ProtocolError::ValueError)?,
+        _ => Some(property_type.encode_value_for_tree_keys(value)?),
+    };
+    key.filter(|key| key.len() <= MAX_INDEX_SIZE)
+        .ok_or_else(|| {
+            ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
+                "value must be less than 256 bytes long".to_string(),
+            ))
+        })
+}

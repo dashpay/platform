@@ -3832,63 +3832,89 @@ mod commit_reveal_lookup_tests {
     /// Check tx reserves the two hashes a reveal's `chooseFirst` check computes as their own
     /// values make them: a transient param, which no stored document keeps and so no write
     /// estimate prices, makes the reservation grow by the double SHA-256 blocks it adds to
-    /// both preimages, and by nothing else.
+    /// both preimages. From protocol version 15, where each competitor's `validWhen` hash bills
+    /// in full, it grows by those blocks for each competitor the scan may read too; at 14, whose
+    /// scan bills hashes within its budget, by nothing else.
     #[tokio::test]
-    async fn should_reserve_the_upfront_hashes_by_the_reveals_own_values() {
-        let mut fixture = CommitRevealFixture::new_with(|contract| {
-            add_name_registration(contract, true);
-            contract["documentSchemas"]["paddedName"] = padded_name_schema();
-        });
-        let platform_version = PlatformVersion::latest();
-        let contract = fixture.contract.clone();
-        let padded = |pad: usize| {
-            let mut values = name_values();
-            values.push(("pad", Value::Bytes(vec![0x07; pad])));
-            values
-        };
-        let (_, small) = fixture
-            .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
-            .await;
-        let (_, large) = fixture
-            .creation_transition(
-                &contract,
-                Who::Mallory,
-                "paddedName",
-                &padded(5_000),
-                &[],
-                None,
-            )
-            .await;
-        let fee = |transition: &StateTransition| {
-            let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
-            assert_eq!(errors, Vec::<u32>::new());
-            estimated.expect("expected an estimated fee")
-        };
-        let (small, large) = (fee(&small), fee(&large));
+    async fn should_reserve_the_hashes_by_the_reveals_own_values() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+                add_name_registration(contract, true);
+                contract["documentSchemas"]["paddedName"] = padded_name_schema();
+            });
+            let contract = fixture.contract.clone();
+            let padded = |pad: usize| {
+                let mut values = name_values();
+                values.push(("pad", Value::Bytes(vec![0x07; pad])));
+                values
+            };
+            let (_, small) = fixture
+                .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
+                .await;
+            let (_, large) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Mallory,
+                    "paddedName",
+                    &padded(5_000),
+                    &[],
+                    None,
+                )
+                .await;
+            let fee = |transition: &StateTransition| {
+                let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
+                assert_eq!(errors, Vec::<u32>::new());
+                estimated.expect("expected an estimated fee")
+            };
+            let (small, large) = (fee(&small), fee(&large));
 
-        // The findBy preimage is the writer's id and the chooseFirst one, `pad | label . parent`
-        let choose_first_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
-        let function = HashFunction::Sha256d;
-        let blocks = |pad: usize| {
-            u64::from(function.block_count(32 + choose_first_len(pad)))
-                + u64::from(function.block_count(choose_first_len(pad)))
-        };
-        assert_eq!(
-            large.processing_fee - small.processing_fee,
-            (blocks(5_000) - blocks(1)) * platform_version.fee_version.hashing.sha256_per_block,
-        );
-        assert_eq!(
-            large.storage_fee, small.storage_fee,
-            "the pad is not stored"
-        );
+            // The findBy preimage is `pad | label . parent`, the validWhen one the writer's
+            // id and the same bytes
+            let find_by_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
+            let function = HashFunction::Sha256d;
+            let valid_when_blocks =
+                |pad: usize| u64::from(function.block_count(32 + find_by_len(pad)));
+            let blocks = |pad: usize| {
+                valid_when_blocks(pad) + u64::from(function.block_count(find_by_len(pad)))
+            };
+            let competitors = if protocol_version >= 15 {
+                u64::from(platform_version.system_limits.max_choose_first_candidates)
+            } else {
+                0
+            };
+            assert_eq!(
+                large.processing_fee - small.processing_fee,
+                (blocks(5_000) - blocks(1)
+                    + competitors * (valid_when_blocks(5_000) - valid_when_blocks(1)))
+                    * platform_version.fee_version.hashing.sha256_per_block,
+                "at {protocol_version}"
+            );
+            assert_eq!(
+                large.storage_fee, small.storage_fee,
+                "the pad is not stored"
+            );
+        }
     }
 
-    /// The competitor scan bills as it runs, up to its budget: past it, it bills what is left
-    /// of the budget and nothing more, and reads on. With one credit per competitor the budget
-    /// is 1,000 credits, less than the competitors query alone.
-    #[tokio::test]
-    async fn should_bill_the_competitor_scan_up_to_its_budget() {
-        let mut fixture = choose_first_fixture(true);
+    /// The competitors of a reveal, the `name` its `chooseFirst` judges, read with one credit
+    /// per competitor, so the scan's budget is 1,000 credits, less than the competitors query
+    /// alone: Carol's commitment, holding a hash of nobody's, then Mallory's valid one, then
+    /// Alice's, which the reveal finds. Returns the reveal's references validated as Alice's at
+    /// `protocol_version`, and Mallory's commitment.
+    async fn competitors_read_on_a_tight_budget(
+        protocol_version: u32,
+    ) -> (
+        SimpleConsensusValidationResult,
+        StateTransitionExecutionContext,
+        Document,
+    ) {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected the platform version");
+        let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+            add_name_registration(contract, true)
+        });
         preorder_name(
             &mut fixture,
             Who::Carol,
@@ -3904,7 +3930,7 @@ mod commit_reveal_lookup_tests {
             .map(|(property, value)| (property.to_string(), value))
             .collect();
 
-        let mut tight_budget = PlatformVersion::latest().clone();
+        let mut tight_budget = platform_version.clone();
         tight_budget
             .fee_version
             .document_reference
@@ -3918,13 +3944,38 @@ mod commit_reveal_lookup_tests {
             REVEAL_HEIGHT,
             &tight_budget,
         );
-
-        // Billing stops at the budget, the scan does not: Mallory's valid preorder refuses
+        // The scan reads on past the budget: Mallory's valid preorder refuses
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
                 if *e.preceding_document_id() == mallory.id()
         );
+        (result, execution_context, mallory)
+    }
+
+    /// From protocol version 15 the competitors query bills up to the scan's budget, and every
+    /// competitor's `validWhen` hash bills in full by the blocks it hashes, past the budget too:
+    /// the reveal pays for each hash it makes, however large its preimage.
+    #[tokio::test]
+    async fn should_bill_every_competitor_hash_past_the_scan_budget() {
+        let (_, execution_context, _) =
+            competitors_read_on_a_tight_budget(PlatformVersion::latest().protocol_version).await;
+        let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan), ValidationOperation::DoubleSha256(2), ValidationOperation::DoubleSha256(2)] =
+            execution_context.operations_slice()
+        else {
+            panic!(
+                "the query bills its budget and each competitor its hash, got {:?}",
+                execution_context.operations_slice()
+            );
+        };
+        assert_eq!(scan.processing_fee, 1_000);
+    }
+
+    /// At protocol version 14 the scan bills as it runs, up to its budget: past it, it bills
+    /// what is left of the budget and nothing more, and reads on.
+    #[tokio::test]
+    async fn should_bill_the_competitor_scan_up_to_its_budget_at_protocol_version_14() {
+        let (_, execution_context, _) = competitors_read_on_a_tight_budget(14).await;
         let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan)] =
             execution_context.operations_slice()
         else {
@@ -4121,5 +4172,459 @@ mod commit_reveal_lookup_tests {
             .expect("expected the references to be validated");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert!(execution_context.operations_slice().is_empty());
+    }
+
+    /// Holds `who` to `transition`'s check tx estimate on the first check and on a recheck,
+    /// each judged on its own: one credit short of a level's estimate is refused there and its
+    /// estimate admitted. Leaves `who` holding the smaller of the two, the least a signer whose
+    /// transaction check tx keeps can hold, and returns it.
+    fn hold_to_the_check_tx_estimate(
+        fixture: &CommitRevealFixture,
+        who: Who,
+        transition: &StateTransition,
+    ) -> Credits {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let mut least = Credits::MAX;
+        for level in [FirstTimeCheck, Recheck] {
+            fixture.set_balance(who, dash_to_credits!(0.5));
+            let (errors, estimated) = fixture.check_tx_at(transition, level);
+            assert_eq!(errors, Vec::<u32>::new());
+            let estimated = estimated
+                .expect("expected an estimated fee")
+                .total_base_fee();
+            fixture.set_balance(who, estimated - 1);
+            assert_eq!(
+                fixture.check_tx_at(transition, level).0,
+                vec![IDENTITY_INSUFFICIENT_BALANCE]
+            );
+            fixture.set_balance(who, estimated);
+            assert_eq!(fixture.check_tx_at(transition, level).0, Vec::<u32>::new());
+            least = least.min(estimated);
+        }
+        fixture.set_balance(who, least);
+        least
+    }
+
+    /// Check tx does not validate the state of a reveal, so its fee estimate held none of what
+    /// document reference validation bills a block for the commitment it finds: the key's hash
+    /// and the lookup query, and the delete of the commitment it consumes, which the block
+    /// prices with the create. It reserves them on the first check and on a recheck: a signer
+    /// holding exactly the smaller of the two estimates is charged for the reveal in the block,
+    /// at protocol version 14 and 15, and the consumed commitment is gone.
+    #[tokio::test]
+    async fn should_reserve_the_lookup_and_the_consumed_commitments_delete_when_admitting_a_reveal()
+    {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = CommitRevealFixture::new_at(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_| {},
+            );
+            let salt = [0x11; 32];
+            let preorder = fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let contract = fixture.contract.clone();
+            let (_, reveal) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Alice,
+                    "domain",
+                    &subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    None,
+                )
+                .await;
+            hold_to_the_check_tx_estimate(&fixture, Who::Alice, &reveal);
+
+            let result = fixture.process(&reveal, REVEAL_HEIGHT);
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "at {protocol_version}"
+            );
+            assert!(!fixture.preorder_exists(preorder.id()));
+        }
+    }
+
+    /// A lookup that does not consume is reserved too: a post finding its author's handle by
+    /// name, made by a signer holding exactly the smaller of the check tx and recheck estimates,
+    /// is charged in the block, at protocol version 14 and 15.
+    #[tokio::test]
+    async fn should_reserve_the_lookup_of_a_write_finding_a_document_by_a_value() {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = handle_fixture_at(
+                "permanentDocument",
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_, _| {},
+            );
+            make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+            let contract = fixture.contract.clone();
+            let (_, post) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Mallory,
+                    "post",
+                    &[("authorHandle", text("alice")), ("body", text("gm"))],
+                    &[],
+                    None,
+                )
+                .await;
+            hold_to_the_check_tx_estimate(&fixture, Who::Mallory, &post);
+
+            let result = fixture.process(&post, REVEAL_HEIGHT);
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "at {protocol_version}"
+            );
+        }
+    }
+
+    /// The fee check tx judges `transition` by on its first check at `platform_version`, the
+    /// reservations included, and the gas it reports the transition as wanting.
+    fn admitted_and_gas_wanted(
+        fixture: &CommitRevealFixture,
+        transition: &StateTransition,
+        platform_version: &PlatformVersion,
+    ) -> (Credits, Credits) {
+        let raw = transition
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let state = fixture.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &fixture.platform.drive,
+            state: &state,
+            config: &fixture.platform.config,
+            core_rpc: &fixture.platform.core_rpc,
+        };
+        let result = fixture
+            .platform
+            .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
+            .expect("expected to check the transaction");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let checked = result.data.expect("expected a check tx result");
+        (
+            checked
+                .fee_result
+                .expect("expected an estimated fee")
+                .total_base_fee(),
+            checked.gas_wanted,
+        )
+    }
+
+    /// The processing fee of one double SHA-256 over a preimage of `preimage_len` bytes.
+    fn double_sha256_fee(preimage_len: usize, platform_version: &PlatformVersion) -> Credits {
+        let mut fee = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(
+            &[ValidationOperation::DoubleSha256(
+                HashFunction::Sha256d.block_count(preimage_len),
+            )],
+            &mut fee,
+            platform_version,
+        )
+        .expect("expected to price the hash");
+        fee.processing_fee
+    }
+
+    /// Check tx holds a reveal's signer to what it reserves for the reveal's lookup, and reports
+    /// the gas the reveal wants without the part that is a bound: Tenderdash fills a block's gas
+    /// with what transitions want, and the lookup query's allowance bounds what a block may bill
+    /// for the query. The key's double SHA-256 and the consumed commitment's delete, which a
+    /// block bills whenever it accepts the reveal, stay in the gas. So the fee check tx judges
+    /// and the gas it reports differ by the allowance, whatever it is.
+    #[tokio::test]
+    async fn should_report_the_gas_a_reveal_wants_without_the_lookup_querys_allowance() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x11; 32];
+        fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+            .await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(
+                &contract,
+                Who::Alice,
+                "domain",
+                &subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                None,
+            )
+            .await;
+
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert!(allowance > 1);
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+        assert_eq!(admitted - gas_wanted, allowance);
+
+        // Another allowance moves the fee check tx judges and not the gas it reports
+        let mut small_allowance = platform_version.clone();
+        small_allowance
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved = 1;
+        let (admitted_with_small_allowance, gas_wanted_with_small_allowance) =
+            admitted_and_gas_wanted(&fixture, &reveal, &small_allowance);
+        assert_eq!(gas_wanted_with_small_allowance, gas_wanted);
+        assert_eq!(admitted - admitted_with_small_allowance, allowance - 1);
+    }
+
+    /// The fixture contract with `memberOrReveal`: a claim whose `ownerRefersTo` is an `anyOf`
+    /// of the writer's membership and, second, a reveal of a preorder of its label that
+    /// consumes it.
+    fn member_or_reveal(contract: &mut serde_json::Value) {
+        let mut schema = contract["documentSchemas"]["fallbackClaim"].clone();
+        schema["ownerRefersTo"] = serde_json::json!({
+            "anyOf": [
+                {
+                    "type": "deletableDocument",
+                    "documentType": "membership",
+                    "findBy": { "$ownerId": "." }
+                },
+                {
+                    "type": "deletableDocument",
+                    "documentType": "preorder",
+                    "findBy": {
+                        "saltedDomainHash": {
+                            "function": "sys.hash.sha256d",
+                            "params": ["preorderSalt", "label"]
+                        }
+                    },
+                    "where": { "$ownerId": "$ownerId" },
+                    "consume": true
+                }
+            ]
+        });
+        contract["documentSchemas"]["memberOrReveal"] = schema;
+    }
+
+    /// An `anyOf` stops at the first operand that holds, so a block bills the work of a later
+    /// operand only when every earlier one fails. Check tx holds the signer to all of it, but
+    /// reports the gas a claim wants with only the first operand's work: the reveal its second
+    /// operand would make, its key's hash and its commitment's delete, is a bound, beside the
+    /// two lookup queries' allowances. The block holds the claim through the membership and
+    /// neither hashes the key nor consumes the commitment.
+    #[tokio::test]
+    async fn should_report_the_work_of_an_any_of_operand_after_the_first_as_a_bound() {
+        let mut fixture = CommitRevealFixture::new_with(member_or_reveal);
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x52; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "fallback", COMMIT_HEIGHT)
+            .await;
+        let (_, result) = fixture
+            .create(
+                Who::Alice,
+                "membership",
+                &[("note", "member".into())],
+                &[],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let contract = fixture.contract.clone();
+        let (_, claim) = fixture
+            .creation_transition(
+                &contract,
+                Who::Alice,
+                "memberOrReveal",
+                &[
+                    ("label", "fallback".into()),
+                    ("preorderSalt", Value::Bytes32(salt)),
+                ],
+                &[],
+                None,
+            )
+            .await;
+
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &claim, platform_version);
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let consumed_delete = fixture
+            .platform
+            .drive
+            .consumed_document_delete_cost(
+                &contract,
+                contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder type"),
+                &block_info,
+                platform_version,
+            )
+            .expect("expected to price the delete")
+            .processing_fee;
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert_eq!(
+            admitted - gas_wanted,
+            2 * allowance
+                + double_sha256_fee(32 + "fallback".len(), platform_version)
+                + consumed_delete
+        );
+
+        let result = fixture.process(&claim, REVEAL_HEIGHT);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    /// From protocol version 15 a create deletes the commitment it consumes from what its lookup
+    /// read, without reading it again (the create conversion 1), so check tx prices the delete
+    /// without that read: it costs less than at 14, where the create deletes the commitment by
+    /// its id and reads it first. The lookup's own read is reserved by its query's allowance.
+    #[tokio::test]
+    async fn should_price_a_consumed_delete_without_reading_the_document_again_from_15() {
+        let fixture = CommitRevealFixture::new();
+        let contract = fixture.contract.clone();
+        let preorder = contract
+            .document_type_for_name("preorder")
+            .expect("expected the preorder type");
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let delete_at = |protocol_version: u32| {
+            fixture
+                .platform
+                .drive
+                .consumed_document_delete_cost(
+                    &contract,
+                    preorder,
+                    &block_info,
+                    PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                )
+                .expect("expected to price the delete")
+                .processing_fee
+        };
+        assert!(
+            delete_at(PlatformVersion::latest().protocol_version) < delete_at(14),
+            "at 15 {}, at 14 {}",
+            delete_at(PlatformVersion::latest().protocol_version),
+            delete_at(14)
+        );
+    }
+
+    /// A block drops what a failed `anyOf` operand consumes, so a consume in an operand that may
+    /// fail while a later one lets the write through is no work the block bills whenever it
+    /// accepts the write. `fallbackClaim` holds through `anyOf(allOf(<consuming reveal>,
+    /// <membership>), identity)`: check tx holds its signer to the reveal's delete but reports
+    /// it as a bound, beside the two lookup queries' allowances, with the reveal's key hash, the
+    /// first thing the block checks, in the gas. A writer without a membership is accepted
+    /// through the identity, and the commitment stays.
+    #[tokio::test]
+    async fn should_report_a_consume_an_any_of_may_drop_as_a_bound() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x53; 32];
+        let preorder = fixture
+            .commit(Who::Mallory, salt, "fallback", COMMIT_HEIGHT)
+            .await;
+        let contract = fixture.contract.clone();
+        let (_, claim) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "fallbackClaim",
+                &[
+                    ("label", "fallback".into()),
+                    ("preorderSalt", Value::Bytes32(salt)),
+                ],
+                &[],
+                None,
+            )
+            .await;
+
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &claim, platform_version);
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let consumed_delete = fixture
+            .platform
+            .drive
+            .consumed_document_delete_cost(
+                &contract,
+                contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder type"),
+                &block_info,
+                platform_version,
+            )
+            .expect("expected to price the delete")
+            .processing_fee;
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert_eq!(admitted - gas_wanted, 2 * allowance + consumed_delete);
+
+        let result = fixture.process(&claim, REVEAL_HEIGHT);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    /// A create its contest decides reads no `chooseFirst` competitor in a block, so check tx
+    /// reserves none of their hashes for it, where it reserves them for an uncontested reveal of
+    /// the same name; both keep the competitor scan's budget. Their bounds differ by exactly the
+    /// hashes of the competitors the scan may read.
+    #[tokio::test]
+    async fn should_reserve_no_competitor_hashes_for_a_create_its_contest_decides() {
+        let platform_version = PlatformVersion::latest();
+        let (uncontested, _) = preceded_reveal_fixture().await;
+        let (contested, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let mut bounds = Vec::new();
+        for mut fixture in [uncontested, contested] {
+            let contract = fixture.contract.clone();
+            let (_, reveal) = fixture
+                .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+                .await;
+            let (admitted, gas_wanted) =
+                admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+            bounds.push(admitted - gas_wanted);
+        }
+        let competitors = u64::from(platform_version.system_limits.max_choose_first_candidates);
+        assert_eq!(
+            bounds[0] - bounds[1],
+            competitors * double_sha256_fee(32 + full_name().len(), platform_version)
+        );
+        assert!(bounds[1] >= choose_first_scan_budget(platform_version));
+    }
+
+    /// A reveal choosing the first of the commitments to its values is reported as wanting no
+    /// gas for what only bounds the work a block may bill, while check tx still holds its signer
+    /// to it: the competitor scan's budget, the hashes of the competitors the scan may read, and
+    /// its lookup query's allowance. The fee check tx judges and the gas it reports differ by
+    /// exactly those, so the `findBy` and `validWhen` hashes the check makes for the reveal's own
+    /// commitment stay in the gas.
+    #[tokio::test]
+    async fn should_report_the_gas_a_choose_first_reveal_wants_without_the_scan_budget() {
+        let (mut fixture, _) = preceded_reveal_fixture().await;
+        let platform_version = PlatformVersion::latest();
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+        let budget = choose_first_scan_budget(platform_version);
+        let competitor_hashes =
+            u64::from(platform_version.system_limits.max_choose_first_candidates)
+                * double_sha256_fee(32 + full_name().len(), platform_version);
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert!(gas_wanted > 0);
+        assert_eq!(
+            admitted - gas_wanted,
+            budget + competitor_hashes + allowance,
+            "admitted {admitted}, gas wanted {gas_wanted}"
+        );
     }
 }

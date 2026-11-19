@@ -1,6 +1,9 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
-use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::validation::state_transition::check_tx_verification::{
+    state_transition_to_execution_event_for_check_tx, CheckTxExecutionEvent,
+};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
     validate_batch_token_pool_nullifiers_unspent, StateTransitionHasShieldedProofValidationV0,
@@ -25,6 +28,9 @@ use crate::execution::types::state_transition_container::v0::{
 };
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::prelude::UserFeeIncrease;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
@@ -114,6 +120,7 @@ where
         let mut check_tx_result = CheckTxResult {
             level: check_tx_level,
             fee_result: None,
+            gas_wanted: 0,
             unique_identifiers: vec![],
             priority: 0,
             state_transition_name: None,
@@ -180,7 +187,11 @@ where
 
         // We should run the execution event in dry run (estimated fees)
         // to see if we would have enough fees for the transition
-        if let Some(execution_event) = validation_result.into_data()? {
+        if let Some(CheckTxExecutionEvent {
+            event: execution_event,
+            reserved_bounds,
+        }) = validation_result.into_data()?
+        {
             let validation_result = self.validate_fees_of_event(
                 &execution_event,
                 platform_ref.state.last_block_info(),
@@ -190,6 +201,12 @@ where
 
             let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
 
+            check_tx_result.gas_wanted = gas_wanted_without_reservations(
+                &estimated_fee_result,
+                &reserved_bounds,
+                state_transition.user_fee_increase(),
+                platform_version,
+            )?;
             check_tx_result.fee_result = Some(estimated_fee_result);
 
             // A batch that spends a token shielded pool note the pool already records can only
@@ -275,6 +292,30 @@ where
             Ok(ValidationResult::new_with_data(check_tx_result))
         }
     }
+}
+
+/// The `gas_wanted` check tx reports for a transition whose estimate, raised by its
+/// `user_fee_increase`, is `estimated_fee_result`: that estimate without the bounds check tx
+/// reserved on top of it (`reserved_bounds`) for state it did not validate, raised as fee
+/// validation raises the estimate. Tenderdash fills a block's gas with what transitions want,
+/// and a bound is what a block may bill, not what it is expected to; the reserved work a block
+/// bills whenever it processes the transition stays in. The increase is rounded down over the
+/// whole processing fee, so this is the estimate without the bounds, or one credit above it.
+/// Tenderdash reads it to reap transactions into a proposal and to refuse one wanting more than
+/// a block's gas (its post-check), so leaving the bounds out also admits a transition only they
+/// made want more than that.
+fn gas_wanted_without_reservations(
+    estimated_fee_result: &FeeResult,
+    reserved_bounds: &[ValidationOperation],
+    user_fee_increase: UserFeeIncrease,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, Error> {
+    let mut reserved = FeeResult::default();
+    ValidationOperation::add_many_to_fee_result(reserved_bounds, &mut reserved, platform_version)?;
+    reserved.apply_user_fee_increase(user_fee_increase);
+    Ok(estimated_fee_result
+        .total_base_fee()
+        .saturating_sub(reserved.total_base_fee()))
 }
 
 #[cfg(test)]

@@ -48,7 +48,6 @@ use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use indexmap::IndexMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
@@ -4810,9 +4809,7 @@ fn referenced_textual_read(
             continue;
         }
         let spells = match kind {
-            WhereLiteralKind::Identifier => {
-                Identifier::from_string(constant, Encoding::Base58).is_ok()
-            }
+            WhereLiteralKind::Identifier => Identifier::from_base58_text(constant).is_some(),
             WhereLiteralKind::Bytes => hex::decode(constant).is_ok_and(|bytes| {
                 let DocumentPropertyType::ByteArray(sizes) = element_type else {
                     return true;
@@ -5435,8 +5432,7 @@ fn validate_property_constraint_aggregates_with(
                                     )));
                                 }
                                 AggregateKeyKind::Identifier => {
-                                    if Identifier::from_string(constant, Encoding::Base58).is_err()
-                                    {
+                                    if Identifier::from_base58_text(constant).is_none() {
                                         return Err(error(format!(
                                             "{totals} with \"{key}\" at \"{constant}\", which is \
                                              not a base58 identifier"

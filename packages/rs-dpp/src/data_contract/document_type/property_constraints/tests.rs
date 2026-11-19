@@ -1,5 +1,6 @@
 use super::*;
 use platform_value::platform_value;
+use platform_value::string_encoding::Encoding;
 use platform_version::version::PLATFORM_VERSIONS;
 
 /// The paths the unit tests treat as string properties, `labels` an array of
@@ -4824,4 +4825,18 @@ fn should_take_the_revision_and_stored_version_of_a_create_and_of_a_document() {
             .flatten(),
         Some(&Value::U64(7))
     );
+}
+
+/// A rule's identifier constant longer than any identifier's base 58 form is refused as one
+/// that is not an identifier, whether its characters are base 58 or not, without decoding it:
+/// every parse reads the rules, and a full decode of a constant of a million characters takes
+/// minutes, as base 58 decoding takes time quadratic in a text's length.
+#[test]
+fn should_refuse_a_long_identifier_constant_without_decoding_it() {
+    for constant in ["2".repeat(1_000_000), format!("{}0", "2".repeat(999_999))] {
+        expect_refusal(
+            platform_value!({ "rule": { "equal": ["$ownerId", { "const": constant }] } }),
+            "which is not a base58 identifier of 32 bytes",
+        );
+    }
 }

@@ -119,7 +119,6 @@ use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision, TimestampMillis};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
-use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use serde::{Serialize, Serializer};
@@ -3802,7 +3801,7 @@ fn identifier_constant(value: &Value, at: &str) -> Result<Identifier, String> {
     let Some(text) = value.as_text() else {
         return Err(format!("at {at} must be an identifier, written base58"));
     };
-    Identifier::from_string(text, Encoding::Base58).map_err(|_| {
+    Identifier::from_base58_text(text).ok_or_else(|| {
         format!("at {at} holds \"{text}\", which is not a base58 identifier of 32 bytes")
     })
 }

@@ -8,10 +8,10 @@ use crate::execution::validation::state_transition::state_transitions::data_cont
     assert_refused_unpaid_as_not_active, assert_unpaid_internal_error, check_and_process,
     contested_unbounded_sum_schema, expiring_unbounded_sum_schema,
     field_matches_before_an_unknown_index_key_schema, one_pattern_too_many, patterned_schema,
-    regex_format_schema,
+    private_schema, regex_format_schema,
     resign_with_contract, summed_u64_schema, terminal_without_index_only_schema, Outcome,
     CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, PATTERN_TOO_LARGE_MESSAGE,
-    SMALL_PATTERN, SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
+    PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
     TOO_MANY_PATTERNS_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
@@ -734,5 +734,51 @@ async fn should_register_a_contract_holding_as_many_patterns_as_it_may() {
     assert_matches!(
         registration.outcome.block,
         StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
+}
+
+/// `check_tx` parses a contract without validating it, which skips the cap on a private type's
+/// `entrySize`, and its fee estimate then prices the store the registration creates. GroveDB
+/// refuses an entry of 65,520 bytes or more, and a size near `u32::MAX` overflows the store's
+/// entry size: an internal error, logged with the whole transaction. `check_tx` refuses the
+/// contract instead, for its `entrySize`, with the error the block charges for.
+#[tokio::test]
+async fn should_refuse_a_private_entry_size_over_the_cap_in_check_tx_as_the_block_does() {
+    for entry_size in [4_097, 70_000, u64::from(u32::MAX)] {
+        let registration = register_contract_with_schema(
+            private_schema(entry_size),
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+
+        assert_paid_contract_structure_error(
+            &registration.outcome,
+            PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE,
+            1,
+        );
+    }
+}
+
+/// A private type declaring the largest entry it may registers through `check_tx` and a block.
+#[tokio::test]
+async fn should_register_a_private_type_declaring_the_largest_entry_size() {
+    let outcome = register_contract_with_schema(
+        private_schema(4_096),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
     );
 }

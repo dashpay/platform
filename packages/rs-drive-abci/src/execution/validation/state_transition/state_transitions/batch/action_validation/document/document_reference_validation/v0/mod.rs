@@ -1783,11 +1783,13 @@ fn validate_reference_target_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// The most a create's `chooseFirst` competitor scan bills: the credits per competitor of the
-/// fee schedule (`FeeDocumentReferenceVersion::choose_first_credits_per_candidate`) times the
-/// competitors it may read (`SystemLimits::max_choose_first_candidates`). Check tx reserves it
-/// for every such create whose state it does not validate (`choose_first_reservation`), so
-/// the scan never costs more in a block than the signer was admitted with.
+/// The scan's budget: the credits per competitor of the fee schedule
+/// (`FeeDocumentReferenceVersion::choose_first_credits_per_candidate`) times the competitors a
+/// create's `chooseFirst` may read (`SystemLimits::max_choose_first_candidates`), the most this
+/// generation's scan bills, and the most generation 1's competitors query bills. Check tx
+/// reserves it for every such create whose state it does not validate
+/// (`choose_first_reservation`), so the scan never costs more in a block than the signer was
+/// admitted with.
 pub(crate) fn choose_first_scan_budget(platform_version: &PlatformVersion) -> Credits {
     platform_version
         .fee_version
