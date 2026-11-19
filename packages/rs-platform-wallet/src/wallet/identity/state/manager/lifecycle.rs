@@ -93,7 +93,7 @@ impl IdentityManager {
 
         // Through the one slot path, so an occupied slot is refused here as
         // everywhere else instead of being overwritten.
-        self.place_in_slot_unstored(identity, identity_index, wallet_id, None)
+        self.place_in_slot_unstored(identity, identity_index, wallet_id)
             .map(|_| ())
     }
 

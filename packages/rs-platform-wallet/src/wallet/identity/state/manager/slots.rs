@@ -285,19 +285,18 @@ impl IdentityManager {
     ///
     /// A lease on the slot does not stop the placement: an identity whose keys
     /// are derived at this index is what the slot is for, whoever leased it.
-    /// `releasing`, when given, is dropped if it is the slot's lease holder.
+    /// The lease ends with the placement: an occupied slot holds none.
     /// A retained private-payment hold is applied whichever way it arrives.
     pub(crate) fn place_in_slot_unstored(
         &mut self,
         identity: Identity,
         identity_index: RegistrationIndex,
         wallet_id: WalletId,
-        releasing: Option<&SlotHolder>,
     ) -> Result<SlotPlacement, PlatformWalletError> {
         let identity_id = identity.id();
         match self.slot_state(&wallet_id, identity_index) {
             SlotState::Occupied(occupant) if occupant == identity_id => {
-                self.release_matching_lease(&wallet_id, identity_index, releasing);
+                self.end_lease_at(&wallet_id, identity_index);
                 return Ok(SlotPlacement::AlreadyPlaced);
             }
             SlotState::Occupied(occupant) => {
@@ -340,14 +339,14 @@ impl IdentityManager {
                 registration_index: identity_index,
             },
         );
-        self.release_matching_lease(&wallet_id, identity_index, releasing);
+        self.end_lease_at(&wallet_id, identity_index);
         Ok(SlotPlacement::Placed)
     }
 
     /// [`Self::place_in_slot_unstored`], with `keys` layered onto the
     /// identity, stored durably as one changeset: the identity, `keys` with
-    /// their breadcrumbs and, when `releasing` is a claim, its lease as it now
-    /// stands. Memory keeps the placement only once the store is durable; on a
+    /// their breadcrumbs and, when the slot was a claim's, the end of its
+    /// lease. Memory keeps the placement only once the store is durable; on a
     /// failed store it is undone and the store's error returned, so no caller
     /// reports an identity as placed that a restart would not find.
     pub(crate) fn place_in_slot(
@@ -355,7 +354,6 @@ impl IdentityManager {
         identity: Identity,
         identity_index: RegistrationIndex,
         wallet_id: WalletId,
-        releasing: Option<&SlotHolder>,
         keys: Vec<KeyWithBreadcrumb>,
         persister: &WalletPersister,
     ) -> Result<SlotPlacement, PlatformWalletError> {
@@ -370,8 +368,7 @@ impl IdentityManager {
                 .copied(),
             marker: self.retained_private_payment_markers.contains(&identity_id),
         };
-        let placement =
-            self.place_in_slot_unstored(identity, identity_index, wallet_id, releasing)?;
+        let placement = self.place_in_slot_unstored(identity, identity_index, wallet_id)?;
 
         let managed = self
             .managed_identity_mut(&identity_id)
@@ -382,9 +379,13 @@ impl IdentityManager {
             identity_keys: Some(keys_cs),
             ..Default::default()
         };
-        if let Some(SlotHolder::InvitationClaim { invitation }) = releasing {
+        if let Some(SlotLease {
+            holder: SlotHolder::InvitationClaim { invitation },
+            ..
+        }) = undo.lease
+        {
             changeset.identity_slot_leases =
-                Some(self.claim_lease_changeset(&wallet_id, *invitation));
+                Some(self.claim_lease_changeset(&wallet_id, invitation));
         }
 
         if let Err(not_durable) = persister.store_durably(changeset) {
@@ -438,23 +439,17 @@ impl IdentityManager {
         }
     }
 
-    fn release_matching_lease(
-        &mut self,
-        wallet_id: &WalletId,
-        identity_index: RegistrationIndex,
-        releasing: Option<&SlotHolder>,
-    ) {
-        let Some(releasing) = releasing else {
-            return;
-        };
+    /// End the lease on `wallet_id`'s slot `identity_index`, whoever holds
+    /// it: an occupied slot holds no lease. The holder's operation is over
+    /// (its identity landed there) or cannot land there any more (the keys
+    /// derived at the index belong to the identity now in it).
+    fn end_lease_at(&mut self, wallet_id: &WalletId, identity_index: RegistrationIndex) {
         let Some(leases) = self.slot_leases.get_mut(wallet_id) else {
             return;
         };
-        if leases.get(&identity_index).map(|lease| &lease.holder) == Some(releasing) {
-            leases.remove(&identity_index);
-            if leases.is_empty() {
-                self.slot_leases.remove(wallet_id);
-            }
+        leases.remove(&identity_index);
+        if leases.is_empty() {
+            self.slot_leases.remove(wallet_id);
         }
     }
 
@@ -629,14 +624,7 @@ mod tests {
         let keys = keys_of(&landed, acquired.identity_index);
 
         manager
-            .place_in_slot(
-                landed,
-                acquired.identity_index,
-                WALLET,
-                Some(&claim(1)),
-                keys,
-                &persister,
-            )
+            .place_in_slot(landed, acquired.identity_index, WALLET, keys, &persister)
             .unwrap();
 
         let stored = backend.stored.lock().unwrap();
@@ -679,14 +667,8 @@ mod tests {
         let landed = identity_with_key(1);
         let keys = keys_of(&landed, acquired.identity_index);
 
-        let placed = manager.place_in_slot(
-            landed,
-            acquired.identity_index,
-            WALLET,
-            Some(&claim(1)),
-            keys,
-            &persister,
-        );
+        let placed =
+            manager.place_in_slot(landed, acquired.identity_index, WALLET, keys, &persister);
 
         assert!(placed.is_err());
         assert!(manager.identity(&id).is_none());
@@ -700,7 +682,7 @@ mod tests {
             Some(acquired.identity_index)
         );
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
         assert!(manager
             .managed_identity(&id)
@@ -726,7 +708,7 @@ mod tests {
         let landed = identity_with_key(1);
         let keys = keys_of(&landed, 2);
 
-        let placed = manager.place_in_slot(landed, 2, WALLET, None, keys, &persister);
+        let placed = manager.place_in_slot(landed, 2, WALLET, keys, &persister);
 
         assert!(placed.is_err());
         let id = Identifier::from([1u8; 32]);
@@ -808,10 +790,10 @@ mod tests {
     fn should_lease_the_lowest_free_index() {
         let mut manager = IdentityManager::new();
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
         manager
-            .place_in_slot_unstored(identity(2), 2, WALLET, None)
+            .place_in_slot_unstored(identity(2), 2, WALLET)
             .unwrap();
 
         let first = manager
@@ -914,10 +896,10 @@ mod tests {
     fn should_refuse_to_place_into_a_slot_another_identity_holds() {
         let mut manager = IdentityManager::new();
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
 
-        let refused = manager.place_in_slot_unstored(identity(2), 0, WALLET, None);
+        let refused = manager.place_in_slot_unstored(identity(2), 0, WALLET);
 
         assert!(matches!(
             refused,
@@ -935,10 +917,10 @@ mod tests {
     fn should_treat_placing_the_same_identity_again_as_done() {
         let mut manager = IdentityManager::new();
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
 
-        let again = manager.place_in_slot_unstored(identity(1), 0, WALLET, None);
+        let again = manager.place_in_slot_unstored(identity(1), 0, WALLET);
 
         assert_eq!(again.unwrap(), SlotPlacement::AlreadyPlaced);
     }
@@ -947,10 +929,10 @@ mod tests {
     fn should_refuse_an_identity_the_wallet_holds_in_another_slot() {
         let mut manager = IdentityManager::new();
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
 
-        let refused = manager.place_in_slot_unstored(identity(1), 1, WALLET, None);
+        let refused = manager.place_in_slot_unstored(identity(1), 1, WALLET);
 
         assert!(matches!(
             refused,
@@ -967,12 +949,7 @@ mod tests {
             .unwrap();
 
         manager
-            .place_in_slot_unstored(
-                identity(1),
-                acquired.identity_index,
-                WALLET,
-                Some(&claim(1)),
-            )
+            .place_in_slot_unstored(identity(1), acquired.identity_index, WALLET)
             .unwrap();
 
         assert!(manager.leased_slot(&WALLET, &claim(1)).is_none());
@@ -983,27 +960,29 @@ mod tests {
     }
 
     #[test]
-    fn should_place_into_a_slot_another_holder_leases_and_keep_that_lease() {
+    fn should_end_any_lease_on_the_slot_an_identity_is_placed_in() {
         let mut manager = IdentityManager::new();
         manager
             .acquire_identity_slot(WALLET, claim(1), &none())
             .unwrap();
 
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
 
-        // The slot is the identity's now; the claim's lease is stale but kept,
-        // so its holder learns of the conflict instead of moving silently.
+        // The keys derived at index 0 belong to the identity now in it, so
+        // the claim cannot land there any more: its lease ends, and a retry
+        // of the claim is leased another slot.
         assert_eq!(
             manager.slot_state(&WALLET, 0),
             SlotState::Occupied(Identifier::from([1u8; 32]))
         );
-        assert!(manager.leased_slot(&WALLET, &claim(1)).is_some());
-        let next = manager
-            .acquire_identity_slot(WALLET, SlotHolder::Registration { token: 1 }, &none())
+        assert!(manager.leased_slot(&WALLET, &claim(1)).is_none());
+        let retried = manager
+            .acquire_identity_slot(WALLET, claim(1), &none())
             .unwrap();
-        assert_eq!(next.identity_index, 1);
+        assert_eq!(retried.identity_index, 1);
+        assert!(!retried.reentered);
     }
 
     #[test]
@@ -1018,7 +997,7 @@ mod tests {
             .unwrap();
 
         manager
-            .place_in_slot_unstored(identity(1), 3, WALLET, None)
+            .place_in_slot_unstored(identity(1), 3, WALLET)
             .unwrap();
 
         let id = Identifier::from([1u8; 32]);
@@ -1034,7 +1013,7 @@ mod tests {
         manager.retain_private_payment_markers([id]);
 
         manager
-            .place_in_slot_unstored(identity(1), 0, WALLET, None)
+            .place_in_slot_unstored(identity(1), 0, WALLET)
             .unwrap();
 
         assert!(manager

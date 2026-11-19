@@ -211,7 +211,7 @@ impl IdentityWallet {
                     // spent: record it in the slot and send the host to
                     // another index instead.
                     if let Some(taken) = self
-                        .slot_taken_on_chain(identity_index, &keys_map, &holder, None)
+                        .slot_taken_on_chain(identity_index, &keys_map, None)
                         .await?
                     {
                         return Err(taken);
@@ -336,7 +336,6 @@ impl IdentityWallet {
                         identity.clone(),
                         identity_index,
                         self.wallet_id,
-                        holder.as_ref(),
                         keys,
                         &self.persister,
                     ) {

@@ -264,7 +264,7 @@ impl IdentityWallet {
     /// Before anything is funded at `identity_index`: the identity Platform
     /// holds under `keys_map[0]` (the master key derived there), if any.
     /// Found, and `expected` (when given) is its id, it is recorded in slot
-    /// `identity_index`, releasing `holder`'s lease in the same write, and
+    /// `identity_index`, ending the slot's lease in the same write, and
     /// [`PlatformWalletError::IdentitySlotTakenOnChain`] is returned for the
     /// caller to hand back. A failed lookup fails closed.
     ///
@@ -275,7 +275,6 @@ impl IdentityWallet {
         &self,
         identity_index: RegistrationIndex,
         keys_map: &BTreeMap<KeyID, IdentityPublicKey>,
-        holder: &SlotHolder,
         expected: Option<Identifier>,
     ) -> Result<Option<PlatformWalletError>, PlatformWalletError> {
         let Some(master) = keys_map.get(&0) else {
@@ -320,7 +319,6 @@ impl IdentityWallet {
             found,
             identity_index,
             self.wallet_id,
-            Some(holder),
             keys,
             &self.persister,
         )?;
@@ -337,13 +335,12 @@ impl IdentityWallet {
     }
 
     /// Record `identity`, registered at `identity_index` with keys derived
-    /// there, in that slot, releasing `holder`'s lease in the same durable
+    /// there, in that slot, ending the slot's lease in the same durable
     /// write ([`IdentityManager::place_in_slot`](crate::wallet::identity::IdentityManager::place_in_slot)).
     pub(crate) async fn record_registered_identity(
         &self,
         identity: Identity,
         identity_index: RegistrationIndex,
-        holder: &SlotHolder,
     ) -> Result<(), PlatformWalletError> {
         let keys = derived_keys(&identity, self.wallet_id, identity_index);
         let mut wm = self.wallet_manager.write().await;
@@ -352,7 +349,6 @@ impl IdentityWallet {
             identity,
             identity_index,
             self.wallet_id,
-            Some(holder),
             keys,
             &self.persister,
         )?;
@@ -1089,6 +1085,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_store_the_end_of_a_submitted_claims_lease_when_its_slot_is_filled() {
+        let backend = Backend::new(full());
+        let wallet = wallet(backend.clone()).await;
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await
+            .unwrap();
+
+        wallet
+            .identity()
+            .record_registered_identity(registered_with_our_master(), slot.identity_index)
+            .await
+            .unwrap();
+
+        let stored = backend.lease_writes();
+        let last = stored.last().unwrap();
+        assert!(last.leases.is_empty());
+        assert_eq!(last.released, [invitation].into());
+        assert_eq!(
+            wallet
+                .identity()
+                .release_identity_slot(slot.holder)
+                .await
+                .unwrap(),
+            None,
+            "the slot is the identity's; nothing is left to refuse"
+        );
+    }
+
+    #[tokio::test]
     async fn should_refuse_to_submit_a_claim_at_a_slot_it_does_not_lease() {
         let wallet = wallet(Backend::new(full())).await;
         wallet
@@ -1228,7 +1263,6 @@ mod tests {
             .slot_taken_on_chain(
                 slot.identity_index,
                 &master_keys(),
-                &slot.holder,
                 Some(Identifier::from([6; 32])),
             )
             .await
@@ -1263,7 +1297,7 @@ mod tests {
 
         let taken = wallet
             .identity()
-            .slot_taken_on_chain(slot.identity_index, &master_keys(), &slot.holder, None)
+            .slot_taken_on_chain(slot.identity_index, &master_keys(), None)
             .await
             .unwrap();
 

@@ -2310,7 +2310,7 @@ impl PlatformWallet {
                     .collect();
                 if let Some(taken) = self
                     .identity
-                    .slot_taken_on_chain(identity_index, &keys_map, &holder, None)
+                    .slot_taken_on_chain(identity_index, &keys_map, None)
                     .await?
                 {
                     return Err(taken);
@@ -2372,7 +2372,7 @@ impl PlatformWallet {
         // local view.
         if let Err(e) = self
             .identity
-            .record_registered_identity(identity, identity_index, &holder)
+            .record_registered_identity(identity, identity_index)
             .await
         {
             tracing::warn!(

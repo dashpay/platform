@@ -109,7 +109,7 @@ impl IdentityWallet {
             SlotHolder::Registration { .. } => {
                 self.require_slot_lease(identity_index, &holder).await?;
                 if let Some(taken) = self
-                    .slot_taken_on_chain(identity_index, identity.public_keys(), &holder, None)
+                    .slot_taken_on_chain(identity_index, identity.public_keys(), None)
                     .await?
                 {
                     return Err(taken);
@@ -179,7 +179,7 @@ impl IdentityWallet {
         // which likewise treat post-acceptance local bookkeeping as
         // best-effort.
         if let Err(e) = self
-            .record_registered_identity(identity.clone(), identity_index, &holder)
+            .record_registered_identity(identity.clone(), identity_index)
             .await
         {
             tracing::warn!(

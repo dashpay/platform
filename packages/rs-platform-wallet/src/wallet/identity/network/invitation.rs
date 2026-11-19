@@ -42,7 +42,6 @@ use crate::wallet::identity::network::identity_handle::{
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair, MASTER_KEY_INDEX,
 };
 use crate::wallet::identity::network::registration::derived_keys;
-use crate::wallet::identity::state::SlotHolder;
 
 use super::*;
 
@@ -618,9 +617,6 @@ impl IdentityWallet {
         // from then on only the claim's outcome frees the slot.
         let out_point = self.invitation_funding_out_point(&invitation).await?;
         self.submit_claim_lease(identity_index, out_point).await?;
-        let holder = SlotHolder::InvitationClaim {
-            invitation: out_point,
-        };
 
         let our_keys = keys_map.clone();
         let identity = match self
@@ -653,7 +649,7 @@ impl IdentityWallet {
                 } = &refusal
                 {
                     if let Some(taken) = self
-                        .slot_taken_on_chain(identity_index, &our_keys, &holder, Some(*owner))
+                        .slot_taken_on_chain(identity_index, &our_keys, Some(*owner))
                         .await?
                     {
                         return Err(taken);
@@ -681,7 +677,6 @@ impl IdentityWallet {
                         identity.clone(),
                         identity_index,
                         self.wallet_id,
-                        Some(&holder),
                         keys,
                         &self.persister,
                     ) {
