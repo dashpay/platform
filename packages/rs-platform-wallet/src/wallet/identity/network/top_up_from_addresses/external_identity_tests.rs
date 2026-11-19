@@ -294,6 +294,30 @@ impl Fixture {
         let waits = self.sdk.mock().request_count(&self.wait).await;
         (broadcasts, waits, self.signer.0.load(Ordering::SeqCst))
     }
+
+    /// The broadcasts and result waits of a top-up of `recipient` signed
+    /// like [`AddressSigner`]: [`Self::submissions`] counts only the
+    /// external recipient's requests, which a managed top-up never matches.
+    async fn submissions_for(&self, recipient: [u8; 32]) -> (usize, usize) {
+        let transition = IdentityTopUpFromAddressesTransition::try_from_inputs_with_signer(
+            &identity(recipient),
+            BTreeMap::from([(ADDRESS, (1, AMOUNT))]),
+            &AddressSigner::default(),
+            0,
+            self.sdk.version(),
+            None,
+        )
+        .await
+        .unwrap();
+        let broadcast = transition.broadcast_request_for_state_transition().unwrap();
+        let wait = transition
+            .wait_for_state_transition_result_request()
+            .unwrap();
+        (
+            self.sdk.mock().request_count(&broadcast).await,
+            self.sdk.mock().request_count(&wait).await,
+        )
+    }
 }
 
 /// The top-up of an identity the wallet does not manage is built from the
@@ -634,8 +658,12 @@ async fn should_complete_a_removal_while_the_top_up_signer_is_pending() {
                 if *id == hex::encode(wallet_id)),
             "managed {managed}: {topped_up:?}"
         );
-        let (broadcasts, waits, _) = fixture.submissions().await;
-        assert_eq!((broadcasts, waits), (0, 0), "managed {managed}");
+        let recipient = if managed { OWN_IDENTITY } else { [9; 32] };
+        assert_eq!(
+            fixture.submissions_for(recipient).await,
+            (0, 0),
+            "managed {managed}"
+        );
     }
 }
 
