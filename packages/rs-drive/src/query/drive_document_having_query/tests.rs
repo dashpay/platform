@@ -530,11 +530,11 @@ mod bounds {
         let (_, upper) = bounds.secondary_key_bounds();
         assert_eq!(upper, None, "hi == MAX has no representable successor");
 
-        let sum_bounds = AxisRangeBounds::Sum {
-            lo: 0,
-            hi: i64::MAX,
-        };
-        assert_eq!(sum_bounds.secondary_key_bounds().1, None);
+        // An open sum end, and one the clause states at the edge of 64 bits
+        for hi in [i128::MAX, i128::from(i64::MAX)] {
+            let sum_bounds = AxisRangeBounds::Sum { lo: 0, hi };
+            assert_eq!(sum_bounds.secondary_key_bounds().1, None);
+        }
 
         let avg_bounds = AxisRangeBounds::Avg {
             lo: 0,
@@ -1006,7 +1006,9 @@ mod execution {
     /// On the big sum axis an open bound reaches the groups past 64 bits:
     /// `HAVING SUM(amount) >= 0` over a group summing to `i64::MAX + 1`
     /// refuses the page that would hold it, read and proved alike, rather
-    /// than leave the group out. A page that ends before it still returns.
+    /// than leave the group out. A page that ends before it still returns,
+    /// and so does a bound the clause states at the edge of 64 bits, which
+    /// leaves the group out.
     #[test]
     fn open_sum_bound_reaches_the_groups_past_64_bits_on_the_big_sum_axis() {
         let (drive, contract) = setup_restaurants_keeping_big_sums(i64::MAX);
@@ -1046,6 +1048,29 @@ mod execution {
         let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
         assert_eq!(keys_of(&entries), vec!["alpha", "gamma"]);
         assert_proof_round_trips(&drive, &contract, &case, &entries);
+
+        for (case, expected) in [
+            (
+                HavingCase::sum(HavingOperator::Equal, Value::I64(i64::MAX), 10),
+                vec![],
+            ),
+            (
+                HavingCase::sum(HavingOperator::LessThanOrEquals, Value::I64(i64::MAX), 10),
+                vec!["alpha", "gamma"],
+            ),
+            (
+                HavingCase::sum(
+                    HavingOperator::Between,
+                    Value::Array(vec![Value::I64(0), Value::I64(i64::MAX)]),
+                    10,
+                ),
+                vec!["alpha", "gamma"],
+            ),
+        ] {
+            let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
+            assert_eq!(keys_of(&entries), expected, "{:?}", case.having.operator);
+            assert_proof_round_trips(&drive, &contract, &case, &entries);
+        }
     }
 
     /// The restaurants contract with the tip amount bounded by `maximum`, so the tip type

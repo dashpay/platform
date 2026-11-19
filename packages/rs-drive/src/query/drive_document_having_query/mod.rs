@@ -125,7 +125,7 @@ pub const MAX_HAVING_LIMIT: u16 = 100;
 /// form of a `HAVING <aggregate> <operator> <value>` clause.
 ///
 /// One variant per axis because the three axes have three value types
-/// (`u64` count, `i64` sum, `i128` fixed-point average) and the bound
+/// (`u64` count, `i128` sum, `i128` fixed-point average) and the bound
 /// arithmetic (operator translation, successor/predecessor at exclusive
 /// bounds) must be exact in the axis's own domain. Both bounds are
 /// **inclusive**; the operator translation in
@@ -142,12 +142,16 @@ pub enum AxisRangeBounds {
         /// Inclusive upper bound.
         hi: u64,
     },
-    /// `SUM(field) ∈ [lo, hi]`.
+    /// `SUM(field) ∈ [lo, hi]`. A bound the clause states is within `i64`, the operands a
+    /// `SUM` bound takes; an open end is `i128::MIN` or `i128::MAX`, which a read of 64-bit
+    /// sums takes at their edge ([`DriveDocumentHavingQuery::index_axis_and_bounds`]), so a
+    /// read of a type that keeps its sums in 128 bits reaches the sums past 64 bits only
+    /// where the clause leaves that end open.
     Sum {
         /// Inclusive lower bound.
-        lo: i64,
+        lo: i128,
         /// Inclusive upper bound.
-        hi: i64,
+        hi: i128,
     },
     /// `AVG(field) ∈ [lo, hi]`, in the fixed-point domain described on
     /// [`super::drive_document_ranked_query::RANKED_AVG_SCALE`].
@@ -157,6 +161,13 @@ pub enum AxisRangeBounds {
         /// Inclusive upper bound (fixed point).
         hi: i128,
     },
+}
+
+/// A sum bound on the 64-bit sums: an open end ([`AxisRangeBounds::Sum`]) at their edge, a
+/// bound the clause states as it is.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn sum_bound_in_64_bits(bound: i128) -> i64 {
+    bound.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -172,12 +183,13 @@ impl AxisRangeBounds {
 
     /// The bounds as inclusive `i128` values in the axis's own domain —
     /// the form `AxisTraversal::Bounded` carries in the unified
-    /// `PathQuery`. Count and sum widen losslessly; avg is already
-    /// `i128` fixed point.
+    /// `PathQuery`. Count widens losslessly; sum and avg are already
+    /// `i128`. A sum's open end stands past the 64-bit sums, which
+    /// [`DriveDocumentHavingQuery::index_axis_and_bounds`] takes at their edge.
     pub fn inclusive_bounds_i128(&self) -> (i128, i128) {
         match *self {
             AxisRangeBounds::Count { lo, hi } => (lo as i128, hi as i128),
-            AxisRangeBounds::Sum { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Sum { lo, hi } => (lo, hi),
             AxisRangeBounds::Avg { lo, hi } => (lo, hi),
         }
     }
@@ -204,10 +216,13 @@ impl AxisRangeBounds {
                 encode_count_sort_key(lo).to_vec(),
                 (hi != u64::MAX).then(|| encode_count_sort_key(hi + 1).to_vec()),
             ),
-            AxisRangeBounds::Sum { lo, hi } => (
-                encode_sum_sort_key(lo).to_vec(),
-                (hi != i64::MAX).then(|| encode_sum_sort_key(hi + 1).to_vec()),
-            ),
+            AxisRangeBounds::Sum { lo, hi } => {
+                let (lo, hi) = (sum_bound_in_64_bits(lo), sum_bound_in_64_bits(hi));
+                (
+                    encode_sum_sort_key(lo).to_vec(),
+                    (hi != i64::MAX).then(|| encode_sum_sort_key(hi + 1).to_vec()),
+                )
+            }
             AxisRangeBounds::Avg { lo, hi } => (
                 encode_avg_sort_key(lo).to_vec(),
                 (hi != i128::MAX).then(|| encode_avg_sort_key(hi + 1).to_vec()),
@@ -328,7 +343,8 @@ impl DriveDocumentHavingQuery<'_> {
     /// secondary, whose sums are its document counts (see
     /// [`read_axis_for`]), with the same bounds as sums.
     ///
-    /// An upper bound above `i64::MAX` reads as `i64::MAX`, the largest sum.
+    /// An upper bound above `i64::MAX` reads as `i64::MAX`, the largest of
+    /// the counters' 64-bit sums ([`Self::index_axis_and_bounds`]).
     /// [`resolve_having_query_for_mode`] refuses a lower bound above it,
     /// which matches no group, so the lower saturation is never reached.
     pub fn read_bounds(&self) -> AxisRangeBounds {
@@ -337,8 +353,8 @@ impl DriveDocumentHavingQuery<'_> {
                 if read_axis_for(RankedAxis::Count, self.index) == RankedAxis::Sum =>
             {
                 AxisRangeBounds::Sum {
-                    lo: i64::try_from(lo).unwrap_or(i64::MAX),
-                    hi: i64::try_from(hi).unwrap_or(i64::MAX),
+                    lo: i128::from(lo),
+                    hi: i128::from(hi),
                 }
             }
             bounds => bounds,
@@ -349,24 +365,24 @@ impl DriveDocumentHavingQuery<'_> {
     /// inclusive bounds on it, which the reader and the verifier both build the axis query
     /// from.
     ///
-    /// On the big sum axis of a type that keeps its sums in 128 bits, a bound at the edge of
-    /// the 64 bits a sum bound carries reads as open: `SUM(x) >= 0` walks the groups past
-    /// `i64::MAX` too, which a read then refuses where it returns one (`sum_in_64_bits`)
-    /// rather than leaves out. An explicit bound at that edge reads the same way, so it can
-    /// refuse a group past it, never miss one inside it.
+    /// A sum's open end ([`AxisRangeBounds::Sum`]) is read at the edge of the 64-bit sums on
+    /// their axis, which hold none past it, so every read of them is the read it was before
+    /// sums could be kept in 128 bits. On the big sum axis of a type that keeps them in 128
+    /// bits it stays open: `SUM(x) >= 0` walks the groups past `i64::MAX` too, which a read
+    /// then refuses where it returns one (`sum_in_64_bits`) rather than leaves out, while
+    /// `SUM(x) <= i64::MAX` stops at the bound the clause states.
     pub fn index_axis_and_bounds(&self) -> (IndexAxis, i128, i128) {
         let read_bounds = self.read_bounds();
         let index_axis = index_axis_for(read_bounds.axis(), self.document_type, self.index);
-        let (mut lo, mut hi) = read_bounds.inclusive_bounds_i128();
-        if matches!(index_axis, IndexAxis::BigSum) {
-            if lo == i128::from(i64::MIN) {
-                lo = i128::MIN;
-            }
-            if hi == i128::from(i64::MAX) {
-                hi = i128::MAX;
-            }
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
+        match (read_bounds, index_axis) {
+            (AxisRangeBounds::Sum { .. }, IndexAxis::Sum) => (
+                index_axis,
+                i128::from(sum_bound_in_64_bits(lo)),
+                i128::from(sum_bound_in_64_bits(hi)),
+            ),
+            _ => (index_axis, lo, hi),
         }
-        (index_axis, lo, hi)
     }
 
     /// The resolved prefix branches, in canonical order — one per `IN`
