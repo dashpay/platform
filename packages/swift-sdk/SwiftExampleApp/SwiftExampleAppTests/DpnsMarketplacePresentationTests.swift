@@ -26,7 +26,7 @@ final class DpnsMarketplacePresentationTests: XCTestCase {
         let changed = DpnsMarketplaceUI.error(
             PlatformWalletError.priceChanged(documentId: "doc", expected: 10, actual: 12)
         )
-        XCTAssertTrue(changed.contains("Nothing was purchased"))
+        XCTAssertFalse(changed.contains("Nothing was purchased"))
         XCTAssertTrue(changed.contains("10 credits"))
         XCTAssertTrue(changed.contains("12 credits"))
 
@@ -49,6 +49,31 @@ final class DpnsMarketplacePresentationTests: XCTestCase {
         )
         XCTAssertTrue(signing.contains("signing key is unavailable"))
         XCTAssertTrue(signing.contains("Unlock or repair"))
+    }
+
+    /// A failed trade leads with what its payment class allows, never with
+    /// a claim the case's own text would make: a changed price that may
+    /// have been sent waits for sync, and only a retryable NotSent offers a
+    /// retry.
+    func testTradeFailureFollowsThePaymentClass() {
+        let maybe = DpnsMarketplaceUI.tradeFailure(
+            PlatformWalletError.priceChanged(documentId: "doc", expected: 10, actual: 12, payment: .maybeSent)
+        )
+        XCTAssertEqual(maybe.action, .wait)
+        XCTAssertTrue(maybe.message.hasPrefix(PlatformPaymentRecovery.reconcile.suggestion))
+        XCTAssertTrue(maybe.message.contains("12 credits"))
+        XCTAssertFalse(maybe.message.contains("Nothing was purchased"))
+
+        let retry = DpnsMarketplaceUI.tradeFailure(PlatformWalletError.walletOperation(
+            "refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        ))
+        XCTAssertEqual(retry.action, .retry)
+        XCTAssertTrue(retry.message.hasPrefix(PlatformPaymentRecovery.retry.suggestion))
+
+        let unclassified = DpnsMarketplaceUI.tradeFailure(PlatformWalletError.notForSale("gone"))
+        XCTAssertEqual(unclassified.action, .wait)
+        XCTAssertTrue(unclassified.message.hasPrefix(PlatformPaymentRecovery.unconfirmed.suggestion))
+        XCTAssertFalse(unclassified.message.lowercased().contains("try again"))
     }
 
     func testHistoryRecognizesTransferToSelfAsDelist() {

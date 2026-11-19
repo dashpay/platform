@@ -338,6 +338,16 @@ struct SendTransactionView: View {
                     Text(error)
                 }
             }
+            .alert(
+                viewModel.paymentFailure?.title ?? "",
+                isPresented: .constant(viewModel.paymentFailure != nil)
+            ) {
+                Button("OK") { viewModel.paymentFailure = nil }
+            } message: {
+                if let failure = viewModel.paymentFailure {
+                    Text(failure.message)
+                }
+            }
             .alert("Success", isPresented: .constant(viewModel.successMessage != nil)) {
                 Button("Done") { dismiss() }
             } message: {

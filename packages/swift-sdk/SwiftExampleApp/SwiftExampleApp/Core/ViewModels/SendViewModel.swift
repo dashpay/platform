@@ -117,6 +117,10 @@ class SendViewModel: ObservableObject {
     @Published var isSending = false
     @Published var error: String?
     @Published var successMessage: String?
+    /// A send that failed, presented by Rust's payment class
+    /// (`PaymentFailure`): its title and text, and whether it may be
+    /// retried. Never shown as a success.
+    @Published var paymentFailure: PaymentFailure?
 
     /// Per-output minimum credit amount (`min_output_amount`) the chain
     /// enforces for address-funds transitions, resolved on the Rust side from
@@ -500,6 +504,7 @@ class SendViewModel: ObservableObject {
         isSending = true
         error = nil
         successMessage = nil
+        paymentFailure = nil
         defer { isSending = false }
 
         do {
@@ -829,20 +834,12 @@ class SendViewModel: ObservableObject {
                     + "the recipient's next shielded sync."
             }
 
-        } catch let unconfirmed as PlatformWalletError where SendViewModel.mayHaveGoneThrough(unconfirmed) {
-            // The shielded operation (shield / unshield / transfer / withdraw)
-            // may have reached a node and its result is not proved (a node's
-            // refusal or verdict included, code 18), or the SDK could not
-            // confirm a transition it may have accepted (code 20), so it may
-            // already be on chain. Rust intentionally KEEPS any spent notes'
-            // reservations, so this must NOT be presented as a retryable
-            // failure: a retry signs a second transition. Surface it through
-            // the non-error (success) path so the UI doesn't invite a retry;
-            // the next shielded sync reconciles the outcome.
-            successMessage = "Transaction may have gone through — waiting for "
-                + "the next shielded sync to confirm. Do not retry."
         } catch {
-            self.error = error.localizedDescription
+            // Every flow (Core, Platform, shielded) presents its failure by
+            // Rust's class: a retry only for a retryable NotSent, the held
+            // lock's resume for LockHeld, and a wait for a payment that may
+            // have left or that nothing classified (never "failed").
+            paymentFailure = PaymentFailure(error)
         }
     }
 

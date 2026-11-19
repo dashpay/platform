@@ -116,6 +116,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
         walletId: Data,
         recipientRaw43: Data,
         operationId: String,
+        resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> Void
     ) -> StartFundingResult {
         let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
@@ -142,6 +143,12 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 // below and REPLACE the retained controller (its sweep
                 // is identity-guarded, so the old retention timer can't
                 // evict the replacement).
+            case .failed where !existing.phase.permitsSubmit(resuming: resuming):
+                // The failure's class forbids this operation (the payment
+                // may have left, or it holds a lock this call does not
+                // resume): re-present the failed state instead of paying
+                // again.
+                return .started(existing)
             case .idle, .failed:
                 // Legitimate restart paths. We've already checked
                 // the same-recipient slot here; before letting the
@@ -155,7 +162,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 ) {
                     return .blockedByOtherWalletFunding(blocker)
                 }
-                existing.submit(operationId: operationId, body: body)
+                existing.submit(operationId: operationId, resuming: resuming, body: body)
                 // Spawn a fresh retention sweep. The original sweep
                 // exited the moment the first attempt hit `.failed`
                 // (see `scheduleRetentionSweep`'s `.failed: return`
@@ -184,7 +191,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
             recipientRaw43: recipientRaw43
         )
         controllers[key] = controller
-        controller.submit(operationId: operationId, body: body)
+        controller.submit(operationId: operationId, resuming: resuming, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return .started(controller)
     }

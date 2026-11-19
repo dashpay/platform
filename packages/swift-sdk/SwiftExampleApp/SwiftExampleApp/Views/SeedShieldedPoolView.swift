@@ -49,7 +49,7 @@ struct SeedShieldedPoolView: View {
         case idle
         case inFlight
         case completed
-        case failed(String)
+        case failed(PaymentFailure)
     }
     @State private var phase: Phase = .idle
     @State private var progress: SeedShieldedPoolProgress? = nil
@@ -69,8 +69,8 @@ struct SeedShieldedPoolView: View {
                     progressSection
                 case .completed:
                     completedSection
-                case .failed(let message):
-                    failedSection(message)
+                case .failed(let failure):
+                    failedSection(failure)
                 }
             }
             .navigationTitle("Seed Pool Notes")
@@ -246,10 +246,12 @@ struct SeedShieldedPoolView: View {
         }
     }
 
-    private func failedSection(_ message: String) -> some View {
+    /// Only Dismiss: a seeding that may have funded locks is never offered
+    /// again from here; `failure` says what its class allows.
+    private func failedSection(_ failure: PaymentFailure) -> some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Seeding failed", systemImage: "xmark.octagon.fill")
+                Label(failure.title, systemImage: "xmark.octagon.fill")
                     .foregroundColor(.red)
                     .font(.headline)
                 if let p = progress {
@@ -257,7 +259,7 @@ struct SeedShieldedPoolView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                Text(message)
+                Text(failure.message)
                     .font(.callout)
                     .foregroundColor(.primary)
                     .textSelection(.enabled)
@@ -304,8 +306,9 @@ struct SeedShieldedPoolView: View {
                 )
                 await MainActor.run { phase = .completed }
             } catch {
+                let failure = PaymentFailure(error)
                 await MainActor.run {
-                    phase = .failed(error.localizedDescription)
+                    phase = .failed(failure)
                 }
             }
         }

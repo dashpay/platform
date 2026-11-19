@@ -103,10 +103,17 @@ final class RegistrationCoordinator: ObservableObject {
     /// returns — so during the lock-broadcast-to-identity-write
     /// window, the same slot was visible in both Pending and
     /// Resumable surfaces and could be double-tapped.
+    ///
+    /// `resuming` names the asset lock `body` resumes, `nil` for a fresh
+    /// registration. A failed slot restarts only as its payment class
+    /// allows (`PaymentFailure.permitsRestart`): a fresh registration only
+    /// after a retryable failure, a resume only of the lock the failure
+    /// holds.
     func startRegistration(
         walletId: Data,
         identityIndex: UInt32,
         fundingKind: IdentityRegistrationController.FundingKind = .assetLock,
+        resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> Data
     ) -> IdentityRegistrationController {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
@@ -120,13 +127,18 @@ final class RegistrationCoordinator: ObservableObject {
                 // duplicate registration against an identity that's probably
                 // already live on chain.
                 return existing
+            case .failed where !existing.phase.permitsSubmit(resuming: resuming):
+                // The failure's class forbids this operation (the payment may
+                // have left, or it holds a lock this call does not resume):
+                // keep the failed state on screen instead of paying again.
+                return existing
             case .idle, .failed:
                 // Legitimate restart paths: a brand-new idle
                 // controller (shouldn't happen via the standard
-                // entry but safe to allow), or a user-initiated
-                // retry after a failure.
+                // entry but safe to allow), a retry the failure's class
+                // allows, or the resume of the lock it holds.
                 existing.enterPreparingKeys()
-                existing.submit(body: body)
+                existing.submit(resuming: resuming, body: body)
                 scheduleRetentionSweep(key: key, controller: existing)
                 return existing
             }
@@ -138,7 +150,7 @@ final class RegistrationCoordinator: ObservableObject {
         )
         controllers[key] = controller
         controller.enterPreparingKeys()
-        controller.submit(body: body)
+        controller.submit(resuming: resuming, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return controller
     }

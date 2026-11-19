@@ -64,7 +64,7 @@ struct TopUpIdentityView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Could not top up identity"),
+                    title: Text(err.title),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -331,10 +331,11 @@ struct TopUpIdentityView: View {
                     self.isToppingUp = false
                 }
             } catch {
+                // Presented by Rust's payment class: a top-up that may have
+                // left reads as unconfirmed, never as a failure to repeat.
+                let failure = PaymentFailure(error)
                 await MainActor.run {
-                    self.submitError = .init(
-                        message: error.localizedDescription
-                    )
+                    self.submitError = .init(title: failure.title, message: failure.message)
                     self.isToppingUp = false
                 }
             }
@@ -426,5 +427,6 @@ private struct FundingAccountOption: Identifiable {
 
 private struct SubmitError: Identifiable {
     let id = UUID()
+    var title = "Could not top up identity"
     let message: String
 }

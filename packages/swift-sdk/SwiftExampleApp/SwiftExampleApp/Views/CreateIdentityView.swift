@@ -464,13 +464,13 @@ struct CreateIdentityView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Registration failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
@@ -1240,6 +1240,9 @@ struct CreateIdentityView: View {
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
+            // Names the lock this body resumes, so a slot whose failure
+            // holds that lock may restart through it (and only it).
+            resuming: .resuming(txid: txidRaw, vout: vout),
             body: {
                 let (identityId, _) = try await managedWallet.resumeIdentityWithAssetLock(
                     outPointTxid: txidRaw,
@@ -1533,8 +1536,8 @@ struct CreateIdentityView: View {
                     // anyway and is purged by the coordinator's
                     // ~30 s post-completion retention.
                     return
-                case .failed(let message):
-                    self.submitError = .init(message: message)
+                case .failed(let failure):
+                    self.submitError = .init(message: failure.message)
                     self.isCreating = false
                     // Same rationale as `.completed`: keep the
                     // controller so the destination can render

@@ -99,6 +99,7 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
         platformAccountIndex: UInt32,
         recipientHash: Data,
         recipientType: UInt8,
+        resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> UInt64
     ) -> AddressFundFromAssetLockController {
         let key = SlotKey(
@@ -113,9 +114,15 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
                 // the existing controller lets the caller bind to its
                 // progress / terminal state without disrupting it.
                 return existing
+            case .failed where !existing.phase.permitsSubmit(resuming: resuming):
+                // The failure's class forbids this operation (the payment
+                // may have left, or it holds a lock this call does not
+                // resume): keep the failed state instead of paying again.
+                return existing
             case .idle, .failed:
-                // Legitimate restart paths.
-                existing.submit(body: body)
+                // Legitimate restart paths: a retry the failure's class
+                // allows, or the resume of the lock it holds.
+                existing.submit(resuming: resuming, body: body)
                 // No retention sweep here — the slot is sticky on
                 // .failed (we want the user to see + dismiss the
                 // error) and a duplicate sweep on retry would just
@@ -138,7 +145,7 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
         phaseObservers[key] = controller.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
-        controller.submit(body: body)
+        controller.submit(resuming: resuming, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return controller
     }

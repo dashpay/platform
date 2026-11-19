@@ -175,7 +175,7 @@ struct ShieldedFundFromAssetLockProgressSection: View {
     }
 
     private var failureMessage: String? {
-        if case .failed(let msg) = controller.phase { return msg }
+        if case .failed(let failure) = controller.phase { return failure.message }
         return nil
     }
 
@@ -333,13 +333,13 @@ struct ShieldedFundFromAssetLockProgressView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Shield failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)

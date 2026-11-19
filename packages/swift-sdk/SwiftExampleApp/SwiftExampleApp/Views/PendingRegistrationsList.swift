@@ -165,7 +165,7 @@ struct PendingRegistrationRow: View {
         case .preparingKeys: return "Preparing keys"
         case .inFlight: return "In flight"
         case .completed: return "Registered"
-        case .failed: return "Failed"
+        case .failed(let failure): return failure.title
         case .unconfirmed: return "Confirmation pending"
         }
     }

@@ -363,13 +363,13 @@ struct FundFromAssetLockPlatformAddressView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let message):
+        case .failed(let failure):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Top Up failed", systemImage: "xmark.octagon.fill")
+                    Label(failure.title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(message)
+                    Text(failure.message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
@@ -546,6 +546,7 @@ struct FundFromAssetLockPlatformAddressView: View {
         // balance of the recipient so the terminal section can
         // surface a meaningful number.
         let body: () async throws -> UInt64
+        var resuming: AssetLockBuiltOutPoint?
         if let lock = resumeFromLock {
             // Resume path: outpoint is decoded from the persisted
             // `outPointHex` (canonical `<txid display hex>:<vout>`
@@ -556,6 +557,7 @@ struct FundFromAssetLockPlatformAddressView: View {
                 )
                 return
             }
+            resuming = .resuming(txid: parsed.txid, vout: parsed.vout)
             body = {
                 let updates = try await addressWallet.resumeFundFromAssetLock(
                     outPointTxid: parsed.txid,
@@ -617,6 +619,7 @@ struct FundFromAssetLockPlatformAddressView: View {
             platformAccountIndex: platformAcct,
             recipientHash: recipientHash,
             recipientType: recipientType,
+            resuming: resuming,
             body: body
         )
         controller.preSubmitConsumedOutpoints = preSubmitOutpoints

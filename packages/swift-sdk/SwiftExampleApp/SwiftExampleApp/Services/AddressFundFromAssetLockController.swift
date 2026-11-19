@@ -39,11 +39,13 @@ final class AddressFundFromAssetLockController: ObservableObject {
         /// the proof-attested credit balance the caller should
         /// surface in the terminal banner.
         case completed(newBalance: UInt64)
-        /// Failure terminal state. Message is shown inline in
-        /// `AddressFundFromAssetLockProgressView`'s step 4; the row stays in
-        /// the coordinator's map until the user dismisses it
-        /// manually.
-        case failed(String)
+        /// Failure terminal state, presented by `PaymentFailure` from
+        /// Rust's payment class. Its message is shown inline in
+        /// `AddressFundFromAssetLockProgressView`'s step 4, and its action
+        /// says what may run again (a retry, or only the resume of the held
+        /// lock). The row stays in the coordinator's map until the user
+        /// dismisses it manually.
+        case failed(PaymentFailure)
 
         /// Whether the controller is currently holding its slot.
         /// Used by the Resumable Funding surface to hide orphan
@@ -52,12 +54,25 @@ final class AddressFundFromAssetLockController: ObservableObject {
         /// lists during the broadcast-to-success window, letting
         /// the user race a duplicate Resume tap against the
         /// original FFI call.
+        /// What may run on a `.failed` slot again is decided by
+        /// `permitsSubmit` from the failure's payment class.
         var isActive: Bool {
             switch self {
             case .inFlight:
                 return true
             case .idle, .completed, .failed:
                 return false
+            }
+        }
+
+        /// Whether an operation resuming `resuming` (`nil` for a fresh
+        /// funding) may start from this phase: from `.idle`, and from
+        /// `.failed` only as its class allows.
+        func permitsSubmit(resuming: AssetLockBuiltOutPoint?) -> Bool {
+            switch self {
+            case .idle: return true
+            case .failed(let failure): return failure.permitsRestart(resuming: resuming)
+            case .inFlight, .completed: return false
             }
         }
     }
@@ -132,21 +147,20 @@ final class AddressFundFromAssetLockController: ObservableObject {
     ///   - `.completed`: re-submitting after success would flip the
     ///     UI from "Done" back to a spinner before failing on the
     ///     consumed lock.
-    /// `.idle` and `.failed` are allowed — the coordinator drives
-    /// the legitimate-restart flow through them (a user retries a
-    /// failure via `failed → submit`).
+    ///   - `.failed` whose class does not allow this operation
+    ///     (`Phase.permitsSubmit`): a fresh funding only after a
+    ///     retryable failure, a resume only of the lock it holds.
     ///
-    /// `body` performs the actual FFI call. It runs detached on a
+    /// `resuming` names the lock `body` resumes, `nil` for a fresh
+    /// funding. `body` performs the actual FFI call. It runs detached on a
     /// background priority and reports the new credit balance on
     /// success or rethrows on failure. The controller flips `phase`
-    /// to `.completed(balance)` / `.failed(message)` accordingly.
-    func submit(body: @escaping () async throws -> UInt64) {
-        switch phase {
-        case .idle, .failed:
-            break
-        case .inFlight, .completed:
-            return
-        }
+    /// to `.completed(balance)` / `.failed(failure)` accordingly.
+    func submit(
+        resuming: AssetLockBuiltOutPoint? = nil,
+        body: @escaping () async throws -> UInt64
+    ) {
+        guard phase.permitsSubmit(resuming: resuming) else { return }
         phase = .inFlight
         lastSubmittedAt = Date()
         task = Task { [weak self] in
@@ -156,8 +170,9 @@ final class AddressFundFromAssetLockController: ObservableObject {
                     self?.phase = .completed(newBalance: newBalance)
                 }
             } catch {
+                let failure = PaymentFailure(error)
                 await MainActor.run {
-                    self?.phase = .failed(error.localizedDescription)
+                    self?.phase = .failed(failure)
                 }
             }
         }

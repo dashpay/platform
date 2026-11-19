@@ -1256,9 +1256,12 @@ struct TransitionDetailView: View {
         documentId: documentId,
         signer: signer
       )
-    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_, _) {
+    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_, let payment) {
+      // Keep Rust's class on the rethrow: dropping it would read as
+      // unclassified instead of the class the erase actually got.
       throw PlatformWalletError.transactionBroadcastUnconfirmed(
-        "Erase outcome unknown; do not resubmit automatically; read history first."
+        "Erase outcome unknown; do not resubmit automatically; read history first.",
+        payment: payment ?? .maybeSent
       )
     }
     var result: [String: Any] = ["message": describeDocumentEraseOutcome(outcome)]

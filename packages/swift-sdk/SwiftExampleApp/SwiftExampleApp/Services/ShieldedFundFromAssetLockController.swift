@@ -36,10 +36,13 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
         /// address-funding sibling there's no proof-attested
         /// balance to surface here.
         case completed
-        /// Failure terminal state. Message is shown inline in the
-        /// progress view's step 4; the row stays in the
-        /// coordinator's map until the user dismisses it manually.
-        case failed(String)
+        /// Failure terminal state, presented by `PaymentFailure` from
+        /// Rust's payment class. Its message is shown inline in the
+        /// progress view's step 4, and its action says what may run
+        /// again (a retry, or only the resume of the held lock). The row
+        /// stays in the coordinator's map until the user dismisses it
+        /// manually.
+        case failed(PaymentFailure)
 
         /// Whether the controller is currently holding its slot.
         /// Used by the Resumable Funding surface to hide orphan
@@ -48,12 +51,25 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
         /// lists during the broadcast-to-success window, letting
         /// the user race a duplicate Resume tap against the
         /// original FFI call.
+        /// What may run on a `.failed` slot again is decided by
+        /// `permitsSubmit` from the failure's payment class.
         var isActive: Bool {
             switch self {
             case .inFlight:
                 return true
             case .idle, .completed, .failed:
                 return false
+            }
+        }
+
+        /// Whether an operation resuming `resuming` (`nil` for a fresh
+        /// shield) may start from this phase: from `.idle`, and from
+        /// `.failed` only as its class allows.
+        func permitsSubmit(resuming: AssetLockBuiltOutPoint?) -> Bool {
+            switch self {
+            case .idle: return true
+            case .failed(let failure): return failure.permitsRestart(resuming: resuming)
+            case .inFlight, .completed: return false
             }
         }
     }
@@ -105,24 +121,24 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     ///   - `.completed`: re-submitting after success would flip the
     ///     UI from "Done" back to a spinner before failing on the
     ///     consumed lock.
-    /// `.idle` and `.failed` are allowed — the coordinator drives
-    /// the legitimate-restart flow through them (a user retries a
-    /// failure via `failed → submit`).
+    ///   - `.failed` whose class does not allow this operation
+    ///     (`Phase.permitsSubmit`): a fresh shield only after a
+    ///     retryable failure, a resume only of the lock it holds.
     ///
     /// `operationId` names the operation the body performs (see
-    /// `operationId`). `body` performs the actual FFI call. It runs
+    /// `operationId`), `resuming` the lock it resumes (`nil` for a fresh
+    /// shield). `body` performs the actual FFI call. It runs
     /// detached on a background priority. Unlike the address-funding
     /// sibling, the FFI returns `Void` — the shielded note arrives via
     /// the next sync, not from the broadcast call — so the controller
     /// flips `phase` to `.completed` (no balance payload) / `.failed`
     /// accordingly.
-    func submit(operationId: String, body: @escaping () async throws -> Void) {
-        switch phase {
-        case .idle, .failed:
-            break
-        case .inFlight, .completed:
-            return
-        }
+    func submit(
+        operationId: String,
+        resuming: AssetLockBuiltOutPoint? = nil,
+        body: @escaping () async throws -> Void
+    ) {
+        guard phase.permitsSubmit(resuming: resuming) else { return }
         self.operationId = operationId
         phase = .inFlight
         lastSubmittedAt = Date()
@@ -133,8 +149,9 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
                     self?.phase = .completed
                 }
             } catch {
+                let failure = PaymentFailure(error)
                 await MainActor.run {
-                    self?.phase = .failed(error.localizedDescription)
+                    self?.phase = .failed(failure)
                 }
             }
         }
