@@ -282,6 +282,13 @@ jobs:
               fi
             done
           done
+          # The published wasm-sdk must not ship dash-sdk's mock transport.
+          # `-e features,normal` skips the dev-dependency that turns mocks on
+          # for wasm-sdk's own tests.
+          if cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i dash-sdk --locked | grep -q 'dash-sdk feature "mocks"'; then
+            echo "::error::dash-sdk/mocks is enabled in wasm-sdk's default wasm32 build"
+            exit 1
+          fi
 
       # Dash Core links dash-sdk-cxx as a static archive whose trust anchors
       # are its own quorum keys and masternode list: no trusted HTTP

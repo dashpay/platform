@@ -230,7 +230,6 @@ impl WasmSdk {
         Ok(hex::encode(signature.serialize_compact()))
     }
 
-    #[cfg(feature = "mocks")]
     /// Generate deterministic test identity keys for SDK functional tests.
     ///
     /// This generates the same keys that are created in the genesis state when
@@ -250,6 +249,7 @@ impl WasmSdk {
     /// - 1: CRITICAL level AUTHENTICATION key (ECDSA_SECP256K1)
     /// - 2: HIGH level AUTHENTICATION key (ECDSA_SECP256K1)
     /// - 3: CRITICAL level TRANSFER key (ECDSA_HASH160) - for credit transfers
+    #[cfg(feature = "mocks")]
     #[wasm_bindgen(js_name = "generateTestIdentityKeys")]
     pub fn generate_test_identity_keys(seed: u64) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
