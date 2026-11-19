@@ -4477,6 +4477,39 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.preorder_exists(preorder.id()));
     }
 
+    /// From protocol version 15 a create deletes the commitment it consumes from what its lookup
+    /// read, without reading it again (the create conversion 1), so check tx prices the delete
+    /// without that read: it costs less than at 14, where the create deletes the commitment by
+    /// its id and reads it first. The lookup's own read is reserved by its query's allowance.
+    #[tokio::test]
+    async fn should_price_a_consumed_delete_without_reading_the_document_again_from_15() {
+        let fixture = CommitRevealFixture::new();
+        let contract = fixture.contract.clone();
+        let preorder = contract
+            .document_type_for_name("preorder")
+            .expect("expected the preorder type");
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let delete_at = |protocol_version: u32| {
+            fixture
+                .platform
+                .drive
+                .consumed_document_delete_cost(
+                    &contract,
+                    preorder,
+                    &block_info,
+                    PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                )
+                .expect("expected to price the delete")
+                .processing_fee
+        };
+        assert!(
+            delete_at(PlatformVersion::latest().protocol_version) < delete_at(14),
+            "at 15 {}, at 14 {}",
+            delete_at(PlatformVersion::latest().protocol_version),
+            delete_at(14)
+        );
+    }
+
     /// A block drops what a failed `anyOf` operand consumes, so a consume in an operand that may
     /// fail while a later one lets the write through is no work the block bills whenever it
     /// accepts the write. `fallbackClaim` holds through `anyOf(allOf(<consuming reveal>,

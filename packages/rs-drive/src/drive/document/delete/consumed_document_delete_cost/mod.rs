@@ -1,6 +1,7 @@
 //! Version selection for pricing the delete of a document a create consumes.
 
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -14,11 +15,13 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Prices, by estimation and without reading state, the delete of one document of
     /// `document_type` that a create consumes (a `refersTo` lookup declaring `consume`), which
-    /// check tx reserves for a create whose state it does not validate: a by-id force delete on
-    /// its own, read included, which costs at least what a block prices the delete at, inside the
-    /// create's batch, sharing its layers, and from 15 from what the lookup read
-    /// (`ForceDeleteReadDocument`). A generation of that delete that costs more needs a
-    /// generation here that prices it.
+    /// check tx reserves for a create whose state it does not validate, as the create's
+    /// conversion makes it, on its own: a block prices it inside the create's batch, sharing its
+    /// layers, so at most at this. Generation 0 prices the by-id force delete, read included, of
+    /// the create conversion 0 (protocol version 14); generation 1 the delete from what the
+    /// lookup read, without reading the document again, of the create conversion 1 (protocol
+    /// version 15, `ForceDeleteReadDocument`). A generation of that delete that costs more needs
+    /// a generation here that prices it.
     ///
     /// # Parameters
     /// * `contract`: The contract holding the document type.
@@ -51,9 +54,15 @@ impl Drive {
                 block_info,
                 platform_version,
             ),
+            1 => self.consumed_document_delete_cost_v1(
+                contract,
+                document_type,
+                block_info,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "consumed_document_delete_cost".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
