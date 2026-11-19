@@ -212,6 +212,12 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
             ).check()
         }
 
+        // The lock is built, broadcast and tracked once the call succeeds,
+        // so a guard below is not `.notSent`. It cannot be `.lockHeld`
+        // either: the call hands back only the lock's txid, not the vout of
+        // its outpoint, so Swift has no outpoint to name. `.maybeSent` keeps
+        // a second lock from being funded; the tracked lock stays listed
+        // with the wallet's resumable asset locks.
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty", payment: .maybeSent)
         }
@@ -223,7 +229,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         // points to a non-empty NUL-terminated C string. Defaulting
         // to `""` would surface as opaque "key not found" / "derive
         // failed" errors at the next signing step; throwing here
-        // names the actual contract violation.
+        // names the actual contract violation. `.maybeSent` for the
+        // reason above: no outpoint to name.
         guard let pathPtr, pathPtr.pointee != 0 else {
             throw PlatformWalletError.unknown(
                 "FFI returned success but derivation path was NULL or empty",

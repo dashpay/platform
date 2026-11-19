@@ -2796,9 +2796,10 @@ extension ManagedPlatformWallet {
         let username = inviterUsername
         return try await Task.detached(priority: .userInitiated) { () -> String in
             var outURI: UnsafeMutablePointer<CChar>?
-            // `out_outpoint` is required by the FFI but the funding outpoint is
-            // not surfaced through this wrapper (the persistence layer tracks it
-            // via the asset-lock manager); pass a scratch struct.
+            // `out_outpoint` is required by the FFI. The funding outpoint is not
+            // returned by this wrapper (the persistence layer tracks it via the
+            // asset-lock manager); it only names the held voucher lock when a
+            // successful call hands back no URI.
             var outOutpoint = OutPointFFI()
             let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
                 () -> PlatformWalletFFIResult in
@@ -2830,7 +2831,18 @@ extension ManagedPlatformWallet {
             }
             try result.check()
             guard let outURI else {
-                throw PlatformWalletError.nullPointer("createInvitation returned a null URI", payment: .maybeSent)
+                // The call succeeded, so the voucher lock is funded, tracked
+                // and its outpoint was written: name it as held, so the host
+                // reclaims that voucher instead of funding a new invitation.
+                var raw = withUnsafeBytes(of: outOutpoint.txid) { Data($0) }
+                withUnsafeBytes(of: outOutpoint.vout.littleEndian) { raw.append(contentsOf: $0) }
+                throw PlatformWalletError.nullPointer(
+                    "createInvitation returned a null URI",
+                    payment: PlatformPaymentClass(
+                        delivery: .lockHeld(AssetLockBuiltOutPoint(reportedBytes: raw)),
+                        isRetryable: false
+                    )
+                )
             }
             let uri = String(cString: outURI)
             platform_wallet_string_free(outURI)
