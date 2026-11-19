@@ -144,6 +144,31 @@ pub(super) fn network_contract_declares_tombstones(
     Ok(declares_tombstones)
 }
 
+/// The network's DPNS contract when it declares tombstones, `None` when the network stores
+/// none: fetched by [`network_dpns_contract`], then judged by
+/// [`network_contract_declares_tombstones`] against `verified_version` as it stands once the
+/// fetch has answered.
+pub(super) async fn network_dpns_contract_declaring_tombstones<V, F, R, C, RC>(
+    verified_version: V,
+    fetch: F,
+    fetch_as_a_registration: C,
+) -> Result<Option<DataContract>, Error>
+where
+    V: Fn() -> Option<u32>,
+    F: FnOnce() -> R,
+    R: Future<Output = Result<(Option<DataContract>, ResponseMetadata), Error>>,
+    C: FnOnce() -> RC,
+    RC: Future<Output = Result<DataContract, Error>>,
+{
+    let network_contract =
+        network_dpns_contract(&verified_version, fetch, fetch_as_a_registration).await?;
+    let declares_tombstones = network_contract_declares_tombstones(
+        network_contract.has_document_type_for_name(TOMBSTONE),
+        verified_version().map(protocol_version_declares_tombstones),
+    )?;
+    Ok(declares_tombstones.then_some(network_contract))
+}
+
 impl Sdk {
     /// The `document_type_name` document of the name `normalized_label` under `dash`, if the
     /// network holds one. A proven absence comes back as entries holding `None`.
@@ -171,20 +196,25 @@ impl Sdk {
             .map(protocol_version_declares_tombstones)
     }
 
-    /// The DPNS contract the network stores now, to judge whether it declares tombstones.
+    /// The DPNS contract the network stores now when it declares tombstones, `None` when the
+    /// network stores none.
     ///
     /// The SDK first learns the network's protocol version where it can (a proven refresh,
     /// which does nothing on an SDK with a pinned version or with proofs off), so a contract
     /// stored at a newer version is not parsed under an older one. The contract is then
     /// fetched as any contract is, and taken unless the fetch fails or a node behind the
-    /// network answered it ([`network_dpns_contract`]): then it is fetched as a registration
-    /// fetches it ([`Sdk::fetch_current_dpns_contract`]), whose error is returned when that
-    /// fails too. An SDK whose version stays below the network's can not parse the network's
-    /// contract, and is told so.
-    pub(super) async fn fetch_network_dpns_contract(&self) -> Result<DataContract, Error> {
+    /// network answered it: then it is fetched as a registration fetches it
+    /// ([`Sdk::fetch_current_dpns_contract`]), whose error is returned when that fails too. An
+    /// SDK whose version stays below the network's can not parse the network's contract, and
+    /// is told so. Whichever fetch answered, a contract declaring no tombstone is an error
+    /// once a verified response shows the network past the upgrade
+    /// ([`network_dpns_contract_declaring_tombstones`]).
+    pub(super) async fn fetch_network_dpns_contract_declaring_tombstones(
+        &self,
+    ) -> Result<Option<DataContract>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
         self.refresh_protocol_version().await?;
-        network_dpns_contract(
+        network_dpns_contract_declaring_tombstones(
             || self.protocol_version_info().verified_version,
             || DataContract::fetch_with_metadata(self, dpns_contract_id, None),
             || self.fetch_current_dpns_contract(),
@@ -207,7 +237,7 @@ impl Sdk {
     /// handed to the provider when it declares tombstones, as a registration does. A failed
     /// fetch is an error, never "no tombstone", and so is a fetched contract declaring none
     /// once a verified response shows the network past the upgrade
-    /// ([`network_contract_declares_tombstones`]).
+    /// ([`Sdk::fetch_network_dpns_contract_declaring_tombstones`]).
     async fn dpns_contract_declaring_tombstones(
         &self,
         dpns_contract: Arc<DataContract>,
@@ -221,14 +251,13 @@ impl Sdk {
         {
             return Ok(None);
         }
-        let network_contract = Arc::new(self.fetch_network_dpns_contract().await?);
-        // Judged against what is verified once the fetch has answered
-        if !network_contract_declares_tombstones(
-            network_contract.has_document_type_for_name(TOMBSTONE),
-            self.verified_network_declares_tombstones(),
-        )? {
+        let Some(network_contract) = self
+            .fetch_network_dpns_contract_declaring_tombstones()
+            .await?
+            .map(Arc::new)
+        else {
             return Ok(None);
-        }
+        };
         if let Some(provider) = self.context_provider() {
             provider.register_data_contract(network_contract.clone());
         }

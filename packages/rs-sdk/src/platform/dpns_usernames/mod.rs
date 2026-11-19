@@ -1126,9 +1126,10 @@ mod tests {
     /// as the read does.
     async fn expect_bobs_tombstone(sdk: &mut Sdk, found: Option<Document>) {
         let network_contract = sdk
-            .fetch_network_dpns_contract()
+            .fetch_network_dpns_contract_declaring_tombstones()
             .await
-            .expect("the DPNS contract is fetched");
+            .expect("the DPNS contract is fetched")
+            .expect("the network's DPNS contract declares tombstones");
         sdk.mock()
             .expect_fetch_many::<Identifier, Document, _, Documents>(
                 give_up::dpns_name_query(
@@ -1828,6 +1829,67 @@ mod tests {
         .await;
 
         assert!(result.is_err());
+    }
+
+    /// An SDK pinned to protocol version 14 that a verified response has shown a network at
+    /// the latest version, answered twice by a node still at 14 with the DPNS v2 the upgrade
+    /// replaced. The first response is refused as behind the network. The registration's
+    /// fetch then takes the second, proved at the version the SDK is pinned to and parses
+    /// under. A contract declaring no tombstone is still not the network's: the read fails.
+    #[tokio::test]
+    async fn should_fail_when_a_pinned_sdk_is_answered_twice_by_a_node_behind_the_network() {
+        fn dpns_v2_proved_at_14(
+        ) -> std::future::Ready<Result<(Option<DataContract>, ResponseMetadata), Error>> {
+            let behind = PlatformVersion::get(14).expect("protocol version 14");
+            ready(Ok((
+                Some(dpns_contract_decoded_under(behind, 14)),
+                proved_at(14),
+            )))
+        }
+        let registration_fetches = Cell::new(0);
+
+        let result = give_up::network_dpns_contract_declaring_tombstones(
+            || Some(LATEST_VERSION),
+            dpns_v2_proved_at_14,
+            || {
+                dpns_contract_proved_at_parsed_version(
+                    || 14,
+                    || {
+                        registration_fetches.set(registration_fetches.get() + 1);
+                        dpns_v2_proved_at_14()
+                    },
+                )
+            },
+        )
+        .await;
+
+        assert_eq!(
+            registration_fetches.get(),
+            1,
+            "the pinned SDK takes the response proved at its own version"
+        );
+        assert!(result.is_err());
+    }
+
+    /// The same answer while nothing verified shows the network past protocol version 14:
+    /// the network runs DPNS v2 and stores no tombstone.
+    #[tokio::test]
+    async fn should_report_no_tombstones_on_a_network_verified_at_protocol_version_14() {
+        let current = PlatformVersion::get(14).expect("protocol version 14");
+        let network_contract = give_up::network_dpns_contract_declaring_tombstones(
+            || Some(14),
+            || {
+                ready(Ok((
+                    Some(dpns_contract_decoded_under(current, 14)),
+                    proved_at(14),
+                )))
+            },
+            || async { panic!("the registration's fetch is not needed") },
+        )
+        .await
+        .expect("the network's contract answers");
+
+        assert!(network_contract.is_none());
     }
 
     /// A response at the highest version a verified response reported is the network's, and
