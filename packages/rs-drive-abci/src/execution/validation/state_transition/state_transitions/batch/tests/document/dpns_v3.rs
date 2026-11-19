@@ -5,7 +5,8 @@
 //! preorder of the name (by the creator and the hash of the normalized name) from
 //! an earlier block, refuses it while another identity holds a valid preorder of
 //! the name from an earlier block (`chooseFirst`, a preorder counting when it holds
-//! the hash of its own owner's id and the name), and deletes it, and the
+//! the hash of its own owner's id and the name) unless the create opens or joins the
+//! name's contest, which decides between its contenders, and deletes it, and the
 //! `recordsIdentityIsOwner` rule holds a new name's identity record to its owner. A
 //! preorder carries no salt from v3 and lives an hour (`ttl`).
 //! The trigger keeps only the parent domain checks. Protocol version 14 keeps
@@ -16,8 +17,9 @@ use super::*;
 mod dpns_v3_tests {
     use super::*;
     use crate::execution::validation::state_transition::tests::{
-        create_dpns_name_contest_give_key_info, perform_votes_multi,
+        create_dpns_name_contest_give_key_info, get_vote_states, perform_votes_multi,
     };
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use crate::platform_types::platform_state::PlatformState;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::dpns::dpns_preorder_properties;
@@ -374,6 +376,28 @@ mod dpns_v3_tests {
             .pop()
         }
 
+        /// The identities contending for `label` under `dash`, by id.
+        fn contenders(&self, label: &str) -> Vec<Identifier> {
+            let platform_state = self.platform.state.load();
+            let (contenders, _, _, _) = get_vote_states(
+                &self.platform,
+                &platform_state,
+                &self.dpns(),
+                label,
+                None,
+                false,
+                None,
+                ResultType::Documents,
+                self.platform_version,
+            );
+            let mut ids: Vec<Identifier> = contenders
+                .iter()
+                .map(|contender| contender.identity_id())
+                .collect();
+            ids.sort();
+            ids
+        }
+
         /// The stored preorder `preorder` is, found by its id.
         fn stored_preorder(&self, preorder: &Document) -> Option<Document> {
             let dpns = self.dpns();
@@ -591,47 +615,37 @@ mod dpns_v3_tests {
 
     #[tokio::test]
     async fn should_refuse_a_reveal_in_the_block_of_its_preorder() {
-        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
-        let salt: [u8; 32] = fixture.rng.gen();
-        let preorder = fixture
-            .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
-            .await;
+        // An uncontested name, and a contested one, whose create reads no other preorder but
+        // is still held to its own preorder's age
+        for label in ["quantum7", "quantum"] {
+            let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+            let salt: [u8; 32] = fixture.rng.gen();
+            let preorder = fixture
+                .preorder(Who::Alice, salt, label, "dash", PREORDER_HEIGHT)
+                .await;
 
-        let (_, result) = fixture
-            .domain(
-                Who::Alice,
-                salt,
-                "quantum7",
-                "dash",
-                &[],
-                &[],
-                PREORDER_HEIGHT,
-            )
-            .await;
-        assert_matches!(
-            refusal(&result),
-            ConsensusError::StateError(StateError::ReferencedDocumentRequirementNotMetError(e))
-                if e.field() == "minimumAgeBlocks"
-        );
-        assert!(fixture.name("quantum7").is_none());
-        assert!(fixture.stored_preorder(&preorder).is_some());
+            let (_, result) = fixture
+                .domain(Who::Alice, salt, label, "dash", &[], &[], PREORDER_HEIGHT)
+                .await;
+            assert_matches!(
+                refusal(&result),
+                ConsensusError::StateError(StateError::ReferencedDocumentRequirementNotMetError(e))
+                    if e.field() == "minimumAgeBlocks",
+                "{label}"
+            );
+            assert!(fixture.name(label).is_none());
+            assert!(fixture.stored_preorder(&preorder).is_some());
 
-        // The next block reveals it
-        let (_, result) = fixture
-            .domain(
-                Who::Alice,
-                salt,
-                "quantum7",
-                "dash",
-                &[],
-                &[],
-                REVEAL_HEIGHT,
-            )
-            .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        );
+            // The next block reveals it
+            let (_, result) = fixture
+                .domain(Who::Alice, salt, label, "dash", &[], &[], REVEAL_HEIGHT)
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "{label}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1404,6 +1418,124 @@ mod dpns_v3_tests {
             fixture.name("quantum").is_none(),
             "the name waits for the contest"
         );
+    }
+
+    /// A contest decides between the contenders for a contested name, so a create that opens
+    /// or joins one is not held to `chooseFirst`. Alice opens the contest for "quantum" and
+    /// then preorders the name again, a valid preorder older than any later one of another
+    /// identity, which she never reveals. Bob preorders the name after her and still joins the
+    /// contest, consuming his own preorder; Alice's stays, and the contest holds them both.
+    #[tokio::test]
+    async fn should_let_a_rival_join_a_contested_name_past_an_older_valid_preorder() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let (_, _, result) = fixture.register(Who::Alice, "quantum", &[], &[]).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let salt: [u8; 32] = fixture.rng.gen();
+        let alice_preorder = fixture
+            .preorder(Who::Alice, salt, "quantum", "dash", REVEAL_HEIGHT + 1)
+            .await;
+        let bob_preorder = fixture
+            .preorder(Who::Bob, salt, "quantum", "dash", REVEAL_HEIGHT + 2)
+            .await;
+
+        let (_, result) = fixture
+            .domain(
+                Who::Bob,
+                salt,
+                "quantum",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT + 3,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "a rival joins the contest past an older valid preorder"
+        );
+        assert!(fixture.stored_preorder(&bob_preorder).is_none());
+        assert!(fixture.stored_preorder(&alice_preorder).is_some());
+        assert!(fixture.name("quantum").is_none());
+
+        let mut expected = vec![fixture.id(Who::Alice), fixture.id(Who::Bob)];
+        expected.sort();
+        assert_eq!(fixture.contenders("quantum"), expected);
+    }
+
+    /// Joining a contest reads no other identity's preorder but takes a valid preorder of the
+    /// joiner's own. Alice opens the contest for
+    /// "quantum". Bob holds no preorder of the name, then a copy of Alice's (its
+    /// `ownerNameHash` names Alice): both of his joins are refused (40120), and the copy
+    /// stays.
+    #[tokio::test]
+    async fn should_refuse_a_contested_join_without_a_valid_preorder_of_the_joiners_own() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let (_, _, result) = fixture.register(Who::Alice, "quantum", &[], &[]).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let salt: [u8; 32] = fixture.rng.gen();
+
+        let (_, result) = fixture
+            .domain(
+                Who::Bob,
+                salt,
+                "quantum",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT + 1,
+            )
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+            "a join without a preorder is refused"
+        );
+        assert_eq!(fixture.contenders("quantum"), vec![fixture.id(Who::Alice)]);
+
+        let alice_hashes = dpns_preorder_properties(
+            fixture.id(Who::Alice),
+            &salt,
+            "quantum",
+            "dash",
+            fixture.platform_version,
+        );
+        let copied: Vec<(&str, Value)> = alice_hashes
+            .iter()
+            .map(|(property, value)| (property.as_str(), value.clone()))
+            .collect();
+        let (copy, result) = fixture
+            .create(Who::Bob, "preorder", &copied, &[], REVEAL_HEIGHT + 1)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "anyone may copy a preorder's hashes"
+        );
+        let (_, result) = fixture
+            .domain(
+                Who::Bob,
+                salt,
+                "quantum",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT + 2,
+            )
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+            "a join revealing a copied preorder is refused"
+        );
+        assert!(fixture.stored_preorder(&copy).is_some());
+        assert_eq!(fixture.contenders("quantum"), vec![fixture.id(Who::Alice)]);
     }
 
     /// Two contenders open a contest on a name at protocol version 15, each

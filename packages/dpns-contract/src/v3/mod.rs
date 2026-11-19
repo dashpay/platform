@@ -27,7 +27,11 @@ pub mod document_types {
 /// `minimumAgeBlocks` and `consume`, which needs the preorder to record
 /// `$createdAtBlockHeight`), and refuses it while another identity holds a valid
 /// preorder of the name from an earlier block (`chooseFirst` by creation height, a
-/// preorder counting when it holds the same hash with its owner's id first), and the
+/// preorder counting when it holds the same hash with its owner's id first), unless the
+/// create opens or joins the name's contest, which the masternode vote decides (held to the
+/// order, an identity holding preorders of a name easy to guess older than a rival's could
+/// delay the rival's reveal; each contender still reveals its own preorder, a block old at
+/// least), and the
 /// `recordsIdentityIsOwner` rule holds a new domain's identity record to its owner. A
 /// preorder holds both hashes (`nameHash`, unique per owner and indexed with the
 /// creation height, and `ownerNameHash`) and lives an hour (`ttl`). The protocol

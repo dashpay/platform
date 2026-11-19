@@ -519,15 +519,18 @@ mod commit_reveal_lookup_tests {
         }
 
         /// The references of a `type_name` document holding `data`, written by `writer` in
-        /// block `height` (a create when `changed_fields` is `None`), validated as the document
-        /// create and replace state validations do at `platform_version`, with the operations
-        /// it billed and the documents it would consume.
+        /// block `height` (a create when `changed_fields` is `None`, one opening or joining a
+        /// contest when `opens_or_joins_contest`), validated as the document create and replace
+        /// state validations do at `platform_version`, with the operations it billed and the
+        /// documents it would consume.
+        #[allow(clippy::too_many_arguments)]
         fn validate_references(
             &self,
             type_name: &str,
             data: &BTreeMap<String, Value>,
             writer: Identifier,
             changed_fields: Option<&BTreeSet<String>>,
+            opens_or_joins_contest: bool,
             height: u64,
             platform_version: &PlatformVersion,
         ) -> (
@@ -575,6 +578,7 @@ mod commit_reveal_lookup_tests {
                     &DocumentSystemValues::default(),
                     changed_fields,
                     None,
+                    opens_or_joins_contest,
                     &platform_ref,
                     &block(height),
                     &mut consumed,
@@ -663,13 +667,19 @@ mod commit_reveal_lookup_tests {
             "name": "byNormalizedLabel",
             "properties": [{ "normalizedLabel": "asc" }],
             "unique": true,
-            "contested": {
-                "fieldMatches": [
-                    { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
-                ],
-                "resolution": 0
-            }
+            "contested": label_contest()
         }]);
+    }
+
+    /// The `contested` of a unique index holding `normalizedLabel`: a document whose label
+    /// matches the DPNS contested pattern goes to a masternode vote.
+    fn label_contest() -> serde_json::Value {
+        serde_json::json!({
+            "fieldMatches": [
+                { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+            ],
+            "resolution": 0
+        })
     }
 
     #[tokio::test]
@@ -1339,6 +1349,7 @@ mod commit_reveal_lookup_tests {
                 &data,
                 alice,
                 changed_fields,
+                false,
                 REVEAL_HEIGHT,
                 platform_version,
             )
@@ -2485,8 +2496,27 @@ mod commit_reveal_lookup_tests {
 
     /// `who`'s valid preorder of the name, made in block `height`.
     async fn commit_name(fixture: &mut CommitRevealFixture, who: Who, height: u64) -> Document {
+        commit_to(fixture, who, &full_name(), height).await
+    }
+
+    /// `who`'s valid commitment to `committed`, the bytes a reveal's `findBy` function joins,
+    /// made in block `height`: it holds the sha256d of `committed`, and of `who`'s id followed
+    /// by `committed`.
+    async fn commit_to(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        committed: &str,
+        height: u64,
+    ) -> Document {
         let owner = fixture.id(who);
-        preorder_name(fixture, who, owner_name_hash(owner), height).await
+        preorder_name_holding(
+            fixture,
+            who,
+            salted_hash(&owner.to_buffer(), committed),
+            Value::Bytes32(hash_double(committed.as_bytes())),
+            height,
+        )
+        .await
     }
 
     /// The values of a `name` for the name.
@@ -2655,6 +2685,340 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.document_exists("namePreorder", alice.id()));
     }
 
+    /// The fixture on a chain at `platform_version` with the name registration of
+    /// [`add_name_registration`], its names contested by their label, so a reveal of a label
+    /// the pattern matches opens or joins a contest.
+    fn contested_choose_first_fixture(
+        platform_version: &'static PlatformVersion,
+    ) -> CommitRevealFixture {
+        contested_choose_first_fixture_with(platform_version, |_| {})
+    }
+
+    /// [`contested_choose_first_fixture`] with `change` applied to the contract's JSON after.
+    fn contested_choose_first_fixture_with(
+        platform_version: &'static PlatformVersion,
+        change: impl FnOnce(&mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_at(platform_version, |contract| {
+            add_name_registration(contract, true);
+            contract["documentSchemas"]["name"]["indices"][0]["contested"] = label_contest();
+            change(contract);
+        })
+    }
+
+    /// A create that opens or joins a contest is not held to `chooseFirst` from protocol
+    /// version 15: the contest decides between its contenders. Alice holds the oldest valid
+    /// preorder of a contested name and never reveals it; Mallory and Carol each preorder the
+    /// name a block later. At 15 Mallory's reveal opens the contest and Carol's joins it, each
+    /// consuming its own preorder. At 14, which runs document reference validation 0, Alice's
+    /// preorder still refuses both (40149). Alice's preorder stays either way.
+    #[tokio::test]
+    async fn should_let_a_contested_reveal_past_an_older_valid_commitment_from_protocol_version_15()
+    {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let mut fixture = contested_choose_first_fixture(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+            );
+            let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+            let mallory = commit_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+            let carol = commit_name(&mut fixture, Who::Carol, REVEAL_HEIGHT).await;
+
+            let opening = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            let joining = reveal_name(&mut fixture, Who::Carol, REVEAL_HEIGHT + 1).await;
+            if protocol_version == 14 {
+                assert_preceded(opening, &mallory, &alice);
+                assert_preceded(joining, &carol, &alice);
+            } else {
+                assert_written(opening);
+                assert_written(joining);
+            }
+            for contender in [&mallory, &carol] {
+                assert_eq!(
+                    fixture.document_exists("namePreorder", contender.id()),
+                    protocol_version == 14,
+                    "expected a contender's preorder consumed by its reveal at 15 alone, at \
+                     {protocol_version}"
+                );
+            }
+            assert!(fixture.document_exists("namePreorder", alice.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when the commitments `chooseFirst` orders
+    /// are to its values: here the name's commitments hash its label alone, while its
+    /// contest is over the label and the parent, so a preorder of the label may be meant for
+    /// another parent's contest. The contested reveal is held to the order as any other: at 15
+    /// as at 14, Alice's older valid preorder refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_commitment_misses_a_contested_value(
+    ) {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let name = &mut contract["documentSchemas"]["name"]["creatorRefersTo"];
+                name["findBy"]["nameHash"]["params"] = serde_json::json!(["normalizedLabel"]);
+                name["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"]["params"] =
+                    serde_json::json!(["$ownerId", "normalizedLabel"]);
+            });
+            let alice = commit_to(&mut fixture, Who::Alice, NAME_LABEL, COMMIT_HEIGHT).await;
+            let mallory = commit_to(&mut fixture, Who::Mallory, NAME_LABEL, REVEAL_HEIGHT).await;
+
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when the commitments `chooseFirst` orders
+    /// are to the contest's values and nothing more. Here a name's commitments also hold an
+    /// `answer`: the order of the commitments to the same name and answer is a rule of the
+    /// contract the contest over the name does not decide. The contested reveal is held to it
+    /// as any other: at 15 as at 14, Alice's older valid commitment refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_commitment_holds_more_than_the_contested_values(
+    ) {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let name = &mut contract["documentSchemas"]["name"];
+                name["properties"]["answer"] = serde_json::json!({
+                    "type": "string", "minLength": 1, "maxLength": 63, "position": 2
+                });
+                name["required"] =
+                    serde_json::json!(["normalizedLabel", "normalizedParentDomainName", "answer"]);
+                let reference = &mut name["creatorRefersTo"];
+                reference["findBy"]["nameHash"]["params"] = serde_json::json!([
+                    "normalizedLabel", { "const": "." }, "normalizedParentDomainName",
+                    { "const": "/" }, "answer"
+                ]);
+                reference["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"]["params"] = serde_json::json!([
+                    "$ownerId", "normalizedLabel", { "const": "." },
+                    "normalizedParentDomainName", { "const": "/" }, "answer"
+                ]);
+            });
+            let committed = format!("{}/42", full_name());
+            let alice = commit_to(&mut fixture, Who::Alice, &committed, COMMIT_HEIGHT).await;
+            let mallory = commit_to(&mut fixture, Who::Mallory, &committed, REVEAL_HEIGHT).await;
+
+            let mut values = name_values();
+            values.push(("answer", "42".into()));
+            let (_, result) = fixture
+                .create(Who::Mallory, "name", &values, &[], REVEAL_HEIGHT + 1)
+                .await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when it is decided by its index values. A
+    /// contract registered at protocol version 14 may hold a contest whose `fieldMatches` read
+    /// a property outside the index, here a `tier`, so its writer chooses whether a create of
+    /// the same values is contested. At 15 such a contested create is held to the order as
+    /// any other: Alice's older valid commitment refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_contest_reads_outside_its_index()
+    {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected the platform version");
+        let mut fixture = contested_choose_first_fixture_with(platform_version_14, |contract| {
+            let name = &mut contract["documentSchemas"]["name"];
+            name["properties"]["tier"] = serde_json::json!({
+                "type": "string", "minLength": 1, "maxLength": 10, "position": 2
+            });
+            name["indices"][0]["contested"]["fieldMatches"] =
+                serde_json::json!([{ "field": "tier", "regexPattern": "^gold$" }]);
+        });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT - 1).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let mut data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+        data.insert("tier".to_string(), "gold".into());
+
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(Who::Mallory),
+            None,
+            true,
+            REVEAL_HEIGHT,
+            PlatformVersion::latest(),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.document_id() == mallory.id() && *e.preceding_document_id() == alice.id()
+        );
+    }
+
+    /// A contest decides between its contenders only when `chooseFirst` orders their
+    /// commitments by age alone, the earliest first. Here the commitments to a contested name
+    /// rank by a `priority` each holds, highest first, a rule of the contract the contest does
+    /// not apply: at 15 as at 14, Alice's valid commitment of a higher priority refuses
+    /// Mallory's reveal (40149), though Mallory committed first.
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_an_order_the_contract_ranks_by_priority() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let preorder = &mut contract["documentSchemas"]["namePreorder"];
+                preorder["properties"]["priority"] =
+                    serde_json::json!({ "type": "integer", "position": 2 });
+                preorder["required"] = serde_json::json!([
+                    "$createdAt",
+                    "$createdAtBlockHeight",
+                    "ownerNameHash",
+                    "nameHash",
+                    "priority"
+                ]);
+                preorder["indices"]
+                    .as_array_mut()
+                    .expect("the preorder's indices")
+                    .push(serde_json::json!({
+                        "name": "nameHashByPriority",
+                        "properties": [{ "nameHash": "asc" }, { "priority": "asc" }]
+                    }));
+                contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]
+                    ["chooseFirst"]["by"] = serde_json::json!([{ "priority": "desc" }]);
+            });
+            let mallory = commit_ranked(&mut fixture, Who::Mallory, 1, COMMIT_HEIGHT).await;
+            let alice = commit_ranked(&mut fixture, Who::Alice, 9, REVEAL_HEIGHT).await;
+
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// `who`'s valid preorder of the name holding `priority`, made in block `height`.
+    async fn commit_ranked(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        priority: i64,
+        height: u64,
+    ) -> Document {
+        let owner = fixture.id(who);
+        let (preorder, result) = fixture
+            .create(
+                who,
+                "namePreorder",
+                &[
+                    ("ownerNameHash", owner_name_hash(owner)),
+                    ("nameHash", name_hash()),
+                    ("priority", Value::I64(priority)),
+                ],
+                &[],
+                height,
+            )
+            .await;
+        assert_written(result);
+        preorder
+    }
+
+    /// A contest decides between its contenders only when a contender's commitment must be at
+    /// least a block old: without `minimumAgeBlocks` one who learns the values from a pending
+    /// reveal could commit and reveal in that reveal's own block, tie it and win the tie on a
+    /// ground document id. Held to the order as any other, Mallory's reveal is refused (40149)
+    /// by Alice's older valid commitment.
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_no_minimum_age_is_declared() {
+        let mut fixture =
+            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+                let constraints =
+                    &mut contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"];
+                constraints
+                    .as_object_mut()
+                    .expect("the reference's constraints")
+                    .remove("minimumAgeBlocks");
+            });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+        assert_preceded(result, &mallory, &alice);
+    }
+
+    /// A contest decides between its contenders only when `chooseFirst` ranks their commitments
+    /// by creation height alone, ascending: newest first, or with a last `$id` deciding between
+    /// the commitments of one block, the order is a rule of the contract the contest does not
+    /// apply, and a contested reveal is held to it as any other (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_an_order_other_than_its_commitments_age() {
+        // Newest first: Alice's later commitment comes before Mallory's
+        let mut fixture =
+            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+                contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]
+                    ["chooseFirst"]["by"] =
+                    serde_json::json!([{ "$createdAtBlockHeight": "desc" }]);
+            });
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let alice = commit_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+        assert_preceded(result, &mallory, &alice);
+
+        // Oldest first, a last `$id` breaking ties
+        let mut fixture =
+            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+                contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]
+                    ["chooseFirst"]["by"] = serde_json::json!(["$createdAtBlockHeight", "$id"]);
+            });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+        assert_preceded(result, &mallory, &alice);
+    }
+
+    /// A create its contest decides reads and bills no competitors: the `findBy` hash, the
+    /// lookup and the found preorder's `validWhen` hash are all it pays for, though Carol's copy
+    /// and Mallory's older valid preorder of the name are in state.
+    #[tokio::test]
+    async fn should_bill_no_competitors_for_a_create_its_contest_decides() {
+        let mut fixture = contested_choose_first_fixture(PlatformVersion::latest());
+        preorder_name(
+            &mut fixture,
+            Who::Carol,
+            Value::Bytes32([0xC0; 32]),
+            COMMIT_HEIGHT - 2,
+        )
+        .await;
+        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT - 1).await;
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+
+        let (result, execution_context, consumed) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(Who::Alice),
+            None,
+            true,
+            REVEAL_HEIGHT,
+            PlatformVersion::latest(),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_matches!(
+            execution_context.operations_slice(),
+            [
+                ValidationOperation::DoubleSha256(2),
+                ValidationOperation::PrecalculatedOperation(_),
+                ValidationOperation::DoubleSha256(2)
+            ],
+            "the findBy hash, the lookup and the found preorder's validWhen hash alone"
+        );
+        assert_eq!(
+            consumed
+                .iter()
+                .map(|consumed| consumed.document.document_id)
+                .collect::<Vec<_>>(),
+            vec![alice.id()]
+        );
+    }
+
     /// The fixture with a name registration whose `chooseFirst` orders preorders by `by`.
     fn choose_first_fixture_by(by: serde_json::Value) -> CommitRevealFixture {
         CommitRevealFixture::new_with(move |contract| {
@@ -2715,6 +3079,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(second_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2728,6 +3093,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(first_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2774,6 +3140,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(second_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2787,6 +3154,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(first_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2829,44 +3197,60 @@ mod commit_reveal_lookup_tests {
     }
 
     /// The writer's own commitment past its `ttl` is gone too, whether or not the cleanup has
-    /// reached it: its reveal finds no document, as a competitor past it precedes nobody.
+    /// reached it: its reveal finds no document, as a competitor past it precedes nobody. So
+    /// for a create its contest decides, which reads no competitors.
     #[tokio::test]
     async fn should_refuse_revealing_a_commitment_past_its_ttl() {
-        let mut fixture = choose_first_fixture(true);
-        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        for contested in [false, true] {
+            let mut fixture = choose_first_fixture_contested_or_not(contested);
+            let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
 
-        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_600).await;
-        assert_no_name_commitment(result);
-        assert!(fixture.document_exists("namePreorder", alice.id()));
+            let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_600).await;
+            assert_no_name_commitment(result);
+            assert!(fixture.document_exists("namePreorder", alice.id()));
 
-        // The block before its expiry it is revealed
-        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_599).await;
-        assert_written(result);
+            // The block before its expiry it is revealed
+            let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_599).await;
+            assert_written(result);
+        }
+    }
+
+    /// The name registration fixture, its names contested by their label when `contested`.
+    fn choose_first_fixture_contested_or_not(contested: bool) -> CommitRevealFixture {
+        if contested {
+            contested_choose_first_fixture(PlatformVersion::latest())
+        } else {
+            choose_first_fixture(true)
+        }
     }
 
     /// The writer's own preorder must be valid too: Mallory copies Alice's pending preorder,
     /// her copy landing first, then learns the name from Alice's reveal. Her copy holds the
     /// name's hash, so `findBy` finds it, but not the hash of her own id and the name, so her
-    /// reveal finds no commitment, and her copy precedes nobody: Alice's reveal stands.
+    /// reveal finds no commitment, and her copy precedes nobody: Alice's reveal stands. So for
+    /// a create its contest decides, which reads no competitors but still needs a valid
+    /// commitment of its own.
     #[tokio::test]
     async fn should_refuse_revealing_from_a_copied_commitment() {
-        let mut fixture = choose_first_fixture(true);
-        let alice_id = fixture.id(Who::Alice);
-        let copy = preorder_name(
-            &mut fixture,
-            Who::Mallory,
-            owner_name_hash(alice_id),
-            COMMIT_HEIGHT - 1,
-        )
-        .await;
-        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        for contested in [false, true] {
+            let mut fixture = choose_first_fixture_contested_or_not(contested);
+            let alice_id = fixture.id(Who::Alice);
+            let copy = preorder_name(
+                &mut fixture,
+                Who::Mallory,
+                owner_name_hash(alice_id),
+                COMMIT_HEIGHT - 1,
+            )
+            .await;
+            commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
 
-        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
-        assert_no_name_commitment(result);
-        assert!(fixture.document_exists("namePreorder", copy.id()));
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+            assert_no_name_commitment(result);
+            assert!(fixture.document_exists("namePreorder", copy.id()));
 
-        let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
-        assert_written(result);
+            let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+            assert_written(result);
+        }
     }
 
     /// `findBy` finds the writer's preorder by the name's hash: one holding another name hash
@@ -2974,6 +3358,7 @@ mod commit_reveal_lookup_tests {
             &data,
             mallory_id,
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2996,6 +3381,7 @@ mod commit_reveal_lookup_tests {
                 &data,
                 mallory_id,
                 None,
+                false,
                 REVEAL_HEIGHT,
                 platform_version,
             );
@@ -3044,6 +3430,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(Who::Mallory),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -3081,6 +3468,7 @@ mod commit_reveal_lookup_tests {
             &data,
             alice,
             None,
+            false,
             REVEAL_HEIGHT,
             platform_version,
         );
@@ -3219,11 +3607,19 @@ mod commit_reveal_lookup_tests {
         }))
     }
 
-    /// Alice's preorder and then Mallory's, the platform's last block the one after Mallory's,
-    /// so check tx judges a reveal where Mallory's preorder is old enough and Alice's precedes
-    /// it. Returns Alice's preorder.
+    /// The name registration fixture holding Alice's preorder and then Mallory's, the
+    /// platform's last block the one of Mallory's, so check tx judges, in the next block, a
+    /// reveal where Mallory's preorder is old enough and Alice's precedes it. Returns Alice's
+    /// preorder.
     async fn preceded_reveal_fixture() -> (CommitRevealFixture, Document) {
-        let mut fixture = choose_first_fixture(true);
+        preceded_reveal_on(choose_first_fixture(true)).await
+    }
+
+    /// `fixture`, holding Alice's preorder of the name and then Mallory's, the platform's last
+    /// block the one of Mallory's. Returns Alice's preorder.
+    async fn preceded_reveal_on(
+        mut fixture: CommitRevealFixture,
+    ) -> (CommitRevealFixture, Document) {
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
         let last = block(COMMIT_HEIGHT + 1);
@@ -3296,6 +3692,90 @@ mod commit_reveal_lookup_tests {
             .total_base_fee();
         let budget = choose_first_scan_budget(PlatformVersion::latest());
         assert!(required > budget, "the recheck estimate holds the budget");
+
+        fixture.set_balance(Who::Mallory, required - 1);
+        assert_eq!(
+            fixture.check_tx_at(&reveal, Recheck).0,
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        fixture.set_balance(Who::Mallory, required);
+        assert_eq!(fixture.check_tx_at(&reveal, Recheck).0, Vec::<u32>::new());
+    }
+
+    /// What check tx asks a signer to hold for `estimated`, the fee estimate of a create that
+    /// states the contest's fund: the estimate and the fund it moves out of the identity.
+    fn required_with_fund(estimated: &FeeResult, platform_version: &PlatformVersion) -> Credits {
+        estimated.total_base_fee()
+            + platform_version
+                .fee_version
+                .vote_resolution_fund_fees
+                .contested_document_vote_resolution_fund_required_amount
+    }
+
+    /// Check tx reserves the competitor scan's budget for a create its contest decides too,
+    /// though the block reads no competitor for it: what the block bills that create beyond the
+    /// estimate stays within it. A signer holding the estimate and the contest's fund is
+    /// admitted, one credit short is not, and the block accepts the admitted reveal and charges
+    /// it, opening the contest.
+    #[tokio::test]
+    async fn should_reserve_the_competitor_scan_budget_for_a_create_its_contest_decides() {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let platform_version = PlatformVersion::latest();
+        let (mut fixture, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+
+        let (errors, estimated) = fixture.check_tx_at(&reveal, FirstTimeCheck);
+        assert_eq!(errors, Vec::<u32>::new());
+        let estimated = estimated.expect("expected an estimated fee");
+        assert!(
+            estimated.processing_fee > choose_first_scan_budget(platform_version),
+            "the estimate holds the scan's budget: {estimated:?}"
+        );
+        let required = required_with_fund(&estimated, platform_version);
+
+        fixture.set_balance(Who::Mallory, required - 1);
+        assert_eq!(
+            fixture.check_tx(&reveal),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        fixture.set_balance(Who::Mallory, required);
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+        let result = fixture.process(&reveal, COMMIT_HEIGHT + 2);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "the block accepts and charges what check tx admitted: {result:?}"
+        );
+    }
+
+    /// On a recheck too, check tx reserves the competitor scan's budget for a create its
+    /// contest decides: a signer holding the rechecked estimate and the contest's fund stays in
+    /// the mempool, one credit short leaves it.
+    #[tokio::test]
+    async fn should_reserve_the_competitor_scan_budget_on_recheck_for_a_create_its_contest_decides()
+    {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let platform_version = PlatformVersion::latest();
+        let (mut fixture, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+
+        let (errors, estimated) = fixture.check_tx_at(&reveal, Recheck);
+        assert_eq!(errors, Vec::<u32>::new());
+        let estimated = estimated.expect("expected the recheck to estimate the fee");
+        assert!(
+            estimated.processing_fee > choose_first_scan_budget(platform_version),
+            "the recheck estimate holds the scan's budget: {estimated:?}"
+        );
+        let required = required_with_fund(&estimated, platform_version);
 
         fixture.set_balance(Who::Mallory, required - 1);
         assert_eq!(
@@ -3429,8 +3909,15 @@ mod commit_reveal_lookup_tests {
             .fee_version
             .document_reference
             .choose_first_credits_per_candidate = 1;
-        let (result, execution_context, _) =
-            fixture.validate_references("name", &data, alice, None, REVEAL_HEIGHT, &tight_budget);
+        let (result, execution_context, _) = fixture.validate_references(
+            "name",
+            &data,
+            alice,
+            None,
+            false,
+            REVEAL_HEIGHT,
+            &tight_budget,
+        );
 
         // Billing stops at the budget, the scan does not: Mallory's valid preorder refuses
         assert_matches!(
@@ -3621,6 +4108,7 @@ mod commit_reveal_lookup_tests {
                 &DocumentSystemValues::default(),
                 None,
                 None,
+                false,
                 &platform_ref,
                 &block(REVEAL_HEIGHT),
                 &mut Vec::new(),

@@ -154,6 +154,10 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             &system,
             Some(self.changed_data_fields()),
             Some(self.stored_changed_values()),
+            // A replace opens and joins no contest. Read by document reference validation 1
+            // (protocol version 15) alone, which judges `chooseFirst` on a create only;
+            // generation 0, which protocol version 14 runs, is not handed it
+            false,
             platform,
             block_info,
             // A replace consumes nothing: a lookup that could is judged on a create only

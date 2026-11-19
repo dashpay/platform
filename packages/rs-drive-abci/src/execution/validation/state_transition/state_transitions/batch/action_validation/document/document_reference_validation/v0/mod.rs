@@ -61,12 +61,7 @@ use drive::drive::identity::key::fetch::{
 use drive::query::{TransactionArg, WhereClause, WhereOperator};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
-    ConsumedDocument, DocumentCreateTransitionActionAccessorsV0,
-};
-use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
-use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
-use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use std::slice;
@@ -1791,7 +1786,7 @@ fn validate_reference_target_v0(
 /// The most a create's `chooseFirst` competitor scan bills: the credits per competitor of the
 /// fee schedule (`FeeDocumentReferenceVersion::choose_first_credits_per_candidate`) times the
 /// competitors it may read (`SystemLimits::max_choose_first_candidates`). Check tx reserves it
-/// for every such create whose state it does not validate ([`choose_first_reservation`]), so
+/// for every such create whose state it does not validate (`choose_first_reservation`), so
 /// the scan never costs more in a block than the signer was admitted with.
 pub(crate) fn choose_first_scan_budget(platform_version: &PlatformVersion) -> Credits {
     platform_version
@@ -1801,76 +1796,6 @@ pub(crate) fn choose_first_scan_budget(platform_version: &PlatformVersion) -> Cr
         .saturating_mul(u64::from(
             platform_version.system_limits.max_choose_first_candidates,
         ))
-}
-
-/// What check tx reserves, on top of the estimated fee of `action`, for the `chooseFirst`
-/// checks of its creates when it does not validate their state: for every create of a
-/// document type declaring `chooseFirst` (registration admits at most one per type), the
-/// double SHA-256s of its `findBy` and `validWhen` preimages, priced by the blocks the
-/// create's own values make them (a transient param counts, though no stored document keeps
-/// it), and [`choose_first_scan_budget`] for the competitor scan. Nothing for anything else,
-/// nor for a create whose preimage cannot be assembled, which structure validation refuses
-/// before any read. Without it, a signer covering the create's estimated fee but not these
-/// would be admitted, then refused unpaid in a block, its nonce left to replay the work.
-pub(crate) fn choose_first_reservation(
-    action: &StateTransitionAction,
-    platform_version: &PlatformVersion,
-) -> Vec<ValidationOperation> {
-    let StateTransitionAction::BatchAction(batch) = action else {
-        return Vec::new();
-    };
-    let writer_id = batch.owner_id();
-    let mut reservation = Vec::new();
-    for transition in batch.transitions() {
-        let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(create)) =
-            transition
-        else {
-            continue;
-        };
-        let base = create.base();
-        let Ok(document_type) = base
-            .data_contract_fetch_info_ref()
-            .contract
-            .document_type_for_name(base.document_type_name())
-        else {
-            continue;
-        };
-        let Some(lookup) = choose_first_lookup(document_type) else {
-            continue;
-        };
-        // Neither function reads `"."` beside `chooseFirst`, which registration refuses
-        for key in lookup.hash_key().map(|(_, key)| key).into_iter().chain(
-            lookup
-                .choose_first
-                .as_ref()
-                .map(|choose_first| &choose_first.valid_when),
-        ) {
-            if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
-                reservation.push(ValidationOperation::DoubleSha256(
-                    key.function.block_count(preimage.len()),
-                ));
-            }
-        }
-        reservation.push(ValidationOperation::PrecalculatedOperation(
-            FeeResult::new_from_processing_fee(choose_first_scan_budget(platform_version)),
-        ));
-    }
-    reservation
-}
-
-/// The lookup through which `document_type` chooses the first of the commitments to a
-/// create's values (`chooseFirst`), if it declares one.
-fn choose_first_lookup(document_type: DocumentTypeRef<'_>) -> Option<&DocumentReferenceLookup> {
-    document_type
-        .reference_declarations()
-        .filter_map(|(_, reference)| reference.target())
-        .flat_map(|target| target.leaves())
-        .filter_map(|leaf| leaf.as_any_document_reference())
-        .find_map(|declaration| {
-            declaration
-                .lookup
-                .filter(|lookup| lookup.choose_first.is_some())
-        })
 }
 
 /// What a `chooseFirst` competitor scan has billed, against its budget: each operation is
@@ -1998,7 +1923,7 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 ///   another identity's hash is owned by an identity the hash does not name. The first valid
 ///   competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
-///   ([`choose_first_scan_budget`]), which check tx reserves ([`choose_first_reservation`]).
+///   ([`choose_first_scan_budget`]), which check tx reserves (`choose_first_reservation`).
 ///
 /// `findBy` finds `found` through the referenced type's unique index over `$ownerId` and
 /// `among`, so each competitor is another identity's: the writer's only document holding the

@@ -59,7 +59,13 @@ use super::{
 ///   lookup, so a DPNS domain create costs what it did.
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
 ///   `consume` keeps the commitment it finds in the `ConsumedDocument`, so the create conversion 1
-///   deletes the commitment from it without reading it again. Every lookup reads as v0's does.
+///   deletes the commitment from it without reading it again, and a create that opens or joins
+///   a contest reads no competitors of a `chooseFirst` the contest decides: the contest is
+///   decided by its index values, `validWhen` (as the `findBy` function) reads exactly those
+///   values' properties, `by` is `$createdAtBlockHeight` ascending alone, and the reference
+///   declares `minimumAgeBlocks`, which the writer's own commitment must still meet. A
+///   descending or longer `by`, or no `minimumAgeBlocks`, keeps the scan. Every other lookup
+///   reads as v0's does.
 /// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
 ///   document field change reads the stored document with its stored element's storage flags
 ///   (`query_documents_with_flags`), and the action carries the owner they name, so that the
@@ -147,7 +153,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_erase_transition_state_validation: Some(0), // a deleted document needs owner authorization to start erasure
                 document_erase_transition_refund_recipient_reservation: Some(0), // check tx reserves the refund work an erase is billed for
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
-                document_reference_validation: 1, // a consumed commitment keeps what its lookup read
+                document_reference_validation: 1, // a consumed commitment keeps what its lookup read; a create its contest decides reads no chooseFirst competitors
+                choose_first_reservation: 0,
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide, nor raise the total its type keeps of its summed property past what the type's sums hold
                 document_replace_transition_state_validation: 2, // a replace cannot raise the total its type keeps of its summed property past what the type's sums hold
