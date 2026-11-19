@@ -608,6 +608,7 @@ impl PlatformWallet {
             bundle,
             platform_version,
             pool_fee_credits,
+            shield_amount,
         }));
         let sdk = self.sdk.clone();
         let recipient_for_retry = recipient;
@@ -675,6 +676,7 @@ impl PlatformWallet {
                                 .await
                                 .map_err(|e| dash_sdk::Error::Generic(e.to_string()))??;
                                 state.pool_fee_credits = current_pool_fee;
+                                state.shield_amount = shield_amount;
                             }
                             state.platform_version = current_platform_version;
                             let result = build_and_broadcast_shielded(
@@ -685,6 +687,7 @@ impl PlatformWallet {
                                 asset_lock_signer,
                                 surplus_output,
                                 s,
+                                state.shield_amount,
                                 state.platform_version,
                             )
                             .await;
@@ -761,8 +764,12 @@ impl PlatformWallet {
         // by construction). Recorded Confirmed directly — `broadcast_and_
         // _wait` already proved inclusion. Best-effort: a recording miss
         // (no bound keyset, no recoverable output) just omits the row.
-        self.record_shield_from_asset_lock_activity(coordinator, &landed.actions, shield_amount)
-            .await;
+        self.record_shield_from_asset_lock_activity(
+            coordinator,
+            &landed.actions,
+            landed.shield_amount,
+        )
+        .await;
 
         // Step 5: finalize the tracked asset lock. The shielded note itself
         // arrives via the next sync — there's no immediate balance changeset
@@ -1057,6 +1064,8 @@ struct LandedShield {
     /// orchestrator can record a live `ShieldFromAssetLock` activity entry
     /// over the exact bundle that committed.
     actions: Vec<dpp::shielded::SerializedAction>,
+    /// The fee-adjusted amount committed by the landed bundle.
+    shield_amount: Credits,
     /// Whether the verified proof result attests the asset lock was
     /// consumed in full (see [`proof_attests_full_consumption`]).
     fully_consumed: bool,
@@ -1066,6 +1075,7 @@ struct ShieldBundleState {
     bundle: ProvedShieldFromAssetLockBundle,
     platform_version: &'static PlatformVersion,
     pool_fee_credits: Credits,
+    shield_amount: Credits,
 }
 
 /// Whether a landed Type 18's verified proof result attests that its asset
@@ -1108,6 +1118,7 @@ async fn build_and_broadcast_shielded<AS>(
     asset_lock_signer: &AS,
     surplus_output: Option<PlatformAddress>,
     settings: Option<PutSettings>,
+    shield_amount: Credits,
     platform_version: &PlatformVersion,
 ) -> Result<LandedShield, dash_sdk::Error>
 where
@@ -1156,6 +1167,7 @@ where
         .await?;
     Ok(LandedShield {
         actions,
+        shield_amount,
         fully_consumed: proof_attests_full_consumption(&result),
     })
 }
