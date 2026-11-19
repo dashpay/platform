@@ -326,8 +326,8 @@ pub fn populate_platform_node_pool(
             "failed to store platform node key {index}: {error}"
         ))
     };
-    // Build every entry before inserting any, so an invalid key leaves the
-    // pool untouched.
+    // Insert into a copy and keep it only once every key landed, so a
+    // refused key leaves the pool untouched.
     let entries = keys
         .iter()
         .map(|key| {
@@ -337,12 +337,14 @@ pub fn populate_platform_node_pool(
                 .map_err(|error| to_key_derivation(key.index, error))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let mut staged = pool.clone();
     for entry in entries {
         let index = entry.index;
-        pool.insert(entry).map_err(|source| {
+        staged.insert(entry).map_err(|source| {
             to_key_derivation(index, PlatformNodePoolError::PoolRefused { index, source })
         })?;
     }
+    *pool = staged;
     Ok(())
 }
 
@@ -1225,29 +1227,36 @@ mod tests {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
         let wallet = seed_bearing_wallet(Network::Mainnet);
-        let mut keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
+        let keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
             .expect("platform-node derivation");
-        keys[1].index = 1 << 31;
-        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let mut invalid_index = keys.clone();
+        invalid_index[1].index = 1 << 31;
+        // Passes entry construction; the pool refuses the second insert.
+        let mut duplicate_node_id = keys;
+        duplicate_node_id[1].node_id = duplicate_node_id[0].node_id;
 
-        let result = populate_platform_node_pool(&mut wallet_info, &keys, Network::Mainnet);
+        for batch in [invalid_index, duplicate_node_id] {
+            let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
-        assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
-        let account = wallet_info
-            .accounts
-            .provider_platform_keys
-            .as_ref()
-            .expect("managed platform-node account");
-        let pool = account
-            .managed_account_type()
-            .address_pools()
-            .into_iter()
-            .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
-            .expect("AbsentHardened pool");
-        assert!(
-            pool.addresses().is_empty(),
-            "an invalid later key must not leave earlier keys inserted"
-        );
+            let result = populate_platform_node_pool(&mut wallet_info, &batch, Network::Mainnet);
+
+            assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_ref()
+                .expect("managed platform-node account");
+            let pool = account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
+                .expect("AbsentHardened pool");
+            assert!(
+                pool.addresses().is_empty(),
+                "a refused later key must not leave earlier keys inserted"
+            );
+        }
     }
 
     /// The secp256k1 (owner / voting) families must derive at the DIP-3
