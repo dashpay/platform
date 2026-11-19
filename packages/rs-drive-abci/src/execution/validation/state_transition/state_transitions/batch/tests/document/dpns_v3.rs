@@ -9,6 +9,9 @@
 //! name's contest, which decides between its contenders, and deletes it, and the
 //! `recordsIdentityIsOwner` rule holds a new name's identity record to its owner. A
 //! preorder carries no salt from v3 and lives an hour (`ttl`).
+//! A name's owner can give it up: a delete frees the name for anybody, a
+//! `tombstone` create deletes it and keeps it from being registered again. A
+//! contested name can only be tombstoned (the `domain` delete trigger).
 //! The trigger keeps only the parent domain checks. Protocol version 14 keeps
 //! DPNS v2 and the whole trigger, pinned beside each case.
 
@@ -374,6 +377,200 @@ mod dpns_v3_tests {
                 ],
             )
             .pop()
+        }
+
+        /// A delete of `document`, a `type_name` document, by `who` in block
+        /// `height`.
+        async fn delete(
+            &mut self,
+            who: Who,
+            type_name: &str,
+            document: &Document,
+            height: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = self.platform_version;
+            let dpns = self.dpns();
+            let document_type = dpns
+                .document_type_for_name(type_name)
+                .expect("expected the document type");
+            let writer = self.writer(who);
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            // The batch is its signer's: a delete of another identity's document names the
+            // document by its id alone
+            let mut document = document.clone();
+            document.set_owner_id(self.id(who));
+            let writer = self.writer(who);
+            let transition = BatchTransition::new_document_deletion_transition_from_document(
+                document,
+                document_type,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the delete transition");
+            self.process(&transition, height)
+        }
+
+        /// A transfer of the name `name`, stored at `revision`, from `who` to
+        /// `recipient` in block `height`.
+        async fn transfer(
+            &mut self,
+            who: Who,
+            name: &Document,
+            revision: u64,
+            recipient: Identifier,
+            height: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = self.platform_version;
+            let dpns = self.dpns();
+            let domain = dpns
+                .document_type_for_name("domain")
+                .expect("expected the domain document type");
+            let mut name = name.clone();
+            name.set_revision(Some(revision + 1));
+            let writer = self.writer(who);
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            let transition = BatchTransition::new_document_transfer_transition_from_document(
+                name,
+                domain,
+                recipient,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the transfer transition");
+            self.process(&transition, height)
+        }
+
+        /// A price of `price` credits set by `who` in block `height` on the name
+        /// `name`, stored at `revision`: the name is then for sale to anybody.
+        async fn set_price(
+            &mut self,
+            who: Who,
+            name: &Document,
+            revision: u64,
+            price: Credits,
+            height: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = self.platform_version;
+            let dpns = self.dpns();
+            let domain = dpns
+                .document_type_for_name("domain")
+                .expect("expected the domain document type");
+            let mut name = name.clone();
+            name.set_revision(Some(revision + 1));
+            let writer = self.writer(who);
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            let transition = BatchTransition::new_document_update_price_transition_from_document(
+                name,
+                domain,
+                price,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the update price transition");
+            self.process(&transition, height)
+        }
+
+        /// A tombstone by `who` in block `height` of `label` under `dash`.
+        async fn tombstone(
+            &mut self,
+            who: Who,
+            label: &str,
+            height: u64,
+        ) -> (Document, StateTransitionExecutionResult) {
+            self.create(
+                who,
+                "tombstone",
+                &[
+                    (
+                        "normalizedLabel",
+                        Value::Text(convert_to_homograph_safe_chars(label)),
+                    ),
+                    ("normalizedParentDomainName", Value::Text("dash".into())),
+                ],
+                &[],
+                height,
+            )
+            .await
+        }
+
+        /// The tombstone of `label` under `dash`, if the name is tombstoned.
+        fn tombstone_of(&self, label: &str) -> Option<Document> {
+            self.query(
+                "tombstone",
+                &[
+                    ("normalizedParentDomainName", Value::Text("dash".into())),
+                    (
+                        "normalizedLabel",
+                        Value::Text(convert_to_homograph_safe_chars(label)),
+                    ),
+                ],
+            )
+            .pop()
+        }
+
+        /// Preorders `label` under `dash` in block `height` and reveals it in the
+        /// next, both as `who`.
+        async fn register_at(
+            &mut self,
+            who: Who,
+            label: &str,
+            height: u64,
+        ) -> (Document, StateTransitionExecutionResult) {
+            let salt: [u8; 32] = self.rng.gen();
+            self.preorder(who, salt, label, "dash", height).await;
+            self.domain(who, salt, label, "dash", &[], &[], height + 1)
+                .await
+        }
+
+        /// Ends every contest due by block `height`, as the end of that block does.
+        fn end_contests(&mut self, height: u64) {
+            let block_info = block(height);
+            fast_forward_to_block(
+                &self.platform,
+                block_info.time_ms,
+                block_info.height,
+                42,
+                0,
+                false,
+            );
+            let platform_state = self.platform.state.load();
+            let transaction = self.platform.drive.grove.start_transaction();
+            self.platform
+                .check_for_ended_vote_polls(
+                    &platform_state,
+                    &platform_state,
+                    &block_info,
+                    Some(&transaction),
+                    self.platform_version,
+                )
+                .expect("expected to check for ended vote polls");
+            self.platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit the transaction");
         }
 
         /// The identities contending for `label` under `dash`, by id.
@@ -1243,8 +1440,10 @@ mod dpns_v3_tests {
 
         fixture.activate_protocol_version_15(20);
 
+        // DPNS v3 lets a name's owner delete it too: its delete trigger refuses a contested
+        // name alone, where the one of v2 refused every delete
         let v3_dpns = fixture.dpns();
-        assert!(!v3_dpns
+        assert!(v3_dpns
             .document_type_for_name("domain")
             .expect("expected the domain document type")
             .documents_can_be_deleted());
@@ -1343,9 +1542,13 @@ mod dpns_v3_tests {
     async fn should_store_dpns_v3_and_the_dash_domain_at_genesis() {
         let fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
         let dpns = fixture.dpns();
-        assert!(!dpns
+        assert!(dpns
             .document_type_for_name("domain")
             .expect("expected the domain document type")
+            .documents_can_be_deleted());
+        assert!(!dpns
+            .document_type_for_name("tombstone")
+            .expect("expected the tombstone document type")
             .documents_can_be_deleted());
 
         let dash = fixture
@@ -1705,14 +1908,394 @@ mod dpns_v3_tests {
         // At 15 each create also reads the DPNS contract through a contracts tree holding the
         // decision proposals contract, one more sibling registered at genesis, which reshapes
         // the tree so the DPNS contract's node is billed more bytes to reach (+95_920 a create).
+        // The DPNS contract v3 also declares the `tombstone` type, so each create at 15 reads a
+        // larger contract (+900), and a domain create judges `nameIsNotTombstoned`, one more
+        // count read (+3_600).
         assert_eq!(
             measured,
             vec![
                 (1_159_720, 31_158_000, 0),
                 (1_846_280, 42_687_000, 0),
-                (5_591_000, 11_558_570, 0),
-                (3_739_640, 42_687_000, 0)
+                (5_591_900, 11_558_570, 0),
+                (3_744_140, 42_687_000, 0)
             ]
+        );
+    }
+
+    /// The block a contest opened in [`REVEAL_HEIGHT`] has ended by: fifteen days on,
+    /// at a second a block.
+    const CONTEST_OVER_HEIGHT: u64 = REVEAL_HEIGHT + 15 * 24 * 60 * 60;
+
+    fn assert_rule_refusal(result: &StateTransitionExecutionResult, rule: &str) {
+        assert_matches!(
+            refusal(result),
+            ConsensusError::BasicError(BasicError::DocumentPropertyConstraintViolatedError(e))
+                if e.constraint() == rule,
+            "expected the rule {rule} to refuse"
+        );
+    }
+
+    /// A name's owner deletes it and is refunded its storage; the name is then free, and
+    /// another identity registers it with a preorder of its own.
+    #[tokio::test]
+    async fn should_delete_a_name_and_let_another_identity_register_it() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let alice = fixture.id(Who::Alice);
+        let bob = fixture.id(Who::Bob);
+        let (_, name, result) = fixture.register(Who::Alice, "quantum7", &[], &[]).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .delete(Who::Alice, "domain", &name, REVEAL_HEIGHT + 1)
+            .await;
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the delete to succeed, got {result:?}");
+        };
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .unwrap_or_default()
+                > 0,
+            "the owner is refunded the name's storage"
+        );
+        assert!(fixture.name("quantum7").is_none());
+        assert!(fixture.tombstone_of("quantum7").is_none());
+
+        let (_, result) = fixture
+            .register_at(Who::Bob, "quantum7", REVEAL_HEIGHT + 2)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let name = fixture.name("quantum7").expect("expected the name");
+        assert_eq!(name.owner_id(), bob);
+    }
+
+    /// A tombstone create deletes its creator's name and leaves the tombstone: nobody
+    /// registers the name again, its former owner included, and nobody deletes the
+    /// tombstone or creates a second one.
+    #[tokio::test]
+    async fn should_tombstone_a_name_so_that_nobody_registers_it_again() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let alice = fixture.id(Who::Alice);
+        let (_, _, result) = fixture.register(Who::Alice, "Quantum7", &[], &[]).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let (_, result) = fixture
+            .tombstone(Who::Alice, "Quantum7", REVEAL_HEIGHT + 1)
+            .await;
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the tombstone to succeed, got {result:?}");
+        };
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .unwrap_or_default()
+                > 0,
+            "the owner is refunded the name's storage"
+        );
+        assert!(
+            fixture.name("quantum7").is_none(),
+            "the tombstone create deletes the name"
+        );
+        let tombstone = fixture
+            .tombstone_of("quantum7")
+            .expect("expected the tombstone");
+        assert_eq!(tombstone.owner_id(), alice);
+
+        // Neither another identity nor the former owner registers the name
+        for (who, height) in [
+            (Who::Bob, REVEAL_HEIGHT + 2),
+            (Who::Alice, REVEAL_HEIGHT + 4),
+        ] {
+            let (_, result) = fixture.register_at(who, "quantum7", height).await;
+            assert_rule_refusal(&result, "nameIsNotTombstoned");
+            assert!(fixture.name("quantum7").is_none());
+        }
+
+        // The tombstone stays: its owner can not delete it
+        let result = fixture
+            .delete(Who::Alice, "tombstone", &tombstone, REVEAL_HEIGHT + 6)
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::BasicError(BasicError::InvalidDocumentTransitionActionError(_))
+        );
+        // and a second tombstone finds no name to consume
+        let (_, result) = fixture
+            .tombstone(Who::Alice, "quantum7", REVEAL_HEIGHT + 7)
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
+        );
+        assert!(fixture.tombstone_of("quantum7").is_some());
+    }
+
+    /// Only the identity holding a name deletes or tombstones it: the owner it was
+    /// transferred to, no longer the one that registered it.
+    #[tokio::test]
+    async fn should_let_only_the_owner_of_a_name_delete_or_tombstone_it() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let bob = fixture.id(Who::Bob);
+        let mut names = vec![];
+        for (label, height) in [
+            ("quantum7", PREORDER_HEIGHT),
+            ("quantum8", PREORDER_HEIGHT + 2),
+        ] {
+            let (name, result) = fixture.register_at(Who::Alice, label, height).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            names.push(name);
+        }
+        let height = PREORDER_HEIGHT + 4;
+
+        // Bob holds neither name
+        let result = fixture.delete(Who::Bob, "domain", &names[0], height).await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::DocumentOwnerIdMismatchError(_))
+        );
+        let (_, result) = fixture.tombstone(Who::Bob, "quantum8", height).await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedDocumentPropertyMismatchError(e))
+                if e.referenced_property() == "$ownerId"
+        );
+        assert!(fixture.name("quantum7").is_some());
+        assert!(fixture.name("quantum8").is_some());
+        assert!(fixture.tombstone_of("quantum8").is_none());
+
+        // Alice transfers both to Bob, and holds them no longer
+        for name in &names {
+            let result = fixture.transfer(Who::Alice, name, 1, bob, height + 1).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        let result = fixture
+            .delete(Who::Alice, "domain", &names[0], height + 2)
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::DocumentOwnerIdMismatchError(_))
+        );
+        let (_, result) = fixture.tombstone(Who::Alice, "quantum8", height + 2).await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedDocumentPropertyMismatchError(e))
+                if e.referenced_property() == "$ownerId"
+        );
+        assert!(fixture.name("quantum7").is_some());
+        assert!(fixture.name("quantum8").is_some());
+
+        // Bob does
+        let result = fixture
+            .delete(Who::Bob, "domain", &names[0], height + 3)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let (_, result) = fixture.tombstone(Who::Bob, "quantum8", height + 3).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum7").is_none());
+        assert!(fixture.name("quantum8").is_none());
+        assert_eq!(
+            fixture
+                .tombstone_of("quantum8")
+                .expect("expected the tombstone")
+                .owner_id(),
+            bob
+        );
+    }
+
+    /// A name its owner listed for sale is still the owner's to give up: the delete and the
+    /// tombstone go through, and the name leaves state with its price. The deleted name is
+    /// then registered anew, at no price, and the tombstoned one by nobody.
+    #[tokio::test]
+    async fn should_delete_or_tombstone_a_name_listed_for_sale() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let bob = fixture.id(Who::Bob);
+        let mut names = vec![];
+        for (label, height) in [
+            ("quantum7", PREORDER_HEIGHT),
+            ("quantum8", PREORDER_HEIGHT + 2),
+        ] {
+            let (name, result) = fixture.register_at(Who::Alice, label, height).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            names.push(name);
+        }
+        let height = PREORDER_HEIGHT + 4;
+        for name in &names {
+            let result = fixture
+                .set_price(Who::Alice, name, 1, dash_to_credits!(0.1), height)
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        for label in ["quantum7", "quantum8"] {
+            let listed = fixture.name(label).expect("expected the name");
+            assert_eq!(
+                listed.get("$price"),
+                Some(&Value::U64(dash_to_credits!(0.1))),
+                "{label} is listed for sale"
+            );
+        }
+
+        let result = fixture
+            .delete(Who::Alice, "domain", &names[0], height + 1)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let (_, result) = fixture.tombstone(Who::Alice, "quantum8", height + 1).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum7").is_none());
+        assert!(fixture.name("quantum8").is_none());
+        assert!(fixture.tombstone_of("quantum8").is_some());
+
+        // The deleted name is free, and comes back without the price it left with
+        let (_, result) = fixture.register_at(Who::Bob, "quantum7", height + 2).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let registered = fixture.name("quantum7").expect("expected the name");
+        assert_eq!(registered.owner_id(), bob);
+        assert_eq!(registered.get("$price"), None);
+        // The tombstoned one is nobody's to register
+        let (_, result) = fixture.register_at(Who::Bob, "quantum8", height + 4).await;
+        assert_rule_refusal(&result, "nameIsNotTombstoned");
+    }
+
+    /// A contested name, awarded by the masternode vote, can not be deleted: the delete
+    /// trigger refuses it. Its owner tombstones it, and no contest for it opens again.
+    #[tokio::test]
+    async fn should_tombstone_but_not_delete_a_contested_name() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let alice = fixture.id(Who::Alice);
+
+        // "quantum" matches the contested pattern: the create opens its contest, which
+        // Alice, its only contender, wins when it ends
+        let (_, _, result) = fixture.register(Who::Alice, "quantum", &[], &[]).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum").is_none());
+        fixture.end_contests(CONTEST_OVER_HEIGHT);
+        let name = fixture.name("quantum").expect("expected the awarded name");
+        assert_eq!(name.owner_id(), alice);
+
+        let result = fixture
+            .delete(Who::Alice, "domain", &name, CONTEST_OVER_HEIGHT + 1)
+            .await;
+        assert_data_trigger_refusal(
+            &result,
+            "A contested name can not be deleted, only tombstoned",
+        );
+        assert!(fixture.name("quantum").is_some());
+
+        let (_, result) = fixture
+            .tombstone(Who::Alice, "quantum", CONTEST_OVER_HEIGHT + 2)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum").is_none());
+        assert!(fixture.tombstone_of("quantum").is_some());
+
+        // Bob's create would open a new contest for the name
+        let (_, result) = fixture
+            .register_at(Who::Bob, "quantum", CONTEST_OVER_HEIGHT + 3)
+            .await;
+        assert_rule_refusal(&result, "nameIsNotTombstoned");
+        assert!(fixture.name("quantum").is_none());
+        assert!(fixture.contenders("quantum").is_empty());
+    }
+
+    /// On a chain upgraded from protocol version 14, a name registered under DPNS v2 is
+    /// deleted or tombstoned like any other: the upgrade lays the `tombstone` type out.
+    #[tokio::test]
+    async fn should_delete_and_tombstone_names_registered_before_the_upgrade() {
+        let mut fixture = DpnsFixture::new(14);
+        let mut names = vec![];
+        for (label, height) in [
+            ("quantum7", PREORDER_HEIGHT),
+            ("quantum8", PREORDER_HEIGHT + 2),
+        ] {
+            let (name, result) = fixture.register_at(Who::Alice, label, height).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            names.push(name);
+        }
+
+        // Protocol version 14 refuses every delete of a name
+        let result = fixture
+            .delete(Who::Alice, "domain", &names[0], PREORDER_HEIGHT + 4)
+            .await;
+        assert_data_trigger_refusal(&result, "Action is not allowed");
+        assert!(fixture.name("quantum7").is_some());
+
+        fixture.activate_protocol_version_15(PREORDER_HEIGHT + 5);
+
+        let result = fixture
+            .delete(Who::Alice, "domain", &names[0], PREORDER_HEIGHT + 6)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum7").is_none());
+
+        let (_, result) = fixture
+            .tombstone(Who::Alice, "quantum8", PREORDER_HEIGHT + 6)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.name("quantum8").is_none());
+        assert!(fixture.tombstone_of("quantum8").is_some());
+
+        let (_, result) = fixture
+            .register_at(Who::Bob, "quantum8", PREORDER_HEIGHT + 7)
+            .await;
+        assert_rule_refusal(&result, "nameIsNotTombstoned");
+        let (_, result) = fixture
+            .register_at(Who::Bob, "quantum7", PREORDER_HEIGHT + 9)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
 }

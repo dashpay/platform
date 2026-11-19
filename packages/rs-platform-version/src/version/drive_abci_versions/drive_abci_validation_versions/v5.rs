@@ -147,6 +147,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
                         create_contact_request_data_trigger: 0,
                         validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 0,
+                        delete_domain_data_trigger: None,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,

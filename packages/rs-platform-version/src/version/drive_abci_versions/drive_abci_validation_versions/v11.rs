@@ -29,7 +29,11 @@ use super::{
 ///   (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) declares their checks as schema keywords; and with a
 ///   refusal of a document transition's replace or delete of a token market contract order
 ///   (`ask` and `bid`), as only the token marketplace transitions write them. That contract
-///   exists from protocol version 16, so nothing matches these bindings before it.
+///   exists from protocol version 16, so nothing matches these bindings before it. Bindings 3
+///   also bind the delete of a DPNS `domain` to `delete_domain_data_trigger` (`Some(0)`, `None`
+///   in every earlier table), where v2 rejected it: the DPNS contract v3 lets a name's owner
+///   delete it, and the trigger refuses the delete of a contested name alone, which can only be
+///   tombstoned.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable. A document
@@ -163,9 +167,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide, nor raise the total its type keeps of its summed property past what the type's sums hold
                 document_replace_transition_state_validation: 2, // a replace cannot raise the total its type keeps of its summed property past what the type's sums hold
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); also lists the token market order rejects, unreachable before that contract exists (protocol version 16)
+                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); the DPNS domain delete runs delete_domain_data_trigger, which refuses a contested name alone; also lists the token market order rejects, unreachable before that contract exists (protocol version 16)
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
+                        delete_domain_data_trigger: Some(0),
                         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                             .state_transitions
                             .batch_state_transition

@@ -2889,16 +2889,15 @@ mod dpns_username_transfer_tests {
     }
 
     /// The v1 data-trigger bindings list drops the rejects for `Transfer`,
-    /// `Purchase` and `UpdatePrice`, but `Replace` and `Delete` must stay
-    /// rejected: name records are immutable and permanent even though they can
-    /// now change hands.
+    /// `Purchase` and `UpdatePrice`, but `Replace` stays rejected: name records
+    /// are immutable even though they can now change hands. `Replace` is stopped
+    /// before data triggers run because the domain document type is not mutable.
     ///
-    /// `Replace` is stopped before data triggers run because the domain
-    /// document type is not mutable. From protocol version 15 `Delete` is too:
-    /// DPNS v3 sets `canBeDeleted: false`, which refuses it before the reject
-    /// binding would.
+    /// From protocol version 15 a name's owner may delete it: DPNS v3 binds a
+    /// delete trigger that refuses a contested name alone, and "quantum8" is not
+    /// one (the `dpns_v3` tests cover a contested name and the tombstone).
     #[tokio::test]
-    async fn test_dpns_username_replace_and_delete_still_rejected() {
+    async fn should_reject_a_dpns_username_replace_and_delete_an_uncontested_name() {
         run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(
             PlatformVersion::latest().protocol_version,
         )
@@ -2924,7 +2923,8 @@ mod dpns_username_transfer_tests {
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected to get current platform version");
-        // DPNS v2's `domain` may be deleted, so only the reject data trigger stops it
+        // The reject data trigger stops every delete of a DPNS v2 `domain`; the delete
+        // trigger DPNS v3 binds lets the delete of an uncontested name through
         let delete_rejected_by_data_trigger = platform_version.system_data_contracts.dpns < 3;
 
         let mut rng = StdRng::seed_from_u64(439);
@@ -2978,12 +2978,9 @@ mod dpns_username_transfer_tests {
             .await
             .expect("expect to create documents batch transition for the deletion");
 
-        for (transition, expect_data_trigger_reject) in [
+        for (transition, is_delete) in [
             (documents_batch_replace_transition, false),
-            (
-                documents_batch_delete_transition,
-                delete_rejected_by_data_trigger,
-            ),
+            (documents_batch_delete_transition, true),
         ] {
             let serialized_transition = transition
                 .serialize_to_bytes()
@@ -3016,7 +3013,20 @@ mod dpns_username_transfer_tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            if expect_data_trigger_reject {
+            if is_delete && !delete_rejected_by_data_trigger {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+                assert!(query_domain_documents_by_record_identity(
+                    &platform,
+                    &dpns_contract,
+                    alice.id()
+                )
+                .is_empty());
+                continue;
+            }
+            if is_delete {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::PaidConsensusError {

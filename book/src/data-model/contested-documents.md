@@ -76,6 +76,11 @@ The contender with the most votes wins unless the lock tally exceeds it, in whic
 locked and may be contested again later. The contest always runs the full poll duration, even with
 a single contender, so the masternodes may lock the value.
 
+A name the vote awarded is never contested again: the record of its contest stays. From protocol
+version 15 (DPNS v3) the owner of a name may delete it, which frees it for anybody, but not a
+contested name, whose delete the DPNS delete trigger refuses: it can only be tombstoned, which
+keeps it from being registered again ([A tombstone](../contract-keywords/deletion.md#a-tombstone-deleted-for-good)).
+
 Each contender for a DPNS name reveals a preorder of its own, at least a block old. From protocol
 version 15 (DPNS v3) the vote, not the order of the preorders, decides between them: a create that
 opens or joins a name's contest is not refused because another identity holds an older preorder of

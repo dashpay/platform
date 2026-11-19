@@ -3,6 +3,19 @@ use serde_json::Value;
 
 /// The names v3 adds; every other name is v1's ([`crate::v1::document_types`]).
 pub mod document_types {
+    pub mod tombstone {
+        /// A name its owner gave up for good.
+        pub const NAME: &str = "tombstone";
+
+        pub mod properties {
+            /// The normalized label of the tombstoned name, which finds the creator's own
+            /// `domain` of that name: the create deletes it.
+            pub const NORMALIZED_LABEL: &str = "normalizedLabel";
+            /// The normalized parent domain name of the tombstoned name.
+            pub const NORMALIZED_PARENT_DOMAIN_NAME: &str = "normalizedParentDomainName";
+        }
+    }
+
     pub mod preorder {
         pub mod properties {
             /// The double SHA-256 of the owner's id, the normalized label, "." and the
@@ -35,9 +48,21 @@ pub mod document_types {
 /// `recordsIdentityIsOwner` rule holds a new domain's identity record to its owner. A
 /// preorder holds both hashes (`nameHash`, unique per owner and indexed with the
 /// creation height, and `ownerNameHash`) and lives an hour (`ttl`). The protocol
-/// upgrade deletes the v2 preorders and rebuilds the type. Domains can no longer be
-/// deleted (`canBeDeleted: false`).
+/// upgrade deletes the v2 preorders and rebuilds the type.
 /// The parent domain checks stay in the create trigger.
+///
+/// A name's owner can give the name up, two ways. A delete of the `domain` frees the
+/// name: anybody may register it again (`canBeDeleted: true`; the delete trigger refuses
+/// a contested name, which a masternode vote awarded and which is never contested
+/// again). A `tombstone` create deletes the creator's own `domain` of that name with it
+/// (its `normalizedLabel` carries a `refersTo` with `consume`, found through the domain's
+/// unique index and held to the creator's own by the `where` entry) and keeps the name
+/// from being registered while the tombstone exists: the `domain` rule
+/// `nameIsNotTombstoned` counts the tombstones of the name through the tombstone's
+/// countable index and refuses a create, one opening a contest included, unless there is
+/// none. Any name can be tombstoned, a contested one too. A tombstone can not be
+/// replaced, deleted or transferred; the type's description says a tombstoned name may
+/// later be brought back and redistributed through a direct or indirect will of the DAO.
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../../schema/v3/dpns-contract-documents.json"))
         .map_err(Error::InvalidSchemaJson)

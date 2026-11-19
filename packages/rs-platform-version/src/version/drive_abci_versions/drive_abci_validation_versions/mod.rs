@@ -374,6 +374,9 @@ pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
     pub validate_profile_payment_addresses_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
+    /// The DPNS `domain` delete trigger, which data trigger bindings 3 bind: `None` before
+    /// protocol version 15, where no binding reaches it.
+    pub delete_domain_data_trigger: OptionalFeatureVersion,
     pub create_identity_data_trigger: FeatureVersion,
     pub create_feature_flag_data_trigger: FeatureVersion,
     pub create_masternode_reward_shares_data_trigger: FeatureVersion,
