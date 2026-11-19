@@ -4506,8 +4506,11 @@ mod commit_reveal_lookup_tests {
     }
 
     /// A reveal choosing the first of the commitments to its values is reported as wanting no
-    /// gas for the competitor scan's budget, which bounds what the scan may bill, while check tx
-    /// still holds its signer to it.
+    /// gas for what only bounds the work a block may bill, while check tx still holds its signer
+    /// to it: the competitor scan's budget, the hashes of the competitors the scan may read, and
+    /// its lookup query's allowance. The fee check tx judges and the gas it reports differ by
+    /// exactly those, so the `findBy` and `validWhen` hashes the check makes for the reveal's own
+    /// commitment stay in the gas.
     #[tokio::test]
     async fn should_report_the_gas_a_choose_first_reveal_wants_without_the_scan_budget() {
         let (mut fixture, _) = preceded_reveal_fixture().await;
@@ -4518,9 +4521,17 @@ mod commit_reveal_lookup_tests {
             .await;
         let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &reveal, platform_version);
         let budget = choose_first_scan_budget(platform_version);
-        assert!(admitted > budget);
-        assert!(
-            admitted - gas_wanted >= budget,
+        let competitor_hashes =
+            u64::from(platform_version.system_limits.max_choose_first_candidates)
+                * double_sha256_fee(32 + full_name().len(), platform_version);
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert!(gas_wanted > 0);
+        assert_eq!(
+            admitted - gas_wanted,
+            budget + competitor_hashes + allowance,
             "admitted {admitted}, gas wanted {gas_wanted}"
         );
     }
