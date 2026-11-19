@@ -78,6 +78,30 @@ class PaymentFailureTest {
         }
     }
 
+    /**
+     * A failed invitation create holding its voucher lock tells the user to
+     * reclaim the voucher, not to resume the lock: the operation says it is a
+     * voucher, the class is unchanged (← Swift
+     * `testShouldReclaimAnInvitationVoucherInsteadOfResumingIt`).
+     */
+    @Test
+    fun shouldReclaimAnInvitationVoucherInsteadOfResumingIt() {
+        val voucher = PaymentFailure.of(walletError(6, 3, false, heldRaw), invitationVoucher = true)
+        assertEquals(PaymentFailure.Action.Resume(held), voucher.action)
+        assertFalse("never fund a new invitation", voucher.permitsRestart(null))
+        assertTrue(voucher.message, voucher.message.startsWith(PaymentRecovery.Resume(held).invitationVoucherSuggestion))
+        assertTrue(voucher.message, voucher.message.contains("Reclaim the voucher"))
+        assertFalse(voucher.message, voucher.message.contains("Resume that lock"))
+        assertTrue(voucher.message.contains(held.outPointHex))
+        assertEquals("Funds held in the invitation voucher", voucher.title)
+
+        listOf(walletError(6, 1, true), walletError(6, 1, false), walletError(6, 2, false), walletError(6, 4, false))
+            .forEach {
+                assertEquals(PaymentFailure.of(it).message, PaymentFailure.of(it, invitationVoucher = true).message)
+            }
+        assertNull(PaymentFailure.ofPayment(IllegalStateException("x"), invitationVoucher = true))
+    }
+
     /** The DPNS marketplace's trade failures go through the helper. */
     @Test
     fun dpnsTradeFailuresFollowThePaymentClass() {

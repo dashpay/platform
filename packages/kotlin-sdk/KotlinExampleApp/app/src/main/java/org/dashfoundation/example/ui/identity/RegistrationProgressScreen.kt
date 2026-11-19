@@ -44,8 +44,9 @@ import org.dashfoundation.example.ui.wallet.toHexString
 /**
  * Compact pending-registration row — port of `PendingRegistrationRow` in
  * `PendingRegistrationsList.swift`. Icon + phase label + slot fingerprint;
- * tapping opens [RegistrationProgressScreen]. The dismissal swipe (failed /
- * synced-unconfirmed) is a follow-up UX affordance.
+ * tapping opens [RegistrationProgressScreen]. The dismissal swipe (a failure
+ * whose class allows a retry, or a synced unconfirmed row; the coordinator
+ * refuses any other failure) is a follow-up UX affordance.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

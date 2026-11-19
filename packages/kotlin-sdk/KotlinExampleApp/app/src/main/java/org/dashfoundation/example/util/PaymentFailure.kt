@@ -14,10 +14,21 @@ import java.nio.ByteOrder
  *
  * The class is the error's delivery, retry and held lock, read through the
  * SDK's [PaymentRecovery]: a retryable NOT_SENT offers a retry, LOCK_HELD
- * resumes the named lock and never funds a new one, and everything else
+ * resumes the named lock and never funds a new one (an invitation's voucher
+ * lock is reclaimed instead, [invitationVoucher]), and everything else
  * waits (a non-retryable NOT_SENT, MAYBE_SENT, and an unclassified failure).
  */
-data class PaymentFailure(val recovery: PaymentRecovery, val detail: String) {
+data class PaymentFailure(
+    val recovery: PaymentRecovery,
+    val detail: String,
+    /**
+     * Whether the operation that failed created an invitation, so a held lock
+     * is the invitation's voucher: its funds come back through the voucher's
+     * reclaim, not the generic resume (which refuses a voucher). Known from
+     * the operation, never from the error.
+     */
+    val invitationVoucher: Boolean = false,
+) {
 
     /** The one thing a screen may offer after the failure. */
     sealed interface Action {
@@ -48,7 +59,8 @@ data class PaymentFailure(val recovery: PaymentRecovery, val detail: String) {
         get() = when (recovery) {
             PaymentRecovery.Retry -> "Failed"
             PaymentRecovery.Wait -> "Not sent"
-            is PaymentRecovery.Resume -> "Funds held in an asset lock"
+            is PaymentRecovery.Resume ->
+                if (invitationVoucher) "Funds held in the invitation voucher" else "Funds held in an asset lock"
             PaymentRecovery.Reconcile -> "May have gone through"
             PaymentRecovery.Unconfirmed -> "Not confirmed"
         }
@@ -56,8 +68,13 @@ data class PaymentFailure(val recovery: PaymentRecovery, val detail: String) {
     /** The class's text, the held lock when there is one, then the detail. */
     val message: String
         get() = heldLock?.let {
-            "${recovery.suggestion} Asset lock ${it.outPointHex} is listed with the wallet's " +
-                "resumable asset locks. $detail"
+            if (invitationVoucher) {
+                "${recovery.invitationVoucherSuggestion} Voucher lock ${it.outPointHex} is listed " +
+                    "under Sent invitations. $detail"
+            } else {
+                "${recovery.suggestion} Asset lock ${it.outPointHex} is listed with the wallet's " +
+                    "resumable asset locks. $detail"
+            }
         } ?: "${recovery.suggestion} $detail"
 
     /**
@@ -73,12 +90,17 @@ data class PaymentFailure(val recovery: PaymentRecovery, val detail: String) {
     }
 
     companion object {
-        /** The failure [error] stands for, with its display text as the detail. */
-        fun of(error: Throwable): PaymentFailure = PaymentFailure(
+        /**
+         * The failure [error] stands for, with its display text as the detail.
+         * [invitationVoucher] when the operation that failed created an
+         * invitation.
+         */
+        fun of(error: Throwable, invitationVoucher: Boolean = false): PaymentFailure = PaymentFailure(
             PaymentRecovery.of(error),
             (error as? DashSdkError)?.userMessage?.takeIf { it.isNotBlank() }
                 ?: error.message
                 ?: error.javaClass.simpleName,
+            invitationVoucher,
         )
 
         /**
@@ -86,7 +108,8 @@ data class PaymentFailure(val recovery: PaymentRecovery, val detail: String) {
          * is not an SDK error: the screen's own input check, thrown before
          * anything was sent, which shows as its own message.
          */
-        fun ofPayment(error: Throwable): PaymentFailure? = if (error is DashSdkError) of(error) else null
+        fun ofPayment(error: Throwable, invitationVoucher: Boolean = false): PaymentFailure? =
+            if (error is DashSdkError) of(error, invitationVoucher) else null
 
         /** The outpoint a resume call takes, from its wire-order txid and vout. */
         fun outPoint(txid: ByteArray, vout: Int): AssetLockBuiltOutPoint =

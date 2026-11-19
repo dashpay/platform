@@ -113,10 +113,21 @@ class RegistrationCoordinator(
     /**
      * Manually drop a controller from the map — the UI's "Dismiss" action on
      * a [Phase.Failed] (or a synced [Phase.Unconfirmed]) row. ← Swift `dismiss`.
+     *
+     * A failed slot is dropped only when its class allows a fresh
+     * registration (`permitsSubmit(null)`, a retryable failure):
+     * [startRegistration] gates a restart only on a slot it still holds, so
+     * dropping a failure that may have left, holds a lock, or waits for an
+     * earlier payment would let a fresh registration pay again on the same
+     * index. Such a slot stays until its lock is resumed or the app restarts.
+     * Returns whether the controller was dropped.
      */
-    fun dismiss(walletId: ByteArray, identityIndex: Int) {
+    fun dismiss(walletId: ByteArray, identityIndex: Int): Boolean {
         val key = SlotKey(walletId.toHex(), identityIndex)
+        val phase = _controllers.value[key]?.phase?.value
+        if (phase is IdentityRegistrationController.Phase.Failed && !phase.permitsSubmit(null)) return false
         _controllers.update { it - key }
+        return true
     }
 
     /**

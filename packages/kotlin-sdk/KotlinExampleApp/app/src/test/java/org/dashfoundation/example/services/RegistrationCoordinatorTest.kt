@@ -311,18 +311,44 @@ class RegistrationCoordinatorTest {
     }
 
     @Test
-    fun `dismiss removes a failed controller`() = runTest {
+    fun `dismiss removes a failed controller whose class allows a retry`() = runTest {
         val coordinator = coordinator()
-        val gate = CompletableDeferred<ByteArray>()
 
-        coordinator.startRegistration(walletA, 0, body = { gate.await() })
-        gate.completeExceptionally(RuntimeException("nope"))
+        coordinator.startRegistration(walletA, 0, body = { throw walletError(delivery = 1, retryable = true) })
         advanceUntilIdle()
         assertEquals(1, coordinator.controllers.value.size)
 
-        coordinator.dismiss(walletA, 0)
+        assertTrue(coordinator.dismiss(walletA, 0))
         assertTrue(coordinator.controllers.value.isEmpty())
         assertNull(coordinator.controller(walletA, 0))
+    }
+
+    /**
+     * Dismissing a failure that may have left, holds a lock, or waits for an
+     * earlier payment would drop the slot's gate: refused, so a fresh
+     * registration on the index still does not run (← Swift
+     * `testRegistrationFailureIsDismissedOnlyWhenItsClassAllowsARetry`).
+     */
+    @Test
+    fun `dismiss keeps a failed slot whose class forbids a fresh registration`() = runTest {
+        val coordinator = coordinator()
+        listOf(
+            walletError(delivery = 1, retryable = false),
+            walletError(delivery = 2, retryable = false),
+            walletError(delivery = 3, retryable = false, held = heldRaw),
+            RuntimeException("unclassified"),
+        ).forEachIndexed { index, error ->
+            val controller = coordinator.startRegistration(walletA, index, body = { throw error })
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
+
+            assertFalse(coordinator.dismiss(walletA, index))
+            assertSame(controller, coordinator.controller(walletA, index))
+            var ran = false
+            coordinator.startRegistration(walletA, index, body = { ran = true; ByteArray(32) })
+            advanceUntilIdle()
+            assertFalse("no fresh registration after a refused dismiss", ran)
+        }
     }
 
     @Test
