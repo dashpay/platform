@@ -3539,6 +3539,10 @@ mod tests {
             params.version.as_ref().unwrap().app_version,
             latest.protocol_version as u64
         );
+        assert_eq!(
+            params.version.as_ref().unwrap().consensus_version,
+            latest.consensus.tenderdash_consensus_version as i32
+        );
         let after_parameters = continuation_parameters(&activated, 2);
         drop(activated);
 

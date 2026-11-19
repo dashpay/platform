@@ -593,6 +593,35 @@ fn should_accept_an_ordinary_format_regex_value_at_both_protocol_versions() {
     assert!(format_regex_errors(value, protocol_version_14).is_empty());
 }
 
+/// Validation errors for a document `{ "u": value }` against a type whose `u` is a
+/// `format: uri` string, at `platform_version`. The contract is registered then read anew,
+/// so the protocol version decides which validator checks the value.
+fn format_uri_errors(value: &str, platform_version: &PlatformVersion) -> Vec<ConsensusError> {
+    let contract = item_contract(platform_value!({
+        "u": { "type": "string", "format": "uri", "maxLength": 40, "position": 0 },
+    }));
+    document_errors(
+        &read_anew(&contract),
+        platform_value!({ "u": value }),
+        platform_version,
+    )
+}
+
+/// Pins consensus to the Unicode 17 ICU data behind `url`'s IDNA host mapping: U+0558 is
+/// unassigned there, so a host holding it is not a URI. A failure means a dependency update
+/// changed consensus.
+#[test]
+fn should_refuse_a_format_uri_value_whose_host_holds_a_code_point_unassigned_in_unicode_17() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let value = "https://a\u{0558}b.com/";
+    assert!(!format_uri_errors(value, latest).is_empty());
+    assert!(!format_uri_errors(value, protocol_version_14).is_empty());
+    // An ASCII host is a URI at both protocol versions.
+    assert!(format_uri_errors("https://ab.com/", latest).is_empty());
+    assert!(format_uri_errors("https://ab.com/", protocol_version_14).is_empty());
+}
+
 /// A pattern that parses but that the `regex` crate does not compile under its default size
 /// limit.
 const PATTERN_BEYOND_THE_SIZE_LIMIT: &str = "^\\p{L}{400}$";

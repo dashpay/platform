@@ -261,9 +261,9 @@ extension SDK {
 // MARK: - FFI result handling
 
 /// Takes ownership of the `DashSDKResult`s the decision proposal functions
-/// return: every owned string and error is freed on every path, so only
-/// Swift values leave these functions.
-private enum DecisionProposalFFI {
+/// (yes/no and multiple choice) return: every owned string and error is
+/// freed on every path, so only Swift values leave these functions.
+enum DecisionProposalFFI {
     /// Throw the typed FFI error, freeing it.
     static func throwIfFailed(_ result: DashSDKResult) throws {
         guard let error = result.error else { return }

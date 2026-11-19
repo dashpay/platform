@@ -138,7 +138,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
-    max_compiled_contract_size: None,   // no contract is stored compiled before protocol version 15
+    max_contract_schema_patterns: 32, // schema pattern bounds (consensus from v15, mempool policy before): a contract holds at most 32 patterns
+    max_schema_pattern_compiled_size: 131_072, // and each compiles within 128 KiB
+    max_compiled_contract_size: None, // no contract is stored compiled before protocol version 15
     max_private_document_entry_size: None, // no private document type before protocol version 15
     private_document_store_target_chunk_bytes: None,
     private_document_store_min_chunk_power: None,

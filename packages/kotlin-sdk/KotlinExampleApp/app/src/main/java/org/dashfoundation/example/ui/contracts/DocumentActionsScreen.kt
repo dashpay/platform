@@ -35,14 +35,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.documents.DocumentEraseOutcome
+import org.dashfoundation.dashsdk.documents.DocumentEraseNotSubmittedReason
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
-import org.dashfoundation.dashsdk.queries.DocumentLifecycle
-import org.dashfoundation.dashsdk.queries.DocumentLifecycleState
 import org.dashfoundation.dashsdk.queries.describeEraseProgress
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -63,7 +63,7 @@ import org.dashfoundation.example.util.truncateMiddle
  * Owned-document actions for one document — the DOC-03 replace / DOC-04
  * delete / DOC-05 transfer flows the iOS document ops menu ships, plus the
  * erase (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
- * `eraseDocument` / `transferDocument`). Reached from a document row's
+ * `eraseDocumentAndObserve` / `transferDocument`). Reached from a document row's
  * "Actions…" button and from the document replace/delete/erase/transfer
  * transition-catalog entries.
  *
@@ -501,10 +501,9 @@ fun DocumentActionsScreen(
             }
 
             // ── Erase ─────────────────────────────────────────────────────
-            // A deleted document is invisible to the probe above, so the
-            // erase cannot be ownership-gated here; consensus refuses a
-            // first erase from anyone but the owner (a paid rejection) and
-            // accepts later ones from any identity.
+            // The probe above is for presentation. Rust checks the newest
+            // retained owner before starting erasure of a deleted document;
+            // any submitting identity may continue an erasing document.
             FormSection(title = "Erase") {
                 Text(
                     "Remove the retained revisions of a document that has already " +
@@ -676,23 +675,25 @@ fun DocumentActionsScreen(
                             fail = { error = it },
                             scope = scope,
                         ) {
-                            val (wallet, mgr, signingKeyId) = resolveSigning(container, signer)
-                            val docIdB58 = Base58.encode(docIdBytes)
-                            eraseSuccess = eraseAndDescribe(
-                                readLifecycle = {
-                                    sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
-                                },
-                            ) {
-                                mgr.documentTransactions.erase(
-                                    walletHandle = wallet,
-                                    ownerId = signer.identityId,
+                            val mgr = container.walletManagerStore.activeManager.value
+                                ?: throw IllegalStateException("Wallet manager not active")
+                            val wallet = signer.walletId?.toHex()?.let { mgr.wallets.value[it] }
+                                ?: throw IllegalStateException("Identity has no loaded wallet linkage; cannot erase document history")
+                            val outcome = try {
+                                mgr.documentTransactions.eraseAndObserve(
+                                    walletHandle = wallet.handle,
+                                    submittingIdentityId = signer.identityId,
                                     contractId = contractIdBytes,
                                     documentType = typeName,
                                     documentId = docIdBytes,
-                                    signingKeyId = signingKeyId,
                                     signerHandle = mgr.signerHandle,
                                 )
+                            } catch (e: DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed) {
+                                throw IllegalStateException(
+                                    "Erase outcome unknown; do not resubmit automatically; read history first.", e,
+                                )
                             }
+                            eraseSuccess = describeEraseOutcome(outcome)
                         }
                     },
                     modifier = Modifier.testTag("eraseDocument.confirm"),
@@ -707,51 +708,19 @@ fun DocumentActionsScreen(
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
-/**
- * Submit the erase, then say what it achieved, from the lifecycle read before
- * it and the one read after. Extracted from [DocumentActionsScreen] so the
- * failure split is unit-testable.
- *
- * An ACTIVE or ABSENT lifecycle read returns without invoking [erase]. ABSENT
- * means no retained revisions exist; it does not establish a completed erase.
- *
- * Only [erase] decides whether the submission succeeded. The erase result
- * itself observes only that the document is absent from ordinary reads, which
- * it already was, so the lifecycle is the account of what was removed — but it
- * is an observation of an already-broadcast, already-confirmed transition. A
- * read that fails therefore leaves the erase successful and merely unreported;
- * surfacing it as a failure would invite a second, fee-bearing erase. A
- * [CancellationException] still propagates so structured concurrency is intact.
- */
-internal suspend fun eraseAndDescribe(
-    readLifecycle: suspend () -> DocumentLifecycle?,
-    erase: suspend () -> Unit,
-): String {
-    suspend fun observe(): DocumentLifecycle? = try {
-        readLifecycle()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        null
+/** Display the Rust outcome without making another submission decision. */
+internal fun describeEraseOutcome(outcome: DocumentEraseOutcome): String = when (outcome) {
+    is DocumentEraseOutcome.NotSubmitted -> "Erase not submitted. " + when (outcome.reason) {
+        DocumentEraseNotSubmittedReason.ACTIVE -> "The document is active."
+        DocumentEraseNotSubmittedReason.ABSENT -> "No retained revisions exist."
+        DocumentEraseNotSubmittedReason.NOT_NEWEST_OWNER ->
+            "The newest retained revision belongs to ${outcome.owner}. Select that identity."
+        DocumentEraseNotSubmittedReason.PREFLIGHT_UNAVAILABLE ->
+            "Lifecycle or ownership could not be read; read history before retrying."
     }
-
-    val before = observe()
-    if (before?.state == DocumentLifecycleState.ACTIVE || before?.state == DocumentLifecycleState.ABSENT) {
-        val progress = if (before.state == DocumentLifecycleState.ABSENT) {
-            "No retained revisions exist."
-        } else {
-            describeEraseProgress(before, before)
-        }
-        return "Erase not submitted. Lifecycle: ${before.state}. $progress"
-    }
-    erase()
-    val after = observe()
-    return "Erase submitted; document absence observed. " +
-        if (after != null) {
-            describeEraseProgress(before, after)
-        } else {
-            "Lifecycle not read; query the document history to see what remains."
-        }
+    is DocumentEraseOutcome.Submitted -> "Erase submitted; document absence observed. " +
+        (outcome.after?.let { describeEraseProgress(outcome.before, it) }
+            ?: "Lifecycle not read; query the document history to see what remains.")
 }
 
 /** The owner + current field values [DocumentActionsScreen]'s probe reads. */

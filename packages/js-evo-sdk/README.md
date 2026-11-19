@@ -148,6 +148,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.encryptedFor`](src/encrypted-for/facade.ts) | Encrypt and decrypt the byte properties a document type declares `encryptedFor`, for any contract |
 | [`sdk.moderationCharters`](src/moderation-charters/facade.ts) | Read a contract's seated charter, its team, proposals and join requests; build join and resignation requests |
 | [`sdk.decisionProposals`](src/decision-proposals/facade.ts) | Build, edit, list and read decision proposals; read their polls and vote on them as a masternode |
+| [`sdk.decisionProposals.multipleChoice`](src/decision-proposals/multiple-choice-facade.ts) | Build, edit, list and read multiple choice proposals and their choices; read the vote among the choices and vote in it as a masternode |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
 
@@ -578,6 +579,64 @@ const answer = await sdk.decisionProposals.masternodeVote(proTxHash, proposal.id
 ```
 
 `sdk.voting.masternodeVote` also answers a yes/no poll as `sdk.voting.votePollsByEndDate` lists it, with `voteChoice: 'yes' | 'no' | 'abstain'`.
+
+### Multiple choice proposals
+
+A question with more than two answers is a `multipleChoiceProposal` document of the same contract, and each answer is a `choice` document. The choices contend in a masternode vote that the first choice opens, and the one with the most votes is kept. `sdk.decisionProposals.multipleChoice` builds both for `sdk.documents`, and reads and answers the vote by the proposal's id. A choice is named by its document id, in a vote and in the vote's state:
+
+```ts
+const multipleChoice = sdk.decisionProposals.multipleChoice;
+
+// Described by a document of an elected-moderation contract, at a url, or both.
+// The owner pays the processing fee on top of the fees; the create does not state it.
+const fee = await multipleChoice.processingFee(); // 0.2 Dash, in credits
+const draft = await multipleChoice.build({
+  ownerId: identity.id,
+  title: 'Which block size?',
+  descriptionDocument: { id: postId, contractId: forumContractId, documentType: 'post' },
+  url: 'https://forum.dash.org/t/block-size',
+  open: true, // anyone may enter choices; false leaves them to the owner
+});
+const proposal = await sdk.documents.create({ document: draft, identityKey, signer });
+
+// The title, url and description document can be edited for two hours; `open` never changes
+const edited = await multipleChoice.buildEdit(proposal, { title: 'Which block size, then?' });
+await sdk.documents.replace({ document: edited, identityKey, signer });
+
+// A choice pays the contest fund, which the create states itself
+const fund = await multipleChoice.choiceFund(proposal.id); // 0.1 Dash until the vote holds 250 choices
+const choiceDraft = await multipleChoice.buildChoice({
+  ownerId: identity.id,
+  proposalId: proposal.id,
+  title: 'Double it',
+  description: 'Twice the size it is today.',
+});
+const choice = await sdk.documents.create({ document: choiceDraft, identityKey, signer });
+
+// An identity's proposals; every proposal, newest first
+const mine = await multipleChoice.byOwner({ ownerId: identity.id });
+const latest = await multipleChoice.byCreatedAt({ limit: 10 });
+
+// The vote: every choice with its tally while it runs, its result once it ended
+const vote = await multipleChoice.voteState(proposal.id);
+for (const [choiceId, { choice: document, voteTally }] of vote.choices) {
+  console.log(choiceId, document?.properties.title, voteTally);
+}
+if (vote.result) console.log(vote.result.keptChoiceId?.toBase58());
+const kept = await multipleChoice.keptChoice(proposal.id);
+
+// A masternode answers with a choice's document id, 'abstain' or 'noneOfTheChoices'
+await multipleChoice.vote({
+  masternodeProTxHash: proTxHash,
+  proposalId: proposal.id,
+  voteChoice: { choiceId: choice.id },
+  votingKey,
+  signer: votingSigner,
+});
+const given = await multipleChoice.masternodeVote(proTxHash, proposal.id);
+```
+
+`multipleChoice.votePoll(proposal.id)` gives the vote as a vote poll for `sdk.voting` and the contested resource queries.
 
 ## Immutable properties (`immutable`)
 
