@@ -1268,12 +1268,9 @@ pub(in crate::execution) mod tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 15)
-        assert_eq!(
-            domain.documents_can_be_deleted(),
-            platform_version.system_data_contracts.dpns < 3
-        );
+        // Deletion is refused by a data trigger on DPNS v2, and for a contested name
+        // alone by the one DPNS v3 binds (protocol version 15)
+        assert!(domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);

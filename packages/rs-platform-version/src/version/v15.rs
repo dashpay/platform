@@ -107,8 +107,20 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `records.identity` equal to `$ownerId`) holds a new name's identity record
 ///    to its owner (10422); a transfer or a purchase in a later block no longer
 ///    reads it, and one in the block that created the name is refused. The
-///    `domain` sets `canBeDeleted: false`; its property positions, transient
-///    list and stored encoding are v2's. `transition_to_version_15` re-stores
+///    `domain` keeps `canBeDeleted: true`; its property positions, transient
+///    list and stored encoding are v2's. A name's owner gives it up two ways.
+///    A delete frees the name for anybody; `delete_domain_data_trigger` 0,
+///    which data trigger bindings 3 bind in place of the reject, reads the
+///    stored name (billed) and refuses a contested one, which can only be
+///    tombstoned. A create of the new `tombstone` type deletes the creator's
+///    own `domain` of that name with it (a `refersTo` with `consume` on its
+///    `normalizedLabel`) and nobody can replace, delete or transfer a
+///    tombstone; the `domain` rule `nameIsNotTombstoned` counts the
+///    tombstones of a name through the tombstone's countable index and
+///    refuses a create of it, one opening a contest included (10422). The
+///    type's description says a tombstoned name may later be brought back and
+///    redistributed through a direct or indirect will of the DAO; nothing
+///    does so at this version. `transition_to_version_15` re-stores
 ///    DPNS through `Drive::apply_contract_rebuilding_document_types`: every
 ///    preorder made before the upgrade is deleted, unrefunded, and the
 ///    `preorder` type is rebuilt as a contract update creates a type it adds,
@@ -116,10 +128,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11` selects `create_domain_data_trigger`
 ///    2, which keeps only the parent domain checks: a top-level domain only by
 ///    the contract owner, the parent present, no subdomains under a name, and
-///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
-///    its `domain` Replace and Delete rejects are never reached, as
-///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for DashPay, note 24, not for DPNS.)
+///    the parent's subdomain rule. The `domain` Replace reject is never
+///    reached, as `documentsMutable: false` refuses a replace first (10404);
+///    bindings 3 (note 24) replace the Delete reject with the delete trigger
+///    above. `transition_to_version_15` lays the `tombstone` type out as a
+///    contract update creates a type it adds.
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -1080,7 +1093,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16) and never lowers the Tenderdash consensus version on an emergency update (note 44); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32); check_for_ended_vote_polls 2 leaves open a contest whose winner's document does not decode or cannot be written (note 45)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11) and holds no create opening or joining a contest to a chooseFirst the contest decides (note 48); document_reference_validation 1 bills each chooseFirst competitor's hash in full and choose_first_reservation 1 reserves it in check tx (note 50); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle and document_erase_transition_refund_recipient_reservation Some(0) has check tx reserve an erase's refund work (note 41); document create state_validation 3 and document replace state_validation 2 hold a write to the total its type keeps of its summed property, and contract user moderation transform_into_action 1 a moderator's restore (note 46); masternode vote state 2 refuses a vote on a contest its end left open (note 45); validate_shielded_proof 2 verifies the token bundle of a token pool transition paid from the credit pool over its fee bundle's commitment (note 47)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11) and holds no create opening or joining a contest to a chooseFirst the contest decides (note 48); document_reference_validation 1 bills each chooseFirst competitor's hash in full and choose_first_reservation 1 reserves it in check tx (note 50); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 drop the DashPay bindings (note 24) and bind the DPNS domain delete trigger, which refuses the delete of a contested name alone (note 3); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34); batch_state_transition.document_delete_transition_structure_validation 2 and document_erase_transition_structure_validation/document_erase_transition_state_validation Some(0) admit the lifecycle and document_erase_transition_refund_recipient_reservation Some(0) has check tx reserve an erase's refund work (note 41); document create state_validation 3 and document replace state_validation 2 hold a write to the total its type keeps of its summed property, and contract user moderation transform_into_action 1 a moderator's restore (note 46); masternode vote state 2 refuses a vote on a contest its end left open (note 45); validate_shielded_proof 2 verifies the token bundle of a token pool transition paid from the credit pool over its fee bundle's commitment (note 47)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: getDocumentHistory accepts V1 only
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

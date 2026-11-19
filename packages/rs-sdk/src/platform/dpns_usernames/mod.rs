@@ -1,5 +1,6 @@
 mod contender_request;
 mod contested_queries;
+mod give_up;
 mod queries;
 
 pub use contender_request::{ContenderRequest, ContestRequests};
@@ -650,12 +651,10 @@ impl Sdk {
     ///
     /// # Returns
     ///
-    /// Returns `true` if the name is available, `false` if it's taken
+    /// Returns `true` if the name is available, `false` if it's taken or, from
+    /// DPNS v3, tombstoned ([`Sdk::is_dpns_name_tombstoned`]): nobody registers a
+    /// tombstoned name.
     pub async fn is_dpns_name_available(&self, name: &str) -> Result<bool, Error> {
-        use crate::platform::documents::document_query::DocumentQuery;
-        use drive::query::WhereClause;
-        use drive::query::WhereOperator;
-
         let normalized_label = normalize_dpns_label(name);
 
         // An empty normalized label (e.g. `""`, `".dash"`, `".DASH"`) is not
@@ -669,42 +668,20 @@ impl Sdk {
 
         let dpns_contract = self.fetch_dpns_contract().await?;
 
-        // Query for existing domain with this label
-        let query = DocumentQuery {
-            select: drive::query::SelectProjection::documents(),
-            data_contract: dpns_contract,
-            document_type_name: "domain".to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text("dash".to_string()),
-                },
-                WhereClause {
-                    field: "normalizedLabel".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text(normalized_label),
-                },
-            ],
-            time_range_clauses: vec![],
-            integer_range_clauses: vec![],
-            sub_queries: vec![],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: 1,
-            offset: None,
-            start: None,
-        };
+        // A proven absence comes back as entries holding `None`, which
+        // `dpns_name_document` reads as no document: the name is taken only when
+        // the network holds its domain
+        if self
+            .dpns_name_document(dpns_contract.clone(), "domain", normalized_label.clone())
+            .await?
+            .is_some()
+        {
+            return Ok(false);
+        }
 
-        let documents = Document::fetch_many(self, query).await?;
-
-        // `Document::fetch_many` returns `BTreeMap<Identifier, Option<Document>>`
-        // — a non-existence proof comes back as a non-empty map whose values are
-        // all `None`. Checking `documents.is_empty()` would treat a proven
-        // non-existence as "taken". The name is available iff no entry in the
-        // map carries an actual document.
-        Ok(documents.values().all(|d| d.is_none()))
+        Ok(!self
+            .dpns_name_tombstoned_under(dpns_contract, normalized_label)
+            .await?)
     }
 
     /// Resolve a DPNS name to an identity ID
