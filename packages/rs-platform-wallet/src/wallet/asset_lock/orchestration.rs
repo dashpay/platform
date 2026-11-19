@@ -699,6 +699,10 @@ fn authorized_invitation_reclaim(
 /// Authorize a tracked one-shot output for the operation that is about to
 /// consume it. Identity registration and bound top-up paths must match their
 /// identity index; an unbound top-up is deliberately eligible for any target.
+/// A registration lock may also top up the identity at its own index: once
+/// that slot holds an identity (an earlier registration with the same keys,
+/// whose refusal left the lock partly spent), the lock can never register
+/// one there, and topping that identity up is what is left to do with it.
 /// Invitation vouchers never pass this generic validator—the explicit reclaim
 /// authorization above is the only bypass.
 fn validate_existing_asset_lock_role(
@@ -714,8 +718,10 @@ fn validate_existing_asset_lock_role(
                 && actual_identity_index == expected_identity_index
         }
         AssetLockFundingType::IdentityTopUp => {
-            (actual_funding_type == AssetLockFundingType::IdentityTopUp
-                && actual_identity_index == expected_identity_index)
+            (matches!(
+                actual_funding_type,
+                AssetLockFundingType::IdentityTopUp | AssetLockFundingType::IdentityRegistration
+            ) && actual_identity_index == expected_identity_index)
                 || actual_funding_type == AssetLockFundingType::IdentityTopUpNotBound
         }
         _ => actual_funding_type == expected_funding_type,
@@ -804,6 +810,25 @@ mod tests {
                 AssetLockFundingType::IdentityTopUp,
                 11,
                 AssetLockFundingType::IdentityTopUp,
+                12,
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+        // A registration lock tops up the identity at its own index only.
+        assert!(validate_existing_asset_lock_role(
+            out_point,
+            AssetLockFundingType::IdentityTopUp,
+            11,
+            AssetLockFundingType::IdentityRegistration,
+            11,
+        )
+        .is_ok());
+        assert!(matches!(
+            validate_existing_asset_lock_role(
+                out_point,
+                AssetLockFundingType::IdentityTopUp,
+                11,
+                AssetLockFundingType::IdentityRegistration,
                 12,
             ),
             Err(PlatformWalletError::AssetLockFundingMismatch { .. })

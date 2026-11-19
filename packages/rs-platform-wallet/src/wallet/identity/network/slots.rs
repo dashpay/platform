@@ -530,6 +530,102 @@ impl IdentityWallet {
         Ok(self.holds_identity(&identity_id).await)
     }
 
+    /// Settle this wallet's registration asset locks that may have created
+    /// their identity without this wallet recording it: a submit whose
+    /// answer was lost, or one that landed but whose identity was not stored
+    /// in its slot. Platform derives the identity id from the lock's
+    /// outpoint alone, so each lock that left the wallet costs one lookup:
+    /// - an identity at the id holding this wallet's master key at the
+    ///   lock's index: recorded in that slot, and the lock marked consumed;
+    /// - none, or no answer: the lock stays as it is (still resumable);
+    /// - whose identity it is cannot be told: it stays, and
+    ///   [`ClaimLeaseResolution::needs_key`] says a key would settle it.
+    ///
+    /// Counted in the same [`ClaimLeaseResolution`] as the claim leases.
+    pub(crate) async fn resolve_registration_locks(
+        &self,
+        key: InvitationClaimantKey<'_>,
+    ) -> Result<ClaimLeaseResolution, PlatformWalletError> {
+        let locks: Vec<(OutPoint, RegistrationIndex)> = {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?
+                .tracked_asset_locks
+                .values()
+                .filter(|lock| {
+                    lock.funding_type == AssetLockFundingType::IdentityRegistration
+                        && !lock.status.is_consumed()
+                        && lock.status != AssetLockStatus::Built
+                })
+                .map(|lock| (lock.out_point, lock.identity_index))
+                .collect()
+        };
+        let mut resolution = ClaimLeaseResolution::default();
+        for (out_point, identity_index) in locks {
+            let identity_id = identity_id_for_out_point(out_point);
+            let found = match Identity::fetch(&self.sdk, identity_id).await {
+                Ok(Some(found)) => found,
+                Ok(None) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        %out_point,
+                        error = %e,
+                        "could not ask Platform whether a registration lock created its \
+                         identity"
+                    );
+                    resolution.held += 1;
+                    continue;
+                }
+            };
+            let recovered = match self
+                .invitation_claimed_by_this_wallet(Some(&found), identity_index, key)
+                .await
+            {
+                Some(true) => {
+                    self.record_found_identity(identity_index, identity_id, key)
+                        .await
+                }
+                Some(false) => {
+                    tracing::warn!(
+                        %out_point,
+                        identity_index,
+                        "a registration lock's identity does not hold this wallet's master key \
+                         at the lock's index; left as it is"
+                    );
+                    resolution.held += 1;
+                    continue;
+                }
+                None => {
+                    resolution.held += 1;
+                    resolution.needs_key |= matches!(key, InvitationClaimantKey::Unavailable);
+                    continue;
+                }
+            };
+            match recovered {
+                Ok(true) => {
+                    if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                        tracing::warn!(
+                            %out_point,
+                            error = %e,
+                            "a registration lock's identity was recorded, but the lock could \
+                             not be marked consumed"
+                        );
+                    }
+                    resolution.landed += 1;
+                }
+                Ok(false) => resolution.held += 1,
+                Err(e) => {
+                    tracing::warn!(
+                        %out_point,
+                        error = %e,
+                        "a registration lock created its identity, but it could not be recorded"
+                    );
+                    resolution.held += 1;
+                }
+            }
+        }
+        Ok(resolution)
+    }
+
     /// End `invitation`'s claim lease, stored durably. `false` when it
     /// leases nothing, when this handle's wallet is no longer the one the
     /// manager holds, or when the store fails (the lease is put back).
@@ -1374,6 +1470,115 @@ mod tests {
         })
     }
 
+    /// Track a registration lock at `out_point` for slot 0.
+    async fn track_registration_lock(wallet: &PlatformWallet, out_point: OutPoint) {
+        let mut wm = wallet.identity().wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet.wallet_id()).unwrap();
+        info.tracked_asset_locks.insert(
+            out_point,
+            TrackedAssetLock {
+                operation_id: None,
+                out_point,
+                transaction: Transaction {
+                    version: 3,
+                    lock_time: 0,
+                    input: vec![],
+                    output: vec![],
+                    special_transaction_payload: None,
+                },
+                account_index: 0,
+                funding_type: AssetLockFundingType::IdentityRegistration,
+                identity_index: 0,
+                amount: 1,
+                status: AssetLockStatus::Broadcast,
+                proof: None,
+                shielded_recipient: None,
+            },
+        );
+    }
+
+    /// Resume the registration lock at `out_point` at slot 0.
+    async fn resume_at(
+        wallet: &PlatformWallet,
+        out_point: OutPoint,
+    ) -> Result<dpp::identity::Identity, PlatformWalletError> {
+        let asset_lock_signer = crate::test_support::fund_test_platform_wallet(
+            &wallet.identity().wallet_manager,
+            &wallet.wallet_id(),
+            1_000_000,
+        )
+        .await;
+        wallet
+            .identity()
+            .register_identity_with_funding(
+                crate::wallet::asset_lock::AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                },
+                0,
+                None,
+                master_keys(),
+                &UnusedSigner,
+                &asset_lock_signer,
+                None,
+            )
+            .await
+    }
+
+    /// An earlier submit of the lock landed (its answer was lost): the
+    /// resume finds the lock's own identity at the slot, records it and
+    /// marks the lock consumed, without submitting again.
+    #[tokio::test]
+    async fn should_resume_a_landed_registration_lock_as_its_identity() {
+        let out_point = OutPoint::new(Txid::from_byte_array([3; 32]), 0);
+        let mut landed = registered_with_our_master();
+        dpp::identity::accessors::IdentitySettersV0::set_id(
+            &mut landed,
+            dash_sdk::platform::dashpay::identity_id_for_out_point(out_point),
+        );
+        let wallet = wallet_answering(Backend::new(full()), Some(Some(landed.clone()))).await;
+        track_registration_lock(&wallet, out_point).await;
+
+        let resumed = resume_at(&wallet, out_point).await.unwrap();
+
+        assert_eq!(resumed.id(), landed.id());
+        let wm = wallet.identity().wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id()).unwrap();
+        assert_eq!(
+            info.identity_manager.slot_state(&wallet.wallet_id(), 0),
+            SlotState::Occupied(landed.id())
+        );
+        assert!(info.tracked_asset_locks[&out_point].status.is_consumed());
+    }
+
+    /// Another identity of this wallet holds the slot's keys: resuming would
+    /// be refused for them and charge the lock a penalty again. The identity
+    /// is recorded instead, and the lock stays for a top-up.
+    #[tokio::test]
+    async fn should_not_resume_a_registration_lock_whose_keys_another_identity_holds() {
+        let out_point = OutPoint::new(Txid::from_byte_array([3; 32]), 0);
+        let wallet = wallet_answering(
+            Backend::new(full()),
+            Some(Some(registered_with_our_master())),
+        )
+        .await;
+        track_registration_lock(&wallet, out_point).await;
+
+        let refused = resume_at(&wallet, out_point).await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::IdentitySlotTakenOnChain { identity_index: 0, identity_id })
+                    if identity_id == Identifier::from([5; 32])
+            ),
+            "{refused:?}"
+        );
+        let wm = wallet.identity().wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id()).unwrap();
+        assert!(!info.tracked_asset_locks[&out_point].status.is_consumed());
+    }
+
     #[tokio::test]
     async fn should_record_an_identity_already_at_the_slot_and_send_the_host_elsewhere() {
         let backend = Backend::new(full());
@@ -1834,6 +2039,98 @@ mod tests {
                     ..
                 })
             ));
+        }
+
+        /// A wallet whose node holds `at_lock_id` at the identity id of the
+        /// registration lock at `lock` (and answers the load's master-key
+        /// lookup with it), with that lock tracked for slot 0.
+        async fn wallet_with_registration_lock(
+            lock: OutPoint,
+            at_lock_id: Option<Identity>,
+        ) -> Arc<PlatformWallet> {
+            struct Events;
+            impl EventHandler for Events {}
+            impl PlatformEventHandler for Events {}
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+            sdk.mock()
+                .expect_fetch(identity_id_for_out_point(lock), at_lock_id.clone())
+                .await
+                .unwrap();
+            if let Some(found) = at_lock_id {
+                let hash = found.public_keys()[&0].public_key_hash().unwrap();
+                sdk.mock()
+                    .expect_fetch(PublicKeyHash(hash), Some(found))
+                    .await
+                    .unwrap();
+            }
+            let manager =
+                PlatformWalletManager::new(Arc::new(sdk), Backend::new(full()), Arc::new(Events));
+            let wallet = manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &[9; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .unwrap();
+            track_registration_lock(&wallet, lock).await;
+            wallet
+        }
+
+        /// A registration that landed while its answer, or the record of its
+        /// identity, was lost: startup records the identity and marks the
+        /// lock consumed.
+        #[tokio::test]
+        async fn should_record_the_identity_a_registration_lock_created() {
+            let lock = OutPoint::new(Txid::from_byte_array([4; 32]), 0);
+            let mut landed = claimed(our_master_key());
+            dpp::identity::accessors::IdentitySettersV0::set_id(
+                &mut landed,
+                identity_id_for_out_point(lock),
+            );
+            let wallet = wallet_with_registration_lock(lock, Some(landed.clone())).await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_registration_locks(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution.landed, 1, "{resolution:?}");
+            assert_eq!(
+                slot_state(&wallet, 0).await,
+                SlotState::Occupied(landed.id())
+            );
+            let wm = wallet.identity().wallet_manager.read().await;
+            assert!(wm
+                .get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .tracked_asset_locks[&lock]
+                .status
+                .is_consumed());
+        }
+
+        #[tokio::test]
+        async fn should_leave_a_registration_lock_that_created_nothing() {
+            let lock = OutPoint::new(Txid::from_byte_array([4; 32]), 0);
+            let wallet = wallet_with_registration_lock(lock, None).await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_registration_locks(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution, ClaimLeaseResolution::default());
+            assert_eq!(slot_state(&wallet, 0).await, SlotState::Free);
+            let wm = wallet.identity().wallet_manager.read().await;
+            assert!(!wm
+                .get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .tracked_asset_locks[&lock]
+                .status
+                .is_consumed());
         }
 
         /// A lease restored from the store for a slot an identity filled

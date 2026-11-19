@@ -177,6 +177,22 @@ impl<'a> MemoScanKey<'a> {
     }
 }
 
+/// One settle pass over the wallet's unsettled identity creates: its
+/// invitation claim leases, then its registration asset locks.
+async fn settle_pass(
+    identity_wallet: &crate::wallet::identity::IdentityWallet,
+    key: InvitationClaimantKey<'_>,
+) -> Result<ClaimLeaseResolution, PlatformWalletError> {
+    let claims = identity_wallet.resolve_submitted_claim_leases(key).await?;
+    let locks = identity_wallet.resolve_registration_locks(key).await?;
+    Ok(ClaimLeaseResolution {
+        landed: claims.landed + locks.landed,
+        ended: claims.ended + locks.ended,
+        held: claims.held + locks.held,
+        needs_key: claims.needs_key || locks.needs_key,
+    })
+}
+
 /// Knobs for [`PlatformWalletManager::start_wallet_subsystems`].
 #[derive(Debug, Clone, Copy)]
 pub struct WalletStartupOptions {
@@ -570,11 +586,12 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
         let identity_wallet = wallet.identity();
 
-        // 0. Claims an earlier process left unsettled hold their slots until
-        //    their outcome is read. First, so discovery's retries cannot spend
-        //    the budget it needs, and so a landed claim is a local identity
-        //    by the time step 1 asks whether there is one.
-        self.resolve_claim_leases(identity_wallet, scan_key, deadline)
+        // 0. Invitation claims and registration locks an earlier process left
+        //    unsettled (an answer lost, a landed identity not recorded) hold
+        //    their slots until their outcome is read. First, so discovery's
+        //    retries cannot spend the budget it needs, and so a landed one is
+        //    a local identity by the time step 1 asks whether there is one.
+        self.settle_identity_creates(identity_wallet, scan_key, deadline)
             .await;
 
         // 1. Local identities first. A warm launch must not pay for a network
@@ -857,15 +874,13 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// cannot overturn. Only [`PlatformWalletError::IdentityDiscoveryIncomplete`]
     /// — the error for a scan that never got through — is worth another
     /// attempt.
-    /// Settle the wallet's invitation claim leases an earlier process left
-    /// `Submitted` ([`IdentityWallet::resolve_submitted_claim_leases`]),
-    /// within the budget. The key is resolved only when an identity was found
-    /// whose owner only it can tell. Every failure is logged and leaves the
-    /// leases held: a later start settles them.
-    ///
-    /// [`IdentityWallet::resolve_submitted_claim_leases`]:
-    /// crate::wallet::identity::IdentityWallet
-    async fn resolve_claim_leases(
+    /// Settle the wallet's identity creates an earlier process left
+    /// unsettled ([`settle_pass`]: its `Submitted` invitation
+    /// claim leases and its registration asset locks), within the budget. The
+    /// key is resolved only when an identity was found whose owner only it
+    /// can tell. Every failure is logged and leaves them as they are: a later
+    /// start settles them.
+    async fn settle_identity_creates(
         &self,
         identity_wallet: &crate::wallet::identity::IdentityWallet,
         scan_key: Option<ScanKeyResolver<'_>>,
@@ -875,22 +890,18 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             None => InvitationClaimantKey::ResidentWallet,
             Some(_) => InvitationClaimantKey::Unavailable,
         };
-        let resolution = match within_budget(
-            deadline,
-            identity_wallet.resolve_submitted_claim_leases(first_key),
-        )
-        .await
-        {
-            Some(Ok(resolution)) => resolution,
-            Some(Err(e)) => {
-                tracing::warn!(error = %e, "startup: invitation claim leases not settled");
-                return;
-            }
-            None => {
-                tracing::warn!("startup: no budget left to settle invitation claim leases");
-                return;
-            }
-        };
+        let resolution =
+            match within_budget(deadline, settle_pass(identity_wallet, first_key)).await {
+                Some(Ok(resolution)) => resolution,
+                Some(Err(e)) => {
+                    tracing::warn!(error = %e, "startup: unsettled identity creates not settled");
+                    return;
+                }
+                None => {
+                    tracing::warn!("startup: no budget left to settle unsettled identity creates");
+                    return;
+                }
+            };
         let resolution = match (resolution.needs_key, scan_key) {
             (true, Some(resolve)) => {
                 let master = match resolve() {
@@ -898,16 +909,15 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                     Err(e) => {
                         tracing::warn!(
                             error = %e,
-                            "startup: no key to tell whose invitation claims landed; their \
-                             slots stay held"
+                            "startup: no key to tell whose identity creates landed; they stay \
+                             unsettled"
                         );
                         return;
                     }
                 };
                 match within_budget(
                     deadline,
-                    identity_wallet
-                        .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master)),
+                    settle_pass(identity_wallet, InvitationClaimantKey::Master(&master)),
                 )
                 .await
                 {
@@ -918,7 +928,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                         needs_key: false,
                     },
                     Some(Err(e)) => {
-                        tracing::warn!(error = %e, "startup: invitation claim leases not settled");
+                        tracing::warn!(error = %e, "startup: unsettled identity creates not settled");
                         resolution
                     }
                     None => resolution,
@@ -931,7 +941,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                 landed = resolution.landed,
                 ended = resolution.ended,
                 held = resolution.held,
-                "startup: settled invitation claim leases"
+                "startup: settled identity creates"
             );
         }
     }
@@ -2561,5 +2571,114 @@ mod tests {
             SlotState::Free
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1, "the key is read once");
+    }
+
+    /// A registration lock whose identity landed without this wallet
+    /// recording it (the answer lost, or the record not stored) is settled at
+    /// startup: the identity is recorded in the lock's slot and the lock
+    /// marked consumed.
+    #[tokio::test(start_paused = true)]
+    async fn a_registration_lock_that_created_its_identity_is_settled_at_startup() {
+        use dashcore::{OutPoint, Transaction, Txid};
+
+        use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+        use crate::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
+        use crate::wallet::identity::state::SlotState;
+        use crate::MASTER_KEY_INDEX;
+        use dash_sdk::platform::types::identity::PublicKeyHash;
+        use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let backend = std::sync::Arc::new(DurableStartupBackend::default());
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(backend).await;
+        let lock = OutPoint::new(Txid::from_byte_array([4; 32]), 0);
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.tracked_asset_locks.insert(
+                lock,
+                TrackedAssetLock {
+                    operation_id: None,
+                    out_point: lock,
+                    transaction: Transaction {
+                        version: 3,
+                        lock_time: 0,
+                        input: vec![],
+                        output: vec![],
+                        special_transaction_payload: None,
+                    },
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 0,
+                    amount: 1,
+                    status: AssetLockStatus::Broadcast,
+                    proof: None,
+                    shielded_recipient: None,
+                },
+            );
+        }
+        let master = ExtendedPrivKey::new_master(
+            key_wallet::Network::Testnet,
+            &*seed_for(crate::test_support::TEST_PLATFORM_WALLET_MNEMONIC),
+        )
+        .unwrap();
+        let master_key: IdentityPublicKey =
+            dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 0,
+                purpose: dpp::identity::Purpose::AUTHENTICATION,
+                security_level: dpp::identity::SecurityLevel::MASTER,
+                key_type: dpp::identity::KeyType::ECDSA_SECP256K1,
+                data: derive_ecdsa_identity_auth_keypair_from_master(
+                    &master,
+                    key_wallet::Network::Testnet,
+                    0,
+                    MASTER_KEY_INDEX,
+                )
+                .unwrap()
+                .public_key
+                .to_vec()
+                .into(),
+                ..Default::default()
+            }
+            .into();
+        let landed = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0 {
+            id: dash_sdk::platform::dashpay::identity_id_for_out_point(lock),
+            public_keys: [(0, master_key.clone())].into(),
+            balance: 0,
+            revision: 1,
+        });
+        let mut sdk = (*manager.sdk).clone();
+        sdk.mock()
+            .expect_fetch(landed.id(), Some(landed.clone()))
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                PublicKeyHash(master_key.public_key_hash().unwrap()),
+                Some(landed.clone()),
+            )
+            .await
+            .unwrap();
+
+        let resolve = || Ok(master.clone());
+        manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                Some(&resolve),
+                None::<&crate::wallet::identity::network::SeedCryptoProvider>,
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        let wm = manager.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).unwrap();
+        assert_eq!(
+            info.identity_manager.slot_state(&wallet_id, 0),
+            SlotState::Occupied(landed.id())
+        );
+        assert!(info.tracked_asset_locks[&lock].status.is_consumed());
     }
 }

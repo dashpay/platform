@@ -58,6 +58,9 @@
 
 use std::collections::BTreeMap;
 
+use dashcore::OutPoint;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
@@ -68,6 +71,7 @@ use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
+use dash_sdk::platform::dashpay::identity_id_for_out_point;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
@@ -195,14 +199,23 @@ impl IdentityWallet {
         // `identity_index` (from `acquire_identity_slot`); a tracked
         // registration lock being resumed already holds its index, which the
         // resolver checks against `identity_index`.
-        let resumes_registration_lock = matches!(
-            funding,
-            AssetLockFunding::FromExistingAssetLock {
-                consume_invitation_voucher: false,
-                ..
+        if let AssetLockFunding::FromExistingAssetLock {
+            out_point,
+            consume_invitation_voucher: false,
+        } = funding
+        {
+            // A resumed registration lock: before anything is resolved or
+            // submitted (a refusal for keys already registered costs a
+            // penalty from the lock each time), see whether the keys derived
+            // at its index are an identity's already: this lock's own (an
+            // earlier submit landed) or another of this wallet's.
+            if let Some(settled) = self
+                .settle_registration_lock(identity_index, &keys_map, out_point)
+                .await?
+            {
+                return settled;
             }
-        );
-        if !resumes_registration_lock {
+        } else {
             match holder {
                 Some(holder @ SlotHolder::Registration { .. }) => {
                     self.require_slot_lease(identity_index, &holder).await?;
@@ -304,7 +317,7 @@ impl IdentityWallet {
                 },
             )
             .await?;
-        let identity = self
+        let identity = match self
             .asset_locks
             .reconcile_asset_lock_submit_result(
                 submit_result,
@@ -312,7 +325,28 @@ impl IdentityWallet {
                 &effective_proof,
                 None,
             )
-            .await?;
+            .await
+        {
+            Ok(identity) => identity,
+            // Platform answered that this lock is spent, that its identity
+            // exists, or that a key is registered already: what holds the
+            // keys derived at this index says which. Anything that does not
+            // settle it is reported as Platform's refusal.
+            Err(refusal) if settles_by_the_slot(&refusal, &proof_out_point) => {
+                match self
+                    .settle_registration_lock(
+                        identity_index,
+                        placeholder.public_keys(),
+                        proof_out_point,
+                    )
+                    .await
+                {
+                    Ok(Some(settled)) => return settled,
+                    Ok(None) | Err(_) => return Err(refusal),
+                }
+            }
+            Err(refusal) => return Err(refusal),
+        };
 
         // Step 4 (best-effort): bookkeeping — add to local
         // IdentityManager + record key derivation breadcrumbs.
@@ -381,6 +415,76 @@ impl IdentityWallet {
         }
 
         Ok(identity)
+    }
+}
+
+impl IdentityWallet {
+    /// What holds the identity keys derived at `identity_index` (`keys_map`,
+    /// derived there), for the registration lock at `out_point`:
+    /// - nothing: `None`;
+    /// - the identity this lock created (its id is the one Platform derives
+    ///   from `out_point`): an earlier submit landed. It is recorded in the
+    ///   slot, the lock is marked consumed, and it is returned as the
+    ///   registration's result;
+    /// - another identity, this wallet's at that index: it is recorded in the
+    ///   slot and [`PlatformWalletError::IdentitySlotTakenOnChain`] returned.
+    ///   The lock stays, for a top-up of that identity or another use.
+    ///
+    /// A lookup that fails is `Err`.
+    async fn settle_registration_lock(
+        &self,
+        identity_index: u32,
+        keys_map: &BTreeMap<u32, IdentityPublicKey>,
+        out_point: OutPoint,
+    ) -> Result<Option<Result<Identity, PlatformWalletError>>, PlatformWalletError> {
+        let Some(taken) = self
+            .slot_taken_on_chain(identity_index, keys_map, None)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let PlatformWalletError::IdentitySlotTakenOnChain { identity_id, .. } = &taken else {
+            return Ok(Some(Err(taken)));
+        };
+        if *identity_id != identity_id_for_out_point(out_point) {
+            return Ok(Some(Err(taken)));
+        }
+        if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "a registration lock's identity was found registered, but the lock could \
+                 not be marked consumed"
+            );
+        }
+        let identity = {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?
+                .identity_manager
+                .identity(identity_id)
+                .map(|managed| managed.identity.clone())
+        };
+        Ok(Some(identity.ok_or(PlatformWalletError::IdentityNotFound(
+            *identity_id,
+        ))))
+    }
+}
+
+/// Whether Platform's `refusal` of a registration with the lock at
+/// `out_point` is one the keys at the registration's index settle: the lock
+/// already spent, the identity it creates already existing, or a key
+/// already registered (which also charged the lock a penalty).
+fn settles_by_the_slot(refusal: &PlatformWalletError, out_point: &OutPoint) -> bool {
+    match refusal {
+        PlatformWalletError::AssetLockAlreadyConsumed(consumed) => consumed == out_point,
+        PlatformWalletError::Sdk(error) => matches!(
+            error.consensus_error(),
+            Some(ConsensusError::StateError(
+                StateError::IdentityAlreadyExistsError(_)
+                    | StateError::DuplicatedIdentityPublicKeyStateError(_)
+            ))
+        ),
+        _ => false,
     }
 }
 
@@ -575,6 +679,54 @@ impl IdentityWallet {
 mod tests {
     use super::*;
     use crate::error::is_instant_lock_timeout;
+    use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
+    use dpp::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+    use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+    use dpp::ProtocolError;
+
+    /// Only the refusals what holds the slot's keys can settle go to it.
+    #[test]
+    fn should_settle_by_the_slot_only_a_spent_lock_an_existing_identity_or_a_taken_key() {
+        let ours = OutPoint::new(Txid::from_byte_array([1; 32]), 0);
+        let other = OutPoint::new(Txid::from_byte_array([2; 32]), 0);
+        let consensus = |error: ConsensusError| {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::ConsensusError(
+                Box::new(error),
+            )))
+        };
+        for (refusal, settles) in [
+            (PlatformWalletError::AssetLockAlreadyConsumed(ours), true),
+            (PlatformWalletError::AssetLockAlreadyConsumed(other), false),
+            (
+                consensus(
+                    StateError::IdentityAlreadyExistsError(IdentityAlreadyExistsError::new(
+                        Identifier::from([3; 32]),
+                    ))
+                    .into(),
+                ),
+                true,
+            ),
+            (
+                consensus(
+                    StateError::DuplicatedIdentityPublicKeyStateError(
+                        DuplicatedIdentityPublicKeyStateError::new(vec![0]),
+                    )
+                    .into(),
+                ),
+                true,
+            ),
+            (
+                consensus(DuplicatedIdentityPublicKeyIdBasicError::new(vec![0]).into()),
+                false,
+            ),
+            (
+                PlatformWalletError::Sdk(dash_sdk::Error::Generic("node".to_string())),
+                false,
+            ),
+        ] {
+            assert_eq!(settles_by_the_slot(&refusal, &ours), settles, "{refusal}");
+        }
+    }
     use dashcore::{OutPoint, Txid};
 
     /// Pins the IS-timeout discriminator: only `FinalityTimeout`
