@@ -57,6 +57,16 @@ class PaymentRecoveryTest {
         }
     }
 
+    /** A held invitation voucher is reclaimed; every other class reads as it always does. */
+    @Test
+    fun shouldTellAnInvitationVoucherToBeReclaimed() {
+        val resume = PaymentRecovery.Resume(AssetLockBuiltOutPoint.fromRawBytes(held))
+        assertTrue(resume.invitationVoucherSuggestion.contains("Reclaim the voucher"))
+        assertFalse(resume.invitationVoucherSuggestion.contains("Resume"))
+        listOf(PaymentRecovery.Retry, PaymentRecovery.Wait, PaymentRecovery.Reconcile, PaymentRecovery.Unconfirmed)
+            .forEach { assertEquals(it.suggestion, it.invitationVoucherSuggestion) }
+    }
+
     @Test
     fun shouldNotClaimAnOutcomeOrARetryWithoutTheClass() {
         val changed = DashSdkError.PlatformWallet.DocumentPriceChanged("d", 1u, 2u)

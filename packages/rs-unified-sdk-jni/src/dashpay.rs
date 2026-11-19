@@ -29,7 +29,10 @@ use jni::sys::{
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
-use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
+use platform_wallet_ffi::error::{
+    platform_wallet_ffi_result_free, PlatformWalletFFIPaymentDelivery, PlatformWalletFFIResult,
+    PlatformWalletFFIResultCode,
+};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::invitation::InvitationPreviewFFI;
@@ -1096,12 +1099,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             // Success with no link is a broken invariant, not an empty
             // result: the funded voucher is recorded (persistence callback)
             // and reclaimable from the Sent list, but there is nothing to
-            // share — fail loudly instead of returning "".
-            crate::support::throw_sdk_exception(
-                env,
-                99,
+            // share — fail loudly instead of returning "". The call wrote
+            // the voucher's outpoint, so the failure names it as held: the
+            // host reclaims that voucher instead of funding a new invitation
+            // (← Swift `createInvitation`).
+            let mut failure = PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
                 "create succeeded but returned no link; the voucher is recorded and reclaimable",
             );
+            failure.payment_delivery = PlatformWalletFFIPaymentDelivery::LockHeld;
+            failure.held_asset_lock = outpoint;
+            crate::support::throw_pwffi_result(env, &failure);
             return ptr::null_mut();
         };
         new_jstring(env, value)

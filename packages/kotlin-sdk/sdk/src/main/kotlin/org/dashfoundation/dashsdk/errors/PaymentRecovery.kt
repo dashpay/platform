@@ -15,6 +15,14 @@ sealed class PaymentRecovery {
     /** Text fit to show a person: what happened and the one action allowed. */
     abstract val suggestion: String
 
+    /**
+     * [suggestion] for a failed invitation create, whose held lock is the
+     * invitation's voucher: the generic resume refuses a voucher lock, and its
+     * funds come back through the voucher's reclaim. The host knows it from
+     * the operation that failed; the class is the same.
+     */
+    open val invitationVoucherSuggestion: String get() = suggestion
+
     /** Nothing left the wallet and the native wallet allows running it again. */
     data object Retry : PaymentRecovery() {
         override val suggestion = "Nothing was sent. You can try again."
@@ -33,6 +41,10 @@ sealed class PaymentRecovery {
     data class Resume(val outPoint: AssetLockBuiltOutPoint) : PaymentRecovery() {
         override val suggestion =
             "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."
+
+        override val invitationVoucherSuggestion =
+            "The funds are held in the invitation's voucher lock. Reclaim the voucher from Sent " +
+                "invitations to get them back; do not create a new invitation."
     }
 
     /** The payment may have left the wallet: let sync settle it, never offer a second one. */
