@@ -126,8 +126,9 @@ pub extern "C" fn platform_wallet_identity_slot_release_registration(
 
 /// Give up the slot of an invitation claim abandoned before it was sent, by
 /// the outpoint [`platform_wallet_identity_slot_acquire_invitation_claim`]
-/// wrote. Refused when the claim may have reached Platform; its outcome frees
-/// the slot then. The release is stored durably.
+/// wrote. Refused with `ErrorIdentitySlotClaimSubmitted` when the claim may
+/// have reached Platform; its outcome frees the slot then, and a retried
+/// claim gets the same slot. The release is stored durably.
 ///
 /// # Safety
 /// `invitation_out_point` must point to 36 readable bytes.

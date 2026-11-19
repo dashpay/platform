@@ -823,6 +823,13 @@ pub enum PlatformWalletFFIResultCode {
     /// `{ "identityIndex": <u32>, "identityId": "<base58>" }`.
     ErrorIdentitySlotTakenOnChain = 78,
 
+    /// Maps `PlatformWalletError::IdentitySlotClaimSubmitted`: the release of
+    /// an invitation claim's slot was refused because the claim may have
+    /// reached Platform; only its outcome frees the slot. Retry the claim
+    /// (it gets the same slot) rather than abandoning it. The message is a
+    /// JSON object `{ "identityIndex": <u32> }`.
+    ErrorIdentitySlotClaimSubmitted = 79,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1110,6 +1117,10 @@ fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIRe
                 "identityId": identity_id.to_string(Encoding::Base58),
             })
             .to_string(),
+        )),
+        PlatformWalletError::IdentitySlotClaimSubmitted { identity_index } => Some((
+            PlatformWalletFFIResultCode::ErrorIdentitySlotClaimSubmitted,
+            serde_json::json!({ "identityIndex": identity_index }).to_string(),
         )),
         _ => None,
     }
@@ -2728,6 +2739,12 @@ mod tests {
         let detail: serde_json::Value = serde_json::from_str(&message_of(&taken)).unwrap();
         assert_eq!(detail["identityIndex"], 4);
         assert_eq!(detail["identityId"], id.to_string(Encoding::Base58));
+
+        let submitted: PlatformWalletFFIResult =
+            PlatformWalletError::IdentitySlotClaimSubmitted { identity_index: 5 }.into();
+        assert_eq!(submitted.code as u32, 79);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&submitted)).unwrap();
+        assert_eq!(detail["identityIndex"], 5);
     }
 
     #[test]

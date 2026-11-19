@@ -159,11 +159,9 @@ impl IdentityWallet {
             return Ok(manager.release_identity_slot(&self.wallet_id, &holder));
         };
         if leased.phase == SlotLeasePhase::Submitted {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "the invitation claim at identity index {} may have reached Platform; \
-                 its slot is freed only by the claim's outcome",
-                leased.identity_index
-            )));
+            return Err(PlatformWalletError::IdentitySlotClaimSubmitted {
+                identity_index: leased.identity_index,
+            });
         }
         manager.release_identity_slot(&self.wallet_id, &holder);
         let changeset = PlatformWalletChangeSet {
@@ -715,10 +713,14 @@ mod tests {
 
         let refused = wallet.identity().release_identity_slot(slot.holder).await;
 
-        assert!(matches!(
-            refused,
-            Err(PlatformWalletError::InvalidParameter(_))
-        ));
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::IdentitySlotClaimSubmitted { identity_index })
+                    if identity_index == slot.identity_index
+            ),
+            "{refused:?}"
+        );
         let retried = wallet
             .identity()
             .acquire_resolved_slot(claim(1))

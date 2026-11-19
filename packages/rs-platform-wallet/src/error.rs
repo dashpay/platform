@@ -127,6 +127,15 @@ pub enum PlatformWalletError {
         identity_id: Identifier,
     },
 
+    /// The invitation claim leasing slot `identity_index` may have reached
+    /// Platform, so its slot is not given up on request: only the claim's
+    /// outcome frees it. Retry the claim instead, which gets the same slot.
+    #[error(
+        "the invitation claim at identity index {identity_index} may have reached Platform; \
+         its slot is freed only by the claim's outcome"
+    )]
+    IdentitySlotClaimSubmitted { identity_index: u32 },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 
