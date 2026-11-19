@@ -1,3 +1,96 @@
+## [5.1.0-dev.2](https://github.com/dashpay/platform/compare/v5.1.0-dev.1...v5.1.0-dev.2) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** count documents matching any element of a typed array (#5995)
+* **platform:** delete or tombstone a DPNS name (PV15) (#5994)
+* **drive:** never serve a contract parsed under another protocol version from the cache (#5993)
+* **platform:** admission and fee fixes (check tx bundle) (#5984)
+* **platform:** keep document sums in 128 bits when the summed property passes 2^27 (PV15) (#5987)
+* **platform:** a contested DPNS name is open to every contender with a valid preorder (PV15) (#5978)
+* **platform:** keep-history document migration and erase fixes (PV15) (#5915)
+* **platform:** token pool transitions paid from the credit pool bind their fee bundle (PV15) (#5969)
+* **platform:** pin GroveDB at develop 22f163c2 (#5975)
+* **platform:** leave open a contest whose winner cannot be awarded (PV15) (#5944)
+* **sdk:** a DashPay profile update can set or remove its payment addresses (#5970)
+* **dpp:** refuse a byte array of integers that are not bytes from protocol version 15 (#5964)
+* **platform-wallet:** private contact requests derive the sender's per-contact shielded address (#5902)
+* **platform:** hold a document write to the total its type keeps of its summed property (#5956)
+* **platform-wallet:** contact requests carry the sender's per-contact shielded address (#5901)
+* **dpp:** refuse updating a contract whose stored schema repeats a key (PV15) (#5947)
+* **platform:** pin GroveDB at develop 89dc7351 (#5942)
+* **platform:** activate Tenderdash consensus version 2 with protocol version 15 (#5941)
+* **platform:** the token marketplace starts with protocol version 16, not 15 (#5910)
+* **platform:** refuse high-S signatures on key-recovery paths from protocol version 15 (#5899)
+
+### Features
+
+* **dpp:** count documents matching any element of a typed array ([#5995](https://github.com/dashpay/platform/issues/5995))
+* **platform-wallet:** a dedicated shielded account for each identity, proved with the seed ([#5905](https://github.com/dashpay/platform/issues/5905))
+* **platform-wallet:** contact requests carry the sender's per-contact shielded address ([#5901](https://github.com/dashpay/platform/issues/5901))
+* **platform-wallet:** private contact requests derive the sender's per-contact shielded address ([#5902](https://github.com/dashpay/platform/issues/5902))
+* **platform-wallet:** store and commit a record in one backend step ([#5955](https://github.com/dashpay/platform/issues/5955))
+* **platform:** activate Tenderdash consensus version 2 with protocol version 15 ([#5941](https://github.com/dashpay/platform/issues/5941))
+* **platform:** delete or tombstone a DPNS name (PV15) ([#5994](https://github.com/dashpay/platform/issues/5994))
+* **platform:** keep document sums in 128 bits when the summed property passes 2^27 (PV15) ([#5987](https://github.com/dashpay/platform/issues/5987))
+* **platform:** token pool transitions paid from the credit pool bind their fee bundle (PV15) ([#5969](https://github.com/dashpay/platform/issues/5969))
+* **sdk:** a DashPay profile update can set or remove its payment addresses ([#5970](https://github.com/dashpay/platform/issues/5970))
+* **sdk:** delete and tombstone DPNS names from JavaScript ([#5998](https://github.com/dashpay/platform/issues/5998))
+* **sdk:** multiple choice decision proposals in rs-sdk, wasm-sdk and js-evo-sdk ([#5903](https://github.com/dashpay/platform/issues/5903))
+* **sdk:** multiple choice decision proposals in the Swift and Kotlin SDKs ([#5919](https://github.com/dashpay/platform/issues/5919))
+
+
+### Bug Fixes
+
+* **dashmate:** load ZeroSSL config in force mode ([#4298](https://github.com/dashpay/platform/issues/4298))
+* **dashmate:** print the default config or group when called without an argument ([#5655](https://github.com/dashpay/platform/issues/5655))
+* **dashmate:** restrict a gateway TLS private key an older version left readable ([#5654](https://github.com/dashpay/platform/issues/5654))
+* **dpp:** bound the work document validation does for a long enum at protocol version 15 ([#5945](https://github.com/dashpay/platform/issues/5945))
+* **dpp:** refuse a byte array of integers that are not bytes from protocol version 15 ([#5964](https://github.com/dashpay/platform/issues/5964))
+* **dpp:** refuse updating a contract whose stored schema repeats a key (PV15) ([#5947](https://github.com/dashpay/platform/issues/5947))
+* **drive:** never serve a contract parsed under another protocol version from the cache ([#5993](https://github.com/dashpay/platform/issues/5993))
+* **platform-wallet:** a contact request proves the sender's shielded account itself ([#5971](https://github.com/dashpay/platform/issues/5971))
+* **platform-wallet:** keep contact request holds consistent after an unconfirmed send ([#5908](https://github.com/dashpay/platform/issues/5908))
+* **platform-wallet:** trust a stored record only when no other flush dropped it ([#5923](https://github.com/dashpay/platform/issues/5923))
+* **platform:** a contested DPNS name is open to every contender with a valid preorder (PV15) ([#5978](https://github.com/dashpay/platform/issues/5978))
+* **platform:** admission and fee fixes (check tx bundle) ([#5984](https://github.com/dashpay/platform/issues/5984))
+* **platform:** hold a document write to the total its type keeps of its summed property ([#5956](https://github.com/dashpay/platform/issues/5956))
+* **platform:** keep-history document migration and erase fixes (PV15) ([#5915](https://github.com/dashpay/platform/issues/5915))
+* **platform:** leave open a contest whose winner cannot be awarded (PV15) ([#5944](https://github.com/dashpay/platform/issues/5944))
+* **platform:** refuse high-S signatures on key-recovery paths from protocol version 15 ([#5899](https://github.com/dashpay/platform/issues/5899))
+* **platform:** the token marketplace starts with protocol version 16, not 15 ([#5910](https://github.com/dashpay/platform/issues/5910))
+* **sdk:** mobile yes/no proposal writes survive a cancelled caller and a released wallet ([#5935](https://github.com/dashpay/platform/issues/5935))
+
+
+### Miscellaneous Chores
+
+* **platform:** pin `rust-dashcore` at the `v0.46.0` release ([#5914](https://github.com/dashpay/platform/issues/5914))
+* **platform:** pin GroveDB at develop 22f163c2 ([#5975](https://github.com/dashpay/platform/issues/5975))
+* **platform:** pin GroveDB at develop 2cfc1ce1 ([#6001](https://github.com/dashpay/platform/issues/6001))
+* **platform:** pin GroveDB at develop 89dc7351 ([#5942](https://github.com/dashpay/platform/issues/5942))
+
+
+### Continuous Integration
+
+* build and rehearse Dashmate macOS packages on macos-15 ([#5921](https://github.com/dashpay/platform/issues/5921))
+
+
+### Documentation
+
+* an unreleased generation is edited in place, not copied to a new vN ([#5973](https://github.com/dashpay/platform/issues/5973))
+* define when a protocol version counts as shipped ([#5911](https://github.com/dashpay/platform/issues/5911))
+
+
+### Build System
+
+* **dashmate:** upgrade Tenderdash to v2.0.0-dev.3 ([#5972](https://github.com/dashpay/platform/issues/5972))
+
+
+### Tests
+
+* **drive-abci:** pin the check tx reservation split and fix its doc ([#5990](https://github.com/dashpay/platform/issues/5990))
+
 ## [5.1.0-dev.1](https://github.com/dashpay/platform/compare/v5.0.3...v5.1.0-dev.1) (2026-11-13)
 
 
