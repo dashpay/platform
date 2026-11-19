@@ -487,6 +487,49 @@ async fn should_refuse_a_top_up_from_a_wallet_no_longer_current_on_both_routes()
     assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
+/// The managed sign step reads the wallet manager outside the lifecycle
+/// gate, so a wallet re-created after the gate's liveness check must still
+/// be refused there as not sent: never read as the replacement's state
+/// (which lacks the identity and would say `IdentityNotFound`), never signed.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_refuse_the_managed_sign_step_of_a_re_created_wallet_as_not_sent() {
+    let mut fixture = Fixture::new(true).await;
+    let wallet_id = fixture.wallet.wallet_id();
+    fixture
+        .manager
+        .remove_wallet(&wallet_id)
+        .await
+        .expect("removed");
+    fixture
+        .manager
+        .create_wallet_from_seed_bytes(
+            key_wallet::Network::Testnet,
+            &[42; 64],
+            WalletAccountCreationOptions::None,
+            Some(0),
+        )
+        .await
+        .expect("re-created");
+
+    let signed = fixture
+        .wallet
+        .identity()
+        .sign_top_up_from_addresses(
+            &Identifier::from(OWN_IDENTITY),
+            vec![(ADDRESS, AMOUNT)],
+            &fixture.signer,
+            settings(),
+        )
+        .await
+        .err();
+    assert!(
+        matches!(&signed, Some(PlatformWalletError::WalletRemovedBeforeSend(id))
+            if *id == hex::encode(wallet_id)),
+        "{signed:?}"
+    );
+    assert_eq!(fixture.submissions().await, (0, 0, 0));
+}
+
 /// Signs like [`AddressSigner`], but only once released: holds a top-up in
 /// its signing step.
 #[derive(Debug)]

@@ -96,9 +96,10 @@ impl IdentityWallet {
         let inputs = funding_inputs(inputs)?;
         let identity = {
             let wm = self.wallet_manager.read().await;
-            // Read outside the lifecycle gate: a wallet gone by now was
-            // removed after the liveness check, before anything was sent.
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            // Read outside the lifecycle gate: a wallet removed or
+            // re-created since the liveness check is refused here, before
+            // its replacement's state is read or anything is signed.
+            let info = self.current_wallet_info(&wm).map_err(|_| {
                 PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
             })?;
             let manager = &info.identity_manager;
