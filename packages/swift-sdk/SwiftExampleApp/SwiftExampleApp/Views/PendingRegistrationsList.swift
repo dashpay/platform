@@ -95,7 +95,8 @@ struct PendingRegistrationRow: View {
             .padding(.vertical, 2)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            // `.failed` is always dismissable. `.unconfirmed` only becomes
+            // `.failed` is dismissable only when its class allows a fresh
+            // registration (see `isDismissable`). `.unconfirmed` only becomes
             // dismissable once the matching `PersistentIdentity` row appears
             // via sync (see `isDismissable`): the persisted `isUsed`
             // reservation is best-effort, so until the identity row lands the
@@ -121,9 +122,12 @@ struct PendingRegistrationRow: View {
     private var isDismissable: Bool {
         switch controller.phase {
         case .failed:
-            // The user is expected to read the error and retry; always
-            // dismissable.
-            return true
+            // Only a retryable failure: the live controller is what gates a
+            // fresh registration on this slot (`startRegistration`), so a
+            // failure that may have left, holds a lock, or waits for an
+            // earlier payment stays until its lock is resumed. The
+            // coordinator refuses the same dismissal.
+            return controller.phase.permitsSubmit(resuming: nil)
         case .unconfirmed:
             // The slot is held to block a re-submission that would burn funds
             // (the identity is probably live on chain). The picker's

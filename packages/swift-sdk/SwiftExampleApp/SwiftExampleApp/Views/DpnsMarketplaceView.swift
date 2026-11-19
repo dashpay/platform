@@ -625,7 +625,8 @@ private struct DpnsMarketplaceActionSheet: View {
             } catch {
                 let failure = DpnsMarketplaceUI.tradeFailure(error)
                 await MainActor.run {
-                    alert = .init(title: "\(title): \(failure.title)", message: failure.message)
+                    alert = failure.map { DpnsMarketplaceAlert(title: "\(title): \($0.title)", message: $0.message) }
+                        ?? DpnsMarketplaceAlert(title: title, message: error.localizedDescription)
                     isSubmitting = false
                 }
             }
@@ -752,9 +753,12 @@ enum DpnsMarketplaceUI {
 
     /// A failed trade (list, delist, transfer, purchase): what happened to
     /// the payment and the action its class allows (`PaymentFailure`),
-    /// followed by what the case says about the listing.
-    static func tradeFailure(_ error: Error) -> PaymentFailure {
-        PaymentFailure(payment: PaymentFailure.paymentClass(of: error), detail: self.error(error))
+    /// followed by what the case says about the listing. `nil` when no
+    /// payment was attempted (`PaymentFailure.ofPayment`): the error shows as
+    /// its own message.
+    static func tradeFailure(_ error: Error) -> PaymentFailure? {
+        guard PaymentFailure.ofPayment(error) != nil else { return nil }
+        return PaymentFailure(payment: PaymentFailure.paymentClass(of: error), detail: self.error(error))
     }
 
     /// What the error says about the listing. Says nothing about whether

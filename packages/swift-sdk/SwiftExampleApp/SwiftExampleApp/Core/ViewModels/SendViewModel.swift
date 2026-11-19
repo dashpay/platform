@@ -838,8 +838,13 @@ class SendViewModel: ObservableObject {
             // Every flow (Core, Platform, shielded) presents its failure by
             // Rust's class: a retry only for a retryable NotSent, the held
             // lock's resume for LockHeld, and a wait for a payment that may
-            // have left or that nothing classified (never "failed").
-            paymentFailure = PaymentFailure(error)
+            // have left (never "failed"). An error no payment raised (an
+            // input check before any send) shows as its own message.
+            if let failure = PaymentFailure.ofPayment(error) {
+                paymentFailure = failure
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 

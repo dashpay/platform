@@ -9,7 +9,8 @@ import SwiftDashSDK
 /// The class is the error's `payment` (delivery, `isRetryable`, the held
 /// lock), read through the SDK's `PlatformPaymentRecovery`:
 /// - a retryable `.notSent` offers a retry;
-/// - `.lockHeld` resumes the named lock and never funds a new one;
+/// - `.lockHeld` resumes the named lock and never funds a new one (an
+///   invitation's voucher lock is reclaimed instead, `invitationVoucher`);
 /// - everything else waits: a non-retryable `.notSent` (an earlier payment
 ///   may still be settling), `.maybeSent` (sync settles it) and an
 ///   unclassified failure (unconfirmed, never retried).
@@ -28,14 +29,42 @@ struct PaymentFailure: Equatable {
     let recovery: PlatformPaymentRecovery
     /// The error's own description, shown after the class's text.
     let detail: String
+    /// Whether the operation that failed created an invitation, so a held
+    /// lock is the invitation's voucher: its funds come back through the
+    /// voucher's reclaim, not the generic resume (which refuses a voucher).
+    /// Known from the operation, never from the error.
+    let invitationVoucher: Bool
 
-    init(_ error: Error) {
-        self.init(payment: Self.paymentClass(of: error), detail: error.localizedDescription)
+    init(_ error: Error, invitationVoucher: Bool = false) {
+        self.init(
+            payment: Self.paymentClass(of: error),
+            detail: error.localizedDescription,
+            invitationVoucher: invitationVoucher
+        )
     }
 
-    init(payment: PlatformPaymentClass?, detail: String) {
+    init(payment: PlatformPaymentClass?, detail: String, invitationVoucher: Bool = false) {
         self.recovery = PlatformPaymentRecovery(payment)
         self.detail = detail
+        self.invitationVoucher = invitationVoucher
+    }
+
+    /// The failure a payment screen's `error` stands for, or `nil` when no
+    /// payment was attempted, which the screen shows as its own message
+    /// (← Kotlin `PaymentFailure.ofPayment`): the screen's own input check (not
+    /// an SDK error), or a wallet error Rust gave no class. Rust classes every
+    /// failure of a payment the wallet ran, so a wallet error without one is a
+    /// refusal before any payment (a Swift-side input check, a native pointer
+    /// or handle refusal), as `ErrorCategorizer` presents it too.
+    static func ofPayment(_ error: Error, invitationVoucher: Bool = false) -> PaymentFailure? {
+        switch error {
+        case let wallet as PlatformWalletError where wallet.payment == nil:
+            return nil
+        case is PlatformWalletError, is ShieldedIdentityCreateUnconfirmedError, is SDKError:
+            return PaymentFailure(error, invitationVoucher: invitationVoucher)
+        default:
+            return nil
+        }
     }
 
     /// Rust's class of the error, `nil` when it carries none.
@@ -68,7 +97,8 @@ struct PaymentFailure: Equatable {
         switch recovery {
         case .retry: return "Failed"
         case .wait: return "Not sent"
-        case .resume: return "Funds held in an asset lock"
+        case .resume:
+            return invitationVoucher ? "Funds held in the invitation voucher" : "Funds held in an asset lock"
         case .reconcile: return "May have gone through"
         case .unconfirmed: return "Not confirmed"
         }
@@ -76,6 +106,10 @@ struct PaymentFailure: Equatable {
 
     /// The class's text, the held lock when there is one, then the detail.
     var message: String {
+        if let heldLock, invitationVoucher {
+            return "\(recovery.invitationVoucherSuggestion) Voucher lock \(heldLock.outPointHex) is "
+                + "listed under Sent invitations. \(detail)"
+        }
         if let heldLock {
             return "\(recovery.suggestion) Asset lock \(heldLock.outPointHex) is listed with the "
                 + "wallet's resumable asset locks. \(detail)"

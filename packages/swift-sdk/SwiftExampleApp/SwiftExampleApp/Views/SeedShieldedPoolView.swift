@@ -49,7 +49,9 @@ struct SeedShieldedPoolView: View {
         case idle
         case inFlight
         case completed
-        case failed(PaymentFailure)
+        /// `title` and `message` come from `PaymentFailure` for a failed
+        /// payment, from the error itself when no payment was attempted.
+        case failed(title: String, message: String)
     }
     @State private var phase: Phase = .idle
     @State private var progress: SeedShieldedPoolProgress? = nil
@@ -69,8 +71,8 @@ struct SeedShieldedPoolView: View {
                     progressSection
                 case .completed:
                     completedSection
-                case .failed(let failure):
-                    failedSection(failure)
+                case .failed(let title, let message):
+                    failedSection(title: title, message: message)
                 }
             }
             .navigationTitle("Seed Pool Notes")
@@ -247,11 +249,11 @@ struct SeedShieldedPoolView: View {
     }
 
     /// Only Dismiss: a seeding that may have funded locks is never offered
-    /// again from here; `failure` says what its class allows.
-    private func failedSection(_ failure: PaymentFailure) -> some View {
+    /// again from here; the message says what its class allows.
+    private func failedSection(title: String, message: String) -> some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Label(failure.title, systemImage: "xmark.octagon.fill")
+                Label(title, systemImage: "xmark.octagon.fill")
                     .foregroundColor(.red)
                     .font(.headline)
                 if let p = progress {
@@ -259,7 +261,7 @@ struct SeedShieldedPoolView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                Text(failure.message)
+                Text(message)
                     .font(.callout)
                     .foregroundColor(.primary)
                     .textSelection(.enabled)
@@ -306,9 +308,12 @@ struct SeedShieldedPoolView: View {
                 )
                 await MainActor.run { phase = .completed }
             } catch {
-                let failure = PaymentFailure(error)
+                let failure = PaymentFailure.ofPayment(error)
                 await MainActor.run {
-                    phase = .failed(failure)
+                    phase = .failed(
+                        title: failure?.title ?? "Seeding did not start",
+                        message: failure?.message ?? error.localizedDescription
+                    )
                 }
             }
         }

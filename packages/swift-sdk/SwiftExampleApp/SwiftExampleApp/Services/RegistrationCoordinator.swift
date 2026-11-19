@@ -158,10 +158,24 @@ final class RegistrationCoordinator: ObservableObject {
     /// Manually drop a controller from the map. Used by the UI's
     /// "Dismiss" action on a `.failed` row (failures stay
     /// indefinitely until acknowledged so the user can read the
-    /// error).
-    func dismiss(walletId: Data, identityIndex: UInt32) {
+    /// error) and its "Done" after a completion.
+    ///
+    /// A failed slot is dropped only when its class allows a fresh
+    /// registration (`permitsSubmit(resuming: nil)`, a retryable failure):
+    /// `startRegistration` gates a restart only on a slot it still holds, so
+    /// dropping a failure that may have left, holds a lock, or waits for an
+    /// earlier payment would let a fresh registration pay again on the same
+    /// index. Such a slot stays until its lock is resumed or the app
+    /// restarts. Returns whether the controller was dropped.
+    @discardableResult
+    func dismiss(walletId: Data, identityIndex: UInt32) -> Bool {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
+        if let controller = controllers[key], case .failed = controller.phase,
+           !controller.phase.permitsSubmit(resuming: nil) {
+            return false
+        }
         controllers.removeValue(forKey: key)
+        return true
     }
 
     // MARK: - Retention sweep
@@ -199,7 +213,8 @@ final class RegistrationCoordinator: ObservableObject {
                     }
                 case .failed, .unconfirmed:
                     // Keep indefinitely; the user dismisses manually via the
-                    // "Dismiss" action (for `.unconfirmed`, only after the
+                    // "Dismiss" action (for `.failed`, only a failure whose
+                    // class allows a retry; for `.unconfirmed`, only after the
                     // identity row appears via sync). Return so the poll loop
                     // doesn't spin.
                     return

@@ -115,8 +115,9 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
       showResult = true
     } catch {
       // The asset lock may already be consumed: present the failure by its
-      // payment class (unclassified here reads as unconfirmed, no retry).
-      errorMessage = PaymentFailure(error).message
+      // payment class (an SDK error with no class reads as unconfirmed, no
+      // retry); one no payment raised shows as its own message.
+      errorMessage = PaymentFailure.ofPayment(error)?.message ?? error.localizedDescription
       showResult = true
     }
     isLoading = false

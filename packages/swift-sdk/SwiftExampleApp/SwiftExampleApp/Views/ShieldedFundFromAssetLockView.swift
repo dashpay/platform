@@ -129,7 +129,9 @@ struct ShieldedFundFromAssetLockView: View {
         case idle
         case inFlight
         case completed
-        case failed(PaymentFailure)
+        /// `title` and `message` come from `PaymentFailure` for a failed
+        /// payment, from the error itself when no payment was attempted.
+        case failed(title: String, message: String)
     }
     @State private var platformShieldPhase: PlatformShieldPhase = .idle
 
@@ -414,13 +416,13 @@ struct ShieldedFundFromAssetLockView: View {
                     .padding(.top, 4)
                 }
             }
-        case .failed(let failure):
+        case .failed(let title, let message):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(failure.title, systemImage: "xmark.octagon.fill")
+                    Label(title, systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
-                    Text(failure.message)
+                    Text(message)
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
@@ -645,8 +647,12 @@ struct ShieldedFundFromAssetLockView: View {
                     )
                     await MainActor.run { platformShieldPhase = .completed }
                 } catch {
+                    let failure = PaymentFailure.ofPayment(error)
                     await MainActor.run {
-                        platformShieldPhase = .failed(PaymentFailure(error))
+                        platformShieldPhase = .failed(
+                            title: failure?.title ?? "Shield did not start",
+                            message: failure?.message ?? error.localizedDescription
+                        )
                     }
                 }
             }

@@ -417,7 +417,7 @@ struct CreateIdentityView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Could not create identity"),
+                    title: Text(err.title),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -1401,10 +1401,13 @@ struct CreateIdentityView: View {
                     self.isCreating = false
                 }
             } catch {
+                // A failed registration reads by Rust's payment class; an
+                // error no payment raised (saving the created identity)
+                // shows as its own message.
+                let failure = PaymentFailure.ofPayment(error)
                 await MainActor.run {
-                    self.submitError = .init(
-                        message: error.localizedDescription
-                    )
+                    self.submitError = failure.map { SubmitError(title: $0.title, message: $0.message) }
+                        ?? SubmitError(message: error.localizedDescription)
                     self.isCreating = false
                 }
             }
@@ -1537,7 +1540,7 @@ struct CreateIdentityView: View {
                     // ~30 s post-completion retention.
                     return
                 case .failed(let failure):
-                    self.submitError = .init(message: failure.message)
+                    self.submitError = .init(title: failure.title, message: failure.message)
                     self.isCreating = false
                     // Same rationale as `.completed`: keep the
                     // controller so the destination can render
@@ -2319,5 +2322,8 @@ private struct FundingAccountOption: Identifiable {
 /// time the error changes.
 private struct SubmitError: Identifiable {
     let id = UUID()
+    /// The failed payment's title (`PaymentFailure.title`), or the generic
+    /// one for an error no payment raised.
+    var title = "Could not create identity"
     let message: String
 }
