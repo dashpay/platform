@@ -116,11 +116,13 @@ impl Drive {
                             "enumerated contract is missing".to_string(),
                         ))
                     })?;
+                let mut keeps_big_sums = false;
                 for (name, document_type) in fetched.contract.document_types() {
                     let document_type = document_type.as_ref();
                     if !document_type.uses_big_sums() {
                         continue;
                     }
+                    keeps_big_sums = true;
                     stats.types += 1;
                     let type_path = contract_document_type_path_vec(&id, name);
                     // The primary tree holds the type's total. An indexOnly type has none.
@@ -143,6 +145,19 @@ impl Drive {
                             platform_version,
                         )?;
                     }
+                }
+                // The contract reads differently at this version than at the one before it: its
+                // types keep big sums now. A committed-state reader can still put the earlier
+                // reading into the global cache while this block runs, so the block marks the
+                // contract as modified and seeds its block cache with this version's reading,
+                // as for a contract the block rewrites
+                // (`refresh_data_contract_cache_from_state`).
+                if keeps_big_sums {
+                    self.refresh_data_contract_cache_from_state(
+                        id,
+                        Some(transaction),
+                        platform_version,
+                    )?;
                 }
             }
         }

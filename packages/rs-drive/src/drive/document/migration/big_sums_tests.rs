@@ -500,3 +500,56 @@ fn should_convert_a_tree_with_a_provable_count_and_a_plain_sum_into_the_tree_a_c
     );
     assert_consistent(&upgraded);
 }
+
+/// A contract whose types keep big sums reads differently at protocol version 15. After the
+/// conversion a transactional read of it gets that reading, even when a committed-state
+/// reader put the earlier one into the global cache during the block.
+#[test]
+fn should_serve_the_block_the_reading_of_protocol_version_15() {
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    let drive = setup_drive_with_initial_state_structure(Some(version_14()));
+    let contract = setup_contract(
+        &drive,
+        TIP_JAR,
+        None,
+        None,
+        None::<fn(&mut DataContract)>,
+        None,
+        Some(version_14()),
+    );
+    let tips = tips(&contract, version_14());
+    add_tips(&drive, &contract, &tips, version_14());
+    let id = contract.id().to_buffer();
+    let uses_big_sums = |fetch_info: &crate::drive::contract::DataContractFetchInfo| {
+        fetch_info
+            .contract
+            .document_type_for_name("tip")
+            .expect("expected the tip type")
+            .uses_big_sums()
+    };
+
+    drive.cache.data_contracts.clear();
+    let transaction = drive.grove.start_transaction();
+    // A committed-state reader, still at the version before, caches its reading
+    drive
+        .get_contract_with_fetch_info(id, true, None, version_14())
+        .expect("expected to read the contract")
+        .expect("expected the contract");
+    let cached = drive
+        .cache
+        .data_contracts
+        .get(id, true)
+        .expect("expected the committed reading in the cache");
+    assert!(!uses_big_sums(&cached));
+
+    drive
+        .convert_document_sums_to_big_sums(&transaction, version_15())
+        .expect("expected the conversion");
+    assert!(drive.cache.data_contracts.is_modified_in_block(id));
+    let cached = drive
+        .cache
+        .data_contracts
+        .get(id, true)
+        .expect("expected the block to be seeded with its reading");
+    assert!(uses_big_sums(&cached));
+}
