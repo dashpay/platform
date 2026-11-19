@@ -5,9 +5,11 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Value};
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::platform::documents::transitions::DocumentDeleteResult;
 use dash_sdk::platform::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
     RegisterDpnsNameInput,
@@ -157,6 +159,86 @@ extern "C" {
     pub type DpnsRegisterNameOptionsJs;
 }
 
+// ============================================================================
+// DPNS Delete Name / Tombstone Name
+// ============================================================================
+
+/// TypeScript interface for DPNS name deletion options
+#[wasm_bindgen(typescript_custom_section)]
+const DPNS_DELETE_NAME_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for deleting a DPNS name its owner no longer wants (protocol
+ * version 15). The name is free again: anybody may register it.
+ *
+ * A contested name (3 to 19 characters of a-z, 0, 1 and -, once normalized)
+ * can not be deleted, only tombstoned: see `DpnsTombstoneNameOptions`.
+ */
+export interface DpnsDeleteNameOptions {
+  /**
+   * The name to delete: its label ("alice") or the full name ("alice.dash").
+   */
+  name: string;
+
+  /**
+   * The key of the identity holding the name that signs the delete.
+   * Get this from the identity's public keys.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+}
+
+/**
+ * Options for tombstoning a DPNS name its owner no longer wants (protocol
+ * version 15). The name is deleted and nobody can register it again while
+ * the tombstone exists.
+ *
+ * A tombstone can not be undone by anyone: neither its owner nor anybody
+ * else can delete it. The DPNS contract says only that a tombstoned name may
+ * later be brought back and redistributed through a direct or indirect will
+ * of the DAO.
+ *
+ * Any name can be tombstoned. It is the only way to give up a contested name.
+ */
+export interface DpnsTombstoneNameOptions {
+  /**
+   * The name to tombstone: its label ("alice") or the full name ("alice.dash").
+   */
+  name: string;
+
+  /**
+   * The identity holding the name.
+   * Fetch the identity first using `getIdentity()`.
+   */
+  identity: Identity;
+
+  /**
+   * The key of that identity that signs the tombstone.
+   * Get this from the identity's public keys.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DpnsDeleteNameOptions")]
+    pub type DpnsDeleteNameOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "DpnsTombstoneNameOptions")]
+    pub type DpnsTombstoneNameOptionsJs;
+}
+
 // TS definition for DpnsUsernamesQuery used by getDpnsUsernames*
 #[wasm_bindgen(typescript_custom_section)]
 const DPNS_USERNAMES_QUERY_TS: &'static str = r#"
@@ -227,6 +309,8 @@ fn extract_callback_from_options(
 const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
 /// DPNS domain document type
 const DPNS_DOCUMENT_TYPE: &str = "domain";
+/// DPNS document type of a name given up for good, from DPNS v3
+const DPNS_TOMBSTONE_DOCUMENT_TYPE: &str = "tombstone";
 
 impl WasmSdk {
     /// Get DPNS contract, checking context provider cache first, then fetching if needed.
@@ -429,6 +513,92 @@ impl WasmSdk {
             .is_dpns_name_available(label)
             .await
             .map_err(WasmSdkError::from)
+    }
+
+    /// Whether a DPNS name is tombstoned: its owner gave it up for good, and nobody
+    /// can register it while the tombstone exists. `dpnsIsNameAvailable` is false
+    /// for such a name. False for a registered name and for a free one, and always
+    /// false before protocol version 15.
+    ///
+    /// @param name - The label ("alice") or the full name ("alice.dash")
+    /// @returns Promise that resolves to whether the name is tombstoned
+    #[wasm_bindgen(js_name = "dpnsIsNameTombstoned")]
+    pub async fn dpns_is_name_tombstoned(&self, name: &str) -> Result<bool, WasmSdkError> {
+        self.as_ref()
+            .is_dpns_name_tombstoned(name)
+            .await
+            .map_err(WasmSdkError::from)
+    }
+
+    /// Delete a DPNS name its owner no longer wants (protocol version 15). The name
+    /// is free again: anybody may register it. The owner is refunded what is left of
+    /// the name's storage fee.
+    ///
+    /// A contested name (3 to 19 characters of a-z, 0, 1 and -, once normalized) can
+    /// not be deleted, only tombstoned with `dpnsTombstoneName`: the call rejects
+    /// before anything is broadcast.
+    ///
+    /// @param options - Delete options including name, identity key, and signer
+    /// @returns Promise that resolves to the id of the deleted domain document
+    #[wasm_bindgen(js_name = "dpnsDeleteName")]
+    pub async fn dpns_delete_name(
+        &self,
+        options: DpnsDeleteNameOptionsJs,
+    ) -> Result<IdentifierWasm, WasmSdkError> {
+        let name: String = try_from_options_with(&options, "name", |v| try_to_string(v, "name"))?;
+        let identity_public_key: IdentityPublicKey =
+            IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        let DocumentDeleteResult::Deleted(document_id) = self
+            .as_ref()
+            .delete_dpns_name(&name, &identity_public_key, &signer)
+            .await?;
+
+        Ok(IdentifierWasm::from(document_id))
+    }
+
+    /// Tombstone a DPNS name its owner no longer wants (protocol version 15): the
+    /// name is deleted and nobody can register it again while the tombstone exists.
+    /// The owner is refunded what is left of the name's storage fee and pays for the
+    /// tombstone's.
+    ///
+    /// A tombstone can not be undone by anyone: neither its owner nor anybody else
+    /// can delete it. The DPNS contract says only that a tombstoned name may later
+    /// be brought back and redistributed through a direct or indirect will of the
+    /// DAO.
+    ///
+    /// Any name can be tombstoned. It is the only way to give up a contested name.
+    ///
+    /// @param options - Tombstone options including name, identity, identity key, and signer
+    /// @returns Promise that resolves to the tombstone document the network stored
+    #[wasm_bindgen(js_name = "dpnsTombstoneName")]
+    pub async fn dpns_tombstone_name(
+        &self,
+        options: DpnsTombstoneNameOptionsJs,
+    ) -> Result<DocumentWasm, WasmSdkError> {
+        let name: String = try_from_options_with(&options, "name", |v| try_to_string(v, "name"))?;
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let identity_public_key: IdentityPublicKey =
+            IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        let dpns_contract_id = Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
+
+        let tombstone = self
+            .as_ref()
+            .tombstone_dpns_name(&name, identity.id(), identity_public_key, &signer)
+            .await?;
+
+        Ok(DocumentWasm::new(
+            tombstone,
+            dpns_contract_id,
+            DPNS_TOMBSTONE_DOCUMENT_TYPE.to_string(),
+            None,
+        ))
     }
 
     #[wasm_bindgen(js_name = "dpnsResolveName")]

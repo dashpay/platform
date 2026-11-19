@@ -26,6 +26,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [What a document costs (`documentCreateCost`)](#what-a-document-costs-documentcreatecost)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
+- [Giving up a DPNS name](#giving-up-a-dpns-name)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -137,7 +138,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.documents`](src/documents/facade.ts) | Query, create, replace, delete, and transfer documents; aggregate `count` / `sum` / `average` over indexed fields; `ranked` top-K and `having` range queries over ranked indexes |
 | [`sdk.contracts`](src/contracts/facade.ts) | Fetch, publish, and update data contracts |
 | [`sdk.tokens`](src/tokens/facade.ts) | Mint, burn, transfer, freeze tokens and query balances |
-| [`sdk.dpns`](src/dpns/facade.ts) | Register and resolve Dash Platform names |
+| [`sdk.dpns`](src/dpns/facade.ts) | Register and resolve Dash Platform names; delete or tombstone a name its owner gives up |
 | [`sdk.epoch`](src/epoch/facade.ts) | Query epoch information and evonode proposed blocks |
 | [`sdk.protocol`](src/protocol/facade.ts) | Protocol version upgrade state and voting |
 | [`sdk.stateTransitions`](src/state-transitions/facade.ts) | Broadcast and wait for state transitions |
@@ -864,6 +865,30 @@ const next = await sdk.documents.composite({
 ```
 
 `limit` on the page is required (1–100) and bounds every derived clause (at most 100 values reach a sub-query). A sub-query may bind the page (`bind.source: 'page'`, the default) or an earlier `documents` sub-query by index (`bind.source: 1`), so quoted posts can in turn pull their authors' profiles. Every sub-query walks in the page's direction: leave a lookup's ordering out and it inherits that direction, while an ordering that disagrees with the page is refused. Sub-results come back in request order as `{ kind: 'documents', documents }` (a join in first-appearance order of the page's ids, a lookup or sibling in query order) or `{ kind: 'counts', counts }` (a `Map` keyed by the bound value's base58 identifier; a value with no entry counts zero). There is no cursor on this surface; paginate with a range clause on the page's ordering property. `sdk.documents.compositeWithProof(...)` returns the same result with the metadata and proof envelope attached.
+
+## Giving up a DPNS name
+
+From protocol version 15 the identity holding a DPNS name can throw it away, one of two ways:
+
+```ts
+// Delete: the name is free again, anybody may register it.
+// Resolves to the id of the deleted domain document.
+const deletedId = await sdk.dpns.deleteName({ name: 'a-name-i-no-longer-want.dash', identityKey, signer });
+
+// Tombstone: the name is deleted and nobody can register it again.
+// Resolves to the tombstone document the network stored.
+const tombstone = await sdk.dpns.tombstoneName({ name: 'alice.dash', identity, identityKey, signer });
+
+await sdk.dpns.isNameTombstoned('alice.dash'); // true
+await sdk.dpns.isNameAvailable('alice');       // false: a tombstoned name is not available
+```
+
+`name` is the label (`alice`) or the full name (`alice.dash`). In both calls the owner is refunded what is left of the name's storage fee; a tombstone also pays for its own storage.
+
+- **A contested name can only be tombstoned.** A name whose normalized label is 3 to 19 characters of `a-z`, `0`, `1` and `-` is contested (`sdk.dpns.isContestedUsername(label)`): a masternode vote awards it, and the network refuses a delete of it. `deleteName` rejects such a name before anything is broadcast.
+- **A tombstone can not be undone by anyone.** Neither its owner nor anybody else can delete a tombstone. The DPNS contract says only that a tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO. Ask the user to confirm before calling `tombstoneName`.
+
+Before protocol version 15 both calls are refused and `isNameTombstoned` is always false.
 
 ## Contributing
 
