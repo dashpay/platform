@@ -661,20 +661,22 @@ impl PlatformWallet {
                                 .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
                                 let out_point = out_point_from_proof(&proof);
                                 let sender_ovk = sender_ovk_for_retry.clone();
-                                state.bundle = tokio::task::spawn_blocking(move || {
-                                    ProvedShieldFromAssetLockBundle::prove(
-                                        &recipient_for_retry,
-                                        shield_amount,
-                                        out_point,
-                                        &prover_for_retry,
-                                        [0u8; 36],
-                                        sender_ovk,
-                                        dummy_outputs,
-                                        current_platform_version,
-                                    )
-                                })
+                                state.bundle = join_proof(AbortOnDropHandle::new(
+                                    tokio::task::spawn_blocking(move || {
+                                        ProvedShieldFromAssetLockBundle::prove(
+                                            &recipient_for_retry,
+                                            shield_amount,
+                                            out_point,
+                                            &prover_for_retry,
+                                            [0u8; 36],
+                                            sender_ovk,
+                                            dummy_outputs,
+                                            current_platform_version,
+                                        )
+                                    }),
+                                ))
                                 .await
-                                .map_err(|e| dash_sdk::Error::Generic(e.to_string()))??;
+                                .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
                                 state.pool_fee_credits = current_pool_fee;
                                 state.shield_amount = shield_amount;
                             }
