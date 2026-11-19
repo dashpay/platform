@@ -81,12 +81,15 @@ final class ContactRequestOutcomesTests: XCTestCase {
                 "never sent", payment: notSent).localizedDescription))
     }
 
-    /// Both contact-request holds, which Rust classes as maybe sent, keep
-    /// their own outcome so the views mark the contact pending.
-    func testShouldKeepAHoldsOutcomeOverItsMaybeSentClass() {
+    /// Both contact-request holds keep their own outcome so the views mark
+    /// the contact pending, whatever their class: Rust classes the private
+    /// hold as not sent and not retryable (an earlier request blocks it) and
+    /// the public one as maybe sent.
+    func testShouldKeepAHoldsOutcomeOverItsPaymentClass() {
         XCTAssertEqual(
             ContactRequestSubmissionOutcome.of(
-                PlatformWalletError.privateContactRequestPending("held", payment: .maybeSent)),
+                PlatformWalletError.privateContactRequestPending(
+                    "held", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: false))),
             .privateRequestPending)
         XCTAssertEqual(
             ContactRequestSubmissionOutcome.of(

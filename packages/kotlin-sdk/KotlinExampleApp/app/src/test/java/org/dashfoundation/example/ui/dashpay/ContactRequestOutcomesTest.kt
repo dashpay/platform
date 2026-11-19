@@ -102,15 +102,20 @@ class ContactRequestOutcomesTest {
     }
 
     /**
-     * Both contact-request holds, which the wallet classes as maybe sent,
-     * keep their own outcome so the screens mark the contact pending.
+     * Both contact-request holds keep their own outcome so the screens mark
+     * the contact pending, whatever their class: the wallet classes the
+     * private hold as not sent and not retryable (an earlier request blocks
+     * it) and the public one as maybe sent.
      */
     @Test
-    fun shouldKeepAHoldsOutcomeOverItsMaybeSentClass() {
+    fun shouldKeepAHoldsOutcomeOverItsPaymentClass() {
         assertEquals(
             ContactRequestSubmissionOutcome.PrivateRequestPending,
             ContactRequestSubmissionOutcome.of(
-                DashSdkError.PlatformWallet.PrivateContactRequestPending("held", classed(PaymentDelivery.MAYBE_SENT)),
+                DashSdkError.PlatformWallet.PrivateContactRequestPending(
+                    "held",
+                    classed(PaymentDelivery.NOT_SENT, retryable = false),
+                ),
             ),
         )
         assertEquals(
@@ -739,13 +744,16 @@ class ContactRequestOutcomesTest {
 }
 
 /** The native exception a wallet failure carries, with the payment class the wallet gave it. */
-private fun classed(delivery: PaymentDelivery): DashSDKException =
+private fun classed(
+    delivery: PaymentDelivery,
+    retryable: Boolean = delivery == PaymentDelivery.NOT_SENT,
+): DashSDKException =
     DashSDKException(
         code = 0,
         message = "classed",
         consensusError = null,
         paymentDelivery = delivery,
-        retryable = delivery == PaymentDelivery.NOT_SENT,
+        retryable = retryable,
     )
 
 /** A read of both holds that found [contacts] held for a private request and none awaiting a public request's outcome. */

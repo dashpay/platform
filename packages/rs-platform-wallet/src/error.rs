@@ -1482,14 +1482,18 @@ impl PlatformWalletError {
             | Self::ShieldedSpendUnconfirmed { .. }
             | Self::MasternodeWithdrawalUnconfirmed { .. }
             | Self::PublicContactRequestUnconfirmed(_) => MaybeSent,
-            // An earlier payment for the same intent is unresolved: this
-            // call sent nothing new, but the payment it repeats may have
-            // left, so a second one is not offered.
+            // Another payment blocks this request: an earlier one for the
+            // same inputs, contact or identity is still settling, or the
+            // shielded recovery that would settle it cannot run yet. This
+            // call dispatched nothing, so it is `NotSent`; it is not
+            // retryable either (see [`Self::is_retryable`]): the host waits
+            // for the earlier payment to settle, and the earlier payment's
+            // own error carried its class.
             Self::InputMidBroadcast { .. }
             | Self::PrivateContactRequestPending(_)
             | Self::ShieldedIdentityDebitPending { .. }
             | Self::ShieldedRecoveryCorrupted { .. }
-            | Self::ShieldedRecoveryKeysRequired { .. } => MaybeSent,
+            | Self::ShieldedRecoveryKeysRequired { .. } => NotSent,
             // A tracked asset lock is held for the payment and named: it
             // exists and may be on the network, its funds have left the
             // spendable balance, and the payment goes on by resuming it
@@ -1573,6 +1577,9 @@ impl PlatformWalletError {
     /// a recorded anchor, a shielded broadcast refused before it was sent, a
     /// drain that ran out of budget, a private-contact store read that did
     /// not finish, and a persister the store calls transiently unavailable.
+    /// Never for a request another payment blocks (`NotSent`, but running
+    /// it again meets the same refusal): the host waits for the earlier
+    /// payment to settle.
     pub fn is_retryable(&self) -> bool {
         match self.payment_delivery() {
             PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => false,
@@ -1592,6 +1599,14 @@ impl PlatformWalletError {
                 // retry a transient flush allows is another flush, not the
                 // operation.
                 Self::PersisterFlush(_) => false,
+                // Another payment blocks this request. Running it again only
+                // meets the same refusal until that payment settles; the host
+                // waits for it instead.
+                Self::InputMidBroadcast { .. }
+                | Self::PrivateContactRequestPending(_)
+                | Self::ShieldedIdentityDebitPending { .. }
+                | Self::ShieldedRecoveryCorrupted { .. }
+                | Self::ShieldedRecoveryKeysRequired { .. } => false,
                 // Refusals running the same call again does not get past:
                 // the request, the wallet's state or the network has to
                 // change first.
@@ -1667,11 +1682,6 @@ impl PlatformWalletError {
                 | Self::ShieldedSpendUnconfirmed { .. }
                 | Self::MasternodeWithdrawalUnconfirmed { .. }
                 | Self::PublicContactRequestUnconfirmed(_)
-                | Self::InputMidBroadcast { .. }
-                | Self::PrivateContactRequestPending(_)
-                | Self::ShieldedIdentityDebitPending { .. }
-                | Self::ShieldedRecoveryCorrupted { .. }
-                | Self::ShieldedRecoveryKeysRequired { .. }
                 | Self::FinalityTimeout(_)
                 | Self::AssetLockInputContested { .. }
                 | Self::AssetLockRecipientMismatch { .. }
@@ -2780,7 +2790,7 @@ mod payment_delivery_tests {
                 E::InputMidBroadcast {
                     outpoint: out_point(),
                 },
-                MaybeSent,
+                NotSent,
             ),
             (
                 E::MessageSigningAddressInvalid {
@@ -2934,7 +2944,7 @@ mod payment_delivery_tests {
                 NotSent,
             ),
             (E::PrivateContactRequestNeedsPrivateReply(id()), NotSent),
-            (E::PrivateContactRequestPending(id()), MaybeSent),
+            (E::PrivateContactRequestPending(id()), NotSent),
             (E::PublicContactRequestUnconfirmed(id()), MaybeSent),
             (E::PrivateContactStoreNotRead(id()), NotSent),
             (E::PrivateContactPaymentsNotRestored, NotSent),
@@ -3071,21 +3081,21 @@ mod payment_delivery_tests {
                 E::ShieldedIdentityDebitPending {
                     identity_id: [1; 32],
                 },
-                MaybeSent,
+                NotSent,
             ),
             (
                 E::ShieldedRecoveryCorrupted {
                     account_index: None,
                     reason: s(),
                 },
-                MaybeSent,
+                NotSent,
             ),
             (
                 E::ShieldedRecoveryKeysRequired {
                     account_index: 0,
                     reason: s(),
                 },
-                MaybeSent,
+                NotSent,
             ),
             (
                 E::ShieldedSpendUnconfirmed {
@@ -3185,6 +3195,40 @@ mod payment_delivery_tests {
         for (error, _) in held {
             assert!(!error.is_retryable(), "{error:?}");
             assert_eq!(error.held_asset_lock(), Some(out_point()), "{error:?}");
+        }
+    }
+
+    /// A request another payment blocks dispatched nothing (`NotSent`), and
+    /// running it again only meets the same refusal until that payment
+    /// settles, so it is not retryable: the host waits for the earlier one.
+    #[test]
+    fn should_class_a_request_blocked_by_another_payment_as_not_sent_and_not_retryable() {
+        use PlatformWalletError as E;
+        let blocked = [
+            E::InputMidBroadcast {
+                outpoint: out_point(),
+            },
+            E::PrivateContactRequestPending(id()),
+            E::ShieldedIdentityDebitPending {
+                identity_id: [1; 32],
+            },
+            E::ShieldedRecoveryCorrupted {
+                account_index: None,
+                reason: "x".into(),
+            },
+            E::ShieldedRecoveryKeysRequired {
+                account_index: 0,
+                reason: "x".into(),
+            },
+        ];
+        for error in blocked {
+            assert_eq!(
+                error.payment_delivery(),
+                PaymentDelivery::NotSent,
+                "{error:?}"
+            );
+            assert!(!error.is_retryable(), "{error:?}");
+            assert_eq!(error.held_asset_lock(), None, "{error:?}");
         }
     }
 
