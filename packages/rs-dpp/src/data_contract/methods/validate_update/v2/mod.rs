@@ -1,4 +1,5 @@
 use crate::block::block_info::BlockInfo;
+use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -6,10 +7,12 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::{
     first_repeated_key_of_definitions, first_repeated_key_of_schema,
 };
+use crate::data_contract::document_type::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
+use indexmap::IndexMap;
 use platform_version::version::PlatformVersion;
 
 impl DataContract {
@@ -25,6 +28,11 @@ impl DataContract {
     ///
     /// The rule is about an update that submits schemas. A token configuration update submits
     /// none and stores the stored schemas and `$defs` as they are, so it does not come here.
+    ///
+    /// Once generation 1 accepts the update, the members of the objects of a document type the
+    /// update adds are held to the bound its own properties are held to there: no
+    /// `requiredSince` past the version the update creates. A schema set through
+    /// `set_document_schema` is not held to the bound a contract's deserialization checks.
     ///
     /// Delegating to generation 1 is safe because that generation is shipped and therefore
     /// frozen. The checks are independent and short-circuiting, so running the extra one first
@@ -42,7 +50,56 @@ impl DataContract {
             return Ok(result);
         }
 
-        self.validate_update_v1(new_data_contract, block_info, platform_version)
+        let result = self.validate_update_v1(new_data_contract, block_info, platform_version)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        Ok(self.validate_update_new_document_types_member_required_since(new_data_contract))
+    }
+
+    /// Refuses a document type the update adds when a member of one of its objects, at any
+    /// depth, carries a `requiredSince` past the version the update creates. Generation 1 holds
+    /// the type's own properties to that version exactly; a member may name an earlier one, as
+    /// a member of a shared `$defs` definition does.
+    fn validate_update_new_document_types_member_required_since(
+        &self,
+        new_data_contract: &DataContract,
+    ) -> SimpleConsensusValidationResult {
+        let new_version = new_data_contract.version();
+        for (document_type_name, new_document_type) in new_data_contract.document_types() {
+            if self
+                .document_type_optional_for_name(document_type_name)
+                .is_some()
+            {
+                continue;
+            }
+            let past =
+                new_document_type
+                    .as_ref()
+                    .properties()
+                    .iter()
+                    .find_map(|(name, property)| match &property.property_type {
+                        DocumentPropertyType::Object(members) => {
+                            first_member_required_past(members, name, new_version)
+                        }
+                        _ => None,
+                    });
+            if let Some((path, required_since)) = past {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(
+                        document_type_name.clone(),
+                        format!(
+                            "new document type property '{path}' carries requiredSince \
+                             {required_since}, a contract version past the {new_version} this \
+                             update creates"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+        SimpleConsensusValidationResult::new()
     }
 
     /// Refuses the update when an object of a stored document type's schema, or of the
@@ -89,6 +146,30 @@ impl DataContract {
 
         SimpleConsensusValidationResult::new()
     }
+}
+
+/// The dotted path and `requiredSince` of the first of `members`, the members of the object at
+/// `path`, at any depth, required from a version past `version`.
+fn first_member_required_past(
+    members: &IndexMap<String, DocumentProperty>,
+    path: &str,
+    version: u32,
+) -> Option<(String, u32)> {
+    members.iter().find_map(|(name, member)| {
+        let member_path = format!("{path}.{name}");
+        if let Some(required_since) = member
+            .required_since
+            .filter(|required_since| *required_since > version)
+        {
+            return Some((member_path, required_since));
+        }
+        match &member.property_type {
+            DocumentPropertyType::Object(members) => {
+                first_member_required_past(members, &member_path, version)
+            }
+            _ => None,
+        }
+    })
 }
 
 #[cfg(test)]
@@ -413,6 +494,64 @@ mod tests {
         let result = stored
             .validate_update(&updated, &BlockInfo::default(), platform_version)
             .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    /// A document type an update adds may not carry a member required from a version the
+    /// contract has not reached, as its own properties may not: a schema set through
+    /// `set_document_schema` is not held to the bound a contract's deserialization checks.
+    #[test]
+    fn should_refuse_a_new_document_type_whose_member_is_required_from_a_later_version() {
+        use crate::consensus::basic::BasicError;
+
+        let platform_version = PlatformVersion::latest();
+        let stored = get_data_contract_fixture(
+            None,
+            IdentityNonce::default(),
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let new_type = |required_since: u32| {
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "meta": {
+                        "type": "object",
+                        "position": 0,
+                        "properties": {
+                            "x": { "type": "boolean", "position": 0, "requiredSince": required_since },
+                        },
+                        "required": ["x"],
+                        "additionalProperties": false,
+                    },
+                },
+                "additionalProperties": false,
+            })
+        };
+        let update = |required_since: u32| {
+            let mut updated = stored.clone();
+            updated.set_version(stored.version() + 1);
+            updated
+                .set_document_schema(
+                    "other",
+                    new_type(required_since),
+                    true,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("expected the new type to register");
+            stored
+                .validate_update(&updated, &BlockInfo::default(), platform_version)
+                .expect("expected the update to be judged")
+        };
+
+        assert_matches!(
+            update(3).errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+            )] if e.details().contains("meta.x") && e.details().contains("requiredSince 3")
+        );
+        let result = update(2);
         assert!(result.is_valid(), "{:?}", result.errors);
     }
 }

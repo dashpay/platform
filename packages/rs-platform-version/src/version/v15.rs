@@ -1095,7 +1095,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     creates; a member the update adds is required exactly when a `required` list names it;
 ///     an object's `required` loses no name, gains only members the same update adds, and does
 ///     not grow past the object's `maxProperties`; a member is not added as required under a
-///     property listed in `immutable`; and no `required` list, the type's own and those of
+///     property listed in `immutable` or only moderators write, nor inside an object declaring a
+///     whole-object `const` or `enum`; no member of an object an update adds, nor of a document
+///     type it adds, carries a `requiredSince` past the version it creates; and no `required`
+///     list, the type's own and those of
 ///     objects the update adds included, gains a dotted name, or loses one no other list still
 ///     requires (`DocumentTypeUpdateError`, `DataContractInvalidRequiredFieldsUpdateError`).
 ///     Through a `$ref` members are added only as optional: the `required` beside a `$ref`

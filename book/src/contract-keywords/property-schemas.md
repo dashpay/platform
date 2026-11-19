@@ -298,7 +298,7 @@ An object groups members under one property, as DPNS groups a name's records.
 - An object declares `properties`, 1 to 100 members each with a `position`, and `additionalProperties: false`, unless it takes its schema from a [`$ref`](#ref).
 - Its `required` names the members every value of the object must hold. A member the object's `required` names is stored without a presence byte (unless it carries `requiredSince`), so on update, as for the type's own properties, a member keeps its requiredness and nothing leaves the list. From protocol version 15 a member added by an update may join the list with [`requiredSince`](required-since.md#members-of-an-object); before, the list is fixed and an added member is optional.
 - The members are stored in the order of the object's `properties` map. An update adds members after the existing ones; from protocol version 15 one that reorders them or puts a member before them is refused (40212). Tools that rewrite a schema's maps in another key order (sorting them, or putting integer-like keys first) produce such an update.
-- Under an [immutable](mutability.md) property a member is added only as optional: a document stored before would have to add a required one on replace, which changes the property (10276).
+- Under an [immutable](mutability.md) property, a property only moderators write, or an object declaring a whole-object `const` or `enum`, a member is added only as optional: a document stored before would have to add a required one on replace, which changes the property or breaks the constraint (10276).
 - An object is stored with its members inline. An object cannot be indexed, but a member can: an index names it by its dotted path, such as `records.identity`.
 
 ## `$ref`

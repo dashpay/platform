@@ -1125,3 +1125,222 @@ fn should_refuse_a_member_required_from_the_new_version_under_an_immutable_prope
     ];
     run(&cases, PlatformVersion::latest());
 }
+
+/// A member required from the new version is held to what a required top-level property is
+/// held to: no `requiredSince` past the version the update creates, nothing that keeps a
+/// stored document from adding it on replace, and no whole-object `const` or `enum` it could
+/// not meet.
+#[test]
+fn should_refuse_a_member_required_from_the_new_version_that_no_document_could_meet() {
+    let since = |version: u32| with(boolean(1), "requiredSince", Value::U32(version));
+    let constrained = |keyword: &str, constraint: Value, with_x: bool| {
+        let members = if with_x {
+            platform_value!({ "y": boolean(0), "x": since(2) })
+        } else {
+            platform_value!({ "y": boolean(0) })
+        };
+        let required = if with_x {
+            platform_value!(["y", "x"])
+        } else {
+            platform_value!(["y"])
+        };
+        document_type_schema(
+            with_meta(with(
+                object(members, 1, Some(required)),
+                keyword,
+                constraint,
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let cases = vec![
+        case(
+            "a member of an object the update adds, required from a later version",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "x": since(3) }),
+                    1,
+                    Some(platform_value!(["x"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "requiredSince 3"),
+        ),
+        case(
+            "a member required from the new version under an object declaring const",
+            constrained("const", platform_value!({ "y": true }), false),
+            constrained("const", platform_value!({ "y": true }), true),
+            Expected::Refused(10276, "const"),
+        ),
+        case(
+            "a member required from the new version under an object declaring enum",
+            constrained("enum", platform_value!([{ "y": true }]), false),
+            constrained("enum", platform_value!([{ "y": true }]), true),
+            Expected::Refused(10276, "enum"),
+        ),
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// An object only moderators write is like an immutable one for its owner: a replace that adds
+/// a member required from the new version would change it, so such a member is refused there.
+#[test]
+fn should_refuse_a_member_required_from_the_new_version_under_a_field_only_moderators_write() {
+    use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("expected a default config")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: false,
+        }));
+    let make = |members: Value, required: Option<Value>| {
+        let schema = with(
+            document_type_schema(
+                with_meta(object(members, 1, required)),
+                platform_value!(["a"]),
+            ),
+            "moderatorAbilities",
+            platform_value!({ "changeFields": ["meta"] }),
+        );
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "note",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the type to parse")
+    };
+    let old = make(platform_value!({ "y": boolean(0) }), None);
+    let required = make(
+        platform_value!({ "y": boolean(0), "x": with(boolean(1), "requiredSince", Value::U32(2)) }),
+        Some(platform_value!(["x"])),
+    );
+    let optional = make(platform_value!({ "y": boolean(0), "x": boolean(1) }), None);
+
+    let result = old
+        .as_ref()
+        .validate_update(required.as_ref(), 2, platform_version)
+        .expect("expected the update to be judged");
+    assert_verdict(
+        "a member required from the new version under a field only moderators write",
+        &result,
+        Expected::Refused(10276, "moderators"),
+    );
+    let result = old
+        .as_ref()
+        .validate_update(optional.as_ref(), 2, platform_version)
+        .expect("expected the update to be judged");
+    assert_verdict(
+        "an optional member under a field only moderators write",
+        &result,
+        Expected::Accepted,
+    );
+}
+
+/// Through a `$ref` members are added only as optional, whatever lists the schema writes
+/// beside the `$ref`; and the lists written beside a `$ref` an update adds hold no dotted name.
+#[test]
+fn should_hold_additions_through_a_ref_to_optional_members() {
+    let overlay = |entries: Value| {
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "meta": meta_ref(Some(("properties", entries))),
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    let r_entry = || object(platform_value!({ "b": boolean(0) }), 1, None);
+    let definition = |with_p: bool| {
+        let q_members = if with_p {
+            platform_value!({
+                "a": boolean(0),
+                "p": with(boolean(1), "requiredSince", Value::U32(2)),
+            })
+        } else {
+            platform_value!({ "a": boolean(0) })
+        };
+        definitions(platform_value!({
+            "q": object(q_members, 0, None),
+            "r": r_entry(),
+        }))
+    };
+    let new_shared = |q_required: Value| {
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "meta": meta_ref(None),
+                "shared": with(
+                    platform_value!({ "$ref": "#/$defs/n", "position": 2 }),
+                    "properties",
+                    platform_value!({
+                        "q": object(platform_value!({ "a": boolean(0) }), 0, Some(q_required)),
+                    }),
+                ),
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    // A second definition, for the property an update adds beside `meta`: one type may not
+    // reference a definition twice
+    let with_n = |defs: Option<Value>| {
+        let mut defs = defs.expect("expected definitions");
+        defs.set_value(
+            "n",
+            platform_value!({
+                "type": "object",
+                "properties": { "q": object(platform_value!({ "a": boolean(0) }), 0, None) },
+                "additionalProperties": false,
+            }),
+        )
+        .expect("expected a map");
+        Some(defs)
+    };
+    let cases = vec![
+        Case {
+            name: "a definition member made required through properties written beside a $ref",
+            old: overlay(platform_value!({ "r": r_entry() })),
+            new: overlay(platform_value!({
+                "r": r_entry(),
+                "q": object(
+                    platform_value!({
+                        "a": boolean(0),
+                        "p": with(boolean(1), "requiredSince", Value::U32(2)),
+                    }),
+                    0,
+                    Some(platform_value!(["p"])),
+                ),
+            })),
+            old_defs: definition(false),
+            new_defs: definition(true),
+            expected: Expected::Refused(10276, "$ref"),
+        },
+        Case {
+            name: "a dotted name in a list beside a $ref the update adds",
+            old: document_type_schema(
+                platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
+                platform_value!(["a"]),
+            ),
+            new: new_shared(platform_value!(["x.y"])),
+            old_defs: with_n(definition(false)),
+            new_defs: with_n(definition(false)),
+            expected: Expected::Refused(10276, "x.y"),
+        },
+    ];
+    run(&cases, PlatformVersion::latest());
+}

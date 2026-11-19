@@ -21,7 +21,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::property_names::{
-    MAX_PROPERTIES, PROPERTIES, REF, REQUIRED,
+    CONST, ENUM, MAX_PROPERTIES, PROPERTIES, REF, REQUIRED,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
@@ -114,6 +114,12 @@ impl DocumentTypeRef<'_> {
                 .chain(new_document_type.immutable_field_conditions().keys())
                 .map(String::as_str)
                 .collect(),
+            moderator_only: new_document_type
+                .moderator_changeable_fields()
+                .iter()
+                .map(String::as_str)
+                .collect(),
+            new_schema: new_document_type.schema(),
             new_contract_version,
         };
         match first_requiredness_change(
@@ -186,6 +192,10 @@ struct AddedMembers<'a> {
     required_fields: &'a BTreeSet<String>,
     /// The type's own properties the new type lists as `immutable`, with a condition or without.
     immutable: BTreeSet<&'a str>,
+    /// The type's own properties only its moderators write (`moderatorAbilities.changeFields`).
+    moderator_only: BTreeSet<&'a str>,
+    /// The new type's schema, as written.
+    new_schema: &'a Value,
     new_contract_version: u32,
 }
 
@@ -259,6 +269,15 @@ fn added_member_error(
              member's name as naming the member; rename one of them"
         ));
     }
+    if let Some(required_since) = property
+        .required_since
+        .filter(|required_since| *required_since > new_contract_version)
+    {
+        return Some(format!(
+            "new field '{path}' carries requiredSince {required_since}, a contract version past \
+             the {new_contract_version} this update creates"
+        ));
+    }
     if property.required && in_kept_object {
         if property.required_since != Some(new_contract_version) {
             return Some(format!(
@@ -266,11 +285,25 @@ fn added_member_error(
                  contract version this update creates"
             ));
         }
+        // A document stored before must add the member on replace: everything holding it must
+        // let it do so, as nothing keeps a stored document from adding a new top-level property
+        if let Some(refusal) = holding_object_refusal(added.new_schema, path) {
+            return Some(format!(
+                "new required field '{path}' can not be added: {refusal}; add it as optional"
+            ));
+        }
         let top_level = path.split('.').next().unwrap_or(path);
         if added.immutable.contains(top_level) {
             return Some(format!(
                 "new required field '{path}' can not be added under the immutable property \
                  '{top_level}': a document stored before would have to add it on replace, which \
+                 changes '{top_level}'; add it as optional"
+            ));
+        }
+        if added.moderator_only.contains(top_level) {
+            return Some(format!(
+                "new required field '{path}' can not be added under '{top_level}', which only \
+                 the type's moderators write: its owner would have to add it on replace, which \
                  changes '{top_level}'; add it as optional"
             ));
         }
@@ -423,8 +456,39 @@ fn first_required_list_change(
     None
 }
 
+/// Why an object holding the member at `path` keeps it from being added as required, read in
+/// the type's `schema` as written: one takes its members from a `$ref` (through which members
+/// are added only as optional), or declares a whole-object `const` or `enum`, which a document
+/// holding the new member could not meet.
+fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
+    let segments: Vec<&str> = path.split('.').collect();
+    let mut current = schema;
+    for depth in 0..segments.len().saturating_sub(1) {
+        let holder_path = segments[..=depth].join(".");
+        let holder = *inline_member_schemas(current).get(segments[depth])?;
+        if has_ref(holder) {
+            return Some(format!(
+                "'{holder_path}' takes its members from a $ref, through which members are added \
+                 only as optional"
+            ));
+        }
+        if let Some(keyword) = [CONST, ENUM].into_iter().find(|keyword| {
+            holder
+                .as_map()
+                .is_some_and(|holder| holder.get_optional_key(keyword).is_some())
+        }) {
+            return Some(format!(
+                "'{holder_path}' declares {keyword} for the whole object, which a document holding \
+                 the member could not meet"
+            ));
+        }
+        current = holder;
+    }
+    None
+}
+
 /// The first dotted name in a `required` list of the object the update adds at `path`, whose
-/// schema is `schema`, or of an object inside it written inline.
+/// schema is `schema`, or of an object written inside it, beside a `$ref` too.
 fn first_dotted_name_in_added_object(schema: &Value, path: &str) -> Option<String> {
     if let Some(dotted) = required_names(schema)
         .into_iter()
@@ -438,7 +502,6 @@ fn first_dotted_name_in_added_object(schema: &Value, path: &str) -> Option<Strin
     }
     let members = schema
         .as_map()
-        .filter(|schema| schema.get_optional_key(REF).is_none())
         .and_then(|schema| schema.get_optional_key(PROPERTIES))
         .and_then(Value::as_map)?;
     members.iter().find_map(|(name, member)| {
