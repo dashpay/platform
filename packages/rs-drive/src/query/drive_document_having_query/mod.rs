@@ -76,7 +76,8 @@ use super::drive_document_ranked_query::index_picker::{
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::{
-    path::indexed_property_name_tree_path_for_index, read_axis_for, PrefixPin, RankedAxis,
+    index_axis_for, path::indexed_property_name_tree_path_for_index, read_axis_for, PrefixPin,
+    RankedAxis,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::drive::DriveError;
@@ -88,6 +89,8 @@ use crate::error::Error;
 use crate::query::ResolvedTimeRange;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::element::indexed::{encode_avg_sort_key, encode_count_sort_key, encode_sum_sort_key};
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::element::IndexAxis;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::Query;
 
@@ -340,6 +343,30 @@ impl DriveDocumentHavingQuery<'_> {
             }
             bounds => bounds,
         }
+    }
+
+    /// The axis tree a read of [`Self::read_bounds`] walks ([`index_axis_for`]) and the
+    /// inclusive bounds on it, which the reader and the verifier both build the axis query
+    /// from.
+    ///
+    /// On the big sum axis of a type that keeps its sums in 128 bits, a bound at the edge of
+    /// the 64 bits a sum bound carries reads as open: `SUM(x) >= 0` walks the groups past
+    /// `i64::MAX` too, which a read then refuses where it returns one (`sum_in_64_bits`)
+    /// rather than leaves out. An explicit bound at that edge reads the same way, so it can
+    /// refuse a group past it, never miss one inside it.
+    pub fn index_axis_and_bounds(&self) -> (IndexAxis, i128, i128) {
+        let read_bounds = self.read_bounds();
+        let index_axis = index_axis_for(read_bounds.axis(), self.document_type, self.index);
+        let (mut lo, mut hi) = read_bounds.inclusive_bounds_i128();
+        if matches!(index_axis, IndexAxis::BigSum) {
+            if lo == i128::from(i64::MIN) {
+                lo = i128::MIN;
+            }
+            if hi == i128::from(i64::MAX) {
+                hi = i128::MAX;
+            }
+        }
+        (index_axis, lo, hi)
     }
 
     /// The resolved prefix branches, in canonical order — one per `IN`

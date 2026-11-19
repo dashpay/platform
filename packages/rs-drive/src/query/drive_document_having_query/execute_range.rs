@@ -14,9 +14,7 @@
 use super::super::drive_document_ranked_query::branches::{
     axis_keys_to_ranked, decompose_branch_paths, read_branched_union,
 };
-use super::super::drive_document_ranked_query::{
-    index_axis_for, present_entries_on_axis, RankedEntry,
-};
+use super::super::drive_document_ranked_query::{present_entries_on_axis, RankedEntry};
 use super::DriveDocumentHavingQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -67,20 +65,14 @@ impl DriveDocumentHavingQuery<'_> {
                 .collect::<Result<Vec<_>, Error>>()?;
             let read_bounds = self.read_bounds();
             let axis = read_bounds.axis();
-            let (lo, hi) = read_bounds.inclusive_bounds_i128();
+            let (index_axis, lo, hi) = self.index_axis_and_bounds();
             return read_branched_union(
                 &drive.grove,
                 "having",
                 &self.prefix_branches,
                 &paths,
                 axis,
-                AxisQuery::bounded(
-                    index_axis_for(axis, self.document_type, self.index),
-                    lo,
-                    hi,
-                    self.limit,
-                    self.descending,
-                ),
+                AxisQuery::bounded(index_axis, lo, hi, self.limit, self.descending),
                 self.limit as usize,
                 self.descending,
                 transaction,
@@ -104,21 +96,14 @@ impl DriveDocumentHavingQuery<'_> {
         let path = self.indexed_property_name_tree_path(branch)?;
         let read_bounds = self.read_bounds();
         let axis = read_bounds.axis();
-        let (lo, hi) = read_bounds.inclusive_bounds_i128();
+        let (index_axis, lo, hi) = self.index_axis_and_bounds();
 
         // Costs are destructured away rather than `.unwrap()`-ed, same
         // as the ranked executors: `CostContext::unwrap` is infallible
         // but reads like a panicking unwrap at the call site.
         let path_query = PathQuery::new_axis(
             path,
-            AxisQuery::bounded(
-                index_axis_for(axis, self.document_type, self.index),
-                lo,
-                hi,
-                self.limit,
-                self.descending,
-            )
-            .keys_only(),
+            AxisQuery::bounded(index_axis, lo, hi, self.limit, self.descending).keys_only(),
         );
         let CostContext { value, cost: _ } = drive.grove.run_path_query(
             &path_query,
@@ -186,19 +171,12 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let read_bounds = self.read_bounds();
-            let (lo, hi) = read_bounds.inclusive_bounds_i128();
+            let (index_axis, lo, hi) = self.index_axis_and_bounds();
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys,
                 suffix,
-                AxisQuery::bounded(
-                    index_axis_for(read_bounds.axis(), self.document_type, self.index),
-                    lo,
-                    hi,
-                    self.limit,
-                    self.descending,
-                ),
+                AxisQuery::bounded(index_axis, lo, hi, self.limit, self.descending),
             );
             let CostContext { value, cost: _ } =
                 drive.grove.prove_query(&path_query, None, grove_version);
@@ -217,16 +195,9 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let read_bounds = self.read_bounds();
-        let (lo, hi) = read_bounds.inclusive_bounds_i128();
-        let path_query = PathQuery::new_axis_bounded(
-            path,
-            index_axis_for(read_bounds.axis(), self.document_type, self.index),
-            lo,
-            hi,
-            self.limit,
-            self.descending,
-        );
+        let (index_axis, lo, hi) = self.index_axis_and_bounds();
+        let path_query =
+            PathQuery::new_axis_bounded(path, index_axis, lo, hi, self.limit, self.descending);
         // Same destructure-don't-unwrap rationale as the no-proof arm.
         let CostContext { value, cost: _ } =
             drive.grove.prove_query(&path_query, None, grove_version);

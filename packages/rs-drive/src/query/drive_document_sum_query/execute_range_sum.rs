@@ -35,6 +35,12 @@ impl DriveDocumentSumQuery<'_> {
     /// the entry point that returns one, as the 64-bit one refuses its trees, and the sum
     /// is returned when it fits the 64 bits a sum result carries. An absent path reads zero
     /// where the verifier of the same total reads it so (`aggregate_or_zero_when_absent`).
+    ///
+    /// The width is the type's, also for the counters of a `summableOffCountIndex` index
+    /// (`DriveDocumentCountQuery::counter_sums_query`), which keep 64-bit sums: such an index
+    /// is only declared on an indexOnly type, which declares no `documentsSummable`, and its
+    /// type's other summing indexes sum the same counts, so the type sums no property and
+    /// keeps no big sums.
     fn read_aggregate_sum(
         &self,
         drive: &Drive,
