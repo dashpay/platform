@@ -32,7 +32,8 @@ pub use crypto::{
 pub use network::{DashPayView, IdentityWallet};
 pub use state::{
     BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, PrivateContact,
-    RegistrationIndex,
+    RegistrationIndex, SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement,
+    SlotState,
 };
 pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerprint};
 pub use types::{

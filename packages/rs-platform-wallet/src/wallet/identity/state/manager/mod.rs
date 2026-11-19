@@ -34,7 +34,9 @@ mod slots;
 pub use slots::{SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement, SlotState};
 
 use super::managed_identity::ManagedIdentity;
-use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
+use crate::changeset::{
+    IdentityManagerStartState, IdentityScanStateEntry, IdentitySlotLeaseChangeSet,
+};
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -130,6 +132,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             out_of_wallet_identities,
             wallet_identities,
             scan_states,
+            claim_leases,
         } = state;
 
         // Rebuild the side-index from the two buckets — `IdentityManagerStartState`
@@ -151,14 +154,24 @@ impl From<IdentityManagerStartState> for IdentityManager {
             }
         }
 
-        Self {
+        let mut manager = Self {
             out_of_wallet_identities,
             wallet_identities,
             location_index,
             identity_scan_states: scan_states,
             retained_private_payment_markers: BTreeSet::new(),
             slot_leases: BTreeMap::new(),
+        };
+        for (wallet_id, leases) in claim_leases {
+            manager.apply_claim_lease_changeset(
+                wallet_id,
+                IdentitySlotLeaseChangeSet {
+                    leases,
+                    ..Default::default()
+                },
+            );
         }
+        manager
     }
 }
 

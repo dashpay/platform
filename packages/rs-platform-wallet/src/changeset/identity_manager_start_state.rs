@@ -6,9 +6,10 @@
 
 use std::collections::BTreeMap;
 
+use dashcore::OutPoint;
 use dpp::prelude::Identifier;
 
-use crate::changeset::IdentityScanStateEntry;
+use crate::changeset::{IdentityScanStateEntry, IdentitySlotLeaseEntry};
 use crate::wallet::identity::ManagedIdentity;
 use crate::wallet::identity::RegistrationIndex;
 use crate::wallet::platform_wallet::WalletId;
@@ -36,6 +37,9 @@ pub struct IdentityManagerStartState {
     /// claiming a guarantee nobody made; only a restored `complete: false`
     /// forces a rescan. See [`IdentityScanStateEntry`].
     pub scan_states: BTreeMap<WalletId, IdentityScanStateEntry>,
+    /// Invitation-claim slot leases, keyed by the invitation outpoint. Filled
+    /// only by a backend declaring `IDENTITY_SLOT_LEASES`.
+    pub claim_leases: BTreeMap<WalletId, BTreeMap<OutPoint, IdentitySlotLeaseEntry>>,
 }
 
 impl IdentityManagerStartState {

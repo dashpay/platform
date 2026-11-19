@@ -17,6 +17,7 @@ pub mod dashpay_backfill;
 pub(crate) mod flush_ledger;
 pub mod identity_manager_start_state;
 pub mod identity_scan_state;
+pub mod identity_slot_lease;
 pub mod merge;
 pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
@@ -59,6 +60,7 @@ pub use dashpay_backfill::{
 pub(crate) use flush_ledger::FlushLedger;
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use identity_scan_state::IdentityScanStateEntry;
+pub use identity_slot_lease::{IdentitySlotLeaseChangeSet, IdentitySlotLeaseEntry};
 pub use merge::Merge;
 pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;

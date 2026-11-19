@@ -14,6 +14,7 @@
 //! [`IdentityManager::acquire_identity_slot`].
 
 use super::{IdentityLocation, IdentityManager, RegistrationIndex};
+use crate::changeset::{IdentitySlotLeaseChangeSet, IdentitySlotLeaseEntry};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::wallet::platform_wallet::WalletId;
@@ -289,6 +290,64 @@ impl IdentityManager {
             }
         }
     }
+
+    /// The stored form of `invitation`'s claim lease as it is now: its entry,
+    /// or its release when it leases nothing.
+    pub(crate) fn claim_lease_changeset(
+        &self,
+        wallet_id: &WalletId,
+        invitation: OutPoint,
+    ) -> IdentitySlotLeaseChangeSet {
+        let holder = SlotHolder::InvitationClaim { invitation };
+        let mut changeset = IdentitySlotLeaseChangeSet::default();
+        match self.leased_slot(wallet_id, &holder) {
+            Some(slot) => {
+                changeset.leases.insert(
+                    invitation,
+                    IdentitySlotLeaseEntry {
+                        identity_index: slot.identity_index,
+                        phase: slot.phase,
+                    },
+                );
+            }
+            None => {
+                changeset.released.insert(invitation);
+            }
+        }
+        changeset
+    }
+
+    /// Replay stored claim leases onto `wallet_id`. An entry moves its claim
+    /// to the entry's index; a release drops it. Idempotent.
+    pub(crate) fn apply_claim_lease_changeset(
+        &mut self,
+        wallet_id: WalletId,
+        changeset: IdentitySlotLeaseChangeSet,
+    ) {
+        for (invitation, entry) in changeset.leases {
+            let holder = SlotHolder::InvitationClaim { invitation };
+            self.release_identity_slot(&wallet_id, &holder);
+            let leases = self.slot_leases.entry(wallet_id).or_default();
+            if let Some(previous) = leases.get(&entry.identity_index) {
+                if previous.holder != holder {
+                    tracing::warn!(
+                        identity_index = entry.identity_index,
+                        "two stored identity slot leases name one index; keeping the later one"
+                    );
+                }
+            }
+            leases.insert(
+                entry.identity_index,
+                SlotLease {
+                    holder,
+                    phase: entry.phase,
+                },
+            );
+        }
+        for invitation in changeset.released {
+            self.release_identity_slot(&wallet_id, &SlotHolder::InvitationClaim { invitation });
+        }
+    }
 }
 
 #[cfg(test)]
@@ -317,6 +376,55 @@ mod tests {
 
     fn none() -> BTreeSet<RegistrationIndex> {
         BTreeSet::new()
+    }
+
+    #[test]
+    fn should_restore_a_stored_claim_lease_after_a_restart() {
+        let mut before = IdentityManager::new();
+        before
+            .acquire_identity_slot(WALLET, SlotHolder::Registration { token: 1 }, &none())
+            .unwrap();
+        before
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        before.set_slot_lease_phase(&WALLET, &claim(1), SlotLeasePhase::Submitted);
+        let SlotHolder::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        let stored = before.claim_lease_changeset(&WALLET, invitation);
+
+        let after = IdentityManager::from(crate::changeset::IdentityManagerStartState {
+            claim_leases: [(WALLET, stored.leases)].into(),
+            ..Default::default()
+        });
+
+        // The registration's lease was in memory only; the claim's came back
+        // at its index and phase, and a new registration skips it.
+        let restored = after.leased_slot(&WALLET, &claim(1)).unwrap();
+        assert_eq!(restored.identity_index, 1);
+        assert_eq!(restored.phase, SlotLeasePhase::Submitted);
+        let mut after = after;
+        let next = after
+            .acquire_identity_slot(WALLET, SlotHolder::Registration { token: 2 }, &none())
+            .unwrap();
+        assert_eq!(next.identity_index, 0);
+    }
+
+    #[test]
+    fn should_store_a_release_for_a_claim_that_leases_nothing() {
+        let mut manager = IdentityManager::new();
+        manager
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        manager.release_identity_slot(&WALLET, &claim(1));
+        let SlotHolder::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+
+        let stored = manager.claim_lease_changeset(&WALLET, invitation);
+
+        assert!(stored.leases.is_empty());
+        assert_eq!(stored.released, [invitation].into());
     }
 
     #[test]
