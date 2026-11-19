@@ -11,6 +11,8 @@ use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_trans
 use crate::error::PlatformWalletError;
 
 mod build;
+#[cfg(test)]
+mod funded_lock_tests;
 mod operation;
 pub use operation::{
     AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,

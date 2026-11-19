@@ -228,40 +228,44 @@ impl IdentityWallet {
         // Both retries share the original `placeholder` Identity; the
         // CL-height retry also iterates inside the IS→CL fallback branch
         // so a freshly-upgraded CL proof gets the same patience.
-        let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = self
-            .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                None,
-                "identity registration",
-                |proof, s| {
-                    placeholder.put_to_platform_and_wait_for_response_with_signer(
-                        &self.sdk,
-                        proof,
-                        &path,
-                        asset_lock_signer,
-                        identity_signer,
-                        s,
-                    )
-                },
-            )
-            .await
-            .map_err(|e| after_funding_resolved(e, tracked_out_point))?;
+        //
         // The Core lock exists from here on (broadcast by the resolution, or
-        // the resumed one): a refusal before any Platform dispatch leaves it
-        // held, never `NotSent`.
+        // the resumed one), so every failure until Platform accepts goes
+        // through the funded-lock seam: the lock is named as held, never
+        // `NotSent`.
+        let proof_out_point = out_point_from_proof(&proof);
         let identity = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                None,
-            )
-            .await
-            .map_err(|e| after_funding_resolved(e, tracked_out_point))?;
+            .with_funded_lock(tracked_out_point, async {
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
+                        proof,
+                        settings,
+                        None,
+                        "identity registration",
+                        |proof, s| {
+                            placeholder.put_to_platform_and_wait_for_response_with_signer(
+                                &self.sdk,
+                                proof,
+                                &path,
+                                asset_lock_signer,
+                                identity_signer,
+                                s,
+                            )
+                        },
+                    )
+                    .await?;
+                self.asset_locks
+                    .reconcile_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        None,
+                    )
+                    .await
+            })
+            .await?;
 
         // Step 4 (best-effort): bookkeeping — add to local
         // IdentityManager + record key derivation breadcrumbs.
@@ -364,25 +368,6 @@ impl IdentityWallet {
     }
 }
 
-/// The error a funded registration ends with once its funding resolved: the
-/// Core asset lock is then broadcast (or resumed), so a refusal that precedes
-/// any Platform dispatch (`NotSent`, such as the identity signer having no
-/// key) does not undo it. Such a refusal names the tracked lock as held, to
-/// be resumed, keeping its own diagnostic. An ambiguous error stays as it is,
-/// and with no tracked outpoint the class is `MaybeSent`.
-fn after_funding_resolved(
-    error: PlatformWalletError,
-    tracked_out_point: Option<dashcore::OutPoint>,
-) -> PlatformWalletError {
-    match error.payment_delivery() {
-        crate::PaymentDelivery::NotSent => PlatformWalletError::PaymentAlreadyDispatched {
-            held_lock: tracked_out_point,
-            source: Box::new(error),
-        },
-        crate::PaymentDelivery::MaybeSent | crate::PaymentDelivery::LockHeld(_) => error,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // top-up
 // ---------------------------------------------------------------------------
@@ -475,33 +460,39 @@ impl IdentityWallet {
         // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
         // cache, and an unusable IS proof triggers an IS→CL upgrade on
         // the same outpoint.
+        // Every failure until Platform accepts goes through the funded-lock
+        // seam, as in `register_identity_with_funding`.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = self
-            .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                None,
-                "identity top-up",
-                |proof, s| {
-                    identity.top_up_identity_with_signer_with_metadata(
-                        &self.sdk,
-                        proof,
-                        &path,
-                        asset_lock_signer,
-                        s,
-                    )
-                },
-            )
-            .await?;
         let (mut new_balance, metadata) = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                None,
-            )
+            .with_funded_lock(tracked_out_point, async {
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
+                        proof,
+                        settings,
+                        None,
+                        "identity top-up",
+                        |proof, s| {
+                            identity.top_up_identity_with_signer_with_metadata(
+                                &self.sdk,
+                                proof,
+                                &path,
+                                asset_lock_signer,
+                                s,
+                            )
+                        },
+                    )
+                    .await?;
+                self.asset_locks
+                    .reconcile_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        None,
+                    )
+                    .await
+            })
             .await?;
 
         // Step 4 (best-effort): persist the new balance + clean up the
@@ -612,51 +603,6 @@ mod tests {
             !is_instant_lock_timeout(&wait_err),
             "AssetLockProofWait must NOT trigger IS→CL fallback \
              (wallet-state mismatch is a hard failure)"
-        );
-    }
-
-    /// The identity signer refusing after the Core lock was broadcast leaves
-    /// that lock held: the result names it for resume and keeps the
-    /// key-unavailable diagnostic, instead of `NotSent`. An ambiguous error
-    /// stays ambiguous.
-    #[test]
-    fn should_hold_the_broadcast_lock_when_the_identity_signer_refuses() {
-        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([9; 32]), 0);
-        let key_unavailable = || {
-            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(
-                format!(
-                    "{}no private key",
-                    crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
-                ),
-            )))
-        };
-        assert_eq!(
-            key_unavailable().payment_delivery(),
-            crate::PaymentDelivery::NotSent
-        );
-
-        let held = after_funding_resolved(key_unavailable(), Some(out_point));
-        assert_eq!(
-            held.payment_delivery(),
-            crate::PaymentDelivery::LockHeld(out_point)
-        );
-        assert!(!held.is_retryable());
-        assert_eq!(held.to_string(), key_unavailable().to_string());
-
-        let untracked = after_funding_resolved(key_unavailable(), None);
-        assert_eq!(
-            untracked.payment_delivery(),
-            crate::PaymentDelivery::MaybeSent
-        );
-
-        let ambiguous = after_funding_resolved(
-            PlatformWalletError::Sdk(dash_sdk::Error::Generic("transport".into())),
-            Some(out_point),
-        );
-        assert!(matches!(ambiguous, PlatformWalletError::Sdk(_)));
-        assert_eq!(
-            ambiguous.payment_delivery(),
-            crate::PaymentDelivery::MaybeSent
         );
     }
 }

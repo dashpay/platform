@@ -360,37 +360,45 @@ impl PlatformAddressWallet {
         // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
         // cache, and an unusable IS proof triggers an IS→CL upgrade on
         // the same outpoint.
+        //
+        // The Core lock exists from here on, so every failure until Platform
+        // accepts goes through the funded-lock seam: the lock is named as
+        // held, never `NotSent`.
         let proof_out_point = out_point_from_proof(&proof);
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below.
-        let (submit_result, effective_proof) = self
-            .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                None,
-                "platform-address top-up",
-                |proof, s| {
-                    addresses.top_up_with_signers(
-                        &self.sdk,
-                        proof,
-                        &path,
-                        fee_strategy.clone(),
-                        address_signer,
-                        asset_lock_signer,
-                        s,
-                    )
-                },
-            )
-            .await?;
         let (address_infos, proof_height) = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                None,
-            )
+            .with_funded_lock(tracked_out_point, async {
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
+                        proof,
+                        settings,
+                        None,
+                        "platform-address top-up",
+                        |proof, s| {
+                            addresses.top_up_with_signers(
+                                &self.sdk,
+                                proof,
+                                &path,
+                                fee_strategy.clone(),
+                                address_signer,
+                                asset_lock_signer,
+                                s,
+                            )
+                        },
+                    )
+                    .await?;
+                self.asset_locks
+                    .reconcile_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        None,
+                    )
+                    .await
+            })
             .await?;
 
         // Step 4: bookkeeping + cleanup. Write the proof-attested
@@ -406,7 +414,11 @@ impl PlatformAddressWallet {
         // zero-credit funding. We fail loud rather than silently
         // consume the asset lock with no recorded credits for some
         // or all recipients.
-        validate_address_infos_complete(&addresses, &address_infos)?;
+        //
+        // Platform accepted the transition, so this refusal is never
+        // `NotSent`.
+        validate_address_infos_complete(&addresses, &address_infos)
+            .map_err(PlatformWalletError::after_dispatch)?;
 
         // The shared seam applies the proof-attested balances to the
         // managed accounts, updates the provider's sync seed, and

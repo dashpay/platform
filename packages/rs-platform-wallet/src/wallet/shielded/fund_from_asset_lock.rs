@@ -79,6 +79,17 @@ pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize 
     (1 + dummy_outputs).max(2)
 }
 
+/// What the funded phase of [`PlatformWallet::shielded_fund_from_asset_lock`]
+/// hands to the bookkeeping that follows Platform's acceptance.
+struct FundedShield<T> {
+    landed: T,
+    drain_operation_id: Option<[u8; 16]>,
+    proof_out_point: OutPoint,
+    shield_amount: Credits,
+    asset_lock_value_credits: Credits,
+    pool_fee_credits: Credits,
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
     ///
@@ -99,7 +110,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<Option<T>, PlatformWalletError> {
         if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
             if is_asset_lock_already_consumed(error, out_point) {
-                self.complete_wallet_drain(*out_point, operation_id).await?;
+                // Platform consumed the lock: whatever fails while recording
+                // that is never `NotSent`, and the lock is not the way on.
+                self.complete_wallet_drain(*out_point, operation_id)
+                    .await
+                    .map_err(PlatformWalletError::after_dispatch)?;
                 return Ok(None);
             }
         }
@@ -236,15 +251,28 @@ impl PlatformWallet {
             .await;
         if let Some(operation) = operation {
             let snapshot = operation.snapshot();
-            if result.is_ok() {
-                operation.set(AssetLockOperationState::Completed, snapshot.out_point);
-            } else if snapshot.out_point.is_none() {
-                // Every possibly durable or dispatched lock records its
-                // outpoint first. A returned pre-build error proves no send.
-                operation.set(AssetLockOperationState::NotSent, None);
+            match result {
+                Ok(()) => {
+                    operation.set(AssetLockOperationState::Completed, snapshot.out_point);
+                    Ok(())
+                }
+                Err(error) if snapshot.out_point.is_none() => {
+                    // Every possibly durable or dispatched lock records its
+                    // outpoint first. A returned pre-build error proves no send.
+                    operation.set(AssetLockOperationState::NotSent, None);
+                    Err(error)
+                }
+                // The operation stays Pending on its lock, so its error is
+                // never `NotSent`: the lock is named as held while it is
+                // resumable, `MaybeSent` otherwise.
+                Err(error) => Err(self
+                    .asset_locks
+                    .funded_lock_error(error, snapshot.out_point)
+                    .await),
             }
+        } else {
+            result
         }
-        result
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -435,184 +463,214 @@ impl PlatformWallet {
             }
         };
 
-        // Step 3: derive `shield_amount` from the asset-lock value.
-        //
-        // Unlike Type 14 (where Platform deducts the fee inside the
-        // transition via `AddressFundsFeeStrategy`), Type 18 bakes
-        // the Orchard `value_balance` into the Halo 2 proof at build
-        // time — someone *has* to know the precise number before
-        // signing. The wallet is the right place: it already has the
-        // lock value (from the IS proof's TxOut, or from the asset-
-        // lock manager's tracked row for CL-only paths) and the
-        // protocol min-fee constant (from `PlatformVersion`).
-        //
-        // Single-recipient + `None` semantics today: the recipient
-        // receives `lock_value - pool_fee`. Future multi-recipient
-        // would honor `Some(_)` values explicitly and route the
-        // residual to the (sole) `None` bucket; the preflight will
-        // change in lockstep with the DPP-side multi-output bundle
-        // builder.
-        let asset_lock_value_credits =
-            lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
-        // `pool_fee = compute_minimum_shielded_fee(2) + asset_lock_base_cost` — the SAME flat fee
-        // consensus charges (`transform_into_action` Step 3b). Deriving `shield_amount =
-        // lock_value − pool_fee` reserves room for the fee and pins the consensus surplus
-        // (`lock_value − shield_amount − pool_fee`) to exactly zero.
-        let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
-        let shield_amount = asset_lock_value_credits
-            .checked_sub(pool_fee_credits)
-            .ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "asset lock value ({asset_lock_value_credits} credits) is below the \
-                     ShieldFromAssetLock pool fee ({pool_fee_credits} credits = shielded fee + \
-                     asset_lock_base_cost)"
-                ))
-            })?;
-        if shield_amount == 0 {
-            return Err(PlatformWalletError::ShieldedBuildError(
-                "shield amount after fee is zero".to_string(),
-            ));
-        }
+        // Steps 3–4 run with the Core lock in hand (broadcast by the
+        // resolution, or resumed), so every failure until Platform accepts
+        // goes through the funded-lock seam: the lock is named as held, never
+        // `NotSent`. That covers the sizing checks below too, which refuse
+        // after the lock exists.
+        let funded = self
+            .asset_locks
+            .with_funded_lock(tracked_out_point, async {
+                // Step 3: derive `shield_amount` from the asset-lock value.
+                //
+                // Unlike Type 14 (where Platform deducts the fee inside the
+                // transition via `AddressFundsFeeStrategy`), Type 18 bakes
+                // the Orchard `value_balance` into the Halo 2 proof at build
+                // time — someone *has* to know the precise number before
+                // signing. The wallet is the right place: it already has the
+                // lock value (from the IS proof's TxOut, or from the asset-
+                // lock manager's tracked row for CL-only paths) and the
+                // protocol min-fee constant (from `PlatformVersion`).
+                //
+                // Single-recipient + `None` semantics today: the recipient
+                // receives `lock_value - pool_fee`. Future multi-recipient
+                // would honor `Some(_)` values explicitly and route the
+                // residual to the (sole) `None` bucket; the preflight will
+                // change in lockstep with the DPP-side multi-output bundle
+                // builder.
+                let asset_lock_value_credits =
+                    lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
+                // `pool_fee = compute_minimum_shielded_fee(2) + asset_lock_base_cost` — the SAME flat fee
+                // consensus charges (`transform_into_action` Step 3b). Deriving `shield_amount =
+                // lock_value − pool_fee` reserves room for the fee and pins the consensus surplus
+                // (`lock_value − shield_amount − pool_fee`) to exactly zero.
+                let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
+                let shield_amount = asset_lock_value_credits
+                    .checked_sub(pool_fee_credits)
+                    .ok_or_else(|| {
+                        PlatformWalletError::ShieldedBuildError(format!(
+                            "asset lock value ({asset_lock_value_credits} credits) is below the \
+                             ShieldFromAssetLock pool fee ({pool_fee_credits} credits = shielded fee + \
+                             asset_lock_base_cost)"
+                        ))
+                    })?;
+                if shield_amount == 0 {
+                    return Err(PlatformWalletError::ShieldedBuildError(
+                        "shield amount after fee is zero".to_string(),
+                    ));
+                }
 
-        // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
-        // pool_fee`), so `None` is always consensus-valid. Defensively assert the cap invariant
-        // and surface a clear error rather than building a transition consensus would reject —
-        // this guards future code paths that might leave a non-zero residual.
-        let surplus = asset_lock_value_credits
-            .checked_sub(shield_amount)
-            .and_then(|v| v.checked_sub(pool_fee_credits))
-            .unwrap_or(0);
-        if surplus_output.is_none() {
-            let implicit_fee_cap = self
-                .sdk
-                .version()
-                .drive_abci
-                .validation_and_processing
-                .event_constants
-                .shielded_implicit_fee_cap;
-            if surplus > implicit_fee_cap {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "ShieldFromAssetLock surplus ({surplus} credits) exceeds the implicit fee cap \
-                     ({implicit_fee_cap} credits) and no surplus_output address was supplied — \
-                     consensus would reject this transition; pass a surplus_output to receive the \
-                     remainder"
-                )));
-            }
-        }
-        // Encrypt the output under this wallet's OVK so the shielded sync can
-        // recover the funding (recipient, value, memo) from chain data alone.
-        // Prefer the bound account whose IVK recognizes the recipient address
-        // (the sent-note row then lands under that account); fall back to the
-        // lowest bound account, or `None` (unrecoverable out_ciphertext) if
-        // the shielded sub-wallet isn't bound.
-        let sender_ovk = {
-            let guard = self.shielded_keys.read().await;
-            guard.as_ref().and_then(|keys| {
-                keys.values()
-                    .find(|ks| {
-                        ks.incoming_viewing_key
-                            .diversifier_index(recipient.inner())
-                            .is_some()
+                // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
+                // pool_fee`), so `None` is always consensus-valid. Defensively assert the cap invariant
+                // and surface a clear error rather than building a transition consensus would reject —
+                // this guards future code paths that might leave a non-zero residual.
+                let surplus = asset_lock_value_credits
+                    .checked_sub(shield_amount)
+                    .and_then(|v| v.checked_sub(pool_fee_credits))
+                    .unwrap_or(0);
+                if surplus_output.is_none() {
+                    let implicit_fee_cap = self
+                        .sdk
+                        .version()
+                        .drive_abci
+                        .validation_and_processing
+                        .event_constants
+                        .shielded_implicit_fee_cap;
+                    if surplus > implicit_fee_cap {
+                        return Err(PlatformWalletError::ShieldedBuildError(format!(
+                            "ShieldFromAssetLock surplus ({surplus} credits) exceeds the implicit fee cap \
+                             ({implicit_fee_cap} credits) and no surplus_output address was supplied — \
+                             consensus would reject this transition; pass a surplus_output to receive the \
+                             remainder"
+                        )));
+                    }
+                }
+                // Encrypt the output under this wallet's OVK so the shielded sync can
+                // recover the funding (recipient, value, memo) from chain data alone.
+                // Prefer the bound account whose IVK recognizes the recipient address
+                // (the sent-note row then lands under that account); fall back to the
+                // lowest bound account, or `None` (unrecoverable out_ciphertext) if
+                // the shielded sub-wallet isn't bound.
+                let sender_ovk = {
+                    let guard = self.shielded_keys.read().await;
+                    guard.as_ref().and_then(|keys| {
+                        keys.values()
+                            .find(|ks| {
+                                ks.incoming_viewing_key
+                                    .diversifier_index(recipient.inner())
+                                    .is_some()
+                            })
+                            .or_else(|| keys.values().next())
+                            .map(|ks| ks.outgoing_viewing_key.clone())
                     })
-                    .or_else(|| keys.values().next())
-                    .map(|ks| ks.outgoing_viewing_key.clone())
-            })
-        };
+                };
 
-        // Step 4: submit. Two Platform-side fallback layers — matching
-        // the address-funding sibling: CL-height-too-low retries bump
-        // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
-        // cache) and an unusable IS proof (rejected, or too large)
-        // triggers an IS→CL upgrade on the same outpoint.
-        //
-        // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
-        // is a no-op (pinned at `state_transition::mod`'s
-        // `test_shield_from_asset_lock_user_fee_increase_is_zero_and_setter_noop`),
-        // so the wrapper's bump cannot directly diversify the ST hash
-        // here the way it does for address-funding. Retries still avoid
-        // Tenderdash's invalid-tx cache because `build_output_only_bundle`
-        // draws fresh randomness from `OsRng` on every call
-        // (`packages/rs-dpp/src/shielded/builder/mod.rs`), so a re-built
-        // bundle has a different Halo 2 proof and therefore a different
-        // signable hash. If the prover is ever made deterministic for
-        // reproducibility, this orchestration would need an explicit
-        // diversifier (e.g. a memo-derived bump) to keep CL-height
-        // retries from silently degrading into duplicate-hash submits.
-        let proof_out_point = out_point_from_proof(&proof);
-        let sdk = self.sdk.clone();
-        // Serialized actions of the bundle that actually landed — fed to
-        // the live activity recorder below. Each retry re-randomizes the
-        // bundle, so only the landed attempt's actions are the ones a
-        // later scan will recover; `build_and_broadcast_shielded` returns
-        // them on success, with the proof's verdict on the lock.
-        let (submit_result, effective_proof) = self
-            .asset_locks
-            .submit_with_chain_lock_fallback(
-                proof,
-                settings,
-                cl_wait,
-                "shielded fund-from-asset-lock",
-                |proof, s| {
-                    build_and_broadcast_shielded(
-                        sdk.clone(),
-                        recipient,
-                        shield_amount,
+                // Step 4: submit. Two Platform-side fallback layers — matching
+                // the address-funding sibling: CL-height-too-low retries bump
+                // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
+                // cache) and an unusable IS proof (rejected, or too large)
+                // triggers an IS→CL upgrade on the same outpoint.
+                //
+                // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
+                // is a no-op (pinned at `state_transition::mod`'s
+                // `test_shield_from_asset_lock_user_fee_increase_is_zero_and_setter_noop`),
+                // so the wrapper's bump cannot directly diversify the ST hash
+                // here the way it does for address-funding. Retries still avoid
+                // Tenderdash's invalid-tx cache because `build_output_only_bundle`
+                // draws fresh randomness from `OsRng` on every call
+                // (`packages/rs-dpp/src/shielded/builder/mod.rs`), so a re-built
+                // bundle has a different Halo 2 proof and therefore a different
+                // signable hash. If the prover is ever made deterministic for
+                // reproducibility, this orchestration would need an explicit
+                // diversifier (e.g. a memo-derived bump) to keep CL-height
+                // retries from silently degrading into duplicate-hash submits.
+                let proof_out_point = out_point_from_proof(&proof);
+                let sdk = self.sdk.clone();
+                // Serialized actions of the bundle that actually landed — fed to
+                // the live activity recorder below. Each retry re-randomizes the
+                // bundle, so only the landed attempt's actions are the ones a
+                // later scan will recover; `build_and_broadcast_shielded` returns
+                // them on success, with the proof's verdict on the lock.
+                let (submit_result, effective_proof) = self
+                    .asset_locks
+                    .submit_with_chain_lock_fallback(
                         proof,
-                        path.clone(),
-                        asset_lock_signer,
-                        &prover,
-                        sender_ovk.clone(),
-                        surplus_output,
-                        dummy_outputs,
-                        s,
+                        settings,
+                        cl_wait,
+                        "shielded fund-from-asset-lock",
+                        |proof, s| {
+                            build_and_broadcast_shielded(
+                                sdk.clone(),
+                                recipient,
+                                shield_amount,
+                                proof,
+                                path.clone(),
+                                asset_lock_signer,
+                                &prover,
+                                sender_ovk.clone(),
+                                surplus_output,
+                                dummy_outputs,
+                                s,
+                            )
+                        },
                     )
-                },
-            )
-            .await?;
+                    .await?;
 
-        // Platform's verdict settles the lock. For a wallet drain, an
-        // exact-outpoint "already consumed" rejection means an earlier attempt
-        // for the same lock landed: the drain completes with no landed bundle
-        // to record (the scan surfaces the note).
-        let drain_operation_id = self
-            .asset_locks
-            .tracked_operation_id(&proof_out_point)
-            .await;
-        let Some(landed) = self
-            .asset_locks
-            .settle_asset_lock_submit_result(
-                submit_result,
-                &proof_out_point,
-                &effective_proof,
-                cl_wait,
-                drain_operation_id,
-            )
-            .await?
+                // Platform's verdict settles the lock. For a wallet drain, an
+                // exact-outpoint "already consumed" rejection means an earlier attempt
+                // for the same lock landed: the drain completes with no landed bundle
+                // to record (the scan surfaces the note).
+                let drain_operation_id = self
+                    .asset_locks
+                    .tracked_operation_id(&proof_out_point)
+                    .await;
+                let Some(landed) = self
+                    .asset_locks
+                    .settle_asset_lock_submit_result(
+                        submit_result,
+                        &proof_out_point,
+                        &effective_proof,
+                        cl_wait,
+                        drain_operation_id,
+                    )
+                    .await?
+                else {
+                    tracing::info!(
+                        outpoint = %proof_out_point,
+                        "wallet drain completed: Platform reports its asset lock already consumed by an earlier attempt"
+                    );
+                    return Ok(None);
+                };
+
+                // A drain completes only when the verified proof attests the lock
+                // was consumed in full. Checked before any history is written: a
+                // drain left pending must not carry a Confirmed row for a bundle a
+                // later resume may replace. The next resume completes it from
+                // Platform's verdict.
+                if drain_operation_id.is_some() && !landed.fully_consumed {
+                    tracing::warn!(
+                        outpoint = %proof_out_point,
+                        "wallet drain left pending: the landed shield's proof does not attest \
+                         full consumption of its asset lock"
+                    );
+                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                        "drain shield landed but its proof does not attest full consumption of \
+                         the asset lock; the operation stays pending"
+                            .into(),
+                    ));
+                }
+
+                Ok(Some(FundedShield {
+                    landed,
+                    drain_operation_id,
+                    proof_out_point,
+                    shield_amount,
+                    asset_lock_value_credits,
+                    pool_fee_credits,
+                }))
+            })
+            .await?;
+        let Some(FundedShield {
+            landed,
+            drain_operation_id,
+            proof_out_point,
+            shield_amount,
+            asset_lock_value_credits,
+            pool_fee_credits,
+        }) = funded
         else {
-            tracing::info!(
-                outpoint = %proof_out_point,
-                "wallet drain completed: Platform reports its asset lock already consumed by an earlier attempt"
-            );
             return Ok(());
         };
-
-        // A drain completes only when the verified proof attests the lock
-        // was consumed in full. Checked before any history is written: a
-        // drain left pending must not carry a Confirmed row for a bundle a
-        // later resume may replace. The next resume completes it from
-        // Platform's verdict.
-        if drain_operation_id.is_some() && !landed.fully_consumed {
-            tracing::warn!(
-                outpoint = %proof_out_point,
-                "wallet drain left pending: the landed shield's proof does not attest \
-                 full consumption of its asset lock"
-            );
-            return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                "drain shield landed but its proof does not attest full consumption of \
-                 the asset lock; the operation stays pending"
-                    .into(),
-            ));
-        }
 
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
@@ -634,7 +692,8 @@ impl PlatformWallet {
             (Some(operation_id), _) => {
                 self.asset_locks
                     .complete_wallet_drain(proof_out_point, operation_id)
-                    .await?;
+                    .await
+                    .map_err(PlatformWalletError::after_dispatch)?;
             }
             (None, Some(out_point)) => {
                 // Platform DID accept the shield ST — propagating an Err

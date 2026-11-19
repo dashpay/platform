@@ -1693,19 +1693,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                          reservation and reporting an unknown outcome rather than a \
                          definite rejection"
                     );
-                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                        format!(
+                    // The row stays tracked: the error names it as held.
+                    let unconfirmed =
+                        PlatformWalletError::TransactionBroadcastUnconfirmed(format!(
                             "asset lock {out_point} stays tracked and reserved: the \
-                             broadcast was rejected, but resume state excludes cleanup \
-                             of the same row, so the transaction may be on the network \
-                             or committed to dispatch: {e}"
-                        ),
-                    ));
+                         broadcast was rejected, but resume state excludes cleanup \
+                         of the same row, so the transaction may be on the network \
+                         or committed to dispatch: {e}"
+                        ));
+                    return Err(self.funded_lock_error(unconfirmed, Some(out_point)).await);
                 }
             } else {
-                // Ambiguous `MaybeSent`: the transaction may be on the network.
+                // Ambiguous `MaybeSent`: the transaction may be on the network,
+                // and its row stays tracked and resumable, so the error names
+                // the lock as held.
                 in_broadcast_pin.settle_pending_spend();
+                return Err(self.funded_lock_error(e.into(), Some(out_point)).await);
             }
+            // Rejected, and the row is gone with its reservation: provably
+            // never sent.
             return Err(e.into());
         }
         // Accepted. On the DAPI broadcaster nothing was injected locally, so the
@@ -1715,15 +1721,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // 4. Transition to Broadcast only if no concurrent flow advanced the
         //    row while this call awaited the network. Replacing a finalized
         //    status here would retain its proof under the weaker status.
-        if let Some(cs_broadcast) = self
-            .advance_asset_lock_status_if(
-                &out_point,
-                |current| *current == AssetLockStatus::Built,
-                AssetLockStatus::Broadcast,
-                None,
+        let advanced = self
+            .with_funded_lock(
+                Some(out_point),
+                self.advance_asset_lock_status_if(
+                    &out_point,
+                    |current| *current == AssetLockStatus::Built,
+                    AssetLockStatus::Broadcast,
+                    None,
+                ),
             )
-            .await?
-        {
+            .await?;
+        if let Some(cs_broadcast) = advanced {
             self.queue_asset_lock_changeset(cs_broadcast);
         }
 
@@ -1739,34 +1748,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         account_index: u32,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
-        // 5. Wait for proof via SPV events. The 300s bound is an
-        //    InstantSend-preference window, NOT a finality timeout: on
-        //    expiry the resolver falls back to an unbounded ChainLock wait
-        //    (`upgrade_to_chain_lock_proof(None)`), so a broadcast lock is
-        //    never surfaced as "failed" just because IS was slow.
-        let proof = self
-            .wait_for_proof(out_point, Some(Duration::from_secs(300)))
-            .await?;
+        // The lock is broadcast: every failure here leaves it held (or, once
+        // it is gone, `MaybeSent`), never `NotSent`.
+        self.with_funded_lock(Some(*out_point), async {
+            // 5. Wait for proof via SPV events. The 300s bound is an
+            //    InstantSend-preference window, NOT a finality timeout: on
+            //    expiry the resolver falls back to an unbounded ChainLock wait
+            //    (`upgrade_to_chain_lock_proof(None)`), so a broadcast lock is
+            //    never surfaced as "failed" just because IS was slow.
+            let proof = self
+                .wait_for_proof(out_point, Some(Duration::from_secs(300)))
+                .await?;
 
-        // 5b. If we got an IS-lock proof, check whether the transaction is
-        // old enough that Platform might reject it. If so, upgrade to a
-        // ChainLock proof proactively.
-        let proof = self
-            .validate_or_upgrade_proof(proof, account_index, out_point)
-            .await?;
+            // 5b. If we got an IS-lock proof, check whether the transaction is
+            // old enough that Platform might reject it. If so, upgrade to a
+            // ChainLock proof proactively.
+            let proof = self
+                .validate_or_upgrade_proof(proof, account_index, out_point)
+                .await?;
 
-        // 6. Attach proof — status matches the proof type received —
-        //    and queue the final changeset.
-        let status = match &proof {
-            dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
-            dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
-        };
-        let cs_final = self
-            .advance_asset_lock_status(out_point, status, Some(proof.clone()))
-            .await?;
-        self.queue_asset_lock_changeset(cs_final);
+            // 6. Attach proof — status matches the proof type received —
+            //    and queue the final changeset.
+            let status = match &proof {
+                dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+                dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+            };
+            let cs_final = self
+                .advance_asset_lock_status(out_point, status, Some(proof.clone()))
+                .await?;
+            self.queue_asset_lock_changeset(cs_final);
 
-        Ok(proof)
+            Ok(proof)
+        })
+        .await
     }
 }
 
@@ -2884,13 +2898,15 @@ mod tests {
             .await;
         assert!(
             matches!(
-                result,
+                result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "ambiguous broadcast should surface as TransactionBroadcastUnconfirmed, got {result:?}"
         );
 
-        // The Built row survives for a later resume…
+        // The Built row survives for a later resume, and the error names it…
         {
             let wm = manager.wallet_manager.read().await;
             let (_, info) = wm
@@ -2899,6 +2915,9 @@ mod tests {
             assert_eq!(info.tracked_asset_locks.len(), 1);
             let lock = info.tracked_asset_locks.values().next().expect("built row");
             assert_eq!(lock.status, AssetLockStatus::Built);
+            let error = result.as_ref().expect_err("ambiguous broadcast");
+            assert_eq!(error.held_asset_lock(), Some(lock.out_point));
+            assert!(!error.is_retryable());
         }
         // …no persisted-row deletion was queued…
         assert!(
@@ -3005,7 +3024,9 @@ mod tests {
             .await;
         assert!(
             matches!(
-                result,
+                result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "a rejection whose cleanup released nothing must surface as the \
@@ -3013,7 +3034,8 @@ mod tests {
              released reservation and a safe rebuild, got {result:?}"
         );
 
-        // The concurrently-advanced row survives the cleanup…
+        // The concurrently-advanced row survives the cleanup, and the error
+        // names it as held…
         {
             let wm = wallet_manager.read().await;
             let (_, info) = wm
@@ -3022,6 +3044,8 @@ mod tests {
             assert_eq!(info.tracked_asset_locks.len(), 1);
             let lock = info.tracked_asset_locks.values().next().expect("row kept");
             assert_eq!(lock.status, AssetLockStatus::Broadcast);
+            let error = result.as_ref().expect_err("kept row");
+            assert_eq!(error.held_asset_lock(), Some(lock.out_point));
         }
         // …no persisted-row deletion was queued…
         assert!(
@@ -4020,7 +4044,17 @@ mod tests {
 
         let (build_result, (out_point, resume)) = tokio::join!(build, coordinator);
 
-        let Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason)) = &build_result
+        assert_eq!(
+            build_result
+                .as_ref()
+                .err()
+                .and_then(|e| e.held_asset_lock()),
+            Some(out_point),
+            "the kept row is named as held: {build_result:?}"
+        );
+        let Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason)) = build_result
+            .as_ref()
+            .map_err(PlatformWalletError::dispatched_source)
         else {
             panic!(
                 "with a resume holding the dispatch window the cleanup cannot run, so \
@@ -4157,7 +4191,9 @@ mod tests {
                 .expect("the resume task must not panic");
             assert!(
                 matches!(
-                    resume_result,
+                    resume_result
+                        .as_ref()
+                        .map_err(PlatformWalletError::dispatched_source),
                     Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
                 ),
                 "the resume must report its pre-dispatch rejection as an unknown original \
@@ -4300,7 +4336,9 @@ mod tests {
         let (build_result, out_point) = tokio::join!(build, coordinator);
         assert!(
             matches!(
-                build_result,
+                build_result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "a cancellation after an observable send is an unknown outcome; cleanup must not \
@@ -4433,7 +4471,9 @@ mod tests {
         let (build_result, out_point) = tokio::join!(build, coordinator);
         assert!(
             matches!(
-                build_result,
+                build_result
+                    .as_ref()
+                    .map_err(PlatformWalletError::dispatched_source),
                 Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
             ),
             "a cancellation after observing local finality is an unknown outcome; cleanup must \

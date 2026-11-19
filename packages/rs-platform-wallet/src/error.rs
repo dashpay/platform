@@ -1547,6 +1547,32 @@ impl PlatformWalletError {
         }
     }
 
+    /// This error as the end of a payment that already dispatched funds: a
+    /// `NotSent` refusal becomes [`Self::PaymentAlreadyDispatched`] with no
+    /// held lock (`MaybeSent`), keeping its diagnostic and FFI code; any
+    /// other class is kept. For the steps that follow a dispatch of a
+    /// multi-step payment (a DPNS domain after its preorder, a seed batch
+    /// after an earlier one) and for the bookkeeping after Platform accepted
+    /// a funded transition.
+    pub(crate) fn after_dispatch(self) -> Self {
+        match self.payment_delivery() {
+            PaymentDelivery::NotSent => Self::PaymentAlreadyDispatched {
+                held_lock: None,
+                source: Box::new(self),
+            },
+            PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => self,
+        }
+    }
+
+    /// The error that decided this one's diagnostic and FFI code: the source
+    /// of a [`Self::PaymentAlreadyDispatched`], or this error itself.
+    pub fn dispatched_source(&self) -> &Self {
+        match self {
+            Self::PaymentAlreadyDispatched { source, .. } => source.dispatched_source(),
+            other => other,
+        }
+    }
+
     /// The tracked asset lock this error leaves held, when it names one: the
     /// lock exists and may be on the network, and the payment goes on by
     /// resuming it rather than by funding a new one. `None` for every other
@@ -3230,6 +3256,32 @@ mod payment_delivery_tests {
             assert!(!error.is_retryable(), "{error:?}");
             assert_eq!(error.held_asset_lock(), None, "{error:?}");
         }
+    }
+
+    /// A refusal that follows a dispatch is never `NotSent`: it keeps its
+    /// diagnostic under the `MaybeSent` wrapper, and the wrapper names it as
+    /// its source. Other classes stay as they are.
+    #[test]
+    fn should_never_leave_a_refusal_after_a_dispatch_not_sent() {
+        let refusal = || PlatformWalletError::AssetLockNotTracked(out_point());
+        let after = refusal().after_dispatch();
+        assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
+        assert_eq!(after.held_asset_lock(), None);
+        assert!(!after.is_retryable());
+        assert_eq!(after.to_string(), refusal().to_string());
+        assert!(matches!(
+            after.dispatched_source(),
+            PlatformWalletError::AssetLockNotTracked(_)
+        ));
+
+        let held = PlatformWalletError::FinalityTimeout(out_point()).after_dispatch();
+        assert!(matches!(held, PlatformWalletError::FinalityTimeout(_)));
+        let maybe =
+            PlatformWalletError::TransactionBroadcastUnconfirmed("x".into()).after_dispatch();
+        assert!(matches!(
+            maybe,
+            PlatformWalletError::TransactionBroadcastUnconfirmed(_)
+        ));
     }
 
     /// A persister failure is retryable exactly when the store called it
