@@ -3657,7 +3657,9 @@ pub(super) fn apply_property_constraints(
         // Version 1 (protocol version 15) differs in the rule parse alone, which dispatches
         // on the same version: a byte array binds a countOf or sumOf filter key
         // (`aggregate_binding_kind`), and `validate_property_constraint_aggregates` admits a
-        // byte array key bound to one
+        // byte array key bound to one; and a filter may match a key by the elements of an
+        // array (`aggregate_elements_parsed`), which `validate_rule_limits` counts as the
+        // state reads it makes
         Some(0) | Some(1) => apply_property_constraints_v0(
             document_type,
             schema_defs,
@@ -3705,7 +3707,12 @@ fn apply_property_constraints_v0(
     }
 
     if full_validation {
-        validate_rule_limits(&constraints, &structure_error, platform_version)?;
+        validate_rule_limits(
+            &constraints,
+            &document_type.flattened_properties,
+            &structure_error,
+            platform_version,
+        )?;
     }
 
     document_type.property_constraints = constraints;
@@ -3725,8 +3732,15 @@ fn apply_property_constraints_v0(
 /// each rule of at most `max_property_constraint_nodes` nodes, and no `anyOf`
 /// or `allOf` listing the same condition twice. `propertyConstraints` and
 /// `deleteConstraints` are each held to them on their own.
+///
+/// A total matching a key by the elements of an array of the type
+/// ([`AggregateBinding::Elements`], parsed from protocol version 15 only) reads
+/// one total from state per element, so it counts as the `maxItems` of that
+/// array, read from `flattened_properties`; every other total counts as one,
+/// as before.
 fn validate_rule_limits(
     constraints: &BTreeMap<String, PropertyConstraint>,
+    flattened_properties: &IndexMap<String, DocumentProperty>,
     structure_error: &dyn Fn(String) -> DataContractError,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
@@ -3743,7 +3757,9 @@ fn validate_rule_limits(
         .values()
         .flat_map(PropertyConstraint::aggregate_reads)
         .collect::<BTreeSet<_>>()
-        .len();
+        .into_iter()
+        .map(|read| aggregate_state_reads(read, flattened_properties))
+        .fold(0usize, usize::saturating_add);
     if aggregates > usize::from(max_aggregates) {
         return Err(structure_error(format!(
             "reads {aggregates} distinct countOf and sumOf totals, above the maximum of \
@@ -3765,6 +3781,24 @@ fn validate_rule_limits(
         }
     }
     Ok(())
+}
+
+/// How many totals `read` takes from state for one document: one, or, when it
+/// matches a key by the elements of an array of the type
+/// ([`AggregateRead::elements_path`]), one per element the array may hold, its
+/// `maxItems`. A path naming no typed array counts as one here and is refused
+/// where the rule's reads are checked.
+fn aggregate_state_reads(
+    read: &AggregateRead,
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> usize {
+    read.elements_path()
+        .and_then(|path| flattened_properties.get(path))
+        .and_then(|property| match &property.property_type {
+            DocumentPropertyType::TypedArray(array) => Some(usize::from(array.max_items)),
+            _ => None,
+        })
+        .unwrap_or(1)
 }
 
 /// Reads the `deleteConstraints` keyword onto the document type: the rules the
@@ -3847,7 +3881,12 @@ fn apply_delete_constraints_v0(
     }
 
     if full_validation {
-        validate_rule_limits(&constraints, &structure_error, platform_version)?;
+        validate_rule_limits(
+            &constraints,
+            &document_type.flattened_properties,
+            &structure_error,
+            platform_version,
+        )?;
     }
 
     document_type.delete_constraints = constraints;
@@ -4352,6 +4391,8 @@ pub(super) fn validate_property_constraint_reads(
         // The value a key is matched by is always there, so that every write reads
         // the total of the documents matching it: a property the document could leave
         // out, or whose enclosing object it could, would match nothing
+        // A list matched by its elements (`AggregateBinding::Elements`) may be left
+        // out: it then holds no element, and the total is 0
         for binding in read.filter.values() {
             let AggregateBinding::Property { path, .. } = binding else {
                 continue;
@@ -5244,7 +5285,9 @@ impl AggregateKeyKind {
 ///
 /// Versioned on `parse_property_constraints`, the version that parsed the rules:
 /// 1 (protocol version 15) also admits a byte array key bound to a byte array
-/// property ([`AggregateKeyKind::of_admitting_byte_arrays`]). Before 14 (`None`)
+/// property ([`AggregateKeyKind::of_admitting_byte_arrays`]), and a key matched
+/// by the elements of a typed array of the declaring type
+/// ([`AggregateBinding::Elements`]), which only its parse produces. Before 14 (`None`)
 /// no rule parses, so version 0 finds nothing to check.
 pub(in crate::data_contract::document_type::class_methods) fn validate_property_constraint_aggregates(
     document_types: &BTreeMap<String, DocumentType>,
@@ -5282,6 +5325,11 @@ struct AggregateKeyGrammar {
     keys: &'static str,
     values: &'static str,
 }
+
+/// What a key may be matched by the elements of ([`AggregateBinding::Elements`]), in a
+/// refusal. Only `parse_property_constraints` 1 parses one.
+const AGGREGATE_ELEMENTS: &str = "an \"in\" names a typed array of the document whose elements \
+                                  are integers, strings or identifiers";
 
 /// `parse_property_constraints` 0: integer, string and identifier keys.
 const AGGREGATE_KEY_GRAMMAR_V0: AggregateKeyGrammar = AggregateKeyGrammar {
@@ -5456,6 +5504,40 @@ fn validate_property_constraint_aggregates_with(
                                 }
                             };
                             (format!("the constant \"{constant}\""), kind)
+                        }
+                        // Parsed only under `parse_property_constraints` 1 (protocol
+                        // version 15): no rule holds one under the grammar of 0
+                        AggregateBinding::Elements { path, .. } => {
+                            // What a document adds to a total of its own type is
+                            // matched key by key against one value each
+                            // (`AggregateRead::contribution`), which a list is not
+                            if read.of_own_type {
+                                return Err(error(format!(
+                                    "{totals}, its own type, with \"{key}\" at any element of \
+                                     \"{path}\": a total of the rule's own type matches every \
+                                     key by a single value"
+                                )));
+                            }
+                            let property_type = declaring
+                                .flattened_properties()
+                                .get(path)
+                                .map(|property| &property.property_type);
+                            let kind = match property_type {
+                                Some(DocumentPropertyType::TypedArray(array)) => {
+                                    AggregateKeyKind::of(&array.item_type)
+                                }
+                                _ => None,
+                            };
+                            let Some(kind) = kind else {
+                                return Err(error(format!(
+                                    "{totals} with \"{key}\" at any element of \"{path}\", \
+                                     which has type {}: {AGGREGATE_ELEMENTS}",
+                                    property_type.map_or("none".to_string(), |property_type| {
+                                        property_type.name()
+                                    }),
+                                )));
+                            };
+                            (format!("an element of \"{path}\""), kind)
                         }
                         AggregateBinding::Property { path, .. } => {
                             let property_type = declaring

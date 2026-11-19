@@ -130,6 +130,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    or sum tree holds the key as `serialize_value_for_key` writes it, so
 ///    consensus reads the total as it reads any other. `parse_property_constraints`
 ///    0 (protocol version 14) reads such a binding as an integer and refuses it.
+///    The same generation lets a filter match a key by any element of a typed
+///    array of the document, `{ "tag": { "in": "tags" } }`: the total is over the
+///    documents whose key is one of the list's distinct elements, read as one
+///    total per element and added up, 0 for a list left out. It counts as the
+///    array's `maxItems` toward `max_property_constraint_aggregates`, and is
+///    refused in a total of the rule's own type. Generation 0 refuses the object
+///    as no value a filter takes.
 ///
 /// 5. **Tradeable tokens, decoded and not yet admitted**: `TokenTradeMode::Tradeable` lets a
 ///    token's holders list it and make offers for it. This version decodes the mode and admits

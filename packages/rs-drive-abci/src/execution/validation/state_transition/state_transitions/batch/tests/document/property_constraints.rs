@@ -3131,6 +3131,195 @@ mod property_constraints_tests {
         assert_eq!(integer(&fixture.stored_offers()[0], "fee"), Some(20));
     }
 
+    /// An offer holding up to four `tags`, declaring `rules`.
+    fn tagged_offer_schema(rules: Value) -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "maximum": 100000000, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61 },
+                    "maxItems": 4,
+                    "position": 4
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": rules,
+            "additionalProperties": false
+        })
+    }
+
+    /// A tag nobody may use, counted by the tag it bans.
+    fn banned_tag_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "tag": { "type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61, "position": 0 }
+            },
+            "required": ["tag"],
+            "indices": [{
+                "name": "byTag",
+                "properties": [{ "tag": "asc" }],
+                "countable": "countable"
+            }],
+            "additionalProperties": false
+        })
+    }
+
+    /// Sets an offer's `tags`.
+    fn tagged<const N: usize>(tags: [&'static str; N]) -> impl FnOnce(&mut Document) {
+        move |document: &mut Document| {
+            document.set(
+                "tags",
+                Value::Array(
+                    tags.iter()
+                        .map(|tag| Value::Text(tag.to_string()))
+                        .collect(),
+                ),
+            );
+        }
+    }
+
+    /// The fixture whose offers declare `rules` beside the banned tags, with `banned` banned.
+    async fn offers_with_banned_tags<const N: usize>(
+        rules: Value,
+        banned: [&'static str; N],
+    ) -> OfferFixture {
+        let mut fixture = OfferFixture::with_schemas(
+            tagged_offer_schema(rules),
+            [("bannedTag", banned_tag_schema())],
+        );
+        for tag in banned {
+            assert_matches!(
+                fixture
+                    .create_of("bannedTag", |document| {
+                        document.set("tag", Value::Text(tag.to_string()))
+                    })
+                    .await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        fixture
+    }
+
+    /// `countOf` matching a key by any element of an array of the document
+    /// (`{ "in": "tags" }`, protocol version 15): an offer holds no banned tag,
+    /// on a create and on a replace, and one without tags reads nothing.
+    #[tokio::test]
+    async fn should_refuse_a_document_holding_a_banned_element() {
+        let mut fixture = offers_with_banned_tags(
+            platform_value!({
+                "noBannedTags": {
+                    "equal": [{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }, 0]
+                }
+            }),
+            ["spam"],
+        )
+        .await;
+
+        let result = fixture.create(tagged(["dash", "spam"])).await;
+        expect_violated(result, "noBannedTags", PropertyConstraintViolation::NotMet);
+        let result = fixture.create(tagged(["spam"])).await;
+        expect_violated(result, "noBannedTags", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.create(tagged(["dash", "news"])).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+
+        // A replace is judged by the tags it leaves
+        let result = fixture.replace(tagged(["dash", "spam"])).await;
+        expect_violated(result, "noBannedTags", PropertyConstraintViolation::NotMet);
+        assert_matches!(
+            fixture.replace(tagged(["dash"])).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // A tag banned later refuses the next write, and leaves what is stored
+        assert_matches!(
+            fixture
+                .create_of("bannedTag", |document| {
+                    document.set("tag", Value::Text("dash".to_string()))
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.create(tagged(["dash"])).await;
+        expect_violated(result, "noBannedTags", PropertyConstraintViolation::NotMet);
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// The total is over the documents matching any distinct element of the
+    /// list: two banned tags held count two, and a tag held twice counts once.
+    #[tokio::test]
+    async fn should_total_the_documents_matching_each_distinct_element() {
+        let mut fixture = offers_with_banned_tags(
+            platform_value!({
+                "atMostOneBannedTag": {
+                    "lessThan": [{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }, 2]
+                }
+            }),
+            ["spam", "scam"],
+        )
+        .await;
+
+        assert_matches!(
+            fixture.create(tagged(["spam", "dash"])).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.create(tagged(["spam", "spam", "spam"])).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.create(tagged(["spam", "dash", "scam"])).await;
+        expect_violated(
+            result,
+            "atMostOneBannedTag",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// Each distinct element is one state read, billed with the write: three
+    /// tags cost more to judge than one tag held three times, which is stored in
+    /// as many bytes.
+    #[tokio::test]
+    async fn should_bill_one_total_per_distinct_element() {
+        let processing_fee = |result: StateTransitionExecutionResult| {
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!("expected the create to succeed, got {result:?}");
+            };
+            fee_result.processing_fee
+        };
+        let rules = || {
+            platform_value!({
+                "noBannedTags": {
+                    "equal": [{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }, 0]
+                }
+            })
+        };
+        let mut repeated = offers_with_banned_tags(rules(), ["spam"]).await;
+        let mut distinct = offers_with_banned_tags(rules(), ["spam"]).await;
+        let repeated_fee = processing_fee(repeated.create(tagged(["aaa", "aaa", "aaa"])).await);
+        let distinct_fee = processing_fee(distinct.create(tagged(["aaa", "bbb", "ccc"])).await);
+        assert!(
+            distinct_fee > repeated_fee,
+            "each distinct element must be billed: {distinct_fee} <= {repeated_fee}"
+        );
+    }
+
     /// The totals a rule reads leave out the other writes of its batch, which is
     /// sound only while a document batch carries one transition: raising the
     /// limit needs the batch's own writes added to them.

@@ -429,44 +429,50 @@ fn read_aggregates(
                  contract lacks, which registration refuses",
             )));
         };
-        let total = match read.filter_values(
+        // One total kept in state per set of values the filter's keys take: a single
+        // set, or none when no document can match a value its key cannot hold (the total
+        // is then 0), for every filter a contract of protocol version 14 can declare, so
+        // this loop reads there exactly what it read before; from protocol version 15 a
+        // filter may match a key by any element of an array of the document
+        // (`AggregateBinding::Elements`, which `parse_property_constraints` 0 never
+        // parses), and then one set per distinct element, added up
+        let mut total = 0i128;
+        for filter_values in read.filter_value_sets(
             counted,
             bound.id,
             bound.data,
             bound.owner_id,
             platform_version,
         )? {
-            // No document can match a value its key cannot hold
-            None => 0,
-            Some(filter_values) => {
-                let kept = drive.fetch_property_constraint_aggregate(
-                    contract.id().to_buffer(),
+            let kept = drive.fetch_property_constraint_aggregate(
+                contract.id().to_buffer(),
+                counted,
+                read,
+                &filter_values,
+                transaction,
+                &mut drive_operations,
+                platform_version,
+            )?;
+            let contribution = |version: Option<VersionData>| match version {
+                Some(version) => read.contribution(
                     counted,
-                    read,
                     &filter_values,
-                    transaction,
-                    &mut drive_operations,
+                    version.data,
+                    version.owner_id,
                     platform_version,
-                )?;
-                let contribution = |version: Option<VersionData>| match version {
-                    Some(version) => read.contribution(
-                        counted,
-                        &filter_values,
-                        version.data,
-                        version.owner_id,
-                        platform_version,
-                    ),
-                    None => Ok(0),
-                };
-                let removed = contribution(stored)?;
-                let added = contribution(written)?;
-                kept.checked_sub(removed)
-                    .and_then(|total| total.checked_add(added))
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "a propertyConstraints or deleteConstraints total overflowed an i128",
-                    )))?
-            }
-        };
+                ),
+                None => Ok(0),
+            };
+            let removed = contribution(stored)?;
+            let added = contribution(written)?;
+            total = kept
+                .checked_sub(removed)
+                .and_then(|kept| kept.checked_add(added))
+                .and_then(|kept| total.checked_add(kept))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "a propertyConstraints or deleteConstraints total overflowed an i128",
+                )))?;
+        }
         aggregates.insert(read.clone(), total);
     }
 
