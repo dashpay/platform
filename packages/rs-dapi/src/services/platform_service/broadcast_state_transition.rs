@@ -60,7 +60,13 @@ impl PlatformServiceImpl {
         // Bytes no known version admits are refused without waiting for the
         // status lookup.
         validate_state_transition_bytes_size(&tx, MOST_PERMISSIVE_SIZE_VERSION)?;
-        let active_version = self.active_version().await;
+        // While every known version has the same limits, the active one
+        // cannot change either check, so a broadcast does not wait for it.
+        let active_version = if KNOWN_LIMITS_ARE_UNIFORM {
+            None
+        } else {
+            self.active_version().await
+        };
         validate_state_transition_bytes_size(
             &tx,
             active_version.unwrap_or(MOST_PERMISSIVE_SIZE_VERSION),
@@ -280,10 +286,12 @@ impl PlatformServiceImpl {
     /// The protocol version the network runs now, from the cached
     /// `getStatus`. `None` when the status does not answer in
     /// [`ACTIVE_VERSION_LOOKUP_TIMEOUT`] or names a version this build does
-    /// not know; callers then fall back to the largest limit any known
-    /// version has, so DAPI never refuses what the network could accept, nor
-    /// charges less proof work than Drive does. Drive enforces the active
-    /// version's limits when it decodes.
+    /// not know; callers then fall back to the largest limit any version
+    /// compiled into this build has. Among those versions, DAPI then never
+    /// refuses what the network could accept, nor charges less proof work
+    /// than Drive does; a newer version this build does not know may raise
+    /// either limit past that fallback until DAPI is upgraded. Drive enforces
+    /// the active version's limits when it decodes.
     async fn active_version(&self) -> Option<&'static PlatformVersion> {
         let request = Request::new(GetStatusRequest {
             version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
@@ -321,6 +329,25 @@ fn active_platform_version(status: Option<&GetStatusResponse>) -> Option<&'stati
         .as_ref()?
         .current;
     PlatformVersion::get(current).ok()
+}
+
+/// Whether every known protocol version has the same state transition size
+/// and shielded action limits.
+const KNOWN_LIMITS_ARE_UNIFORM: bool = limits_are_uniform(PLATFORM_VERSIONS);
+
+const fn limits_are_uniform(versions: &[PlatformVersion]) -> bool {
+    let mut index = 1;
+    while index < versions.len() {
+        let first = &versions[0].system_limits;
+        let other = &versions[index].system_limits;
+        if other.max_state_transition_size != first.max_state_transition_size
+            || other.max_shielded_transition_actions != first.max_shielded_transition_actions
+        {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 /// The known protocol version with the largest `max_state_transition_size`.
@@ -444,6 +471,30 @@ mod tests {
             validate_state_transition_bytes_size(&[1; 101], &version),
             Err(DapiError::InvalidArgument(message)) if message.contains("maximum size of 100 bytes")
         ));
+    }
+
+    #[test]
+    fn should_see_whether_the_known_limits_differ() {
+        let with_limits = |size, actions| {
+            let mut version = PlatformVersion::latest().clone();
+            version.system_limits.max_state_transition_size = size;
+            version.system_limits.max_shielded_transition_actions = actions;
+            version
+        };
+
+        assert!(limits_are_uniform(&[with_limits(100, 16)]));
+        assert!(limits_are_uniform(&[
+            with_limits(100, 16),
+            with_limits(100, 16)
+        ]));
+        assert!(!limits_are_uniform(&[
+            with_limits(100, 16),
+            with_limits(200, 16)
+        ]));
+        assert!(!limits_are_uniform(&[
+            with_limits(100, 16),
+            with_limits(100, 32)
+        ]));
     }
 
     #[test]

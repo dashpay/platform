@@ -124,10 +124,11 @@ fn last_forwarded_address(header: &str) -> Option<IpAddr> {
 }
 
 /// The most Orchard actions Drive verifies in one bundle: the active protocol
-/// version's limit, or, when DAPI does not know the active version, the
-/// largest limit of any version this build knows. Drive refuses a bundle over
-/// the active limit before any proof work, so a larger one costs no more than
-/// the largest valid one.
+/// version's limit when DAPI recognises it, otherwise the largest limit of
+/// any version compiled into this build. Drive refuses a bundle over the
+/// active limit before any proof work, so a larger one costs no more than the
+/// largest valid one. A newer version this build does not know may raise the
+/// limit past that fallback until DAPI is upgraded.
 pub(super) fn bundle_action_limit(active_version: Option<&PlatformVersion>) -> u16 {
     active_version.map_or(MAX_SHIELDED_ACTIONS, |version| {
         version.system_limits.max_shielded_transition_actions
@@ -553,13 +554,14 @@ mod tests {
     fn should_cap_actions_in_flight_at_one_largest_bundle() {
         let budget = budget();
         let now = Instant::now();
-        let largest = budget.try_reserve_at(SOURCE, 16, now).unwrap().unwrap();
+        let limit = usize::from(MAX_SHIELDED_ACTIONS);
+        let largest = budget.try_reserve_at(SOURCE, limit, now).unwrap().unwrap();
         assert!(
             budget.try_reserve_at(SOURCE, 1, now).is_err(),
             "concurrent broadcasts must not all pass before any failure is charged"
         );
         largest.settle_at(false, now);
-        assert!(broadcast(&budget, SOURCE, 16, false, now).is_ok());
+        assert!(broadcast(&budget, SOURCE, limit, false, now).is_ok());
     }
 
     #[test]
