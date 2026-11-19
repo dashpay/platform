@@ -870,8 +870,8 @@ pub struct AccountBalanceEntryFFI {
 // ---------------------------------------------------------------------------
 //
 // All structs here are read-only diagnostic surfaces consumed by the
-// iOS memory explorer. Each struct mirrors a `*Snapshot` type in
-// `platform-wallet`'s `manager::accessors` module 1:1.
+// iOS memory explorer. They expose snapshots from `platform-wallet`'s
+// `manager::accessors` module.
 
 /// Snapshot of [`PlatformAddressSyncManager`] configuration / last-pass
 /// timestamp. `last_event_wallet_count` was dropped — it aliased
@@ -896,6 +896,8 @@ pub struct IdentitySyncConfigFFI {
 pub struct CoreWalletStateFFI {
     pub synced_height: u32,
     pub last_processed_height: u32,
+    /// Reserved for C ABI compatibility. Callers must ignore this field.
+    pub reserved: u64,
 }
 
 /// Per-wallet identity scan state.
@@ -949,6 +951,8 @@ pub struct TrackedAssetLockEntryFFI {
 pub struct AccountMetadataFFI {
     pub total_transactions: u64,
     pub total_utxos: u64,
+    /// Reserved for C ABI compatibility. Callers must ignore this field.
+    pub reserved: u64,
 }
 
 /// One address row inside [`AccountAddressPoolEntryFFI`]. The pool's
