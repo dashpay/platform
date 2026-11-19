@@ -1,3 +1,4 @@
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
 use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
@@ -10,6 +11,7 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::consensus::ConsensusError;
+use dpp::decision_proposal::is_multiple_choice_proposal;
 use dpp::balances::credits::MAX_CREDITS;
 use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
@@ -182,10 +184,10 @@ pub fn action_fee_operations(
 /// paid for the storage, and a document's would otherwise go to its owner, who could delete it
 /// and keep what the sponsor paid.
 ///
-/// Deletes name no owner (their refunds go to the owners recorded on what they remove), history
-/// entries, which are never deleted, refund nobody, and the withdrawal and multi-document
-/// operations are never part of a batch. A document of a type with a `ttl` is stored without
-/// flags and refunds nobody.
+/// A history delete names the sponsor on its lifecycle record; refunds for the
+/// removed pointer and index entries still go to their recorded owners. An erase
+/// preserves those owners too. Withdrawal and multi-document operations are never
+/// part of a batch. A type with a `ttl` is stored without flags and refunds nobody.
 ///
 /// The estimate needs no owner, and an owner takes no more bytes than any other, so this
 /// changes no fee.
@@ -221,7 +223,11 @@ pub fn record_gas_sponsor_as_storage_owner(
             } => owned_document_info
                 .document_info
                 .set_storage_flags_owner(gas_sponsor),
-            DocumentOperationType::DeleteDocument { .. }
+            // Only delete operation generation 1 reads this owner, for the lifecycle record.
+            DocumentOperationType::DeleteDocument { deleter_id, .. } => {
+                *deleter_id = Some(gas_sponsor_id);
+            }
+            DocumentOperationType::EraseDocument { .. }
             | DocumentOperationType::ForceDeleteDocument { .. }
             | DocumentOperationType::ForceDeleteReadDocument { .. }
             | DocumentOperationType::DeleteIndexOnlyDocument { .. }
@@ -429,6 +435,33 @@ impl BatchTransitionAction {
                     _ => None,
                 })
                 .collect(),
+        }
+    }
+
+    /// How many multiple choice proposals the batch creates (protocol version 15): each adds
+    /// the multiple choice proposal processing fee to what the batch pays.
+    ///
+    /// Read off the transitions as they are now, like the action fees: state validation
+    /// replaces a create that fails with a nonce bump, which creates nothing and owes
+    /// nothing.
+    pub fn multiple_choice_proposals_created(&self) -> u64 {
+        match self {
+            BatchTransitionAction::V0(v0) => v0
+                .transitions
+                .iter()
+                .filter(|transition| match transition {
+                    BatchedTransitionAction::DocumentAction(
+                        document_action @ DocumentTransitionAction::CreateAction(_),
+                    ) => {
+                        let base = document_action.base();
+                        is_multiple_choice_proposal(
+                            &base.data_contract_id(),
+                            base.document_type_name(),
+                        )
+                    }
+                    _ => false,
+                })
+                .count() as u64,
         }
     }
 

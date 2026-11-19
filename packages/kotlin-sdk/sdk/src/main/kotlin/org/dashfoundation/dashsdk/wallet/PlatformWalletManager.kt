@@ -182,6 +182,14 @@ internal fun initializePlatformWalletNativeManager(
  * switching means closing this instance and creating a new one — see
  * [WalletManagerStore]; there is no reconfiguration path.
  *
+ * ## SPV quorum keys
+ *
+ * On an adaptive SDK ([Sdk.ContextProviderKind.ADAPTIVE], the default) the
+ * manager serves the SDK the quorum keys of its own SPV client, which the
+ * SDK uses to verify proofs once that client has synced. Only one manager
+ * serves an SDK: constructing a second on the same SDK while the first is
+ * open throws, so close a manager before constructing another on its SDK.
+ *
  * ## Lifecycle
  *
  * [AutoCloseable]. [close] stops the sync loops, destroys the native
@@ -859,6 +867,16 @@ class PlatformWalletManager(
      */
     val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposalTransactions =
         org.dashfoundation.dashsdk.voting.DecisionProposalTransactions(teardownGate)
+
+    /**
+     * Multiple choice proposal create and edit, and entering a choice (protocol version
+     * 15): the multiple choice proposal slice of `ManagedPlatformWallet`
+     * (`ManagedPlatformWalletMultipleChoiceProposals.swift`). Stateless; callers thread the
+     * wallet handle and [signerHandle] into each call. Reads and the masternode vote are on
+     * `Sdk.multipleChoiceProposals`.
+     */
+    val multipleChoiceProposals: org.dashfoundation.dashsdk.voting.MultipleChoiceProposalTransactions =
+        org.dashfoundation.dashsdk.voting.MultipleChoiceProposalTransactions(teardownGate)
 
     // ── Native manager bundle ─────────────────────────────────────────
 
@@ -1766,7 +1784,7 @@ class PlatformWalletManager(
      * Shield from Platform balance (Type 15) — port of Swift's
      * `shieldedShield`. Spends [amount] credits from the wallet's
      * [paymentAccount] Platform-Payment addresses (auto-selected in
-     * ascending derivation order) into its own bound shielded pool
+     * lexicographic Platform-address order) into its own bound shielded pool
      * ([shieldedAccount]). Signed by the Keystore address signer
      * ([signerHandle]); self-shield only (Rust always targets this wallet's
      * own default Orchard address, so there is no recipient parameter).
@@ -1796,6 +1814,89 @@ class PlatformWalletManager(
                 shieldedAccount,
                 paymentAccount,
                 amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Platform → EXTERNAL shielded (Type 15) — port of Swift's
+     * `PlatformWalletManager.shieldedShieldToRecipient(walletId:shieldedAccount:paymentAccount:recipientRaw43:amount:memo:addressSigner:)`
+     * in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift.
+     *
+     * This is the same Type 15 shield as [shieldedShield], with the same
+     * input selection (the [paymentAccount] Platform-Payment addresses,
+     * lexicographic Platform-address order), the same fees, the same error
+     * shapes and the same Keystore address signer ([signerHandle]). The only
+     * difference is that the note is assigned to [recipientRaw43], a third
+     * party's raw 43-byte Orchard payment address, instead of this wallet's
+     * own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShield].
+     *
+     * A bound shielded account ([shieldedAccount]) is still required: the
+     * send is OVK-encrypted to that account and recorded there, which is how
+     * the wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules (and the 36-byte
+     * on-chain encoding), so an over-long memo surfaces as a native error,
+     * not a Kotlin precondition.
+     *
+     * Throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
+     * when the broadcast was accepted but its execution result couldn't be
+     * confirmed. The shield may already be on chain, so the caller must NOT
+     * retry: a retry rebuilds the bundle and could double-pay. The next sync
+     * reconciles the outcome. A shield spends no notes, so nothing is
+     * reserved wallet-side.
+     *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, this still returns normally (see
+     * [opReturningCompletedResult]), so a completed shield is never hidden.
+     * Handle the return before the next suspension point.
+     *
+     * Blocks for the ~30s Halo 2 proof.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11). Negative values are
+     *   rejected here; Rust rejects zero.
+     * @param memo optional UTF-8 memo for the recipient's note.
+     */
+    suspend fun shieldedShieldToRecipient(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        paymentAccount: Int = 0,
+        memo: String? = null,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        // Sign check only, before the native unsigned cast; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        require(paymentAccount >= 0) {
+            "paymentAccount must be non-negative, got $paymentAccount"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                paymentAccount,
+                recipientRaw43,
+                amount,
+                memo,
                 signerHandle,
             )
         }

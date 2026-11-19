@@ -85,7 +85,9 @@ fn read_and_prove_index_matrix(countable: bool) {
                 "required":["topic"], "additionalProperties":false
             }
         });
-        let contract = DataContractFactory::new(old.protocol_version)
+        // Contested keep-history types can only originate before lifecycle admission.
+        // Keep covering their persisted contracts under both storage layouts.
+        let contract = DataContractFactory::new(14)
             .unwrap()
             .create_with_value_config([7; 32].into(), 0, schemas, None, None)
             .unwrap()

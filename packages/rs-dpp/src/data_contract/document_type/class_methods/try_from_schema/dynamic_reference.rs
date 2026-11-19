@@ -3,14 +3,17 @@
 //! version 1 of `apply_property_reference` reads (protocol version 15). See
 //! [`DynamicDocumentReference`].
 
+use crate::data_contract::config::moderation::ModerationAbility;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::{
     DocumentPropertyType, DocumentTypeRequirements, DynamicDocumentReference,
     DynamicDocumentReferenceKind, PropertyReference, ReferenceHolder, RequiredPropertySlot,
-    SlotCondition, SlotConditionList, SlotConditionValue, SlotConditions, SlotPropertyName,
-    SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME, REFERRING_DOCUMENT_PREFIX,
-    SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND,
-    SLOT_CONDITION_PROPERTY,
+    SlotCondition, SlotConditionList, SlotConditionSetting, SlotConditionValue, SlotConditions,
+    SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME,
+    REFERRING_DOCUMENT_PREFIX, SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS,
+    SLOT_CONDITION_DELETE_SETTLED, SLOT_CONDITION_DELETE_WITHIN, SLOT_CONDITION_ELECTED_ABILITIES,
+    SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
+    SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT,
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -28,6 +31,14 @@ const DYNAMIC_KEYS: [&str; 3] = [
 
 /// The two keys a dynamic reference reads from the referring document.
 const TARGET_KEYS: [&str; 2] = [property_names::CONTRACT_ID, property_names::DOCUMENT_TYPE];
+
+/// The `refersTo` `type`s of a reference to a document, on each of which version 0 of
+/// `apply_property_reference` reads `contractId` as an identifier.
+const DOCUMENT_REFERENCE_TYPES: [&str; 3] = [
+    "permanentDocument",
+    "moderatedDocument",
+    "deletableDocument",
+];
 
 /// What `"$self.<rest>"` reads from the referring document: `<rest>`. `None` for a value
 /// that is not written with the prefix, a literal contract id or document type among them.
@@ -59,31 +70,56 @@ struct SlotConditionLimits {
     text_length: usize,
 }
 
+impl SlotConditionLimits {
+    fn of(platform_version: &PlatformVersion) -> Self {
+        let limits = &platform_version.system_limits;
+        Self {
+            nodes: usize::from(limits.max_document_type_requirement_condition_nodes),
+            text_length: usize::from(limits.max_document_type_requirement_condition_text_length),
+        }
+    }
+}
+
 fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
 }
 
-/// Whether a `refersTo` declaration names its target through the referring document: its
-/// `contractId` or its `documentType` is read from it (`"$self.<property>"`).
+/// Whether a `refersTo` declaration names its target through the referring document: a
+/// reference to a document whose `contractId` is read from it (`"$self.<property>"`), or one
+/// whose `type` lists kinds and whose `contractId` or `documentType` is read from it.
 ///
 /// Nothing else tells one. This runs on every parse, the reading of a contract stored
 /// under an earlier protocol version included, and must read such a contract as that
-/// version did. No stored declaration is written this way: before protocol version 15 a
-/// `contractId` that is no identifier does not parse, and a `documentType` names a document
-/// type that exists, whose name holds no `$` and no dot. `documentTypeRequirements` beside
-/// a target the schema names is another matter: earlier versions did not read the key, so
-/// a stored declaration may carry it, and it stays unread here. Registration refuses it
-/// (the native schema check), like every key a declaration does not take.
+/// version did. So it holds only for a declaration version 0 of `apply_property_reference`
+/// cannot read at all: version 0 reads the `contractId` of a reference to a document as an
+/// identifier, which no `"$self."` string is, and takes a `type` only as a string. Every
+/// declaration version 0 reads is read as it was, whatever a stored one carries: an
+/// `identity`, `contract`, `token` or `identityPublicKey` reference, whose `contractId` and
+/// `documentType` version 0 never reads, and a reference to a document whose `contractId` is
+/// an id or left out, whose `documentType` version 0 reads as a document type name, written
+/// `"$self."` or not. Registration refuses `"$self."` in either (the native schema check).
+/// `documentTypeRequirements` beside a target the schema names is the same: earlier
+/// versions did not read the key, so a stored declaration may carry it, and it stays unread
+/// here. Registration refuses it, like every key a declaration does not take.
 pub(super) fn declares_dynamic_target(refers_to_value: &Value) -> bool {
-    refers_to_value
-        .to_btree_ref_string_map()
-        .is_ok_and(|declaration| {
-            TARGET_KEYS.iter().any(|key| {
-                declaration
-                    .get(*key)
-                    .is_some_and(|value| read_from_referring_document(value).is_some())
-            })
-        })
+    let Ok(declaration) = refers_to_value.to_btree_ref_string_map() else {
+        return false;
+    };
+    let reads_from_referring_document = |key: &str| {
+        declaration
+            .get(key)
+            .is_some_and(|value| read_from_referring_document(value).is_some())
+    };
+    match declaration.get(property_names::TYPE) {
+        Some(Value::Text(reference_type)) => {
+            DOCUMENT_REFERENCE_TYPES.contains(&reference_type.as_str())
+                && reads_from_referring_document(property_names::CONTRACT_ID)
+        }
+        Some(Value::Array(_)) => TARGET_KEYS
+            .iter()
+            .any(|key| reads_from_referring_document(key)),
+        _ => false,
+    }
 }
 
 /// Whether a `refersTo` declaration, or an operand anywhere inside a reference expression
@@ -240,10 +276,11 @@ fn parse_document_type_requirements(
         .map_err(|_| refused("documentTypeRequirements must be an object".to_string()))?;
     if let Some(key) = requirements
         .keys()
-        .find(|key| !matches!(key.as_str(), "properties" | "require"))
+        .find(|key| !matches!(key.as_str(), "properties" | "require" | "when"))
     {
         return Err(refused(format!(
-            "documentTypeRequirements does not take {key}: it holds properties and require"
+            "documentTypeRequirements does not take {key}: it holds properties, require and \
+             when"
         )));
     }
     let slot_values = requirements
@@ -298,7 +335,34 @@ fn parse_document_type_requirements(
         .map(|value| parse_require(value, &slots))
         .transpose()?;
 
-    Ok(DocumentTypeRequirements { slots, require })
+    // What the type must say of itself, whatever fills the slots: the grammar of a slot's
+    // `when`, with no property in hand to read
+    let when = requirements
+        .get("when")
+        .map(|when| {
+            let mut nodes = 0;
+            let condition = parse_slot_condition(
+                when,
+                "documentTypeRequirements",
+                &mut nodes,
+                SlotConditionLimits::of(platform_version),
+            )?;
+            if condition.reads_the_property() {
+                return Err(refused(format!(
+                    "documentTypeRequirements when is judged for the document type as a \
+                     whole and reads no \"{SLOT_CONDITION_PROPERTY}\": a condition on a property \
+                     belongs on the slot the property fills"
+                )));
+            }
+            Ok(condition)
+        })
+        .transpose()?;
+
+    Ok(DocumentTypeRequirements {
+        slots,
+        require,
+        when,
+    })
 }
 
 fn parse_slot(
@@ -417,20 +481,13 @@ fn parse_slot(
     let when = slot
         .get("when")
         .map(|when| {
-            let limits = SlotConditionLimits {
-                nodes: usize::from(
-                    platform_version
-                        .system_limits
-                        .max_document_type_requirement_condition_nodes,
-                ),
-                text_length: usize::from(
-                    platform_version
-                        .system_limits
-                        .max_document_type_requirement_condition_text_length,
-                ),
-            };
             let mut nodes = 0;
-            parse_slot_condition(when, &at(), &mut nodes, limits)
+            parse_slot_condition(
+                when,
+                &at(),
+                &mut nodes,
+                SlotConditionLimits::of(platform_version),
+            )
         })
         .transpose()?;
 
@@ -530,7 +587,8 @@ fn parse_slot_condition(
         .ok_or_else(|| {
             refused(format!(
                 "{at} when, and every condition inside it, is an object of one key: equal, \
-                 notEqual, in, notIn, contains, not, anyOf, allOf, ifThen or ifThenElse"
+                 notEqual, in, notIn, contains, present, absent, not, anyOf, allOf, ifThen or \
+                 ifThenElse"
             ))
         })?;
     let Some((key, operand)) = condition.iter().next() else {
@@ -627,15 +685,37 @@ fn parse_slot_condition(
             let list = match pair[0].as_text() {
                 Some(SLOT_CONDITION_DELETE_KEEPS_FIELDS) => SlotConditionList::DeletionKeptFields,
                 Some(SLOT_CONDITION_CHANGE_FIELDS) => SlotConditionList::ModeratorChangeableFields,
+                Some(SLOT_CONDITION_ELECTED_ABILITIES) => SlotConditionList::ElectedAbilities,
                 _ => {
                     return Err(refused(format!(
-                        "{at} when contains looks into \"{SLOT_CONDITION_DELETE_KEEPS_FIELDS}\" \
-                         or \"{SLOT_CONDITION_CHANGE_FIELDS}\", got {}",
+                        "{at} when contains looks into \"{SLOT_CONDITION_DELETE_KEEPS_FIELDS}\", \
+                         \"{SLOT_CONDITION_CHANGE_FIELDS}\" or \
+                         \"{SLOT_CONDITION_ELECTED_ABILITIES}\", got {}",
                         pair[0]
                     )))
                 }
             };
             let needle = slot_condition_value(&pair[1], at, limits.text_length)?;
+            // The team's abilities are named, not properties: a constant that names one
+            if list == SlotConditionList::ElectedAbilities {
+                let names_an_ability = matches!(
+                    &needle,
+                    SlotConditionValue::Constant(name)
+                        if ModerationAbility::ALL.iter().any(|ability| ability.as_str() == name)
+                );
+                if !names_an_ability {
+                    return Err(refused(format!(
+                        "{at} when contains looks in \"{SLOT_CONDITION_ELECTED_ABILITIES}\" for \
+                         a {{ \"const\": ... }} naming an ability: {}",
+                        ModerationAbility::ALL
+                            .iter()
+                            .map(ModerationAbility::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                }
+                return Ok(SlotCondition::Contains(list, needle));
+            }
             if needle == SlotConditionValue::Kind {
                 return Err(refused(format!(
                     "{at} when contains looks for \"{SLOT_CONDITION_PROPERTY}\" or a {{ \"const\": \
@@ -692,9 +772,30 @@ fn parse_slot_condition(
             .map(SlotCondition::IfThen),
         "ifThenElse" => parse_slot_conditions(items(3..=3, "three conditions")?, at, nodes, limits)
             .map(SlotCondition::IfThenElse),
+        "present" | "absent" => {
+            let setting = match operand.as_text() {
+                Some(SLOT_CONDITION_DELETE_WITHIN) => SlotConditionSetting::DeleteWithin,
+                Some(SLOT_CONDITION_DELETE_SETTLED) => SlotConditionSetting::DeleteSettled,
+                Some(SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT) => {
+                    SlotConditionSetting::SettledApproversPredateDocument
+                }
+                _ => {
+                    return Err(refused(format!(
+                        "{at} when {key} tests \"{SLOT_CONDITION_DELETE_WITHIN}\", \
+                         \"{SLOT_CONDITION_DELETE_SETTLED}\" or \
+                         \"{SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT}\", got {operand}"
+                    )))
+                }
+            };
+            Ok(if key == "present" {
+                SlotCondition::Present(setting)
+            } else {
+                SlotCondition::Absent(setting)
+            })
+        }
         other => Err(refused(format!(
             "{at} when does not take {other}: a condition is equal, notEqual, in, notIn, \
-             contains, not, anyOf, allOf, ifThen or ifThenElse"
+             contains, present, absent, not, anyOf, allOf, ifThen or ifThenElse"
         ))),
     }
 }

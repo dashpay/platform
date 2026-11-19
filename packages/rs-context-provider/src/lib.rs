@@ -19,7 +19,8 @@ pub use adaptive::AdaptiveContextProvider;
 pub use contract_source::ContractSource;
 pub use error::ContextProviderError;
 pub use provider::{
-    platform_activation_height, ContextProvider, DataContractProvider, QuorumKeyFuture,
+    is_platform_quorum_type, platform_activation_height, ContextProvider, DataContractProvider,
+    QuorumKeyFuture,
 };
 pub use quorum_source::{ContextProviderMode, QuorumKeySource};
 pub use spv::{Readiness, SpvContextProvider, SpvSourceLease, SpvSourceSlot, SpvSourceSlotTaken};

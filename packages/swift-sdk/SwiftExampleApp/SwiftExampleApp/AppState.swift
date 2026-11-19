@@ -9,8 +9,8 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    /// The quorum-key source the current SDK uses for proof verification.
-    /// Tracks the adaptive provider's current routing choice after the saved
+    /// The quorum-key source the current SDK asks first for proof verification.
+    /// Tracks the source the adaptive provider asks first after the saved
     /// mode is applied. Drives the app's indicator;
     /// intentionally mirrors `SDK.quorumSource` (this one is the observable the
     /// UI binds to).
@@ -62,7 +62,8 @@ class AppState: ObservableObject {
 
     /// User-selected policy for which quorum source proof verification uses.
     enum QuorumMode: String, CaseIterable, Identifiable {
-        /// Trusted until the SPV masternode list is synced, then SPV.
+        /// SPV once its masternode list is synced, trusted before that and
+        /// for any key SPV cannot serve.
         case auto
         /// Force SPV as soon as the SPV client is running (proofs fail closed
         /// until synced; no trusted fallback).
@@ -82,7 +83,7 @@ class AppState: ObservableObject {
 
     /// Which quorum source the user wants. Every change is applied to every
     /// SDK this object built (see `applyQuorumMode`); `quorumSource` reflects
-    /// the adaptive provider's current routing choice (SPV may not be ready
+    /// the source the adaptive provider asks first (SPV may not be ready
     /// yet).
     @Published var quorumMode: QuorumMode {
         didSet {
@@ -127,7 +128,8 @@ class AppState: ObservableObject {
             // Persist so SDK.swift can read it (didSet doesn't fire in init)
             UserDefaults.standard.set(legacyLocal, forKey: "useDockerSetup")
         }
-        // Default: Auto — trusted until SPV syncs, then SPV.
+        // Default: Auto — SPV once synced, trusted before that and for any
+        // key SPV cannot serve.
         self.quorumMode =
             UserDefaults.standard.string(forKey: "quorumMode").flatMap(QuorumMode.init(rawValue:))
             ?? .auto
@@ -176,13 +178,13 @@ class AppState: ObservableObject {
     /// `makeSdk` applies the mode to an SDK it builds.
     ///
     /// - `.auto`: SPV while it runs with the header + masternode lists fully
-    ///   synced, trusted otherwise.
+    ///   synced, trusted otherwise, and trusted for any key SPV cannot serve.
     /// - `.spv`: SPV unconditionally — installed even before the SPV client
     ///   starts. The lookup fails closed ("SPV Client not started" / proofs
     ///   fail until synced) rather than falling back to trusted.
     /// - `.trusted`: always the trusted HTTP quorum provider.
     ///
-    /// `quorumSource` tracks the provider's current routing choice, which may
+    /// `quorumSource` tracks the source the provider asks first, which may
     /// lag the requested mode while SPV isn't ready.
     private func applyQuorumMode() {
         for builtSdk in builtSdks.allObjects {

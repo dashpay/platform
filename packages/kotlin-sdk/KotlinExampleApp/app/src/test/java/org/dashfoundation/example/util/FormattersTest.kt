@@ -1,6 +1,7 @@
 package org.dashfoundation.example.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -31,5 +32,15 @@ class FormattersTest {
         assertEquals(100_000_000L, parseDashToDuffs("1"))
         assertEquals(10_000L, parseDashToDuffs("0.0001"))
         assertNull(parseDashToDuffs("0.000000001"))
+    }
+
+    @Test
+    fun formatCreditsKeepsAnUnsignedAmountUnsigned() {
+        // An unsigned amount formats as the same amount read as a Long.
+        assertEquals(formatCredits(20_000_000_000L), formatCredits(20_000_000_000uL))
+        // Past Long.MAX_VALUE it is still a positive amount, where a narrowing to Long
+        // would have shown a negative one.
+        assertFalse(formatCredits(ULong.MAX_VALUE).startsWith("-"))
+        assertFalse(formatCredits(Long.MAX_VALUE.toULong() + 1uL).startsWith("-"))
     }
 }

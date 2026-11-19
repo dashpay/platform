@@ -839,6 +839,11 @@ mod commit_reveal_lookup_tests {
     /// create: the processing fee, the storage fee and the refund of the consumed commitment's
     /// storage to its owner. At 15 the create deletes the commitment from what its lookup read,
     /// so it pays one read of it fewer than at 14; the storage fee and the refund are the same.
+    ///
+    /// The contested create still costs more at 15 than at 14. The decision proposals contract,
+    /// registered at genesis from 15, holds contests of its own (the choices of a multiple
+    /// choice proposal), so the tree of contracts holding contests has one entry more, and a
+    /// write below it pays for the larger tree: 50_100 credits here.
     #[tokio::test]
     async fn should_pin_the_fees_of_a_consume_through_a_plain_and_a_contested_create() {
         // A fee of a reveal: processing, storage, and the refund to the commitment's owner
@@ -899,8 +904,8 @@ mod commit_reveal_lookup_tests {
                 ),
                 (
                     15,
-                    (1_766_860, 9_720_000, 15_181_239),
-                    (3_478_880, 75_411_000, 15_181_239)
+                    (1_720_940, 9_720_000, 15_181_239),
+                    (3_483_060, 75_411_000, 15_181_239)
                 ),
             ]
         );
@@ -1872,13 +1877,15 @@ mod commit_reveal_lookup_tests {
                     actual_fees.processing_fee,
                 ));
             }
-            // A chain born at 15 also holds the decision proposals and token market contracts,
-            // two more siblings registered at genesis in the contracts tree; with both, the
-            // written post reads its contract for as many bytes as at 14. The lookups cost the
-            // same.
+            // A chain born at 15 also holds the decision proposals contract, one more sibling
+            // registered at genesis in the contracts tree, which reshapes it so the written post
+            // reads its contract for fewer bytes (-45_920). The lookups cost the same.
+            let ((found_at_14, found_storage_at_14), missing_at_14) = fees[0];
             assert_eq!(
-                fees[0], fees[1],
-                "keyed by owner {keyed_by_owner}: the fees at 14, then at 15"
+                ((found_at_14 - 45_920, found_storage_at_14), missing_at_14),
+                fees[1],
+                "keyed by owner {keyed_by_owner}: the fees at 14 less the genesis shift, then at \
+                 15"
             );
         }
     }
@@ -3112,10 +3119,10 @@ mod commit_reveal_lookup_tests {
     /// it consumes from what its lookup read, without reading it again.
     #[tokio::test]
     async fn should_pin_the_fees_of_a_reveal_choosing_the_first_of_its_preorders() {
-        // At 15 the contracts tree also holds the decision proposals and token market contracts,
-        // two more siblings registered at genesis; with both, the fixture contract's node is
-        // billed as many bytes to reach as at 14
-        for (protocol_version, accepted_processing_fee) in [(14, 3_574_720), (15, 3_562_700)] {
+        // At 15 the contracts tree also holds the decision proposals contract, one more sibling
+        // registered at genesis, which reshapes it so the fixture contract's node is billed
+        // fewer bytes to reach (-45_920)
+        for (protocol_version, accepted_processing_fee) in [(14, 3_574_720), (15, 3_516_780)] {
             let platform_version =
                 PlatformVersion::get(protocol_version).expect("expected the platform version");
             let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {

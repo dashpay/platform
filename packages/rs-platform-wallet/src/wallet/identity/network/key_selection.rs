@@ -55,8 +55,8 @@ pub(crate) fn usable_authentication_key<'a>(
 /// Whether a key carrying `bounds` may sign a `document_type_name` document of `contract_id`.
 ///
 /// A contract group bound is answered by group membership, state the wallet does not hold,
-/// so a group-bound key is never chosen here: the DashPay writes this picker serves are
-/// signed with an unbound key or one bound to DashPay itself.
+/// so a group-bound key is never chosen here. Callers use an unbound key or one
+/// bound to the target contract or document type.
 fn bounds_cover(
     bounds: Option<&ContractBounds>,
     contract_id: Identifier,

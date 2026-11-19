@@ -67,9 +67,9 @@ pub enum SystemDataContract {
     /// vote poll it funds (protocol version 15). Registered from protocol version 15 on:
     /// registered at genesis by chains born at 15 and inserted by the upgrade to 15.
     DecisionProposals = 11,
-    /// The open listings and offers of the token marketplace (protocol version 15). Registered
-    /// from protocol version 15 on: registered at genesis by chains born at 15 and inserted by
-    /// the upgrade to 15.
+    /// The open listings and offers of the token marketplace (protocol version 16). Registered
+    /// from protocol version 16 on: registered at genesis by chains born at 16 and inserted by
+    /// the upgrade to 16.
     TokenMarket = 12,
 }
 

@@ -373,7 +373,7 @@ fn distributions() -> StructureNode {
     ])
 }
 
-/// The tokens the token marketplace holds in escrow for open listings, from protocol 15.
+/// The tokens the token marketplace holds in escrow for open listings, from protocol 16.
 fn order_escrow() -> StructureNode {
     StructureNode::fixed(
         "order_escrow",
@@ -382,7 +382,7 @@ fn order_escrow() -> StructureNode {
         "TOKEN_ORDER_ESCROW_KEY",
     )
     .kind(ElementKind::BigSumTree)
-    .since(15)
+    .since(16)
     .source(SOURCE)
     .book("data-model/token-marketplace.md")
     .describe(

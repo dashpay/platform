@@ -15045,11 +15045,19 @@ typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__st
 
 @dynamic state;
 @dynamic remainingRevisions;
+@dynamic deletedAtMs;
+@dynamic erasingStartedAtMs;
+@dynamic erasingFromTimeMs;
+@dynamic erasingFromRevision;
 
 typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_ {
   uint32_t _has_storage_[1];
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State state;
   uint64_t remainingRevisions;
+  uint64_t deletedAtMs;
+  uint64_t erasingStartedAtMs;
+  uint64_t erasingFromTimeMs;
+  uint64_t erasingFromRevision;
 } GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_;
 
 // This method is threadsafe because it is initially called
@@ -15073,6 +15081,42 @@ typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle
         .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_RemainingRevisions,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, remainingRevisions),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "deletedAtMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_DeletedAtMs,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, deletedAtMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "erasingStartedAtMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_ErasingStartedAtMs,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, erasingStartedAtMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "erasingFromTimeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_ErasingFromTimeMs,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, erasingFromTimeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "erasingFromRevision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_ErasingFromRevision,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, erasingFromRevision),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },
@@ -15114,10 +15158,12 @@ GPBEnumDescriptor *GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifec
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
-        "Active\000Absent\000";
+        "Active\000Absent\000Deleted\000Erasing\000";
     static const int32_t values[] = {
         GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active,
         GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent,
+        GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Deleted,
+        GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Erasing,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State)
@@ -15137,6 +15183,8 @@ BOOL GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_IsV
   switch (value__) {
     case GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active:
     case GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent:
+    case GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Deleted:
+    case GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Erasing:
       return YES;
     default:
       return NO;

@@ -12,7 +12,7 @@ use dpp::data_contract::document_type::DocumentReferenceKind;
 use drive::drive::document::paths::document_history_path;
 use drive::grovedb::Element;
 use drive::query::document_history_drive_query::{
-    DocumentHistoryDriveQuery, DocumentHistoryFilter,
+    DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryState,
 };
 
 const NOTE: &str = "note";
@@ -30,6 +30,153 @@ const REFERENCED_DOCUMENT_TYPE_NOT_FOUND: u32 = 40121;
 const REFERENCED_DOCUMENT_TYPE_NOT_MODERATED: u32 = 40143;
 const REFERENCED_DOCUMENT_TYPE_INDEX_ONLY: u32 = 40146;
 const REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET: u32 = 40153;
+const REFERENCED_DOCUMENT_TYPE_DELETABLE: u32 = 40122;
+
+/// Retained revisions never satisfy an existence reference after deletion. Both dynamic
+/// kind declarations refuse the deletable type before looking for its document.
+#[tokio::test]
+async fn should_resolve_history_reference_targets_by_current_existence_and_kind() {
+    let version = PlatformVersion::latest();
+    let setup = Setup::new_at_with(None, version, |contract| {
+        let mut target = plain_schema();
+        for keyword in [
+            "documentsKeepHistory",
+            "documentsMutable",
+            "canBeDeleted",
+            "canBeErased",
+        ] {
+            target.insert(keyword.into(), true.into()).unwrap();
+        }
+        add_document_type(contract, POST, target);
+        let mut schema = note_schema(text_or_bytes());
+        schema
+            .get_mut("properties")
+            .unwrap()
+            .unwrap()
+            .get_mut("descriptionId")
+            .unwrap()
+            .unwrap()
+            .insert(
+                "refersTo".into(),
+                platform_value!({
+                    "type": "deletableDocument",
+                    "documentType": POST,
+                }),
+            )
+            .unwrap();
+        add_document_type(contract, NOTE, schema);
+        add_document_type(contract, PERMANENT_NOTE, permanent_note_schema());
+        add_document_type(
+            contract,
+            EITHER_NOTE,
+            note_schema_of(
+                platform_value!(["permanentDocument", "moderatedDocument"]),
+                text_or_bytes(),
+            ),
+        );
+    })
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (mut post, create_post) =
+        create_with(&setup, &setup.user, POST, vec![("text", "retained".into())]).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let chunk = version
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .unwrap();
+    for _ in 0..chunk {
+        let replace = replacement(&setup.user, &setup.contract, POST, &mut post).await;
+        assert_success(&setup.process(&replace, &transaction));
+    }
+    let document_type = setup.contract.document_type_for_name(POST).unwrap();
+    for (state, remaining) in [
+        (DocumentHistoryState::Active, u64::from(chunk) + 1),
+        (DocumentHistoryState::Deleted, u64::from(chunk) + 1),
+        (DocumentHistoryState::Erasing, 1),
+        (DocumentHistoryState::Absent, 0),
+    ] {
+        match state {
+            DocumentHistoryState::Active => {}
+            DocumentHistoryState::Deleted => {
+                let deletion = BatchTransition::new_document_deletion_transition_from_document(
+                    post.clone(),
+                    document_type,
+                    &setup.user.key,
+                    setup.user.contract_nonce(),
+                    0,
+                    None,
+                    &setup.user.signer,
+                    version,
+                    None,
+                )
+                .await
+                .unwrap();
+                assert_success(&setup.process(&deletion, &transaction));
+            }
+            DocumentHistoryState::Erasing | DocumentHistoryState::Absent => {
+                let erase = BatchTransition::new_document_erase_transition_from_document(
+                    post.clone(),
+                    document_type,
+                    &setup.user.key,
+                    setup.user.contract_nonce(),
+                    0,
+                    &setup.user.signer,
+                    version,
+                    None,
+                )
+                .await
+                .unwrap();
+                assert_success(&setup.process(&erase, &transaction));
+            }
+        }
+        let history = setup
+            .platform
+            .drive
+            .fetch_document_history(
+                &DocumentHistoryDriveQuery {
+                    contract_id: setup.contract.id().to_buffer(),
+                    document_type_name: POST.into(),
+                    document_id: post.id().to_buffer(),
+                    filter: DocumentHistoryFilter::StartAtTime(0),
+                    limit: None,
+                },
+                document_type,
+                Some(&transaction),
+                version,
+            )
+            .unwrap();
+        let lifecycle = history.lifecycle.unwrap();
+        assert_eq!(lifecycle.state, state);
+        assert_eq!(lifecycle.remaining_revisions, remaining);
+
+        let (_, reference) = create_with(
+            &setup,
+            &setup.stranger,
+            NOTE,
+            note_naming(setup.contract.id(), POST, post.id()),
+        )
+        .await;
+        let result = setup.process(&reference, &transaction);
+        if state == DocumentHistoryState::Active {
+            assert_success(&result);
+        } else {
+            assert_paid_with_code(&result, REFERENCED_ENTITY_NOT_FOUND);
+        }
+        for dynamic_type in [PERMANENT_NOTE, EITHER_NOTE] {
+            let (_, dynamic) = create_with(
+                &setup,
+                &setup.stranger,
+                dynamic_type,
+                note_naming(setup.contract.id(), POST, post.id()),
+            )
+            .await;
+            assert_paid_with_code(
+                &setup.process(&dynamic, &transaction),
+                REFERENCED_DOCUMENT_TYPE_DELETABLE,
+            );
+        }
+    }
+}
 
 fn id_value(id: Identifier) -> Value {
     Value::Identifier(id.to_buffer())

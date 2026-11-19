@@ -61,9 +61,14 @@ mod v0;
 mod v1;
 mod v2;
 mod v3;
+mod v4;
 
 #[cfg(all(test, feature = "validation"))]
 pub(in crate::data_contract) use native_schema::DOCUMENT_SCHEMA_ROOT_KEYS;
+#[cfg(feature = "validation")]
+pub(in crate::data_contract) use native_schema::{
+    first_repeated_key_of_definitions, first_repeated_key_of_schema,
+};
 pub(in crate::data_contract) use v3::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
     validate_summable_off_count_indexes_lossless,
@@ -158,9 +163,22 @@ impl DocumentType {
                 validation_operations,
                 platform_version,
             ),
+            4 => DocumentType::try_from_schema_v4(
+                data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
+                name,
+                schema,
+                schema_defs,
+                token_configurations,
+                data_contact_config,
+                full_validation,
+                validation_operations,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "try_from_schema".to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2, 3, 4],
                 received: version,
             }),
         }
@@ -768,7 +786,8 @@ pub(in crate::data_contract::document_type::class_methods) fn apply_property_ref
 /// document names (`contractId` and `documentType` written `"$self.<property>"`,
 /// `documentTypeRequirements`), on an identifier property. Every other declaration is
 /// version 0's, except that an operand of a reference expression naming its target that way
-/// is refused, where version 0 does not read those keys.
+/// is refused, which version 0 cannot read either (see
+/// [`dynamic_reference::declares_dynamic_target`]).
 fn apply_property_reference_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: DocumentPropertyType,
@@ -2143,7 +2162,7 @@ pub(super) fn parse_doctype_reference(
         return Ok(None);
     };
     // Version 1 (protocol version 15) reads a dynamic target on an identifier property
-    // alone; version 0 does not read its keys at all
+    // alone; version 0 cannot read one at all
     if platform_version
         .dpp
         .contract_versions

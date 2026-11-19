@@ -28,7 +28,8 @@
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
-//! natively.
+//! natively, and every `pattern` it holds to compile under the `regex` crate's default size
+//! limit, one only a `$ref` reaches included.
 //!
 //! [`JsonSchemaError`]: crate::consensus::basic::json_schema_error::JsonSchemaError
 
@@ -112,21 +113,74 @@ pub(super) fn refuse_a_repeated_doctype_key(
     name: &str,
     read: &mut u64,
 ) -> Result<(), ProtocolError> {
-    refuse_a_repeated_key_within(schema, name, &mut String::new(), read)?;
-    for (definition, value) in schema_defs.into_iter().flatten() {
-        refuse_a_repeated_key_within(value, name, &mut format!("$defs.{definition}"), read)?;
+    let repeated = first_repeated_key_of_schema(schema, read)
+        .or_else(|| first_repeated_key_of_definitions(schema_defs, read));
+    match repeated {
+        None => Ok(()),
+        Some(repeated) => Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares `{}` more than once {}: \
+                 the document type parser may read its first entry where the \
+                 schema checks read its last",
+                repeated.key(),
+                repeated.place()
+            )),
+        )),
     }
-    Ok(())
 }
 
-/// [`refuse_a_repeated_doctype_key`] over `value`, found at `path` within the schema (empty
-/// at its root), and everything it holds.
-fn refuse_a_repeated_key_within(
+/// A key an object of a document schema, or of a contract's `$defs`, names more than once.
+pub(in crate::data_contract) struct RepeatedKey {
+    key: String,
+    /// The path of the object naming it: empty at a document schema's root,
+    /// `$defs.<name>...` in a definition.
+    path: String,
+}
+
+impl RepeatedKey {
+    /// The key named more than once.
+    pub(in crate::data_contract) fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// Where the object naming it is, as a refusal words it.
+    pub(in crate::data_contract) fn place(&self) -> String {
+        if self.path.is_empty() {
+            "at its root".to_string()
+        } else {
+            format!("at `{}`", self.path)
+        }
+    }
+}
+
+/// The first key an object of the document `schema` names more than once, at its root or
+/// anywhere below it, walking as [`refuse_a_repeated_doctype_key`] does and counting in
+/// `read` each value it reads. `None` when no object repeats a key.
+pub(in crate::data_contract) fn first_repeated_key_of_schema(
+    schema: &Value,
+    read: &mut u64,
+) -> Option<RepeatedKey> {
+    first_repeated_key_within(schema, &mut String::new(), read)
+}
+
+/// [`first_repeated_key_of_schema`] over each definition of a contract's `schema_defs`, in
+/// the order of their names.
+pub(in crate::data_contract) fn first_repeated_key_of_definitions(
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    read: &mut u64,
+) -> Option<RepeatedKey> {
+    schema_defs.into_iter().flatten().find_map(|(name, value)| {
+        first_repeated_key_within(value, &mut format!("$defs.{name}"), read)
+    })
+}
+
+/// The first repeated key of `value`, found at `path` within the schema (empty at its
+/// root), and of everything it holds.
+fn first_repeated_key_within(
     value: &Value,
-    name: &str,
     path: &mut String,
     read: &mut u64,
-) -> Result<(), ProtocolError> {
+) -> Option<RepeatedKey> {
     *read = read.saturating_add(1);
     match value {
         Value::Map(map) => {
@@ -139,39 +193,37 @@ fn refuse_a_repeated_key_within(
                     continue;
                 };
                 if !declared.insert(key) {
-                    let place = if path.is_empty() {
-                        "at its root".to_string()
-                    } else {
-                        format!("at `{path}`")
-                    };
-                    return Err(consensus_or_protocol_data_contract_error(
-                        DataContractError::InvalidContractStructure(format!(
-                            "document type \"{name}\" declares `{key}` more than once {place}: \
-                             the document type parser may read its first entry where the \
-                             schema checks read its last"
-                        )),
-                    ));
+                    return Some(RepeatedKey {
+                        key: key.to_string(),
+                        path: path.clone(),
+                    });
                 }
                 let len = path.len();
                 if !path.is_empty() {
                     path.push('.');
                 }
                 path.push_str(key);
-                refuse_a_repeated_key_within(entry, name, path, read)?;
+                let repeat = first_repeated_key_within(entry, path, read);
                 path.truncate(len);
+                if repeat.is_some() {
+                    return repeat;
+                }
             }
-            Ok(())
+            None
         }
         Value::Array(items) => {
             for (index, item) in items.iter().enumerate() {
                 let len = path.len();
                 path.push_str(&format!("[{index}]"));
-                refuse_a_repeated_key_within(item, name, path, read)?;
+                let repeat = first_repeated_key_within(item, path, read);
                 path.truncate(len);
+                if repeat.is_some() {
+                    return repeat;
+                }
             }
-            Ok(())
+            None
         }
-        _ => Ok(()),
+        _ => None,
     }
 }
 
@@ -191,8 +243,9 @@ pub(super) fn check_document_type_schema(
 }
 
 /// Requires the type whose expanded schema is `schema`, with the contract's expanded
-/// `$defs`, to have a typed validation schema, refusing one it does not represent. Returns the
-/// native validator built of it, which the type keeps.
+/// `$defs`, to have a typed validation schema, refusing one it does not represent, and every
+/// pattern it holds to compile. Returns the native validator built of it, with its patterns
+/// compiled, which the type keeps.
 pub(super) fn check_validation_schema(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
@@ -203,14 +256,22 @@ pub(super) fn check_validation_schema(
         schema_defs.map(|defs| Value::from(defs.clone())),
         platform_version,
     )?;
-    // Document validation refuses the documents of a type whose validator does not build, a
-    // cycle of references that consumes nothing included: registration refuses the type
-    DocumentSchemaValidator::try_from_root(&root, platform_version).map_err(|error| match error {
+    let refusal = |error| match error {
         ProtocolError::DataContractError(refusal) => {
             consensus_or_protocol_data_contract_error(refusal)
         }
         error => error,
-    })
+    };
+    // Document validation refuses the documents of a type whose validator does not build, a
+    // cycle of references that consumes nothing included: registration refuses the type
+    let validator =
+        DocumentSchemaValidator::try_from_root(&root, platform_version).map_err(refusal)?;
+    // The validator compiles a pattern the first time a value reaches it, and refuses a value
+    // reaching one that does not compile: registration refuses the type instead. The schema
+    // checks above compiled the patterns they read; this reaches the rest, one only a `$ref`
+    // into a value they do not read as a schema reaches
+    validator.compile_patterns().map_err(refusal)?;
+    Ok(validator)
 }
 
 /// A check of one value of a document schema, knowing where the value is.

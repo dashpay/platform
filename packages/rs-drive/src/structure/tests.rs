@@ -9,6 +9,7 @@ use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_sta
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
+use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -279,6 +280,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use crate::drive::document::lifecycle::DocumentLifecycleState;
     use crate::drive::system::core_fork_activations::CoreFork;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
@@ -728,6 +730,121 @@ mod fixtures {
                 .expect("insert legacy document");
         }
         conformance_of_at_version(&drive, "legacy_document_histories", run, version);
+    }
+
+    fn deleted_and_erasing_histories(run: &mut FixtureRun) {
+        let mut version = PlatformVersion::latest().clone();
+        version
+            .system_limits
+            .max_document_revisions_erased_per_transition = Some(1);
+        let drive = setup_drive_with_initial_state_structure(Some(&version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            Some([78; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract
+                    .set_document_schema(
+                        "person",
+                        platform_value!({
+                            "type": "object",
+                            "documentsKeepHistory": true,
+                            "canBeDeleted": true,
+                            "canBeErased": true,
+                            "properties": {
+                                "name": { "type": "string", "maxLength": 50, "position": 0 },
+                            },
+                            "additionalProperties": false,
+                        }),
+                        true,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected an erasable history type");
+            }),
+            None,
+            Some(&version),
+        );
+        let person = contract.document_type_for_name("person").expect("person");
+        for seed in 1..=2 {
+            let mut document = person
+                .random_document(Some(seed), &version)
+                .expect("fixture document");
+            let flags = Some(Cow::Owned(StorageFlags::new_single_epoch(
+                0,
+                Some(document.owner_id().to_buffer()),
+            )));
+            for revision in 1..=seed {
+                document.set_revision(Some(revision));
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&document, flags.clone())),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type: person,
+                        },
+                        revision > 1,
+                        BlockInfo::default_with_time(1_000 + revision),
+                        true,
+                        None,
+                        &version,
+                    )
+                    .expect("expected to retain a revision");
+            }
+            drive
+                .delete_document_for_contract_apply_and_add_to_operations(
+                    document.id(),
+                    &contract,
+                    "person",
+                    &BlockInfo::default_with_time(2_000),
+                    (seed == 2).then(|| document.owner_id()),
+                    None,
+                    None,
+                    &mut vec![],
+                    &version,
+                )
+                .expect("expected to delete the document");
+            if seed == 2 {
+                let batch = drive
+                    .erase_document_for_contract_operations(
+                        document.id(),
+                        &contract,
+                        person,
+                        &BlockInfo::default_with_time(3_000),
+                        &mut None,
+                        None,
+                        &version,
+                    )
+                    .expect("expected to start erasure");
+                drive
+                    .apply_batch_low_level_drive_operations(
+                        None,
+                        None,
+                        batch,
+                        &mut vec![],
+                        &version.drive,
+                    )
+                    .expect("expected to apply the first erase chunk");
+            }
+            let state = drive
+                .fetch_document_lifecycle(&contract, person, document.id(), None, None, &version)
+                .expect("expected to read the lifecycle")
+                .0;
+            assert!(match seed {
+                1 => matches!(state, DocumentLifecycleState::Deleted(_)),
+                _ => matches!(state, DocumentLifecycleState::Erasing),
+            });
+        }
+        conformance_of_at_version(&drive, "deleted_and_erasing_histories", run, &version);
+    }
+
+    #[test]
+    fn should_describe_deleted_and_erasing_history_records() {
+        deleted_and_erasing_histories(&mut FixtureRun::default());
     }
 
     /// A contract whose moderators only delete documents: no list, one document type they can
@@ -1830,9 +1947,11 @@ mod fixtures {
         conformance_of(&drive, "token_shielded_pool", run);
     }
     /// The token marketplace escrow: two listings of one token holding tokens, and two offers
-    /// holding credits.
+    /// holding credits. The marketplace starts with protocol version 16, which has no tables
+    /// yet, so the fixture is built under the test version that selects it.
     fn token_order_escrow(run: &mut FixtureRun) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
+            .expect("expected the token marketplace test version");
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [7; 32];
         for (order_id, amount) in [([1; 32], 500), ([2; 32], 30)] {
@@ -1864,7 +1983,7 @@ mod fixtures {
                     .expect("expected the offer escrow operations"),
             );
         }
-        conformance_of(&drive, "token_order_escrow", run);
+        conformance_of_at_version(&drive, "token_order_escrow", run, platform_version);
     }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
     /// in the documents expirations tree under the time it expires, and a lifetime storage fee
@@ -1964,6 +2083,7 @@ mod fixtures {
         identities(&mut run);
         contracts_with_documents(&mut run);
         legacy_document_histories(&mut run);
+        deleted_and_erasing_histories(&mut run);
         expiring_documents(&mut run);
         moderated_contract(&mut run);
         warned_contract(&mut run);

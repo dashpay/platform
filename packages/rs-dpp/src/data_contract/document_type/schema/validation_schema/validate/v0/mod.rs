@@ -25,12 +25,14 @@
 //! reports, and every violation is a `JsonSchemaError`, so the verdict and the error code
 //! are the same; a value breaking several can get another violation first.
 
+#[cfg(feature = "validation")]
+use super::super::v0::{pattern_refusal, reached_through};
 use super::super::{
-    structure_error, validator_regex, validator_regex_parses, ArrayConstraints, JsonType,
-    JsonTypes, NumberConstraints, ObjectConstraints, SchemaNode, StringConstraints,
-    ValidationSchema, ValidatorFormat,
+    structure_error, validator_regex_parses, ArrayConstraints, JsonType, JsonTypes,
+    NumberConstraints, ObjectConstraints, SchemaNode, StringConstraints, ValidationSchema,
+    ValidatorFormat,
 };
-use super::DocumentSchemaValidator;
+use super::{DocumentSchemaValidator, PatternCell};
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::BasicError;
@@ -77,27 +79,27 @@ static TIME: Lazy<Regex> = Lazy::new(|| {
 });
 
 impl DocumentSchemaValidator {
-    /// Generation 0's validator of `schema`, reusing `patterns`, compiled as
-    /// [`validator_regex`] compiles them: a `pattern` of the schema missing there is compiled.
-    /// Refuses a `pattern` the JSON Schema validator does not compile and a property declared
+    /// Generation 0's validator of `schema`. Every `pattern` it holds is checked to parse,
+    /// whatever built the schema, and none is compiled: a pattern is compiled the first time a
+    /// value reaches it. Refuses a `pattern` that does not parse and a property declared
     /// twice, which the builder refuses already, and a chain of `$ref`s that returns to where
     /// it started without entering the value.
     pub(super) fn with_patterns_v0(
         schema: Arc<ValidationSchema>,
-        mut patterns: BTreeMap<String, Regex>,
     ) -> Result<Self, DataContractError> {
+        let mut patterns = BTreeMap::new();
         {
             let mut nodes: Vec<&SchemaNode> = vec![&schema.root];
             nodes.extend(schema.references.values().map(|node| node.as_ref()));
             while let Some(node) = nodes.pop() {
                 if let Some(pattern) = node.string.as_deref().and_then(|s| s.pattern.as_ref()) {
                     if !patterns.contains_key(pattern) {
-                        let regex = validator_regex(pattern).ok_or_else(|| {
+                        let parsed = PatternCell::parsed(pattern).ok_or_else(|| {
                             structure_error(format!(
                                 "the JSON Schema validator compiles no `pattern` `{pattern}`"
                             ))
                         })?;
-                        patterns.insert(pattern.clone(), regex);
+                        patterns.insert(pattern.clone(), parsed);
                     }
                 }
                 if let Some(object) = node.object.as_deref() {
@@ -144,6 +146,53 @@ impl DocumentSchemaValidator {
             schema,
             patterns,
         })
+    }
+
+    /// Generation 0's compile of every pattern, as registration compiles them: the patterns of
+    /// the document schema, then those of each schema a `$ref` reaches, by reference, each
+    /// schema's own pattern before those below it, a property's in declared order, then
+    /// `items`, then `contains`. Refuses the first pattern that does not compile, as the
+    /// builder refuses one that does not parse, saying which reference reached it.
+    #[cfg(feature = "validation")]
+    pub(super) fn compile_patterns_v0(&self) -> Result<(), DataContractError> {
+        if let Some(pattern) = self.first_uncompiled_pattern(&self.schema.root) {
+            return Err(pattern_refusal(pattern));
+        }
+        for (reference, node) in &self.schema.references {
+            if let Some(pattern) = self.first_uncompiled_pattern(node) {
+                return Err(reached_through(pattern_refusal(pattern), reference));
+            }
+        }
+        Ok(())
+    }
+
+    /// The first pattern of `node` and the schemas below it, in the order
+    /// [`Self::compile_patterns_v0`] compiles them, that does not compile.
+    #[cfg(feature = "validation")]
+    fn first_uncompiled_pattern<'n>(&self, node: &'n SchemaNode) -> Option<&'n str> {
+        if let Some(pattern) = node.string.as_deref().and_then(|s| s.pattern.as_deref()) {
+            if self
+                .patterns
+                .get(pattern)
+                .and_then(PatternCell::regex)
+                .is_none()
+            {
+                return Some(pattern);
+            }
+        }
+        let properties = node
+            .object
+            .as_deref()
+            .into_iter()
+            .flat_map(|object| object.properties.iter().flatten())
+            .map(|(_, property)| property);
+        let array = node.array.as_deref();
+        let items = array.and_then(|array| array.items.as_deref());
+        let contains = array.and_then(|array| array.contains.as_deref());
+        properties
+            .chain(items)
+            .chain(contains)
+            .find_map(|below| self.first_uncompiled_pattern(below))
     }
 
     /// Generation 0's check of `instance`: the walk stops at the first violation it meets.
@@ -756,18 +805,33 @@ impl<'v, 'i> Walk<'v, 'i> {
             return Ok(());
         }
         if let Some(pattern) = &string.pattern {
-            let regex = self.validator.patterns.get(pattern).ok_or_else(|| {
+            let held = self.validator.patterns.get(pattern).ok_or_else(|| {
                 ProtocolError::CorruptedCodeExecution(format!(
-                    "the validator compiled no `pattern` `{pattern}`"
+                    "the validator holds no `pattern` `{pattern}`"
                 ))
             })?;
-            if !regex.is_match(value) {
-                self.fail("pattern", "", || {
+            match held.regex() {
+                Some(regex) => {
+                    if !regex.is_match(value) {
+                        self.fail("pattern", "", || {
+                            (
+                                json!({ "pattern": pattern }),
+                                format!("\"{value}\" does not match \"{pattern}\""),
+                            )
+                        });
+                    }
+                }
+                // A pattern that parses but that the `regex` crate does not compile. The JSON
+                // Schema validator compiled the schema a `$ref` reaches only when a value
+                // reached it, and refused that value with a `format` violation naming the
+                // pattern as a `regex` it does not compile; matching a `contains` element,
+                // it found no match, as the walk does when it only matches
+                None => self.fail_under("pattern", "format", "", || {
                     (
-                        json!({ "pattern": pattern }),
-                        format!("\"{value}\" does not match \"{pattern}\""),
+                        json!({ "format": "regex" }),
+                        format!("{} is not a \"regex\"", json!(pattern)),
                     )
-                });
+                }),
             }
         }
         Ok(())

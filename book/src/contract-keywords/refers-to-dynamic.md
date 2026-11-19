@@ -48,7 +48,7 @@ A note is described by a document its author points at: `descriptionContractId` 
 |---|---|---|
 | `contractId` | `"$self."` followed by the name of a top-level identifier property of the document type, 1 to 64 letters, digits or underscores | The property holding the id of the contract the referenced document type lives in, where a reference naming its target in the schema writes the id itself. |
 | `documentType` | `"$self."` followed by the name of a top-level string property | The property holding the name of the referenced document type, where a reference naming its target in the schema writes the name itself. |
-| `documentTypeRequirements` | object: `properties` (required), `require` | What the named document type must look like. Absent, the type is held to its kind alone. |
+| `documentTypeRequirements` | object: `properties` (required), `require`, `when` | What the named document type must look like. Absent, the type is held to its kind alone. |
 
 The two come together: a declaration names its target in the schema or through the document, never half of each, so a `$self.` `contractId` beside a literal `documentType` is refused, as is one beside none. The declaring contract is named like any other: a document pointing into its own contract writes that contract's id. Nothing a schema could write literally starts with `$self.`: a contract id is base58 and a document type name holds no `$`.
 
@@ -140,17 +140,45 @@ When the type is a moderated one, the string filling `body` is one a moderator's
 | `"$property"` | The name of the property tried for the slot. |
 | `"$moderatorAbilities.deleteKeepsFields"` | The referenced type's [`deleteKeepsFields`](moderator-abilities.md): the property paths a removal record keeps. Empty when the type lists none. |
 | `"$moderatorAbilities.changeFields"` | The referenced type's [`changeFields`](moderator-abilities.md): the properties only moderators write. Empty when the type lists none. |
+| `"$electedAbilities"` | The abilities the referenced type's contract gives its [elected moderation team](../data-model/contract-moderation.md) on the type, by name: `deleteDocuments`, `ban`, `suspend`, `warn`, `changeDocumentFields`. Empty when the contract elects no team, or leaves the type out of what the team moderates. |
+| `"$moderatorAbilities.deleteWithin"`, `"$moderatorAbilities.deleteSettled"` | Settings of the referenced type a `present` or an `absent` tests: whether moderators delete a document only within a window after its last change, and whether the type says who of a seated team may delete one past it. |
+| `"$moderatorAbilities.deleteSettled.approversPredateDocument"` | A setting a `present` or an `absent` tests: whether that rule counts a member the team's leader added only for documents created after its addition ([`approversPredateDocument`](moderator-abilities.md), as the rule reads once its default is applied: set unless one approval meets it). Absent on a type with no such rule. |
 | `{ "const": "<string>" }` | The string, 1 to 256 characters. |
 
 | Condition | Holds when |
 |---|---|
 | `{ "equal": [a, b] }`, `{ "notEqual": [a, b] }` | `$kind` or `$property` is, or is not, the constant on the other side. Compared with `$kind`, the constant is `permanentDocument` or `moderatedDocument`. |
 | `{ "in": [a, [...]] }`, `{ "notIn": [a, [...]] }` | `$kind` or `$property` is, or is not, one of two or more distinct strings. |
-| `{ "contains": [list, a] }` | One of the two lists holds `$property` or a constant, as a whole entry. |
+| `{ "contains": [list, a] }` | One of the two property lists holds `$property` or a constant, as a whole entry; or `$electedAbilities` holds the ability a constant names. |
+| `{ "present": setting }`, `{ "absent": setting }` | The type declares, or does not declare, `$moderatorAbilities.deleteWithin` or `$moderatorAbilities.deleteSettled`; or its settled rule sets, or does not set, `approversPredateDocument`. |
 | `{ "not": c }`, `{ "anyOf": [...] }`, `{ "allOf": [...] }` | As in `propertyConstraints`: `anyOf` and `allOf` take two or more conditions, none listed twice and none the same combinator; `not` holds no `not` and no `notIn`. |
 | `{ "ifThen": [c, then] }`, `{ "ifThenElse": [c, then, else] }` | `then` holds whenever `c` does; with an `else`, it holds when `c` does not. |
 
 One `when` is made of at most 16 conditions (`max_document_type_requirement_condition_nodes`), combinators counted and each string an `in` or a `notIn` lists counted too, and no string in it is longer than 256 characters (`max_document_type_requirement_condition_text_length`), so what it adds to a stored contract is bounded. It reads the type, never a document: no property path, no arithmetic, and no value of the referenced document. `distinctFrom`, `require` and the search for an assignment work as before, over the properties each slot's `when` leaves it.
+
+## A condition on the type (`when`)
+
+`documentTypeRequirements` takes a `when` of its own, beside `properties`: the same condition, judged once for the named type as a whole, whatever fills the slots. No property is in hand, so it reads no `$property`. A type it does not hold for does not meet the requirements (40153).
+
+```json
+"documentTypeRequirements": {
+  "when": { "allOf": [
+    { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+    { "anyOf": [
+      { "absent": "$moderatorAbilities.deleteWithin" },
+      { "allOf": [
+        { "present": "$moderatorAbilities.deleteSettled" },
+        { "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+      ] }
+    ] }
+  ] },
+  "properties": { "body": { "name": "$any", "type": "string" } }
+}
+```
+
+The contract of the named type gives its elected team the deletion of the type's documents, and a document stays deletable: the type sets no window, or says who of the team deletes one past it and counts every member for every document. Without the first, a type can be a moderated one that nobody may moderate once a team is seated; without the second, a document outlasts its window for good; without the third, a rule taking more approvals than the leader and the elected members give never deletes a document older than the members the leader added. A reference that relies on a document being removable asks for both, and usually for [an elected contract](#who-vouches-for-the-target) too.
+
+A slot's `when` reads the same facts beside `$property`. Each `when` is held to the limits above on its own.
 
 ## How it works
 
@@ -192,6 +220,8 @@ The requirements say what the target's type looks like. They do not say who runs
 ```
 
 or compare it with the contracts the application trusts in a [`propertyConstraints`](property-constraints.md) rule (`{ "in": ["descriptionContractId", ["<base58>", "<base58>"]] }`).
+
+The decision proposals contract does the first for the description of a multiple choice proposal: a `moderatedDocument` whose text a removal takes away, in a contract whose moderators the masternodes elect (see `docs/protocol/decision-proposals.md`). `"moderation": "elected"` says the contract declares such a team, not that one is seated: until then the contract's interim moderators, if it names any, are the ones who can remove the document.
 
 ## Errors
 

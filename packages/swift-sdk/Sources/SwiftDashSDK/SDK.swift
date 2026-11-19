@@ -76,12 +76,15 @@ public final class SDK: @unchecked Sendable {
   }
 
   /// Fixed context provider installed when the Rust SDK is constructed.
+  /// Contracts and tokens resolve locally with each of them.
   public enum ContextProviderKind: Sendable {
-    /// Trusted HTTP quorum keys plus local contract/token resolution.
+    /// Quorum keys from the trusted quorum service only.
     case trusted
-    /// SPV-only quorum keys plus local contract/token resolution.
+    /// Quorum keys from a wallet manager's SPV client only: proofs fail until
+    /// one serves this SDK and has synced.
     case spv
-    /// Runtime-selectable Trusted/SPV/Auto quorum routing.
+    /// Quorum keys routed by a `QuorumMode` that can change at run time,
+    /// starting in `.auto`. The default.
     case adaptive
   }
 
@@ -254,9 +257,18 @@ public final class SDK: @unchecked Sendable {
   /// Create a new SDK instance with a fixed context-provider policy.
   ///
   /// `contextProvider` selects one provider identity for the SDK's lifetime.
-  /// Production SPV never falls back to trusted quorum keys; Adaptive is
-  /// intended for examples and deployments that explicitly need live policy
-  /// changes.
+  /// The default, `.adaptive`, starts in `QuorumMode.auto`: proofs are
+  /// verified with the trusted quorum service's keys until a
+  /// `PlatformWalletManager` configured with this SDK (`configure(sdk:)`)
+  /// serves its SPV client and that client has synced, then with SPV's keys,
+  /// and still with the trusted service's for any key SPV cannot serve. An
+  /// SDK no wallet manager serves verifies like a `.trusted` one.
+  ///
+  /// Only one wallet manager serves an SDK: configuring a second while the
+  /// first holds it throws, so `await shutdown()` a manager before
+  /// configuring another with the same SDK. Pass `.trusted` for the trusted
+  /// service alone, or `.spv` for proofs that must never be verified with
+  /// its keys.
   ///
   /// `platformVersion`:
   /// - `0` (default) — let the Rust SDK seed at the per-network minimum
@@ -270,7 +282,7 @@ public final class SDK: @unchecked Sendable {
   public init(
     network: Network,
     platformVersion: UInt32 = 0,
-    contextProvider: ContextProviderKind = .trusted
+    contextProvider: ContextProviderKind = .adaptive
   ) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
@@ -390,7 +402,7 @@ public final class SDK: @unchecked Sendable {
     self.network = network
   }
 
-  /// Which quorum-key source this SDK's proof verification currently uses.
+  /// Which quorum-key source this SDK's proof verification asks first.
   public enum QuorumSource: Sendable {
     case trusted
     case spv
@@ -402,10 +414,14 @@ public final class SDK: @unchecked Sendable {
 
   /// Policy used by the SDK's fixed adaptive context provider.
   public enum QuorumMode: UInt8, Sendable {
-    /// SPV while it is synced, the trusted quorum service whenever it is
-    /// not. Cutting the client off from its SPV peers forces the trusted
-    /// service, so use `.spv` when proofs must never be verified with its
-    /// keys.
+    /// SPV first while it is synced, with the trusted quorum service serving
+    /// any key SPV cannot, such as a quorum SPV has not caught up with; the
+    /// trusted service alone whenever SPV is not synced. Every key comes
+    /// from one of the two, so Auto is only as strong as the trusted
+    /// service: whoever controls it and a node can have a proof accepted
+    /// that names a quorum SPV does not hold, and cutting the client off
+    /// from its SPV peers moves every key onto it. Use `.spv` when proofs
+    /// must never be verified with its keys.
     case auto = 0
     /// SPV only; proofs fail whenever SPV is not synced.
     case spv = 1
@@ -413,9 +429,11 @@ public final class SDK: @unchecked Sendable {
     case trusted = 2
   }
 
-  /// The quorum source proof verification uses right now, as the native
-  /// SDK's current context provider reports it: fixed for a Trusted or SPV
-  /// SDK, and following SPV readiness for an Adaptive SDK in Auto mode.
+  /// The quorum source proof verification asks first, as the native SDK's
+  /// current context provider reports it: fixed for a Trusted or SPV SDK,
+  /// and following SPV readiness for an Adaptive SDK in Auto mode. In Auto,
+  /// a key SPV cannot serve still comes from the trusted service while this
+  /// reports `.spv`.
   public var quorumSource: QuorumSource {
     guard let handle else { return .custom }
     switch dash_sdk_get_context_provider_source(handle) {
@@ -693,9 +711,10 @@ public struct SDKStatus: Codable {
   /// (caller-supplied or mock). It stays so after native code replaces the
   /// provider.
   public let mode: String
-  /// The source the SDK's current provider answers quorum lookups from now,
-  /// `"trusted"` or `"spv"`; an adaptive provider reports its live choice.
-  /// `nil` for a provider that does not say.
+  /// The source the SDK's current provider asks first for quorum keys now,
+  /// `"trusted"` or `"spv"`; an adaptive provider reports the source it would
+  /// ask first, and in Auto a key SPV cannot serve still comes from the
+  /// trusted service. `nil` for a provider that does not say.
   public let quorumSource: String?
   /// Quorums in the cache of the trusted provider the SDK was built with,
   /// whichever source answers; `0` without one.

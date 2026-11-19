@@ -7,8 +7,13 @@
 //!
 //! ## What the manager takes at construction
 //!
-//! `platform_wallet_manager_create_with_persistence_capabilities(...)`.
-//! The mnemonic resolver and signer are **SDK-level, per-call** handles
+//! `platform_wallet_manager_create_with_sdk(...)`: the SDK handle, the
+//! persistence vtable with its capabilities and extension, and the event
+//! vtable with its extension. When the SDK's context provider takes quorum
+//! keys from an SPV client, as the adaptive provider does, the manager
+//! serves them from its own SPV client for as long as it lives, and only one
+//! manager can serve an SDK. The mnemonic resolver and signer are
+//! **SDK-level, per-call** handles
 //! (see `mnemonic.rs` / `signer.rs`) — they are NOT wired into the
 //! manager, matching `PlatformWalletManager.swift`, which holds only a
 //! persistence handler + event handler.
@@ -40,6 +45,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::credits::parse_credit_rows;
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
@@ -68,7 +74,7 @@ use std::ptr;
 
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
-use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, FFINetwork, SDKHandle};
+use rs_sdk_ffi::{FFINetwork, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
@@ -85,8 +91,10 @@ struct ManagerBundle {
 
 /// Create a `PlatformWalletManager`.
 ///
-/// `sdk_handle` is the `SDKHandle` jlong from `SdkNative.createTrusted`;
-/// we resolve its inner `Sdk` pointer via `dash_sdk_get_inner_sdk_ptr`.
+/// `sdk_handle` is the `SDKHandle` jlong from `SdkNative.createTrusted` or
+/// `SdkNative.createAdaptive`, borrowed only for this call. A manager on an
+/// adaptive SDK serves it the quorum keys of its own SPV client; a second
+/// manager on that SDK, while the first lives, is refused.
 /// `persistence_bridge` / `event_bridge` are the Kotlin
 /// `NativePersistenceBridge` / `NativeWalletEventBridge` objects, held as
 /// `GlobalRef`s for the manager's lifetime.
@@ -106,13 +114,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             throw_sdk_exception(env, 1, "SDK handle is 0");
             return 0;
         }
-        // Resolve the inner Sdk pointer the manager stores.
-        let inner = unsafe { dash_sdk_get_inner_sdk_ptr(sdk_handle as *const SDKHandle) };
-        if inner.is_null() {
-            throw_sdk_exception(env, 1, "dash_sdk_get_inner_sdk_ptr returned NULL");
-            return 0;
-        }
-
         let Some(BridgePersistence {
             context: persistence_ctx,
             callbacks: persistence,
@@ -139,11 +140,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let event_extension: EventHandlerCallbacksExtension = build_event_extension();
 
         let mut manager_handle: Handle = 0;
-        // SAFETY: `inner` is a live Sdk pointer for the duration of this
-        // call; the manager clones the Sdk and reads both vtables by value.
+        // SAFETY: Kotlin keeps `sdk_handle` alive for the duration of this
+        // call; the manager clones the Sdk it holds and reads both vtables by
+        // value. The SDK's SPV slot is claimed before the contexts are taken,
+        // so every failure leaves them to the reclaim below.
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_create_with_extensions(
-                inner,
+            platform_wallet_ffi::platform_wallet_manager_create_with_sdk(
+                sdk_handle as *mut SDKHandle,
                 &persistence as *const PersistenceCallbacks,
                 &mut event_callbacks as *const EventHandlerCallbacks,
                 &persistence_capabilities as *const PersistenceCapabilitiesFFI,
@@ -1903,12 +1906,35 @@ fn decode_funding_recipients(
 /// Decode the credit-outputs BLOB for a wallet-signed platform-address
 /// transfer into `AddressBalanceEntryFFI` rows.
 ///
-/// BLOB layout (big-endian): `u32 rowCount` then per row
-/// `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`. The row's
-/// `balance` carries the credits to route to that recipient; `nonce` /
-/// `account_index` / `address_index` are left `0` (the FFI only reads the
-/// address + amount for a transfer output). Returns `None` (after throwing)
-/// on a malformed / truncated blob.
+/// The blob uses the shared credit-row format parsed by
+/// [`parse_credit_rows`]: `u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`, big-endian.
+/// The row's `balance` carries the credits to route to that recipient;
+/// `nonce` / `account_index` / `address_index` / `as_of_height` are left `0`
+/// (the FFI only reads the address + amount for a transfer output).
+fn decode_transfer_outputs(
+    bytes: &[u8],
+) -> Result<Vec<platform_wallet_ffi::AddressBalanceEntryFFI>, String> {
+    let rows = parse_credit_rows(bytes, "outputs blob")?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(address_type, hash, credits)| platform_wallet_ffi::AddressBalanceEntryFFI {
+                address: platform_wallet_ffi::PlatformAddressFFI { address_type, hash },
+                balance: credits,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+                // Request path names only outputs/amounts — 0 per the FFI doc
+                // (the height pin is a persistence-round-trip concern).
+                as_of_height: 0,
+            },
+        )
+        .collect())
+}
+
+/// [`decode_transfer_outputs`] over a Java `byte[]`. Returns `None` (after
+/// throwing) on a null array or a malformed / truncated blob.
 fn decode_credit_outputs(
     env: &mut JNIEnv,
     arr: &JByteArray,
@@ -1921,81 +1947,13 @@ fn decode_credit_outputs(
             return None;
         }
     };
-    let mut cursor = 0usize;
-    let read = |cursor: &mut usize, n: usize| -> Option<Vec<u8>> {
-        if *cursor + n > bytes.len() {
-            return None;
+    match decode_transfer_outputs(&bytes) {
+        Ok(outputs) => Some(outputs),
+        Err(msg) => {
+            throw_sdk_exception(env, 1, &msg);
+            None
         }
-        let s = bytes[*cursor..*cursor + n].to_vec();
-        *cursor += n;
-        Some(s)
-    };
-    let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, "outputs blob truncated (row count)");
-        return None;
-    };
-    let count = u32::from_be_bytes(count_bytes.as_slice().try_into().ok()?) as usize;
-    // Length-before-allocation guard: rows are a fixed 29 bytes, so a
-    // header claiming more than the remaining payload holds is malformed
-    // — prevents a huge `with_capacity` abort from a raw-JNI blob.
-    if count
-        .checked_mul(29)
-        .is_none_or(|need| bytes.len() - cursor < need)
-    {
-        throw_sdk_exception(
-            env,
-            1,
-            &format!("outputs blob claims {count} rows but body is too short"),
-        );
-        return None;
     }
-    let mut outputs = Vec::with_capacity(count);
-    for i in 0..count {
-        let Some(type_byte) = read(&mut cursor, 1) else {
-            throw_sdk_exception(env, 1, &format!("outputs blob truncated at row {i} type"));
-            return None;
-        };
-        let Some(hash_bytes) = read(&mut cursor, 20) else {
-            throw_sdk_exception(env, 1, &format!("outputs blob truncated at row {i} hash"));
-            return None;
-        };
-        let Some(credit_bytes) = read(&mut cursor, 8) else {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("outputs blob truncated at row {i} credits"),
-            );
-            return None;
-        };
-        let mut hash = [0u8; 20];
-        hash.copy_from_slice(&hash_bytes);
-        let credits = u64::from_be_bytes(credit_bytes.as_slice().try_into().ok()?);
-        // The Kotlin encoder writes this field from a signed long; a set
-        // sign bit means a negative amount crossed the boundary — reject
-        // rather than treat it as a huge unsigned credit value.
-        if credits & (1 << 63) != 0 {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("outputs blob row {i} credits amount out of range"),
-            );
-            return None;
-        }
-        outputs.push(platform_wallet_ffi::AddressBalanceEntryFFI {
-            address: platform_wallet_ffi::PlatformAddressFFI {
-                address_type: type_byte[0],
-                hash,
-            },
-            balance: credits,
-            nonce: 0,
-            account_index: 0,
-            address_index: 0,
-            // Request path names only outputs/amounts — 0 per the FFI doc
-            // (the height pin is a persistence-round-trip concern).
-            as_of_height: 0,
-        });
-    }
-    Some(outputs)
 }
 
 /// Serialize a `PlatformAddressChangeSetFFI` into a `byte[]` blob:
@@ -2679,6 +2637,104 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// Shared body of the AUTO and EXPLICIT platform-address withdrawal exports:
+/// reject negative `jint`s (they would bit-cast to huge `u32`s), read the Core
+/// address, open the wallet's platform-address handle, call
+/// `platform_address_wallet_withdraw_to_address` and return the changeset
+/// blob. `inputs` is `None` for AUTO selection and the decoded rows for
+/// EXPLICIT. No fee strategy is passed, so the FFI applies its default
+/// `DeductFromInput(0)`.
+fn withdraw_platform_address_credits(
+    env: &mut JNIEnv,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    inputs: Option<&[platform_wallet_ffi::ExplicitInputFFI]>,
+    core_address: &JString,
+    core_fee_per_byte: jni::sys::jint,
+    signer_handle: jlong,
+) -> jbyteArray {
+    if account_index < 0 {
+        throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+        return ptr::null_mut();
+    }
+    if core_fee_per_byte < 0 {
+        throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
+        return ptr::null_mut();
+    }
+    let Some(core_address_c) = read_cstring_required(env, core_address, "core_address") else {
+        return ptr::null_mut();
+    };
+    let (selection, inputs_ptr, inputs_len) = match inputs {
+        None => (
+            platform_wallet_ffi::InputSelectionType::Auto,
+            ptr::null(),
+            0,
+        ),
+        Some(rows) => (
+            platform_wallet_ffi::InputSelectionType::Explicit,
+            rows.as_ptr(),
+            rows.len(),
+        ),
+    };
+
+    let mut addr_handle: Handle = 0;
+    let result = unsafe {
+        platform_wallet_ffi::platform_wallet_get_platform(
+            wallet_handle as Handle,
+            &mut addr_handle as *mut Handle,
+        )
+    };
+    if take_pwffi_error(env, result) {
+        return ptr::null_mut();
+    }
+
+    let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
+        updated: ptr::null_mut(),
+        updated_count: 0,
+    };
+    let withdraw_result = unsafe {
+        platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
+            addr_handle,
+            account_index as u32,
+            selection,
+            inputs_ptr,
+            inputs_len,
+            ptr::null(),
+            0,
+            core_address_c.as_ptr(),
+            core_fee_per_byte as u32,
+            ptr::null(), // fee strategy: FFI default `DeductFromInput(0)`
+            0,
+            signer_handle as *mut rs_sdk_ffi::SignerHandle,
+            &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+        )
+    };
+
+    let out = if take_pwffi_error(env, withdraw_result) {
+        ptr::null_mut()
+    } else {
+        let blob = unsafe { encode_changeset(&changeset) };
+        unsafe {
+            platform_wallet_ffi::platform_address_wallet_free_changeset(
+                &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
+            )
+        };
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    };
+
+    let destroy_result =
+        unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+    if !env.exception_check().unwrap_or(false) {
+        let _ = take_pwffi_error(env, destroy_result);
+    } else {
+        unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+    }
+
+    out
+}
+
 /// Withdraw platform-address credits (full account balance, AUTO input
 /// selection) to a Core L1 address, wallet-signed. The address is
 /// network-checked Rust-side against the wallet's own network. Returns the
@@ -2698,77 +2754,95 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
-        // bit-cast to huge u32s on the FFI call.
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+        withdraw_platform_address_credits(
+            env,
+            wallet_handle,
+            account_index,
+            None,
+            &core_address,
+            core_fee_per_byte,
+            signer_handle,
+        )
+    })
+}
+
+/// Decode the withdrawal-inputs blob into FFI rows.
+///
+/// The blob uses the shared credit-row format parsed by
+/// [`crate::credits::parse_credit_rows`] (the same rows as the transfer
+/// outputs blob): `u32 rowCount` then per row `u8 addressType, u8[20] hash,
+/// u64 credits`, big-endian.
+///
+/// Only malformed framing and a set sign bit on `credits` (a negative Kotlin
+/// `Long`, which would otherwise read as a huge `u64`) are rejected here.
+/// Everything else is validated once by its owner: the address type and
+/// duplicate addresses by `parse_explicit_inputs` in `rs-platform-wallet-ffi`,
+/// an empty list by `rs-platform-wallet`, and the input count and minimum
+/// input amount by `rs-dpp`. The messages never echo a hash or amount.
+fn decode_withdrawal_inputs(
+    bytes: &[u8],
+) -> Result<Vec<platform_wallet_ffi::ExplicitInputFFI>, String> {
+    let rows = parse_credit_rows(bytes, "withdrawal inputs blob")?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(address_type, hash, credits)| platform_wallet_ffi::ExplicitInputFFI {
+                address: platform_wallet_ffi::PlatformAddressFFI { address_type, hash },
+                balance: credits,
+            },
+        )
+        .collect())
+}
+
+/// Withdraw exactly the listed amounts from the listed platform addresses
+/// (EXPLICIT input selection) to a Core L1 address, wallet-signed. Port of
+/// Swift's `ManagedPlatformAddressWallet.withdraw(accountIndex:coreAddress:
+/// inputs:…)`; sibling of [`walletPlatformAddressWithdraw`], which withdraws
+/// the full balance. `inputs_blob` is decoded by [`decode_withdrawal_inputs`].
+///
+/// The amount and fee semantics (gross input sum, Core fee, which input pays
+/// the transition fee) are documented once, on the Kotlin
+/// `ManagedPlatformWallet.withdrawCredits(coreAddress, inputs, …)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletPlatformAddressWithdrawExplicit(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_index: jni::sys::jint,
+    inputs_blob: JByteArray,
+    core_address: JString,
+    core_fee_per_byte: jni::sys::jint,
+    signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if inputs_blob.is_null() {
+            throw_sdk_exception(env, 1, "withdrawal inputs blob was null");
             return ptr::null_mut();
         }
-        if core_fee_per_byte < 0 {
-            throw_sdk_exception(env, 1, "coreFeePerByte must be non-negative");
-            return ptr::null_mut();
-        }
-
-        let Some(core_address_c) = read_cstring_required(env, &core_address, "core_address") else {
-            return ptr::null_mut();
+        let blob_bytes = match env.convert_byte_array(&inputs_blob) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "withdrawal inputs blob was invalid");
+                return ptr::null_mut();
+            }
         };
-
-        let mut addr_handle: Handle = 0;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_get_platform(
-                wallet_handle as Handle,
-                &mut addr_handle as *mut Handle,
-            )
+        let inputs = match decode_withdrawal_inputs(&blob_bytes) {
+            Ok(rows) => rows,
+            Err(msg) => {
+                throw_sdk_exception(env, 1, &msg);
+                return ptr::null_mut();
+            }
         };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-
-        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
-            updated: ptr::null_mut(),
-            updated_count: 0,
-        };
-        let withdraw_result = unsafe {
-            platform_wallet_ffi::platform_address_wallet_withdraw_to_address(
-                addr_handle,
-                account_index as u32,
-                platform_wallet_ffi::InputSelectionType::Auto,
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                core_address_c.as_ptr(),
-                core_fee_per_byte as u32,
-                ptr::null(),
-                0,
-                signer_handle as *mut rs_sdk_ffi::SignerHandle,
-                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
-            )
-        };
-
-        let out = if take_pwffi_error(env, withdraw_result) {
-            ptr::null_mut()
-        } else {
-            let blob = unsafe { encode_changeset(&changeset) };
-            unsafe {
-                platform_wallet_ffi::platform_address_wallet_free_changeset(
-                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
-                )
-            };
-            env.byte_array_from_slice(&blob)
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut())
-        };
-
-        let destroy_result =
-            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
-        if !env.exception_check().unwrap_or(false) {
-            let _ = take_pwffi_error(env, destroy_result);
-        } else {
-            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
-        }
-
-        out
+        withdraw_platform_address_credits(
+            env,
+            wallet_handle,
+            account_index,
+            Some(&inputs),
+            &core_address,
+            core_fee_per_byte,
+            signer_handle,
+        )
     })
 }
 
@@ -4441,5 +4515,102 @@ mod tests {
             resume_ffi_for(FundRecipientScope::External) as usize,
             external as usize
         );
+    }
+
+    /// Encode rows the way Kotlin's `encodeWithdrawalInputs` does.
+    fn blob(rows: &[(u8, [u8; 20], i64)]) -> Vec<u8> {
+        let mut out = (rows.len() as u32).to_be_bytes().to_vec();
+        for (address_type, hash, credits) in rows {
+            out.push(*address_type);
+            out.extend_from_slice(hash);
+            out.extend_from_slice(&credits.to_be_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn should_decode_inputs_in_blob_order() {
+        let rows = decode_withdrawal_inputs(&blob(&[(0, [7u8; 20], 1_000), (0, [3u8; 20], 2_000)]))
+            .expect("valid blob");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].address.address_type, 0);
+        assert_eq!(rows[0].address.hash, [7u8; 20]);
+        assert_eq!(rows[0].balance, 1_000);
+        assert_eq!(rows[1].address.hash, [3u8; 20]);
+        assert_eq!(rows[1].balance, 2_000);
+    }
+
+    #[test]
+    fn should_pass_policy_checks_through_to_their_owners() {
+        // An empty list (rs-platform-wallet), P2SH (rs-platform-wallet-ffi)
+        // and zero credits (rs-dpp) are each rejected by their owner, not here.
+        assert!(decode_withdrawal_inputs(&blob(&[]))
+            .expect("marshals")
+            .is_empty());
+        let rows = decode_withdrawal_inputs(&blob(&[(1, [0u8; 20], 0)])).expect("marshals");
+        assert_eq!(rows[0].address.address_type, 1);
+        assert_eq!(rows[0].balance, 0);
+    }
+
+    #[test]
+    fn should_reject_negative_withdrawal_input_credits() {
+        assert!(decode_withdrawal_inputs(&blob(&[(0, [0u8; 20], -1)])).is_err());
+        assert!(decode_withdrawal_inputs(&blob(&[(0, [0u8; 20], i64::MIN)])).is_err());
+    }
+
+    #[test]
+    fn should_accept_the_largest_positive_withdrawal_input_credits() {
+        let rows = decode_withdrawal_inputs(&blob(&[(0, [0u8; 20], i64::MAX)])).expect("valid");
+        assert_eq!(rows[0].balance, i64::MAX as u64);
+    }
+
+    #[test]
+    fn should_reject_a_withdrawal_inputs_blob_with_bad_framing() {
+        assert!(decode_withdrawal_inputs(&[]).is_err());
+        assert!(decode_withdrawal_inputs(&[0, 0, 0]).is_err());
+        let mut short = blob(&[(0, [0u8; 20], 5)]);
+        short.pop();
+        assert!(decode_withdrawal_inputs(&short).is_err());
+        // Bytes after the last row are ignored, as on every credit-row route.
+        let mut long = blob(&[(0, [0u8; 20], 5)]);
+        long.push(0);
+        assert_eq!(decode_withdrawal_inputs(&long).expect("valid").len(), 1);
+        // A header claiming more rows than the body holds must not allocate.
+        assert!(decode_withdrawal_inputs(&u32::MAX.to_be_bytes()).is_err());
+    }
+
+    #[test]
+    fn should_decode_transfer_outputs_with_zeroed_request_metadata() {
+        let outputs =
+            decode_transfer_outputs(&blob(&[(0, [7u8; 20], 1_000), (0, [3u8; 20], 2_000)]))
+                .expect("valid blob");
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].address.address_type, 0);
+        assert_eq!(outputs[0].address.hash, [7u8; 20]);
+        assert_eq!(outputs[0].balance, 1_000);
+        assert_eq!(outputs[1].address.hash, [3u8; 20]);
+        assert_eq!(outputs[1].balance, 2_000);
+        for out in &outputs {
+            assert_eq!(
+                (
+                    out.nonce,
+                    out.account_index,
+                    out.address_index,
+                    out.as_of_height
+                ),
+                (0, 0, 0, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_or_negative_transfer_outputs() {
+        assert!(decode_transfer_outputs(&[0, 0, 0]).is_err());
+        let mut short = blob(&[(0, [0u8; 20], 5)]);
+        short.pop();
+        assert!(decode_transfer_outputs(&short).is_err());
+        assert!(decode_transfer_outputs(&u32::MAX.to_be_bytes()).is_err());
+        let err = decode_transfer_outputs(&blob(&[(0, [0u8; 20], -1)])).unwrap_err();
+        assert!(err.starts_with("outputs blob"), "{err}");
     }
 }

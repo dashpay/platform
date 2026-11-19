@@ -47,6 +47,19 @@ pub const SLOT_CONDITION_PROPERTY: &str = "$property";
 pub const SLOT_CONDITION_DELETE_KEEPS_FIELDS: &str = "$moderatorAbilities.deleteKeepsFields";
 /// The operand reading the referenced type's `moderatorAbilities.changeFields`.
 pub const SLOT_CONDITION_CHANGE_FIELDS: &str = "$moderatorAbilities.changeFields";
+/// The operand reading the abilities the referenced type's contract gives its elected
+/// moderation team on the type.
+pub const SLOT_CONDITION_ELECTED_ABILITIES: &str = "$electedAbilities";
+/// The operand a `present` or an `absent` tests for the referenced type's
+/// `moderatorAbilities.deleteWithin`.
+pub const SLOT_CONDITION_DELETE_WITHIN: &str = "$moderatorAbilities.deleteWithin";
+/// The operand a `present` or an `absent` tests for the referenced type's
+/// `moderatorAbilities.deleteSettled`.
+pub const SLOT_CONDITION_DELETE_SETTLED: &str = "$moderatorAbilities.deleteSettled";
+/// The operand a `present` or an `absent` tests for the `approversPredateDocument` of the
+/// referenced type's `moderatorAbilities.deleteSettled`.
+pub const SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT: &str =
+    "$moderatorAbilities.deleteSettled.approversPredateDocument";
 
 /// The deepest a decoder accepts conditions inside one another. It only keeps crafted bytes
 /// from driving the decoder, and the evaluation of what it decodes, into unbounded
@@ -77,6 +90,41 @@ pub enum SlotConditionList {
     DeletionKeptFields,
     /// `$moderatorAbilities.changeFields`: what only moderators write.
     ModeratorChangeableFields,
+    /// `$electedAbilities`: the abilities the type's contract gives its elected moderation
+    /// team on the type, by their names (`deleteDocuments`, `changeDocumentFields`, ...).
+    /// Empty when the contract elects no team, or leaves the type out of what the team
+    /// moderates.
+    ElectedAbilities,
+}
+
+/// A setting of the referenced type a `present` or an `absent` tests.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Encode, Decode, DecodeUntrusted)]
+pub enum SlotConditionSetting {
+    /// `$moderatorAbilities.deleteWithin`: the type gives moderators a window after a
+    /// document's last change to delete it in.
+    DeleteWithin,
+    /// `$moderatorAbilities.deleteSettled`: the type says who of a seated team may delete a
+    /// document past that window.
+    DeleteSettled,
+    /// `$moderatorAbilities.deleteSettled.approversPredateDocument`: that rule counts a member
+    /// the team's leader added only for documents created after its addition, as the rule
+    /// reads once its default is applied (set unless one approval meets it). A document
+    /// older than the members it would take is then never deleted once settled. Absent on a
+    /// type with no such rule.
+    SettledApproversPredateDocument,
+}
+
+impl SlotConditionSetting {
+    /// The operand the setting is written as.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            SlotConditionSetting::DeleteWithin => SLOT_CONDITION_DELETE_WITHIN,
+            SlotConditionSetting::DeleteSettled => SLOT_CONDITION_DELETE_SETTLED,
+            SlotConditionSetting::SettledApproversPredateDocument => {
+                SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT
+            }
+        }
+    }
 }
 
 impl SlotConditionList {
@@ -85,6 +133,7 @@ impl SlotConditionList {
         match self {
             SlotConditionList::DeletionKeptFields => SLOT_CONDITION_DELETE_KEEPS_FIELDS,
             SlotConditionList::ModeratorChangeableFields => SLOT_CONDITION_CHANGE_FIELDS,
+            SlotConditionList::ElectedAbilities => SLOT_CONDITION_ELECTED_ABILITIES,
         }
     }
 }
@@ -113,6 +162,10 @@ pub enum SlotCondition {
     /// `ifThenElse`: three conditions; the second holds when the first does, the third
     /// when it does not.
     IfThenElse(SlotConditions),
+    /// `present`: the type declares the setting.
+    Present(SlotConditionSetting),
+    /// `absent`: the type does not declare the setting.
+    Absent(SlotConditionSetting),
 }
 
 /// What a slot condition is judged against: the referenced document type, and the one of
@@ -127,6 +180,28 @@ pub struct SlotConditionSubject<'a> {
     pub deletion_kept_fields: &'a BTreeSet<String>,
     /// The referenced type's `moderatorAbilities.changeFields`.
     pub moderator_changeable_fields: &'a BTreeSet<String>,
+    /// The abilities the referenced type's contract gives its elected team on the type, by
+    /// name; empty when it elects none or leaves the type out.
+    pub elected_abilities: &'a BTreeSet<String>,
+    /// Whether the referenced type declares `moderatorAbilities.deleteWithin`.
+    pub deletion_window: bool,
+    /// Whether the referenced type declares `moderatorAbilities.deleteSettled`.
+    pub settled_deletion: bool,
+    /// Whether that rule counts a member the leader added only for documents created after
+    /// its addition (`approversPredateDocument`, its default applied).
+    pub settled_approvers_predate_document: bool,
+}
+
+impl SlotConditionSubject<'_> {
+    fn declares(&self, setting: SlotConditionSetting) -> bool {
+        match setting {
+            SlotConditionSetting::DeleteWithin => self.deletion_window,
+            SlotConditionSetting::DeleteSettled => self.settled_deletion,
+            SlotConditionSetting::SettledApproversPredateDocument => {
+                self.settled_approvers_predate_document
+            }
+        }
+    }
 }
 
 impl SlotConditionValue {
@@ -205,6 +280,12 @@ impl SlotCondition {
             SlotCondition::AllOf(conditions) => ("allOf", listed(conditions)),
             SlotCondition::IfThen(conditions) => ("ifThen", listed(conditions)),
             SlotCondition::IfThenElse(conditions) => ("ifThenElse", listed(conditions)),
+            SlotCondition::Present(setting) => {
+                ("present", Value::Text(setting.wire_name().to_string()))
+            }
+            SlotCondition::Absent(setting) => {
+                ("absent", Value::Text(setting.wire_name().to_string()))
+            }
         };
         Value::Map(vec![(Value::Text(key.to_string()), operand)])
     }
@@ -225,6 +306,7 @@ impl SlotCondition {
                     SlotConditionList::ModeratorChangeableFields => {
                         subject.moderator_changeable_fields
                     }
+                    SlotConditionList::ElectedAbilities => subject.elected_abilities,
                 };
                 list.contains(value.read(subject))
             }
@@ -254,6 +336,31 @@ impl SlotCondition {
                 }
                 _ => false,
             },
+            SlotCondition::Present(setting) => subject.declares(*setting),
+            SlotCondition::Absent(setting) => !subject.declares(*setting),
+        }
+    }
+
+    /// Whether the condition, or one inside it, reads `$property`: a condition on the type
+    /// as a whole, which has no property in hand, reads none.
+    pub fn reads_the_property(&self) -> bool {
+        let reads = |value: &SlotConditionValue| *value == SlotConditionValue::PropertyName;
+        match self {
+            SlotCondition::Equal(left, right) | SlotCondition::NotEqual(left, right) => {
+                reads(left) || reads(right)
+            }
+            SlotCondition::In(value, _)
+            | SlotCondition::NotIn(value, _)
+            | SlotCondition::Contains(_, value) => reads(value),
+            SlotCondition::Not(conditions)
+            | SlotCondition::AnyOf(conditions)
+            | SlotCondition::AllOf(conditions)
+            | SlotCondition::IfThen(conditions)
+            | SlotCondition::IfThenElse(conditions) => conditions
+                .conditions()
+                .iter()
+                .any(SlotCondition::reads_the_property),
+            SlotCondition::Present(_) | SlotCondition::Absent(_) => false,
         }
     }
 
@@ -265,7 +372,9 @@ impl SlotCondition {
         match self {
             SlotCondition::Equal(..)
             | SlotCondition::NotEqual(..)
-            | SlotCondition::Contains(..) => 1,
+            | SlotCondition::Contains(..)
+            | SlotCondition::Present(_)
+            | SlotCondition::Absent(_) => 1,
             SlotCondition::In(_, values) | SlotCondition::NotIn(_, values) => {
                 values.len().saturating_add(1)
             }
@@ -431,6 +540,10 @@ mod tests {
                     property_name,
                     deletion_kept_fields: kept,
                     moderator_changeable_fields: changeable,
+                    elected_abilities: &none,
+                    deletion_window: false,
+                    settled_deletion: false,
+                    settled_approvers_predate_document: false,
                 })
             };
 
@@ -464,6 +577,10 @@ mod tests {
             property_name: "body",
             deletion_kept_fields: &empty,
             moderator_changeable_fields: &empty,
+            elected_abilities: &empty,
+            deletion_window: false,
+            settled_deletion: false,
+            settled_approvers_predate_document: false,
         };
         let name_is = |name: &str| {
             SlotCondition::Equal(
@@ -523,6 +640,78 @@ mod tests {
             !SlotCondition::IfThenElse(list(vec![name_is("body"), name_is("body")]))
                 .holds(&subject)
         );
+    }
+
+    /// A condition on the type as a whole: what its contract lets the elected team do on
+    /// it, and which settings it declares. "The team may delete its documents, and a
+    /// document stays deletable": no window, or a rule for deleting past it that counts
+    /// every member of the team for every document.
+    #[test]
+    fn should_judge_a_type_by_what_its_moderation_says_of_it() {
+        let condition = SlotCondition::AllOf(SlotConditions::new(vec![
+            SlotCondition::Contains(
+                SlotConditionList::ElectedAbilities,
+                SlotConditionValue::Constant("deleteDocuments".to_string()),
+            ),
+            SlotCondition::AnyOf(SlotConditions::new(vec![
+                SlotCondition::Absent(SlotConditionSetting::DeleteWithin),
+                SlotCondition::AllOf(SlotConditions::new(vec![
+                    SlotCondition::Present(SlotConditionSetting::DeleteSettled),
+                    SlotCondition::Absent(SlotConditionSetting::SettledApproversPredateDocument),
+                ])),
+            ])),
+        ]));
+        assert_eq!(condition.node_count(), 7);
+        assert!(!condition.reads_the_property());
+        assert!(removed_with_the_document().reads_the_property());
+
+        let empty = BTreeSet::new();
+        let holds = |abilities: &[&str], deletion_window, settled_deletion, approvers_predate| {
+            condition.holds(&SlotConditionSubject {
+                kind: DocumentReferenceKind::Moderated,
+                property_name: "",
+                deletion_kept_fields: &empty,
+                moderator_changeable_fields: &empty,
+                elected_abilities: &kept(abilities),
+                deletion_window,
+                settled_deletion,
+                settled_approvers_predate_document: approvers_predate,
+            })
+        };
+        assert!(holds(&["deleteDocuments"], false, false, false));
+        assert!(holds(&["ban", "deleteDocuments"], true, true, false));
+        // The team does not delete documents of the type
+        assert!(!holds(&[], false, false, false));
+        assert!(!holds(&["changeDocumentFields"], false, false, false));
+        // A window with nobody to delete past it
+        assert!(!holds(&["deleteDocuments"], true, false, false));
+        // A window, and a rule past it under which members added after a document do not
+        // count for it: a document older than the members it would take stays for good
+        assert!(!holds(&["deleteDocuments"], true, true, true));
+
+        // Written back as declared, and decoded as encoded
+        assert_eq!(
+            condition
+                .to_schema_value()
+                .try_into_validating_json()
+                .expect("converts"),
+            serde_json::json!({ "allOf": [
+                { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+                { "anyOf": [
+                    { "absent": "$moderatorAbilities.deleteWithin" },
+                    { "allOf": [
+                        { "present": "$moderatorAbilities.deleteSettled" },
+                        { "absent":
+                            "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+                    ] }
+                ] }
+            ] })
+        );
+        let bytes =
+            bincode::encode_to_vec(&condition, bincode::config::standard()).expect("encodes");
+        for decoded in decode_every_way(&bytes) {
+            assert_eq!(decoded.expect("decodes"), condition);
+        }
     }
 
     #[test]

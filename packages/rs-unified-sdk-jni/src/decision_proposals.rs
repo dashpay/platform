@@ -39,14 +39,18 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-// ── Marshalling helpers ──────────────────────────────────────────────────
+// ── Marshalling helpers (shared with `crate::multiple_choice_proposals`) ─
 
 /// Read a nullable JVM string into an owned `CString`.
 ///
 /// `Some(None)` for a null string, `Some(Some(_))` for a string, and `None` after throwing
 /// for a string JNI cannot read or one holding a NUL byte (the caller bails out). An
 /// unreadable string is never mistaken for an absent one.
-fn read_optional_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<Option<CString>> {
+pub(crate) fn read_optional_cstring(
+    env: &mut JNIEnv,
+    s: &JString,
+    field: &str,
+) -> Option<Option<CString>> {
     if s.is_null() {
         return Some(None);
     }
@@ -69,7 +73,7 @@ fn read_optional_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<O
 
 /// Read a required JVM string into an owned `CString`; throws and returns `None` for a null
 /// or unreadable string.
-fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
+pub(crate) fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
     match read_optional_cstring(env, s, field)? {
         Some(c) => Some(c),
         None => {
@@ -80,13 +84,13 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 }
 
 /// The pointer the C functions take for an optional string: null for `None`.
-fn c_ptr(value: &Option<CString>) -> *const c_char {
+pub(crate) fn c_ptr(value: &Option<CString>) -> *const c_char {
     value.as_ref().map_or(ptr::null(), |s| s.as_ptr())
 }
 
 /// Read a required 32-byte array; throws and returns `None` for a null array or any other
 /// length (the C functions read exactly 32 bytes through the pointer).
-fn read_bytes32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+pub(crate) fn read_bytes32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {
@@ -110,7 +114,7 @@ fn read_bytes32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 
 
 /// Secret-key sibling of [`read_bytes32`]: the returned buffer is scrubbed on drop and the
 /// intermediate JNI copy is zeroized before it is dropped. For the voting private key only.
-fn read_key32_zeroizing(
+pub(crate) fn read_key32_zeroizing(
     env: &mut JNIEnv,
     arr: &JByteArray,
     field: &str,
@@ -139,7 +143,7 @@ fn read_key32_zeroizing(
 
 /// `value` as the unsigned C type `T`; throws and returns `None` for a value `T` cannot
 /// hold (negative, or too large) instead of wrapping it into a different, valid one.
-fn to_unsigned<T: TryFrom<i64>>(env: &mut JNIEnv, value: i64, field: &str) -> Option<T> {
+pub(crate) fn to_unsigned<T: TryFrom<i64>>(env: &mut JNIEnv, value: i64, field: &str) -> Option<T> {
     match T::try_from(value) {
         Ok(converted) => Some(converted),
         Err(_) => {
@@ -155,7 +159,7 @@ fn to_unsigned<T: TryFrom<i64>>(env: &mut JNIEnv, value: i64, field: &str) -> Op
 /// # Safety
 /// `result` must be a `DashSDKResult` freshly returned by an rs-sdk-ffi function whose
 /// success payload is a `char*` or no data.
-unsafe fn string_or_null(env: &mut JNIEnv, result: DashSDKResult) -> jstring {
+pub(crate) unsafe fn string_or_null(env: &mut JNIEnv, result: DashSDKResult) -> jstring {
     unwrap_string(env, result)
         .map(|s| s.into_raw())
         .unwrap_or(ptr::null_mut())
@@ -174,7 +178,7 @@ unsafe fn static_string(env: &mut JNIEnv, value: *const c_char) -> jstring {
 
 /// Whether `arr` is a non-null `byte[len]`. Clears the exception a failed length read
 /// leaves; the caller throws.
-fn is_byte_array_of_len(env: &mut JNIEnv, arr: &JByteArray, len: i32) -> bool {
+pub(crate) fn is_byte_array_of_len(env: &mut JNIEnv, arr: &JByteArray, len: i32) -> bool {
     if arr.is_null() {
         return false;
     }
@@ -194,7 +198,11 @@ fn is_byte_array_of_len(env: &mut JNIEnv, arr: &JByteArray, len: i32) -> bool {
 ///
 /// # Safety
 /// `json` must be null or a string the platform wallet allocated and nothing else frees.
-unsafe fn take_wallet_json(env: &mut JNIEnv, json: *mut c_char, call: &str) -> Option<String> {
+pub(crate) unsafe fn take_wallet_json(
+    env: &mut JNIEnv,
+    json: *mut c_char,
+    call: &str,
+) -> Option<String> {
     if json.is_null() {
         throw_sdk_exception(
             env,
@@ -704,7 +712,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     const DECISION_PROPOSALS_NATIVE_KT: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/DecisionProposalsNative.kt"
@@ -713,10 +721,16 @@ mod tests {
     /// The parameter types and the return type of `external fun {name}(...)` in
     /// `DecisionProposalsNative.kt`.
     fn kotlin_signature(name: &str) -> (Vec<String>, String) {
-        let declaration = DECISION_PROPOSALS_NATIVE_KT
+        kotlin_signature_in(DECISION_PROPOSALS_NATIVE_KT, name)
+    }
+
+    /// The parameter types and the return type of `external fun {name}(...)` in the Kotlin
+    /// source `kotlin`, the text of a `*Native.kt` file.
+    pub(crate) fn kotlin_signature_in(kotlin: &str, name: &str) -> (Vec<String>, String) {
+        let declaration = kotlin
             .split(&format!("external fun {name}("))
             .nth(1)
-            .unwrap_or_else(|| panic!("DecisionProposalsNative.kt declares {name}"));
+            .unwrap_or_else(|| panic!("the Kotlin native object declares {name}"));
         let (parameters, rest) = declaration
             .split_once(')')
             .expect("the parameter list closes");
