@@ -106,9 +106,9 @@ final class RegistrationCoordinator: ObservableObject {
     ///
     /// `resuming` names the asset lock `body` resumes, `nil` for a fresh
     /// registration. A failed slot restarts only as its payment class
-    /// allows (`PaymentFailure.permitsRestart`): a fresh registration only
-    /// after a retryable failure, a resume only of the lock the failure
-    /// holds.
+    /// allows (`PaymentFailure.permitsRestart`): any registration after a
+    /// failure that releases the slot (any `.notSent`), a resume only of the
+    /// lock a held failure names, nothing after one that may have left.
     func startRegistration(
         walletId: Data,
         identityIndex: UInt32,
@@ -160,18 +160,18 @@ final class RegistrationCoordinator: ObservableObject {
     /// indefinitely until acknowledged so the user can read the
     /// error) and its "Done" after a completion.
     ///
-    /// A failed slot is dropped only when its class allows a fresh
-    /// registration (`permitsSubmit(resuming: nil)`, a retryable failure):
-    /// `startRegistration` gates a restart only on a slot it still holds, so
-    /// dropping a failure that may have left, holds a lock, or waits for an
-    /// earlier payment would let a fresh registration pay again on the same
-    /// index. Such a slot stays until its lock is resumed or the app
-    /// restarts. Returns whether the controller was dropped.
+    /// A failed slot is dropped only when its failure releases it
+    /// (`PaymentFailure.holdsSlot`, any `.notSent`): `startRegistration`
+    /// gates a restart only on a slot it still holds, so dropping a failure
+    /// that may have left, holds a lock, or has no class would let a fresh
+    /// registration pay again on the same index. Such a slot stays until its
+    /// lock is resumed or the app restarts. Returns whether the controller
+    /// was dropped.
     @discardableResult
     func dismiss(walletId: Data, identityIndex: UInt32) -> Bool {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
-        if let controller = controllers[key], case .failed = controller.phase,
-           !controller.phase.permitsSubmit(resuming: nil) {
+        if let controller = controllers[key], case .failed(let failure) = controller.phase,
+           failure.holdsSlot {
             return false
         }
         controllers.removeValue(forKey: key)
@@ -213,8 +213,8 @@ final class RegistrationCoordinator: ObservableObject {
                     }
                 case .failed, .unconfirmed:
                     // Keep indefinitely; the user dismisses manually via the
-                    // "Dismiss" action (for `.failed`, only a failure whose
-                    // class allows a retry; for `.unconfirmed`, only after the
+                    // "Dismiss" action (for `.failed`, only a failure that
+                    // releases its slot; for `.unconfirmed`, only after the
                     // identity row appears via sync). Return so the poll loop
                     // doesn't spin.
                     return

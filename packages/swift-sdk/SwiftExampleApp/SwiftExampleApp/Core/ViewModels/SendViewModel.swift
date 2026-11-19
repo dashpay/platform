@@ -119,8 +119,24 @@ class SendViewModel: ObservableObject {
     @Published var successMessage: String?
     /// A send that failed, presented by Rust's payment class
     /// (`PaymentFailure`): its title and text, and whether it may be
-    /// retried. Never shown as a success.
+    /// retried. Never shown as a success. One that holds its slot
+    /// (`PaymentFailure.holdsSlot`) stays stored after its alert is
+    /// acknowledged, so `canSend` and `executeSend` refuse a second payment
+    /// until the user leaves the form.
     @Published var paymentFailure: PaymentFailure?
+
+    /// Whether the stored failure forbids another submission from this form.
+    var isHeldByPaymentFailure: Bool { paymentFailure?.holdsSlot == true }
+
+    /// Acknowledge the failure alert. Returns whether the form must close:
+    /// a failure that holds its slot stays stored (the form stays refused)
+    /// and the form closes; a `.notSent` one is cleared, so a corrected
+    /// request may go.
+    func acknowledgePaymentFailure() -> Bool {
+        if isHeldByPaymentFailure { return true }
+        paymentFailure = nil
+        return false
+    }
 
     /// Per-output minimum credit amount (`min_output_amount`) the chain
     /// enforces for address-funds transitions, resolved on the Rust side from
@@ -340,7 +356,7 @@ class SendViewModel: ObservableObject {
     }
 
     var canSend: Bool {
-        guard let flow = detectedFlow, !isSending else { return false }
+        guard let flow = detectedFlow, !isSending, !isHeldByPaymentFailure else { return false }
         // An over-limit memo would be rejected by Rust; block here so
         // the user sees the red counter rather than a backend error.
         // Only the shielded → shielded path carries a memo, so a stale
@@ -499,7 +515,9 @@ class SendViewModel: ObservableObject {
         senderAccountIndex: UInt32,
         modelContext: ModelContext
     ) async {
-        guard let flow = detectedFlow else { return }
+        // A failure that may have left the wallet or holds a lock stays
+        // stored: never pay again from this form.
+        guard let flow = detectedFlow, !isHeldByPaymentFailure else { return }
 
         isSending = true
         error = nil

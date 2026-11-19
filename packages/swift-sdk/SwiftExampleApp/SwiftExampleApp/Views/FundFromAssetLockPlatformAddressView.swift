@@ -373,13 +373,21 @@ struct FundFromAssetLockPlatformAddressView: View {
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
-                    Button("Dismiss") {
-                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
-                        )
-                        dismiss()
+                    // Only a failure that releases its slot
+                    // (`PaymentFailure.holdsSlot`) offers Dismiss: one that
+                    // may have left or holds a lock keeps the controller, so
+                    // a fresh lock is never funded for this recipient (the
+                    // coordinator refuses the same dismissal). Leaving the
+                    // screen keeps it in the pending list.
+                    if !failure.holdsSlot {
+                        Button("Dismiss") {
+                            walletManager.addressFundFromAssetLockCoordinator.dismiss(
+                                walletId: controller.walletId,
+                                platformAccountIndex: controller.platformAccountIndex,
+                                recipientHash: controller.recipientHash
+                            )
+                            dismiss()
+                        }
                     }
                 }
             }

@@ -32,7 +32,6 @@ final class PaymentFailureTests: XCTestCase {
             XCTAssertEqual(failure.action, action, "\(String(describing: payment))")
             XCTAssertTrue(failure.message.hasPrefix(recovery.suggestion), failure.message)
             XCTAssertTrue(failure.message.hasSuffix("detail"), failure.message)
-            XCTAssertEqual(failure.allowsRetry, action == .retry)
             if action != .retry {
                 XCTAssertFalse(failure.message.lowercased().contains("try again"), failure.message)
             }
@@ -94,17 +93,41 @@ final class PaymentFailureTests: XCTestCase {
         }
     }
 
+    /// A failure that may have left (`.maybeSent`), holds a lock
+    /// (`.lockHeld`) or has no class holds its slot; any `.notSent` one,
+    /// retryable or not, releases it.
+    func testShouldHoldTheSlotUnlessNothingWasSent() {
+        let table: [(PlatformPaymentClass?, Bool)] = [
+            (Self.retryable, false),
+            (Self.blocked, false),
+            (Self.lockHeld, true),
+            (.maybeSent, true),
+            (nil, true),
+        ]
+        for (payment, holds) in table {
+            let failure = PaymentFailure(payment: payment, detail: "")
+            XCTAssertEqual(failure.holdsSlot, holds, "\(String(describing: payment))")
+            XCTAssertEqual(
+                PaymentFailure(payment: payment, detail: "", invitationVoucher: true).holdsSlot,
+                holds
+            )
+        }
+    }
+
     func testShouldRestartOnlyAsTheClassAllows() {
-        let retry = PaymentFailure(payment: Self.retryable, detail: "")
-        XCTAssertTrue(retry.permitsRestart(resuming: nil))
-        XCTAssertTrue(retry.permitsRestart(resuming: Self.other))
+        // Nothing left the wallet: any new request, retryable or not.
+        for payment in [Self.retryable, Self.blocked] {
+            let released = PaymentFailure(payment: payment, detail: "")
+            XCTAssertTrue(released.permitsRestart(resuming: nil))
+            XCTAssertTrue(released.permitsRestart(resuming: Self.other))
+        }
 
         let resume = PaymentFailure(payment: Self.lockHeld, detail: "")
         XCTAssertFalse(resume.permitsRestart(resuming: nil), "never fund a new payment")
         XCTAssertFalse(resume.permitsRestart(resuming: Self.other))
         XCTAssertTrue(resume.permitsRestart(resuming: Self.held))
 
-        for payment in [Self.blocked, .maybeSent, nil] {
+        for payment in [PlatformPaymentClass.maybeSent, nil] {
             let wait = PaymentFailure(payment: payment, detail: "")
             XCTAssertFalse(wait.permitsRestart(resuming: nil))
             XCTAssertFalse(wait.permitsRestart(resuming: Self.held))
@@ -159,21 +182,23 @@ final class PaymentFailureTests: XCTestCase {
         XCTAssertFalse(ranAgain.value, "no fresh registration after a refused dismiss")
     }
 
-    /// Only a failure whose class allows a fresh registration is dismissed;
-    /// one holding a lock or waiting for an earlier payment keeps its slot.
+    /// Only a failure that releases its slot (any `.notSent`) is dismissed;
+    /// one holding a lock, one that may have left, and one with no class
+    /// keep it.
     @MainActor
-    func testRegistrationFailureIsDismissedOnlyWhenItsClassAllowsARetry() async throws {
+    func testRegistrationFailureIsDismissedOnlyWhenNothingWasSent() async throws {
         let coordinator = RegistrationCoordinator()
         let walletId = Data(repeating: 0xA3, count: 32)
-        let cases: [(UInt32, PlatformPaymentClass, Bool)] = [
+        let cases: [(UInt32, PlatformPaymentClass?, Bool)] = [
             (1, Self.retryable, true),
-            (2, Self.blocked, false),
+            (2, Self.blocked, true),
             (3, Self.lockHeld, false),
             (4, .maybeSent, false),
+            (5, nil, false),
         ]
         for (index, payment, dismissable) in cases {
             let controller = coordinator.startRegistration(walletId: walletId, identityIndex: index) {
-                throw PlatformWalletError.walletOperation("refused", payment: payment)
+                throw Self.failure(payment)
             }
             try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
             XCTAssertEqual(coordinator.dismiss(walletId: walletId, identityIndex: index), dismissable)
@@ -182,6 +207,132 @@ final class PaymentFailureTests: XCTestCase {
                 dismissable
             )
         }
+    }
+
+    /// A registration refused before anything was sent, even one Rust does
+    /// not allow to retry as it is (an earlier payment still settling, too
+    /// little in the asset lock), does not keep its index: a corrected new
+    /// request on the same slot runs.
+    @MainActor
+    func testRegistrationNotSentFailureLetsANewRequestRun() async throws {
+        let coordinator = RegistrationCoordinator()
+        let walletId = Data(repeating: 0xA4, count: 32)
+        let blocked = Self.blocked
+        let controller = coordinator.startRegistration(walletId: walletId, identityIndex: 6) {
+            throw PlatformWalletError.walletOperation("insufficient funds", payment: blocked)
+        }
+        try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
+
+        let newId = Data(repeating: 0x6B, count: 32)
+        let again = coordinator.startRegistration(walletId: walletId, identityIndex: 6) { newId }
+        try await Self.waitUntil {
+            if case .completed(let id) = again.phase { return id == newId }
+            return false
+        }
+        XCTAssertTrue(coordinator.controller(walletId: walletId, identityIndex: 6) === again)
+    }
+
+    /// A Platform-address funding's Dismiss drops the controller only when
+    /// its failure releases the slot; otherwise the slot stays and a fresh
+    /// funding of the same recipient does not run.
+    @MainActor
+    func testAddressFundingFailureIsDismissedOnlyWhenNothingWasSent() async throws {
+        let coordinator = AddressFundFromAssetLockCoordinator()
+        let walletId = Data(repeating: 0xB1, count: 32)
+        let cases: [(UInt8, PlatformPaymentClass?, Bool)] = [
+            (1, Self.retryable, true),
+            (2, Self.blocked, true),
+            (3, Self.lockHeld, false),
+            (4, .maybeSent, false),
+            (5, nil, false),
+        ]
+        for (tag, payment, dismissable) in cases {
+            let recipient = Data(repeating: tag, count: 20)
+            let controller = coordinator.startFunding(
+                walletId: walletId, platformAccountIndex: 0, recipientHash: recipient, recipientType: 0
+            ) {
+                throw Self.failure(payment)
+            }
+            try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
+            XCTAssertEqual(
+                coordinator.dismiss(walletId: walletId, platformAccountIndex: 0, recipientHash: recipient),
+                dismissable,
+                "\(String(describing: payment))"
+            )
+            let kept = coordinator.controller(
+                walletId: walletId, platformAccountIndex: 0, recipientHash: recipient
+            )
+            XCTAssertEqual(kept == nil, dismissable)
+
+            let ranAgain = Flag()
+            let again = coordinator.startFunding(
+                walletId: walletId, platformAccountIndex: 0, recipientHash: recipient, recipientType: 0
+            ) {
+                ranAgain.value = true
+                return 1
+            }
+            if dismissable {
+                try await Self.waitUntil { ranAgain.value }
+                XCTAssertFalse(again === controller)
+            } else {
+                try await Task.sleep(nanoseconds: 50_000_000)
+                XCTAssertFalse(ranAgain.value, "no fresh lock after a held failure")
+                XCTAssertTrue(again === controller)
+            }
+        }
+    }
+
+    /// The shielded funding's Dismiss follows the same rule.
+    @MainActor
+    func testShieldedFundingFailureIsDismissedOnlyWhenNothingWasSent() async throws {
+        let coordinator = ShieldedFundFromAssetLockCoordinator()
+        let walletId = Data(repeating: 0xB2, count: 32)
+        let cases: [(UInt8, PlatformPaymentClass?, Bool)] = [
+            (1, Self.retryable, true),
+            (2, Self.blocked, true),
+            (3, Self.lockHeld, false),
+            (4, .maybeSent, false),
+            (5, nil, false),
+        ]
+        for (tag, payment, dismissable) in cases {
+            let recipient = Data(repeating: tag, count: 43)
+            let started = coordinator.startFunding(
+                walletId: walletId, recipientRaw43: recipient, operationId: "fresh:\(tag)"
+            ) {
+                throw Self.failure(payment)
+            }
+            guard case .started(let controller) = started else { return XCTFail("funding did not start") }
+            try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
+            XCTAssertEqual(
+                coordinator.dismiss(walletId: walletId, recipientRaw43: recipient),
+                dismissable,
+                "\(String(describing: payment))"
+            )
+            XCTAssertEqual(
+                coordinator.controller(walletId: walletId, recipientRaw43: recipient) == nil,
+                dismissable
+            )
+
+            let ranAgain = Flag()
+            _ = coordinator.startFunding(
+                walletId: walletId, recipientRaw43: recipient, operationId: "fresh:\(tag):2"
+            ) {
+                ranAgain.value = true
+            }
+            if dismissable {
+                try await Self.waitUntil { ranAgain.value }
+            } else {
+                try await Task.sleep(nanoseconds: 50_000_000)
+                XCTAssertFalse(ranAgain.value, "no fresh lock after a held failure")
+            }
+        }
+    }
+
+    /// The error a payment of `payment`'s class fails with; `nil` stands
+    /// for an error Rust gave no class (an SDK timeout).
+    private static func failure(_ payment: PlatformPaymentClass?) -> Error {
+        guard let payment else { return SDKError.timeout("timeout") }
+        return PlatformWalletError.walletOperation("refused", payment: payment)
     }
 
     /// A registration holding a lock restarts only through that lock's

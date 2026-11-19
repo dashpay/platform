@@ -14,6 +14,9 @@ import SwiftDashSDK
 /// - everything else waits: a non-retryable `.notSent` (an earlier payment
 ///   may still be settling), `.maybeSent` (sync settles it) and an
 ///   unclassified failure (unconfirmed, never retried).
+///
+/// Whether the failure keeps its slot is `holdsSlot`: only a `.notSent` one
+/// releases it.
 struct PaymentFailure: Equatable {
     /// The one thing a screen may offer after the failure.
     enum Action: Equatable {
@@ -84,8 +87,6 @@ struct PaymentFailure: Equatable {
         }
     }
 
-    var allowsRetry: Bool { action == .retry }
-
     /// The lock to resume, `nil` unless the action is `.resume`.
     var heldLock: AssetLockBuiltOutPoint? {
         if case .resume(let outPoint) = action { return outPoint }
@@ -117,16 +118,29 @@ struct PaymentFailure: Equatable {
         return "\(recovery.suggestion) \(detail)"
     }
 
+    /// Whether the failure holds its slot (the screen's form, the
+    /// coordinator's controller, its Dismiss) until it is resumed or the
+    /// user leaves the flow. Every gate on a failed payment reads this.
+    ///
+    /// A failure that may have left the wallet (`.maybeSent`), holds an
+    /// asset lock (`.lockHeld`) or carries no class holds it: a new request
+    /// could pay a second time. Any `.notSent` failure, retryable or not,
+    /// releases it: nothing left the wallet, so Dismiss and a corrected new
+    /// request are allowed (Rust refuses again if something still blocks).
+    var holdsSlot: Bool {
+        switch recovery {
+        case .retry, .wait: return false
+        case .resume, .reconcile, .unconfirmed: return true
+        }
+    }
+
     /// Whether a failed attempt may be started again by an operation that
     /// resumes `resuming` (`nil` for a fresh one): any operation after a
-    /// retryable failure, only the resume of the held lock after a held one,
-    /// nothing after one that waits.
+    /// failure that releases its slot (`holdsSlot`), only the resume of the
+    /// held lock after a held one, nothing after any other.
     func permitsRestart(resuming: AssetLockBuiltOutPoint?) -> Bool {
-        switch action {
-        case .retry: return true
-        case .resume(let held): return resuming == held
-        case .wait: return false
-        }
+        guard holdsSlot else { return true }
+        return heldLock.map { resuming == $0 } ?? false
     }
 }
 

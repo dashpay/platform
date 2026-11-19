@@ -390,19 +390,27 @@ struct AddressFundFromAssetLockProgressView: View {
                     // Funding` row's `.swipeActions` doesn't fire
                     // outside a List, so neither surface had a
                     // working dismissal.
-                    Button {
-                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            platformAccountIndex: controller.platformAccountIndex,
-                            recipientHash: controller.recipientHash
-                        )
-                        dismiss()
-                    } label: {
-                        Text("Dismiss")
-                            .frame(maxWidth: .infinity)
+                    // Only a failure that releases its slot
+                    // (`PaymentFailure.holdsSlot`) offers Dismiss: one that
+                    // may have left or holds a lock keeps the controller, so
+                    // a fresh lock is never funded for this recipient (the
+                    // coordinator refuses the same dismissal). Leaving the
+                    // screen keeps it in the pending list.
+                    if !failure.holdsSlot {
+                        Button {
+                            walletManager.addressFundFromAssetLockCoordinator.dismiss(
+                                walletId: controller.walletId,
+                                platformAccountIndex: controller.platformAccountIndex,
+                                recipientHash: controller.recipientHash
+                            )
+                            dismiss()
+                        } label: {
+                            Text("Dismiss")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
                     }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
                 }
             }
         default:

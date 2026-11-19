@@ -343,18 +343,26 @@ struct ShieldedFundFromAssetLockProgressView: View {
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
-                    Button {
-                        walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
-                            walletId: controller.walletId,
-                            recipientRaw43: controller.recipientRaw43
-                        )
-                        dismiss()
-                    } label: {
-                        Text("Dismiss")
-                            .frame(maxWidth: .infinity)
+                    // Only a failure that releases its slot
+                    // (`PaymentFailure.holdsSlot`) offers Dismiss: one that
+                    // may have left or holds a lock keeps the controller, so
+                    // a fresh lock is never funded for this recipient (the
+                    // coordinator refuses the same dismissal). Leaving the
+                    // screen keeps it in the pending list.
+                    if !failure.holdsSlot {
+                        Button {
+                            walletManager.shieldedFundFromAssetLockCoordinator.dismiss(
+                                walletId: controller.walletId,
+                                recipientRaw43: controller.recipientRaw43
+                            )
+                            dismiss()
+                        } label: {
+                            Text("Dismiss")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
                     }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
                 }
             }
         default:

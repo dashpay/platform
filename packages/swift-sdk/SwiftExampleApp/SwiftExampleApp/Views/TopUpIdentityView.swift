@@ -38,8 +38,8 @@ struct TopUpIdentityView: View {
 
     @State private var isToppingUp: Bool = false
     @State private var submitError: SubmitError? = nil
-    /// The last top-up's failure: the Top Up button stays off unless its
-    /// class allows a retry (← Kotlin `TopUpIdentityScreen`).
+    /// The last top-up's failure: the Top Up button stays off while it holds
+    /// its slot (`PaymentFailure.holdsSlot`; ← Kotlin `TopUpIdentityScreen`).
     @State private var failure: PaymentFailure? = nil
     @State private var newBalance: UInt64? = nil
 
@@ -184,7 +184,7 @@ struct TopUpIdentityView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit || isToppingUp || failure?.allowsRetry == false)
+            .disabled(!canSubmit || isToppingUp || failure?.holdsSlot == true)
         }
     }
 
@@ -336,7 +336,7 @@ struct TopUpIdentityView: View {
             } catch {
                 // Presented by Rust's payment class: a top-up that may have
                 // left reads as unconfirmed, never as a failure to repeat,
-                // and the button stays off unless the class allows a retry.
+                // and the button stays off while the failure holds its slot.
                 // An error no payment raised shows as its own message.
                 let failure = PaymentFailure.ofPayment(error)
                 await MainActor.run {

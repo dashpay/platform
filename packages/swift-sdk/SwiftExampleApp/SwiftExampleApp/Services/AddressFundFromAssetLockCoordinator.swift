@@ -153,19 +153,33 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// Manually drop a controller from the map. Used by the UI's
     /// "Dismiss" action on a `.failed` row (failures stay
     /// indefinitely until acknowledged so the user can read the
-    /// error).
+    /// error) and its "Done" after a completion.
+    ///
+    /// A failed slot is dropped only when its failure releases it
+    /// (`PaymentFailure.holdsSlot`, any `.notSent`): `startFunding` gates a
+    /// restart only on a slot it still holds, so dropping a failure that may
+    /// have left, holds a lock, or has no class would let a fresh lock be
+    /// funded for the same recipient. Such a slot stays until its lock is
+    /// resumed or the app restarts. Returns whether the controller was
+    /// dropped (← `RegistrationCoordinator.dismiss`).
+    @discardableResult
     func dismiss(
         walletId: Data,
         platformAccountIndex: UInt32,
         recipientHash: Data
-    ) {
+    ) -> Bool {
         let key = SlotKey(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
             recipientHash: recipientHash
         )
+        if let controller = controllers[key], case .failed(let failure) = controller.phase,
+           failure.holdsSlot {
+            return false
+        }
         controllers.removeValue(forKey: key)
         phaseObservers.removeValue(forKey: key)
+        return true
     }
 
     // MARK: - Retention sweep

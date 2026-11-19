@@ -342,7 +342,12 @@ struct SendTransactionView: View {
                 viewModel.paymentFailure?.title ?? "",
                 isPresented: .constant(viewModel.paymentFailure != nil)
             ) {
-                Button("OK") { viewModel.paymentFailure = nil }
+                // A failure that holds its slot closes the form (it may
+                // have left the wallet, or holds a lock); a `.notSent` one
+                // leaves it open for a corrected request.
+                Button("OK") {
+                    if viewModel.acknowledgePaymentFailure() { dismiss() }
+                }
             } message: {
                 if let failure = viewModel.paymentFailure {
                     Text(failure.message)
