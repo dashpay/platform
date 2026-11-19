@@ -1749,6 +1749,83 @@ mod tests {
         assert!(declares_the_preorder_hash(&dpns_contract));
     }
 
+    /// The network's contract, read to judge whether it declares tombstones, after a
+    /// verified response reported the latest protocol version: a node still at protocol
+    /// version 14 proves the DPNS v2 the upgrade replaced. That response is not taken as the
+    /// network's; the contract is fetched as a registration fetches it, and its DPNS v3
+    /// declares tombstones.
+    #[tokio::test]
+    async fn should_not_take_the_contract_of_a_node_behind_the_network_for_the_networks() {
+        let fetched_as_a_registration = Cell::new(false);
+        let network_contract = give_up::network_dpns_contract(
+            || Some(LATEST_VERSION),
+            || {
+                let behind = PlatformVersion::get(14).expect("protocol version 14");
+                ready(Ok((
+                    Some(dpns_contract_decoded_under(behind, LATEST_VERSION)),
+                    proved_at(14),
+                )))
+            },
+            || {
+                fetched_as_a_registration.set(true);
+                ready(Ok(dpns_v3()))
+            },
+        )
+        .await
+        .expect("the network's contract is fetched again");
+
+        assert!(fetched_as_a_registration.get());
+        assert!(network_contract.has_document_type_for_name("tombstone"));
+    }
+
+    /// And when no response at the network's version comes, the read fails: the DPNS v2 of
+    /// the node behind is never the answer.
+    #[tokio::test]
+    async fn should_fail_when_only_a_node_behind_the_network_answers() {
+        let result = give_up::network_dpns_contract(
+            || Some(LATEST_VERSION),
+            || {
+                let behind = PlatformVersion::get(14).expect("protocol version 14");
+                ready(Ok((
+                    Some(dpns_contract_decoded_under(behind, LATEST_VERSION)),
+                    proved_at(14),
+                )))
+            },
+            || {
+                ready(Err(Error::Generic(
+                    "no response at the version".to_string(),
+                )))
+            },
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    /// A response at the highest version a verified response reported is the network's, and
+    /// so is one when nothing was verified yet: the contract is taken as fetched, DPNS v2 on a
+    /// network before the upgrade, without the registration's fetch.
+    #[tokio::test]
+    async fn should_take_the_contract_of_a_node_at_the_networks_version() {
+        for verified_version in [Some(14), None] {
+            let network_contract = give_up::network_dpns_contract(
+                || verified_version,
+                || {
+                    let current = PlatformVersion::get(14).expect("protocol version 14");
+                    ready(Ok((
+                        Some(dpns_contract_decoded_under(current, 14)),
+                        proved_at(14),
+                    )))
+                },
+                || async { panic!("the registration's fetch is not needed") },
+            )
+            .await
+            .expect("the network's contract is taken");
+
+            assert!(!network_contract.has_document_type_for_name("tombstone"));
+        }
+    }
+
     #[tokio::test]
     async fn should_skip_a_dpns_contract_proved_while_another_request_raised_the_version() {
         // The SDK is at 13 when the fetch starts. While it waits, another request on a clone

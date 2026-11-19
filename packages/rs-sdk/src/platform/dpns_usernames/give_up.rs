@@ -18,6 +18,7 @@ use crate::platform::documents::transitions::{
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::{DataContract, Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -29,6 +30,7 @@ use dpp::prelude::Identifier;
 use dpp::version::{FeatureVersion, PlatformVersion};
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::Arc;
 
 /// The DPNS document type of a registered name.
@@ -76,6 +78,39 @@ pub(super) fn dpns_name_query(
     }
 }
 
+/// The network's DPNS contract from `fetch`, unless its response fails or is proved by a node
+/// behind the network: then from `fetch_as_a_registration`, whose error is returned when it
+/// fails too.
+///
+/// A node that has not yet reached an upgrade still proves the contract the upgrade replaced,
+/// at its own, older protocol version. Its response is behind the network when that version
+/// is below `verified_version`, the highest a verified response has reported, read once the
+/// fetch has answered. Taken as the network's, a DPNS v2 from such a node would say the
+/// network stores no tombstone. A registration's fetch takes only a response proved at the
+/// version the SDK parsed it under, asking again when it gets another
+/// ([`super::dpns_contract_proved_at_parsed_version`]).
+pub(super) async fn network_dpns_contract<V, F, R, C, RC>(
+    verified_version: V,
+    fetch: F,
+    fetch_as_a_registration: C,
+) -> Result<DataContract, Error>
+where
+    V: Fn() -> Option<u32>,
+    F: FnOnce() -> R,
+    R: Future<Output = Result<(Option<DataContract>, ResponseMetadata), Error>>,
+    C: FnOnce() -> RC,
+    RC: Future<Output = Result<DataContract, Error>>,
+{
+    match fetch().await {
+        Ok((dpns_contract, metadata))
+            if !verified_version().is_some_and(|verified| metadata.protocol_version < verified) =>
+        {
+            dpns_contract.ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
+        }
+        _ => fetch_as_a_registration().await,
+    }
+}
+
 impl Sdk {
     /// The `document_type_name` document of the name `normalized_label` under `dash`, if the
     /// network holds one. A proven absence comes back as entries holding `None`.
@@ -112,19 +147,20 @@ impl Sdk {
     /// The SDK first learns the network's protocol version where it can (a proven refresh,
     /// which does nothing on an SDK with a pinned version or with proofs off), so a contract
     /// stored at a newer version is not parsed under an older one. The contract is then
-    /// fetched as any contract is. Should that fail, it is fetched as a registration fetches
-    /// it, taking a response proved at the version it was parsed under
-    /// ([`Sdk::fetch_current_dpns_contract`]), whose error is returned when it fails too: an
-    /// SDK whose version stays below the network's can not parse the network's contract, and
-    /// is told so.
+    /// fetched as any contract is, and taken unless the fetch fails or a node behind the
+    /// network answered it ([`network_dpns_contract`]): then it is fetched as a registration
+    /// fetches it ([`Sdk::fetch_current_dpns_contract`]), whose error is returned when that
+    /// fails too. An SDK whose version stays below the network's can not parse the network's
+    /// contract, and is told so.
     pub(super) async fn fetch_network_dpns_contract(&self) -> Result<DataContract, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
         self.refresh_protocol_version().await?;
-        match DataContract::fetch(self, dpns_contract_id).await {
-            Ok(Some(dpns_contract)) => Ok(dpns_contract),
-            Ok(None) => Err(Error::Generic("DPNS contract not found".to_string())),
-            Err(_) => self.fetch_current_dpns_contract().await,
-        }
+        network_dpns_contract(
+            || self.protocol_version_info().verified_version,
+            || DataContract::fetch_with_metadata(self, dpns_contract_id, None),
+            || self.fetch_current_dpns_contract(),
+        )
+        .await
     }
 
     /// The DPNS contract to read a name's tombstone under, or `None` when the network's
