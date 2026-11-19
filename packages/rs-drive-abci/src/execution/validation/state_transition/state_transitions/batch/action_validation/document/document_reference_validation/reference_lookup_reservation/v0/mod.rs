@@ -29,10 +29,10 @@ use crate::execution::types::execution_operation::ValidationOperation;
 /// `chooseFirst` lookup, whose `findBy` hash `choose_first_reservation` reserves),
 /// `lookup_query_credits_reserved`, and for a lookup declaring `consume` Drive's estimated
 /// delete of a document of the consumed type (see [`super::reference_lookup_reservation`]).
-/// The allowance is a bound; the hash and the delete are billed for a leaf a block checks
-/// whenever the write holds, and bounds for one it checks only when an earlier `anyOf` operand
-/// fails ([`leaves_checked_when_the_write_holds`]). An unset property makes no lookup, and a key
-/// whose preimage cannot be assembled is refused by structure validation before any read.
+/// The allowance is a bound. The hash is billed for a leaf a block checks whenever it accepts
+/// the write, the delete for a leaf that holds whenever it does, and each is a bound otherwise
+/// ([`leaves_as_the_write_holds`]). An unset property makes no lookup, and a key whose preimage
+/// cannot be assembled is refused by structure validation before any read.
 #[inline(always)]
 pub(super) fn reference_lookup_reservation_v0(
     action: &StateTransitionAction,
@@ -80,7 +80,7 @@ pub(super) fn reference_lookup_reservation_v0(
             if values == 0 {
                 continue;
             }
-            for (leaf, checked_when_held) in leaves_checked_when_the_write_holds(target) {
+            for (leaf, leaf_when_held) in leaves_as_the_write_holds(target) {
                 let Some(declaration) = leaf.as_any_document_reference() else {
                     continue;
                 };
@@ -88,16 +88,20 @@ pub(super) fn reference_lookup_reservation_v0(
                     continue;
                 };
                 let mut operations = CheckTxReservation::default();
-                let mut billed_or_bound = Vec::new();
                 // A key's `"."` reads the identifier the reference holds, any of which is as
                 // long as the writer's id, or names the property carrying the reference
                 let reference_id = reads_an_identifier.then_some(writer_id);
                 if let (None, Some((_, key))) = (&lookup.choose_first, lookup.hash_key()) {
                     if let Ok(preimage) = key.preimage(document_type, reference_id, writer_id, data)
                     {
-                        billed_or_bound.push(ValidationOperation::DoubleSha256(
+                        let hash = ValidationOperation::DoubleSha256(
                             key.function.block_count(preimage.len()),
-                        ));
+                        );
+                        if leaf_when_held.checked {
+                            operations.billed.push(hash);
+                        } else {
+                            operations.bounds.push(hash);
+                        }
                     }
                 }
                 operations
@@ -132,15 +136,16 @@ pub(super) fn reference_lookup_reservation_v0(
                         }
                     };
                     if let Some(delete_fee) = delete_fee {
-                        billed_or_bound.push(ValidationOperation::PrecalculatedOperation(
+                        let delete = ValidationOperation::PrecalculatedOperation(
                             FeeResult::new_from_processing_fee(delete_fee),
-                        ));
+                        );
+                        // A block drops what an operand that fails consumes
+                        if leaf_when_held.holds {
+                            operations.billed.push(delete);
+                        } else {
+                            operations.bounds.push(delete);
+                        }
                     }
-                }
-                if checked_when_held {
-                    operations.billed.extend(billed_or_bound);
-                } else {
-                    operations.bounds.extend(billed_or_bound);
                 }
                 for _ in 0..values {
                     reservation.extend(operations.clone());
@@ -175,30 +180,57 @@ fn checked_values(
     }
 }
 
-/// The single targets of `target` in declared order, each with whether a block checks it
-/// whenever the write holds: every operand of an `allOf`, and the first of an `anyOf`, which
-/// stops at the first operand that holds. A later `anyOf` operand is checked only when every
-/// earlier one fails.
-fn leaves_checked_when_the_write_holds(
+/// What a block is sure of about a single target of a reference expression whenever it accepts
+/// the write.
+#[derive(Clone, Copy)]
+struct LeafWhenHeld {
+    /// The block checks it.
+    checked: bool,
+    /// It holds.
+    holds: bool,
+}
+
+/// The single targets of `target` in declared order, each with what a block is sure of about it
+/// whenever it accepts the write. An `allOf` that holds checks every operand, and each holds;
+/// one that may not hold is sure to check its first operand alone, as it stops at the first
+/// that fails. An `anyOf` checks its first operand whenever it is checked, and stops at the
+/// first operand that holds, so no operand is sure to hold and a later one is checked only when
+/// every earlier one fails.
+fn leaves_as_the_write_holds(
     target: &DocumentPropertyReferenceTarget,
-) -> Vec<(&DocumentPropertyReferenceTarget, bool)> {
+) -> Vec<(&DocumentPropertyReferenceTarget, LeafWhenHeld)> {
     fn walk<'a>(
         target: &'a DocumentPropertyReferenceTarget,
-        checked_when_held: bool,
-        leaves: &mut Vec<(&'a DocumentPropertyReferenceTarget, bool)>,
+        when_held: LeafWhenHeld,
+        leaves: &mut Vec<(&'a DocumentPropertyReferenceTarget, LeafWhenHeld)>,
     ) {
         match target.combinator() {
-            None => leaves.push((target, checked_when_held)),
+            None => leaves.push((target, when_held)),
             Some((combinator, operands)) => {
                 for (index, operand) in operands.operands().iter().enumerate() {
-                    let checked = checked_when_held
-                        && (combinator == ReferenceCombinator::AllOf || index == 0);
-                    walk(operand, checked, leaves);
+                    let operand_when_held = match combinator {
+                        ReferenceCombinator::AllOf => LeafWhenHeld {
+                            checked: when_held.holds || (when_held.checked && index == 0),
+                            holds: when_held.holds,
+                        },
+                        ReferenceCombinator::AnyOf => LeafWhenHeld {
+                            checked: when_held.checked && index == 0,
+                            holds: false,
+                        },
+                    };
+                    walk(operand, operand_when_held, leaves);
                 }
             }
         }
     }
     let mut leaves = Vec::new();
-    walk(target, true, &mut leaves);
+    walk(
+        target,
+        LeafWhenHeld {
+            checked: true,
+            holds: true,
+        },
+        &mut leaves,
+    );
     leaves
 }

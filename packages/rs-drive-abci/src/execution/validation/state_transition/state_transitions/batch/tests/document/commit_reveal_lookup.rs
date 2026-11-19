@@ -4477,6 +4477,65 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.preorder_exists(preorder.id()));
     }
 
+    /// A block drops what a failed `anyOf` operand consumes, so a consume in an operand that may
+    /// fail while a later one lets the write through is no work the block bills whenever it
+    /// accepts the write. `fallbackClaim` holds through `anyOf(allOf(<consuming reveal>,
+    /// <membership>), identity)`: check tx holds its signer to the reveal's delete but reports
+    /// it as a bound, beside the two lookup queries' allowances, with the reveal's key hash, the
+    /// first thing the block checks, in the gas. A writer without a membership is accepted
+    /// through the identity, and the commitment stays.
+    #[tokio::test]
+    async fn should_report_a_consume_an_any_of_may_drop_as_a_bound() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x53; 32];
+        let preorder = fixture
+            .commit(Who::Mallory, salt, "fallback", COMMIT_HEIGHT)
+            .await;
+        let contract = fixture.contract.clone();
+        let (_, claim) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "fallbackClaim",
+                &[
+                    ("label", "fallback".into()),
+                    ("preorderSalt", Value::Bytes32(salt)),
+                ],
+                &[],
+                None,
+            )
+            .await;
+
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &claim, platform_version);
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let consumed_delete = fixture
+            .platform
+            .drive
+            .consumed_document_delete_cost(
+                &contract,
+                contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder type"),
+                &block_info,
+                platform_version,
+            )
+            .expect("expected to price the delete")
+            .processing_fee;
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert_eq!(admitted - gas_wanted, 2 * allowance + consumed_delete);
+
+        let result = fixture.process(&claim, REVEAL_HEIGHT);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
     /// A create its contest decides reads no `chooseFirst` competitor in a block, so check tx
     /// reserves none of their hashes for it, where it reserves them for an uncontested reveal of
     /// the same name; both keep the competitor scan's budget. Their bounds differ by exactly the

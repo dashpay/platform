@@ -6,12 +6,13 @@ use crate::execution::types::execution_operation::ValidationOperation;
 /// fills a block's gas with.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(in crate::execution) struct CheckTxReservation {
-    /// Work a block bills whenever the transition is processed as expected: a `refersTo`
-    /// lookup's key hash and the delete of the document it consumes, a `chooseFirst` check's
-    /// own hashes, an erase's refund work.
+    /// Work a block bills whenever it accepts the transition: a `refersTo` lookup's key hash
+    /// when the lookup is sure to be checked, and the delete of the document it consumes when
+    /// the lookup is sure to hold, a `chooseFirst` check's own hashes, an erase's refund work.
     pub(in crate::execution) billed: Vec<ValidationOperation>,
-    /// Bounds on work a block bills at most as much as: a lookup query's allowance, the
-    /// `chooseFirst` competitor scan's budget and its competitors' hashes.
+    /// Bounds on work a block bills at most as much as: a lookup query's allowance, the key
+    /// hash and the consumed delete of a lookup an expression may leave out, the `chooseFirst`
+    /// competitor scan's budget and its competitors' hashes.
     pub(in crate::execution) bounds: Vec<ValidationOperation>,
 }
 
