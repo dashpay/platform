@@ -1,0 +1,47 @@
+# Manki — AI Code Review Configuration
+# https://github.com/manki-review/manki
+
+auto_review: true
+auto_approve: true
+
+models:
+  # A second refuter on another model than the judge's Claude Opus. A blocker the
+  # base branch already had stops blocking only when both refuters prove it.
+  second_refuter: gpt-6.2-sol
+  # A call that a model refuses on safety grounds is sent to this model instead.
+  fallback: claude-sonnet-5-5
+
+review:
+  # Who reviews. A trivial change gets a quick check, a low-risk change one reader,
+  # and everything else Claude Opus and an OpenAI model side by side.
+  groups:
+    trivial: [claude-sonnet-5-5]
+    solo: [claude-opus-5-5]
+    full: [claude-opus-5-5, gpt-6.2-sol]
+  # A blocker the review keeps starts one search of the diff for other places with
+  # the same kind of mistake.
+  sweep: blockers
+  # A doubt that the PR is useful, or a proposed split into separate PRs, is posted
+  # as a warning that holds the approval until its thread is resolved.
+  scope_blocks: true
+  examples:
+    blocker:
+      - "Changing how a state transition is validated, priced or stored without gating it on a new protocol version splits nodes running different versions."
+
+related_repos:
+  - { repo: dashpay/dash, kind: reference, paths: [src/] }
+  - { repo: dashpay/dips, kind: reference }
+  - { repo: dashpay/tenderdash, kind: reference, paths: [abci/, proto/, spec/] }
+  - { repo: dashpay/rust-dashcore, kind: dependency }
+  - { repo: dashpay/grovedb, kind: dependency }
+  - { repo: dashpay/rs-tenderdash-abci, kind: dependency }
+  - { repo: dashpay/dash-evo-tool, kind: consumer, paths: [src/] }
+  - { repo: dashpay/dashwallet-ios, kind: consumer, paths: [DashWallet/Sources/] }
+  - { repo: dashpay/kotlin-platform, kind: consumer }
+
+static_analysis:
+  analyzers:
+    secrets: true
+
+memory:
+  enabled: true
