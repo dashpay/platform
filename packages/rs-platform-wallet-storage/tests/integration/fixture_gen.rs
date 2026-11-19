@@ -22,6 +22,7 @@
 //! world-writable, or the persister refuses it as an insecure parent.
 
 use crate::common;
+use crate::sqlite_legacy_state_migration::snapshot_bytes;
 
 use std::path::{Path, PathBuf};
 
@@ -190,15 +191,14 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
         params![wallet.as_slice(), registration_blob],
     )
     .expect("insert account_registrations");
-    // Real public pool state from the published writer's bincode-serde codec.
+    // Real public pool state in the published writer's `AddressInfo` layout.
     let mut info = first_external_info(FIXTURE_WALLET);
     info.state = key_wallet::managed_account::address_pool::AddressState::Used;
-    let snapshot = platform_wallet::changeset::AccountAddressPoolEntry {
+    let snapshot = snapshot_bytes(&platform_wallet::changeset::AccountAddressPoolEntry {
         account_type: registration.account_type,
         pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
         addresses: vec![info.clone()],
-    };
-    let snapshot = bincode::serde::encode_to_vec(snapshot, bincode::config::standard()).unwrap();
+    });
     conn.execute(
         "INSERT INTO account_address_pools \
              (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
