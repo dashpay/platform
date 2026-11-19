@@ -116,7 +116,12 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
 /// the prepare-then-broadcast flow. On a dead generation the transaction
 /// is abandoned (generation-bound, so a logged no-op after a genuine
 /// removal) and the send refused.
-pub(crate) async fn broadcast_special_transaction_guarded<B>(
+///
+/// This is how a caller of this module's `prepare_*` functions sends what
+/// they returned. `CoreWallet::broadcast_finalized_transaction` leaves the
+/// generation check to its caller, so sending a kept transaction through it
+/// after the wallet was re-created would skip the check.
+pub async fn broadcast_special_transaction_guarded<B>(
     core: &CoreWallet<B>,
     signed: &SignedCoreTransaction,
 ) -> Result<Txid, PlatformWalletError>
@@ -143,7 +148,7 @@ where
 /// For hosts that show the ProUpServTx before sending it. The returned
 /// transaction is exactly what a broadcast would put on the network, so a
 /// preview built from it cannot drift from what is sent. The caller then
-/// either broadcasts it (`CoreWallet::broadcast_finalized_transaction`) or
+/// either broadcasts it ([`broadcast_special_transaction_guarded`]) or
 /// abandons it (`CoreWallet::abandon_transaction`) — dropping it without
 /// either strands the reservation until the TTL backstop reclaims it.
 pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + Sync>(

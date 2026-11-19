@@ -41,9 +41,10 @@ pub use update_registrar::{
     MasternodeUpdateRegistrarParams, OwnerSecret,
 };
 pub use update_service::{
-    execute_masternode_update_service, execute_masternode_update_service_with_values,
-    prepare_masternode_update_service, prepare_masternode_update_service_with_values,
-    MasternodeUpdateServiceParams, UpdateServiceValues,
+    broadcast_special_transaction_guarded, execute_masternode_update_service,
+    execute_masternode_update_service_with_values, prepare_masternode_update_service,
+    prepare_masternode_update_service_with_values, MasternodeUpdateServiceParams,
+    UpdateServiceValues,
 };
 
 use crate::changeset::PlatformWalletPersistence;
