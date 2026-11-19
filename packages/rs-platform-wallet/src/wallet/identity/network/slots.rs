@@ -212,6 +212,30 @@ impl IdentityWallet {
         identity_index: RegistrationIndex,
         invitation: OutPoint,
     ) -> Result<(), PlatformWalletError> {
+        self.set_claim_lease_phase(identity_index, invitation, SlotLeasePhase::Submitted)
+            .await
+    }
+
+    /// Move `invitation`'s claim lease on slot `identity_index` back to
+    /// `Reserved`, stored durably: its claim was refused in a way that can
+    /// never execute, so the host may retry or release it. Refused like
+    /// [`Self::submit_claim_lease`]; on a failed store the lease stays
+    /// `Submitted`.
+    pub(crate) async fn unsubmit_claim_lease(
+        &self,
+        identity_index: RegistrationIndex,
+        invitation: OutPoint,
+    ) -> Result<(), PlatformWalletError> {
+        self.set_claim_lease_phase(identity_index, invitation, SlotLeasePhase::Reserved)
+            .await
+    }
+
+    async fn set_claim_lease_phase(
+        &self,
+        identity_index: RegistrationIndex,
+        invitation: OutPoint,
+        phase: SlotLeasePhase,
+    ) -> Result<(), PlatformWalletError> {
         let holder = SlotHolder::InvitationClaim { invitation };
         let mut wm = self.wallet_manager.write().await;
         let info = self.current_wallet_info_mut(&mut wm)?;
@@ -222,10 +246,10 @@ impl IdentityWallet {
                 return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
             }
         };
-        if lease.phase == SlotLeasePhase::Submitted {
+        if lease.phase == phase {
             return Ok(());
         }
-        manager.set_slot_lease_phase(&self.wallet_id, &holder, SlotLeasePhase::Submitted);
+        manager.set_slot_lease_phase(&self.wallet_id, &holder, phase);
         let changeset = PlatformWalletChangeSet {
             identity_slot_leases: Some(manager.claim_lease_changeset(&self.wallet_id, invitation)),
             ..Default::default()
@@ -1011,6 +1035,57 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(retried.phase, SlotLeasePhase::Reserved);
+    }
+
+    #[tokio::test]
+    async fn should_give_a_claim_refused_before_it_could_execute_back_to_the_host() {
+        let backend = Backend::new(full());
+        let wallet = wallet(backend.clone()).await;
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await
+            .unwrap();
+
+        // A failed store keeps it held.
+        *backend.fail.lock().unwrap() = true;
+        assert!(wallet
+            .identity()
+            .unsubmit_claim_lease(slot.identity_index, invitation)
+            .await
+            .is_err());
+        *backend.fail.lock().unwrap() = false;
+        assert!(matches!(
+            wallet.identity().release_identity_slot(slot.holder).await,
+            Err(PlatformWalletError::IdentitySlotClaimSubmitted { .. })
+        ));
+
+        wallet
+            .identity()
+            .unsubmit_claim_lease(slot.identity_index, invitation)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            backend.lease_writes().last().unwrap().leases[&invitation].phase,
+            SlotLeasePhase::Reserved
+        );
+        assert_eq!(
+            wallet
+                .identity()
+                .release_identity_slot(slot.holder)
+                .await
+                .unwrap(),
+            Some(slot.identity_index)
+        );
     }
 
     #[tokio::test]

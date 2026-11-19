@@ -630,6 +630,18 @@ impl IdentityWallet {
         {
             Ok(identity) => identity,
             Err(error) => {
+                // A claim that can never execute gives its slot back to the
+                // host; a failed store keeps it held, as before.
+                if claim_never_executes(&error) {
+                    if let Err(e) = self.unsubmit_claim_lease(identity_index, out_point).await {
+                        tracing::warn!(
+                            identity_index,
+                            error = %e,
+                            "an invitation claim was refused before it could execute, but its \
+                             slot could not be given back; it stays held"
+                        );
+                    }
+                }
                 let refusal = self.claim_refusal(error).await;
                 // Refused before sending because an identity already holds
                 // the master key derived at this index: it is this wallet's,
@@ -695,9 +707,71 @@ impl IdentityWallet {
     }
 }
 
+/// Whether a claim the SDK refused with `error` can never execute, so its
+/// slot need not stay held for its outcome. Only refusals made before the
+/// claim was sent, or ones no node would accept it past:
+/// - `Invalid`, `NetworkMismatch`, `NotReady`: refused before anything was
+///   sent;
+/// - `NotChainLocked`: the funding transaction was not found or not yet
+///   chain-locked (before sending), or Platform refused the islock proof as
+///   stale, which every node refuses alike.
+///
+/// Every other refusal may follow a claim that reached Platform: the
+/// invitation claimed (by this wallet or another), a key already registered,
+/// or an SDK error. Those keep the slot held until the claim's outcome is
+/// known.
+fn claim_never_executes(error: &InvitationError) -> bool {
+    match error {
+        InvitationError::Invalid(_)
+        | InvitationError::NetworkMismatch { .. }
+        | InvitationError::NotReady(_)
+        | InvitationError::NotChainLocked(_) => true,
+        InvitationError::ClaimedByThisWallet { .. }
+        | InvitationError::AlreadyClaimed { .. }
+        | InvitationError::KeysAlreadyRegistered { .. }
+        | InvitationError::Sdk(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only refusals made before sending, or ones every node makes alike,
+    /// give a claim's slot back; any that may follow a claim that reached
+    /// Platform keep it.
+    #[test]
+    fn should_give_a_slot_back_only_for_a_claim_that_can_never_execute() {
+        let id = Identifier::from([7u8; 32]);
+        let sdk_error = || dash_sdk::Error::Generic("node".to_string());
+        for (error, never_executes) in [
+            (InvitationError::Invalid("bad link".to_string()), true),
+            (
+                InvitationError::NetworkMismatch {
+                    invitation: dashcore::Network::Testnet,
+                    wallet: dashcore::Network::Mainnet,
+                },
+                true,
+            ),
+            (InvitationError::NotReady(sdk_error()), true),
+            (InvitationError::NotChainLocked("later".to_string()), true),
+            (
+                InvitationError::ClaimedByThisWallet { identity_id: id },
+                false,
+            ),
+            (InvitationError::AlreadyClaimed { identity_id: id }, false),
+            (
+                InvitationError::KeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: None,
+                },
+                false,
+            ),
+            (InvitationError::Sdk(sdk_error()), false),
+        ] {
+            assert_eq!(claim_never_executes(&error), never_executes, "{error}");
+        }
+    }
 
     /// A real DIP-13 invitation funding path ends in a NORMAL (non-hardened)
     /// address-pool index. This is the record that a hardened-only gate silently
