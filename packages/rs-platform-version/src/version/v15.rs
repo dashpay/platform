@@ -1094,7 +1094,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     an object's positions to one after another from its lowest (unique, no gap; an object may
 ///     start above 0, as DPNS `records` does); a stored object whose positions are not all
 ///     integers keeps its map order. An object's members keep their order and their
-///     requiredness as the type parses it, and members are added only after them, at the next
+///     requiredness as the type parses it, and whether they are required from a contract
+///     version (`requiredSince`, which gives them a presence byte), and members are added only after them, at the next
 ///     free positions; a member added to an object the type already
 ///     has is optional, or required with `requiredSince` equal to the version the update
 ///     creates; a member the update adds is required exactly when a `required` list names it;

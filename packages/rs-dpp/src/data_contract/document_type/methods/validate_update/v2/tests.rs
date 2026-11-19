@@ -1424,3 +1424,72 @@ fn should_hold_additions_through_a_ref_to_optional_members() {
     ];
     run(&cases, PlatformVersion::latest());
 }
+
+/// An object's member keeps whether it is required at every contract version or from one: the
+/// first is stored without a presence byte, the second with one, so a member gaining or losing
+/// `requiredSince` would have the documents stored before read wrong. Refused inline, one level
+/// down, and through the `required` beside a `$ref` when only the definition changes.
+#[test]
+fn should_refuse_an_existing_member_gaining_or_losing_required_since() {
+    let layout = Expected::Refused(10276, "presence byte");
+    let since = |position: u32| with(boolean(position), "requiredSince", Value::U32(2));
+    let meta = |y: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": y, "z": integer(1) }),
+                1,
+                Some(platform_value!(["y"])),
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let inner = |p: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({
+                    "y": boolean(0),
+                    "inner": object(platform_value!({ "p": p }), 1, Some(platform_value!(["p"]))),
+                }),
+                1,
+                None,
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let site = document_type_schema(
+        platform_value!({
+            "a": string(0, 10),
+            "meta": meta_ref(Some(("required", platform_value!(["y"])))),
+        }),
+        platform_value!(["a"]),
+    );
+    let cases = vec![
+        case(
+            "an existing required member gaining requiredSince",
+            meta(boolean(0)),
+            meta(since(0)),
+            layout,
+        ),
+        case(
+            "an existing member required from a version losing requiredSince",
+            meta(since(0)),
+            meta(boolean(0)),
+            layout,
+        ),
+        case(
+            "a member of an object inside an object gaining requiredSince",
+            inner(boolean(0)),
+            inner(since(0)),
+            Expected::Refused(10276, "meta.inner.p"),
+        ),
+        Case {
+            name: "a definition's member listed beside the $ref gaining requiredSince",
+            old: site.clone(),
+            new: site,
+            old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
+            new_defs: definitions(platform_value!({ "y": since(0), "z": integer(1) })),
+            expected: layout,
+        },
+    ];
+    run(&cases, PlatformVersion::latest());
+}

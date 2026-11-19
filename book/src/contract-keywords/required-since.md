@@ -83,7 +83,8 @@ On an update to an existing document type, which always creates the version one 
 - A property the update adds may be required only if it carries `requiredSince` equal to that new version. Without the annotation, or with any other value, the update is refused (10276).
 - An existing property may not become required, with or without the annotation (10276).
 - No property may leave `required` (10276).
-- A property's existing `requiredSince` may not be changed or removed, and one may not be added to an existing property (`IncompatibleDocumentTypeSchemaError`, 10246).
+- A property's existing `requiredSince` may not be changed or removed, and one may not be added to an existing property (`IncompatibleDocumentTypeSchemaError`, 10246). From protocol version 15 the same holds for an object's member (10276).
+- These rules judge the update that adds the property. A later update may still list it in [`immutable`](mutability.md), whose list may grow, and so may it list an object holding a member with `requiredSince`. The documents written before that version can then no longer be replaced: a replace would have to add the property, which changes what `immutable` freezes. This is the same for a top-level property and for an object's member.
 
 A document type that the update adds has no older documents. Every `requiredSince` on its own properties must still equal the version the update creates (10276). The members of an object, in a type the update adds or an object it adds to an existing type, may be required outright, since no stored document holds the object, or carry `requiredSince` up to the contract's version.
 

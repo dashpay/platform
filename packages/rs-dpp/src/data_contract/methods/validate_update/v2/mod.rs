@@ -476,4 +476,56 @@ mod tests {
             .expect("expected the update to be judged");
         assert!(result.is_valid(), "{:?}", result.errors);
     }
+
+    /// A definition's member listed in the `required` beside a `$ref` may not gain
+    /// `requiredSince` when only the definition changes: the member would then be stored with a
+    /// presence byte the documents stored before do not hold. The document types are compared
+    /// first and refuse it (10276); the contract's `$defs` check, after them, refuses it too
+    /// (10213).
+    #[test]
+    fn should_refuse_a_definition_member_listed_beside_a_ref_gaining_required_since() {
+        use crate::consensus::basic::BasicError;
+
+        let platform_version = PlatformVersion::latest();
+        let definition = |y: Value| {
+            BTreeMap::from([(
+                "m".to_string(),
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "y": y,
+                        "z": { "type": "boolean", "position": 1 },
+                    },
+                    "additionalProperties": false,
+                }),
+            )])
+        };
+        let referencing = platform_value!({
+            "type": "object",
+            "properties": {
+                "meta": { "$ref": "#/$defs/m", "position": 0, "required": ["y"] },
+            },
+            "additionalProperties": false,
+        });
+        let (stored, updated) = stored_and_updated(
+            referencing.clone(),
+            Some(definition(
+                platform_value!({ "type": "boolean", "position": 0 }),
+            )),
+            referencing,
+            Some(definition(
+                platform_value!({ "type": "boolean", "position": 0, "requiredSince": 2 }),
+            )),
+            platform_version,
+        );
+        let result = stored
+            .validate_update(&updated, &BlockInfo::default(), platform_version)
+            .expect("expected the update to be judged");
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+            )] if e.details().contains("meta.y") && e.details().contains("presence byte")
+        );
+    }
 }

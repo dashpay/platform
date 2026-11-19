@@ -95,7 +95,9 @@ impl DocumentTypeRef<'_> {
         }
     }
 
-    /// Every member an object keeps stays required or optional as it was, and every member an
+    /// Every member an object keeps stays required or optional as it was, and keeps whether it
+    /// is required at every contract version or from one (`always_required`), which decides
+    /// whether it is stored with a presence byte; every member an
     /// update adds is required exactly when a `required` list names it by its path, so the
     /// document validator holds every document to it. A member added to an object the type
     /// already has may be required only from the contract version the update creates
@@ -223,6 +225,23 @@ fn first_requiredness_change(
                     } else {
                         format!("removed required field '{member_path}'")
                     });
+                }
+                // An object's member required at every contract version is stored without the
+                // presence byte one required from a contract version carries
+                if path.is_some()
+                    && old_property.always_required() != new_property.always_required()
+                {
+                    return Some(format!(
+                        "existing property '{member_path}' can not {} requiredSince: a member \
+                         required at every contract version is stored without the presence byte \
+                         one required from a contract version carries, so the documents stored \
+                         before would read wrong",
+                        if new_property.always_required() {
+                            "lose"
+                        } else {
+                            "gain"
+                        }
+                    ));
                 }
                 if let (
                     DocumentPropertyType::Object(old_members),
