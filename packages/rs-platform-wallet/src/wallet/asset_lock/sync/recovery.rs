@@ -2598,6 +2598,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {

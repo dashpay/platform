@@ -5656,6 +5656,7 @@ mod sweep_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         }
     }
 
