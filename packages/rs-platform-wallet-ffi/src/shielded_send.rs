@@ -680,7 +680,7 @@ fn spend_result_code(
         // host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-            format!("{operation} failed: {e}"),
+            outcome_message(operation, &e),
         ),
         // An address-nonce race keeps its own code, so the host can recognize
         // the self-healing nonce mismatch: a plain retry re-fetches the nonce.
@@ -690,7 +690,7 @@ fn spend_result_code(
         // generic `ErrorWalletOperation` below if one does.
         Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
-            format!("{operation} failed: {e}"),
+            outcome_message(operation, &e),
         ),
         // The cached Platform Payment-account set no longer covers the
         // requested claim plus input-0's fee reserve. Keep this distinct from
@@ -699,7 +699,7 @@ fn spend_result_code(
         Err(e @ PlatformWalletError::PlatformShieldCapacityExceeded { .. }) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance,
-                format!("{operation} failed: {e}"),
+                outcome_message(operation, &e),
             )
         }
         // A structured key-unavailable signer completion that the wallet layer
@@ -722,11 +722,11 @@ fn spend_result_code(
         }
         Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
-            format!("{operation} failed: {e}"),
+            outcome_message(operation, &e),
         ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("{operation} failed: {e}"),
+            outcome_message(operation, &e),
         ),
     }
 }
@@ -859,7 +859,7 @@ fn map_asset_lock_funding_result(
         // pre-dispatch failure never sent anything (`NotSent`).
         _ => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("{operation} failed: {e}"),
+            outcome_message(operation, &e),
             &e,
         ),
     }
@@ -1082,11 +1082,11 @@ fn map_identity_create_result(
         // Definitive failure: the transition was not executed and the spent notes were released.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-            format!("shielded identity-create-from-pool failed: {e}"),
+            outcome_message("shielded identity-create-from-pool", &e),
         ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded identity-create-from-pool failed: {e}"),
+            outcome_message("shielded identity-create-from-pool", &e),
         ),
     };
     let mapped = match class {
@@ -2266,7 +2266,7 @@ unsafe fn platform_wallet_manager_shielded_seed_pool_notes_inner(
         Ok(_outcome) => PlatformWalletFFIResult::ok(),
         Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded seed-pool-notes failed: {e}"),
+            outcome_message("shielded seed-pool-notes", &e),
             &e,
         ),
     }
@@ -3667,6 +3667,7 @@ mod tests {
             not_sent.payment_delivery,
             PlatformWalletFFIPaymentDelivery::NotSent
         );
+        assert!(message_of(&not_sent).starts_with("shielded fund-from-asset-lock failed: "));
 
         let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([9; 32]), 2);
         let held = map_asset_lock_funding_result(
@@ -3680,6 +3681,14 @@ mod tests {
         );
         assert_eq!(held.held_asset_lock.txid, [9; 32]);
         assert_eq!(held.held_asset_lock.vout, 2);
+        // A held lock or a payment that may have gone out did not "fail":
+        // the host shows this text.
+        assert!(
+            message_of(&held)
+                .starts_with("shielded resume fund-from-asset-lock did not complete: "),
+            "{}",
+            message_of(&held)
+        );
 
         let maybe_sent = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockProofWait("lost".into())),
@@ -3689,6 +3698,19 @@ mod tests {
             maybe_sent.payment_delivery,
             PlatformWalletFFIPaymentDelivery::MaybeSent
         );
+        assert!(
+            message_of(&maybe_sent).starts_with("shielded fund-from-asset-lock did not complete: ")
+        );
+
+        // The spend mapper's shared-code arms word their text the same way.
+        let spend_held = map_spend_result(
+            Err(PlatformWalletError::FinalityTimeout(out_point)),
+            "shield",
+        );
+        assert!(message_of(&spend_held).starts_with("shield did not complete: "));
+        let spend_not_sent =
+            map_spend_result(Err(PlatformWalletError::ShieldedNoUnspentNotes), "shield");
+        assert!(message_of(&spend_not_sent).starts_with("shield failed: "));
     }
 
     /// The asset-lock coin-selection shortfall must reach hosts as the

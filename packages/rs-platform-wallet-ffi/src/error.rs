@@ -1159,6 +1159,20 @@ pub(crate) fn payment_class(error: &PlatformWalletError) -> (PaymentDelivery, bo
     (error.payment_delivery(), error.is_retryable())
 }
 
+/// The text a result reports for `operation` ending in `error`, worded by the
+/// error's payment class: "failed" only when nothing was sent
+/// ([`PaymentDelivery::NotSent`]). A payment that may have been sent, or that
+/// holds its asset lock, "did not complete": a host shows this text, and
+/// "failed" would tell the user nothing happened.
+pub(crate) fn outcome_message(operation: &str, error: &PlatformWalletError) -> String {
+    match error.payment_delivery() {
+        PaymentDelivery::NotSent => format!("{operation} failed: {error}"),
+        PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => {
+            format!("{operation} did not complete: {error}")
+        }
+    }
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
         let class = payment_class(&error);
