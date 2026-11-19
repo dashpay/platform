@@ -16,6 +16,7 @@ import org.dashfoundation.dashsdk.persistence.dao.DataContractDao
 import org.dashfoundation.dashsdk.persistence.dao.DocumentDao
 import org.dashfoundation.dashsdk.persistence.dao.DpnsNameDao
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
+import org.dashfoundation.dashsdk.persistence.dao.IdentitySlotLeaseDao
 import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PrivateContactScanStateDao
@@ -40,6 +41,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DocumentEntity
 import org.dashfoundation.dashsdk.persistence.entities.DocumentTypeEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.IdentitySlotLeaseEntity
 import org.dashfoundation.dashsdk.persistence.entities.IndexEntity
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.KeywordEntity
@@ -190,9 +192,16 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `onLoadPrivateContactScanState`, so a relaunch resumes the private contact
  * request sync where it stopped. Empty after the migration: the first sync
  * reads the store from its start, as every sync did before.
+ *
+ * Version 17 (invitation-claim slot leases): adds the `identity_slot_leases`
+ * table, the identity index each invitation claim holds before its identity
+ * lands, which native writes through `onPersistIdentitySlotLeases` and reads
+ * back through `onLoadIdentitySlotLeases`, so a claim retried after a
+ * relaunch returns to the same slot. Empty after the migration: no claim
+ * took a slot through this store before.
  */
 @Database(
-    version = 16,
+    version = 17,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -231,6 +240,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         WalletManagerMetadataEntity::class,
         PrivateContactRequestsPositionEntity::class,
         PrivateShieldedAddressEntity::class,
+        IdentitySlotLeaseEntity::class,
     ],
 )
 @TypeConverters(Converters::class)
@@ -255,6 +265,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun walletManagerMetadataDao(): WalletManagerMetadataDao
     abstract fun storageCountsDao(): StorageCountsDao
     abstract fun privateContactScanStateDao(): PrivateContactScanStateDao
+    abstract fun identitySlotLeaseDao(): IdentitySlotLeaseDao
 
     companion object {
         const val DATABASE_NAME: String = "dash-sdk.db"
@@ -753,6 +764,21 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v16 -> v17: the invitation-claim slot lease table, see the
+         * version-17 class doc above. Created empty.
+         */
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `identity_slot_leases` (" +
+                        "`walletId` BLOB NOT NULL, `invitationOutPoint` BLOB NOT NULL, " +
+                        "`identityIndex` INTEGER NOT NULL, `phase` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`walletId`, `invitationOutPoint`))",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -783,6 +809,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
+                    MIGRATION_16_17,
                 )
                 .build()
 

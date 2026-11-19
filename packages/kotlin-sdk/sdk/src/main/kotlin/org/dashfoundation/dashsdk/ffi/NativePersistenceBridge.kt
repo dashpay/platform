@@ -126,6 +126,26 @@ abstract class NativePersistenceBridge {
         const val PRIVATE_ADDRESS_ENTRY_SIZE: Int = 32 + 32 + 43
         const val PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE: Int = 32 + 32
         const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32
+
+        /**
+         * `PersistenceCapabilities::IDENTITY_SLOT_LEASES` (bit 16,
+         * `0x10000`): the invitation-claim slot leases are stored on their
+         * round and restored at load ([onPersistIdentitySlotLeases],
+         * [onLoadIdentitySlotLeases]). Without it an invitation claim is
+         * refused before it takes a slot. The one Kotlin home of this bit,
+         * aliased by the public diagnostic mirror.
+         */
+        const val CAPABILITY_IDENTITY_SLOT_LEASES: Long = 1L shl 16
+
+        /**
+         * Packed row widths of [onPersistIdentitySlotLeases] and
+         * [onLoadIdentitySlotLeases]: a lease is the invitation's asset-lock
+         * outpoint (36: raw txid, then the vout as u32 little-endian), the
+         * identity index (u32, little-endian) and the phase (1); a released
+         * lease its outpoint.
+         */
+        const val IDENTITY_SLOT_LEASE_ENTRY_SIZE: Int = 36 + 4 + 1
+        const val IDENTITY_SLOT_LEASE_RELEASE_ENTRY_SIZE: Int = 36
     }
 
     /**
@@ -520,6 +540,25 @@ abstract class NativePersistenceBridge {
         addresses: ByteArray,
         removedAddresses: ByteArray,
         clearedIdentities: ByteArray,
+    ): Int = 0
+
+    /**
+     * The invitation-claim slot leases a round writes, inside the round.
+     * Descriptor `([B[B[B)I`. Each array packs whole rows (see
+     * [IDENTITY_SLOT_LEASE_ENTRY_SIZE] and its sibling):
+     *
+     * - [leases]: replace the stored lease of each outpoint.
+     * - [released]: delete the stored lease of each outpoint.
+     *
+     * Every field is opaque here: store it and hand it back as it came.
+     * Delivered only to a bridge that overrides both this and
+     * [onLoadIdentitySlotLeases]: an inherited no-op would acknowledge a
+     * lease it never kept. Without them an invitation claim is refused.
+     */
+    open fun onPersistIdentitySlotLeases(
+        walletId: ByteArray,
+        leases: ByteArray,
+        released: ByteArray,
     ): Int = 0
 
     // ── Identities ────────────────────────────────────────────────────
@@ -978,6 +1017,14 @@ abstract class NativePersistenceBridge {
      * be read.
      */
     open fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+
+    /**
+     * `on_load_identity_slot_leases_fn`: every stored invitation-claim lease
+     * of [walletId], packed in the layout [onPersistIdentitySlotLeases]
+     * stores. Descriptor `([B)[B`. Throw on a store that cannot be read: an
+     * empty answer would free a slot a claim already took.
+     */
+    open fun onLoadIdentitySlotLeases(walletId: ByteArray): ByteArray = ByteArray(0)
 
     /**
      * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`

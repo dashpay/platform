@@ -88,6 +88,13 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        /**
+         * The identity index each invitation claim holds before its
+         * identity lands is stored on its round and restored at load, so a
+         * claim retried after a relaunch returns to the same slot. Mirrors
+         * `PersistenceCapabilities::IDENTITY_SLOT_LEASES`.
+         */
+        const val IDENTITY_SLOT_LEASES: Long = NativePersistenceBridge.CAPABILITY_IDENTITY_SLOT_LEASES
     }
 }
 
