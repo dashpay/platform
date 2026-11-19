@@ -17,6 +17,7 @@
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
+use platform_wallet::wallet::identity::SlotHolder;
 use platform_wallet::AssetLockFunding;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -50,6 +51,11 @@ fn existing_asset_lock_funding(
 /// funding or privacy choice. CoinJoin funding remains drain-only and
 /// is not reachable here.
 ///
+/// `identity_index` and `slot_token` come from
+/// [`crate::identity_slot::platform_wallet_identity_slot_acquire_registration`]:
+/// a registration at an index its token does not lease is refused with
+/// nothing funded.
+///
 /// # Safety
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
 ///   produced by `dash_sdk_signer_create_with_ctx`. The caller retains
@@ -65,6 +71,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
     amount_duffs: u64,
     account_index: u32,
     identity_index: u32,
+    slot_token: u64,
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     signer_handle: *mut SignerHandle,
@@ -121,6 +128,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
                         account_index,
                     },
                     identity_index,
+                    Some(SlotHolder::Registration { token: slot_token }),
                     keys_map,
                     identity_signer,
                     &asset_lock_signer,
@@ -241,6 +249,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
                 .register_identity_with_funding(
                     existing_asset_lock_funding(resume_outpoint, consume_invitation_voucher),
                     identity_index,
+                    None,
                     keys_map,
                     identity_signer,
                     &asset_lock_signer,

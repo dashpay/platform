@@ -42,6 +42,7 @@ use crate::wallet::identity::network::identity_handle::{
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair, MASTER_KEY_INDEX,
 };
 use crate::wallet::identity::network::registration::derived_keys;
+use crate::wallet::identity::state::SlotHolder;
 
 use super::*;
 
@@ -323,6 +324,16 @@ impl IdentityWallet {
             .await?)
     }
 
+    /// The outpoint of the invitation's voucher credit output, which keys
+    /// its claim's identity slot. Forwards to
+    /// [`dash_sdk::Sdk::invitation_funding_out_point`].
+    pub async fn invitation_funding_out_point(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<dashcore::OutPoint, PlatformWalletError> {
+        Ok(self.sdk.invitation_funding_out_point(invitation).await?)
+    }
+
     /// What an invitation is worth and whether it was already claimed.
     /// Forwards to [`dash_sdk::Sdk::invitation_claim_status`].
     pub async fn invitation_claim_status(
@@ -602,6 +613,15 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        // The claim must lease `identity_index` (from `acquire_identity_slot`),
+        // and its lease turns `Submitted` durably before anything is sent:
+        // from then on only the claim's outcome frees the slot.
+        let out_point = self.invitation_funding_out_point(&invitation).await?;
+        self.submit_claim_lease(identity_index, out_point).await?;
+        let holder = SlotHolder::InvitationClaim {
+            invitation: out_point,
+        };
+
         let identity = match self
             .sdk
             .claim_invitation(invitation, keys_map, identity_signer, settings)
@@ -629,7 +649,7 @@ impl IdentityWallet {
                         identity.clone(),
                         identity_index,
                         self.wallet_id,
-                        None,
+                        Some(&holder),
                         keys,
                         &self.persister,
                     ) {

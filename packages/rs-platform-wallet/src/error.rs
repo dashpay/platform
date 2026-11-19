@@ -106,6 +106,13 @@ pub enum PlatformWalletError {
         occupant: Identifier,
     },
 
+    /// A registration or an invitation claim at an identity index its
+    /// holder does not lease: the index was not taken through
+    /// `IdentityWallet::acquire_identity_slot`, or its lease was released.
+    /// Refused before anything is funded or sent.
+    #[error("identity index {identity_index} is not leased to this operation")]
+    IdentitySlotNotHeld { identity_index: u32 },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

@@ -17,18 +17,28 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::changeset::{PersistenceCapabilities, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
-use crate::wallet::identity::state::{RegistrationIndex, SlotHolder, SlotLease, SlotLeasePhase};
+use crate::wallet::identity::crypto::ParsedInvitation;
+use crate::wallet::identity::state::{
+    RegistrationIndex, SlotHolder, SlotLease, SlotLeasePhase, SlotState,
+};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 use super::*;
 
 /// The operation asking for a slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotRequest {
+#[derive(Debug, Clone, Copy)]
+pub enum SlotRequest<'a> {
     /// A new identity registration. Each request gets its own slot.
     Registration,
-    /// A claim of the invitation funded by `invitation`. A retry of the same
-    /// claim gets the slot its earlier attempt leased.
+    /// A claim of `invitation`. A retry of the same claim gets the slot its
+    /// earlier attempt leased.
+    InvitationClaim(&'a ParsedInvitation),
+}
+
+/// [`SlotRequest`] with the invitation resolved to its funding outpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResolvedSlotRequest {
+    Registration,
     InvitationClaim { invitation: OutPoint },
 }
 
@@ -56,19 +66,36 @@ impl IdentityWallet {
     /// ([`PersistenceCapabilities::IDENTITY_SLOT_LEASE_RESTART`]): a claim
     /// retried after a restart would otherwise derive at another index than
     /// the one its earlier attempt may have landed at.
+    ///
+    /// A claim costs one funding-tx fetch: its lease is keyed by the
+    /// invitation's funding outpoint, which the link does not carry.
     pub async fn acquire_identity_slot(
         &self,
-        request: SlotRequest,
+        request: SlotRequest<'_>,
     ) -> Result<IdentitySlot, PlatformWalletError> {
-        if let SlotRequest::InvitationClaim { .. } = request {
-            self.require_slot_lease_persistence()?;
-        }
+        let resolved = match request {
+            SlotRequest::Registration => ResolvedSlotRequest::Registration,
+            SlotRequest::InvitationClaim(invitation) => {
+                self.require_slot_lease_persistence()?;
+                ResolvedSlotRequest::InvitationClaim {
+                    invitation: self.invitation_funding_out_point(invitation).await?,
+                }
+            }
+        };
+        self.acquire_resolved_slot(resolved).await
+    }
+
+    /// [`Self::acquire_identity_slot`] once the request is resolved.
+    pub(crate) async fn acquire_resolved_slot(
+        &self,
+        request: ResolvedSlotRequest,
+    ) -> Result<IdentitySlot, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let info = self.current_wallet_info_mut(&mut wm)?;
         let funded = funded_registration_indices(info);
         let manager = &mut info.identity_manager;
         match request {
-            SlotRequest::Registration => {
+            ResolvedSlotRequest::Registration => {
                 let (holder, acquired) =
                     manager.acquire_registration_slot(self.wallet_id, &funded)?;
                 Ok(IdentitySlot {
@@ -78,7 +105,7 @@ impl IdentityWallet {
                     phase: acquired.phase,
                 })
             }
-            SlotRequest::InvitationClaim { invitation } => {
+            ResolvedSlotRequest::InvitationClaim { invitation } => {
                 let holder = SlotHolder::InvitationClaim { invitation };
                 let acquired = manager.acquire_identity_slot(self.wallet_id, holder, &funded)?;
                 if !acquired.reentered {
@@ -146,6 +173,61 @@ impl IdentityWallet {
             return Err(self.persister.classify_not_durable(not_durable));
         }
         Ok(Some(leased.identity_index))
+    }
+
+    /// Refuse with [`PlatformWalletError::IdentitySlotNotHeld`] unless
+    /// `holder` leases this wallet's slot `identity_index`.
+    pub(crate) async fn require_slot_lease(
+        &self,
+        identity_index: RegistrationIndex,
+        holder: &SlotHolder,
+    ) -> Result<(), PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = self.current_wallet_info(&wm)?;
+        match info
+            .identity_manager
+            .slot_state(&self.wallet_id, identity_index)
+        {
+            SlotState::Leased(lease) if lease.holder == *holder => Ok(()),
+            SlotState::Leased(_) | SlotState::Occupied(_) | SlotState::Free => {
+                Err(PlatformWalletError::IdentitySlotNotHeld { identity_index })
+            }
+        }
+    }
+
+    /// Move `invitation`'s claim lease on slot `identity_index` to
+    /// `Submitted`, stored durably, before its claim is sent: from then on
+    /// only the claim's outcome frees the slot. Refused with
+    /// [`PlatformWalletError::IdentitySlotNotHeld`] unless the claim leases
+    /// that slot; on a failed store the lease keeps its phase.
+    pub(crate) async fn submit_claim_lease(
+        &self,
+        identity_index: RegistrationIndex,
+        invitation: OutPoint,
+    ) -> Result<(), PlatformWalletError> {
+        let holder = SlotHolder::InvitationClaim { invitation };
+        let mut wm = self.wallet_manager.write().await;
+        let info = self.current_wallet_info_mut(&mut wm)?;
+        let manager = &mut info.identity_manager;
+        let lease = match manager.slot_state(&self.wallet_id, identity_index) {
+            SlotState::Leased(lease) if lease.holder == holder => lease,
+            SlotState::Leased(_) | SlotState::Occupied(_) | SlotState::Free => {
+                return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
+            }
+        };
+        if lease.phase == SlotLeasePhase::Submitted {
+            return Ok(());
+        }
+        manager.set_slot_lease_phase(&self.wallet_id, &holder, SlotLeasePhase::Submitted);
+        let changeset = PlatformWalletChangeSet {
+            identity_slot_leases: Some(manager.claim_lease_changeset(&self.wallet_id, invitation)),
+            ..Default::default()
+        };
+        if let Err(not_durable) = self.persister.store_durably(changeset) {
+            manager.set_slot_lease_phase(&self.wallet_id, &holder, lease.phase);
+            return Err(self.persister.classify_not_durable(not_durable));
+        }
+        Ok(())
     }
 
     /// Refuse an invitation claim's slot when the persister cannot keep its
@@ -265,8 +347,8 @@ mod tests {
             .unwrap()
     }
 
-    fn claim(byte: u8) -> SlotRequest {
-        SlotRequest::InvitationClaim {
+    fn claim(byte: u8) -> ResolvedSlotRequest {
+        ResolvedSlotRequest::InvitationClaim {
             invitation: OutPoint::new(Txid::from_byte_array([byte; 32]), 0),
         }
     }
@@ -280,7 +362,19 @@ mod tests {
         let backend = Backend::new(PersistenceCapabilities::ATOMIC_CHANGESETS);
         let wallet = wallet(backend.clone()).await;
 
-        let refused = wallet.identity().acquire_identity_slot(claim(1)).await;
+        // Refused before the funding tx is fetched: the mock SDK expects no
+        // fetch, so reaching one would fail with another error.
+        let invitation = ParsedInvitation {
+            voucher_key: dpp::secp256k1::SecretKey::from_secret_bytes([1; 32]).unwrap(),
+            voucher_key_network: Network::Testnet,
+            funding_txid: "11".repeat(32),
+            islock_hex: None,
+            inviter: None,
+        };
+        let refused = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::InvitationClaim(&invitation))
+            .await;
 
         assert!(matches!(refused, Err(PlatformWalletError::Persistence(_))));
         assert!(backend.lease_writes().is_empty());
@@ -300,12 +394,12 @@ mod tests {
 
         let first = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
         let retried = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
 
@@ -315,7 +409,7 @@ mod tests {
         assert!(retried.reentered);
         let writes = backend.lease_writes();
         assert_eq!(writes.len(), 1);
-        let SlotRequest::InvitationClaim { invitation } = claim(1) else {
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
             unreachable!()
         };
         assert_eq!(writes[0].leases[&invitation].identity_index, 0);
@@ -327,7 +421,7 @@ mod tests {
         let wallet = wallet(backend.clone()).await;
         *backend.fail.lock().unwrap() = true;
 
-        let refused = wallet.identity().acquire_identity_slot(claim(1)).await;
+        let refused = wallet.identity().acquire_resolved_slot(claim(1)).await;
 
         assert!(refused.is_err());
         *backend.fail.lock().unwrap() = false;
@@ -418,14 +512,14 @@ mod tests {
         let wallet = wallet(backend.clone()).await;
         let slot = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
 
         let released = wallet.identity().release_identity_slot(slot.holder).await;
 
         assert_eq!(released.unwrap(), Some(0));
-        let SlotRequest::InvitationClaim { invitation } = claim(1) else {
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
             unreachable!()
         };
         assert_eq!(
@@ -440,7 +534,7 @@ mod tests {
         let wallet = wallet(backend.clone()).await;
         let slot = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
         *backend.fail.lock().unwrap() = true;
@@ -451,7 +545,7 @@ mod tests {
         *backend.fail.lock().unwrap() = false;
         let retried = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
         assert!(retried.reentered);
@@ -463,7 +557,7 @@ mod tests {
         let wallet = wallet(Backend::new(full())).await;
         let slot = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
         {
@@ -482,9 +576,198 @@ mod tests {
         ));
         let retried = wallet
             .identity()
-            .acquire_identity_slot(claim(1))
+            .acquire_resolved_slot(claim(1))
             .await
             .unwrap();
         assert!(retried.reentered);
+    }
+
+    /// Never asked to sign: every call here is refused before signing.
+    #[derive(Debug)]
+    struct UnusedSigner;
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for UnusedSigner {
+        async fn sign(
+            &self,
+            _key: &dpp::identity::IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("refused before signing")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &dpp::identity::IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("refused before signing")
+        }
+
+        fn can_sign_with(&self, _key: &dpp::identity::IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    fn master_keys() -> std::collections::BTreeMap<u32, dpp::identity::IdentityPublicKey> {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            key_type: KeyType::ECDSA_HASH160,
+            data: vec![1; 20].into(),
+            ..Default::default()
+        };
+        std::collections::BTreeMap::from([(0, key.into())])
+    }
+
+    /// Register at `identity_index` with `holder`, funded from the balance.
+    async fn register_at(
+        wallet: &PlatformWallet,
+        identity_index: RegistrationIndex,
+        holder: Option<SlotHolder>,
+    ) -> Result<dpp::identity::Identity, PlatformWalletError> {
+        let asset_lock_signer = crate::test_support::fund_test_platform_wallet(
+            &wallet.identity().wallet_manager,
+            &wallet.wallet_id(),
+            1_000_000,
+        )
+        .await;
+        wallet
+            .identity()
+            .register_identity_with_funding(
+                crate::wallet::asset_lock::AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 100_000,
+                    account_index: 0,
+                },
+                identity_index,
+                holder,
+                master_keys(),
+                &UnusedSigner,
+                &asset_lock_signer,
+                None,
+            )
+            .await
+    }
+
+    async fn tracked_locks(wallet: &PlatformWallet) -> usize {
+        let wm = wallet.identity().wallet_manager.read().await;
+        wm.get_wallet_info(&wallet.wallet_id())
+            .unwrap()
+            .tracked_asset_locks
+            .len()
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_registration_without_its_slot_before_funding() {
+        let wallet = wallet(Backend::new(full())).await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        let other = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+
+        for (index, holder) in [
+            (slot.identity_index, None),
+            (slot.identity_index, Some(other.holder)),
+            (5, Some(slot.holder)),
+        ] {
+            let refused = register_at(&wallet, index, holder).await;
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::IdentitySlotNotHeld { identity_index }) if identity_index == index
+                ),
+                "index {index}, holder {holder:?}: {refused:?}"
+            );
+        }
+        assert_eq!(tracked_locks(&wallet).await, 0);
+    }
+
+    #[tokio::test]
+    async fn should_mark_a_claim_submitted_durably_before_it_is_sent() {
+        let backend = Backend::new(full());
+        let wallet = wallet(backend.clone()).await;
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+
+        wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            backend.lease_writes().last().unwrap().leases[&invitation].phase,
+            SlotLeasePhase::Submitted
+        );
+        let retried = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        assert_eq!(retried.phase, SlotLeasePhase::Submitted);
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_claim_reserved_when_its_submission_is_not_stored() {
+        let backend = Backend::new(full());
+        let wallet = wallet(backend.clone()).await;
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        *backend.fail.lock().unwrap() = true;
+
+        let refused = wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await;
+
+        assert!(refused.is_err());
+        *backend.fail.lock().unwrap() = false;
+        let retried = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        assert_eq!(retried.phase, SlotLeasePhase::Reserved);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_to_submit_a_claim_at_a_slot_it_does_not_lease() {
+        let wallet = wallet(Backend::new(full())).await;
+        wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(2) else {
+            unreachable!()
+        };
+
+        let refused = wallet.identity().submit_claim_lease(0, invitation).await;
+
+        assert!(matches!(
+            refused,
+            Err(PlatformWalletError::IdentitySlotNotHeld { identity_index: 0 })
+        ));
     }
 }

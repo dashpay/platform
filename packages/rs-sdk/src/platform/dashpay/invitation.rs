@@ -948,6 +948,20 @@ impl Sdk {
         Ok(identity_id_for_out_point(funding.out_point))
     }
 
+    /// The outpoint of the invitation's voucher credit output: the asset lock
+    /// a claim spends, and what a wallet keys the claim's identity slot by.
+    ///
+    /// Costs one funding-tx fetch, for the reason
+    /// [`Sdk::invitation_prospective_identity_id`] gives.
+    pub async fn invitation_funding_out_point(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<OutPoint, InvitationError> {
+        Ok(inspect_invitation_funding(self, invitation)
+            .await?
+            .out_point)
+    }
+
     /// What an invitation is worth and whether it was already claimed — the
     /// invitee's pre-claim check, one network round trip before any username
     /// is picked.

@@ -81,7 +81,7 @@ fn phase_from_u8(phase: u8) -> Option<SlotLeasePhase> {
     }
 }
 
-fn outpoint_from_bytes(bytes: &[u8; 36]) -> OutPoint {
+pub(crate) fn outpoint_from_bytes(bytes: &[u8; 36]) -> OutPoint {
     let mut txid = [0u8; 32];
     txid.copy_from_slice(&bytes[..32]);
     let mut vout = [0u8; 4];

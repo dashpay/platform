@@ -78,6 +78,7 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
+use crate::wallet::identity::state::SlotHolder;
 use crate::wallet::platform_wallet::WalletId;
 use crate::BlockTime;
 
@@ -147,10 +148,12 @@ impl IdentityWallet {
     /// fails, the asset-lock stays tracked (cleanup only runs on Platform
     /// success), carrying the ChainLock proof, so subsequent registration
     /// attempts can resume via `FromExistingAssetLock`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn register_identity_with_funding<S, AS>(
         &self,
         funding: AssetLockFunding,
         identity_index: u32,
+        holder: Option<SlotHolder>,
         keys_map: BTreeMap<u32, IdentityPublicKey>,
         identity_signer: &S,
         asset_lock_signer: &AS,
@@ -183,6 +186,21 @@ impl IdentityWallet {
                     return Err(PlatformWalletError::InvalidIdentityData(
                         "keys_map must include key id=0 with MASTER security level".to_string(),
                     ));
+                }
+            }
+        }
+
+        // Step 1b: the slot. A new funding needs the registration's lease on
+        // `identity_index` (from `acquire_identity_slot`); an existing
+        // registration lock already holds its index, which the resolver
+        // checks against `identity_index`.
+        if !matches!(funding, AssetLockFunding::FromExistingAssetLock { .. }) {
+            match holder {
+                Some(holder @ SlotHolder::Registration { .. }) => {
+                    self.require_slot_lease(identity_index, &holder).await?;
+                }
+                Some(SlotHolder::InvitationClaim { .. }) | None => {
+                    return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
                 }
             }
         }
@@ -300,7 +318,7 @@ impl IdentityWallet {
                         identity.clone(),
                         identity_index,
                         self.wallet_id,
-                        None,
+                        holder.as_ref(),
                         keys,
                         &self.persister,
                     ) {

@@ -770,6 +770,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     amount_duffs: jlong,
     account_index: jint,
     identity_index: jint,
+    slot_token: jlong,
     pubkeys_blob: JByteArray,
     signer_handle: jlong,
     core_signer_handle: jlong,
@@ -812,6 +813,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
                 amount_duffs as u64,
                 account_index as u32,
                 identity_index as u32,
+                // Opaque: the bits `acquireRegistrationSlot` handed out.
+                slot_token as u64,
                 ffi_rows.as_ptr(),
                 ffi_rows.len(),
                 signer_handle as *mut SignerHandle,
