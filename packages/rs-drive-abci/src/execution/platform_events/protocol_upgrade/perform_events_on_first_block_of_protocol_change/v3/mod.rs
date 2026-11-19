@@ -10,9 +10,9 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Clears stale contract fees and runs activation, including operator-payout reconciliation,
-    /// before migrating history and converting the trees of document sums that widen in the
-    /// same transaction.
+    /// Empties the contract cache and runs activation (v2), including operator-payout
+    /// reconciliation, before migrating history and converting the trees of document sums that
+    /// widen in the same transaction.
     pub(super) fn perform_events_on_first_block_of_protocol_change_v3(
         &self,
         platform_state: &PlatformState,

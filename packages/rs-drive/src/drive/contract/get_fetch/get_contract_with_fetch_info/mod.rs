@@ -206,7 +206,7 @@ impl Drive {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::drive::contract::tests::setup_reference_contract;
+    use crate::drive::contract::tests::setup_reference_contract_at;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -224,10 +224,24 @@ mod tests {
     use std::borrow::Cow;
     use std::sync::Arc;
 
+    /// A protocol version selecting each generation: 14 selects generation 0, which chains at
+    /// protocol version 14 execute and replay, and the latest selects generation 1.
+    fn each_generation() -> [&'static PlatformVersion; 2] {
+        [
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+            PlatformVersion::latest(),
+        ]
+    }
+
     #[test]
     fn should_get_contract_from_global_and_block_cache() {
-        let (drive, mut contract) = setup_reference_contract();
-        let platform_version = PlatformVersion::latest();
+        for platform_version in each_generation() {
+            should_get_contract_from_global_and_block_cache_at(platform_version);
+        }
+    }
+
+    fn should_get_contract_from_global_and_block_cache_at(platform_version: &PlatformVersion) {
+        let (drive, mut contract) = setup_reference_contract_at(platform_version);
 
         let transaction = drive.grove.start_transaction();
 
@@ -274,8 +288,13 @@ mod tests {
 
     #[test]
     fn should_return_none_if_contract_not_exist() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        for platform_version in each_generation() {
+            should_return_none_if_contract_not_exist_at(platform_version);
+        }
+    }
+
+    fn should_return_none_if_contract_not_exist_at(platform_version: &PlatformVersion) {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let result = drive
             .get_contract_with_fetch_info_and_fee([0; 32], None, true, None, platform_version)
@@ -287,8 +306,15 @@ mod tests {
 
     #[test]
     fn should_return_fees_for_non_existing_contract_if_epoch_is_passed() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        for platform_version in each_generation() {
+            should_return_fees_for_non_existing_contract_if_epoch_is_passed_at(platform_version);
+        }
+    }
+
+    fn should_return_fees_for_non_existing_contract_if_epoch_is_passed_at(
+        platform_version: &PlatformVersion,
+    ) {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let result = drive
             .get_contract_with_fetch_info_and_fee(
@@ -313,11 +339,16 @@ mod tests {
 
     #[test]
     fn should_always_have_then_same_cost() {
+        for platform_version in each_generation() {
+            should_always_have_then_same_cost_at(platform_version);
+        }
+    }
+
+    fn should_always_have_then_same_cost_at(platform_version: &PlatformVersion) {
         // Merk trees have own cache and depends on does contract node cached or not
         // we get could get different costs. To avoid of it we fetch contracts without tree caching
 
-        let (drive, mut ref_contract) = setup_reference_contract();
-        let platform_version = PlatformVersion::latest();
+        let (drive, mut ref_contract) = setup_reference_contract_at(platform_version);
 
         /*
          * Firstly, we create multiple contracts during block processing (in transaction)
@@ -578,8 +609,13 @@ mod tests {
     #[test]
     fn should_resolve_a_contract_updated_in_the_block_after_a_committed_query_refills_the_global_cache(
     ) {
-        let (drive, contract) = setup_reference_contract();
-        let platform_version = PlatformVersion::latest();
+        for platform_version in each_generation() {
+            resolve_an_updated_contract_after_a_query_refill_at(platform_version);
+        }
+    }
+
+    fn resolve_an_updated_contract_after_a_query_refill_at(platform_version: &PlatformVersion) {
+        let (drive, contract) = setup_reference_contract_at(platform_version);
         let contract_id = contract.id().to_buffer();
         let epoch = Epoch::new(0).expect("epoch 0");
 
@@ -702,8 +738,15 @@ mod tests {
     /// Estimating a batch writes nothing, so it must not record a rewrite either.
     #[test]
     fn should_not_record_a_rewrite_when_only_estimating_a_batch() {
-        let (drive, contract) = setup_reference_contract();
-        let platform_version = PlatformVersion::latest();
+        for platform_version in each_generation() {
+            should_not_record_a_rewrite_when_only_estimating_a_batch_at(platform_version);
+        }
+    }
+
+    fn should_not_record_a_rewrite_when_only_estimating_a_batch_at(
+        platform_version: &PlatformVersion,
+    ) {
+        let (drive, contract) = setup_reference_contract_at(platform_version);
         let contract_id = contract.id().to_buffer();
 
         let transaction = drive.grove.start_transaction();
