@@ -5,9 +5,13 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.NativeLoader
+import org.dashfoundation.dashsdk.ffi.NativeSignerBridge
+import org.dashfoundation.dashsdk.ffi.SignerNative
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -32,20 +36,54 @@ import org.junit.runner.RunWith
  *  - a well-formed call with dead manager handle 0 reaches the FFI's handle
  *    lookup and comes back as `ErrorInvalidHandle`.
  *
- * The FFI encodes the memo and resolves the manager handle before it ever
- * dereferences the signer pointer, so [DUMMY_SIGNER] is never read; it only
- * has to be non-zero to pass the JNI null check.
+ * The signer is a real native handle over a bridge that holds no keys, so
+ * the calls stay memory-safe even if the FFI ever borrows the signer before
+ * it resolves the manager handle. It never signs: every call here fails
+ * before a transition is built.
  */
 @RunWith(AndroidJUnit4::class)
 class ShieldFromIdentityToRecipientBindingTest {
 
     private companion object {
         const val DEAD_HANDLE = 0L
-        const val DUMMY_SIGNER = 1L
 
         /** `PlatformWalletFFIResultCode` values, shifted into the Kotlin range. */
         const val INVALID_HANDLE = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 1
         const val INVALID_PARAMETER = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 2
+    }
+
+    /** Holds no keys: refuses every signature request. */
+    private class NoKeySigner : NativeSignerBridge() {
+        override fun signAsync(
+            pubkeyBytes: ByteArray,
+            keyType: Int,
+            data: ByteArray,
+            completionToken: Long,
+        ) {
+            SignerNative.completeSign(
+                completionToken,
+                null,
+                SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
+                "test signer holds no keys",
+            )
+        }
+
+        override fun canSignWith(pubkeyBytes: ByteArray, keyType: Int): Boolean = false
+    }
+
+    private var signerHandle = 0L
+
+    @Before
+    fun createSigner() {
+        NativeLoader.ensureLoaded()
+        signerHandle = SignerNative.createSigner(NoKeySigner())
+        assertTrue("createSigner returned a null handle", signerHandle != 0L)
+    }
+
+    @After
+    fun destroySigner() {
+        SignerNative.destroySigner(signerHandle)
+        signerHandle = 0L
     }
 
     private fun callExpectingThrow(
@@ -55,7 +93,7 @@ class ShieldFromIdentityToRecipientBindingTest {
         recipient: ByteArray = ByteArray(43) { 2 },
         amount: Long = 1_000L,
         memo: String? = null,
-        signer: Long = DUMMY_SIGNER,
+        signer: Long = signerHandle,
     ): DashSDKException {
         NativeLoader.ensureLoaded()
         return assertThrows(DashSDKException::class.java) {
