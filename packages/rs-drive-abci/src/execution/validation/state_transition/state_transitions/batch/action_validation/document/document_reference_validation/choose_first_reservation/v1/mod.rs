@@ -13,13 +13,16 @@ use crate::error::Error;
 use crate::execution::types::check_tx_reservation::CheckTxReservation;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::choose_first_scan_budget;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v1::contest_decides_choose_first;
 
 /// Generation 1: generation 0's reservation, and, a bound, for each competitor the scan may read
 /// (`SystemLimits::max_choose_first_candidates`) the double SHA-256 of the create's `validWhen`
 /// preimage, which document reference validation 1 bills in full for every competitor it
 /// hashes, past the scan's budget too. A competitor's preimage is the writer's with the
-/// competitor's owner in the `"$ownerId"` slots, so it hashes as many blocks
-/// (see [`super::choose_first_reservation`]).
+/// competitor's owner in the `"$ownerId"` slots, so it hashes as many blocks. A create its
+/// contest decides (`contest_decides_choose_first`, for a create stating the contest's fund)
+/// reads no competitor in a block, so it is reserved none of their hashes; it keeps the scan's
+/// budget (see [`super::choose_first_reservation`]).
 #[inline(always)]
 pub(super) fn choose_first_reservation_v1(
     action: &StateTransitionAction,
@@ -56,6 +59,10 @@ pub(super) fn choose_first_reservation_v1(
                 ));
             }
         }
+        // A create its contest decides reads no competitor (document reference validation 1),
+        // so none of their hashes is reserved for it
+        let left_to_its_contest = create.prefunded_voting_balance().is_some()
+            && contest_decides_choose_first(document_type, lookup);
         if let Some(choose_first) = &lookup.choose_first {
             let key = &choose_first.valid_when;
             if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
@@ -63,24 +70,25 @@ pub(super) fn choose_first_reservation_v1(
                 reservation
                     .billed
                     .push(ValidationOperation::DoubleSha256(blocks));
-                let mut one_hash = FeeResult::default();
-                ValidationOperation::add_many_to_fee_result(
-                    &[ValidationOperation::DoubleSha256(blocks)],
-                    &mut one_hash,
-                    platform_version,
-                )?;
-                let competitor_hashes =
-                    one_hash
+                if !left_to_its_contest {
+                    let mut one_hash = FeeResult::default();
+                    ValidationOperation::add_many_to_fee_result(
+                        &[ValidationOperation::DoubleSha256(blocks)],
+                        &mut one_hash,
+                        platform_version,
+                    )?;
+                    let competitor_hashes = one_hash
                         .processing_fee
                         .checked_mul(competitors)
                         .ok_or(Error::Execution(ExecutionError::Overflow(
                             "chooseFirst competitor hashes reservation overflow",
                         )))?;
-                reservation
-                    .bounds
-                    .push(ValidationOperation::PrecalculatedOperation(
-                        FeeResult::new_from_processing_fee(competitor_hashes),
-                    ));
+                    reservation
+                        .bounds
+                        .push(ValidationOperation::PrecalculatedOperation(
+                            FeeResult::new_from_processing_fee(competitor_hashes),
+                        ));
+                }
             }
         }
         reservation

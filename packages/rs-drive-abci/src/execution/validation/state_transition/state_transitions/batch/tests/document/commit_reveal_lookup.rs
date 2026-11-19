@@ -4477,6 +4477,34 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.preorder_exists(preorder.id()));
     }
 
+    /// A create its contest decides reads no `chooseFirst` competitor in a block, so check tx
+    /// reserves none of their hashes for it, where it reserves them for an uncontested reveal of
+    /// the same name; both keep the competitor scan's budget. Their bounds differ by exactly the
+    /// hashes of the competitors the scan may read.
+    #[tokio::test]
+    async fn should_reserve_no_competitor_hashes_for_a_create_its_contest_decides() {
+        let platform_version = PlatformVersion::latest();
+        let (uncontested, _) = preceded_reveal_fixture().await;
+        let (contested, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let mut bounds = Vec::new();
+        for mut fixture in [uncontested, contested] {
+            let contract = fixture.contract.clone();
+            let (_, reveal) = fixture
+                .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+                .await;
+            let (admitted, gas_wanted) =
+                admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+            bounds.push(admitted - gas_wanted);
+        }
+        let competitors = u64::from(platform_version.system_limits.max_choose_first_candidates);
+        assert_eq!(
+            bounds[0] - bounds[1],
+            competitors * double_sha256_fee(32 + full_name().len(), platform_version)
+        );
+        assert!(bounds[1] >= choose_first_scan_budget(platform_version));
+    }
+
     /// A reveal choosing the first of the commitments to its values is reported as wanting no
     /// gas for the competitor scan's budget, which bounds what the scan may bill, while check tx
     /// still holds its signer to it.

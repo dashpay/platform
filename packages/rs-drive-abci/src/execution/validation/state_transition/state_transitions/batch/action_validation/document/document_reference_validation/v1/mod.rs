@@ -2123,7 +2123,7 @@ fn validate_choose_first_v1(
 /// A commitment to more than the contest's values (an answer beside a name) or to fewer, or an
 /// order the contract ranks commitments by (a priority each holds, the newest first, or a last
 /// `$id` deciding within a block), decides something the contest does not, and keeps the order.
-fn contest_decides_choose_first(
+pub(crate) fn contest_decides_choose_first(
     declaring_document_type: DocumentTypeRef<'_>,
     lookup: &DocumentReferenceLookup,
 ) -> bool {
