@@ -1068,6 +1068,146 @@ mod tests {
         assert!(declares_the_preorder_hash(&resolved));
     }
 
+    /// A tombstone document of `b0b.dash`, as a proof returns it.
+    fn bob_tombstone() -> Document {
+        Document::V0(DocumentV0 {
+            contract_version: None,
+            id: Identifier::new([8u8; 32]),
+            owner_id: Identifier::new([1u8; 32]),
+            properties: BTreeMap::from([
+                (
+                    "normalizedParentDomainName".to_string(),
+                    Value::Text("dash".to_string()),
+                ),
+                (
+                    "normalizedLabel".to_string(),
+                    Value::Text("b0b".to_string()),
+                ),
+            ]),
+            revision: None,
+            created_at: Some(1_700_000_000_000),
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+        })
+    }
+
+    /// An SDK seeded at protocol version 13 whose context provider holds DPNS v2, on a
+    /// network that runs the latest version and stores DPNS v3: the refresh and the DPNS
+    /// contract fetch are answered.
+    async fn sdk_behind_an_upgraded_network(provider: &DpnsV2ContextProvider) -> Sdk {
+        let mut sdk = SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(13).expect("protocol version 13"))
+            .with_context_provider(provider.clone())
+            .build()
+            .expect("the mock SDK builds");
+        expect_epoch_refresh(&mut sdk).await;
+        let stored = dpns_v3();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored))
+            .await
+            .expect("the DPNS fetch is expected");
+        sdk
+    }
+
+    /// Answers the query for the tombstone of `b0b.dash` with `found`. The query is read
+    /// under the DPNS v3 the network stores as a fetch returns it, which a mock query is
+    /// matched by: another SDK behind the same network fetches it here.
+    async fn expect_bobs_tombstone(sdk: &mut Sdk, found: Option<Document>) {
+        let fetched_dpns_v3 = sdk_behind_an_upgraded_network(&DpnsV2ContextProvider::default())
+            .await
+            .fetch_current_dpns_contract()
+            .await
+            .expect("the DPNS contract is fetched");
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                give_up::dpns_name_query(Arc::new(fetched_dpns_v3), "tombstone", "b0b".to_string()),
+                Some([(Identifier::new([8u8; 32]), found)].into_iter().collect()),
+            )
+            .await
+            .expect("the tombstone query is expected");
+    }
+
+    /// A context provider that still holds DPNS v2 after the network upgraded resolves a
+    /// contract declaring no tombstone. An SDK that has read nothing yet still reads the
+    /// tombstone of a name: it learns the network's version, reads under the DPNS v3 the
+    /// network stores and hands that contract to the provider. Here the network holds no
+    /// tombstone of the name, a proven absence.
+    #[tokio::test]
+    async fn should_read_tombstones_under_the_network_contract_when_the_provider_holds_dpns_v2() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_behind_an_upgraded_network(&provider).await;
+        expect_bobs_tombstone(&mut sdk, None).await;
+
+        assert!(!sdk
+            .is_dpns_name_tombstoned("Bob.dash")
+            .await
+            .expect("the tombstone query answers"));
+
+        assert_eq!(sdk.protocol_version_number(), LATEST_VERSION);
+        let resolved = provider
+            .get_data_contract(&dpns_v3().id(), PlatformVersion::latest())
+            .expect("the provider answers")
+            .expect("the provider holds DPNS");
+        assert!(resolved.has_document_type_for_name("tombstone"));
+    }
+
+    /// The same provider, once the SDK knows the network's version, on a network holding a
+    /// tombstone of the name: the tombstone is found.
+    #[tokio::test]
+    async fn should_find_a_tombstone_when_the_provider_holds_dpns_v2_after_the_upgrade() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_behind_an_upgraded_network(&provider).await;
+        // The mock encodes a document under the SDK's version, which must know DPNS v3
+        sdk.refresh_protocol_version()
+            .await
+            .expect("the refresh answers");
+        expect_bobs_tombstone(&mut sdk, Some(bob_tombstone())).await;
+
+        assert!(sdk
+            .is_dpns_name_tombstoned("Bob.dash")
+            .await
+            .expect("the tombstone is read"));
+    }
+
+    /// And asked whether the name is available: no domain of the name exists, read under
+    /// the DPNS v2 the provider holds, and the name is still not available, since its
+    /// tombstone is found under the contract the network stores.
+    #[tokio::test]
+    async fn should_not_report_a_tombstoned_name_available_when_the_provider_holds_dpns_v2() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_behind_an_upgraded_network(&provider).await;
+        sdk.refresh_protocol_version()
+            .await
+            .expect("the refresh answers");
+        let dpns_v2 = load_system_data_contract(
+            SystemDataContract::DPNS,
+            PlatformVersion::get(13).expect("protocol version 13"),
+        )
+        .expect("the DPNS contract loads");
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                give_up::dpns_name_query(Arc::new(dpns_v2), "domain", "b0b".to_string()),
+                Some([(Identifier::new([9u8; 32]), None)].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+        expect_bobs_tombstone(&mut sdk, Some(bob_tombstone())).await;
+
+        assert!(!sdk
+            .is_dpns_name_available("Bob")
+            .await
+            .expect("the name is judged"));
+    }
+
     /// A signer the tests never reach: each registration below stops before it signs.
     #[derive(Debug)]
     struct UnusedSigner;

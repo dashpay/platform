@@ -26,6 +26,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::version::FeatureVersion;
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -35,6 +36,10 @@ const DOMAIN: &str = "domain";
 
 /// The DPNS document type of a name given up for good, from DPNS v3.
 const TOMBSTONE: &str = "tombstone";
+
+/// The first DPNS contract version, as a platform version's `system_data_contracts.dpns`
+/// numbers them, that declares the `tombstone` type.
+const FIRST_DPNS_VERSION_WITH_TOMBSTONES: FeatureVersion = 3;
 
 /// The query for the `document_type_name` document (a `domain` or a `tombstone`) of the name
 /// `normalized_label` under `dash`: at most one exists.
@@ -88,16 +93,52 @@ impl Sdk {
             .next())
     }
 
+    /// The DPNS contract to read a name's tombstone under, or `None` when the network's
+    /// contract declares no tombstone (before DPNS v3).
+    ///
+    /// `dpns_contract` is the one the SDK resolves for reads, which a context provider may
+    /// still hold from before the upgrade to DPNS v3 (a known-contracts cache warmed earlier).
+    /// Such a contract declares no tombstone while the network stores them, so a tombstoned
+    /// name would read as free. When the SDK's protocol version, which every verified
+    /// response raises to the network's, selects a DPNS contract that declares tombstones,
+    /// the contract the network stores now is fetched instead and handed to the provider, as
+    /// a registration does. An SDK that verifies no proofs, or whose version is pinned below
+    /// the network's, never learns the network's version and keeps the contract it resolves.
+    async fn dpns_contract_declaring_tombstones(
+        &self,
+        dpns_contract: Arc<DataContract>,
+    ) -> Result<Option<Arc<DataContract>>, Error> {
+        if dpns_contract.has_document_type_for_name(TOMBSTONE) {
+            return Ok(Some(dpns_contract));
+        }
+        if self.version().system_data_contracts.dpns < FIRST_DPNS_VERSION_WITH_TOMBSTONES {
+            return Ok(None);
+        }
+        let current = Arc::new(self.fetch_current_dpns_contract().await?);
+        if let Some(provider) = self.context_provider() {
+            provider.register_data_contract(current.clone());
+        }
+        Ok(current
+            .has_document_type_for_name(TOMBSTONE)
+            .then_some(current))
+    }
+
     /// Whether the name `normalized_label` under `dash` is tombstoned, read under
-    /// `dpns_contract`. Never before DPNS v3, whose contract declares no tombstone.
+    /// `dpns_contract` or, when that one predates the network's, under the contract the
+    /// network stores now ([`Sdk::dpns_contract_declaring_tombstones`]). Never before DPNS
+    /// v3, whose contract declares no tombstone. The caller has learned the network's
+    /// protocol version: from an earlier verified response, or by refreshing it.
     pub(super) async fn dpns_name_tombstoned_under(
         &self,
         dpns_contract: Arc<DataContract>,
         normalized_label: String,
     ) -> Result<bool, Error> {
-        if !dpns_contract.has_document_type_for_name(TOMBSTONE) {
+        let Some(dpns_contract) = self
+            .dpns_contract_declaring_tombstones(dpns_contract)
+            .await?
+        else {
             return Ok(false);
-        }
+        };
         Ok(self
             .dpns_name_document(dpns_contract, TOMBSTONE, normalized_label)
             .await?
@@ -116,6 +157,11 @@ impl Sdk {
             return Ok(false);
         }
         let dpns_contract = self.fetch_dpns_contract().await?;
+        if !dpns_contract.has_document_type_for_name(TOMBSTONE) {
+            // Nothing this call read says what the network runs: learn its protocol
+            // version before judging whether the contract in hand predates the network's
+            self.refresh_protocol_version().await?;
+        }
         self.dpns_name_tombstoned_under(dpns_contract, normalized_label)
             .await
     }
@@ -390,17 +436,20 @@ mod tests {
             .expect("the query answers"));
     }
 
-    /// DPNS v2 declares no tombstone, so nothing is read: the mock SDK holds no expectation
+    /// On a network at protocol version 14, DPNS v2 declares no tombstone, so nothing is
+    /// read: the mock SDK holds no expectation
     #[tokio::test]
     async fn should_report_no_name_tombstoned_before_dpns_v3() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("protocol version 14");
         let dpns_v2 = Arc::new(
-            load_system_data_contract(
-                SystemDataContract::DPNS,
-                PlatformVersion::get(14).expect("protocol version 14"),
-            )
-            .expect("the DPNS contract loads"),
+            load_system_data_contract(SystemDataContract::DPNS, protocol_version_14)
+                .expect("the DPNS contract loads"),
         );
-        assert!(!mock_sdk()
+        let sdk = SdkBuilder::new_mock()
+            .with_version(protocol_version_14)
+            .build()
+            .expect("the mock SDK builds");
+        assert!(!sdk
             .dpns_name_tombstoned_under(dpns_v2, "b0b".to_string())
             .await
             .expect("nothing is read"));
