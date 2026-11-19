@@ -686,3 +686,128 @@ fn should_keep_the_protocol_version_14_verdicts_of_member_edits() {
     ];
     run(&cases, platform_version);
 }
+
+/// A member an object gains may be required from the contract version the update creates, as a
+/// top-level property may: through its object's own `required`, at any depth, or through the
+/// `required` beside a `$ref`.
+#[test]
+fn should_admit_a_member_required_from_the_version_the_update_creates() {
+    let since = |version: u32| with(boolean(2), "requiredSince", Value::U32(version));
+    let appended = |x: Value, required: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": boolean(0), "z": integer(1), "x": x }),
+                1,
+                Some(required),
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let old = || document_type_schema(with_meta(meta_yz()), platform_value!(["a"]));
+    let nested = |inner: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": boolean(0), "inner": inner }),
+                1,
+                None,
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let cases = vec![
+        case(
+            "a member its object's required names from the new version",
+            old(),
+            appended(since(2), platform_value!(["x"])),
+            Expected::Accepted,
+        ),
+        case(
+            "a member of an object inside an object required from the new version",
+            nested(object(platform_value!({ "p": boolean(0) }), 1, None)),
+            nested(object(
+                platform_value!({ "p": boolean(0), "q": with(boolean(1), "requiredSince", Value::U32(2)) }),
+                1,
+                Some(platform_value!(["q"])),
+            )),
+            Expected::Accepted,
+        ),
+        case(
+            "a member required from an earlier version",
+            old(),
+            appended(since(1), platform_value!(["x"])),
+            Expected::Refused(10276, "must carry requiredSince 2"),
+        ),
+        case(
+            "an existing member required from the new version",
+            old(),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({
+                        "y": with(boolean(0), "requiredSince", Value::U32(2)),
+                        "z": integer(1),
+                    }),
+                    1,
+                    Some(platform_value!(["y"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "meta.y"),
+        ),
+        case(
+            "a member required from the new version through a dotted name",
+            old(),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "z": integer(1), "x": since(2) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a", "meta.x"]),
+            ),
+            Expected::Refused(10276, "meta.x"),
+        ),
+        Case {
+            name: "a definition's member required from the new version beside its $ref",
+            old: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some(("required", platform_value!(["y"])))),
+                }),
+                platform_value!(["a"]),
+            ),
+            new: document_type_schema(
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": meta_ref(Some(("required", platform_value!(["y", "x"])))),
+                }),
+                platform_value!(["a"]),
+            ),
+            old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
+            new_defs: definitions(
+                platform_value!({ "y": boolean(0), "z": integer(1), "x": since(2) }),
+            ),
+            expected: Expected::Accepted,
+        },
+        case(
+            "a member named required whose type changes",
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "required": integer(1) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "required": string(1, 10) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10246, "required"),
+        ),
+    ];
+    run(&cases, PlatformVersion::latest());
+}

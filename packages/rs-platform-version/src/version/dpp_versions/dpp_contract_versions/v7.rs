@@ -55,7 +55,14 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   contest name one poll; 0 wrote only identifiers one way;
 /// - `max_size`, 1 rather than 0: a string of 16384 or more characters without `maxBytes`
 ///   counts as `u16::MAX` bytes toward a document type's largest size rather than failing it
-///   with an overflow. Only the erase of retained revisions, new in this version, reads it.
+///   with an overflow. Only the erase of retained revisions, new in this version, reads it;
+/// - `apply_required_since`, `Some(1)` rather than `Some(0)`: a member of an object listed in
+///   its object's `required` (or the `required` beside its `$ref`) may carry `requiredSince`,
+///   and is then stored with a presence byte at every contract version;
+/// - `validate_schema_compatibility`, 2 rather than 1: the `required` lists of a document
+///   type's objects are left out of the JSON-schema diff, as the type's own `required` is,
+///   and judged by document type `validate_update` 2, which the validation versions of this
+///   protocol version select.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -96,6 +103,10 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // changed: the depth and cycle check reads a `$ref` pointer as the validator does
             // and holds arrays to the maximum depth as it does maps
             validate_max_depth: 2,
+            // changed: an object's member may carry `requiredSince`, as a top-level property may
+            apply_required_since: Some(1),
+            // changed: the `required` lists of a type's objects are left to `validate_update` 2
+            validate_schema_compatibility: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         methods: DocumentTypeMethodVersions {

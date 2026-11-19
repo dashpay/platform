@@ -2842,8 +2842,12 @@ impl DocumentPropertyType {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
+                        // A member required from a contract version (`requiredSince`) is stored
+                        // like an optional one at every version. Only protocol version 15 parses
+                        // such a member, so before it `always_required` is `required`.
+                        let required = field.always_required();
                         if finished_buffer {
-                            return if field.required {
+                            return if required {
                                 Some(Err(DataContractError::CorruptedSerialization(
                                     "required field after finished buffer in object".to_string(),
                                 )))
@@ -2854,7 +2858,7 @@ impl DocumentPropertyType {
 
                         let read_value = field
                             .property_type
-                            .read_optionally_from(&mut object_buf_reader, field.required);
+                            .read_optionally_from(&mut object_buf_reader, required);
 
                         match read_value {
                             Ok(read_value) => {
@@ -3170,10 +3174,13 @@ impl DocumentPropertyType {
             DocumentPropertyType::Object(inner_fields) => {
                 let mut inner = 0u32;
                 for field in inner_fields.values() {
-                    let field_size = field.property_type.max_encoded_value_size(field.required)?;
+                    // As the encoder writes it: a member required from a contract version takes
+                    // a presence byte (only protocol version 15 parses one)
+                    let required = field.always_required();
+                    let field_size = field.property_type.max_encoded_value_size(required)?;
                     inner = inner
                         .saturating_add(field_size)
-                        .saturating_add(u32::from(!field.required));
+                        .saturating_add(u32::from(!required));
                 }
                 Some(length_prefixed(inner))
             }
@@ -3300,16 +3307,21 @@ impl DocumentPropertyType {
                 let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
+                    // A member required from a contract version (`requiredSince`) is stored like
+                    // an optional one at every version, so documents written before it was
+                    // required still decode. Only protocol version 15 parses such a member, so
+                    // before it `always_required` is `required`.
+                    let required = field.always_required();
                     if let Some(value) = value_map.get(key) {
-                        if !field.required {
+                        if !required {
                             r_vec.push(1);
                         }
                         let value = field
                             .property_type
-                            .encode_value_ref_with_size(value, field.required)?;
+                            .encode_value_ref_with_size(value, required)?;
                         r_vec.extend(value.as_slice());
                         Ok(())
-                    } else if field.required {
+                    } else if required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
                                 "a required field is not present".to_string(),

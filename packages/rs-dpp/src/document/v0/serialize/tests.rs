@@ -1759,3 +1759,133 @@ fn stamp_survives_the_wire_for_documents_stamped_past_required_since() {
     assert_eq!(before_back, stamped_before);
     assert_eq!(at_back, stamped_at);
 }
+
+/// `{ meta: { y, x } }`, `x` required from contract version 2 when `with_x`, else
+/// `{ meta: { y } }`: the type before and after the update that adds `x`.
+fn nested_required_since_document_type(
+    with_x: bool,
+) -> crate::data_contract::document_type::DocumentType {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+    let meta = if with_x {
+        platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": {
+                "y": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "x": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+            },
+            "required": ["y", "x"],
+            "additionalProperties": false,
+        })
+    } else {
+        platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": {
+                "y": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "required": ["y"],
+            "additionalProperties": false,
+        })
+    };
+    let schema = platform_value!({
+        "type": "object",
+        "properties": { "meta": meta },
+        "required": ["meta"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        platform_value::Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type")
+}
+
+fn meta_properties(members: &[(&str, &str)]) -> BTreeMap<String, Value> {
+    let meta = members
+        .iter()
+        .map(|(name, value)| {
+            (
+                Value::Text(name.to_string()),
+                Value::Text(value.to_string()),
+            )
+        })
+        .collect();
+    BTreeMap::from([("meta".to_string(), Value::Map(meta))])
+}
+
+/// The bytes of the user properties of a format-3 document of the nested type: the length
+/// prefix of `meta`, then its members.
+fn meta_bytes(serialized: &[u8]) -> &[u8] {
+    // version 3, stamp, id, owner id, revision, time flags (no time fields)
+    let (_, version_length) = u64::decode_var(serialized).expect("expected the version");
+    let (_, stamp_length) =
+        u64::decode_var(&serialized[version_length..]).expect("expected the stamp");
+    let header = version_length + stamp_length + 32 + 32 + 1 + 2;
+    &serialized[header..]
+}
+
+#[test]
+fn should_store_a_member_required_from_a_contract_version_with_a_presence_byte_at_every_stamp() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = nested_required_since_document_type(true);
+    let document_type_ref = document_type.as_ref();
+
+    // At and above the version `x` is required from, `x` keeps the presence byte an optional
+    // member carries: `meta` is `y` (length 1, "a", no presence byte: required at every
+    // version), then `x` (present: 1, length 1, "b")
+    for stamp in [Some(2), Some(3), Some(1), None] {
+        let properties = match stamp {
+            Some(stamp) if stamp >= 2 => meta_properties(&[("y", "a"), ("x", "b")]),
+            _ => meta_properties(&[("y", "a")]),
+        };
+        let document = stamped_document(stamp, properties, document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("expected the document to serialize");
+        let expected: &[u8] = match stamp {
+            Some(stamp) if stamp >= 2 => &[5, 1, b'a', 1, 1, b'b'],
+            _ => &[3, 1, b'a', 0],
+        };
+        assert_eq!(meta_bytes(&serialized), expected, "stamp {stamp:?}");
+
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected the document to deserialize");
+        assert_eq!(deserialized, document, "stamp {stamp:?}");
+    }
+}
+
+#[test]
+fn should_read_a_document_stored_before_its_object_gained_a_member() {
+    let platform_version = PlatformVersion::latest();
+    let before = nested_required_since_document_type(false);
+    let after = nested_required_since_document_type(true);
+
+    let document = stamped_document(Some(1), meta_properties(&[("y", "a")]), before.as_ref());
+    let serialized = document
+        .serialize_v3(before.as_ref())
+        .expect("expected the document to serialize under the type before the update");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, after.as_ref(), platform_version)
+        .expect("a document stored before the update must read under the updated type");
+    assert_eq!(
+        deserialized.properties,
+        meta_properties(&[("y", "a")]),
+        "the member the update added reads as absent"
+    );
+}

@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| **Where** | A top-level property listed in the document type's `required` |
+| **Where** | A top-level property listed in the document type's `required`; from protocol version 15 also a member of an object, listed in that object's `required` (or the `required` beside its `$ref`) |
 | **Value** | A contract version: an integer from 1 to 4294967295 |
 | **Default** | Absent: a property listed in `required` is required of every document |
 | **Since** | protocol version 14 |
-| **On update** | May only appear on a property the update adds, equal to the contract version the update creates (`DataContractInvalidRequiredFieldsUpdateError`, 10276). An existing annotation may not be added, changed or removed (`IncompatibleDocumentTypeSchemaError`, 10246). |
+| **On update** | May only appear on a property or object member the update adds, equal to the contract version the update creates (`DataContractInvalidRequiredFieldsUpdateError`, 10276). An existing annotation may not be added, changed or removed (`IncompatibleDocumentTypeSchemaError`, 10246). |
 | **Errors** | `DataContractInvalidRequiredFieldsUpdateError` (10276), `InvalidContractStructure` (10231), `IncompatibleDocumentTypeSchemaError` (10246), all at registration; `JsonSchemaError` (10101) for a new document without the property |
 
 ## Example
@@ -39,9 +39,39 @@ From protocol version 14, every create and replace stamps the document with the 
 - **Readers must expect gaps.** An app that reads the type should handle documents without the property: every document stamped below the annotation may lack it.
 - **No index on it.** A contract update cannot add an index to an existing document type (see [Indexes](indexes.md)), so a property added this way cannot be indexed on that type.
 
+## Members of an object
+
+From protocol version 15 an update may also add a required member to an object the type already has. The member goes after the object's existing members, carries `requiredSince` equal to the version the update creates, and is listed in the object's own `required`:
+
+```json
+"post": {
+  "type": "object",
+  "properties": {
+    "text": { "type": "string", "maxLength": 280, "position": 0 },
+    "meta": {
+      "type": "object",
+      "position": 1,
+      "properties": {
+        "author": { "type": "string", "maxLength": 64, "position": 0 },
+        "language": { "type": "string", "minLength": 2, "maxLength": 8, "requiredSince": 3, "position": 1 }
+      },
+      "required": ["author", "language"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["text", "meta"],
+  "additionalProperties": false
+}
+```
+
+- **New writes are held to it, older documents are left alone,** as for a top-level property: every `meta` created or replaced under version 3 or later must hold a `language`, and documents written earlier may lack it.
+- **Storage does not follow the stamp.** Such a member is stored with the presence byte an optional member carries, in every document whatever its stamp, so a document written before the update reads with the member absent.
+- **Listed in the object's own `required`.** A dotted name in the type's `required` (`"meta.language"`) cannot carry it: no `required` list gains or loses a dotted name on update (see [Document Shape](document-shape.md#required)).
+- **A shared definition.** A member of a `$defs` definition is required through the `required` beside each `$ref` that uses it. Every document type that references the definition must list the member there, or its parse refuses the `requiredSince`.
+
 ## Rules at registration
 
-- `requiredSince` sits only on a top-level property, and only on one listed in `required`. A nested property, or one that is not required, is refused (`InvalidContractStructure`, 10231). It cannot go on the elements of a typed array.
+- `requiredSince` sits only on a property listed as required: a top-level property in the type's `required`, or, from protocol version 15, an object's member in that object's `required` or the `required` beside its `$ref`. A property that is not required is refused (`InvalidContractStructure`, 10231), and so is a nested one before protocol version 15. It cannot go on the elements of a typed array.
 - The value is never higher than the contract's own version (10276): a property cannot be scheduled to become required later.
 - On a new contract, which is version 1, the value may only be 1 (10276).
 
@@ -52,7 +82,7 @@ On an update to an existing document type, which always creates the version one 
 - No property may leave `required` (10276).
 - A property's existing `requiredSince` may not be changed or removed, and one may not be added to an existing property (`IncompatibleDocumentTypeSchemaError`, 10246).
 
-A document type that the update adds has no older documents. Every `requiredSince` in it must still equal the version the update creates (10276).
+A document type that the update adds has no older documents. Every `requiredSince` in it, on its own properties and on its objects' members, must still equal the version the update creates (10276). So must one inside an object the update adds to an existing type, whose members may otherwise be required outright, since no stored document holds the object.
 
 ## See also
 

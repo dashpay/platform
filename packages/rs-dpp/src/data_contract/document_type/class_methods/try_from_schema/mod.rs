@@ -9168,9 +9168,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn should_reject_required_since_on_nested_property() {
-        let result = try_document_type_from_schema(json!({
+    /// An object whose member `inner` carries `requiredSince` 2, listed in the object's
+    /// `required` when `listed`.
+    fn nested_required_since_schema(listed: bool) -> serde_json::Value {
+        json!({
             "type": "object",
             "properties": {
                 "outer": {
@@ -9179,17 +9180,55 @@ mod tests {
                     "properties": {
                         "inner": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 2},
                     },
-                    "required": ["inner"],
+                    "required": if listed { json!(["inner"]) } else { json!([]) },
                     "additionalProperties": false
                 },
             },
             "required": [],
             "additionalProperties": false
-        }));
+        })
+    }
+
+    #[test]
+    fn should_reject_required_since_on_nested_property_at_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let result = try_document_type_from_schema_on_version(
+            nested_required_since_schema(true),
+            platform_version,
+        );
 
         assert!(
             result.is_err(),
-            "requiredSince on a nested property must be rejected"
+            "requiredSince on a nested property must be rejected at protocol version 14"
+        );
+    }
+
+    #[test]
+    fn should_parse_required_since_on_a_nested_property_its_object_requires() {
+        let document_type = try_document_type_from_schema(nested_required_since_schema(true))
+            .expect("a nested member its object requires may carry requiredSince");
+
+        let DocumentPropertyType::Object(members) =
+            &document_type.properties()["outer"].property_type
+        else {
+            panic!("expected outer to parse as an object");
+        };
+        let inner = &members["inner"];
+        assert!(inner.required);
+        assert_eq!(inner.required_since, Some(2));
+        assert!(
+            !inner.always_required(),
+            "a member required from a contract version is stored like an optional one"
+        );
+    }
+
+    #[test]
+    fn should_reject_required_since_on_a_nested_property_its_object_does_not_require() {
+        let result = try_document_type_from_schema(nested_required_since_schema(false));
+
+        assert!(
+            result.is_err(),
+            "requiredSince on a nested property its object does not require must be rejected"
         );
     }
 

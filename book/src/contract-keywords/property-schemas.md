@@ -83,9 +83,9 @@ An array that is neither is refused.
 A document is stored with its values one after another and no property names. `position` is the property's place in that sequence.
 
 - The top-level properties of a document type must use the positions 0, 1, 2 and so on, with no gap and no number used twice (10411). A top-level property without a `position` is refused.
-- The members of an object need a `position` too. Number them from 0 within the object; only the top level is checked for gaps.
+- The members of an object need a `position` too. Number them from 0 within the object; only the top level is checked for gaps. Inside an object, though, the stored order is the order of the object's `properties` map, not `position`.
 - A property that takes its schema from a [`$ref`](#ref) writes its `position` next to the `$ref`.
-- A property added by a contract update takes the next free position. An existing position can never change, or stored documents would be read in the wrong order.
+- A property added by a contract update takes the next free position. An existing position can never change, or stored documents would be read in the wrong order. A member added to an object also goes after the object's existing members in its `properties` map (from protocol version 15 an update that reorders them, or puts a member before them, is refused: `DocumentTypeUpdateError`, 40212).
 
 ## Strings
 
@@ -278,7 +278,7 @@ The two spellings are the same property: a value is validated, indexed and store
 | **Where** | Properties of type `object` |
 | **Value** | The same as at the top of a document type: see [Document Shape](document-shape.md) |
 | **Since** | protocol version 1 |
-| **On update** | Members may be added, never removed; `required` and `additionalProperties` are fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
+| **On update** | Members may be added after the existing ones, never removed or reordered (10246; reordering 40212 from protocol version 15); `required` follows the rules of the type's own `required` from protocol version 15 (10276) and is fixed before (10246); `additionalProperties` is fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
 | **Errors** | `JsonSchemaError` (10101) |
 
 ```json
@@ -296,7 +296,9 @@ The two spellings are the same property: a value is validated, indexed and store
 An object groups members under one property, as DPNS groups a name's records.
 
 - An object declares `properties`, 1 to 100 members each with a `position`, and `additionalProperties: false`, unless it takes its schema from a [`$ref`](#ref).
-- Its `required` names the members every value of the object must hold. It cannot change after the type exists, so a member added by an update is optional.
+- Its `required` names the members every value of the object must hold. A member is stored without a presence byte when the object's `required` names it, so on update, as for the type's own properties, a member keeps its requiredness and nothing leaves the list. From protocol version 15 a member added by an update may join the list with [`requiredSince`](required-since.md#members-of-an-object); before, the list is fixed and an added member is optional.
+- The members are stored in the order of the object's `properties` map. An update adds members after the existing ones; from protocol version 15 one that reorders them or puts a member before them is refused (40212). Tools that rewrite a schema's maps in another key order (sorting them, or putting integer-like keys first) produce such an update.
+- Under an [immutable](mutability.md) object, a member required from the new version leaves older documents unable to be replaced: a replace must add the member, and may not change the object.
 - An object is stored with its members inline. An object cannot be indexed, but a member can: an index names it by its dotted path, such as `records.identity`.
 
 ## `$ref`
@@ -331,7 +333,7 @@ A property of any document type of the contract then reads `"shippingAddress": {
 - A reference that does not resolve, or that leads back to itself, is refused (10207).
 - The property keeps its own `position`; the definition supplies everything else.
 - A definition may be written with a [shorthand](#shorthands-identifier-and-bytes): `"schemaDefs": { "owner": { "type": "identifier" } }`.
-- The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213).
+- The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213). An object definition's members follow the rules of [Objects](#objects) in every type that references it: members only after the existing ones. The definition's own `required` is fixed; a type requires a definition's member through the `required` beside its `$ref`.
 
 ## Annotations
 
