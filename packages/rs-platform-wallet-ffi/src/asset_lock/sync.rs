@@ -219,6 +219,37 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     out_proof_len: *mut usize,
     out_derivation_path: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("asset-lock resume", || {
+        asset_lock_manager_resume_inner(
+            handle,
+            txid,
+            vout,
+            timeout_secs,
+            out_proof_bytes,
+            out_proof_len,
+            out_derivation_path,
+        )
+    })
+}
+
+/// Body of [`asset_lock_manager_resume`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn asset_lock_manager_resume_inner(
+    handle: Handle,
+    txid: *const [u8; 32],
+    vout: u32,
+    timeout_secs: u64,
+    out_proof_bytes: *mut *mut u8,
+    out_proof_len: *mut usize,
+    out_derivation_path: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
     check_ptr!(txid);
     check_ptr!(out_proof_bytes);
     check_ptr!(out_proof_len);
@@ -245,15 +276,21 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
         }
     };
     let (proof, path) = unwrap_result_or_return!(result);
-    let bytes = unwrap_result_or_return!(dpp::bincode::encode_to_vec(
-        &proof,
-        dpp::bincode::config::standard()
-    ));
+    // The resumed lock is tracked and unconsumed: a failure to hand the result
+    // back names it as held. Both fallible steps run before any out-parameter
+    // is written, so a failure leaves nothing for the host to free.
+    let bytes = match dpp::bincode::encode_to_vec(&proof, dpp::bincode::config::standard()) {
+        Ok(bytes) => bytes,
+        Err(e) => return super::lock_held_handoff_failure(out_point, e.into()),
+    };
+    let path_c = match CString::new(path.to_string()) {
+        Ok(path_c) => path_c,
+        Err(e) => return super::lock_held_handoff_failure(out_point, e.into()),
+    };
     let len = bytes.len();
     let boxed = bytes.into_boxed_slice();
     *out_proof_bytes = Box::into_raw(boxed) as *mut u8;
     *out_proof_len = len;
-    let path_c = unwrap_result_or_return!(CString::new(path.to_string()));
     *out_derivation_path = path_c.into_raw();
     PlatformWalletFFIResult::ok()
 }
@@ -300,6 +337,26 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 /// from the record.
 #[no_mangle]
 pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
+    handle: Handle,
+    txid: *const [u8; 32],
+    vout: u32,
+    timeout_secs: u64,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("asset-lock catch-up", || {
+        asset_lock_manager_catch_up_blocking_inner(handle, txid, vout, timeout_secs)
+    })
+}
+
+/// Body of [`asset_lock_manager_catch_up_blocking`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn asset_lock_manager_catch_up_blocking_inner(
     handle: Handle,
     txid: *const [u8; 32],
     vout: u32,

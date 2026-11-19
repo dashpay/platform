@@ -112,6 +112,42 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
     out_uri: *mut *mut c_char,
     out_outpoint: *mut OutPointFFI,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("invitation creation", || {
+        platform_wallet_create_invitation_inner(
+            wallet_handle,
+            amount_duffs,
+            funding_account_index,
+            inviter_identity_id,
+            inviter_username,
+            now_unix,
+            core_signer_handle,
+            out_uri,
+            out_outpoint,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_create_invitation`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_wallet_create_invitation_inner(
+    wallet_handle: Handle,
+    amount_duffs: u64,
+    funding_account_index: u32,
+    inviter_identity_id: *const u8,
+    inviter_username: *const c_char,
+    now_unix: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_uri: *mut *mut c_char,
+    out_outpoint: *mut OutPointFFI,
+) -> PlatformWalletFFIResult {
     check_ptr!(core_signer_handle);
     check_ptr!(out_uri);
     check_ptr!(out_outpoint);

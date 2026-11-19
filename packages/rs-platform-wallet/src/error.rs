@@ -685,12 +685,14 @@ pub enum PlatformWalletError {
     },
 
     /// `source` ended a payment that had already dispatched funds: a Core
-    /// asset lock it broadcast, or seed batches it committed. The diagnostic
-    /// (and the FFI code) stay `source`'s; only the payment class changes, so
-    /// a refusal that followed the dispatch is never reported as `NotSent`.
-    /// `held_lock` names the tracked asset lock the payment holds and goes on
-    /// by resuming, when the caller knows one; `None` when nothing it can
-    /// resume is known.
+    /// asset lock it broadcast or resumed, a DPNS preorder, or seed batches
+    /// it committed. The diagnostic stays `source`'s, and so does the FFI
+    /// code on every path that reports it: the blanket conversion and the
+    /// typed arms of the shielded funding mapper both read
+    /// [`Self::dispatched_source`]. Only the payment class changes, so a
+    /// refusal that followed the dispatch is never reported as `NotSent`.
+    /// `held_lock` names the tracked, unconsumed asset lock the payment holds
+    /// and goes on by resuming; `None` when nothing it can resume is known.
     #[error("{source}")]
     PaymentAlreadyDispatched {
         held_lock: Option<dashcore::OutPoint>,

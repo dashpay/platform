@@ -768,38 +768,6 @@ pub(crate) fn catch_spend_panic(
     )
 }
 
-/// Post-panic guidance for the asset-lock funding exports. Paired with
-/// `ErrorTransactionBroadcastUnconfirmed` in [`catch_funding_panic`].
-const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast — do \
-     NOT retry; the funding UTXOs stay reserved, and the reservation TTL or the next sync \
-     reconciles the outcome (a tracked lock resumes via the resume entry point).";
-
-/// [`catch_panic_to_code`] specialized for the asset-lock funding exports.
-///
-/// The panic is mapped to
-/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], NOT to a definitive
-/// failure code: a panic can strike after the asset-lock transaction reached the wire (broadcast
-/// precedes the ChainLock wait, the Platform submit, and the note bookkeeping), so the outcome
-/// is genuinely ambiguous. That code's contract is exactly the conservative one this needs — the
-/// host must not auto-retry, the funding UTXOs' reservation is still held (`ReservationToken` is
-/// a plain id, not a drop-release guard, so the unwind does not free it and an immediate retry
-/// fails at input selection instead of double-spending), and the reservation TTL or a sync
-/// observing the transaction reconciles the outcome; a tracked lock is resumable through
-/// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`. The result's payment class
-/// is the wallet's [`panicked_payment_class`]; this guard only marshals it.
-pub(crate) fn catch_funding_panic(
-    operation: &str,
-    body: impl FnOnce() -> PlatformWalletFFIResult,
-) -> PlatformWalletFFIResult {
-    catch_panic_to_code(
-        operation,
-        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
-        Some(panicked_payment_class()),
-        FUNDING_PANIC_GUIDANCE,
-        body,
-    )
-}
-
 /// Preserve the typed funding reports that hosts branch on across the FFI
 /// boundary while keeping every other funding failure on the existing generic
 /// error path.
@@ -859,35 +827,37 @@ pub(crate) fn catch_funding_panic(
 ///   build and the resume entry point. A host that was handed the lock's
 ///   outpoint by `on_asset_lock_built` tells from these whether the lock is
 ///   gone (definite rejection) or kept and resumable.
+///
+/// Each arm reads the error's
+/// [`dispatched_source`](PlatformWalletError::dispatched_source): a typed
+/// refusal the wallet wrapped as `PaymentAlreadyDispatched` (one that followed
+/// the lock's broadcast, now `LockHeld` or `MaybeSent`) keeps its typed code
+/// here as it does through the blanket conversion, and every arm keeps the
+/// wrapper's payment class.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
-    match result {
-        Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
-        Err(
-            e @ (PlatformWalletError::AssetLockNotTracked(_)
-            | PlatformWalletError::AssetLockFundingMismatch { .. }
-            | PlatformWalletError::AssetLockRecipientMismatch { .. }),
-        ) => e.into(),
-        Err(
-            e @ (PlatformWalletError::AssetLockInputConflict { .. }
-            | PlatformWalletError::AssetLockInputContested { .. }),
-        ) => e.into(),
-        Err(
-            e @ (PlatformWalletError::AssetLockInsufficientFunds { .. }
-            | PlatformWalletError::AssetLockTooManyInputs { .. }
-            | PlatformWalletError::AssetLockFundsAwaitingFinality { .. }),
-        ) => e.into(),
-        Err(
-            e @ (PlatformWalletError::TransactionBroadcast(_)
-            | PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
-        ) => e.into(),
+    let e = match result {
+        Ok(()) => return PlatformWalletFFIResult::ok(),
+        Err(e) => e,
+    };
+    match e.dispatched_source() {
+        PlatformWalletError::AssetLockAlreadyConsumed(_) => e.into(),
+        PlatformWalletError::AssetLockNotTracked(_)
+        | PlatformWalletError::AssetLockFundingMismatch { .. }
+        | PlatformWalletError::AssetLockRecipientMismatch { .. } => e.into(),
+        PlatformWalletError::AssetLockInputConflict { .. }
+        | PlatformWalletError::AssetLockInputContested { .. } => e.into(),
+        PlatformWalletError::AssetLockInsufficientFunds { .. }
+        | PlatformWalletError::AssetLockTooManyInputs { .. }
+        | PlatformWalletError::AssetLockFundsAwaitingFinality { .. } => e.into(),
+        PlatformWalletError::TransactionBroadcast(_)
+        | PlatformWalletError::TransactionBroadcastUnconfirmed(_) => e.into(),
         // The fold keeps the error's own payment-delivery class: a
         // `FinalityTimeout` here holds its asset lock (`LockHeld`), a
         // pre-dispatch failure never sent anything (`NotSent`).
-        Err(e) => PlatformWalletFFIResult::err_from_wallet_error(
+        _ => PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
             &e,
@@ -1656,6 +1626,44 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     on_asset_lock_built: AssetLockBuiltFn,
     on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("shielded fund-from-asset-lock", || {
+        platform_wallet_manager_shielded_fund_from_asset_lock_inner(
+            handle,
+            wallet_id_bytes,
+            account_index,
+            amount_duffs,
+            recipient_raw_43,
+            surplus_output_ptr,
+            surplus_output_len,
+            core_signer_handle,
+            on_asset_lock_built,
+            on_asset_lock_built_context,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_fund_from_asset_lock`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_wallet_manager_shielded_fund_from_asset_lock_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    amount_duffs: u64,
+    recipient_raw_43: *const u8,
+    surplus_output_ptr: *const u8,
+    surplus_output_len: usize,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
     check_ptr!(core_signer_handle);
@@ -1967,6 +1975,37 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
     surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
 ) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("shielded resume fund-from-asset-lock", || {
+        platform_wallet_manager_shielded_resume_fund_from_asset_lock_inner(
+            handle,
+            wallet_id_bytes,
+            out_point,
+            recipient_raw_43,
+            surplus_output_ptr,
+            surplus_output_len,
+            core_signer_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_resume_fund_from_asset_lock`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn platform_wallet_manager_shielded_resume_fund_from_asset_lock_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_point: *const OutPointFFI,
+    recipient_raw_43: *const u8,
+    surplus_output_ptr: *const u8,
+    surplus_output_len: usize,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(out_point);
     check_ptr!(recipient_raw_43);
@@ -2092,6 +2131,48 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account: u32,
+    target_total_notes: u64,
+    funding_account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    progress_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut std::os::raw::c_void,
+            batch_index: u64,
+            batches_total_estimate: u64,
+            pool_notes_now: u64,
+            target: u64,
+        ),
+    >,
+    progress_ctx: *mut std::os::raw::c_void,
+) -> PlatformWalletFFIResult {
+    // A panic must not unwind across this `extern "C"` frame: it can strike after the
+    // asset lock reached the wire, so it becomes the ambiguous funding result.
+    catch_funding_panic("shielded seed pool", || {
+        platform_wallet_manager_shielded_seed_pool_notes_inner(
+            handle,
+            wallet_id_bytes,
+            account,
+            target_total_notes,
+            funding_account_index,
+            core_signer_handle,
+            progress_fn,
+            progress_ctx,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_seed_pool_notes`].
+///
+/// An ordinary Rust function, so a panic unwinds into [`catch_funding_panic`] instead of
+/// across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn platform_wallet_manager_shielded_seed_pool_notes_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     account: u32,
@@ -3434,6 +3515,65 @@ mod tests {
             map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
         );
+    }
+
+    /// A typed refusal the wallet classed as following the lock's broadcast
+    /// (`PaymentAlreadyDispatched`) keeps its typed code, as through the
+    /// blanket conversion, and carries the wrapper's class: the held lock, or
+    /// `MaybeSent`.
+    #[test]
+    fn map_asset_lock_funding_result_keeps_typed_codes_under_a_dispatched_class() {
+        let out_point = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([5; 32]),
+            vout: 2,
+        };
+        type Source = fn(dashcore::OutPoint) -> PlatformWalletError;
+        let cases: [(Source, PlatformWalletFFIResultCode); 3] = [
+            (
+                |_| PlatformWalletError::TransactionBroadcastUnconfirmed("ambiguous".into()),
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            ),
+            (
+                PlatformWalletError::AssetLockNotTracked,
+                PlatformWalletFFIResultCode::ErrorAssetLockNotTracked,
+            ),
+            (
+                |_| PlatformWalletError::AssetLockInsufficientFunds {
+                    available: 1,
+                    required: 2,
+                },
+                PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            ),
+        ];
+        for (source, code) in cases {
+            for held_lock in [Some(out_point), None] {
+                let rendered = source(out_point).to_string();
+                let result = map_asset_lock_funding_result(
+                    Err(PlatformWalletError::PaymentAlreadyDispatched {
+                        held_lock,
+                        source: Box::new(source(out_point)),
+                    }),
+                    "shielded fund-from-asset-lock",
+                );
+                assert_eq!(result.code, code, "{rendered}");
+                assert_eq!(message_of(&result), rendered);
+                assert!(!result.retryable, "{rendered}");
+                match held_lock {
+                    Some(out_point) => {
+                        assert_eq!(
+                            result.payment_delivery,
+                            PlatformWalletFFIPaymentDelivery::LockHeld
+                        );
+                        assert_eq!(result.held_asset_lock.txid, [5; 32]);
+                        assert_eq!(result.held_asset_lock.vout, out_point.vout);
+                    }
+                    None => assert_eq!(
+                        result.payment_delivery,
+                        PlatformWalletFFIPaymentDelivery::MaybeSent
+                    ),
+                }
+            }
+        }
     }
 
     /// Every arm of the identity-create mapping carries the wallet error's own

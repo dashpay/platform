@@ -3,7 +3,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::changeset::PersistenceErrorKind;
-use platform_wallet::{PaymentDelivery, PlatformWalletError};
+use platform_wallet::{panicked_payment_class, PaymentDelivery, PlatformWalletError};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -1826,6 +1826,41 @@ pub(crate) fn catch_panic_to_code(
             }
         }
     }
+}
+
+/// Post-panic guidance for the asset-lock funding exports. Paired with
+/// `ErrorTransactionBroadcastUnconfirmed` in [`catch_funding_panic`].
+const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast — do \
+     NOT retry; the funding UTXOs stay reserved, and the reservation TTL or the next sync \
+     reconciles the outcome (a tracked lock resumes via the resume entry point).";
+
+/// [`catch_panic_to_code`] specialized for the asset-lock funding exports: every export that
+/// builds, broadcasts, resumes or consumes an asset lock (identity registration and top-up,
+/// platform-address and shielded funding, the seed pool, the invitation voucher, the bare
+/// funded-proof build and the resume).
+///
+/// The panic is mapped to
+/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], NOT to a definitive
+/// failure code: a panic can strike after the asset-lock transaction reached the wire (broadcast
+/// precedes the ChainLock wait, the Platform submit, and the bookkeeping), so the outcome
+/// is genuinely ambiguous. That code's contract is exactly the conservative one this needs — the
+/// host must not auto-retry, the funding UTXOs' reservation is still held (`ReservationToken` is
+/// a plain id, not a drop-release guard, so the unwind does not free it and an immediate retry
+/// fails at input selection instead of double-spending), and the reservation TTL or a sync
+/// observing the transaction reconciles the outcome; a tracked lock is resumable through the
+/// flow's resume entry point. The result's payment class is the wallet's
+/// [`panicked_payment_class`]; this guard only marshals it.
+pub(crate) fn catch_funding_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        Some(panicked_payment_class()),
+        FUNDING_PANIC_GUIDANCE,
+        body,
+    )
 }
 
 #[cfg(test)]
