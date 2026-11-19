@@ -21,11 +21,16 @@ internal fun interface ResumeIdentityNativeCall {
         outpointTxid: ByteArray,
         outpointVout: Int,
         identityIndex: Int,
+        slotToken: Long,
         pubkeysBlob: ByteArray,
         signerHandle: Long,
         coreSignerHandle: Long,
         consumeInvitationVoucher: Boolean,
     ): IdentityRegistrationNativeResult
+}
+
+internal fun interface ReleaseInvitationClaimSlotNativeCall {
+    fun call(walletHandle: Long, invitationOutPoint: ByteArray)
 }
 
 internal fun interface ClaimInvitationNativeCall {
@@ -77,7 +82,74 @@ class IdentityRegistration internal constructor(
         ManagedIdentityLookupNativeCall(TokensNative::getManagedIdentity),
     private val cachedContestedDpnsNative: CachedContestedDpnsNativeCall =
         CachedContestedDpnsNativeCall(TokensNative::managedIdentityContestedDpnsNames),
+    private val acquireRegistrationSlotNative: (Long) -> LongArray =
+        IdentityNative::acquireRegistrationSlot,
+    private val acquireInvitationClaimSlotNative: (Long, String) -> ByteArray =
+        IdentityNative::acquireInvitationClaimSlot,
+    private val releaseRegistrationSlotNative: (Long, Long) -> Unit =
+        IdentityNative::releaseRegistrationSlot,
+    private val releaseInvitationClaimSlotNative: ReleaseInvitationClaimSlotNativeCall =
+        ReleaseInvitationClaimSlotNativeCall(IdentityNative::releaseInvitationClaimSlot),
 ) {
+
+    companion object {
+        /**
+         * How many times in a row a host acquires a new slot after
+         * [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain] before giving
+         * up. Rust's `IDENTITY_SLOT_TAKEN_RETRY_LIMIT` (pinned by a
+         * `rs-unified-sdk-jni` test).
+         */
+        const val IDENTITY_SLOT_TAKEN_RETRY_LIMIT: Int = 5
+    }
+
+    /**
+     * Lease an identity slot for a new registration: the wallet chooses the
+     * index. Derive the identity keys at [RegistrationSlot.identityIndex] and
+     * pass the slot to [registerWithWalletFunding] or
+     * [reclaimInvitationAsNewIdentity], or [releaseRegistrationSlot] it when
+     * the registration is abandoned before that call.
+     */
+    suspend fun acquireRegistrationSlot(walletHandle: Long): RegistrationSlot = gate.op {
+        val longs = mapNativeErrors { acquireRegistrationSlotNative(walletHandle) }
+        check(longs.size == 2) { "native registration slot returned ${longs.size} values" }
+        check(longs[0] in 0..Int.MAX_VALUE.toLong()) {
+            "native registration slot returned identityIndex ${longs[0]}"
+        }
+        RegistrationSlot(identityIndex = longs[0].toInt(), slotToken = longs[1])
+    }
+
+    /**
+     * Give up [slot] of an abandoned registration. A slot that holds no
+     * lease any more (its registration landed, or Rust released it with
+     * [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain]) is not an error.
+     */
+    suspend fun releaseRegistrationSlot(walletHandle: Long, slot: RegistrationSlot): Unit = gate.op {
+        mapNativeErrors { releaseRegistrationSlotNative(walletHandle, slot.slotToken) }
+    }
+
+    /**
+     * Lease the identity slot for a claim of the invitation link [uri]; a
+     * retried claim of the same invitation gets the same slot. Costs one
+     * funding-tx fetch. The lease is stored durably. The [uri] is a bearer
+     * credential: never log it.
+     */
+    suspend fun acquireInvitationClaimSlot(walletHandle: Long, uri: String): InvitationClaimSlot =
+        gate.op {
+            val blob = mapNativeErrors { acquireInvitationClaimSlotNative(walletHandle, uri) }
+            InvitationClaimSlot.decode(blob)
+        }
+
+    /**
+     * Give up [slot] of an invitation claim abandoned before it was sent.
+     * Rust refuses while the claim may have reached Platform (only its
+     * outcome frees the slot then); a caller treats that refusal as "keep it".
+     */
+    suspend fun releaseInvitationClaimSlot(walletHandle: Long, slot: InvitationClaimSlot): Unit =
+        gate.op {
+            mapNativeErrors {
+                releaseInvitationClaimSlotNative.call(walletHandle, slot.invitationOutPoint)
+            }
+        }
 
     /** One canonical network sync followed by one fresh cached snapshot. */
     data class ContestedDpnsSnapshot(
@@ -174,6 +246,8 @@ class IdentityRegistration internal constructor(
                 outpointTxid = lock.outpointTxid,
                 outpointVout = lock.outpointVout,
                 identityIndex = identityIndex,
+                // The tracked lock holds its index; no slot lease is read.
+                slotToken = 0L,
                 pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
                 signerHandle = signerHandle,
                 coreSignerHandle = coreSignerHandle,
@@ -210,7 +284,8 @@ class IdentityRegistration internal constructor(
      * not a [TrackedAssetLock] — invitation locks are deliberately
      * excluded from the generic tracked-lock recovery model, and no
      * funding-type or registration-index gate applies: the identity slot
-     * is freely chosen (next unused). [keys] carries the **base 4-key**
+     * is the one [acquireRegistrationSlot] leased ([slot]), and [keys] are
+     * derived at its index. [keys] carries the **base 4-key**
      * registration set (`includeDashPayKeys = false`) — a reclaim sends
      * no contact request, matching iOS's `authKeyCount = 4`.
      * `consumeInvitationVoucher = true` is the explicit authorization
@@ -222,7 +297,7 @@ class IdentityRegistration internal constructor(
         walletHandle: Long,
         outPointTxid: ByteArray,
         outPointVout: Int,
-        identityIndex: Int,
+        slot: RegistrationSlot,
         keys: RegistrationKeySet,
         signerHandle: Long,
         coreSignerHandle: Long,
@@ -231,16 +306,19 @@ class IdentityRegistration internal constructor(
             "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
         }
         require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        require(keys.identityIndex == identityIndex) {
-            "reclaim keys use identityIndex ${keys.identityIndex}, expected $identityIndex"
+        require(slot.identityIndex >= 0) {
+            "identityIndex must be non-negative, got ${slot.identityIndex}"
+        }
+        require(keys.identityIndex == slot.identityIndex) {
+            "reclaim keys use identityIndex ${keys.identityIndex}, expected ${slot.identityIndex}"
         }
         val native = mapNativeErrors {
             resumeNative.call(
                 walletHandle = walletHandle,
                 outpointTxid = outPointTxid,
                 outpointVout = outPointVout,
-                identityIndex = identityIndex,
+                identityIndex = slot.identityIndex,
+                slotToken = slot.slotToken,
                 pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
                 signerHandle = signerHandle,
                 coreSignerHandle = coreSignerHandle,
@@ -279,6 +357,10 @@ class IdentityRegistration internal constructor(
      * [previewRegistrationKeySet]). No core signer: the asset-lock's outer
      * signature uses the link's raw voucher key.
      *
+     * [slot] is the one [acquireInvitationClaimSlot] leased for this [uri];
+     * [keys] are derived at its index. Rust refuses an index the claim does
+     * not lease.
+     *
      * The [uri] is a bearer credential (it embeds the one-time voucher
      * key) — this wrapper never logs it and callers must not either.
      *
@@ -288,21 +370,20 @@ class IdentityRegistration internal constructor(
     suspend fun claimInvitation(
         walletHandle: Long,
         uri: String,
-        identityIndex: Int,
+        slot: InvitationClaimSlot,
         keys: RegistrationKeySet,
         signerHandle: Long,
         // Long for the same 2038 reason as Dashpay.createInvitation.
         nowUnix: Long = System.currentTimeMillis() / 1000L,
     ): ByteArray = gate.op {
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        require(keys.identityIndex == identityIndex) {
-            "claim keys use identityIndex ${keys.identityIndex}, expected $identityIndex"
+        require(keys.identityIndex == slot.identityIndex) {
+            "claim keys use identityIndex ${keys.identityIndex}, expected ${slot.identityIndex}"
         }
         val native = mapNativeErrors {
             claimInvitationNative.call(
                 walletHandle = walletHandle,
                 uri = uri,
-                identityIndex = identityIndex,
+                identityIndex = slot.identityIndex,
                 pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
                 signerHandle = signerHandle,
                 nowUnix = nowUnix,
@@ -400,7 +481,12 @@ class IdentityRegistration internal constructor(
      * single entry point the registration coordinator's body calls. [keys] are
      * the rich registration rows (built via
      * [RegistrationKeys.buildRegistrationRows]); each row's private half must
-     * already be derived + persisted (see [previewRegistrationKeySet]).
+     * already be derived + persisted (see [previewRegistrationKeySet]) at
+     * the index of [slot], the one [acquireRegistrationSlot] leased.
+     *
+     * Throws [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain] before
+     * anything is funded when the keys at that index already belong to an
+     * identity on Platform: acquire a slot again and derive the keys there.
      *
      * @return the 32-byte identity id.
      */
@@ -408,20 +494,23 @@ class IdentityRegistration internal constructor(
         walletHandle: Long,
         amountDuffs: Long,
         accountIndex: Int,
-        identityIndex: Int,
+        slot: RegistrationSlot,
         keys: List<IdentityPubkey>,
         signerHandle: Long,
         coreSignerHandle: Long,
     ): ByteArray = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(slot.identityIndex >= 0) {
+            "identityIndex must be non-negative, got ${slot.identityIndex}"
+        }
         mapNativeErrors {
             IdentityNative.registerIdentityWithFunding(
                 walletHandle,
                 amountDuffs,
                 accountIndex,
-                identityIndex,
+                slot.identityIndex,
+                slot.slotToken,
                 IdentityPubkeyCodec.encode(keys),
                 signerHandle,
                 coreSignerHandle,

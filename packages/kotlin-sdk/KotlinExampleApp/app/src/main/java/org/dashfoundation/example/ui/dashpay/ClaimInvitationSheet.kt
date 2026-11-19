@@ -13,6 +13,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,11 +27,13 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.identity.InvitationClaimSlot
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.tokens.InvitationPreview
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.DashpayKeyProvisioning
+import org.dashfoundation.example.services.IdentitySlotRetry
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 
@@ -89,6 +92,27 @@ fun ClaimInvitationSheet(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // Post-claim "Add <username>?" prompt payload: (username, new identity id).
     var contactPrompt by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
+    // The slot the wallet last leased to this sheet's claim; given back when
+    // the sheet closes.
+    var heldClaimSlot by remember { mutableStateOf<HeldClaimSlot?>(null) }
+
+    // Closing gives the slot back. A landed claim already freed it (not an
+    // error), and the wallet refuses while a claim may have reached Platform
+    // (only its outcome frees the slot then): a refusal means "keep it". A
+    // claim still running owns its slot.
+    DisposableEffect(Unit) {
+        onDispose {
+            val held = heldClaimSlot
+            val mgr = manager
+            if (held != null && mgr != null && !isClaiming) {
+                container.applicationScope.launch {
+                    runCatching {
+                        mgr.identityRegistration.releaseInvitationClaimSlot(held.walletHandle, held.slot)
+                    }
+                }
+            }
+        }
+    }
 
     // Claim wallet: the DashPay tab's ACTIVE identity's wallet (passed by
     // the host — the user's actual selection, matching iOS), else the first
@@ -133,54 +157,52 @@ fun ClaimInvitationSheet(
         container.applicationScope.launch {
             try {
                 val newIdentityId = withContext(NonCancellable) {
-                    // Next-unused spans BOTH committed identities (Room) and
-                    // slots held by in-flight registrations on the app-scoped
-                    // coordinator — a concurrent create-identity flow holds
-                    // its slot before any Room row exists.
-                    val heldByCoordinator = container.registrationCoordinator
-                        .controllers.value.keys
-                        .filter { it.walletIdHex == wallet.walletId.toHex() }
-                        .map { it.identityIndex }
-                    val identityIndex = InvitationReclaimLogic.nextUnusedIdentityIndex(
-                        walletOwned
-                            .filter { it.walletId?.contentEquals(wallet.walletId) == true }
-                            .map { it.identityIndex } + heldByCoordinator,
-                    )
-                    // Full fresh-registration set: base four + the DashPay
-                    // enc/dec pair, pre-persisted before the broadcast.
-                    val previews = mgr.identityRegistration.previewRegistrationKeySet(
-                        walletHandle = wallet.handle,
-                        mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                        identityIndex = identityIndex,
-                        count = RegistrationKeys.keyCount(includeDashPayKeys = true),
-                    )
-                    val keySet = DashpayKeyProvisioning.provision(
-                        previews = previews,
-                        includeDashPayKeys = true,
-                        walletId = wallet.walletId,
-                        persister = { keyHex, priv, owner ->
-                            container.walletStorage.storePrivateKey(
-                                keyHex, priv, ownerWalletId = owner,
-                            )
-                        },
-                    )
-                    try {
-                        mgr.identityRegistration.claimInvitation(
+                    // The wallet chooses the index: the slot it leases to
+                    // this invitation (the same one on a retried claim).
+                    suspend fun acquireSlot() = mgr.identityRegistration
+                        .acquireInvitationClaimSlot(wallet.handle, uri)
+                        .also { heldClaimSlot = HeldClaimSlot(wallet.handle, it) }
+                    IdentitySlotRetry.run(
+                        first = acquireSlot(),
+                        reacquire = { acquireSlot() },
+                    ) { slot ->
+                        val identityIndex = slot.identityIndex
+                        // Full fresh-registration set: base four + the DashPay
+                        // enc/dec pair, pre-persisted before the broadcast.
+                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
-                            uri = uri,
+                            mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            keys = keySet,
-                            signerHandle = mgr.signerHandle,
+                            count = RegistrationKeys.keyCount(includeDashPayKeys = true),
                         )
-                    } catch (e: DashSdkError.PlatformWallet.InvitationClaimedByThisWallet) {
-                        // The invitation's identity is this wallet's. When the
-                        // wallet already lists it, the claim continues with it;
-                        // otherwise the outer handler points to a rescan.
-                        val claimedId = Base58.decodeIdentifier(e.identityId) ?: throw e
-                        walletOwned.firstOrNull {
-                            it.walletId?.contentEquals(wallet.walletId) == true &&
-                                it.identityId.contentEquals(claimedId)
-                        }?.identityId ?: throw e
+                        val keySet = DashpayKeyProvisioning.provision(
+                            previews = previews,
+                            includeDashPayKeys = true,
+                            walletId = wallet.walletId,
+                            persister = { keyHex, priv, owner ->
+                                container.walletStorage.storePrivateKey(
+                                    keyHex, priv, ownerWalletId = owner,
+                                )
+                            },
+                        )
+                        try {
+                            mgr.identityRegistration.claimInvitation(
+                                walletHandle = wallet.handle,
+                                uri = uri,
+                                slot = slot,
+                                keys = keySet,
+                                signerHandle = mgr.signerHandle,
+                            )
+                        } catch (e: DashSdkError.PlatformWallet.InvitationClaimedByThisWallet) {
+                            // The invitation's identity is this wallet's. When the
+                            // wallet already lists it, the claim continues with it;
+                            // otherwise the outer handler points to a rescan.
+                            val claimedId = Base58.decodeIdentifier(e.identityId) ?: throw e
+                            walletOwned.firstOrNull {
+                                it.walletId?.contentEquals(wallet.walletId) == true &&
+                                    it.identityId.contentEquals(claimedId)
+                            }?.identityId ?: throw e
+                        }
                     }
                 }
                 val username = preview.inviterUsername
@@ -333,3 +355,7 @@ fun ClaimInvitationSheet(
         )
     }
 }
+
+
+/** A claim slot and the wallet that leased it. */
+private class HeldClaimSlot(val walletHandle: Long, val slot: InvitationClaimSlot)

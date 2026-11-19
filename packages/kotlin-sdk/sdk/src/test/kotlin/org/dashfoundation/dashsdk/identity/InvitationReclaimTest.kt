@@ -50,9 +50,11 @@ class InvitationReclaimTest {
         val destroyed = mutableListOf<Long>()
         var capturedConsume = false
         var capturedIndex = -1
+        var capturedToken = 0L
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, index, _, _, _, consume ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, index, token, _, _, _, consume ->
                 capturedIndex = index
+                capturedToken = token
                 capturedConsume = consume
                 IdentityRegistrationNativeResult(ByteArray(32) { 8 }, 77L)
             },
@@ -63,7 +65,7 @@ class InvitationReclaimTest {
             walletHandle = 1,
             outPointTxid = ByteArray(32) { 4 },
             outPointVout = 0,
-            identityIndex = 7,
+            slot = RegistrationSlot(identityIndex = 7, slotToken = -9L),
             keys = keySet(identityIndex = 7),
             signerHandle = 2,
             coreSignerHandle = 3,
@@ -71,6 +73,7 @@ class InvitationReclaimTest {
 
         assertTrue(capturedConsume)
         assertEquals(7, capturedIndex)
+        assertEquals(-9L, capturedToken)
         assertEquals(listOf(77L), destroyed)
         assertEquals(32, identityId.size)
     }
@@ -79,7 +82,7 @@ class InvitationReclaimTest {
     fun `reclaim as new identity rejects a wrong-slot key set before JNI`() = runTest {
         var called = false
         val registration = IdentityRegistration(
-            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _, _ ->
                 called = true
                 IdentityRegistrationNativeResult(ByteArray(32), 1)
             },
@@ -87,7 +90,7 @@ class InvitationReclaimTest {
 
         val failure = runCatching {
             registration.reclaimInvitationAsNewIdentity(
-                1, ByteArray(32), 0, 7, keySet(identityIndex = 6), 2, 3,
+                1, ByteArray(32), 0, RegistrationSlot(7, 1L), keySet(identityIndex = 6), 2, 3,
             )
         }
         assertTrue(failure.exceptionOrNull() is IllegalArgumentException)

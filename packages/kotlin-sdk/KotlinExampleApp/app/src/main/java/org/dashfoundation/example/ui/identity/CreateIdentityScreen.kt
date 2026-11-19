@@ -29,10 +29,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
+import org.dashfoundation.dashsdk.identity.RegistrationSlot
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.di.LocalAppContainer
@@ -40,6 +44,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.RegistrationProgress
 import org.dashfoundation.example.services.DashpayKeyProvisioning
 import org.dashfoundation.example.services.IdentityRegistrationController
+import org.dashfoundation.example.services.IdentitySlotRetry
 import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
@@ -93,7 +98,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
             amountText = shieldedDenominations.first().first.toString()
         }
     }
-    var identityIndexText by remember { mutableStateOf("0") }
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var recoveryLocks by remember { mutableStateOf(emptyList<TrackedAssetLock>()) }
@@ -115,9 +119,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
             emptyList()
         }
         selectedRecoveryLock = recoveryLocks.firstOrNull()
-        if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
-            selectedRecoveryLock?.let { identityIndexText = it.registrationIndex.toString() }
-        }
     }
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -179,16 +180,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 recoveryLocks = recoveryLocks,
                 recoveryLoadError = recoveryLoadError,
                 selectedRecoveryLock = selectedRecoveryLock,
-                onRecoveryLockChange = {
-                    selectedRecoveryLock = it
-                    identityIndexText = it.registrationIndex.toString()
-                },
+                onRecoveryLockChange = { selectedRecoveryLock = it },
                 shieldedDenominations = shieldedDenominations,
-            )
-
-            KeysSection(
-                identityIndexText = identityIndexText,
-                onIndexChange = { identityIndexText = it.filter(Char::isDigit) },
             )
 
             SubmitButton(
@@ -200,15 +193,13 @@ fun CreateIdentityScreen(navController: NavHostController) {
                         amountText.toLongOrNull(),
                     ) &&
                     (fundingSource != CreateIdentityFundingSource.AssetLockResume ||
-                        selectedRecoveryLock != null) &&
-                    identityIndexText.toIntOrNull() != null,
+                        selectedRecoveryLock != null),
                 modifier = Modifier.fillMaxWidth().testTag("createIdentity.submit"),
             ) {
                 val wallet = selectedWallet ?: return@SubmitButton
                 val submission = createIdentitySubmissionSnapshot(
                     fundingSource = fundingSource,
                     amountText = amountText,
-                    identityIndexText = identityIndexText,
                     selectedRecoveryLock = selectedRecoveryLock,
                 ) ?: return@SubmitButton
                 val amount = submission.amount
@@ -224,7 +215,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     }
                     return@SubmitButton
                 }
-                val identityIndex = submission.identityIndex
                 val mgr = manager ?: return@SubmitButton
                 val registerDashPayKeys = submission.includesDashPayKeys
                 isSubmitting = true
@@ -280,14 +270,13 @@ fun CreateIdentityScreen(navController: NavHostController) {
                         // new identity can send contact requests immediately;
                         // asset-lock resume keeps the base 4 it originally
                         // committed to on-chain (§ DashPay resume exclusion).
-                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
-                            walletHandle = wallet.handle,
-                            mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                            identityIndex = identityIndex,
-                            count = RegistrationKeys.keyCount(registerDashPayKeys),
-                        )
-                        val keySet = DashpayKeyProvisioning.provision(
-                            previews = previews,
+                        suspend fun registrationKeysAt(index: Int) = DashpayKeyProvisioning.provision(
+                            previews = mgr.identityRegistration.previewRegistrationKeySet(
+                                walletHandle = wallet.handle,
+                                mnemonicResolverHandle = mgr.mnemonicResolverHandle,
+                                identityIndex = index,
+                                count = RegistrationKeys.keyCount(registerDashPayKeys),
+                            ),
                             includeDashPayKeys = registerDashPayKeys,
                             walletId = wallet.walletId,
                             // Prestored BEFORE the registration broadcasts: only
@@ -297,105 +286,171 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 container.walletStorage.storePrivateKey(hex, priv, ownerWalletId = owner)
                             },
                         )
-                        val keys = keySet.rows
-                        // Step 2: hand the single registration FFI entry point to
-                        // the coordinator as the body — no orchestration here. The
-                        // funding source picks which registration FFI runs (ID-01
-                        // Core asset lock vs ID-08 Platform addresses).
-                        when (submission.fundingSource) {
-                            CreateIdentityFundingSource.CoreBalance -> {
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
-                                    body = {
-                                        mgr.identityRegistration.registerWithWalletFunding(
-                                            walletHandle = wallet.handle,
-                                            amountDuffs = amount
-                                                ?: error("A funding amount is required"),
-                                            accountIndex = 0,
-                                            identityIndex = identityIndex,
-                                            keys = keys,
-                                            signerHandle = mgr.signerHandle,
-                                            coreSignerHandle = mgr.mnemonicResolverHandle,
-                                        )
-                                    },
-                                )
+
+                        suspend fun releaseSlot(slot: RegistrationSlot) = withContext(NonCancellable) {
+                            runCatching {
+                                mgr.identityRegistration.releaseRegistrationSlot(wallet.handle, slot)
                             }
-                            CreateIdentityFundingSource.PlatformAddress -> {
-                                val inputs = platformInputs
-                                    ?: error("Platform funding inputs were not prepared")
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind =
-                                        IdentityRegistrationController.FundingKind.PlatformAddresses,
-                                    body = {
-                                        mgr.identityRegistration.registerFromAddresses(
-                                            walletHandle = wallet.handle,
-                                            identityIndex = identityIndex,
-                                            keys = keys,
-                                            signerHandle = mgr.signerHandle,
-                                            inputs = inputs,
-                                        )
-                                    },
-                                )
+                        }
+
+                        // The index: a resume derives at its tracked lock's;
+                        // every fresh funding at the slot the wallet leases.
+                        val recoveryLock = submission.recoveryLock
+                        val slot = if (recoveryLock == null) {
+                            mgr.identityRegistration.acquireRegistrationSlot(wallet.handle)
+                        } else {
+                            null
+                        }
+                        val identityIndex = recoveryLock?.registrationIndex
+                            ?: requireNotNull(slot).identityIndex
+                        // Until the registration body owns the slot, leaving
+                        // (an error, or the screen closing) gives it back.
+                        var slotHandedOff = false
+                        try {
+                            val keySet = registrationKeysAt(identityIndex)
+                            val keys = keySet.rows
+                            // Step 2: hand the single registration FFI entry point to
+                            // the coordinator as the body — no orchestration here. The
+                            // funding source picks which registration FFI runs (ID-01
+                            // Core asset lock vs ID-08 Platform addresses).
+                            when (submission.fundingSource) {
+                                CreateIdentityFundingSource.CoreBalance -> {
+                                    coordinator.startRegistration(
+                                        walletId = wallet.walletId,
+                                        identityIndex = identityIndex,
+                                        fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
+                                        body = {
+                                            val leasedSlot = requireNotNull(slot)
+                                            var current = leasedSlot
+                                            try {
+                                                IdentitySlotRetry.run(
+                                                    first = leasedSlot,
+                                                    reacquire = {
+                                                        mgr.identityRegistration
+                                                            .acquireRegistrationSlot(wallet.handle)
+                                                            .also { current = it }
+                                                    },
+                                                    attempt = { leased ->
+                                                        mgr.identityRegistration.registerWithWalletFunding(
+                                                            walletHandle = wallet.handle,
+                                                            amountDuffs = amount
+                                                                ?: error("A funding amount is required"),
+                                                            accountIndex = 0,
+                                                            slot = leased,
+                                                            keys = if (leased == leasedSlot) {
+                                                                keys
+                                                            } else {
+                                                                registrationKeysAt(leased.identityIndex).rows
+                                                            },
+                                                            signerHandle = mgr.signerHandle,
+                                                            coreSignerHandle = mgr.mnemonicResolverHandle,
+                                                        )
+                                                    },
+                                                )
+                                            } catch (e: Throwable) {
+                                                // A failed registration frees its
+                                                // slot; one whose asset lock was
+                                                // built stays held by that lock.
+                                                releaseSlot(current)
+                                                throw e
+                                            }
+                                        },
+                                    )
+                                }
+                                CreateIdentityFundingSource.PlatformAddress -> {
+                                    val inputs = platformInputs
+                                        ?: error("Platform funding inputs were not prepared")
+                                    coordinator.startRegistration(
+                                        walletId = wallet.walletId,
+                                        identityIndex = identityIndex,
+                                        fundingKind =
+                                            IdentityRegistrationController.FundingKind.PlatformAddresses,
+                                        body = {
+                                            // This path does not read the lease:
+                                            // it is given back once the call ends.
+                                            try {
+                                                mgr.identityRegistration.registerFromAddresses(
+                                                    walletHandle = wallet.handle,
+                                                    identityIndex = identityIndex,
+                                                    keys = keys,
+                                                    signerHandle = mgr.signerHandle,
+                                                    inputs = inputs,
+                                                )
+                                            } finally {
+                                                releaseSlot(requireNotNull(slot))
+                                            }
+                                        },
+                                    )
+                                }
+                                CreateIdentityFundingSource.ShieldedBalance -> {
+                                    // Type-20: spend a fixed-denomination note from
+                                    // the bound shielded pool. `amount` holds the
+                                    // chosen denomination (credits) from the picker.
+                                    // The 21-byte fallback failure address is REQUIRED
+                                    // — build it from the wallet's first Platform-
+                                    // payment address (1 variant tag + 20-byte hash),
+                                    // the same (addressType, hash) pairing ID-08 feeds.
+                                    val fallbackAddress = shieldedFallbackAddress
+                                        ?: error("Shielded fallback address was not prepared")
+                                    coordinator.startRegistration(
+                                        walletId = wallet.walletId,
+                                        identityIndex = identityIndex,
+                                        fundingKind =
+                                            IdentityRegistrationController.FundingKind.ShieldedPool,
+                                        body = {
+                                            // This path does not read the lease:
+                                            // it is given back once the call ends,
+                                            // unless the identity may be live.
+                                            try {
+                                                mgr.shieldedIdentityCreateFromPool(
+                                                    walletId = wallet.walletId,
+                                                    identityIndex = identityIndex,
+                                                    keys = keys,
+                                                    denomination = amount
+                                                        ?: error("A shielded denomination is required"),
+                                                    fallbackAddress = fallbackAddress,
+                                                ).also { releaseSlot(requireNotNull(slot)) }
+                                            } catch (e: Throwable) {
+                                                if (e !is DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed) {
+                                                    releaseSlot(requireNotNull(slot))
+                                                }
+                                                throw e
+                                            }
+                                        },
+                                        // Ambiguous broadcast: the identity may
+                                        // already be live — record Unconfirmed
+                                        // (slot held) instead of retryable Failed.
+                                        isUnconfirmed = {
+                                            (it as? DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed)
+                                                ?.identityId
+                                        },
+                                    )
+                                }
+                                CreateIdentityFundingSource.AssetLockResume -> {
+                                    val lock = submission.recoveryLock
+                                        ?: error("No resumable registration asset lock is selected")
+                                    coordinator.startRegistration(
+                                        walletId = wallet.walletId,
+                                        identityIndex = identityIndex,
+                                        fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
+                                        body = {
+                                            IdentityAssetLockRecovery.submitRegistrationResume(lock) {
+                                                mgr.identityRegistration.resumeWithExistingAssetLock(
+                                                    walletHandle = wallet.handle,
+                                                    lock = it,
+                                                    identityIndex = it.registrationIndex,
+                                                    keys = keySet,
+                                                    signerHandle = mgr.signerHandle,
+                                                    coreSignerHandle = mgr.mnemonicResolverHandle,
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
                             }
-                            CreateIdentityFundingSource.ShieldedBalance -> {
-                                // Type-20: spend a fixed-denomination note from
-                                // the bound shielded pool. `amount` holds the
-                                // chosen denomination (credits) from the picker.
-                                // The 21-byte fallback failure address is REQUIRED
-                                // — build it from the wallet's first Platform-
-                                // payment address (1 variant tag + 20-byte hash),
-                                // the same (addressType, hash) pairing ID-08 feeds.
-                                val fallbackAddress = shieldedFallbackAddress
-                                    ?: error("Shielded fallback address was not prepared")
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind =
-                                        IdentityRegistrationController.FundingKind.ShieldedPool,
-                                    body = {
-                                        mgr.shieldedIdentityCreateFromPool(
-                                            walletId = wallet.walletId,
-                                            identityIndex = identityIndex,
-                                            keys = keys,
-                                            denomination = amount
-                                                ?: error("A shielded denomination is required"),
-                                            fallbackAddress = fallbackAddress,
-                                        )
-                                    },
-                                    // Ambiguous broadcast: the identity may
-                                    // already be live — record Unconfirmed
-                                    // (slot held) instead of retryable Failed.
-                                    isUnconfirmed = {
-                                        (it as? org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed)
-                                            ?.identityId
-                                    },
-                                )
-                            }
-                            CreateIdentityFundingSource.AssetLockResume -> {
-                                val lock = submission.recoveryLock
-                                    ?: error("No resumable registration asset lock is selected")
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
-                                    body = {
-                                        IdentityAssetLockRecovery.submitRegistrationResume(lock) {
-                                            mgr.identityRegistration.resumeWithExistingAssetLock(
-                                                walletHandle = wallet.handle,
-                                                lock = it,
-                                                identityIndex = it.registrationIndex,
-                                                keys = keySet,
-                                                signerHandle = mgr.signerHandle,
-                                                coreSignerHandle = mgr.mnemonicResolverHandle,
-                                            )
-                                        }
-                                    },
-                                )
-                            }
+                            slotHandedOff = true
+                        } finally {
+                            if (!slotHandedOff && slot != null) releaseSlot(slot)
                         }
                         navController.navigate(
                             RegistrationProgress(wallet.walletId.toHexString(), identityIndex),
@@ -450,7 +505,6 @@ enum class CreateIdentityFundingSource(
 internal data class CreateIdentitySubmissionSnapshot(
     val fundingSource: CreateIdentityFundingSource,
     val amount: Long?,
-    val identityIndex: Int,
     val recoveryLock: TrackedAssetLock?,
 ) {
     val includesDashPayKeys: Boolean = fundingSource.includesDashPayKeys
@@ -464,7 +518,6 @@ internal data class CreateIdentitySubmissionSnapshot(
 internal fun createIdentitySubmissionSnapshot(
     fundingSource: CreateIdentityFundingSource,
     amountText: String,
-    identityIndexText: String,
     selectedRecoveryLock: TrackedAssetLock?,
 ): CreateIdentitySubmissionSnapshot? {
     val lock = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
@@ -478,13 +531,9 @@ internal fun createIdentitySubmissionSnapshot(
     } else {
         amountText.toLongOrNull() ?: return null
     }
-    val identityIndex = lock?.registrationIndex
-        ?: identityIndexText.toIntOrNull()
-        ?: return null
     return CreateIdentitySubmissionSnapshot(
         fundingSource = fundingSource,
         amount = amount,
-        identityIndex = identityIndex,
         recoveryLock = lock,
     )
 }
@@ -768,18 +817,3 @@ private fun comparePlatformAddresses(left: FundingInput, right: FundingInput): I
 
 private fun saturatingAdd(left: Long, right: Long): Long =
     if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
-
-/** Identity-slot section — the Swift `CreateIdentityView` identity-index stepper. */
-@Composable
-private fun KeysSection(identityIndexText: String, onIndexChange: (String) -> Unit) {
-    FormSection(title = "Identity Slot") {
-        OutlinedTextField(
-            value = identityIndexText,
-            onValueChange = onIndexChange,
-            label = { Text("Identity index (HD slot)") },
-            singleLine = true,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth().testTag("createIdentity.identityIndex"),
-        )
-    }
-}

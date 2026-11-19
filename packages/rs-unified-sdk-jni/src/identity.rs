@@ -34,7 +34,7 @@
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jlongArray, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::derive_connect_key::ConnectDerivedKeyFFI;
@@ -44,6 +44,12 @@ use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::identity_slot::{
+    platform_wallet_identity_slot_acquire_invitation_claim,
+    platform_wallet_identity_slot_acquire_registration,
+    platform_wallet_identity_slot_release_invitation_claim,
+    platform_wallet_identity_slot_release_registration,
+};
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -847,6 +853,171 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     })
 }
 
+// ── Identity slots ────────────────────────────────────────────────────
+
+/// The `long[]` [`Java_org_dashfoundation_dashsdk_ffi_IdentityNative_acquireRegistrationSlot`]
+/// returns, in the order `IdentityRegistration.acquireRegistrationSlot` reads
+/// it: the identity index, then the slot token's bits (opaque to Kotlin).
+fn registration_slot_longs(identity_index: u32, slot_token: u64) -> [jlong; 2] {
+    [jlong::from(identity_index), slot_token as jlong]
+}
+
+/// Length of the blob [`invitation_claim_slot_bytes`] builds.
+const INVITATION_CLAIM_SLOT_LEN: usize = 4 + 36 + 1;
+
+/// The `byte[]` [`Java_org_dashfoundation_dashsdk_ffi_IdentityNative_acquireInvitationClaimSlot`]
+/// returns, decoded by `InvitationClaimSlot.decode`: `u32` identity index
+/// (big-endian), the invitation's 36-byte funding outpoint as the FFI wrote
+/// it, then `u8` submitted (0 or 1).
+fn invitation_claim_slot_bytes(
+    identity_index: u32,
+    invitation_out_point: &[u8; 36],
+    submitted: bool,
+) -> [u8; INVITATION_CLAIM_SLOT_LEN] {
+    let mut out = [0u8; INVITATION_CLAIM_SLOT_LEN];
+    out[..4].copy_from_slice(&identity_index.to_be_bytes());
+    out[4..40].copy_from_slice(invitation_out_point);
+    out[40] = u8::from(submitted);
+    out
+}
+
+/// Lease an identity slot for a new registration. Thin marshaler over
+/// `platform_wallet_identity_slot_acquire_registration`; returns
+/// `[identityIndex, slotToken]` (see [`registration_slot_longs`]).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_acquireRegistrationSlot(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut identity_index = 0u32;
+        let mut slot_token = 0u64;
+        let result = unsafe {
+            platform_wallet_identity_slot_acquire_registration(
+                wallet_handle as Handle,
+                &mut identity_index,
+                &mut slot_token,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let longs = registration_slot_longs(identity_index, slot_token);
+        let Ok(out) = env.new_long_array(longs.len() as i32) else {
+            return ptr::null_mut();
+        };
+        if env.set_long_array_region(&out, 0, &longs).is_err() {
+            return ptr::null_mut();
+        }
+        out.into_raw()
+    })
+}
+
+/// Lease the identity slot for a claim of the invitation link `uri` (a
+/// retried claim gets its earlier slot). Thin marshaler over
+/// `platform_wallet_identity_slot_acquire_invitation_claim`; costs one
+/// funding-tx fetch. Returns the blob [`invitation_claim_slot_bytes`] builds.
+/// The `uri` is a bearer credential and is never logged.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_acquireInvitationClaimSlot(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    uri: JString,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let uri_c = match read_optional_cstring(env, &uri, "uri") {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                throw_sdk_exception(env, 1, "uri must not be empty");
+                return ptr::null_mut();
+            }
+            Err(()) => return ptr::null_mut(),
+        };
+        let mut identity_index = 0u32;
+        let mut out_point = [0u8; 36];
+        let mut submitted = false;
+        let result = unsafe {
+            platform_wallet_identity_slot_acquire_invitation_claim(
+                wallet_handle as Handle,
+                uri_c.as_ptr(),
+                &mut identity_index,
+                &mut out_point,
+                &mut submitted,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&invitation_claim_slot_bytes(
+            identity_index,
+            &out_point,
+            submitted,
+        ))
+        .map(|a| a.into_raw())
+        .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Give up an abandoned registration's slot by the token
+/// `acquireRegistrationSlot` handed out. Thin marshaler over
+/// `platform_wallet_identity_slot_release_registration`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_releaseRegistrationSlot(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    slot_token: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = platform_wallet_identity_slot_release_registration(
+            wallet_handle as Handle,
+            // Opaque: the bits `acquireRegistrationSlot` handed out.
+            slot_token as u64,
+        );
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Give up the slot of an invitation claim abandoned before it was sent, by
+/// the 36-byte outpoint `acquireInvitationClaimSlot` handed out. Thin
+/// marshaler over `platform_wallet_identity_slot_release_invitation_claim`,
+/// which refuses while the claim may have reached Platform.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_releaseInvitationClaimSlot(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    invitation_out_point: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let bytes = match env.convert_byte_array(&invitation_out_point) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "invitationOutPoint byte[] was null/invalid");
+                return;
+            }
+        };
+        let Ok(out_point) = <[u8; 36]>::try_from(bytes.as_slice()) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("invitationOutPoint must be 36 bytes, got {}", bytes.len()),
+            );
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_identity_slot_release_invitation_claim(
+                wallet_handle as Handle,
+                &out_point,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 // ── Registration (Platform-address funded) ────────────────────────────
 
 /// Register a new identity funded by the wallet's already-committed
@@ -1314,15 +1485,59 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use platform_wallet_ffi::derive_connect_key::{
         CONNECT_KEY_PURPOSE_DECRYPTION, CONNECT_KEY_PURPOSE_ENCRYPTION,
         CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
     };
+    use platform_wallet_ffi::identity_slot::IDENTITY_SLOT_TAKEN_RETRY_LIMIT;
 
     const PLATFORM_WALLET_MANAGER_KT: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/wallet/PlatformWalletManager.kt"
     ));
+
+    const IDENTITY_REGISTRATION_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/identity/IdentityRegistration.kt"
+    ));
+
+    #[test]
+    fn should_lay_out_a_registration_slot_as_index_then_token_bits() {
+        assert_eq!(registration_slot_longs(7, 42), [7, 42]);
+        // The token is opaque: every bit survives the signed long.
+        let [index, token] = registration_slot_longs(u32::MAX, u64::MAX);
+        assert_eq!(index, jlong::from(u32::MAX));
+        assert_eq!(token as u64, u64::MAX);
+    }
+
+    #[test]
+    fn should_lay_out_a_claim_slot_as_kotlin_decodes_it() {
+        let mut out_point = [0u8; 36];
+        for (i, byte) in out_point.iter_mut().enumerate() {
+            *byte = i as u8;
+        }
+        let blob = invitation_claim_slot_bytes(0x0102_0304, &out_point, true);
+        assert_eq!(blob.len(), 41);
+        assert_eq!(&blob[..4], &[1, 2, 3, 4]);
+        assert_eq!(&blob[4..40], &out_point);
+        assert_eq!(blob[40], 1);
+        assert_eq!(invitation_claim_slot_bytes(0, &out_point, false)[40], 0);
+    }
+
+    /// Kotlin's retry limit for `IdentitySlotTakenOnChain` is the FFI's.
+    #[test]
+    fn kotlin_slot_taken_retry_limit_matches_the_ffi() {
+        let needle = format!(
+            "const val IDENTITY_SLOT_TAKEN_RETRY_LIMIT: Int = {IDENTITY_SLOT_TAKEN_RETRY_LIMIT}"
+        );
+        assert!(
+            IDENTITY_REGISTRATION_KT
+                .lines()
+                .any(|line| line.trim() == needle),
+            "IdentityRegistration.kt no longer declares `{needle}`"
+        );
+    }
 
     /// Kotlin's `ConnectSubFeature` / `ConnectKeyPurpose` literals are the
     /// FFI's constants; a drift would derive keys at paths nothing looks for.

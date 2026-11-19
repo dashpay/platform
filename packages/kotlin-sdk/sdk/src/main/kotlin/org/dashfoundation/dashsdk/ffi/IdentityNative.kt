@@ -37,7 +37,7 @@ internal object IdentityNative {
      * JNI symbol:
      * `Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resumeIdentityWithExistingAssetLock`
      * Descriptor:
-     * `(J[BII[BJJZ)Lorg/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult;`
+     * `(J[BIIJ[BJJZ)Lorg/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult;`
      *
      * Thinly marshals
      * `platform_wallet_resume_identity_with_existing_asset_lock_signer`,
@@ -47,12 +47,17 @@ internal object IdentityNative {
      * supply `false`;
      * `IdentityRegistration.reclaimInvitationAsNewIdentity` is the sole
      * `true` caller.
+     *
+     * @param slotToken the token [acquireRegistrationSlot] handed out with
+     *   [identityIndex]; read only when [consumeInvitationVoucher] is `true`
+     *   (resuming a tracked registration lock passes `0` and the lock's index).
      */
     external fun resumeIdentityWithExistingAssetLock(
         walletHandle: Long,
         outpointTxid: ByteArray,
         outpointVout: Int,
         identityIndex: Int,
+        slotToken: Long,
         pubkeysBlob: ByteArray,
         signerHandle: Long,
         coreSignerHandle: Long,
@@ -208,6 +213,8 @@ internal object IdentityNative {
      * Register a new identity funded from the wallet's Core balance. The
      * single FFI entry point the registration coordinator's body invokes.
      *
+     * @param identityIndex the index [acquireRegistrationSlot] leased.
+     * @param slotToken the token [acquireRegistrationSlot] handed out with it.
      * @param pubkeysBlob the rich key rows to register, encoded by
      *   [org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode] — each
      *   row carries its keyId, DPP role, and any contract bounds (built from
@@ -222,10 +229,45 @@ internal object IdentityNative {
         amountDuffs: Long,
         accountIndex: Int,
         identityIndex: Int,
+        slotToken: Long,
         pubkeysBlob: ByteArray,
         signerHandle: Long,
         coreSignerHandle: Long,
     ): ByteArray
+
+    /**
+     * Lease an identity slot for a new registration. Bridges
+     * `platform_wallet_identity_slot_acquire_registration`.
+     *
+     * @return `[identityIndex, slotToken]`; the token's bits are opaque.
+     */
+    external fun acquireRegistrationSlot(walletHandle: Long): LongArray
+
+    /**
+     * Lease the identity slot for a claim of the invitation link [uri]; a
+     * retried claim gets its earlier slot. Costs one funding-tx fetch.
+     * Bridges `platform_wallet_identity_slot_acquire_invitation_claim`. The
+     * [uri] is a bearer credential: never log it.
+     *
+     * @return a 41-byte blob decoded by
+     *   [org.dashfoundation.dashsdk.identity.InvitationClaimSlot.decode].
+     */
+    external fun acquireInvitationClaimSlot(walletHandle: Long, uri: String): ByteArray
+
+    /**
+     * Give up an abandoned registration's slot. Bridges
+     * `platform_wallet_identity_slot_release_registration`; a token that
+     * holds no slot is not an error.
+     */
+    external fun releaseRegistrationSlot(walletHandle: Long, slotToken: Long)
+
+    /**
+     * Give up the slot of an invitation claim abandoned before it was sent,
+     * by its 36-byte funding outpoint. Bridges
+     * `platform_wallet_identity_slot_release_invitation_claim`, which refuses
+     * while the claim may have reached Platform.
+     */
+    external fun releaseInvitationClaimSlot(walletHandle: Long, invitationOutPoint: ByteArray)
 
     /**
      * Register a new identity funded by the wallet's already-committed

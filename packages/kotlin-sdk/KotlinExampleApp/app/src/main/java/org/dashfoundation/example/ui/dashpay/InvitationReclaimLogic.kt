@@ -103,14 +103,4 @@ object InvitationReclaimLogic {
         for (i in 35 downTo 32) vout = (vout shl 8) or (rawOutPoint[i].toInt() and 0xFF)
         return txid to vout
     }
-
-    /**
-     * One past the highest used registration index across [usedIndices],
-     * else 0 — the fresh HD slot a claim/reclaim-register targets. Mirrors
-     * `ClaimInvitationSheet.nextUnusedIdentityIndex`.
-     */
-    fun nextUnusedIdentityIndex(usedIndices: List<Int>): Int {
-        val highest = usedIndices.maxOrNull() ?: return 0
-        return if (highest == Int.MAX_VALUE) Int.MAX_VALUE else highest + 1
-    }
 }

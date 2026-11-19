@@ -850,6 +850,38 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentitySlotNotHeld` (native code 77): a registration or an
+         * invitation claim named an identity index ([identityIndex]) its
+         * slot does not lease (never acquired, or released). Nothing was
+         * funded or sent. Acquire a slot and derive the keys at its index.
+         */
+        class IdentitySlotNotHeld(
+            val identityIndex: Int,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "Identity index $identityIndex is not leased to this operation.",
+            cause,
+        )
+
+        /**
+         * `ErrorIdentitySlotTakenOnChain` (native code 78): the identity keys
+         * derived at [identityIndex] already belong to identity [identityId]
+         * (base58) on Platform. The wallet recorded that identity in the slot
+         * and released the operation's lease; nothing was funded. Acquire a
+         * slot again and derive the keys at the new index, at most
+         * [org.dashfoundation.dashsdk.identity.IdentityRegistration.IDENTITY_SLOT_TAKEN_RETRY_LIMIT]
+         * times in a row.
+         */
+        class IdentitySlotTakenOnChain(
+            val identityIndex: Int,
+            val identityId: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "The keys at identity index $identityIndex already belong to identity $identityId.",
+            cause,
+        )
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1076,6 +1108,23 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            77 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.IdentitySlotNotHeld(
+                        identityIndex = detail.requiredIndex("identityIndex"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            78 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.IdentitySlotTakenOnChain(
+                        identityIndex = detail.requiredIndex("identityIndex"),
+                        identityId = requireNotNull(detail.optionalString("identityId")),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
@@ -1094,6 +1143,10 @@ sealed class DashSdkError(
 
         private fun JSONObject.requiredULong(name: String): ULong =
             get(name).toString().toULong()
+
+        /** A `u32` identity index that fits an [Int]. */
+        private fun JSONObject.requiredIndex(name: String): Int =
+            get(name).toString().toInt().also { require(it >= 0) { "$name is negative" } }
 
         /** A string, or `null` when the key is JSON `null` or absent. */
         private fun JSONObject.optionalString(name: String): String? =
