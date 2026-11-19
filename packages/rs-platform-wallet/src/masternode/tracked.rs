@@ -32,7 +32,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dash_sdk::platform::Fetch;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
-use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, Txid};
+use dashcore::{Address as DashAddress, Network, OutPoint, Transaction};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
@@ -48,6 +48,7 @@ use super::record::{
     owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
     MasternodeStatus,
 };
+use super::update_service::require_requested_transaction;
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
@@ -1182,13 +1183,7 @@ fn fetched_registration(
     transaction: &Transaction,
     height: u32,
 ) -> Result<Option<RegistrationDetails>, PlatformWalletError> {
-    let expected = Txid::from_byte_array(*pro_tx_hash);
-    let actual = transaction.txid();
-    if actual != expected {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "DAPI returned transaction {actual} for requested registration transaction {expected}"
-        )));
-    }
+    require_requested_transaction(transaction, pro_tx_hash, "registration transaction")?;
     Ok(registration_from_transaction(transaction, height))
 }
 

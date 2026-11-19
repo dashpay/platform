@@ -35,6 +35,7 @@ use std::sync::Arc;
 
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 use dash_sdk::platform::Fetch;
+use dashcore::blockdata::script::Script;
 use dashcore::hashes::hash160;
 use dashcore::{Network, PrivateKey};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
@@ -865,19 +866,10 @@ impl MasternodeKeyReference {
 /// hash160 of a standard P2PKH script (`OP_DUP OP_HASH160 <20> OP_EQUALVERIFY
 /// OP_CHECKSIG`), else `None`.
 pub fn p2pkh_script_hash(script: &[u8]) -> Option<[u8; 20]> {
-    if script.len() == 25
-        && script[0] == 0x76
-        && script[1] == 0xa9
-        && script[2] == 0x14
-        && script[23] == 0x88
-        && script[24] == 0xac
-    {
-        let mut out = [0u8; 20];
-        out.copy_from_slice(&script[3..23]);
-        Some(out)
-    } else {
-        None
-    }
+    Script::from_bytes(script)
+        .p2pkh_public_key_hash_bytes()?
+        .try_into()
+        .ok()
 }
 
 /// Result of checking a key against a role.

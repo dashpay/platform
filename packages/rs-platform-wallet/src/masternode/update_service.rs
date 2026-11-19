@@ -15,7 +15,8 @@
 //! can never silently clear an operator payout on-chain. The payload version
 //! follows Dash Core v24's rules (see [`prepare_update_service_placeholder`]).
 
-use dashcore::blockdata::script::ScriptBuf;
+use dashcore::address::NetworkUnchecked;
+use dashcore::blockdata::script::{Script, ScriptBuf};
 use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::blockdata::transaction::special_transaction::provider_registration::{
     ProviderMasternodeType, ProviderRegistrationPayload,
@@ -605,8 +606,9 @@ pub(crate) fn prepare_update_service_placeholder_from_values(
 
 /// Mainnet consensus constants from Core's chainparams. The port rules
 /// below compare against the MAINNET values on every network — Core reads
-/// them via `MainParams()` regardless of the active chain.
-const MAINNET_CORE_P2P_PORT: u16 = 9999;
+/// them via `MainParams()` regardless of the active chain. rust-dashcore
+/// carries the Core P2P port; it has no Platform ports.
+const MAINNET_CORE_P2P_PORT: u16 = Network::Mainnet.default_p2p_port();
 const MAINNET_PLATFORM_P2P_PORT: u16 = 26656;
 const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
 
@@ -794,7 +796,7 @@ pub(crate) async fn fetch_transaction_checked(
     wallet: &PlatformWallet,
     txid_wire: &[u8; 32],
     what: &str,
-) -> Result<dashcore::Transaction, PlatformWalletError> {
+) -> Result<Transaction, PlatformWalletError> {
     let display = display_hex(txid_wire);
     let fetched = wallet
         .sdk()
@@ -804,6 +806,20 @@ pub(crate) async fn fetch_transaction_checked(
             PlatformWalletError::InvalidParameter(format!("{what} {display} was not found"))
         })?;
     let transaction = fetched.transaction;
+    require_requested_transaction(&transaction, txid_wire, what)?;
+    Ok(transaction)
+}
+
+/// Refuse a transaction DAPI returned that does not hash to the txid (wire
+/// order) it was asked for. DAPI's get-transaction reply is not
+/// authenticated, so this is what binds a reply to its request; nothing may
+/// be read from the transaction before it. `what` names the transaction in
+/// the refusal.
+pub(crate) fn require_requested_transaction(
+    transaction: &Transaction,
+    txid_wire: &[u8; 32],
+    what: &str,
+) -> Result<(), PlatformWalletError> {
     let expected = Txid::from_byte_array(*txid_wire);
     let actual = transaction.txid();
     if actual != expected {
@@ -811,7 +827,7 @@ pub(crate) async fn fetch_transaction_checked(
             "DAPI returned transaction {actual} for requested {what} {expected}"
         )));
     }
-    Ok(transaction)
+    Ok(())
 }
 
 /// The masternode's full ProRegTx via DAPI Core, txid-bound. The registrar
@@ -820,7 +836,7 @@ pub(crate) async fn fetch_transaction_checked(
 pub(crate) async fn fetch_registration_transaction(
     wallet: &PlatformWallet,
     pro_tx_hash: &[u8; 32],
-) -> Result<dashcore::Transaction, PlatformWalletError> {
+) -> Result<Transaction, PlatformWalletError> {
     fetch_transaction_checked(wallet, pro_tx_hash, "registration transaction").await
 }
 
@@ -832,26 +848,20 @@ pub(crate) async fn fetch_registration_payload(
     pro_tx_hash: &[u8; 32],
 ) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
     let transaction = fetch_registration_transaction(wallet, pro_tx_hash).await?;
-    registration_payload_from_fetched(pro_tx_hash, transaction)
+    registration_payload(transaction)
 }
 
-/// Txid-bind and unwrap a fetched registration transaction's payload.
-pub(crate) fn registration_payload_from_fetched(
-    pro_tx_hash: &[u8; 32],
-    transaction: dashcore::Transaction,
+/// The payload of a registration transaction that
+/// [`fetch_registration_transaction`] returned, which has already bound it
+/// to the requested proTxHash.
+pub(crate) fn registration_payload(
+    transaction: Transaction,
 ) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
-    let expected = Txid::from_byte_array(*pro_tx_hash);
-    let actual = transaction.txid();
-    if actual != expected {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "DAPI returned transaction {actual} for requested registration transaction \
-             {expected}"
-        )));
-    }
+    let txid = transaction.txid();
     match transaction.special_transaction_payload {
         Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => Ok(registration),
         _ => Err(PlatformWalletError::InvalidParameter(format!(
-            "transaction {expected} is not a provider registration transaction"
+            "transaction {txid} is not a provider registration transaction"
         ))),
     }
 }
@@ -859,9 +869,7 @@ pub(crate) fn registration_payload_from_fetched(
 /// Consensus accepts only P2PKH and P2SH payout scripts in provider
 /// transactions (`bad-protx-payee`) — anything else (a witness program,
 /// say) would fund and sign a transaction the mempool refuses.
-pub(crate) fn require_standard_payout_script(
-    script: &dashcore::blockdata::script::Script,
-) -> Result<(), PlatformWalletError> {
+pub(crate) fn require_standard_payout_script(script: &Script) -> Result<(), PlatformWalletError> {
     if script.is_p2pkh() || script.is_p2sh() {
         Ok(())
     } else {
@@ -899,24 +907,34 @@ pub(crate) fn resolve_operator_payout_script(
             reward % 100
         ))),
         (_, Some(address)) => {
-            let address = address
-                .parse::<DashAddress<dashcore::address::NetworkUnchecked>>()
-                .map_err(|e| {
-                    PlatformWalletError::InvalidParameter(format!(
-                        "operator payout address is not a valid Dash address: {e}"
-                    ))
-                })?
-                .require_network(network)
-                .map_err(|e| {
-                    PlatformWalletError::InvalidParameter(format!(
-                        "operator payout address is for another network: {e}"
-                    ))
-                })?;
-            let script = address.script_pubkey();
-            require_standard_payout_script(&script)?;
-            Ok(script)
+            payout_script_for_address(address, network, "operator payout address")
         }
     }
+}
+
+/// The payout script a provider transaction carries for `address`: the
+/// address must parse, belong to `network`, and be P2PKH or P2SH (see
+/// [`require_standard_payout_script`]). `what` names the address in the
+/// refusal.
+pub(crate) fn payout_script_for_address(
+    address: &str,
+    network: Network,
+    what: &str,
+) -> Result<ScriptBuf, PlatformWalletError> {
+    let address = address
+        .parse::<DashAddress<NetworkUnchecked>>()
+        .map_err(|e| {
+            PlatformWalletError::InvalidParameter(format!(
+                "{what} is not a valid Dash address: {e}"
+            ))
+        })?
+        .require_network(network)
+        .map_err(|e| {
+            PlatformWalletError::InvalidParameter(format!("{what} is for another network: {e}"))
+        })?;
+    let script = address.script_pubkey();
+    require_standard_payout_script(&script)?;
+    Ok(script)
 }
 
 /// Refuse an operator secret whose public key does not match the
@@ -1313,10 +1331,9 @@ where
         .await
 }
 
+/// A wire-order transaction hash as explorers and Dash Core print it.
 pub(crate) fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
-    let mut display = *pro_tx_hash;
-    display.reverse();
-    hex::encode(display)
+    Txid::from_byte_array(*pro_tx_hash).to_string()
 }
 
 #[cfg(test)]
@@ -2434,29 +2451,81 @@ mod tests {
         }
     }
 
-    /// The DAPI get-transaction reply is unauthenticated: the payload is
-    /// trusted only after the decoded transaction hashes to the requested
-    /// proTxHash.
+    /// The DAPI get-transaction reply is unauthenticated: a transaction is
+    /// trusted only after it hashes to the txid that was requested.
     #[test]
-    fn operator_reward_binds_the_fetched_transaction_to_the_request() {
+    fn should_refuse_a_fetched_transaction_that_does_not_hash_to_the_request() {
         let transaction = registration_transaction(500);
         let matching = transaction.txid().to_byte_array();
 
-        let registration = registration_payload_from_fetched(&matching, transaction.clone())
-            .expect("a matching registration transaction is accepted");
+        require_requested_transaction(&transaction, &matching, "registration transaction")
+            .expect("the requested transaction is accepted");
+
+        let err =
+            require_requested_transaction(&transaction, &[0x99; 32], "registration transaction")
+                .expect_err("a transaction that does not hash to the request must be refused");
+        let PlatformWalletError::InvalidIdentityData(message) = err else {
+            panic!("expected an invalid-data refusal, got {err:?}");
+        };
+        assert!(
+            message.contains("for requested registration transaction"),
+            "the refusal names the transaction: {message}"
+        );
+    }
+
+    #[test]
+    fn should_read_the_payload_of_a_registration_transaction_only() {
+        let registration = registration_payload(registration_transaction(500))
+            .expect("a registration transaction is accepted");
         assert_eq!(registration.operator_reward, 500);
 
-        let err = registration_payload_from_fetched(&[0x99; 32], transaction)
-            .expect_err("a transaction that does not hash to the request must be refused");
-        assert!(matches!(err, PlatformWalletError::InvalidIdentityData(_)));
-
-        // The right txid but not a ProRegTx payload.
         let mut not_registration = registration_transaction(0);
         not_registration.special_transaction_payload = None;
-        let plain_txid = not_registration.txid().to_byte_array();
-        let err = registration_payload_from_fetched(&plain_txid, not_registration)
+        let err = registration_payload(not_registration)
             .expect_err("a non-registration transaction must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// One parser serves the operator payout here and the owner payout of a
+    /// registrar update, so both refuse the same addresses, each under its
+    /// own name.
+    #[test]
+    fn should_build_a_payout_script_only_from_an_address_of_the_network() {
+        let testnet = DashAddress::dummy(Network::Testnet, 3);
+        let script =
+            payout_script_for_address(&testnet.to_string(), Network::Testnet, "payout address")
+                .expect("an address of the network");
+        assert_eq!(script, testnet.script_pubkey());
+
+        let mainnet = DashAddress::dummy(Network::Mainnet, 3).to_string();
+        for (address, expected) in [
+            (
+                "not an address",
+                "payout address is not a valid Dash address",
+            ),
+            (mainnet.as_str(), "payout address is for another network"),
+        ] {
+            let err = payout_script_for_address(address, Network::Testnet, "payout address")
+                .expect_err("refused");
+            let PlatformWalletError::InvalidParameter(message) = err else {
+                panic!("expected an invalid-parameter refusal, got {err:?}");
+            };
+            assert!(message.starts_with(expected), "{message}");
+        }
+    }
+
+    /// Dash Core and explorers print a transaction hash byte-reversed.
+    #[test]
+    fn should_print_a_wire_order_hash_reversed() {
+        let mut wire = [0u8; 32];
+        wire[0] = 0xab;
+        wire[31] = 0x01;
+        let display = display_hex(&wire);
+        assert!(
+            display.starts_with("01") && display.ends_with("ab"),
+            "{display}"
+        );
+        assert_eq!(display.len(), 64);
     }
 
     /// A legacy entry as a registrar update leaves it: Core resets the
