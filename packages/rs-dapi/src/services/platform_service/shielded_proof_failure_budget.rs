@@ -497,8 +497,14 @@ mod tests {
         let budget = budget();
         let now = Instant::now();
         for _ in 0..1_000 {
-            broadcast(&budget, SOURCE, 16, false, now)
-                .expect("verified proofs never spend the allowance");
+            broadcast(
+                &budget,
+                SOURCE,
+                usize::from(MAX_SHIELDED_ACTIONS),
+                false,
+                now,
+            )
+            .expect("verified proofs never spend the allowance");
         }
     }
 
@@ -568,17 +574,32 @@ mod tests {
     fn should_make_a_failed_largest_bundle_wait_for_a_clean_slate() {
         let budget = budget();
         let now = Instant::now();
-        broadcast(&budget, SOURCE, 16, true, now).unwrap();
+        let limit = usize::from(MAX_SHIELDED_ACTIONS);
+        broadcast(&budget, SOURCE, limit, true, now).unwrap();
 
-        let drained = now + ACTION_DRAIN_INTERVAL * 16;
-        assert!(broadcast(&budget, SOURCE, 16, false, drained - Duration::from_secs(1)).is_err());
-        assert!(broadcast(&budget, SOURCE, 16, false, drained).is_ok());
+        let drained = now + ACTION_DRAIN_INTERVAL * u32::from(MAX_SHIELDED_ACTIONS);
+        assert!(
+            broadcast(
+                &budget,
+                SOURCE,
+                limit,
+                false,
+                drained - Duration::from_secs(1)
+            )
+            .is_err()
+        );
+        assert!(broadcast(&budget, SOURCE, limit, false, drained).is_ok());
     }
 
     #[test]
     fn should_charge_a_reservation_dropped_unsettled() {
         let budget = budget();
-        drop(budget.try_reserve(SOURCE, 16).unwrap().unwrap());
+        drop(
+            budget
+                .try_reserve(SOURCE, usize::from(MAX_SHIELDED_ACTIONS))
+                .unwrap()
+                .unwrap(),
+        );
         assert!(
             budget.try_reserve(SOURCE, 2).is_err(),
             "a cancelled broadcast may still have cost Drive a verification"
@@ -711,7 +732,7 @@ mod tests {
         let a = SourceKey::V4(Ipv4Addr::new(192, 0, 2, 1));
         let b = SourceKey::V4(Ipv4Addr::new(192, 0, 2, 2));
         let c = SourceKey::V4(Ipv4Addr::new(192, 0, 2, 3));
-        broadcast(&budget, a, 16, true, now).unwrap();
+        broadcast(&budget, a, usize::from(MAX_SHIELDED_ACTIONS), true, now).unwrap();
         broadcast(&budget, b, 1, true, now).unwrap();
 
         budget
