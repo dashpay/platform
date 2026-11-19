@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **31**
+Capabilities tracked: **32**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 18 | 11 | 1 | 1 |
-| Swift | Example app | 5 | 14 | 3 | 9 |
-| Kotlin | SDK | 14 | 14 | 2 | 1 |
-| Kotlin | Example app | 6 | 13 | 2 | 10 |
+| Swift | SDK | 19 | 11 | 1 | 1 |
+| Swift | Example app | 5 | 14 | 4 | 9 |
+| Kotlin | SDK | 14 | 14 | 3 | 1 |
+| Kotlin | Example app | 6 | 13 | 3 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 10 | 19 |
-| Kotlin | 5 | 8 | 18 |
+| Swift | 2 | 10 | 20 |
+| Kotlin | 5 | 8 | 19 |
 
 ## Capability status
 
