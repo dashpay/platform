@@ -53,8 +53,11 @@ impl IdentityWallet {
     /// spent address back to its derivation index (including addresses
     /// restored from disk that are no longer in a live derived pool).
     ///
-    /// Crate-private: neither step checks the wallet generation or
-    /// reconciles the spent addresses. Callers outside the crate use
+    /// Crate-private: neither step holds the lifecycle gate or reconciles
+    /// the spent addresses. The sign step reads the wallet's state only
+    /// through this handle's generation, so a removed or re-created wallet
+    /// is [`PlatformWalletError::WalletRemovedBeforeSend`] before anything
+    /// is signed. Callers outside the crate use
     /// [`PlatformWallet::top_up_from_addresses`], which signs outside the
     /// lifecycle gate, sends under it and reconciles.
     ///
