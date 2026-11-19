@@ -1319,7 +1319,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "eddsa"))]
 mod platform_node_pool_tests {
     use super::*;
     use crate::changeset::provider_key_account::provider_key_test_wallet;

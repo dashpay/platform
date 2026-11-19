@@ -4,6 +4,7 @@
 //! address and hand those rows back at load; this module owns how they land in
 //! the pool, so the FFI layer only marshals them.
 
+use key_wallet::bip32::ChildNumber;
 use key_wallet::error::Error as KeyWalletError;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
 use key_wallet::AddressInfo;
@@ -59,6 +60,7 @@ pub fn derive_through(
     key_source: &KeySource,
     index: u32,
 ) -> Result<(), KeyWalletError> {
+    ChildNumber::from_normal_idx(index).map_err(KeyWalletError::Bip32)?;
     let next = pool.highest_generated().map_or(0, |highest| highest + 1);
     pool.generate_addresses(index.saturating_add(1).saturating_sub(next), key_source)?;
     Ok(())
@@ -204,6 +206,24 @@ mod tests {
 
     fn next_index(pool: &AddressPool) -> u32 {
         pool.highest_generated().map_or(0, |highest| highest + 1)
+    }
+
+    #[test]
+    fn should_reject_a_hardened_target_before_deriving_addresses() {
+        let (mut pool, key_source) = external_pool();
+        let generated = pool.highest_generated();
+        let addresses = pool.addresses().len();
+
+        for key_source in [KeySource::NoKeySource, key_source] {
+            for index in [1 << 31, u32::MAX] {
+                let error = derive_through(&mut pool, &key_source, index)
+                    .expect_err("hardened targets cannot be derived from an xpub");
+
+                assert!(matches!(error, KeyWalletError::Bip32(_)));
+                assert_eq!(pool.highest_generated(), generated);
+                assert_eq!(pool.addresses().len(), addresses);
+            }
+        }
     }
 
     #[test]
