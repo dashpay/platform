@@ -67,6 +67,7 @@
 
 * **platform:** pin `rust-dashcore` at the `v0.46.0` release ([#5914](https://github.com/dashpay/platform/issues/5914))
 * **platform:** pin GroveDB at develop 22f163c2 ([#5975](https://github.com/dashpay/platform/issues/5975))
+* **platform:** pin GroveDB at develop 2cfc1ce1 ([#6001](https://github.com/dashpay/platform/issues/6001))
 * **platform:** pin GroveDB at develop 89dc7351 ([#5942](https://github.com/dashpay/platform/issues/5942))
 
 
