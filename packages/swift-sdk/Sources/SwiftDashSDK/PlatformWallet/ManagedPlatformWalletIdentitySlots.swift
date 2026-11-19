@@ -14,10 +14,12 @@ extension ManagedPlatformWallet {
     public struct RegistrationSlot: Sendable, Equatable {
         /// The index to derive the identity keys at.
         public let identityIndex: UInt32
-        /// The lease's token: pass it to `registerIdentityWithFunding` (or
-        /// to `resumeIdentityWithAssetLock` when reclaiming an invitation
-        /// voucher as a new identity), or to `releaseRegistrationSlot` when
-        /// the registration is abandoned.
+        /// The lease's token: pass the slot to `registerIdentityWithFunding`,
+        /// `registerIdentityFromAddresses` or
+        /// `PlatformWalletManager.shieldedIdentityCreateFromPool` (or the
+        /// token to `resumeIdentityWithAssetLock` when reclaiming an
+        /// invitation voucher as a new identity), or to
+        /// `releaseRegistrationSlot` when the registration is abandoned.
         public let token: UInt64
     }
 
@@ -40,8 +42,10 @@ extension ManagedPlatformWallet {
     /// Lease an identity slot for a new registration. The lease lives in
     /// memory only; Rust frees it when the registration lands, or when the
     /// registration finds the slot taken on chain
-    /// (`.identitySlotTakenOnChain`). Release it with
-    /// `releaseRegistrationSlot` when the registration is abandoned.
+    /// (`.identitySlotTakenOnChain`). A shielded-pool create left
+    /// unconfirmed is held by the wallet itself, across a restart too.
+    /// Release it with `releaseRegistrationSlot` when the registration is
+    /// abandoned.
     public func acquireRegistrationSlot() async throws -> RegistrationSlot {
         // `self` stays alive for the whole call: a deinit mid-call would
         // destroy the handle the FFI is still using.

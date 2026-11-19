@@ -98,10 +98,12 @@ struct PendingRegistrationRow: View {
             // `.failed` is always dismissable. `.unconfirmed` only becomes
             // dismissable once the matching `PersistentIdentity` row appears
             // via sync (see `isDismissable`): until the identity row lands
-            // only the wallet's in-memory slot lease holds the slot, and the
-            // live controller keeps it visible — dismissing it early hides a
-            // registration whose index a restart would hand out again,
-            // burning funds against the registered-key-hash check.
+            // a Core registration's slot is held only by the wallet's
+            // in-memory lease (a shielded create's slot the wallet holds
+            // across restarts), and the live controller keeps it visible —
+            // dismissing it early hides a registration whose index a restart
+            // could hand out again, burning funds against the
+            // registered-key-hash check.
             // Dismissing only drops the Pending row; it never undoes the
             // on-chain registration.
             if isDismissable {

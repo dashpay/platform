@@ -1112,6 +1112,7 @@ struct CreateIdentityView: View {
                     account: account,
                     walletId: walletId,
                     slot: slot,
+                    slotTakenRetries: slotTakenRetries,
                     identityPubkeys: identityPubkeys,
                     signer: signer,
                     managedWallet: managedWallet,
@@ -1132,6 +1133,7 @@ struct CreateIdentityView: View {
                 submitShieldedFunded(
                     walletId: walletId,
                     slot: slot,
+                    slotTakenRetries: slotTakenRetries,
                     identityPubkeys: identityPubkeys,
                     signer: signer,
                     managedWallet: managedWallet,
@@ -1309,13 +1311,14 @@ struct CreateIdentityView: View {
     /// right shape.
     ///
     /// Uses ZIP-32 account 0 (the app's shielded flows are account-0
-    /// default). The Rust wrapper registers the proof-verified identity
-    /// at `identityIndex` on success, so the `PersistentIdentity` row is
+    /// default). The Rust wrapper records the proof-verified identity
+    /// in `slot` on success, so the `PersistentIdentity` row is
     /// created by the persister callbacks before `persistCreatedIdentity`
     /// patches its UI-only fields — same as the address-funded path.
     private func submitShieldedFunded(
         walletId: Data,
         slot: ManagedPlatformWallet.RegistrationSlot,
+        slotTakenRetries: Int,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner,
         managedWallet: ManagedPlatformWallet,
@@ -1337,8 +1340,6 @@ struct CreateIdentityView: View {
             )
             return
         }
-        let identityIndex = slot.identityIndex
-
         let coordinator = walletManager.registrationCoordinator
         // Captured locally so the escaping body holds its own reference
         // rather than re-reading the view's `walletManager` property from
@@ -1347,7 +1348,7 @@ struct CreateIdentityView: View {
         let manager = walletManager
         let controller = coordinator.startRegistration(
             walletId: walletId,
-            identityIndex: identityIndex,
+            identityIndex: slot.identityIndex,
             fundingKind: .shieldedPool,
             body: {
                 // `shieldedIdentityCreateFromPool` lives on the manager
@@ -1359,7 +1360,7 @@ struct CreateIdentityView: View {
                     walletId: walletId,
                     resolver: MnemonicResolver(),
                     account: 0,
-                    identityIndex: identityIndex,
+                    slot: slot,
                     identityPubkeys: identityPubkeys,
                     denomination: denomination,
                     sendToAddressOnCreationFailure: fallbackAddressBytes,
@@ -1374,17 +1375,21 @@ struct CreateIdentityView: View {
             controller,
             slot: slot,
             managedWallet: managedWallet,
-            slotTakenRetries: 0,
+            slotTakenRetries: slotTakenRetries,
             network: network
         )
     }
 
     /// Platform-Payment funded registration. Spends credits from
     /// `PersistentPlatformAddress` rows on the selected account.
+    /// Like `observeController`, a slot found already taken on chain
+    /// starts over at a new slot, at most
+    /// `ManagedPlatformWallet.identitySlotTakenRetryLimit` times in a row.
     private func submitPlatformPayment(
         account: PersistentAccount,
         walletId: Data,
         slot: ManagedPlatformWallet.RegistrationSlot,
+        slotTakenRetries: Int,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner,
         managedWallet: ManagedPlatformWallet,
@@ -1415,7 +1420,7 @@ struct CreateIdentityView: View {
                 let created = try await managedWallet.registerIdentityFromAddresses(
                     inputs: inputs,
                     output: nil,
-                    identityIndex: slot.identityIndex,
+                    slot: slot,
                     identityPubkeys: identityPubkeys,
                     identitySigner: signer,
                     addressSigner: signer
@@ -1434,6 +1439,14 @@ struct CreateIdentityView: View {
                 }
             } catch {
                 await MainActor.run {
+                    // The wallet recorded the identity it found at this
+                    // slot and released the lease; nothing was spent.
+                    // Start over at the next slot it hands out.
+                    if case PlatformWalletError.identitySlotTakenOnChain = error,
+                       slotTakenRetries < ManagedPlatformWallet.identitySlotTakenRetryLimit {
+                        submit(slotTakenRetries: slotTakenRetries + 1)
+                        return
+                    }
                     // A registration that may have reached Platform keeps
                     // its slot leased until the app restarts; any other
                     // failure gives it back.
@@ -1541,7 +1554,7 @@ struct CreateIdentityView: View {
     ///
     /// `slot` is the wallet's lease for a new registration (`nil` on the
     /// resume path, whose lock holds its index). A completed or failed
-    /// registration gives it back; an unconfirmed one keeps it. A Core
+    /// registration gives it back; an unconfirmed one keeps it. A
     /// registration that found its slot already taken on chain starts
     /// over at a new slot, at most
     /// `ManagedPlatformWallet.identitySlotTakenRetryLimit` times in a row.
@@ -1608,8 +1621,9 @@ struct CreateIdentityView: View {
                 case .unconfirmed:
                     // The transition may have reached a node; its result is not
                     // proved, and the identity may already be live on chain.
-                    // The slot stays leased (in memory, until the app
-                    // restarts), so the wallet hands it to no other
+                    // The slot stays held (a Core lease in memory until the
+                    // app restarts; a shielded create by the wallet itself,
+                    // across restarts), so the wallet hands it to no other
                     // registration. We do NOT persist a
                     // `PersistentIdentity` row here — the proof-verified
                     // identity wasn't returned; the next sync writes the row

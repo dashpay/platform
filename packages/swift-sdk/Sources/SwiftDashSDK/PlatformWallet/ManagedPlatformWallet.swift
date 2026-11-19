@@ -552,7 +552,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     ///   - inputs: contributing address rows describing each input
     ///     platform address + the credit amount to spend from it.
     ///   - output: optional refund output.
-    ///   - identityIndex: BIP-9 identity index in the HD tree.
+    ///   - slot: the lease from `acquireRegistrationSlot()`; the keys
+    ///     are derived at `slot.identityIndex`. A registration at an
+    ///     index its slot does not lease throws `.identitySlotNotHeld`;
+    ///     keys already registered to an identity on Platform throw
+    ///     `.identitySlotTakenOnChain` (acquire again and re-derive).
+    ///     Nothing is spent in either case.
     ///   - identityPubkeys: Already-derived authentication pubkeys
     ///     for the new identity (typically produced by
     ///     `prePersistIdentityKeysForRegistration`). The first row
@@ -570,7 +575,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     public func registerIdentityFromAddresses(
         inputs: [IdentityAddressInput],
         output: IdentityAddressOutput?,
-        identityIndex: UInt32,
+        slot: RegistrationSlot,
         identityPubkeys: [IdentityPubkey],
         identitySigner: KeychainSigner,
         addressSigner: KeychainSigner
@@ -601,6 +606,8 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
         let addressSignerHandle = addressSigner.handle
+        let identityIndex = slot.identityIndex
+        let slotToken = slot.token
 
         let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
@@ -693,6 +700,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                             platform_wallet_register_identity_with_signer(
                                 handle,
                                 identityIndex,
+                                slotToken,
                                 ffiRowsPtr,
                                 UInt(ffiRowsCount),
                                 identitySignerHandle,
@@ -734,14 +742,14 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     public func registerIdentityFromAddresses(
         inputs: [IdentityAddressInput],
         output: IdentityAddressOutput?,
-        identityIndex: UInt32,
+        slot: RegistrationSlot,
         identityPubkeys: [IdentityPubkey],
         signer: KeychainSigner
     ) async throws -> CreatedIdentity {
         try await registerIdentityFromAddresses(
             inputs: inputs,
             output: output,
-            identityIndex: identityIndex,
+            slot: slot,
             identityPubkeys: identityPubkeys,
             identitySigner: signer,
             addressSigner: signer

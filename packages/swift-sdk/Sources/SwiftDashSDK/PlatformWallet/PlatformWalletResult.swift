@@ -33,7 +33,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// back empty. The wallet keeps the notes reserved and the saved
     /// transition. The identity may already exist on chain: do not treat it
     /// as unregistered or re-submit. The FFI fills the derived id into
-    /// `outIdentityId` on this code, so the caller can hold the slot.
+    /// `outIdentityId` on this code. The wallet holds the identity slot for
+    /// it, across a restart too.
     case errorShieldedBroadcastUnconfirmed = 17
     /// A shielded operation (shield from Platform addresses, unshield /
     /// transfer / withdrawal) may have reached a node and its result is not

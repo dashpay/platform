@@ -9,13 +9,12 @@ import DashSDKFFI
 ///
 /// This is NOT a registration failure: the identity may already exist
 /// on chain or may still be created (its result is not proved, e.g. after
-/// a transient DAPI/proof error or a node's refusal). The caller MUST hold
-/// the slot against re-submission and surface the pending identity
-/// rather than treating it as unregistered — re-registering the same
-/// keys while the identity is live would fail the registered-key-hash
-/// stateful check and burn the funds. The note reservations were
-/// intentionally left in place wallet-side; the next nullifier sync
-/// reconciles them.
+/// a transient DAPI/proof error or a node's refusal). The wallet holds
+/// the identity slot for it (across a restart too), so no other
+/// registration is handed that index; the caller keeps nothing for it,
+/// but must surface the pending identity rather than treat it as
+/// unregistered. The note reservations were intentionally left in place
+/// wallet-side; the next nullifier sync reconciles them.
 ///
 /// `identityId` is the 32-byte derived id the FFI filled into
 /// `outIdentityId` on this specific result code (valid, deterministic
@@ -1407,12 +1406,15 @@ extension PlatformWalletManager {
     /// [`shieldedTransfer`]). Returns the 32-byte new identity id
     /// (`double_sha256(sorted nullifiers)`).
     ///
-    /// `identityIndex` is the DIP-9 identity-registration slot the new
-    /// identity occupies. On a successful broadcast the Rust wallet
-    /// registers the proof-verified identity at this slot in its local
-    /// `IdentityManager` (mirroring address-funded registration), which
+    /// `slot` comes from `ManagedPlatformWallet.acquireRegistrationSlot()`
+    /// on the wallet `walletId` names; the keys are derived at
+    /// `slot.identityIndex`. An index its slot does not lease throws
+    /// `.identitySlotNotHeld` before a note is spent; keys already
+    /// registered to an identity throw `.identitySlotTakenOnChain`
+    /// (acquire again and re-derive). On a successful broadcast the Rust
+    /// wallet records the proof-verified identity in this slot, which
     /// drives the persister callbacks that create the app's identity
-    /// row. This wrapper only marshals it across the FFI.
+    /// row. This wrapper only marshals the slot across the FFI.
     ///
     /// `sendToAddressOnCreationFailure` is the REQUIRED fallback
     /// platform address as raw `PlatformAddress` storage bytes (21
@@ -1429,7 +1431,7 @@ extension PlatformWalletManager {
         walletId: Data,
         resolver: MnemonicResolver,
         account: UInt32 = 0,
-        identityIndex: UInt32,
+        slot: ManagedPlatformWallet.RegistrationSlot,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         denomination: UInt64,
         sendToAddressOnCreationFailure: Data,
@@ -1464,6 +1466,8 @@ extension PlatformWalletManager {
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
         let fallbackAddressBytes = sendToAddressOnCreationFailure
+        let identityIndex = slot.identityIndex
+        let slotToken = slot.token
 
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             var outIdentityId: (
@@ -1516,6 +1520,7 @@ extension PlatformWalletManager {
                                 resolverHandle,
                                 account,
                                 identityIndex,
+                                slotToken,
                                 ffiRowsPtr,
                                 UInt(ffiRowsCount),
                                 denomination,
@@ -1536,8 +1541,8 @@ extension PlatformWalletManager {
             //   - unconfirmed: the transition may have reached a node and its
             //     result is not proved; Rust filled `outIdentityId` with the
             //     derived id on THIS code (and only this code). Throw the typed
-            //     `ShieldedIdentityCreateUnconfirmedError` so the caller holds
-            //     the slot instead of treating it as failed.
+            //     `ShieldedIdentityCreateUnconfirmedError` so the caller does
+            //     not treat it as failed (the wallet holds the slot).
             //   - any other non-success: throw the regular typed error.
             let wrapped = PlatformWalletResult(result)
             switch wrapped.code {
