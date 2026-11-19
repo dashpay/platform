@@ -574,6 +574,7 @@ mod execution {
     use super::super::{AxisRangeBounds, DriveDocumentHavingQuery};
     use super::clause;
     use crate::drive::Drive;
+    use crate::error::proof::ProofError;
     use crate::error::query::QuerySyntaxError;
     use crate::error::Error;
     use crate::query::drive_document_having_query::resolve_having_query_for_mode;
@@ -1035,13 +1036,15 @@ mod execution {
             "the page holds beta, past 64 bits"
         );
         let proof = proof_of(run(&drive, &contract, &case, true).expect("prove must succeed"));
+        let live_root = grovedb_root_hash(&drive);
         assert!(
             matches!(
                 client_side_query(&contract, &case)
                     .verify_having_range_proof(&proof, platform_version()),
-                Err(Error::Query(QuerySyntaxError::Unsupported(_)))
+                Err(Error::Proof(ProofError::SumPastResultWidth { root_hash }))
+                    if root_hash == live_root
             ),
-            "the proved page holds beta too"
+            "the proved page holds beta too, refused with the root it proves"
         );
 
         let case = HavingCase::sum(HavingOperator::GreaterThanOrEquals, Value::I64(0), 2);

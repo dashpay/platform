@@ -101,7 +101,7 @@ impl DriveDocumentHavingQuery<'_> {
                     // `IN` element.
                     let entries = match entries {
                         None => Vec::new(),
-                        Some(entries) => axis_entries_to_ranked(axis, entries)?,
+                        Some(entries) => axis_entries_to_ranked(axis, entries, root_hash)?,
                     };
                     if entries.len() > self.limit as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -159,7 +159,7 @@ impl DriveDocumentHavingQuery<'_> {
                 "a having range proof verified to a different shape".to_string(),
             )));
         };
-        let entries = axis_entries_to_ranked(axis, entries)?;
+        let entries = axis_entries_to_ranked(axis, entries, root_hash)?;
         if entries.len() > self.limit as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                 "having range proof verified to {} entries for limit = {}",

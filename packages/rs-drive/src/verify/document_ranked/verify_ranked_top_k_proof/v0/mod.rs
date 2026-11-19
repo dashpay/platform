@@ -121,7 +121,9 @@ impl DriveDocumentRankedQuery<'_> {
                     // element.
                     let entries = match entries {
                         None => Vec::new(),
-                        Some(entries) => axis_entries_to_ranked(self.read_axis(), entries)?,
+                        Some(entries) => {
+                            axis_entries_to_ranked(self.read_axis(), entries, root_hash)?
+                        }
                     };
                     if entries.len() > self.k as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -192,7 +194,7 @@ impl DriveDocumentRankedQuery<'_> {
         };
         let entries = present_entries_on_axis(
             self.axis,
-            axis_entries_to_ranked(self.read_axis(), entries)?,
+            axis_entries_to_ranked(self.read_axis(), entries, root_hash)?,
         );
         if entries.len() > self.k as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(

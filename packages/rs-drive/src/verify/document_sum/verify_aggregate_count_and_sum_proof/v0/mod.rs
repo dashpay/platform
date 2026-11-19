@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
-use crate::query::sum_width::sum_in_64_bits;
+use crate::query::sum_width::proved_sum_in_64_bits;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::version::PlatformVersion;
@@ -49,7 +49,7 @@ impl DriveDocumentSumQuery<'_> {
                 &platform_version.drive.grove_version,
             )
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
-            return Ok((root_hash, count, sum_in_64_bits(sum)?));
+            return Ok((root_hash, count, proved_sum_in_64_bits(sum, root_hash)?));
         }
         let (root_hash, count, sum) = GroveDb::verify_aggregate_count_and_sum_query(
             proof,

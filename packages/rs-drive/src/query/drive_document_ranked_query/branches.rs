@@ -31,6 +31,8 @@
 use super::{RankedAxis, RankedEntry, RankedEntryValue};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::sum_width::proved_sum_in_64_bits;
+#[cfg(feature = "server")]
 use crate::query::sum_width::sum_in_64_bits;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 #[cfg(feature = "server")]
@@ -343,9 +345,12 @@ pub(crate) fn read_branched_union(
 /// Translate one branch's verified [`AxisEntries`] into drive entries
 /// on the requested axis — the same mapping the single-path verifiers
 /// perform, shared here so both surfaces' branched verifiers agree.
+/// `root_hash` is the root the proof reconstructs, which a sum past 64 bits
+/// is refused with ([`proved_sum_in_64_bits`]).
 pub fn axis_entries_to_ranked(
     axis: RankedAxis,
     entries: AxisEntries,
+    root_hash: [u8; 32],
 ) -> Result<Vec<RankedEntry>, Error> {
     match (axis, entries) {
         (RankedAxis::Count, AxisEntries::Count(entries)) => Ok(entries
@@ -374,7 +379,7 @@ pub fn axis_entries_to_ranked(
                 Ok(RankedEntry {
                     in_key: None,
                     key,
-                    value: RankedEntryValue::Sum(sum_in_64_bits(sum)?),
+                    value: RankedEntryValue::Sum(proved_sum_in_64_bits(sum, root_hash)?),
                 })
             })
             .collect(),

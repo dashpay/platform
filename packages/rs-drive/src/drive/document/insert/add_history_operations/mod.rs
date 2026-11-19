@@ -83,7 +83,7 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::drive::document::paths::contract_document_type_path_vec;
-    use crate::error::query::QuerySyntaxError;
+    use crate::error::proof::ProofError;
     use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
     use crate::query::{WhereClause, WhereOperator};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -393,7 +393,9 @@ mod tests {
     }
 
     /// A proved sum past 64 bits verifies against the root, and is refused as too wide for
-    /// the result that carries it, never read as another number.
+    /// the result that carries it, never read as another number. The refusal carries the
+    /// root the proof reconstructs, so a client authenticates it before taking it for the
+    /// network's answer rather than the node's fault.
     #[test]
     fn should_refuse_a_proved_sum_past_64_bits_as_too_wide() {
         let platform_version = PlatformVersion::latest();
@@ -411,6 +413,11 @@ mod tests {
         }
 
         let (sum, count_and_sum) = proved_price_totals(&drive, platform_version);
+        let live_root = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected the root hash");
         for error in [
             sum.expect_err("expected the sum to be refused"),
             count_and_sum.expect_err("expected the count and sum to be refused"),
@@ -418,8 +425,8 @@ mod tests {
             assert!(
                 matches!(
                     &error,
-                    Error::Query(QuerySyntaxError::Unsupported(message))
-                        if message.contains("does not fit the 64 bits")
+                    Error::Proof(ProofError::SumPastResultWidth { root_hash })
+                        if *root_hash == live_root
                 ),
                 "{error:?}"
             );

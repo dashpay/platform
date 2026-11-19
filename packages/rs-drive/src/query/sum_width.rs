@@ -12,12 +12,15 @@
 //! what the 64-bit accessors return wherever no such element exists, which is every state
 //! before protocol version 15.
 
+use crate::error::proof::ProofError;
+#[cfg(feature = "server")]
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use grovedb::Element;
 
 /// `sum` as a sum result carries it. A sum past 64 bits is refused: no result can carry it
 /// yet.
+#[cfg(feature = "server")]
 pub(crate) fn sum_in_64_bits(sum: i128) -> Result<i64, Error> {
     i64::try_from(sum).map_err(|_| {
         Error::Query(QuerySyntaxError::Unsupported(
@@ -27,17 +30,43 @@ pub(crate) fn sum_in_64_bits(sum: i128) -> Result<i64, Error> {
 }
 
 /// The sum `element` holds or contributes, at either width.
+#[cfg(feature = "server")]
 pub(crate) fn element_sum(element: &Element) -> Result<i64, Error> {
     sum_in_64_bits(element.big_sum_value_or_default())
 }
 
 /// The count and the sum `element` holds or contributes, at either width.
+#[cfg(feature = "server")]
 pub(crate) fn element_count_and_sum(element: &Element) -> Result<(u64, i64), Error> {
     let (count, sum) = element.count_big_sum_value_or_default();
     Ok((count, sum_in_64_bits(sum)?))
 }
 
-#[cfg(test)]
+/// `sum_in_64_bits` for a sum read from a proof that reconstructs `root_hash`. A sum past
+/// 64 bits is refused with that root ([`ProofError::SumPastResultWidth`]), so the caller can
+/// authenticate it before reporting the refusal: every honest node proves the same sum, and
+/// a node is not to be taken for a wrong one for it.
+pub(crate) fn proved_sum_in_64_bits(sum: i128, root_hash: [u8; 32]) -> Result<i64, Error> {
+    i64::try_from(sum).map_err(|_| Error::Proof(ProofError::SumPastResultWidth { root_hash }))
+}
+
+/// `element_sum` for an element read from a proof that reconstructs `root_hash`
+/// ([`proved_sum_in_64_bits`]).
+pub(crate) fn proved_element_sum(element: &Element, root_hash: [u8; 32]) -> Result<i64, Error> {
+    proved_sum_in_64_bits(element.big_sum_value_or_default(), root_hash)
+}
+
+/// `element_count_and_sum` for an element read from a proof that reconstructs `root_hash`
+/// ([`proved_sum_in_64_bits`]).
+pub(crate) fn proved_element_count_and_sum(
+    element: &Element,
+    root_hash: [u8; 32],
+) -> Result<(u64, i64), Error> {
+    let (count, sum) = element.count_big_sum_value_or_default();
+    Ok((count, proved_sum_in_64_bits(sum, root_hash)?))
+}
+
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
 

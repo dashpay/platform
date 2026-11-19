@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::query::drive_document_average_query::AverageEntry;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
-use crate::query::sum_width::element_count_and_sum;
+use crate::query::sum_width::proved_element_count_and_sum;
 use crate::query::WhereOperator;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -37,7 +37,7 @@ impl DriveDocumentSumQuery<'_> {
         for (path, key, elem) in elements {
             if let Some(e) = elem {
                 // At either width a type keeps its sums in (`crate::query::sum_width`)
-                let (count, sum) = element_count_and_sum(&e)?;
+                let (count, sum) = proved_element_count_and_sum(&e, root_hash)?;
                 let in_key = if has_in_on_prefix && path.len() > base_path_len {
                     Some(path[base_path_len].clone())
                 } else {
