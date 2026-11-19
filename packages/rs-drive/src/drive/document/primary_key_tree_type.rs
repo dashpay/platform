@@ -78,6 +78,64 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
     }
 }
 
+/// Generation 1 of the primary key tree's type, which generation 2 builds on.
+fn primary_key_tree_type_v1(document_type: DocumentTypeRef) -> TreeType {
+    // v1: count × sum composition over the expanded
+    // grovedb TreeType set. The four flags map to nine
+    // distinct cases per the dispatch table below — note
+    // the **per-axis** distinction between provable
+    // (per-node aggregation, range-queryable) and root-only
+    // aggregation:
+    //
+    // | rc | dc | rs | ds | TreeType                          |
+    // |----|----|----|----|-----------------------------------|
+    // | F  | F  | F  | F  | NormalTree                        |
+    // | F  | T  | F  | F  | CountTree                         |
+    // | T  | _  | F  | F  | ProvableCountTree                 |
+    // | F  | F  | F  | T  | SumTree                           |
+    // | F  | F  | T  | _  | ProvableSumTree                   |
+    // | F  | T  | F  | T  | CountSumTree                      |
+    // | T  | _  | F  | T  | ProvableCountSumTree              |
+    // | F  | T  | T  | _  | ProvableCountProvableSumTree (*)  |
+    // | T  | _  | T  | _  | ProvableCountProvableSumTree      |
+    //
+    // (*) "count root-only + sum provable" has no
+    // dedicated grovedb variant; we upgrade the count
+    // side to per-node too. Same storage cost as
+    // ProvableCountSumTree's count-half (per-node counts)
+    // because ProvableCountProvableSumTree is the only
+    // way to have a per-node sum aggregate.
+    //
+    // `ProvableCountProvableSumTree` is distinct from
+    // `ProvableCountSumTree`: the latter carries per-node
+    // counts but only a *root-level* sum.
+    let rc = document_type.range_countable();
+    let dc = document_type.documents_countable();
+    let rs = document_type.range_summable();
+    let ds = document_type.documents_summable().is_some();
+
+    let count_provable = rc;
+    let count_root_only = dc && !rc;
+    let sum_provable = rs;
+    let sum_root_only = ds && !rs;
+
+    match (count_provable, count_root_only, sum_provable, sum_root_only) {
+        // No flags
+        (false, false, false, false) => TreeType::NormalTree,
+        // Pure count
+        (false, true, false, false) => TreeType::CountTree,
+        (true, _, false, false) => TreeType::ProvableCountTree,
+        // Pure sum
+        (false, false, false, true) => TreeType::SumTree,
+        (false, false, true, _) => TreeType::ProvableSumTree,
+        // Combined
+        (false, true, false, true) => TreeType::CountSumTree,
+        (true, _, false, true) => TreeType::ProvableCountSumTree,
+        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,63 +195,5 @@ mod tests {
         let pv = PlatformVersion::latest();
         let result = dt.as_ref().primary_key_tree_type(pv).unwrap();
         assert_eq!(result, TreeType::ProvableCountTree);
-    }
-}
-
-/// Generation 1 of the primary key tree's type, which generation 2 builds on.
-fn primary_key_tree_type_v1(document_type: DocumentTypeRef) -> TreeType {
-    // v1: count × sum composition over the expanded
-    // grovedb TreeType set. The four flags map to nine
-    // distinct cases per the dispatch table below — note
-    // the **per-axis** distinction between provable
-    // (per-node aggregation, range-queryable) and root-only
-    // aggregation:
-    //
-    // | rc | dc | rs | ds | TreeType                          |
-    // |----|----|----|----|-----------------------------------|
-    // | F  | F  | F  | F  | NormalTree                        |
-    // | F  | T  | F  | F  | CountTree                         |
-    // | T  | _  | F  | F  | ProvableCountTree                 |
-    // | F  | F  | F  | T  | SumTree                           |
-    // | F  | F  | T  | _  | ProvableSumTree                   |
-    // | F  | T  | F  | T  | CountSumTree                      |
-    // | T  | _  | F  | T  | ProvableCountSumTree              |
-    // | F  | T  | T  | _  | ProvableCountProvableSumTree (*)  |
-    // | T  | _  | T  | _  | ProvableCountProvableSumTree      |
-    //
-    // (*) "count root-only + sum provable" has no
-    // dedicated grovedb variant; we upgrade the count
-    // side to per-node too. Same storage cost as
-    // ProvableCountSumTree's count-half (per-node counts)
-    // because ProvableCountProvableSumTree is the only
-    // way to have a per-node sum aggregate.
-    //
-    // `ProvableCountProvableSumTree` is distinct from
-    // `ProvableCountSumTree`: the latter carries per-node
-    // counts but only a *root-level* sum.
-    let rc = document_type.range_countable();
-    let dc = document_type.documents_countable();
-    let rs = document_type.range_summable();
-    let ds = document_type.documents_summable().is_some();
-
-    let count_provable = rc;
-    let count_root_only = dc && !rc;
-    let sum_provable = rs;
-    let sum_root_only = ds && !rs;
-
-    match (count_provable, count_root_only, sum_provable, sum_root_only) {
-        // No flags
-        (false, false, false, false) => TreeType::NormalTree,
-        // Pure count
-        (false, true, false, false) => TreeType::CountTree,
-        (true, _, false, false) => TreeType::ProvableCountTree,
-        // Pure sum
-        (false, false, false, true) => TreeType::SumTree,
-        (false, false, true, _) => TreeType::ProvableSumTree,
-        // Combined
-        (false, true, false, true) => TreeType::CountSumTree,
-        (true, _, false, true) => TreeType::ProvableCountSumTree,
-        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
-        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
     }
 }
