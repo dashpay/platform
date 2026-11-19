@@ -141,65 +141,59 @@ fun ReclaimInvitationSheet(
                         )
                     } else {
                         // The wallet chooses the index: the slot it leases to
-                        // this registration.
-                        val first = mgr.identityRegistration.acquireRegistrationSlot(wallet.handle)
-                        var current = first
-                        try {
-                            IdentitySlotRetry.run(
-                                first = first,
-                                reacquire = {
-                                    mgr.identityRegistration.acquireRegistrationSlot(wallet.handle)
-                                        .also { current = it }
-                                },
-                            ) { slot ->
-                                // Pre-broadcast local work — BEFORE the marker,
-                                // so a failure here leaves no in-flight marker.
-                                // Base 4-key set: a reclaim sends no contact
-                                // request (iOS authKeyCount = 4).
-                                val previews = mgr.identityRegistration.previewRegistrationKeySet(
-                                    walletHandle = wallet.handle,
-                                    mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                                    identityIndex = slot.identityIndex,
-                                    count = org.dashfoundation.dashsdk.identity.RegistrationKeys
-                                        .keyCount(includeDashPayKeys = false),
-                                )
-                                val keySet = DashpayKeyProvisioning.provision(
-                                    previews = previews,
-                                    includeDashPayKeys = false,
-                                    walletId = wallet.walletId,
-                                    persister = { keyHex, priv, owner ->
-                                        container.walletStorage.storePrivateKey(
-                                            keyHex, priv, ownerWalletId = owner,
-                                        )
-                                    },
-                                )
-                                markInFlight()
-                                try {
-                                    mgr.identityRegistration.reclaimInvitationAsNewIdentity(
-                                        walletHandle = wallet.handle,
-                                        outPointTxid = txid,
-                                        outPointVout = vout,
-                                        slot = slot,
-                                        keys = keySet,
-                                        signerHandle = mgr.signerHandle,
-                                        coreSignerHandle = mgr.mnemonicResolverHandle,
-                                    )
-                                } catch (e: DashSdkError.PlatformWallet.IdentitySlotTakenOnChain) {
-                                    // Nothing was consumed: put the marker back
-                                    // as it was before this attempt set it.
-                                    dao.setReclaimInFlight(
-                                        hex, hadPriorReclaimInFlight, System.currentTimeMillis(),
-                                    )
-                                    throw e
+                        // this registration. A failed registration frees its
+                        // slot (one taken on chain is freed already).
+                        IdentitySlotRetry.runReleasingOnFailure(
+                            first = mgr.identityRegistration.acquireRegistrationSlot(wallet.handle),
+                            reacquire = {
+                                mgr.identityRegistration.acquireRegistrationSlot(wallet.handle)
+                            },
+                            release = {
+                                runCatching {
+                                    mgr.identityRegistration.releaseRegistrationSlot(wallet.handle, it)
                                 }
+                            },
+                        ) { slot ->
+                            // Pre-broadcast local work — BEFORE the marker,
+                            // so a failure here leaves no in-flight marker.
+                            // Base 4-key set: a reclaim sends no contact
+                            // request (iOS authKeyCount = 4).
+                            val previews = mgr.identityRegistration.previewRegistrationKeySet(
+                                walletHandle = wallet.handle,
+                                mnemonicResolverHandle = mgr.mnemonicResolverHandle,
+                                identityIndex = slot.identityIndex,
+                                count = org.dashfoundation.dashsdk.identity.RegistrationKeys
+                                    .keyCount(includeDashPayKeys = false),
+                            )
+                            val keySet = DashpayKeyProvisioning.provision(
+                                previews = previews,
+                                includeDashPayKeys = false,
+                                walletId = wallet.walletId,
+                                persister = { keyHex, priv, owner ->
+                                    container.walletStorage.storePrivateKey(
+                                        keyHex, priv, ownerWalletId = owner,
+                                    )
+                                },
+                            )
+                            markInFlight()
+                            try {
+                                mgr.identityRegistration.reclaimInvitationAsNewIdentity(
+                                    walletHandle = wallet.handle,
+                                    outPointTxid = txid,
+                                    outPointVout = vout,
+                                    slot = slot,
+                                    keys = keySet,
+                                    signerHandle = mgr.signerHandle,
+                                    coreSignerHandle = mgr.mnemonicResolverHandle,
+                                )
+                            } catch (e: DashSdkError.PlatformWallet.IdentitySlotTakenOnChain) {
+                                // Nothing was consumed: put the marker back
+                                // as it was before this attempt set it.
+                                dao.setReclaimInFlight(
+                                    hex, hadPriorReclaimInFlight, System.currentTimeMillis(),
+                                )
+                                throw e
                             }
-                        } catch (e: Throwable) {
-                            // A failed registration frees its slot (one taken
-                            // on chain is freed already).
-                            runCatching {
-                                mgr.identityRegistration.releaseRegistrationSlot(wallet.handle, current)
-                            }
-                            throw e
                         }
                     }
 
