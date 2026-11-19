@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
     axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
-use crate::query::drive_document_ranked_query::present_entries_on_axis;
+use crate::query::drive_document_ranked_query::{index_axis_for, present_entries_on_axis};
 use crate::query::{DriveDocumentHavingQuery, RankedEntry};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -69,7 +69,13 @@ impl DriveDocumentHavingQuery<'_> {
                 prefix,
                 keys.clone(),
                 suffix,
-                AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending),
+                AxisQuery::bounded(
+                    index_axis_for(axis, self.document_type, self.index),
+                    lo,
+                    hi,
+                    self.limit,
+                    self.descending,
+                ),
             );
             let verified = GroveDb::verify_path_query(
                 proof,
@@ -144,8 +150,14 @@ impl DriveDocumentHavingQuery<'_> {
         let read_bounds = self.read_bounds();
         let axis = read_bounds.axis();
         let (lo, hi) = read_bounds.inclusive_bounds_i128();
-        let path_query =
-            PathQuery::new_axis_bounded(path, axis.into(), lo, hi, self.limit, self.descending);
+        let path_query = PathQuery::new_axis_bounded(
+            path,
+            index_axis_for(axis, self.document_type, self.index),
+            lo,
+            hi,
+            self.limit,
+            self.descending,
+        );
         let verified =
             GroveDb::verify_path_query(proof, &path_query, &platform_version.drive.grove_version)
                 .map_err(|e| Error::GroveDB(Box::new(e)))?;

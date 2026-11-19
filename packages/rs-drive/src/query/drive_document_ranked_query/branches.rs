@@ -31,6 +31,7 @@
 use super::{RankedAxis, RankedEntry, RankedEntryValue};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::sum_width::sum_in_64_bits;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 #[cfg(feature = "server")]
 use grovedb::{
@@ -211,6 +212,18 @@ pub(crate) fn axis_keys_to_ranked(
                 value: RankedEntryValue::Sum(sum),
             })
             .collect()),
+        // The big sum axis of a type that keeps its sums in 128 bits, presented as the sum a
+        // ranked entry carries when it fits 64 bits
+        (RankedAxis::Sum, AxisKeys::BigSum(pairs)) => pairs
+            .into_iter()
+            .map(|(sum, key)| {
+                Ok(RankedEntry {
+                    in_key: None,
+                    key,
+                    value: RankedEntryValue::Sum(sum_in_64_bits(sum)?),
+                })
+            })
+            .collect(),
         (RankedAxis::Avg, AxisKeys::Avg(pairs)) => Ok(pairs
             .into_iter()
             .map(|(avg, key)| RankedEntry {
@@ -353,6 +366,18 @@ pub fn axis_entries_to_ranked(
                 value: RankedEntryValue::Sum(sum),
             })
             .collect()),
+        // As for the keys above
+        (RankedAxis::Sum, AxisEntries::BigSum(entries)) => entries
+            .into_iter()
+            .map(|entry| entry.key_pair())
+            .map(|(sum, key)| {
+                Ok(RankedEntry {
+                    in_key: None,
+                    key,
+                    value: RankedEntryValue::Sum(sum_in_64_bits(sum)?),
+                })
+            })
+            .collect(),
         (RankedAxis::Avg, AxisEntries::Avg(entries)) => Ok(entries
             .into_iter()
             .map(|entry| entry.key_pair())

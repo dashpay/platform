@@ -969,6 +969,64 @@ mod execution {
         assert_proof_round_trips(&drive, &contract, &case, &entries);
     }
 
+    /// The same `HAVING SUM` over a type that keeps its sums in 128 bits, whose
+    /// ranking is on the big sum axis (protocol version 15).
+    #[test]
+    fn sum_between_reads_and_proves_consistently_on_the_big_sum_axis() {
+        use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let mut json = dpp::tests::json_document::json_document_to_json_value(
+            "tests/supporting_files/contract/restaurants/restaurants-contract.json",
+        )
+        .expect("expected to read the restaurants contract");
+        json["documentSchemas"]["tip"]["properties"]["amount"]["maximum"] =
+            serde_json::Value::from(u32::MAX);
+        let contract =
+            DataContract::from_json(json, false, pv).expect("expected the contract to parse");
+        assert!(contract
+            .document_type_for_name("tip")
+            .expect("tip")
+            .uses_big_sums());
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the restaurants contract");
+        insert_docs(
+            &drive,
+            &contract,
+            "tip",
+            "amount",
+            300,
+            &[
+                ("alpha", 100),
+                ("alpha", 50),
+                ("beta", 4_000_000_000),
+                ("gamma", 400),
+            ],
+        );
+
+        let case = HavingCase::sum(
+            HavingOperator::Between,
+            Value::Array(vec![Value::I64(100), Value::I64(500)]),
+            10,
+        );
+        let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
+        assert_eq!(keys_of(&entries), vec!["alpha", "gamma"]);
+        assert_eq!(
+            entries.iter().map(|e| e.value).collect::<Vec<_>>(),
+            vec![RankedEntryValue::Sum(150), RankedEntryValue::Sum(400)]
+        );
+        assert_proof_round_trips(&drive, &contract, &case, &entries);
+    }
+
     /// Reviews: alpha (90+80)/2 = 85, beta (60+70+50)/3 = 60, gamma 95.
     /// `HAVING AVG(grade) >= 85` returns alpha and gamma; the entries
     /// carry the exact fixed points.

@@ -14,7 +14,9 @@
 use super::super::drive_document_ranked_query::branches::{
     axis_keys_to_ranked, decompose_branch_paths, read_branched_union,
 };
-use super::super::drive_document_ranked_query::{present_entries_on_axis, RankedEntry};
+use super::super::drive_document_ranked_query::{
+    index_axis_for, present_entries_on_axis, RankedEntry,
+};
 use super::DriveDocumentHavingQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -72,7 +74,13 @@ impl DriveDocumentHavingQuery<'_> {
                 &self.prefix_branches,
                 &paths,
                 axis,
-                AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending),
+                AxisQuery::bounded(
+                    index_axis_for(axis, self.document_type, self.index),
+                    lo,
+                    hi,
+                    self.limit,
+                    self.descending,
+                ),
                 self.limit as usize,
                 self.descending,
                 transaction,
@@ -103,7 +111,14 @@ impl DriveDocumentHavingQuery<'_> {
         // but reads like a panicking unwrap at the call site.
         let path_query = PathQuery::new_axis(
             path,
-            AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending).keys_only(),
+            AxisQuery::bounded(
+                index_axis_for(axis, self.document_type, self.index),
+                lo,
+                hi,
+                self.limit,
+                self.descending,
+            )
+            .keys_only(),
         );
         let CostContext { value, cost: _ } = drive.grove.run_path_query(
             &path_query,
@@ -178,7 +193,7 @@ impl DriveDocumentHavingQuery<'_> {
                 keys,
                 suffix,
                 AxisQuery::bounded(
-                    read_bounds.axis().into(),
+                    index_axis_for(read_bounds.axis(), self.document_type, self.index),
                     lo,
                     hi,
                     self.limit,
@@ -206,7 +221,7 @@ impl DriveDocumentHavingQuery<'_> {
         let (lo, hi) = read_bounds.inclusive_bounds_i128();
         let path_query = PathQuery::new_axis_bounded(
             path,
-            read_bounds.axis().into(),
+            index_axis_for(read_bounds.axis(), self.document_type, self.index),
             lo,
             hi,
             self.limit,

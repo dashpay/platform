@@ -84,7 +84,7 @@ impl DriveDocumentRankedQuery<'_> {
                 keys.clone(),
                 suffix,
                 AxisQuery::top_k(
-                    self.read_axis().into(),
+                    self.read_index_axis(),
                     self.k,
                     self.offset as u64,
                     self.descending,
@@ -172,7 +172,7 @@ impl DriveDocumentRankedQuery<'_> {
         // version reads and presents exactly as before.
         let path_query = PathQuery::new_axis_top_k(
             path,
-            self.read_axis().into(),
+            self.read_index_axis(),
             self.k,
             self.offset as u64,
             self.descending,
