@@ -17,6 +17,8 @@ import java.nio.ByteOrder
  * resumes the named lock and never funds a new one (an invitation's voucher
  * lock is reclaimed instead, [invitationVoucher]), and everything else
  * waits (a non-retryable NOT_SENT, MAYBE_SENT, and an unclassified failure).
+ * Whether the failure keeps its slot is [holdsSlot]: only a NOT_SENT one
+ * releases it.
  */
 data class PaymentFailure(
     val recovery: PaymentRecovery,
@@ -49,8 +51,6 @@ data class PaymentFailure(
             PaymentRecovery.Wait, PaymentRecovery.Reconcile, PaymentRecovery.Unconfirmed -> Action.Wait
         }
 
-    val allowsRetry: Boolean get() = action == Action.Retry
-
     /** The lock to resume, null unless the action is [Action.Resume]. */
     val heldLock: AssetLockBuiltOutPoint? get() = (action as? Action.Resume)?.outPoint
 
@@ -78,16 +78,31 @@ data class PaymentFailure(
         } ?: "${recovery.suggestion} $detail"
 
     /**
-     * Whether a failed attempt may be started again by an operation that
-     * resumes [resuming] (null for a fresh one): anything after a retryable
-     * failure, only the resume of the held lock after a held one, nothing
-     * after one that waits.
+     * Whether the failure holds its slot (the screen's form, the
+     * coordinator's controller, its dismissal) until it is resumed or the
+     * user leaves the flow. Every gate on a failed payment reads this.
+     * ← Swift `PaymentFailure.holdsSlot`.
+     *
+     * A failure that may have left the wallet (MAYBE_SENT), holds an asset
+     * lock (LOCK_HELD) or carries no class holds it: a new request could pay
+     * a second time. Any NOT_SENT failure, retryable or not, releases it:
+     * nothing left the wallet, so dismissal and a corrected new request are
+     * allowed (the native wallet refuses again if something still blocks).
      */
-    fun permitsRestart(resuming: AssetLockBuiltOutPoint?): Boolean = when (val a = action) {
-        Action.Retry -> true
-        is Action.Resume -> resuming == a.outPoint
-        Action.Wait -> false
-    }
+    val holdsSlot: Boolean
+        get() = when (recovery) {
+            PaymentRecovery.Retry, PaymentRecovery.Wait -> false
+            is PaymentRecovery.Resume, PaymentRecovery.Reconcile, PaymentRecovery.Unconfirmed -> true
+        }
+
+    /**
+     * Whether a failed attempt may be started again by an operation that
+     * resumes [resuming] (null for a fresh one): anything after a failure
+     * that releases its slot ([holdsSlot]), only the resume of the held lock
+     * after a held one, nothing after any other.
+     */
+    fun permitsRestart(resuming: AssetLockBuiltOutPoint?): Boolean =
+        !holdsSlot || (heldLock != null && resuming == heldLock)
 
     companion object {
         /**

@@ -310,30 +310,55 @@ class RegistrationCoordinatorTest {
         assertEquals(1, coordinator.controllers.value.size)
     }
 
+    /**
+     * Any NOT_SENT failure, retryable or not, releases the slot (← Swift
+     * `testRegistrationFailureIsDismissedOnlyWhenNothingWasSent`).
+     */
     @Test
-    fun `dismiss removes a failed controller whose class allows a retry`() = runTest {
+    fun `dismiss removes a failed controller whose payment was not sent`() = runTest {
         val coordinator = coordinator()
+        listOf(true, false).forEachIndexed { index, retryable ->
+            coordinator.startRegistration(
+                walletA, index,
+                body = { throw walletError(delivery = 1, retryable = retryable) },
+            )
+            advanceUntilIdle()
+            assertTrue(coordinator.controller(walletA, index)?.phase?.value is Phase.Failed)
 
-        coordinator.startRegistration(walletA, 0, body = { throw walletError(delivery = 1, retryable = true) })
-        advanceUntilIdle()
-        assertEquals(1, coordinator.controllers.value.size)
-
-        assertTrue(coordinator.dismiss(walletA, 0))
+            assertTrue(coordinator.dismiss(walletA, index))
+            assertNull(coordinator.controller(walletA, index))
+        }
         assertTrue(coordinator.controllers.value.isEmpty())
-        assertNull(coordinator.controller(walletA, 0))
     }
 
     /**
-     * Dismissing a failure that may have left, holds a lock, or waits for an
-     * earlier payment would drop the slot's gate: refused, so a fresh
-     * registration on the index still does not run (← Swift
-     * `testRegistrationFailureIsDismissedOnlyWhenItsClassAllowsARetry`).
+     * A registration refused before anything was sent, even one the native
+     * wallet does not allow to retry as it is (too little in the asset lock,
+     * an earlier payment still settling), does not keep its index: a
+     * corrected new request on the slot runs (← Swift
+     * `testRegistrationNotSentFailureLetsANewRequestRun`).
+     */
+    @Test
+    fun `a not-sent failure lets a new request on the slot run`() = runTest {
+        val coordinator = coordinator()
+        coordinator.startRegistration(walletA, 7, body = { throw walletError(delivery = 1, retryable = false) })
+        advanceUntilIdle()
+
+        val id = ByteArray(32) { 6 }
+        val again = coordinator.startRegistration(walletA, 7, body = { id })
+        advanceUntilIdle()
+        assertEquals(Phase.Completed(id), again.phase.value)
+    }
+
+    /**
+     * Dismissing a failure that may have left, holds a lock, or has no class
+     * would drop the slot's gate: refused, so a fresh registration on the
+     * index still does not run.
      */
     @Test
     fun `dismiss keeps a failed slot whose class forbids a fresh registration`() = runTest {
         val coordinator = coordinator()
         listOf(
-            walletError(delivery = 1, retryable = false),
             walletError(delivery = 2, retryable = false),
             walletError(delivery = 3, retryable = false, held = heldRaw),
             RuntimeException("unclassified"),

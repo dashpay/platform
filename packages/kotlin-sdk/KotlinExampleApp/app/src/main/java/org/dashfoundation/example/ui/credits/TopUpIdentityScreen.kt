@@ -70,13 +70,13 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
-    // The last failed top-up, presented by its payment class; only a
-    // retryable one lets the button run it again.
+    // The last failed top-up, presented by its payment class; the button
+    // stays off while it holds its slot (PaymentFailure.holdsSlot).
     var failure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     val amount = amountText.toLongOrNull()
     val canSubmit = wallet != null && manager != null && amount != null && amount > 0 &&
-        !isSubmitting && failure?.allowsRetry != false
+        !isSubmitting && failure?.holdsSlot != true
 
     Scaffold(
         topBar = {

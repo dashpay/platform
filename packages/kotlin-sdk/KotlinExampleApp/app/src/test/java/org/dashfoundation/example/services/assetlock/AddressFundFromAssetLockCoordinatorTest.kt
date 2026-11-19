@@ -10,7 +10,6 @@ import kotlinx.coroutines.test.runTest
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController.Phase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.dashfoundation.dashsdk.errors.DashSdkError
@@ -222,19 +221,36 @@ class AddressFundFromAssetLockCoordinatorTest {
         assertEquals(1, coordinator.controllers.value.size)
     }
 
+    /**
+     * Dismiss drops a failed controller only when its failure releases the
+     * slot (any NOT_SENT); a failure that may have left, holds a lock, or
+     * has no class keeps it, and a fresh funding of the recipient does not
+     * run (← Swift `testAddressFundingFailureIsDismissedOnlyWhenNothingWasSent`).
+     */
     @Test
-    fun `dismiss removes a failed controller`() = runTest {
+    fun `dismiss removes a failed controller only when its payment was not sent`() = runTest {
         val coordinator = coordinator()
-        val gate = CompletableDeferred<Long>()
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(delivery = 1, retryable = true) to true,
+            walletError(delivery = 1, retryable = false) to true,
+            walletError(delivery = 3, retryable = false, held = heldRaw) to false,
+            walletError(delivery = 2, retryable = false) to false,
+            RuntimeException("unclassified") to false,
+        ).forEachIndexed { index, (error, dismissable) ->
+            val recipient = ByteArray(20) { index.toByte() }
+            val controller = coordinator.startFunding(walletA, 0, recipient, 0) { throw error }
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
 
-        coordinator.startFunding(walletA, 0, recipient0, 0) { gate.await() }
-        gate.completeExceptionally(RuntimeException("nope"))
-        advanceUntilIdle()
-        assertEquals(1, coordinator.controllers.value.size)
+            assertEquals(error.toString(), dismissable, coordinator.dismiss(walletA, 0, recipient))
+            assertEquals(dismissable, coordinator.controller(walletA, 0, recipient) == null)
 
-        coordinator.dismiss(walletA, 0, recipient0)
-        assertTrue(coordinator.controllers.value.isEmpty())
-        assertNull(coordinator.controller(walletA, 0, recipient0))
+            var ran = false
+            val again = coordinator.startFunding(walletA, 0, recipient, 0) { ran = true; 1L }
+            advanceUntilIdle()
+            assertEquals("a fresh funding runs only after a released slot", dismissable, ran)
+            if (!dismissable) assertSame(controller, again)
+        }
     }
 
     @Test

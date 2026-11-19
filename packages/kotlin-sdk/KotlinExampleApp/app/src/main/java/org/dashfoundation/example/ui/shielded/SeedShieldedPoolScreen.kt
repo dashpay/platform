@@ -78,10 +78,11 @@ fun SeedShieldedPoolScreen(walletIdHex: String, navController: NavHostController
         val target = targetText.toLongOrNull()
         val batches = target?.let { (it + 5) / 6 } // ceil(target / MAX_ACTIONS_PER_BATCH)
         val inFlight = phase is SeedPhase.InFlight
-        // A seeding that failed in the SDK runs again only where its
-        // payment class allows a retry: earlier batches may have funded locks.
+        // A seeding that failed in the SDK runs again only when its failure
+        // releases the slot (PaymentFailure.holdsSlot): one that may have
+        // left or holds a lock could fund a second one.
         val canSubmit = manager != null && target != null && target > 0 && !inFlight &&
-            (phase as? SeedPhase.Failed)?.allowsRetry != false
+            (phase as? SeedPhase.Failed)?.holdsSlot != true
 
         Scaffold(
             topBar = {
@@ -207,7 +208,7 @@ fun SeedShieldedPoolScreen(walletIdHex: String, navController: NavHostController
                             phase = SeedPhase.Completed
                         } catch (e: Exception) {
                             phase = PaymentFailure.ofPayment(e)
-                                ?.let { SeedPhase.Failed(it.message, it.title, it.allowsRetry) }
+                                ?.let { SeedPhase.Failed(it.message, it.title, it.holdsSlot) }
                                 ?: SeedPhase.Failed(e.message ?: "Seeding failed")
                         }
                     }
@@ -226,7 +227,7 @@ private sealed interface SeedPhase {
     data class Failed(
         val message: String,
         val title: String = "Failed",
-        val allowsRetry: Boolean = true,
+        val holdsSlot: Boolean = false,
     ) : SeedPhase
 }
 

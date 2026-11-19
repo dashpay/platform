@@ -41,8 +41,7 @@ class PaymentFailureTest {
             assertEquals(expected.first, failure.action)
             assertTrue(failure.message, failure.message.startsWith(expected.second.suggestion))
             assertTrue(failure.message, failure.message.endsWith("detail"))
-            assertEquals(expected.first == PaymentFailure.Action.Retry, failure.allowsRetry)
-            if (!failure.allowsRetry) {
+            if (failure.action != PaymentFailure.Action.Retry) {
                 assertFalse(failure.message, failure.message.lowercase().contains("try again"))
             }
         }
@@ -60,18 +59,41 @@ class PaymentFailureTest {
         assertNull(PaymentFailure.ofPayment(IllegalArgumentException("Enter a price")))
     }
 
+    /**
+     * A failure that may have left (MAYBE_SENT), holds a lock (LOCK_HELD) or
+     * has no class holds its slot; any NOT_SENT one, retryable or not,
+     * releases it (← Swift `testShouldHoldTheSlotUnlessNothingWasSent`).
+     */
+    @Test
+    fun shouldHoldTheSlotUnlessNothingWasSent() {
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(6, 1, true) to false,
+            walletError(6, 1, false) to false,
+            walletError(6, 3, false, heldRaw) to true,
+            walletError(6, 2, false) to true,
+            walletError(6, 4, false) to true,
+            RuntimeException("unclassified") to true,
+        ).forEach { (error, holds) ->
+            assertEquals(error.toString(), holds, PaymentFailure.of(error).holdsSlot)
+            assertEquals(holds, PaymentFailure.of(error, invitationVoucher = true).holdsSlot)
+        }
+    }
+
     @Test
     fun shouldRestartOnlyAsTheClassAllows() {
-        val retry = PaymentFailure.of(walletError(6, 1, true))
-        assertTrue(retry.permitsRestart(null))
-        assertTrue(retry.permitsRestart(other))
+        // Nothing left the wallet: any new request, retryable or not.
+        listOf(walletError(6, 1, true), walletError(6, 1, false)).forEach {
+            val released = PaymentFailure.of(it)
+            assertTrue(released.permitsRestart(null))
+            assertTrue(released.permitsRestart(other))
+        }
 
         val resume = PaymentFailure.of(walletError(6, 3, false, heldRaw))
         assertFalse("never fund a new payment", resume.permitsRestart(null))
         assertFalse(resume.permitsRestart(other))
         assertTrue(resume.permitsRestart(held))
 
-        listOf(walletError(6, 1, false), walletError(6, 2, false), walletError(6, 4, false)).forEach {
+        listOf(walletError(6, 2, false), walletError(6, 4, false)).forEach {
             val wait = PaymentFailure.of(it)
             assertFalse(wait.permitsRestart(null))
             assertFalse(wait.permitsRestart(held))

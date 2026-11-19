@@ -208,19 +208,35 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         assertEquals(Phase.Completed, controller.phase.value)
     }
 
+    /**
+     * Dismiss drops a failed controller only when its failure releases the
+     * slot (any NOT_SENT); a failure that may have left, holds a lock, or
+     * has no class keeps it, and a fresh shield to the recipient does not
+     * run (← Swift `testShieldedFundingFailureIsDismissedOnlyWhenNothingWasSent`).
+     */
     @Test
-    fun `dismiss removes a failed controller`() = runTest {
+    fun `dismiss removes a failed controller only when its payment was not sent`() = runTest {
         val coordinator = coordinator()
-        val gate = CompletableDeferred<Unit>()
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(delivery = 1, retryable = true) to true,
+            walletError(delivery = 1, retryable = false) to true,
+            walletError(delivery = 3, retryable = false, held = heldRaw) to false,
+            walletError(delivery = 2, retryable = false) to false,
+            RuntimeException("unclassified") to false,
+        ).forEachIndexed { index, (error, dismissable) ->
+            val recipient = ByteArray(43) { index.toByte() }
+            val controller = coordinator.startFunding(walletA, recipient, "shield:$index") { throw error }.controller()
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
 
-        coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }
-        gate.completeExceptionally(RuntimeException("nope"))
-        advanceUntilIdle()
-        assertEquals(1, coordinator.controllers.value.size)
+            assertEquals(error.toString(), dismissable, coordinator.dismiss(walletA, recipient))
+            assertEquals(dismissable, coordinator.controller(walletA, recipient) == null)
 
-        coordinator.dismiss(walletA, recipientX)
-        assertTrue(coordinator.controllers.value.isEmpty())
-        assertNull(coordinator.controller(walletA, recipientX))
+            var ran = false
+            coordinator.startFunding(walletA, recipient, "shield:$index:2") { ran = true }
+            advanceUntilIdle()
+            assertEquals("a fresh shield runs only after a released slot", dismissable, ran)
+        }
     }
 
     // ------------------------------------------------------------------

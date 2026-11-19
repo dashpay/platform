@@ -161,7 +161,9 @@ fun SendTransactionScreen(
     var sentTxidHex by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
     // A send that failed in the SDK, presented by its payment class: never
-    // shown as a success, and "failed" only where nothing was sent.
+    // shown as a success, and "failed" only where nothing was sent. One that
+    // holds its slot stays stored after its alert, so Send stays refused
+    // (sendPermittedAfter) until the user leaves the form.
     var paymentFailure by remember { mutableStateOf<PaymentFailure?>(null) }
 
     // Result hand-back from the QR scanner (← QRScannerView's onScan).
@@ -367,7 +369,7 @@ fun SendTransactionScreen(
     }
     val coreSendTotalDuffs = coreRecipients?.sumOf { it.second } ?: 0L
 
-    val canSend = when (flow) {
+    val canSend = sendPermittedAfter(paymentFailure) && when (flow) {
         SendFlow.CORE_TO_CORE -> coreRecipients != null
         SendFlow.SHIELDED_TO_SHIELDED -> (amountCredits ?: 0) > 0 && !memoOverLimit
         SendFlow.PLATFORM_TO_SHIELDED,
@@ -628,6 +630,9 @@ fun SendTransactionScreen(
                     .fillMaxWidth()
                     .testTag("send.submitButton"),
             ) {
+                // A failure that may have left the wallet or holds a lock
+                // stays stored: never pay again from this form.
+                if (!sendPermittedAfter(paymentFailure)) return@SubmitButton
                 val activeManager = manager
                 if (activeManager == null || flow == null) {
                     error = "Wallet is not ready. Try again in a moment."
@@ -801,20 +806,37 @@ fun SendTransactionScreen(
     }
 
     paymentFailure?.let { failure ->
+        // A failure that holds its slot closes the form and stays stored (it
+        // may have left the wallet, or holds a lock); a NOT_SENT one is
+        // cleared, leaving the form open for a corrected request.
+        val acknowledge: () -> Unit = {
+            if (failure.holdsSlot) {
+                navController.popBackStack()
+            } else {
+                paymentFailure = null
+            }
+        }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { paymentFailure = null },
+            onDismissRequest = acknowledge,
             title = { Text(failure.title) },
             text = {
                 Text(failure.message, modifier = Modifier.testTag("send.paymentFailure"))
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { paymentFailure = null }) { Text("OK") }
+                androidx.compose.material3.TextButton(onClick = acknowledge) { Text("OK") }
             },
         )
     }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
+
+/**
+ * Whether Send may submit after [failure], the last one this form stored:
+ * never while it holds its slot ([PaymentFailure.holdsSlot]).
+ * ← Swift `SendViewModel.isHeldByPaymentFailure`.
+ */
+internal fun sendPermittedAfter(failure: PaymentFailure?): Boolean = failure?.holdsSlot != true
 
 /**
  * Whether a shielded operation's error means it may already be on chain, so

@@ -122,9 +122,20 @@ class AddressFundFromAssetLockCoordinator(
     /**
      * Manually drop a controller from the map — the UI's "Dismiss" action
      * on a [Phase.Failed] row. ← Swift `dismiss`.
+     *
+     * A failed slot is dropped only when its failure releases it
+     * (`PaymentFailure.holdsSlot`, any NOT_SENT): [startFunding] gates a
+     * restart only on a slot it still holds, so dropping a failure that may
+     * have left, holds a lock, or has no class would let a fresh lock be
+     * funded for the same recipient. Returns whether the controller was
+     * dropped (← [RegistrationCoordinator.dismiss]).
      */
-    fun dismiss(walletId: ByteArray, platformAccountIndex: Int, recipientHash: ByteArray) {
-        _controllers.update { it - key(walletId, platformAccountIndex, recipientHash) }
+    fun dismiss(walletId: ByteArray, platformAccountIndex: Int, recipientHash: ByteArray): Boolean {
+        val key = key(walletId, platformAccountIndex, recipientHash)
+        val phase = _controllers.value[key]?.phase?.value
+        if (phase is AddressFundFromAssetLockController.Phase.Failed && phase.failure.holdsSlot) return false
+        _controllers.update { it - key }
+        return true
     }
 
     /**
