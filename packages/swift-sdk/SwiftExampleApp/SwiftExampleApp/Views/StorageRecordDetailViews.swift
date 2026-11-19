@@ -2616,6 +2616,31 @@ struct ShieldedSyncStateStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentLockedOutpoint
+
+struct LockedOutpointStorageDetailView: View {
+    let record: PersistentLockedOutpoint
+
+    var body: some View {
+        Form {
+            Section("Wallet") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            Section {
+                FieldRow(label: "Outpoint", value: record.outpointHex)
+            } header: {
+                Text("Locked Outpoint")
+            } footer: {
+                Text("Kept out of coin selection: a masternode collateral, or an outpoint locked by "
+                    + "hand. The row is the lock, and needs no TXO row behind it.")
+            }
+        }
+        .navigationTitle("Locked Outpoint")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentAssetLock
 
 struct AssetLockStorageDetailView: View {
