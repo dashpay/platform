@@ -1268,18 +1268,46 @@ mod tests {
         assert!(sdk.is_dpns_name_tombstoned("Bob").await.is_err());
     }
 
-    /// The network's own contract answers when it declares no tombstone: on a network before
-    /// DPNS v3 no name is tombstoned, and the provider keeps the contract it holds.
-    #[tokio::test]
-    async fn should_report_no_name_tombstoned_on_a_network_before_dpns_v3() {
-        let provider = DpnsV2ContextProvider::default();
-        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
-        expect_network_dpns(&mut sdk, dpns_v2()).await;
-
-        assert!(!sdk
-            .is_dpns_name_tombstoned("Bob")
-            .await
+    /// The network's own contract answers when it declares no tombstone, while nothing
+    /// verified shows the network past the upgrade to DPNS v3: no name is tombstoned. Once a
+    /// verified response does, a contract declaring none is not the network's, and the read
+    /// fails. A contract declaring tombstones is read under either way.
+    #[test]
+    fn should_judge_a_contract_declaring_no_tombstone_by_what_is_verified_of_the_network() {
+        for before_dpns_v3_or_unknown in [Some(false), None] {
+            assert!(!give_up::network_contract_declares_tombstones(
+                false,
+                before_dpns_v3_or_unknown
+            )
             .expect("the network's contract answers"));
+        }
+        assert!(give_up::network_contract_declares_tombstones(false, Some(true)).is_err());
+        for verified in [Some(true), Some(false), None] {
+            assert!(
+                give_up::network_contract_declares_tombstones(true, verified)
+                    .expect("the contract declares tombstones")
+            );
+        }
+    }
+
+    /// An SDK pinned to protocol version 14 that a verified response has shown a network at
+    /// the latest version, with a provider holding DPNS v2, answered with DPNS v2 again (a
+    /// node behind the network, whose response a pinned SDK takes as proved at its own
+    /// version): the reads fail instead of answering "not tombstoned" or "available".
+    #[tokio::test]
+    async fn should_fail_a_pinned_sdk_read_answered_with_the_contract_the_upgrade_replaced() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, |builder| {
+            builder.with_version(PlatformVersion::get(14).expect("protocol version 14"))
+        });
+        sdk.accept_verified_metadata("getDocuments", &proved_at(LATEST_VERSION), None)
+            .expect("the metadata is accepted");
+        assert_eq!(sdk.protocol_version_number(), 14);
+        expect_network_dpns(&mut sdk, dpns_v2()).await;
+        expect_no_domain_of_bob(&mut sdk).await;
+
+        assert!(sdk.is_dpns_name_tombstoned("Bob").await.is_err());
+        assert!(sdk.is_dpns_name_available("Bob").await.is_err());
         assert!(!resolves_dpns_with_tombstones(&provider));
     }
 
