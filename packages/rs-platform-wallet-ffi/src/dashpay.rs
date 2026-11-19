@@ -670,9 +670,10 @@ pub unsafe extern "C" fn platform_wallet_reserve_dashpay_payment_address(
     let address = match result {
         Ok(address) => address,
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            return PlatformWalletFFIResult::err(
+            return PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 e.to_string(),
+                &e,
             );
         }
         Err(e) => return e.into(),
@@ -780,9 +781,10 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     let (txid, _entry, fee_duffs) = match result {
         Ok(v) => v,
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            return PlatformWalletFFIResult::err(
+            return PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 e.to_string(),
+                &e,
             );
         }
         Err(e) => return e.into(),
@@ -919,9 +921,10 @@ pub unsafe extern "C" fn platform_wallet_prepare_dashpay_payment(
     let payment = match result {
         Ok(payment) => payment,
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            return PlatformWalletFFIResult::err(
+            return PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 e.to_string(),
+                &e,
             );
         }
         Err(e) => return e.into(),
@@ -1434,9 +1437,10 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
         // a host recognizes the wrong-seed condition identically whether it
         // checked up front or was refused at the drain.
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            PlatformWalletFFIResult::err(
+            PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 e.to_string(),
+                &e,
             )
         }
         Err(e) => PlatformWalletFFIResult::err(
@@ -1600,9 +1604,10 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            PlatformWalletFFIResult::err(
+            PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 e.to_string(),
+                &e,
             )
         }
         Err(e) => PlatformWalletFFIResult::err(
@@ -1717,9 +1722,10 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
             PlatformWalletFFIResult::ok()
         }
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            PlatformWalletFFIResult::err(
+            PlatformWalletFFIResult::err_from_wallet_error(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 e.to_string(),
+                &e,
             )
         }
         Err(e) => PlatformWalletFFIResult::err(

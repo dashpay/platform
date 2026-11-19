@@ -245,9 +245,10 @@ impl Default for ParsedStateTransitionFFI {
 
 /// Bytes the summary could not decode.
 pub(crate) fn deserialization_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
-    PlatformWalletFFIResult::err(
+    PlatformWalletFFIResult::err_from_wallet_error(
         PlatformWalletFFIResultCode::ErrorDeserialization,
         error.to_string(),
+        &error,
     )
 }
 
