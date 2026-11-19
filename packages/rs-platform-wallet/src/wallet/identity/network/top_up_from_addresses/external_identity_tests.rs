@@ -298,7 +298,7 @@ impl Fixture {
     /// The broadcasts and result waits of a top-up of `recipient` signed
     /// like [`AddressSigner`]: [`Self::submissions`] counts only the
     /// external recipient's requests, which a managed top-up never matches.
-    async fn submissions_for(&self, recipient: [u8; 32]) -> (usize, usize) {
+    async fn submissions_for(&mut self, recipient: [u8; 32]) -> (usize, usize) {
         let transition = IdentityTopUpFromAddressesTransition::try_from_inputs_with_signer(
             &identity(recipient),
             BTreeMap::from([(ADDRESS, (1, AMOUNT))]),
@@ -313,10 +313,9 @@ impl Fixture {
         let wait = transition
             .wait_for_state_transition_result_request()
             .unwrap();
-        (
-            self.sdk.mock().request_count(&broadcast).await,
-            self.sdk.mock().request_count(&wait).await,
-        )
+        let broadcasts = self.sdk.mock().request_count(&broadcast).await;
+        let waits = self.sdk.mock().request_count(&wait).await;
+        (broadcasts, waits)
     }
 }
 
@@ -340,6 +339,8 @@ async fn should_submit_a_top_up_for_an_identity_the_wallet_does_not_manage() {
         "the top-up must be submitted, got {error:?}"
     );
     assert_eq!(fixture.submissions().await, (1, 1, 1));
+    // The per-recipient count matches the requests a send really makes.
+    assert_eq!(fixture.submissions_for([9; 32]).await, (1, 1));
 }
 
 /// Topping up someone else's identity never records it as the wallet's own.
