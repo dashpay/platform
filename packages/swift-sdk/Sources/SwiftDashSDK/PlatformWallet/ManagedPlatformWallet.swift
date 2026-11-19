@@ -710,7 +710,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             try result.check()
             guard outIdentityHandle != NULL_HANDLE else {
-                throw PlatformWalletError.walletOperation("identity handle not returned")
+                throw PlatformWalletError.walletOperation("identity handle not returned", payment: .maybeSent)
             }
 
             let idData = withUnsafeBytes(of: outIdentityId) { Data($0) }
@@ -2269,7 +2269,8 @@ extension ManagedPlatformWallet {
             defer { if let p = outPtr { platform_wallet_string_free(p) } }
             guard let p = outPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "register_dpns_name_with_signer returned a null full-domain-name pointer"
+                    "register_dpns_name_with_signer returned a null full-domain-name pointer",
+                    payment: .maybeSent
                 )
             }
             return String(cString: p)
@@ -2829,7 +2830,7 @@ extension ManagedPlatformWallet {
             }
             try result.check()
             guard let outURI else {
-                throw PlatformWalletError.nullPointer("createInvitation returned a null URI")
+                throw PlatformWalletError.nullPointer("createInvitation returned a null URI", payment: .maybeSent)
             }
             let uri = String(cString: outURI)
             platform_wallet_string_free(outURI)
@@ -2906,7 +2907,8 @@ extension ManagedPlatformWallet {
             // NULL_HANDLE would defer the failure to a harder-to-debug point.
             guard outManagedHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation(
-                    "FFI returned success but managed-identity handle was NULL"
+                    "FFI returned success but managed-identity handle was NULL",
+                    payment: .maybeSent
                 )
             }
             return ManagedIdentity(handle: outManagedHandle)
@@ -4767,7 +4769,8 @@ extension ManagedPlatformWallet {
             // if it were the canonical document.
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "create_document_with_signer returned no canonical document JSON"
+                    "create_document_with_signer returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -4856,7 +4859,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_replace returned no canonical document JSON"
+                    "document_replace returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5102,7 +5106,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_transfer returned no canonical document JSON"
+                    "document_transfer returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5175,7 +5180,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_set_price returned no canonical document JSON"
+                    "document_set_price returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5249,7 +5255,8 @@ extension ManagedPlatformWallet {
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "document_purchase returned no canonical document JSON"
+                    "document_purchase returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -5363,7 +5370,8 @@ extension ManagedPlatformWallet {
             // accessor crashing on a NULL slot).
             guard outManagedHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation(
-                    "FFI returned success but managed-identity handle was NULL"
+                    "FFI returned success but managed-identity handle was NULL",
+                    payment: .maybeSent
                 )
             }
             // Copy the 32-byte tuple into a Data via withUnsafeBytes.
@@ -5488,7 +5496,8 @@ extension ManagedPlatformWallet {
             // Same defense as `registerIdentityWithFunding`.
             guard outManagedHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation(
-                    "FFI returned success but managed-identity handle was NULL"
+                    "FFI returned success but managed-identity handle was NULL",
+                    payment: .maybeSent
                 )
             }
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }

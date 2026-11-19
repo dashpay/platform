@@ -318,7 +318,8 @@ public class ManagedCoreWallet {
              .errorTransactionBroadcastUnconfirmed:
             guard let txid else {
                 throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)"
+                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)",
+                    payment: result.paymentClass ?? .maybeSent
                 )
             }
             return try CoreTransactionBroadcastOutcome(
@@ -351,7 +352,8 @@ public class ManagedCoreWallet {
         try result.throwIfError()
         guard let txid else {
             throw PlatformWalletError.nullPointer(
-                "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)"
+                "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)",
+                payment: .maybeSent
             )
         }
         return txid
@@ -397,7 +399,8 @@ public class ManagedCoreWallet {
         try core_wallet_signed_payment_broadcast(handle, token, &txidPtr).check()
         guard let ptr = txidPtr else {
             throw PlatformWalletError.nullPointer(
-                "core_wallet_signed_payment_broadcast returned a NULL txid pointer"
+                "core_wallet_signed_payment_broadcast returned a NULL txid pointer",
+                payment: .maybeSent
             )
         }
         defer { core_wallet_free_address(ptr) }

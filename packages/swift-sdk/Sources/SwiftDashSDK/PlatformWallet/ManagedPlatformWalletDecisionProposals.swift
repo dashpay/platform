@@ -108,7 +108,8 @@ extension ManagedPlatformWallet {
             // is an FFI contract violation, not an empty proposal.
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "decision_proposal_create returned no canonical document JSON"
+                    "decision_proposal_create returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             return (Data(proposalIdBytes), String(cString: jsonPtr))
@@ -222,7 +223,8 @@ extension ManagedPlatformWallet {
             try result.check()
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "decision_proposal_edit returned no canonical document JSON"
+                    "decision_proposal_edit returned no canonical document JSON",
+                    payment: .maybeSent
                 )
             }
             return String(cString: jsonPtr)
