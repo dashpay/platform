@@ -1771,6 +1771,13 @@ pub fn panicked_payment_class() -> (PaymentDelivery, bool) {
 /// The class of an SDK failure that ended a payment: `NotSent` only for the
 /// refusals that precede any dispatch (the signer had no key, the SDK refused
 /// a protocol version the network does not serve), `MaybeSent` for the rest.
+///
+/// Sound for a single-dispatch SDK call only: the error alone cannot say
+/// whether an earlier step of the same operation was already dispatched. A
+/// caller of a multi-step call (a DPNS preorder then domain, a funded
+/// transition after its Core lock) classes the refusals that follow the first
+/// dispatch itself, through [`PlatformWalletError::after_dispatch`] or the
+/// asset-lock seam (`AssetLockManager::with_funded_lock`).
 fn sdk_payment_delivery(error: &dash_sdk::Error) -> PaymentDelivery {
     match error {
         dash_sdk::Error::ProtocolVersionNotActive { .. } => PaymentDelivery::NotSent,

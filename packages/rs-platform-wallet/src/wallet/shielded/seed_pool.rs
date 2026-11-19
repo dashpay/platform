@@ -244,7 +244,7 @@ impl PlatformWallet {
             let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
             let pool_fee = self
                 .shield_from_asset_lock_pool_fee(num_actions)
-                .map_err(|e| seed_batch_failure(e, batches_submitted))?;
+                .map_err(|e| seed_batch_failure(e, batches_submitted > 0))?;
             let lock_credits = pool_fee
                 .checked_add(REAL_NOTE_VALUE_CREDITS)
                 .ok_or_else(|| {
@@ -311,7 +311,11 @@ impl PlatformWallet {
                         };
                         tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
                     }
-                    Err(e) => return Err(seed_batch_failure(e, batches_submitted)),
+                    // A retry resumes the lock this batch already broadcast,
+                    // so the batch dispatched even when the resume is refused.
+                    Err(e) => {
+                        return Err(seed_batch_failure(e, batches_submitted > 0 || attempt > 1))
+                    }
                 }
             }
 
@@ -380,21 +384,28 @@ impl PlatformWallet {
 /// per batch. Returns `0` when already at/above target. Pure arithmetic so
 /// it can be unit-tested without a wallet/SDK.
 /// The error a seed run ends with, classed for the whole run rather than the
-/// last batch alone. After a committed batch the run already moved Core funds
-/// into the pool, so a later refusal is not `NotSent`. A held lock is not
-/// offered for resume either: the generic resume pays a single note, while
-/// this batch carried `dummy_outputs` fillers it cannot preserve. Either way
-/// the run's class is `MaybeSent`, with `error` kept as the diagnostic.
-fn seed_batch_failure(error: PlatformWalletError, batches_submitted: u64) -> PlatformWalletError {
+/// last batch alone. `dispatched` says the run already moved Core funds: a
+/// committed batch, or this batch's own lock broadcast (a finality retry that
+/// resumes it). After that a refusal is not `NotSent`.
+///
+/// A held batch lock is not offered for resume either, and becomes
+/// `MaybeSent` with no held lock, keeping its diagnostic: the batch carried
+/// `dummy_outputs` fillers that the generic resume (a single-note shield)
+/// cannot reproduce, so resuming it would not complete the batch the run was
+/// building. The lock stays tracked, so the wallet's resumable-lock list still
+/// lists it.
+fn seed_batch_failure(error: PlatformWalletError, dispatched: bool) -> PlatformWalletError {
     use crate::PaymentDelivery;
     match error.payment_delivery() {
-        PaymentDelivery::LockHeld(_) => {}
-        PaymentDelivery::NotSent if batches_submitted > 0 => {}
-        PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => return error,
-    }
-    PlatformWalletError::PaymentAlreadyDispatched {
-        held_lock: None,
-        source: Box::new(error),
+        PaymentDelivery::LockHeld(_) => PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: None,
+            source: Box::new(match error {
+                PlatformWalletError::PaymentAlreadyDispatched { source, .. } => *source,
+                other => other,
+            }),
+        },
+        PaymentDelivery::NotSent if dispatched => error.after_dispatch(),
+        PaymentDelivery::NotSent | PaymentDelivery::MaybeSent => error,
     }
 }
 
@@ -407,9 +418,9 @@ fn estimate_batches(current: u64, target: u64, per_batch: u64) -> u64 {
 mod tests {
     use super::*;
 
-    /// A refusal after a committed batch is not `NotSent` (the run moved Core
-    /// funds), a held batch lock is not offered for the generic resume, and
-    /// a refusal before any batch keeps its own class.
+    /// A refusal after the run dispatched (a committed batch, or this batch's
+    /// own lock) is not `NotSent`, a held batch lock is not offered for the
+    /// generic resume, and a refusal before any dispatch keeps its own class.
     #[test]
     fn should_class_a_seed_failure_for_the_whole_run() {
         use crate::PaymentDelivery;
@@ -424,18 +435,37 @@ mod tests {
             ))
         };
 
-        let first = seed_batch_failure(refusal(), 0);
+        let first = seed_batch_failure(refusal(), false);
         assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
 
-        let after_one = seed_batch_failure(refusal(), 1);
-        assert_eq!(after_one.payment_delivery(), PaymentDelivery::MaybeSent);
-        assert!(!after_one.is_retryable());
-        assert_eq!(after_one.to_string(), refusal().to_string());
+        let after_dispatch = seed_batch_failure(refusal(), true);
+        assert_eq!(
+            after_dispatch.payment_delivery(),
+            PaymentDelivery::MaybeSent
+        );
+        assert!(!after_dispatch.is_retryable());
+        assert_eq!(after_dispatch.to_string(), refusal().to_string());
 
-        for batches in [0, 3] {
-            let error = seed_batch_failure(held(), batches);
-            assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
-            assert_eq!(error.held_asset_lock(), None);
+        // A lock the funded-lock seam named as held, or a bare held lock.
+        let named = || PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: Some(dashcore::OutPoint::new(
+                dashcore::Txid::from_byte_array([8; 32]),
+                1,
+            )),
+            source: Box::new(refusal()),
+        };
+        for dispatched in [false, true] {
+            for error in [
+                seed_batch_failure(held(), dispatched),
+                seed_batch_failure(named(), dispatched),
+            ] {
+                assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+                assert_eq!(error.held_asset_lock(), None);
+            }
+            assert_eq!(
+                seed_batch_failure(named(), dispatched).to_string(),
+                refusal().to_string()
+            );
         }
     }
 

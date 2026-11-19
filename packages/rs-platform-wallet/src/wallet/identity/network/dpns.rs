@@ -14,6 +14,9 @@ use dpp::prelude::Identifier;
 use dpp::identity::signer::Signer;
 use dpp::ProtocolError;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::platform_value::BinaryData;
@@ -120,6 +123,30 @@ pub enum ContestWinner {
     /// Contest resolved as locked — nobody wins, the label becomes
     /// unavailable.
     Locked,
+}
+
+/// The error a DPNS registration ends with. A structured key-unavailable
+/// signer failure stays under `Sdk` so the FFI boundary can still restore code
+/// 31; other failures are stringified into `InvalidIdentityData`. A
+/// registration is two dispatches: once its preorder is placed
+/// (`preorder_placed`), a refusal of the domain (the signer had no key for
+/// it, say) is never `NotSent`; the diagnostic and code stay.
+fn dpns_registration_failure(
+    error: dash_sdk::Error,
+    name: &str,
+    preorder_placed: bool,
+) -> PlatformWalletError {
+    let error = crate::error::preserve_signer_key_unavailable_or(error, |e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to register DPNS name '{}': {}",
+            name, e
+        ))
+    });
+    if preorder_placed {
+        error.after_dispatch()
+    } else {
+        error
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +276,8 @@ impl IdentityWallet {
             (identity, key)
         };
 
+        let preorder_placed = Arc::new(AtomicBool::new(false));
+        let preorder_placed_by_callback = Arc::clone(&preorder_placed);
         let input = RegisterDpnsNameInput {
             label: name.to_string(),
             identity,
@@ -258,7 +287,11 @@ impl IdentityWallet {
             // bound is satisfied without forcing the caller to hand
             // over ownership / wrap in an Arc per call.
             signer: SignerRef(signer),
-            preorder_callback: None,
+            // The SDK calls this once the preorder is on Platform (dispatched
+            // by this call, or an earlier one's pending preorder it reveals).
+            preorder_callback: Some(Box::new(move |_: &dpp::document::Document| {
+                preorder_placed_by_callback.store(true, Ordering::Relaxed);
+            })),
             contest_fund,
         };
 
@@ -267,15 +300,7 @@ impl IdentityWallet {
             .register_dpns_name_with_owner_balance_and_metadata(input)
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the FFI
-                // boundary can still restore code 31; only genuine operation
-                // failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to register DPNS name '{}': {}",
-                        name, e
-                    ))
-                })
+                dpns_registration_failure(e, name, preorder_placed.load(Ordering::Relaxed))
             })?;
         self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
             .await;
@@ -546,5 +571,44 @@ impl IdentityWallet {
                     prefix, e
                 ))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::PaymentDelivery;
+
+    fn key_unavailable() -> dash_sdk::Error {
+        dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+            "{}no key for the domain",
+            crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+        )))
+    }
+
+    /// The signer refusing before the preorder went out sent nothing; after
+    /// the preorder it refuses the domain of a registration already under
+    /// way, so the failure is not `NotSent`. Either way the error keeps the
+    /// key-unavailable diagnostic under `Sdk` (FFI code 31).
+    #[test]
+    fn should_class_a_domain_refusal_after_the_preorder_as_dispatched() {
+        let before = dpns_registration_failure(key_unavailable(), "alice", false);
+        assert_eq!(before.payment_delivery(), PaymentDelivery::NotSent);
+
+        let after = dpns_registration_failure(key_unavailable(), "alice", true);
+        assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
+        assert!(!after.is_retryable());
+        assert!(matches!(
+            after.dispatched_source(),
+            PlatformWalletError::Sdk(_)
+        ));
+        assert_eq!(after.to_string(), before.to_string());
+
+        let transport =
+            dpns_registration_failure(dash_sdk::Error::Generic("transport".into()), "alice", false);
+        assert!(matches!(
+            transport,
+            PlatformWalletError::InvalidIdentityData(_)
+        ));
     }
 }
