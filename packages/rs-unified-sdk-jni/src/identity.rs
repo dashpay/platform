@@ -662,6 +662,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resume
     outpoint_txid: JByteArray,
     outpoint_vout: jint,
     identity_index: jint,
+    slot_token: jlong,
     pubkeys_blob: JByteArray,
     signer_handle: jlong,
     core_signer_handle: jlong,
@@ -698,6 +699,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resume
                 wallet_handle as Handle,
                 &outpoint,
                 identity_index as u32,
+                // Opaque: the bits `acquireRegistrationSlot` handed out, read
+                // only when reclaiming a voucher as a new identity.
+                slot_token as u64,
                 ffi_rows.as_ptr(),
                 ffi_rows.len(),
                 signer_handle as *mut SignerHandle,

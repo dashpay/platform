@@ -190,11 +190,19 @@ impl IdentityWallet {
             }
         }
 
-        // Step 1b: the slot. A new funding needs the registration's lease on
-        // `identity_index` (from `acquire_identity_slot`); an existing
-        // registration lock already holds its index, which the resolver
-        // checks against `identity_index`.
-        if !matches!(funding, AssetLockFunding::FromExistingAssetLock { .. }) {
+        // Step 1b: the slot. A new funding, and an invitation voucher this
+        // wallet reclaims as a new identity, need the registration's lease on
+        // `identity_index` (from `acquire_identity_slot`); a tracked
+        // registration lock being resumed already holds its index, which the
+        // resolver checks against `identity_index`.
+        let resumes_registration_lock = matches!(
+            funding,
+            AssetLockFunding::FromExistingAssetLock {
+                consume_invitation_voucher: false,
+                ..
+            }
+        );
+        if !resumes_registration_lock {
             match holder {
                 Some(holder @ SlotHolder::Registration { .. }) => {
                     self.require_slot_lease(identity_index, &holder).await?;

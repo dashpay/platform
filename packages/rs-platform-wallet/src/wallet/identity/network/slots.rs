@@ -1030,4 +1030,55 @@ mod tests {
 
         assert!(taken.is_none());
     }
+
+    #[tokio::test]
+    async fn should_require_a_slot_to_reclaim_a_voucher_but_not_to_resume_a_registration_lock() {
+        let wallet = wallet(Backend::new(full())).await;
+        let asset_lock_signer = crate::test_support::fund_test_platform_wallet(
+            &wallet.identity().wallet_manager,
+            &wallet.wallet_id(),
+            1_000_000,
+        )
+        .await;
+        let out_point = OutPoint::new(Txid::from_byte_array([3; 32]), 0);
+
+        let mut refusals = Vec::new();
+        for consume_invitation_voucher in [true, false] {
+            refusals.push(
+                wallet
+                    .identity()
+                    .register_identity_with_funding(
+                        crate::wallet::asset_lock::AssetLockFunding::FromExistingAssetLock {
+                            out_point,
+                            consume_invitation_voucher,
+                        },
+                        0,
+                        None,
+                        master_keys(),
+                        &UnusedSigner,
+                        &asset_lock_signer,
+                        None,
+                    )
+                    .await,
+            );
+        }
+
+        assert!(
+            matches!(
+                refusals[0],
+                Err(PlatformWalletError::IdentitySlotNotHeld { identity_index: 0 })
+            ),
+            "{:?}",
+            refusals[0]
+        );
+        // The untracked lock is refused by the resolver, not for its slot.
+        assert!(
+            !matches!(
+                refusals[1],
+                Err(PlatformWalletError::IdentitySlotNotHeld { .. })
+            ),
+            "{:?}",
+            refusals[1]
+        );
+    }
 }
