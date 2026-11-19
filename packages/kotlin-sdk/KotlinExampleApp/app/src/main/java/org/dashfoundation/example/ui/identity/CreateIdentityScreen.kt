@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.identity.IdentityPubkey
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.identity.RegistrationSlot
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
@@ -309,6 +310,38 @@ fun CreateIdentityScreen(navController: NavHostController) {
                         try {
                             val keySet = registrationKeysAt(identityIndex)
                             val keys = keySet.rows
+
+                            // A fresh funding registers at the leased slot, and
+                            // at the next slot the wallet leases when the keys
+                            // there belong to an identity on Platform (keys
+                            // derived anew at each slot). A failure gives the
+                            // current slot back: one taken on chain or landed is
+                            // freed already, one whose asset lock was built stays
+                            // held by that lock, and the wallet holds an
+                            // unconfirmed shielded create's slot itself.
+                            suspend fun <T> registerAtLeasedSlot(
+                                register: suspend (RegistrationSlot, List<IdentityPubkey>) -> T,
+                            ): T {
+                                val leasedSlot = requireNotNull(slot)
+                                return IdentitySlotRetry.runReleasingOnFailure(
+                                    first = leasedSlot,
+                                    reacquire = {
+                                        mgr.identityRegistration.acquireRegistrationSlot(wallet.handle)
+                                    },
+                                    release = { releaseSlot(it) },
+                                    attempt = { leased ->
+                                        register(
+                                            leased,
+                                            if (leased == leasedSlot) {
+                                                keys
+                                            } else {
+                                                registrationKeysAt(leased.identityIndex).rows
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+
                             // Step 2: hand the single registration FFI entry point to
                             // the coordinator as the body — no orchestration here. The
                             // funding source picks which registration FFI runs (ID-01
@@ -320,39 +353,17 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                         identityIndex = identityIndex,
                                         fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
                                         body = {
-                                            val leasedSlot = requireNotNull(slot)
-                                            var current = leasedSlot
-                                            try {
-                                                IdentitySlotRetry.run(
-                                                    first = leasedSlot,
-                                                    reacquire = {
-                                                        mgr.identityRegistration
-                                                            .acquireRegistrationSlot(wallet.handle)
-                                                            .also { current = it }
-                                                    },
-                                                    attempt = { leased ->
-                                                        mgr.identityRegistration.registerWithWalletFunding(
-                                                            walletHandle = wallet.handle,
-                                                            amountDuffs = amount
-                                                                ?: error("A funding amount is required"),
-                                                            accountIndex = 0,
-                                                            slot = leased,
-                                                            keys = if (leased == leasedSlot) {
-                                                                keys
-                                                            } else {
-                                                                registrationKeysAt(leased.identityIndex).rows
-                                                            },
-                                                            signerHandle = mgr.signerHandle,
-                                                            coreSignerHandle = mgr.mnemonicResolverHandle,
-                                                        )
-                                                    },
+                                            registerAtLeasedSlot { leased, leasedKeys ->
+                                                mgr.identityRegistration.registerWithWalletFunding(
+                                                    walletHandle = wallet.handle,
+                                                    amountDuffs = amount
+                                                        ?: error("A funding amount is required"),
+                                                    accountIndex = 0,
+                                                    slot = leased,
+                                                    keys = leasedKeys,
+                                                    signerHandle = mgr.signerHandle,
+                                                    coreSignerHandle = mgr.mnemonicResolverHandle,
                                                 )
-                                            } catch (e: Throwable) {
-                                                // A failed registration frees its
-                                                // slot; one whose asset lock was
-                                                // built stays held by that lock.
-                                                releaseSlot(current)
-                                                throw e
                                             }
                                         },
                                     )
@@ -366,18 +377,14 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                         fundingKind =
                                             IdentityRegistrationController.FundingKind.PlatformAddresses,
                                         body = {
-                                            // This path does not read the lease:
-                                            // it is given back once the call ends.
-                                            try {
+                                            registerAtLeasedSlot { leased, leasedKeys ->
                                                 mgr.identityRegistration.registerFromAddresses(
                                                     walletHandle = wallet.handle,
-                                                    identityIndex = identityIndex,
-                                                    keys = keys,
+                                                    slot = leased,
+                                                    keys = leasedKeys,
                                                     signerHandle = mgr.signerHandle,
                                                     inputs = inputs,
                                                 )
-                                            } finally {
-                                                releaseSlot(requireNotNull(slot))
                                             }
                                         },
                                     )
@@ -398,28 +405,21 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                         fundingKind =
                                             IdentityRegistrationController.FundingKind.ShieldedPool,
                                         body = {
-                                            // This path does not read the lease:
-                                            // it is given back once the call ends,
-                                            // unless the identity may be live.
-                                            try {
+                                            registerAtLeasedSlot { leased, leasedKeys ->
                                                 mgr.shieldedIdentityCreateFromPool(
                                                     walletId = wallet.walletId,
-                                                    identityIndex = identityIndex,
-                                                    keys = keys,
+                                                    slot = leased,
+                                                    keys = leasedKeys,
                                                     denomination = amount
                                                         ?: error("A shielded denomination is required"),
                                                     fallbackAddress = fallbackAddress,
-                                                ).also { releaseSlot(requireNotNull(slot)) }
-                                            } catch (e: Throwable) {
-                                                if (e !is DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed) {
-                                                    releaseSlot(requireNotNull(slot))
-                                                }
-                                                throw e
+                                                )
                                             }
                                         },
                                         // Ambiguous broadcast: the identity may
                                         // already be live — record Unconfirmed
-                                        // (slot held) instead of retryable Failed.
+                                        // (the wallet holds its slot) instead
+                                        // of retryable Failed.
                                         isUnconfirmed = {
                                             (it as? DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed)
                                                 ?.identityId

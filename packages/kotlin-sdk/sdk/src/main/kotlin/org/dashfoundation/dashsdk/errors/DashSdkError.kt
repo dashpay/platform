@@ -377,8 +377,9 @@ sealed class DashSdkError(
          * `ErrorShieldedBroadcastUnconfirmed` (native code 17) on the
          * shielded identity-create path. The broadcast outcome is AMBIGUOUS
          * — the identity may already be live on-chain — so [identityId]
-         * (written by the C ABI even on this outcome) MUST be retained and
-         * its derivation slot held (the coordinator's `Unconfirmed` phase).
+         * (written by the C ABI even on this outcome) MUST be retained. The
+         * wallet holds its derivation slot (across a restart too) while the
+         * create may still execute, so no new registration derives there.
          * Retrying would reuse keys for a possibly-live identity. Thrown by
          * `PlatformWalletManager.shieldedIdentityCreateFromPool` from the
          * tagged JNI payload (the id never rides in the message text).

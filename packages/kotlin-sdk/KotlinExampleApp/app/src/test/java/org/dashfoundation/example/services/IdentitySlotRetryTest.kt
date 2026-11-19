@@ -61,4 +61,56 @@ class IdentitySlotRetryTest {
         assertEquals(0, acquired)
         assertTrue(failure is IllegalStateException)
     }
+
+    @Test
+    fun `a failure gives back the slot the operation reached`() = runTest {
+        val leases = ArrayDeque(listOf(4))
+        val released = mutableListOf<Int>()
+        val failure = runCatching {
+            IdentitySlotRetry.runReleasingOnFailure(
+                first = 3,
+                reacquire = { leases.removeFirst() },
+                release = { released += it },
+                attempt = { slot ->
+                    if (slot == 3) throw takenAt(slot)
+                    error("insufficient funds")
+                },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(listOf(4), released)
+    }
+
+    @Test
+    fun `the last refusal of a slot taken on chain still gives the slot back`() = runTest {
+        var acquired = 0
+        val released = mutableListOf<Int>()
+        val failure = runCatching {
+            IdentitySlotRetry.runReleasingOnFailure(
+                first = 0,
+                reacquire = { ++acquired },
+                release = { released += it },
+                limit = 1,
+                attempt = { slot -> throw takenAt(slot) },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is DashSdkError.PlatformWallet.IdentitySlotTakenOnChain)
+        assertEquals(listOf(1), released)
+    }
+
+    @Test
+    fun `a landed operation gives nothing back`() = runTest {
+        val released = mutableListOf<Int>()
+        val result = IdentitySlotRetry.runReleasingOnFailure(
+            first = 2,
+            reacquire = { error("not reached") },
+            release = { released += it },
+            attempt = { slot -> "landed at $slot" },
+        )
+
+        assertEquals("landed at 2", result)
+        assertEquals(emptyList<Int>(), released)
+    }
 }

@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.credits.FundingInput
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,6 +42,32 @@ class IdentitySlotTest {
         registration.releaseRegistrationSlot(walletHandle = 5, slot = RegistrationSlot(2, 99L))
 
         assertEquals(listOf(5L to 99L), released)
+    }
+
+    @Test
+    fun `address-funded registration forwards the slot index and token`() = runTest {
+        var captured: Triple<Long, Int, Long>? = null
+        var capturedInputs: ByteArray? = null
+        val registration = IdentityRegistration(
+            registerFromAddressesNative = RegisterFromAddressesNativeCall { wallet, index, token, _, _, inputs ->
+                captured = Triple(wallet, index, token)
+                capturedInputs = inputs
+                ByteArray(32) { 1 }
+            },
+        )
+        val inputs = listOf(FundingInput(addressType = 0, hash = ByteArray(20) { 2 }, credits = 5L))
+
+        val id = registration.registerFromAddresses(
+            walletHandle = 8,
+            slot = RegistrationSlot(identityIndex = 6, slotToken = Long.MIN_VALUE),
+            keys = emptyList(),
+            signerHandle = 9,
+            inputs = inputs,
+        )
+
+        assertEquals(Triple(8L, 6, Long.MIN_VALUE), captured)
+        assertArrayEquals(FundingInput.encode(inputs), capturedInputs)
+        assertArrayEquals(ByteArray(32) { 1 }, id)
     }
 
     @Test

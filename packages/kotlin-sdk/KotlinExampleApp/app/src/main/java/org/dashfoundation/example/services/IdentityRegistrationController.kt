@@ -67,7 +67,8 @@ class IdentityRegistrationController(
         /**
          * Unconfirmed terminal state (shielded only): the transition may have
          * reached a node and its result is not proved. The identity at
-         * [identityId] MAY already be live; the slot must stay held so a
+         * [identityId] MAY already be live. The wallet holds its slot (across
+         * a restart too), and this phase is never re-fired, so a
          * re-submission can't burn funds against the registered-key-hash check.
          */
         data class Unconfirmed(val identityId: ByteArray, val message: String) : Phase {

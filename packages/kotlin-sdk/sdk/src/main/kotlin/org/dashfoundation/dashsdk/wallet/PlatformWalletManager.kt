@@ -2003,7 +2003,17 @@ class PlatformWalletManager(
      * PV12, 0.03/0.1/0.25/0.5/1.0 DASH from PV13; a non-member is rejected
      * at validation) from the wallet's bound Orchard pool
      * ([account]) to fund
-     * a new identity at [identityIndex]. [keys] are the rich registration rows
+     * a new identity at the index of [slot], the one
+     * [org.dashfoundation.dashsdk.identity.IdentityRegistration.acquireRegistrationSlot]
+     * leased; Rust refuses an index the slot does not lease
+     * ([DashSdkError.PlatformWallet.IdentitySlotNotHeld]) and throws
+     * [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain] before a note is
+     * spent when the keys there already belong to an identity on Platform:
+     * acquire a slot again and derive the keys there. A landed create frees
+     * the slot; one reported
+     * [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed] is held by the
+     * wallet itself (across a restart too) while it may still execute.
+     * [keys] are the rich registration rows
      * (built via `RegistrationKeys.buildRegistrationRows`), encoded to the same
      * blob every registration path uses; each row's private half must already
      * be persisted. [fallbackAddress] is the REQUIRED 21-byte PlatformAddress
@@ -2015,13 +2025,15 @@ class PlatformWalletManager(
      */
     suspend fun shieldedIdentityCreateFromPool(
         walletId: ByteArray,
-        identityIndex: Int,
+        slot: org.dashfoundation.dashsdk.identity.RegistrationSlot,
         keys: List<org.dashfoundation.dashsdk.identity.IdentityPubkey>,
         denomination: Long,
         fallbackAddress: ByteArray,
         account: Int = 0,
     ): ByteArray = teardownGate.op {
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(slot.identityIndex >= 0) {
+            "identityIndex must be non-negative, got ${slot.identityIndex}"
+        }
         require(denomination > 0) { "denomination must be positive, got $denomination" }
         require(fallbackAddress.size == 21) {
             "fallbackAddress must be 21 bytes, got ${fallbackAddress.size}"
@@ -2033,7 +2045,8 @@ class PlatformWalletManager(
                 walletId,
                 mnemonicResolver.nativeHandle,
                 account,
-                identityIndex,
+                slot.identityIndex,
+                slot.slotToken,
                 org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode(keys),
                 denomination,
                 fallbackAddress,
@@ -3179,7 +3192,7 @@ internal suspend fun isGenuineWatchOnly(
  *   underlying DAPI / result-proof confirmation failure); an empty
  *   diagnostic falls back to a generic message. The C ABI writes the id
  *   on the unconfirmed outcome too — the identity may already be live,
- *   so the caller must hold the derivation slot instead of retrying.
+ *   so the caller must not retry (the wallet holds its derivation slot).
  *
  * Extracted from [PlatformWalletManager.shieldedIdentityCreateFromPool]
  * so the codec boundary is unit-testable without the native library

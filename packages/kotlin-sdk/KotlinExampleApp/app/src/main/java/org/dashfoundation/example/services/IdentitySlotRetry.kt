@@ -36,4 +36,31 @@ object IdentitySlotRetry {
             }
         }
     }
+
+    /**
+     * [run] for an operation that owns its slot until it ends: when it
+     * fails, the slot it reached is given back with [release]. A slot taken
+     * on chain or a landed operation is freed by the wallet already, so
+     * [release] must accept a slot that holds no lease.
+     */
+    suspend fun <S, T> runReleasingOnFailure(
+        first: S,
+        reacquire: suspend () -> S,
+        release: suspend (S) -> Unit,
+        limit: Int = IdentityRegistration.IDENTITY_SLOT_TAKEN_RETRY_LIMIT,
+        attempt: suspend (S) -> T,
+    ): T {
+        var current = first
+        try {
+            return run(
+                first = first,
+                reacquire = { reacquire().also { current = it } },
+                limit = limit,
+                attempt = attempt,
+            )
+        } catch (e: Throwable) {
+            release(current)
+            throw e
+        }
+    }
 }

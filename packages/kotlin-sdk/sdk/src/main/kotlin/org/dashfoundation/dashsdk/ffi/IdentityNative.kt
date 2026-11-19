@@ -286,11 +286,14 @@ internal object IdentityNative {
      *   u64 credits`. Built by
      *   [org.dashfoundation.dashsdk.credits.FundingInput.encode]. Nonces
      *   are auto-fetched Rust-side.
+     * @param identityIndex the index [acquireRegistrationSlot] leased.
+     * @param slotToken the token [acquireRegistrationSlot] handed out with it.
      * @return the 32-byte identity id.
      */
     external fun registerIdentityFromAddresses(
         walletHandle: Long,
         identityIndex: Int,
+        slotToken: Long,
         pubkeysBlob: ByteArray,
         signerHandle: Long,
         inputsBlob: ByteArray,

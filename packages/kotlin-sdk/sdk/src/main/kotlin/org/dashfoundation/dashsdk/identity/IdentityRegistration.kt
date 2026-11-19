@@ -33,6 +33,17 @@ internal fun interface ReleaseInvitationClaimSlotNativeCall {
     fun call(walletHandle: Long, invitationOutPoint: ByteArray)
 }
 
+internal fun interface RegisterFromAddressesNativeCall {
+    fun call(
+        walletHandle: Long,
+        identityIndex: Int,
+        slotToken: Long,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        inputsBlob: ByteArray,
+    ): ByteArray
+}
+
 internal fun interface ClaimInvitationNativeCall {
     fun call(
         walletHandle: Long,
@@ -90,6 +101,8 @@ class IdentityRegistration internal constructor(
         IdentityNative::releaseRegistrationSlot,
     private val releaseInvitationClaimSlotNative: ReleaseInvitationClaimSlotNativeCall =
         ReleaseInvitationClaimSlotNativeCall(IdentityNative::releaseInvitationClaimSlot),
+    private val registerFromAddressesNative: RegisterFromAddressesNativeCall =
+        RegisterFromAddressesNativeCall(IdentityNative::registerIdentityFromAddresses),
 ) {
 
     companion object {
@@ -105,7 +118,8 @@ class IdentityRegistration internal constructor(
     /**
      * Lease an identity slot for a new registration: the wallet chooses the
      * index. Derive the identity keys at [RegistrationSlot.identityIndex] and
-     * pass the slot to [registerWithWalletFunding] or
+     * pass the slot to [registerWithWalletFunding], [registerFromAddresses],
+     * `PlatformWalletManager.shieldedIdentityCreateFromPool` or
      * [reclaimInvitationAsNewIdentity], or [releaseRegistrationSlot] it when
      * the registration is abandoned before that call.
      */
@@ -530,24 +544,35 @@ class IdentityRegistration internal constructor(
      * both the identity-key and platform-address signing roles. Nonces are
      * auto-fetched Rust-side.
      *
+     * [keys] are derived at the index of [slot], the one
+     * [acquireRegistrationSlot] leased; Rust refuses an index the slot does
+     * not lease ([DashSdkError.PlatformWallet.IdentitySlotNotHeld]) and
+     * throws [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain] before
+     * anything is spent when the keys there already belong to an identity
+     * on Platform: acquire a slot again and derive the keys there. A landed
+     * registration frees the slot.
+     *
      * @return the 32-byte identity id.
      */
     suspend fun registerFromAddresses(
         walletHandle: Long,
-        identityIndex: Int,
+        slot: RegistrationSlot,
         keys: List<IdentityPubkey>,
         signerHandle: Long,
         inputs: List<FundingInput>,
     ): ByteArray = gate.op {
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(slot.identityIndex >= 0) {
+            "identityIndex must be non-negative, got ${slot.identityIndex}"
+        }
         require(inputs.isNotEmpty()) { "inputs must not be empty" }
         mapNativeErrors {
-            IdentityNative.registerIdentityFromAddresses(
-                walletHandle,
-                identityIndex,
-                IdentityPubkeyCodec.encode(keys),
-                signerHandle,
-                FundingInput.encode(inputs),
+            registerFromAddressesNative.call(
+                walletHandle = walletHandle,
+                identityIndex = slot.identityIndex,
+                slotToken = slot.slotToken,
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys),
+                signerHandle = signerHandle,
+                inputsBlob = FundingInput.encode(inputs),
             )
         }
     }
