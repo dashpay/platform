@@ -89,6 +89,12 @@ class IdentityCredits internal constructor(
      * Kotlin never creates a second funding transaction. Invitation locks
      * are rejected and generic recovery always passes `false` for voucher
      * consumption.
+     *
+     * Rust checks that [lock] may fund this top-up: a bound top-up lock and
+     * a registration lock only for the identity at their own index (a
+     * registration lock whose resume answered
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentitySlotTakenOnChain]
+     * tops up the identity found there), an unbound one for any identity.
      */
     suspend fun resumeTopUpWithExistingAssetLock(
         walletHandle: Long,
@@ -98,12 +104,6 @@ class IdentityCredits internal constructor(
     ): Long = gate.op {
         require(identityId.size == 32) {
             "identityId must be exactly 32 bytes, got ${identityId.size}"
-        }
-        require(
-            lock.fundingType == TrackedAssetLock.FundingType.IDENTITY_TOP_UP ||
-                lock.fundingType == TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND,
-        ) {
-            "top-up recovery requires funding type 1 or 2, got ${lock.fundingType.raw}"
         }
         mapNativeErrors {
             resumeTopUpNative.call(

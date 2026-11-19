@@ -236,6 +236,14 @@ class IdentityRegistration internal constructor(
      * DashPay provisioning from the resume path). A user who resumes and wants
      * DashPay capability adds those keys afterward via the Add Identity Key
      * flow.
+     *
+     * Before submitting, Rust settles the lock by what holds the keys at its
+     * index: the identity this lock created (an earlier submit landed) is
+     * returned as the result; another identity of this wallet is recorded in
+     * the slot and [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain] is
+     * thrown. Do not acquire a slot and retry on that error: the lock stays
+     * tracked and can top up that identity
+     * (`IdentityCredits.resumeTopUpWithExistingAssetLock`).
      */
     suspend fun resumeWithExistingAssetLock(
         walletHandle: Long,

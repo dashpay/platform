@@ -7,7 +7,11 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.services.IdentityRegistrationController.Phase
+import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
+import org.dashfoundation.example.util.Base58
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -321,5 +325,39 @@ class RegistrationCoordinatorTest {
         advanceUntilIdle()
         // Completed is not active → gate opens (before the 30s sweep removes it).
         assertFalse(coordinator.hasInFlightRegistrations)
+    }
+
+    @Test
+    fun `resume refused for a taken slot fails once with a top-up offer and no retry`() = runTest {
+        val coordinator = coordinator()
+        val lock = TrackedAssetLock(
+            outpointTxid = ByteArray(32) { 9 },
+            outpointVout = 1,
+            fundingType = TrackedAssetLock.FundingType.IDENTITY_REGISTRATION,
+            status = TrackedAssetLock.Status.CHAIN_LOCKED,
+            registrationIndex = 3,
+            instantLockPresent = true,
+            chainLockHeight = 10,
+        )
+        val takenBy = Base58.encode(ByteArray(32) { 7 })
+        var attempts = 0
+
+        val controller = coordinator.startRegistration(
+            walletId = walletA,
+            identityIndex = 3,
+            body = {
+                attempts++
+                throw DashSdkError.PlatformWallet.IdentitySlotTakenOnChain(3, takenBy)
+            },
+            topUpOffer = { IdentityAssetLockRecovery.registrationResumeTopUp(lock, it) },
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, attempts)
+        val failed = controller.phase.value as Phase.Failed
+        val offer = requireNotNull(failed.topUp)
+        assertSame(lock, offer.lock)
+        assertEquals(takenBy, offer.identityIdBase58)
+        assertEquals(3, controller.currentIdentityIndex.value)
     }
 }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.dashfoundation.example.services.assetlock.RegistrationLockTopUp
 
 /**
  * Hub for in-flight identity registrations — 1:1 port of
@@ -74,6 +75,7 @@ class RegistrationCoordinator(
         body: suspend IdentityRegistrationController.() -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
+        topUpOffer: (Throwable) -> RegistrationLockTopUp? = { null },
     ): IdentityRegistrationController {
         val key = SlotKey(walletId.toHex(), identityIndex)
         val existing = _controllers.value[key]
@@ -89,7 +91,7 @@ class RegistrationCoordinator(
                 -> {
                     // Legitimate restart: a fresh idle controller, or a retry after failure.
                     existing.enterPreparingKeys()
-                    existing.submit(body, isUnconfirmed, isBroadcastNotSent)
+                    existing.submit(body, isUnconfirmed, isBroadcastNotSent, topUpOffer)
                     scheduleRetentionSweep(key, existing)
                     return existing
                 }
@@ -98,7 +100,7 @@ class RegistrationCoordinator(
         val controller = IdentityRegistrationController(walletId, identityIndex, fundingKind, scope, now)
         _controllers.update { it + (key to controller) }
         controller.enterPreparingKeys()
-        controller.submit(body, isUnconfirmed, isBroadcastNotSent)
+        controller.submit(body, isUnconfirmed, isBroadcastNotSent, topUpOffer)
         scheduleRetentionSweep(key, controller)
         return controller
     }

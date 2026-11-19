@@ -1,6 +1,20 @@
 package org.dashfoundation.example.services.assetlock
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
+import org.dashfoundation.example.util.Base58
+
+/**
+ * A registration lock whose resume found its slot holding another identity
+ * of this wallet: Rust recorded [identityIdBase58] at [identityIndex] and
+ * kept [lock] tracked, and the lock can top that identity up.
+ */
+class RegistrationLockTopUp(
+    val lock: TrackedAssetLock,
+    val identityIndex: Int,
+    val identityId: ByteArray,
+    val identityIdBase58: String,
+)
 
 /** Pure presentation filtering; Rust remains the recovery state machine. */
 object IdentityAssetLockRecovery {
@@ -28,6 +42,18 @@ object IdentityAssetLockRecovery {
         lock: TrackedAssetLock,
         resume: suspend (TrackedAssetLock) -> T,
     ): T = resume(lock)
+
+    /**
+     * What a failed registration resume leaves to do. A resume answered
+     * [DashSdkError.PlatformWallet.IdentitySlotTakenOnChain] is not retried
+     * at another slot (the lock's index is fixed); it offers a top-up of the
+     * identity Rust found there. Every other failure offers nothing.
+     */
+    fun registrationResumeTopUp(lock: TrackedAssetLock, error: Throwable): RegistrationLockTopUp? {
+        val taken = error as? DashSdkError.PlatformWallet.IdentitySlotTakenOnChain ?: return null
+        val identityId = Base58.decodeIdentifier(taken.identityId) ?: return null
+        return RegistrationLockTopUp(lock, taken.identityIndex, identityId, taken.identityId)
+    }
 
     /** Display-only; submission passes the snapshot's original bytes/vout. */
     fun label(lock: TrackedAssetLock): String =

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.example.services.assetlock.RegistrationLockTopUp
 
 /**
  * Per-slot state for a single identity registration attempt — 1:1 port of
@@ -61,8 +62,12 @@ class IdentityRegistrationController(
             override fun hashCode(): Int = identityId.contentHashCode()
         }
 
-        /** Failure terminal state; the message is shown inline. Stays until dismissed. */
-        data class Failed(val message: String) : Phase
+        /**
+         * Failure terminal state; the message is shown inline. Stays until
+         * dismissed. [topUp] is set when a resumed registration lock found
+         * its slot taken and can top up the identity there instead.
+         */
+        data class Failed(val message: String, val topUp: RegistrationLockTopUp? = null) : Phase
 
         /**
          * Unconfirmed terminal state (shielded only): the transition may have
@@ -155,6 +160,7 @@ class IdentityRegistrationController(
         body: suspend IdentityRegistrationController.() -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
+        topUpOffer: (Throwable) -> RegistrationLockTopUp? = { null },
     ) {
         when (_phase.value) {
             is Phase.Idle, is Phase.PreparingKeys, is Phase.Failed -> Unit
@@ -177,7 +183,7 @@ class IdentityRegistrationController(
                 } else {
                     _failureStage.value = if (isBroadcastNotSent(e)) FailureStage.BroadcastNotSent else null
                     terminalAt = now()
-                    _phase.value = Phase.Failed(e.message ?: "Registration failed")
+                    _phase.value = Phase.Failed(e.message ?: "Registration failed", topUpOffer(e))
                 }
             }
         }

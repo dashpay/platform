@@ -1,7 +1,11 @@
 package org.dashfoundation.example.services.assetlock
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
+import org.dashfoundation.example.util.Base58
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.test.runTest
@@ -77,6 +81,44 @@ class IdentityAssetLockRecoveryTest {
         }
 
         assertTrue(resumed)
+    }
+
+    @Test
+    fun `registration resume refused for a taken slot offers a top-up of the identity there`() {
+        val lock = lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION, 7)
+        val id = ByteArray(32) { (it + 1).toByte() }
+        val base58 = Base58.encode(id)
+
+        val offer = IdentityAssetLockRecovery.registrationResumeTopUp(
+            lock,
+            DashSdkError.PlatformWallet.IdentitySlotTakenOnChain(4, base58),
+        )
+
+        requireNotNull(offer)
+        assertSame(lock, offer.lock)
+        assertEquals(4, offer.identityIndex)
+        assertTrue(id.contentEquals(offer.identityId))
+        assertEquals(base58, offer.identityIdBase58)
+    }
+
+    @Test
+    fun `other registration resume failures offer no top-up`() {
+        val lock = lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION, 7)
+
+        assertNull(IdentityAssetLockRecovery.registrationResumeTopUp(lock, IllegalStateException("x")))
+        assertNull(
+            IdentityAssetLockRecovery.registrationResumeTopUp(
+                lock,
+                DashSdkError.PlatformWallet.IdentitySlotNotHeld(4),
+            ),
+        )
+        // An id that is not a 32-byte identifier cannot be topped up.
+        assertNull(
+            IdentityAssetLockRecovery.registrationResumeTopUp(
+                lock,
+                DashSdkError.PlatformWallet.IdentitySlotTakenOnChain(4, "not-an-id"),
+            ),
+        )
     }
 
     private fun lock(

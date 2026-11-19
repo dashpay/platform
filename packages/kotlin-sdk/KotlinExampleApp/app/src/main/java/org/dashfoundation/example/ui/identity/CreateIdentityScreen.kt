@@ -447,6 +447,12 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                                 )
                                             }
                                         },
+                                        // Not IdentitySlotRetry: the lock's index is
+                                        // fixed. A slot taken by another identity of
+                                        // this wallet leaves the lock to top it up.
+                                        topUpOffer = {
+                                            IdentityAssetLockRecovery.registrationResumeTopUp(lock, it)
+                                        },
                                     )
                                 }
                             }
