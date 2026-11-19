@@ -444,6 +444,49 @@ async fn should_hold_the_voucher_lock_when_an_invitation_fails_after_its_broadca
     assert_holds(&error, out_point);
 }
 
+/// A call that built or resumed a lock but could not hand its proof back
+/// names the lock while a resume can take it on; once the row is
+/// consumption-unknown (`RecoveredFromChain`, where Platform may already have
+/// consumed it) or consumed, the failure is `MaybeSent` and names none, as
+/// the seam's resumable-lock rule says.
+#[tokio::test]
+async fn should_name_a_handed_back_lock_only_while_it_is_resumable() {
+    let (_manager, wallet, signer) = wallet().await;
+    let out_point = track_chain_locked_lock(
+        &wallet,
+        &signer,
+        AssetLockFundingType::IdentityRegistration,
+        0,
+    )
+    .await;
+    assert_holds(
+        &wallet.asset_locks.handoff_failure(out_point).await,
+        out_point,
+    );
+
+    for status in [
+        AssetLockStatus::RecoveredFromChain,
+        AssetLockStatus::Consumed,
+    ] {
+        {
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet registered")
+                .tracked_asset_locks
+                .get_mut(&out_point)
+                .expect("tracked")
+                .status = status.clone();
+        }
+        let error = wallet.asset_locks.handoff_failure(out_point).await;
+        assert_eq!(
+            error.payment_delivery(),
+            PaymentDelivery::MaybeSent,
+            "{status:?}"
+        );
+        assert!(!error.is_retryable(), "{status:?}");
+    }
+}
+
 /// Once a shielded funding holds its Core lock, a refusal before any Platform
 /// dispatch (here the lock is too small to pay the pool fee) names the lock as
 /// held: the funded-lock seam covers the sizing checks that follow the lock's

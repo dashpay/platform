@@ -339,6 +339,15 @@ pub(crate) fn hold_resumable_lock(
     }
 }
 
+/// The diagnostic of [`AssetLockManager::handoff_failure`]. On its own, with
+/// no tracked row consulted, it is `MaybeSent`: the call built or resumed a
+/// lock, so its failure is never `NotSent`.
+pub fn handoff_failure_source() -> PlatformWalletError {
+    PlatformWalletError::AssetLockTransaction(
+        "the asset lock's proof could not be handed back".into(),
+    )
+}
+
 /// The errors whose own class is the answer even while the lock is tracked:
 /// resuming it is not the way on (see [`hold_resumable_lock`]).
 fn refuses_resume(error: &PlatformWalletError) -> bool {
@@ -391,6 +400,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None => None,
         };
         hold_resumable_lock(error, resumable).after_dispatch()
+    }
+
+    /// The error of a call that built or resumed the lock at `out_point` but
+    /// could not hand its result back (the proof did not encode, the
+    /// derivation path held an interior NUL), classed as
+    /// [`Self::funded_lock_error`] classes it: the lock named as held while a
+    /// resume can take it on, `MaybeSent` once it is consumed,
+    /// consumption-unknown (`RecoveredFromChain`) or gone.
+    pub async fn handoff_failure(&self, out_point: OutPoint) -> PlatformWalletError {
+        self.funded_lock_error(handoff_failure_source(), Some(out_point))
+            .await
     }
 
     /// The resume's form of [`Self::funded_lock_error`]: a lock the failed
