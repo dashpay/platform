@@ -18,7 +18,6 @@ default = [
   "moderation-charters-contract",
   "decision-proposals-contract",
   "token-market-contract",
-  "mocks",
 ]
 
 mocks = ["dash-sdk/mocks"]

@@ -11,6 +11,7 @@ use dash_sdk::dpp::secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "mocks")]
 use wasm_dpp2::serialization::conversions::to_object;
 use wasm_dpp2::{NetworkLikeJs, NetworkWasm};
 
@@ -229,6 +230,7 @@ impl WasmSdk {
         Ok(hex::encode(signature.serialize_compact()))
     }
 
+    #[cfg(feature = "mocks")]
     /// Generate deterministic test identity keys for SDK functional tests.
     ///
     /// This generates the same keys that are created in the genesis state when

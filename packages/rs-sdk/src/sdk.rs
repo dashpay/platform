@@ -40,6 +40,7 @@ use rs_dapi_client::{
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
+#[cfg(any(feature = "mocks", not(target_arch = "wasm32")))]
 use std::path::Path;
 #[cfg(feature = "mocks")]
 use std::path::PathBuf;
@@ -495,6 +496,7 @@ impl Sdk {
     /// Check the freshness of `metadata` ([`Self::verify_response_metadata`]), with
     /// optional arrival-time height and clock anchors, and learn its protocol version
     /// as the stored one, without recording it as verified.
+    #[cfg(any(test, feature = "mocks"))]
     pub(crate) fn verify_response_metadata_as_of(
         &self,
         method_name: &str,
