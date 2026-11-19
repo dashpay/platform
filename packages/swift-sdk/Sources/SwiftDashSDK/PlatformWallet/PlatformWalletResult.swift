@@ -680,6 +680,20 @@ public enum PlatformPaymentRecovery: Equatable, Sendable {
                 + "before submitting again."
         }
     }
+
+    /// `suggestion` for a failed invitation create, whose held lock is the
+    /// invitation's voucher: the generic resume refuses a voucher lock, and
+    /// its funds come back through the voucher's reclaim. The host knows it
+    /// from the operation that failed; the class is the same.
+    public var invitationVoucherSuggestion: String {
+        switch self {
+        case .resume:
+            return "The funds are held in the invitation's voucher lock. Reclaim the voucher from Sent "
+                + "invitations to get them back; do not create a new invitation."
+        case .retry, .wait, .reconcile, .unconfirmed:
+            return suggestion
+        }
+    }
 }
 
 // MARK: - Class wrapper

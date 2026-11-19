@@ -127,11 +127,16 @@ public enum ErrorFormatter {
         if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
             return sdkError.localizedDescription
         }
-        // A wallet error leads with what its payment class allows (retry,
-        // wait, resume, reconcile, or unconfirmed) and never goes through the
-        // text matching below, which would print the case's `payment:` tail.
+        // A wallet error never goes through the text matching below, which
+        // would print the case's `payment:` tail. One Rust classed leads with
+        // what its payment class allows (retry, wait, resume or reconcile);
+        // one without a class attempted no payment (see
+        // `ErrorCategorizer.toUserFacingError`) and shows its own text.
         if let walletError = error as? PlatformWalletError {
-            let recovery = PlatformPaymentRecovery(walletError.payment)
+            guard let payment = walletError.payment else {
+                return walletError.localizedDescription
+            }
+            let recovery = PlatformPaymentRecovery(payment)
             return "\(recovery.suggestion) \(walletError.localizedDescription)"
         }
         // Handle specific SDK error types
@@ -357,11 +362,22 @@ public enum ErrorCategorizer {
         // A wallet error: Rust's class decides the title, the guidance (which
         // leads the message) and the retry. No category suggestion is added:
         // one inferred from the text would offer a retry Rust did not allow.
+        //
+        // The class is followed only when the error carries one, which marks
+        // a payment that was attempted: Rust stamps its class on every failure
+        // of a payment the wallet ran (panics included), and the Swift guards
+        // that throw after a successful native call pass `.maybeSent`. An
+        // error without one is a refusal before any payment (a Swift-side
+        // input check, a native pointer, handle or decode refusal, or a call
+        // that pays nothing): titled by its category, never "Submission
+        // unconfirmed", and still offered no retry or retry text.
         if let walletError = error as? PlatformWalletError {
+            let category = categorize(walletError)
             return UserFacingError(
-                title: title(for: PlatformPaymentRecovery(walletError.payment)),
+                title: walletError.payment.map { title(for: PlatformPaymentRecovery($0)) }
+                    ?? category.rawValue,
                 message: ErrorFormatter.userFriendlyMessage(from: walletError),
-                category: categorize(walletError),
+                category: category,
                 underlyingError: String(describing: walletError),
                 isRetryable: walletError.isRetryable
             )
@@ -376,6 +392,26 @@ public enum ErrorCategorizer {
                 underlyingError: String(describing: unconfirmed),
                 isRetryable: unconfirmed.isRetryable
             )
+        }
+
+        // A network failure or timeout of an SDK request carries no payment
+        // class, so nothing proves the request did not reach the network:
+        // not retryable, and no "try again" (← Kotlin `NetworkError` /
+        // `Timeout`).
+        if let sdkError = error as? SDKError {
+            switch sdkError {
+            case .networkError, .timeout:
+                let category = categorize(sdkError)
+                return UserFacingError(
+                    title: category.rawValue,
+                    message: ErrorFormatter.userFriendlyMessage(from: sdkError),
+                    category: category,
+                    underlyingError: String(describing: sdkError),
+                    isRetryable: false
+                )
+            default:
+                break
+            }
         }
 
         let category = categorize(error)

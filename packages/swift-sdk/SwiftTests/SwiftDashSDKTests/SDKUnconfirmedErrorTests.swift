@@ -84,6 +84,13 @@ final class SDKUnconfirmedErrorTests: XCTestCase {
             XCTAssertFalse(displayed.isRetryable)
             XCTAssertNil(displayed.recoverySuggestion)
         }
-        XCTAssertTrue(ErrorCategorizer.toUserFacingError(SDKError.timeout("timeout")).isRetryable)
+        // Neither a timeout nor a network failure carries a payment class:
+        // not retryable, and no "try again" (← Kotlin `Timeout` / `NetworkError`).
+        for error in [SDKError.timeout("timeout"), SDKError.networkError("connection lost")] {
+            let displayed = ErrorCategorizer.toUserFacingError(error)
+            XCTAssertFalse(displayed.isRetryable, "\(error)")
+            XCTAssertNil(displayed.recoverySuggestion, "\(error)")
+            XCTAssertFalse(displayed.fullDescription.lowercased().contains("try again"), displayed.fullDescription)
+        }
     }
 }

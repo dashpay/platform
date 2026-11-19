@@ -1511,7 +1511,6 @@ final class ErrorHandlingTests: XCTestCase {
              "Payment held", PlatformPaymentRecovery.resume(held).suggestion),
             (.shieldedBroadcastFailed("network refused", payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true)),
              "Not sent", PlatformPaymentRecovery.retry.suggestion),
-            (.notFound("not found"), "Submission unconfirmed", PlatformPaymentRecovery.unconfirmed.suggestion),
         ]
         for (error, title, suggestion) in cases {
             let shown = ErrorCategorizer.toUserFacingError(error)
@@ -1524,6 +1523,44 @@ final class ErrorHandlingTests: XCTestCase {
                 XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
             }
         }
+    }
+
+    /// A held invitation voucher is reclaimed, not resumed; every other
+    /// class reads as it always does (← Kotlin `PaymentRecovery`).
+    func testShouldTellAnInvitationVoucherToBeReclaimed() {
+        let held = AssetLockBuiltOutPoint(rawBytes: Data(repeating: 7, count: 32) + Data([2, 0, 0, 0]))!
+        let resume = PlatformPaymentRecovery.resume(held)
+        XCTAssertTrue(resume.invitationVoucherSuggestion.contains("Reclaim the voucher"))
+        XCTAssertFalse(resume.invitationVoucherSuggestion.contains("Resume"))
+        for other in [PlatformPaymentRecovery.retry, .wait, .reconcile, .unconfirmed] {
+            XCTAssertEqual(other.invitationVoucherSuggestion, other.suggestion)
+        }
+    }
+
+    /// A wallet error that carries no class attempted no payment (a Swift
+    /// input check before any native call, a native refusal before the wallet
+    /// ran): it is titled by its category, not "Submission unconfirmed", shows
+    /// its own text, and is still offered no retry or retry text.
+    func testShouldNotTitleAnUnclassifiedWalletErrorAsAnUnconfirmedSubmission() {
+        for error in [
+            PlatformWalletError.invalidParameter("Amount must be greater than zero"),
+            PlatformWalletError.notFound("not found"),
+            PlatformWalletError.walletOperation("timeout"),
+        ] {
+            let shown = ErrorCategorizer.toUserFacingError(error)
+            XCTAssertEqual(shown.title, ErrorCategorizer.categorize(error).rawValue, "\(error)")
+            XCTAssertNotEqual(shown.title, "Submission unconfirmed")
+            XCTAssertEqual(shown.message, error.localizedDescription)
+            XCTAssertEqual(ErrorFormatter.userFriendlyMessage(from: error), error.localizedDescription)
+            XCTAssertNil(shown.recoverySuggestion)
+            XCTAssertFalse(shown.isRetryable)
+            XCTAssertFalse(shown.fullDescription.lowercased().contains("try again"), shown.fullDescription)
+        }
+        // The same error once Rust classed its payment follows the class.
+        let classed = ErrorCategorizer.toUserFacingError(
+            PlatformWalletError.walletOperation("timeout", payment: .maybeSent)
+        )
+        XCTAssertEqual(classed.title, "Submission unconfirmed")
     }
 
     /// The marketplace and persister texts do not claim an outcome the class
