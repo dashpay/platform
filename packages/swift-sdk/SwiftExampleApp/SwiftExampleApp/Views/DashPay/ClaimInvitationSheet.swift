@@ -28,8 +28,6 @@ struct ClaimInvitationSheet: View {
     /// Existing identities on this network — used to pick the next unused
     /// registration index for the new identity.
     @Query private var identities: [PersistentIdentity]
-    /// Accounts, for the identity-registration slot rows the claim reserves.
-    @Query private var accounts: [PersistentAccount]
 
     @State private var uri: String
     @State private var preview: ManagedPlatformWallet.InvitationPreview?
@@ -203,7 +201,6 @@ struct ClaimInvitationSheet: View {
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 let identityIndex = nextUnusedIdentityIndex()
-                try reserveIdentitySlot(identityIndex)
 
                 // Register the invitee's own keys exactly like a normal
                 // registration: master + auth keys, plus a DashPay enc/dec pair
@@ -232,48 +229,17 @@ struct ClaimInvitationSheet: View {
                     )
                     newIdentityId = try managed.getId()
                 } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
-                    // The invitation's identity is this wallet's: one it
-                    // records, or one an earlier claim at this index created
-                    // without recording it. The wallet records only the
-                    // identity the error names.
-                    let recovered: Bool
-                    do {
-                        recovered = try await recoverClaimed(claimedId, at: identityIndex, in: wallet)
-                    } catch {
-                        // A failed load says nothing about the identity,
-                        // so it is reported as a failure to retry.
+                    // The invitation's identity is this wallet's. When the
+                    // wallet already lists it, the claim continues with it;
+                    // otherwise a rescan loads it.
+                    guard let recorded = identities.first(where: {
+                        $0.identityIdBase58 == claimedId && $0.wallet?.walletId == walletId
+                    }) else {
                         errorMessage = "This invitation already created identity \(claimedId) "
-                            + "in this wallet, but loading it failed: "
-                            + "\(error.localizedDescription). Try again."
+                            + "in this wallet. Run Re-scan for Identities to load it."
                         return
                     }
-                    guard recovered, let claimed = Data.identifier(fromBase58: claimedId) else {
-                        errorMessage = "This invitation already created identity \(claimedId) "
-                            + "in this wallet. If it is not listed, try Re-scan for Identities."
-                        return
-                    }
-                    newIdentityId = claimed
-                } catch let refusal as PlatformWalletError {
-                    // The keys at this index belong to an identity. When it is
-                    // this wallet's own, unrecorded one, the wallet records
-                    // it, and the next claim takes the next index. Any other
-                    // owner keeps the refusal.
-                    guard case .invitationKeysAlreadyRegistered(let ownerId?, _) = refusal else {
-                        throw refusal
-                    }
-                    let recovered: Bool
-                    do {
-                        recovered = try await recoverClaimed(ownerId, at: identityIndex, in: wallet)
-                    } catch {
-                        errorMessage = "Identity \(ownerId) holds these keys, but checking whether "
-                            + "it is this wallet's failed: \(error.localizedDescription). Try again."
-                        return
-                    }
-                    guard recovered else { throw refusal }
-                    kickDashPaySync(walletManager)
-                    errorMessage = "Identity \(ownerId) of this wallet already used these keys "
-                        + "and is now loaded. Claim again once it is listed."
-                    return
+                    newIdentityId = recorded.identityId
                 }
                 kickDashPaySync(walletManager)
 
@@ -335,17 +301,6 @@ struct ClaimInvitationSheet: View {
         }
     }
 
-    /// Whether `wallet` records the identity a refusal named (base58) as its
-    /// own after asking Rust to recover it at `index`.
-    private func recoverClaimed(
-        _ identityId: String,
-        at index: UInt32,
-        in wallet: ManagedPlatformWallet
-    ) async throws -> Bool {
-        guard let id = Data.identifier(fromBase58: identityId) else { return false }
-        return try await wallet.recoverClaimedIdentity(atIndex: index, identityId: id)
-    }
-
     /// One past the highest used registration index on this wallet, else 0.
     /// Registration keys aren't gap-limited, so "next unused" is `max + 1`.
     /// A slot held by an in-flight registration counts as used: its identity
@@ -360,24 +315,5 @@ struct ClaimInvitationSheet: View {
             .map(\.identityIndex)
         guard let highest = (recorded + held).max() else { return 0 }
         return highest == UInt32.max ? UInt32.max : highest + 1
-    }
-
-    /// Mark the claim's slot used before its keys are derived, so a normal
-    /// registration started meanwhile skips it: `CreateIdentityView` treats a
-    /// slot whose identity-registration address is `isUsed` as taken. A no-op
-    /// when the slot row is beyond the derived lookahead, as there. Saved at
-    /// once, so the reservation outlives an app exit during the claim.
-    ///
-    /// This sheet's own selector does not read the marker: a retry after a
-    /// lost result must come back to the same slot, where the landed claim's
-    /// keys are, to be recognized as this wallet's claim.
-    private func reserveIdentitySlot(_ identityIndex: UInt32) throws {
-        let slot = accounts
-            .first { $0.wallet.walletId == walletId && $0.accountType == 2 }?
-            .coreAddresses
-            .first { $0.addressIndex == identityIndex }
-        guard let slot, !slot.isUsed else { return }
-        slot.isUsed = true
-        try modelContext.save()
     }
 }

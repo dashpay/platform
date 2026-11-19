@@ -124,7 +124,7 @@ impl IdentityWallet {
         &self,
         identity_index: u32,
     ) -> Result<Option<Identity>, PlatformWalletError> {
-        self.load_identity_by_index_inner(identity_index, LoadKeyHashSource::ResidentWallet, None)
+        self.load_identity_by_index_inner(identity_index, LoadKeyHashSource::ResidentWallet)
             .await
     }
 
@@ -153,87 +153,8 @@ impl IdentityWallet {
         identity_index: u32,
         master: &ExtendedPrivKey,
     ) -> Result<Option<Identity>, PlatformWalletError> {
-        self.load_identity_by_index_inner(identity_index, LoadKeyHashSource::Master(master), None)
+        self.load_identity_by_index_inner(identity_index, LoadKeyHashSource::Master(master))
             .await
-    }
-
-    /// Record `expected`, the identity a refused invitation claim named
-    /// (code 63 or 64), as this wallet's identity at `identity_index`.
-    ///
-    /// - `Ok(true)`: this wallet records `expected` now, either because it
-    ///   already held it at some index, or because the identity registered
-    ///   with this wallet's master key at `identity_index` is `expected`
-    ///   and was loaded into that slot (moved there from the observed
-    ///   identities when it was only observed).
-    /// - `Ok(false)`: no identity is registered at `identity_index`, or a
-    ///   different one is. Nothing is written in that case: the id is
-    ///   compared before any state is.
-    /// - `Err`: the lookup failed, or this handle's wallet is no longer the
-    ///   one the manager holds.
-    ///
-    /// Derives from the in-process wallet, like
-    /// [`Self::load_identity_by_index`]; see
-    /// [`Self::recover_claimed_identity_from_master`] for a wallet whose
-    /// seed is not in process.
-    pub async fn recover_claimed_identity(
-        &self,
-        identity_index: u32,
-        expected: Identifier,
-    ) -> Result<bool, PlatformWalletError> {
-        self.recover_claimed_identity_inner(
-            identity_index,
-            expected,
-            LoadKeyHashSource::ResidentWallet,
-        )
-        .await
-    }
-
-    /// [`Self::recover_claimed_identity`], deriving from `master` like
-    /// [`Self::load_identity_by_index_from_master`].
-    pub async fn recover_claimed_identity_from_master(
-        &self,
-        identity_index: u32,
-        expected: Identifier,
-        master: &ExtendedPrivKey,
-    ) -> Result<bool, PlatformWalletError> {
-        self.recover_claimed_identity_inner(
-            identity_index,
-            expected,
-            LoadKeyHashSource::Master(master),
-        )
-        .await
-    }
-
-    async fn recover_claimed_identity_inner(
-        &self,
-        identity_index: u32,
-        expected: Identifier,
-        source: LoadKeyHashSource<'_>,
-    ) -> Result<bool, PlatformWalletError> {
-        if self.records_in_wallet(&expected).await? {
-            return Ok(true);
-        }
-        Ok(self
-            .load_identity_by_index_inner(identity_index, source, Some(expected))
-            .await?
-            .is_some())
-    }
-
-    /// Whether this handle's wallet holds `identity_id` in one of its own
-    /// slots (not only as an observed identity).
-    async fn records_in_wallet(
-        &self,
-        identity_id: &Identifier,
-    ) -> Result<bool, PlatformWalletError> {
-        let wm = self.wallet_manager.read().await;
-        let (_, info) = self
-            .current_wallet_and_info(&wm)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let manager = &info.identity_manager;
-        Ok(manager.identity_index(identity_id).is_some()
-            && manager
-                .managed_identity(identity_id)
-                .is_some_and(|managed| managed.wallet_id == Some(self.wallet_id)))
     }
 
     /// Shared body for [`Self::load_identity_by_index`] and
@@ -244,14 +165,10 @@ impl IdentityWallet {
     /// Platform unique-hash lookup, identity folding, derivation
     /// breadcrumb, and DPNS enrichment — is identical, so it lives here
     /// once.
-    ///
-    /// With `expected`, an identity other than `expected` registered at
-    /// this index is answered as `None` before anything is written.
     async fn load_identity_by_index_inner(
         &self,
         identity_index: u32,
         source: LoadKeyHashSource<'_>,
-        expected: Option<Identifier>,
     ) -> Result<Option<Identity>, PlatformWalletError> {
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
@@ -311,10 +228,6 @@ impl IdentityWallet {
             };
 
         let identity_id = identity.id();
-        if expected.is_some_and(|expected| expected != identity_id) {
-            self.ensure_current_generation().await?;
-            return Ok(None);
-        }
 
         // Derive + verify a candidate for EVERY on-chain key (shared with
         // the discovery scan) so the imported identity can sign with all its
@@ -341,15 +254,6 @@ impl IdentityWallet {
                 // Stored below, with its verified keys, as one changeset.
                 info.identity_manager.add_identity_unstored(
                     identity.clone(),
-                    identity_index,
-                    wallet_id,
-                )?;
-            } else {
-                // One only observed so far (looked up by name, say) holds
-                // this wallet's master key at this index: it moves into
-                // the wallet's slot, stored below with its keys.
-                info.identity_manager.promote_out_of_wallet_unstored(
-                    &identity_id,
                     identity_index,
                     wallet_id,
                 )?;
@@ -1000,7 +904,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(test)]
-#[path = "claim_recovery_tests.rs"]
-mod claim_recovery_tests;

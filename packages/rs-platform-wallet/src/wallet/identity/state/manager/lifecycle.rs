@@ -119,49 +119,6 @@ impl IdentityManager {
         Ok(())
     }
 
-    /// Move an observed identity (the out-of-wallet bucket) into
-    /// `wallet_id`'s slot `identity_index`, in memory only: the caller stores
-    /// it, as [`Self::add_identity_unstored`]'s caller does. An identity that
-    /// is not observed-only (already in a wallet, or unknown) is left as it
-    /// is. A slot that already holds another identity is refused.
-    pub(crate) fn promote_out_of_wallet_unstored(
-        &mut self,
-        identity_id: &Identifier,
-        identity_index: u32,
-        wallet_id: WalletId,
-    ) -> Result<(), PlatformWalletError> {
-        if self.location_index().get(identity_id) != Some(&IdentityLocation::OutOfWallet) {
-            return Ok(());
-        }
-        if let Some(occupant) = self
-            .wallet_identities
-            .get(&wallet_id)
-            .and_then(|slots| slots.get(&identity_index))
-        {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "identity index {identity_index} of this wallet already holds identity {}",
-                occupant.identity.id()
-            )));
-        }
-        let Some(mut managed) = self.out_of_wallet_identities.remove(identity_id) else {
-            return Ok(());
-        };
-        managed.identity_index = Some(identity_index);
-        managed.wallet_id = Some(wallet_id);
-        self.wallet_identities
-            .entry(wallet_id)
-            .or_default()
-            .insert(identity_index, managed);
-        self.location_index_insert(
-            *identity_id,
-            IdentityLocation::InWallet {
-                wallet_id,
-                registration_index: identity_index,
-            },
-        );
-        Ok(())
-    }
-
     /// Hold every identity in `owners`, whose private contact request scan
     /// state record a persister kept marked
     /// (`PrivateContactRequestsPosition::private_payments_unresolved`), as a

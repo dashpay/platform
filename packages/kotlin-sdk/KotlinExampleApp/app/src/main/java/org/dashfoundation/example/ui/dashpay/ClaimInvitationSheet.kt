@@ -28,7 +28,6 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.tokens.InvitationPreview
-import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.DashpayKeyProvisioning
@@ -174,33 +173,14 @@ fun ClaimInvitationSheet(
                             signerHandle = mgr.signerHandle,
                         )
                     } catch (e: DashSdkError.PlatformWallet.InvitationClaimedByThisWallet) {
-                        // The invitation's identity is this wallet's: one it
-                        // records, or one an earlier claim at this index
-                        // created without recording it. The wallet records
-                        // only the identity the error names.
+                        // The invitation's identity is this wallet's. When the
+                        // wallet already lists it, the claim continues with it;
+                        // otherwise the outer handler points to a rescan.
                         val claimedId = Base58.decodeIdentifier(e.identityId) ?: throw e
-                        val recovered = recoverClaimed(wallet.handle, mgr, identityIndex, claimedId) { cause ->
-                            "This invitation already created identity ${e.identityId} " +
-                                "in this wallet, but loading it failed: $cause. Try again."
-                        }
-                        if (!recovered) throw e
-                        claimedId
-                    } catch (e: DashSdkError.PlatformWallet.InvitationKeysAlreadyRegistered) {
-                        // The keys at this index belong to an identity. When
-                        // it is this wallet's own, unrecorded one, the wallet
-                        // records it, and the next claim takes the next index.
-                        // Any other owner keeps the refusal.
-                        val owner = e.identityId ?: throw e
-                        val ownerId = Base58.decodeIdentifier(owner) ?: throw e
-                        val recovered = recoverClaimed(wallet.handle, mgr, identityIndex, ownerId) { cause ->
-                            "Identity $owner holds these keys, but checking whether it " +
-                                "is this wallet's failed: $cause. Try again."
-                        }
-                        if (!recovered) throw e
-                        throw ClaimRecoveryMessage(
-                            "Identity $owner of this wallet already used these keys and " +
-                                "is now loaded. Claim again once it is listed.",
-                        )
+                        walletOwned.firstOrNull {
+                            it.walletId?.contentEquals(wallet.walletId) == true &&
+                                it.identityId.contentEquals(claimedId)
+                        }?.identityId ?: throw e
                     }
                 }
                 val username = preview.inviterUsername
@@ -213,8 +193,7 @@ fun ClaimInvitationSheet(
                 errorMessage = when (t) {
                     is DashSdkError.PlatformWallet.InvitationClaimedByThisWallet ->
                         "This invitation already created identity ${t.identityId} in this wallet. " +
-                            "If it is not listed, try Search Wallets for Identities."
-                    is ClaimRecoveryMessage -> t.message
+                            "Run Search Wallets for Identities to load it."
                     else -> t.message ?: "Claiming the invitation failed."
                 }
             } finally {
@@ -354,33 +333,3 @@ fun ClaimInvitationSheet(
         )
     }
 }
-
-
-/**
- * Asks the wallet to record [identityId], the identity a refusal named, as
- * its identity at [identityIndex]; whether it records it now. A failed
- * lookup is thrown as [ClaimRecoveryMessage] built by [failure] from its
- * cause.
- */
-private suspend fun recoverClaimed(
-    walletHandle: Long,
-    mgr: PlatformWalletManager,
-    identityIndex: Int,
-    identityId: ByteArray,
-    failure: (String) -> String,
-): Boolean = try {
-    mgr.identityRegistration.recoverClaimedIdentity(
-        walletHandle = walletHandle,
-        mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-        identityIndex = identityIndex,
-        identityId = identityId,
-    )
-} catch (e: Exception) {
-    throw ClaimRecoveryMessage(failure(e.message ?: e.javaClass.simpleName), e)
-}
-
-/** A recovery outcome of the claim, shown to the user as is. */
-private class ClaimRecoveryMessage(
-    override val message: String,
-    cause: Throwable? = null,
-) : Exception(message, cause)

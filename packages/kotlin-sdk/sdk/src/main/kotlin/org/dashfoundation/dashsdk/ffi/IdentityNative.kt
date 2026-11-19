@@ -255,19 +255,6 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
-     * Record [identityId], the identity a refused invitation claim named
-     * (code 63 or 64), as this wallet's identity at [identityIndex].
-     * Returns whether the wallet records it now; `false` when no identity,
-     * or another one, is registered there.
-     */
-    external fun recoverClaimedIdentity(
-        walletHandle: Long,
-        resolverHandle: Long,
-        identityIndex: Int,
-        identityId: ByteArray,
-    ): Boolean
-
-    /**
      * Scan the wallet's identity-authentication tree for registered
      * identities (gap-limit walk, Rust-side). Returns the concatenated
      * 32-byte ids (length is a multiple of 32). [startIndex] < 0 uses the

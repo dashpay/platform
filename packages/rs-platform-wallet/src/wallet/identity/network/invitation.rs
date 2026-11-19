@@ -462,14 +462,20 @@ impl IdentityWallet {
         self.current_wallet_and_info(&wm).is_some()
     }
 
-    /// This wallet records `identity_id` as one of its own identities. A
-    /// wallet re-created under this handle's id since it was taken is not
-    /// this wallet: its identities say nothing about this handle's claims.
+    /// This wallet holds `identity_id` in one of its registration slots. An
+    /// identity it only observed (looked up by name, say) is not its own,
+    /// even when stored under this wallet's id. A wallet re-created under
+    /// this handle's id since it was taken is not this wallet: its
+    /// identities say nothing about this handle's claims.
     async fn holds_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
-        self.current_wallet_and_info(&wm)
-            .and_then(|(_, info)| info.identity_manager.managed_identity(identity_id))
-            .is_some_and(|managed| managed.wallet_id == Some(self.wallet_id))
+        self.current_wallet_and_info(&wm).is_some_and(|(_, info)| {
+            let manager = &info.identity_manager;
+            manager.identity_index(identity_id).is_some()
+                && manager
+                    .managed_identity(identity_id)
+                    .is_some_and(|managed| managed.wallet_id == Some(self.wallet_id))
+        })
     }
 
     /// Whether this wallet claimed the invitation as its identity at
@@ -1063,6 +1069,45 @@ mod tests {
                     .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == theirs
+            ));
+        }
+
+        /// An identity this wallet only observed is not its claim, even when
+        /// its row carries this wallet's id (as a store restores a lookup it
+        /// recorded under the wallet's scope): the status falls back to the
+        /// master-key test, and a refusal naming it stays "claimed by
+        /// someone else".
+        #[tokio::test]
+        async fn should_not_treat_an_observed_identity_as_this_wallets_claim() {
+            let wallet = wallet().await;
+            let observed = claimed_at(&wallet, 2).await;
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                let info = wm
+                    .get_wallet_info_mut(&wallet.wallet_id)
+                    .expect("wallet info");
+                info.identity_manager
+                    .add_out_of_wallet_identity(observed.clone(), &wallet.persister)
+                    .expect("observed");
+                info.identity_manager
+                    .managed_identity_mut(&observed.id())
+                    .expect("managed")
+                    .wallet_id = Some(wallet.wallet_id);
+            }
+
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet_resolving(Some(&observed), 3, || {
+                        Some(master())
+                    })
+                    .await,
+                Some(false)
+            );
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: observed.id() })
+                    .await,
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == observed.id()
             ));
         }
 

@@ -999,44 +999,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_discov
     })
 }
 
-/// Record the identity a refused invitation claim named (code 63 or 64) as
-/// this wallet's identity at `identityIndex`. Returns whether the wallet
-/// records it now; `false` when no identity, or another one, is registered
-/// there (nothing is written then).
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_recoverClaimedIdentity(
-    mut env: JNIEnv,
-    _class: JClass,
-    wallet_handle: jlong,
-    resolver_handle: jlong,
-    identity_index: jint,
-    identity_id: JByteArray,
-) -> jboolean {
-    guard(&mut env, 0, |env| {
-        if identity_index < 0 {
-            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
-            return 0;
-        }
-        let Some(id) = read_id32(env, &identity_id, "identityId") else {
-            return 0;
-        };
-        let mut recovered = false;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_recover_claimed_identity(
-                wallet_handle as Handle,
-                resolver_handle as *mut MnemonicResolverHandle,
-                identity_index as u32,
-                id.as_ptr(),
-                &mut recovered as *mut bool,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return 0;
-        }
-        recovered as jboolean
-    })
-}
-
 // ── DPNS name registration ────────────────────────────────────────────
 
 /// Register a DPNS name for an identity, signed via the external signer.

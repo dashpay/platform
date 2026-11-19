@@ -464,34 +464,6 @@ class IdentityRegistration internal constructor(
     }
 
     /**
-     * Record [identityId], the identity a refused invitation claim named
-     * (code 63 or 64), as this wallet's identity at [identityIndex].
-     * Returns `true` when the wallet records it now (it already held it, or
-     * the identity registered with this wallet's master key at
-     * [identityIndex] is [identityId] and was loaded into that slot),
-     * `false` when no identity or another one is registered there; throws
-     * when Platform does not answer. Mirrors Swift
-     * `ManagedPlatformWallet.recoverClaimedIdentity(atIndex:identityId:)`.
-     */
-    suspend fun recoverClaimedIdentity(
-        walletHandle: Long,
-        mnemonicResolverHandle: Long,
-        identityIndex: Int,
-        identityId: ByteArray,
-    ): Boolean = gate.op {
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
-        mapNativeErrors {
-            IdentityNative.recoverClaimedIdentity(
-                walletHandle,
-                mnemonicResolverHandle,
-                identityIndex,
-                identityId,
-            )
-        }
-    }
-
-    /**
      * Scan the wallet for registered identities (gap-limit walk). Returns
      * the discovered 32-byte identity ids.
      *
