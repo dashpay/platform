@@ -239,10 +239,15 @@ class IdentityCredits internal constructor(
      *   the identity's balance could not be read from Platform; nothing was
      *   signed or sent, and the call can be retried.
      * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
-     *   the top-up may have executed or may still execute; do not submit it
-     *   again, the next sync settles it.
+     *   the top-up may have executed or may still execute. Do not submit it
+     *   again; keep it pending. Nothing in the wallet holds its inputs, so a
+     *   resubmission is signed with a fresh nonce and, if this one executed,
+     *   pays twice (dashpay/platform#4270). A nonce refusal from Platform is
+     *   reported this way too: neither top-up returns
+     *   `ErrorAddressNonceMismatch` (native code 21).
      * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.NotFound]:
-     *   the wallet was removed or re-created before anything was sent.
+     *   the wallet was removed or re-created before anything was sent,
+     *   including while the top-up was being signed.
      *
      * The native call cannot observe coroutine cancellation, so a top-up can
      * finish after the caller was cancelled; its balance is then returned
@@ -284,8 +289,15 @@ class IdentityCredits internal constructor(
      *   the identity could not be read from Platform; nothing was signed or
      *   sent, and the call can be retried.
      * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
-     *   the top-up may have executed or may still execute; do not submit it
-     *   again, the next sync settles it.
+     *   the top-up may have executed or may still execute. Do not submit it
+     *   again; keep it pending. Nothing in the wallet holds its inputs, so a
+     *   resubmission is signed with a fresh nonce and, if this one executed,
+     *   pays twice (dashpay/platform#4270). A nonce refusal from Platform is
+     *   reported this way too: neither top-up returns
+     *   `ErrorAddressNonceMismatch` (native code 21).
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.NotFound]:
+     *   the wallet was removed or re-created before anything was sent,
+     *   including while the top-up was being signed.
      *
      * The native call cannot observe coroutine cancellation, so a top-up can
      * finish after the caller was cancelled; its balance is then returned
