@@ -2489,12 +2489,6 @@ mod address_pool_restore_tests {
     #[test]
     fn should_not_reissue_a_lost_invitation_row_after_restart() {
         let (wallet, mut info) = wallet_and_info();
-        let xpub = wallet
-            .accounts
-            .identity_invitation
-            .as_ref()
-            .expect("invitation account")
-            .account_xpub;
         let key_source = wallet.key_source_for_account(AccountType::IdentityInvitation);
         let mut probe = info
             .accounts
@@ -2506,12 +2500,17 @@ mod address_pool_restore_tests {
             .remove(0)
             .clone();
         let lost = probe.highest_generated().map_or(0, |h| h + 1);
-        derive_through(&mut probe, &key_source, lost + 2).expect("derive the probe rows");
-        let rows = (0..=lost + 1)
+        // Used rows through `lost + 1`, then the unused window the wallet
+        // derived past them.
+        let last = lost + 1 + probe.gap_limit();
+        derive_through(&mut probe, &key_source, last).expect("derive the probe rows");
+        let rows = (0..=last)
             .filter(|index| *index != lost)
             .map(|index| {
                 let mut row = probe.addresses()[&index].clone();
-                row.state = AddressState::Used;
+                if index <= lost + 1 {
+                    row.state = AddressState::Used;
+                }
                 row
             })
             .collect();
@@ -2526,12 +2525,14 @@ mod address_pool_restore_tests {
             )],
         );
 
+        // The selection `AssetLockManager::peek_next_funding_address` makes:
+        // no key source, so only an already derived, unused row is eligible.
         let next = info
             .accounts
             .identity_invitation
             .as_mut()
             .expect("managed invitation account")
-            .next_address(Some(&xpub))
+            .next_address(None)
             .expect("next funding address");
         assert_eq!(next, probe.addresses()[&(lost + 2)].address);
     }
