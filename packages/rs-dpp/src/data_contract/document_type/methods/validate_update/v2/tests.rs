@@ -1182,6 +1182,19 @@ fn should_refuse_a_member_required_from_the_new_version_that_no_document_could_m
             constrained("enum", platform_value!([{ "y": true }]), true),
             Expected::Refused(10276, "enum"),
         ),
+        case(
+            "a member required from the new version, the same update dropping the object's const",
+            constrained("const", platform_value!({ "y": true }), false),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0), "x": since(2) }),
+                    1,
+                    Some(platform_value!(["y", "x"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Accepted,
+        ),
     ];
     run(&cases, PlatformVersion::latest());
 }
