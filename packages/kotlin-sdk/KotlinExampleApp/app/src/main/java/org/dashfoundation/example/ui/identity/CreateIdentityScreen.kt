@@ -319,7 +319,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             // freed already, one whose asset lock was built stays
                             // held by that lock, and the wallet holds an
                             // unconfirmed shielded create's slot itself.
-                            suspend fun <T> registerAtLeasedSlot(
+                            // The controller shows the slot the body is at.
+                            suspend fun <T> IdentityRegistrationController.registerAtLeasedSlot(
                                 register: suspend (RegistrationSlot, List<IdentityPubkey>) -> T,
                             ): T {
                                 val leasedSlot = requireNotNull(slot)
@@ -327,6 +328,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                     first = leasedSlot,
                                     reacquire = {
                                         mgr.identityRegistration.acquireRegistrationSlot(wallet.handle)
+                                            .also { moveToIdentityIndex(it.identityIndex) }
                                     },
                                     release = { releaseSlot(it) },
                                     attempt = { leased ->

@@ -69,6 +69,29 @@ class RegistrationCoordinatorTest {
     }
 
     @Test
+    fun `a body that moves to another slot shows that slot under its first key`() = runTest {
+        val coordinator = coordinator()
+        val gate = CompletableDeferred<ByteArray>()
+
+        val controller = coordinator.startRegistration(
+            walletId = walletA,
+            identityIndex = 0,
+            body = {
+                // The wallet found slot 0 taken on chain; the body goes on at 3.
+                moveToIdentityIndex(3)
+                gate.await()
+            },
+        )
+        assertEquals(0, controller.currentIdentityIndex.value)
+        runCurrent()
+
+        assertEquals(3, controller.currentIdentityIndex.value)
+        assertSame(controller, coordinator.controller(walletA, 0))
+        gate.complete(ByteArray(32))
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `failure body transitions to failed and is not active`() = runTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<ByteArray>()

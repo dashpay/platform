@@ -71,7 +71,7 @@ class RegistrationCoordinator(
         walletId: ByteArray,
         identityIndex: Int,
         fundingKind: IdentityRegistrationController.FundingKind = IdentityRegistrationController.FundingKind.AssetLock,
-        body: suspend () -> ByteArray,
+        body: suspend IdentityRegistrationController.() -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
     ): IdentityRegistrationController {

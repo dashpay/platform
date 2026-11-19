@@ -99,6 +99,21 @@ class IdentityRegistrationController(
      */
     enum class FailureStage { BroadcastNotSent }
 
+    private val _currentIdentityIndex = MutableStateFlow(identityIndex)
+
+    /**
+     * The slot the registration is at now. It starts at [identityIndex], the
+     * slot the coordinator keys this controller by, and moves when the wallet
+     * reports that slot taken on chain and the body continues at a new one
+     * ([moveToIdentityIndex]).
+     */
+    val currentIdentityIndex: StateFlow<Int> = _currentIdentityIndex.asStateFlow()
+
+    /** The body continues at slot [index]; see [currentIdentityIndex]. */
+    fun moveToIdentityIndex(index: Int) {
+        _currentIdentityIndex.value = index
+    }
+
     private val _phase = MutableStateFlow<Phase>(Phase.Idle)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
 
@@ -132,11 +147,12 @@ class IdentityRegistrationController(
      * drives the legitimate restart through them. ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the 32-byte identity
-     * id, or throws. It runs on its own dispatcher; the terminal phase flip
+     * id, or throws. It runs with this controller as its receiver, so it can
+     * report a move to another slot ([moveToIdentityIndex]). It runs on its own dispatcher; the terminal phase flip
      * hops back to [scope].
      */
     fun submit(
-        body: suspend () -> ByteArray,
+        body: suspend IdentityRegistrationController.() -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
     ) {
@@ -150,7 +166,7 @@ class IdentityRegistrationController(
         terminalAt = null
         task = scope.launch {
             try {
-                val identityId = body()
+                val identityId = this@IdentityRegistrationController.body()
                 terminalAt = now()
                 _phase.value = Phase.Completed(identityId)
             } catch (e: Throwable) {

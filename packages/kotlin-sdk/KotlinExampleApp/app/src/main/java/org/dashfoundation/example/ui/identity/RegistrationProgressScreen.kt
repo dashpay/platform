@@ -54,6 +54,7 @@ fun PendingRegistrationRow(
     navController: NavHostController,
 ) {
     val phase by controller.phase.collectAsStateWithLifecycle()
+    val identityIndex by controller.currentIdentityIndex.collectAsStateWithLifecycle()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -69,7 +70,7 @@ fun PendingRegistrationRow(
     ) {
         ListItem(
             leadingContent = { PhaseIcon(phase) },
-            headlineContent = { Text("Identity #${controller.identityIndex}") },
+            headlineContent = { Text("Identity #$identityIndex") },
             supportingContent = { Text(phaseLabel(phase)) },
         )
     }
