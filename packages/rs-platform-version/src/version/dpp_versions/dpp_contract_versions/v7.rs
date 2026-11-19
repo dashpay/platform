@@ -10,7 +10,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
-///   them by an integer, string or identifier key;
+///   them by an integer, string or identifier key, and may match a key by any element of a
+///   typed array of that document (`{ "in": path }`), the total then being over the documents
+///   whose key is one of the list's distinct elements;
 /// - `validate_document`, 2 rather than 1: a document is checked against its type's native
 ///   validator (the typed validation schema of `document_type::schema::validation_schema`)
 ///   instead of the `jsonschema` crate. A document type whose schema has no validation schema
@@ -81,7 +83,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         schema: DocumentTypeSchemaVersions {
             // changed: checks a schema natively at registration and requires a validation schema
             check_document_type_schema: 1,
-            parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys
+            parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys, and a key by the elements of an array
             // changed: documents are checked against the typed validation schema this builds
             validation_schema: Some(0),
             // changed: the `private` keyword declares a private document type

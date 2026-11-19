@@ -4276,7 +4276,21 @@ fn should_refuse_a_malformed_aggregate() {
         (
             platform_value!({ "countOf": ["listing", { "a": true }] }),
             "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, \
-             $id, an integer or a { \"const\": ... }",
+             $id, an integer, a { \"const\": ... } string or base58 identifier, or \
+             { \"in\": path } naming a typed array of the document",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "in": 3 } }] }),
+            "must be a property path of the document",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "in": "$ownerId" } }] }),
+            "at lessThan[0].countOf[1].a takes any element of \"$ownerId\", but an \"in\" names \
+             a typed array property of the document being written",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "in": "$old.tags" } }] }),
+            "but an \"in\" names a typed array property of the document being written",
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": { "const": 3 } }] }),
