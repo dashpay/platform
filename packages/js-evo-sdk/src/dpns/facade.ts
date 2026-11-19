@@ -47,8 +47,11 @@ export class DpnsFacade {
   /**
    * Whether a DPNS name is tombstoned: its owner gave it up for good, and
    * nobody can register it while the tombstone exists. `isNameAvailable` is
-   * false for such a name. False for a registered name and for a free one, and
-   * always false before protocol version 15.
+   * false for such a name. False for a registered name and for a free one.
+   * Before protocol version 15 no name is tombstoned, so a read that succeeds
+   * answers false.
+   *
+   * A read that fails rejects: it is never answered as false.
    */
   async isNameTombstoned(name: string): Promise<boolean> {
     const w = await this.sdk.getWasmSdkConnected();

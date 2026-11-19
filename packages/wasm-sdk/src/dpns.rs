@@ -517,11 +517,15 @@ impl WasmSdk {
 
     /// Whether a DPNS name is tombstoned: its owner gave it up for good, and nobody
     /// can register it while the tombstone exists. `dpnsIsNameAvailable` is false
-    /// for such a name. False for a registered name and for a free one, and always
-    /// false before protocol version 15.
+    /// for such a name. False for a registered name and for a free one. Before
+    /// protocol version 15 no name is tombstoned, so a read that succeeds answers
+    /// false.
+    ///
+    /// A read that fails rejects: it is never answered as false.
     ///
     /// @param name - The label ("alice") or the full name ("alice.dash")
-    /// @returns Promise that resolves to whether the name is tombstoned
+    /// @returns Promise that resolves to whether the name is tombstoned, and
+    ///          rejects when the network can not be read
     #[wasm_bindgen(js_name = "dpnsIsNameTombstoned")]
     pub async fn dpns_is_name_tombstoned(&self, name: &str) -> Result<bool, WasmSdkError> {
         self.as_ref()

@@ -888,7 +888,7 @@ await sdk.dpns.isNameAvailable('alice');       // false: a tombstoned name is no
 - **A contested name can only be tombstoned.** A name whose normalized label is 3 to 19 characters of `a-z`, `0`, `1` and `-` is contested (`sdk.dpns.isContestedUsername(label)`): a masternode vote awards it, and the network refuses a delete of it. `deleteName` rejects such a name before anything is broadcast.
 - **A tombstone can not be undone by anyone.** Neither its owner nor anybody else can delete a tombstone. The DPNS contract says only that a tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO. Ask the user to confirm before calling `tombstoneName`.
 
-Before protocol version 15 both calls are refused and `isNameTombstoned` is always false.
+Before protocol version 15 both calls are refused, and no name is tombstoned: `isNameTombstoned` answers false when its read succeeds. At any protocol version a read that fails rejects; it is never answered as false.
 
 ## Contributing
 
