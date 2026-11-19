@@ -3384,6 +3384,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+                | PlatformWalletPersistenceCapabilities.identitySlotLeases
         )
     }
 
@@ -3435,6 +3436,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             loadPrivateContactScanStateWalletsCallback
         extensionCallbacks.on_load_private_contact_scan_state_wallets_free_fn =
             loadPrivateContactScanStateWalletsFreeCallback
+        extensionCallbacks.on_persist_identity_slot_leases_fn = persistIdentitySlotLeasesCallback
+        extensionCallbacks.on_load_identity_slot_leases_fn = loadIdentitySlotLeasesCallback
+        extensionCallbacks.on_load_identity_slot_leases_free_fn = loadIdentitySlotLeasesFreeCallback
         return extensionCallbacks
     }
 
@@ -5412,6 +5416,76 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// One stored invitation-claim lease, as the native wallet hands it over.
+    struct IdentitySlotLeaseRow: Equatable {
+        let invitationOutPoint: Data
+        let identityIndex: UInt32
+        let phase: UInt8
+    }
+
+    /// Apply a round's invitation-claim leases: upsert each lease by its
+    /// outpoint, delete each released one. Saved with the round in
+    /// `endChangeset`, so a claim's identity and its lease release commit
+    /// together.
+    func persistIdentitySlotLeases(
+        walletId: Data, leases: [IdentitySlotLeaseRow], released: [Data]
+    ) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation("Identity slot leases require a changeset")
+            }
+            guard let networkRaw = scanStateNetworkRaw(walletId: walletId) else {
+                throw PlatformWalletError.walletOperation(
+                    "No network to store the identity slot leases under")
+            }
+            for row in leases {
+                let outPoint = row.invitationOutPoint
+                let existing = try backgroundContext.fetch(FetchDescriptor<PersistentIdentitySlotLease>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId
+                            && $0.invitationOutPoint == outPoint
+                    })).first
+                if let existing {
+                    existing.identityIndex = row.identityIndex
+                    existing.phase = row.phase
+                } else {
+                    backgroundContext.insert(PersistentIdentitySlotLease(
+                        networkRaw: networkRaw, walletId: walletId, invitationOutPoint: outPoint,
+                        identityIndex: row.identityIndex, phase: row.phase))
+                }
+            }
+            for outPoint in released {
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentIdentitySlotLease>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId
+                            && $0.invitationOutPoint == outPoint
+                    })) {
+                    backgroundContext.delete(row)
+                }
+            }
+        }
+    }
+
+    /// The stored invitation-claim leases of `walletId`. Throws when the
+    /// store cannot be read, so the load fails rather than forgetting a slot.
+    func loadIdentitySlotLeases(walletId: Data) throws -> [IdentitySlotLeaseRow] {
+        try onQueue {
+            let rows: [PersistentIdentitySlotLease]
+            if let networkRaw = scanStateNetworkRaw(walletId: walletId) {
+                rows = try backgroundContext.fetch(FetchDescriptor<PersistentIdentitySlotLease>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            } else {
+                rows = try backgroundContext.fetch(FetchDescriptor<PersistentIdentitySlotLease>(
+                    predicate: #Predicate { $0.walletId == walletId }))
+            }
+            return rows.map {
+                IdentitySlotLeaseRow(
+                    invitationOutPoint: $0.invitationOutPoint, identityIndex: $0.identityIndex,
+                    phase: $0.phase)
+            }
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -6977,6 +7051,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.delete(row)
                 }
                 for row in try backgroundContext.fetch(addresses)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
+                // Claim leases go with their wallet, by the same network rule.
+                let leases: FetchDescriptor<PersistentIdentitySlotLease>
+                if let raw = metadataNetwork?.rawValue {
+                    leases = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    leases = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                for row in try backgroundContext.fetch(leases)
                     where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
@@ -12525,6 +12612,79 @@ private func loadPrivateContactScanStateWalletsFreeCallback(
     guard let walletIds else { return }
     let buffer = UnsafeMutablePointer(mutating: walletIds)
     buffer.deinitialize(count: Int(walletIdsCount))
+    buffer.deallocate()
+}
+
+/// C shim for `on_persist_identity_slot_leases_fn`. Copies every row before
+/// calling the handler, so Rust can drop its arrays on return.
+private func persistIdentitySlotLeasesCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    leases: UnsafePointer<IdentitySlotLeaseFFI>?, leasesCount: UInt,
+    released: UnsafePointer<FFIByteTuple36>?, releasedCount: UInt
+) -> Int32 {
+    guard let context, let walletId else { return -1 }
+    guard leasesCount == 0 || leases != nil, releasedCount == 0 || released != nil else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let leaseRows = leasesCount == 0 ? [] : UnsafeBufferPointer(start: leases, count: Int(leasesCount)).map {
+        row -> PlatformWalletPersistenceHandler.IdentitySlotLeaseRow in
+        var outPoint = row.invitation_out_point
+        return .init(
+            invitationOutPoint: Swift.withUnsafeBytes(of: &outPoint) { Data($0) },
+            identityIndex: row.identity_index, phase: row.phase)
+    }
+    let releasedRows = releasedCount == 0 ? [] : UnsafeBufferPointer(start: released, count: Int(releasedCount)).map {
+        tuple -> Data in
+        var outPoint = tuple
+        return Swift.withUnsafeBytes(of: &outPoint) { Data($0) }
+    }
+    do {
+        try handler.persistIdentitySlotLeases(
+            walletId: Data(bytes: walletId, count: 32), leases: leaseRows, released: releasedRows)
+        return 0
+    } catch { return -1 }
+}
+
+/// C shim for `on_load_identity_slot_leases_fn`. Hands Rust one array of
+/// flat rows, released by the free shim below. A stored outpoint that is not
+/// 36 bytes cannot cross: the load fails, as for an unreadable store.
+private func loadIdentitySlotLeasesCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outLeases: UnsafeMutablePointer<UnsafePointer<IdentitySlotLeaseFFI>?>?,
+    outLeasesCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outLeases, let outLeasesCount else { return -1 }
+    outLeases.pointee = nil
+    outLeasesCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let rows: [PlatformWalletPersistenceHandler.IdentitySlotLeaseRow]
+    do {
+        rows = try handler.loadIdentitySlotLeases(walletId: Data(bytes: walletId, count: 32))
+    } catch { return -1 }
+    guard rows.allSatisfy({ $0.invitationOutPoint.count == 36 }) else { return -1 }
+    guard !rows.isEmpty else { return 0 }
+    let buffer = UnsafeMutablePointer<IdentitySlotLeaseFFI>.allocate(capacity: rows.count)
+    for (index, row) in rows.enumerated() {
+        var entry = IdentitySlotLeaseFFI()
+        Swift.withUnsafeMutableBytes(of: &entry.invitation_out_point) {
+            _ = row.invitationOutPoint.copyBytes(to: $0)
+        }
+        entry.identity_index = row.identityIndex
+        entry.phase = row.phase
+        (buffer + index).initialize(to: entry)
+    }
+    outLeases.pointee = UnsafePointer(buffer)
+    outLeasesCount.pointee = UInt(rows.count)
+    return 0
+}
+
+/// C shim for `on_load_identity_slot_leases_free_fn`: the rows are flat.
+private func loadIdentitySlotLeasesFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    leases: UnsafePointer<IdentitySlotLeaseFFI>?, leasesCount: UInt
+) {
+    guard let leases else { return }
+    let buffer = UnsafeMutablePointer(mutating: leases)
+    buffer.deinitialize(count: Int(leasesCount))
     buffer.deallocate()
 }
 

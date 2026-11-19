@@ -126,6 +126,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// only honours the declaration when the extension carries the five
     /// scan-state callbacks.
     public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// Invitation-claim slot leases are stored and restored. Mirrors
+    /// `PersistenceCapabilities::IDENTITY_SLOT_LEASES`; Rust only honours the
+    /// declaration when the extension carries the three lease callbacks, and
+    /// refuses an invitation claim on a store without it.
+    public static let identitySlotLeases: UInt64 = 1 << 16
 
     public let version: UInt32
     public let bits: UInt64
