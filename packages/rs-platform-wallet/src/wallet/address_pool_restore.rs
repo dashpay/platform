@@ -30,6 +30,16 @@ enum RowRefusal {
     Refused(#[source] KeyWalletError),
 }
 
+/// How [`restore_address_rows`] stores the addresses it derives to close a gap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GapRows {
+    /// Free to hand out, for pools whose usage the chain shows.
+    Available,
+    /// Marked used, for pools whose usage the chain cannot show: a lost row
+    /// may hold a key already handed out.
+    Used,
+}
+
 /// Outcome of [`restore_address_rows`]: how many persisted rows landed in the
 /// pool and how many it refused.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -63,8 +73,9 @@ pub fn derive_through(
 ///
 /// Rows missing below a row's index (a lost persistence round) are derived
 /// from `key_source` first, at most [`MAX_RESTORE_GAP_FILL`] per call, so the
-/// row is watched and its index is never handed out again. Hardened pools,
-/// which cannot derive, take rows at any index.
+/// row is watched and its index is never handed out again. The derived rows
+/// are stored as `gap_rows` says. Hardened pools, which cannot derive, take
+/// rows at any index.
 ///
 /// A row is refused, counted and skipped when the gap below it cannot be
 /// derived or exceeds the bound, its address is already stored at another
@@ -73,6 +84,7 @@ pub fn restore_address_rows(
     pool: &mut AddressPool,
     key_source: &KeySource,
     mut rows: Vec<AddressInfo>,
+    gap_rows: GapRows,
 ) -> AddressRowsRestore {
     rows.sort_by_key(|row| row.index);
     let mut outcome = AddressRowsRestore::default();
@@ -80,7 +92,7 @@ pub fn restore_address_rows(
     let mut budget = MAX_RESTORE_GAP_FILL;
     for mut row in rows {
         let index = row.index;
-        if let Err(error) = fill_gap_below(pool, key_source, index, &mut budget) {
+        if let Err(error) = fill_gap_below(pool, key_source, index, gap_rows, &mut budget) {
             outcome.refused += 1;
             first_refusal.get_or_insert((index, error));
             continue;
@@ -115,6 +127,7 @@ fn fill_gap_below(
     pool: &mut AddressPool,
     key_source: &KeySource,
     index: u32,
+    gap_rows: GapRows,
     budget: &mut u32,
 ) -> Result<(), RowRefusal> {
     let next = pool.highest_generated().map_or(0, |highest| highest + 1);
@@ -130,6 +143,13 @@ fn fill_gap_below(
     }
     derive_through(pool, key_source, index - 1).map_err(RowRefusal::GapUnderivable)?;
     *budget -= gap;
+    if gap_rows == GapRows::Used {
+        for gap_index in next..index {
+            if let Some(address) = pool.address_at_index(gap_index) {
+                pool.mark_used(&address);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -192,7 +212,12 @@ mod tests {
         let index = next_index(&pool) + 5;
         let row = used_row(&pool, &key_source, index);
 
-        let outcome = restore_address_rows(&mut pool, &key_source, vec![row.clone()]);
+        let outcome = restore_address_rows(
+            &mut pool,
+            &key_source,
+            vec![row.clone()],
+            GapRows::Available,
+        );
 
         assert_eq!(
             outcome,
@@ -215,7 +240,12 @@ mod tests {
         let row = used_row(&pool, &key_source, index);
         let generated = pool.highest_generated();
 
-        let outcome = restore_address_rows(&mut pool, &KeySource::NoKeySource, vec![row]);
+        let outcome = restore_address_rows(
+            &mut pool,
+            &KeySource::NoKeySource,
+            vec![row],
+            GapRows::Available,
+        );
 
         assert_eq!(
             outcome,
@@ -235,7 +265,7 @@ mod tests {
         let mut row = pool.addresses()[&0].clone();
         row.index = next_index(&pool) + MAX_RESTORE_GAP_FILL + 1;
 
-        let outcome = restore_address_rows(&mut pool, &key_source, vec![row]);
+        let outcome = restore_address_rows(&mut pool, &key_source, vec![row], GapRows::Available);
 
         assert_eq!(
             outcome,
@@ -256,7 +286,7 @@ mod tests {
             used_row(&pool, &key_source, first + 2),
         ];
 
-        let outcome = restore_address_rows(&mut pool, &key_source, rows);
+        let outcome = restore_address_rows(&mut pool, &key_source, rows, GapRows::Available);
 
         assert_eq!(
             outcome,
@@ -277,7 +307,8 @@ mod tests {
             used_row(&pool, &key_source, first),
         ];
 
-        let outcome = restore_address_rows(&mut pool, &KeySource::NoKeySource, rows);
+        let outcome =
+            restore_address_rows(&mut pool, &KeySource::NoKeySource, rows, GapRows::Available);
 
         assert_eq!(
             outcome,
@@ -316,8 +347,12 @@ mod tests {
         pool.insert(entry(7, Some(bls.clone())))
             .expect("store the pre-derived entry");
 
-        let outcome =
-            restore_address_rows(&mut pool, &key_source, vec![entry(7, None), entry(9, None)]);
+        let outcome = restore_address_rows(
+            &mut pool,
+            &key_source,
+            vec![entry(7, None), entry(9, None)],
+            GapRows::Available,
+        );
 
         assert_eq!(outcome.refused, 0);
         assert_eq!(pool.addresses()[&7].public_key, Some(bls));

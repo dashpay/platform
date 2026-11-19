@@ -1,5 +1,6 @@
 //! Hydrate a [`PlatformWalletManager`] from its persister.
 
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 #[cfg(feature = "shielded")]
 use std::collections::BTreeSet;
@@ -10,7 +11,7 @@ use crate::changeset::{
     PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
-use crate::wallet::address_pool_restore::restore_address_rows;
+use crate::wallet::address_pool_restore::{restore_address_rows, GapRows};
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -1659,15 +1660,27 @@ pub struct AddressPoolRestoreStats {
 /// Covers the funds-bearing accounts, the asset-lock funding accounts and the
 /// four provider key accounts. Each pool's rows go through
 /// [`restore_address_rows`] with the key source of their account, so rows
-/// missing below a persisted one are derived. A pool whose account or pool
-/// type the wallet does not hold is dropped as a whole and counts once.
+/// missing below a persisted one are derived; entries naming the same pool
+/// are restored together, under one gap-fill budget. Rows derived into an
+/// asset-lock funding pool are marked used, since the chain cannot show
+/// whether their keys were handed out. A pool whose account or pool type the
+/// wallet does not hold is dropped as a whole and counts once.
 pub fn restore_account_address_pools(
     wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
     entries: Vec<AccountAddressPoolEntry>,
 ) -> AddressPoolRestoreStats {
-    let mut stats = AddressPoolRestoreStats::default();
+    let mut pools: BTreeMap<_, AccountAddressPoolEntry> = BTreeMap::new();
     for entry in entries {
+        match pools.entry((entry.account_type, entry.pool_type)) {
+            Entry::Occupied(mut pool) => pool.get_mut().addresses.extend(entry.addresses),
+            Entry::Vacant(slot) => {
+                slot.insert(entry);
+            }
+        }
+    }
+    let mut stats = AddressPoolRestoreStats::default();
+    for entry in pools.into_values() {
         // Funds accounts live in keyed maps and the key accounts in `Option`
         // fields; both unify to `&mut ManagedAccountType`. One match, since a
         // fallback could not re-borrow `wallet_info.accounts`.
@@ -1809,11 +1822,28 @@ pub fn restore_account_address_pools(
             continue;
         };
         let key_source = wallet.key_source_for_account(entry.account_type);
-        let outcome = restore_address_rows(pool, &key_source, entry.addresses);
+        let gap_rows = if is_asset_lock_funding(entry.account_type) {
+            GapRows::Used
+        } else {
+            GapRows::Available
+        };
+        let outcome = restore_address_rows(pool, &key_source, entry.addresses, gap_rows);
         stats.routed += outcome.restored;
         stats.dropped += outcome.refused;
     }
     stats
+}
+
+fn is_asset_lock_funding(account_type: AccountType) -> bool {
+    matches!(
+        account_type,
+        AccountType::IdentityRegistration
+            | AccountType::IdentityTopUp { .. }
+            | AccountType::IdentityTopUpNotBoundToIdentity
+            | AccountType::IdentityInvitation
+            | AccountType::AssetLockAddressTopUp
+            | AccountType::AssetLockShieldedAddressTopUp
+    )
 }
 
 /// Whether every address in `pool` is the one `account` derives at its index.
@@ -2379,7 +2409,7 @@ mod private_payment_hold_tests {
 #[cfg(test)]
 mod address_pool_restore_tests {
     use super::*;
-    use crate::wallet::address_pool_restore::derive_through;
+    use crate::wallet::address_pool_restore::{derive_through, MAX_RESTORE_GAP_FILL};
     use key_wallet::managed_account::address_pool::AddressState;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
@@ -2449,7 +2479,89 @@ mod address_pool_restore_tests {
         );
         let pool = external_pool(&mut info);
         assert!((0..index).all(|i| pool.addresses().contains_key(&i)));
+        assert!(pool.addresses()[&(index - 1)].is_available());
         assert_eq!(pool.highest_used(), Some(index));
+    }
+
+    /// A lost invitation row may hold a key already exported in a voucher,
+    /// and the chain cannot show it was used, so the next voucher after a
+    /// restart must take a never-issued index instead.
+    #[test]
+    fn should_not_reissue_a_lost_invitation_row_after_restart() {
+        let (wallet, mut info) = wallet_and_info();
+        let xpub = wallet
+            .accounts
+            .identity_invitation
+            .as_ref()
+            .expect("invitation account")
+            .account_xpub;
+        let key_source = wallet.key_source_for_account(AccountType::IdentityInvitation);
+        let mut probe = info
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account")
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .remove(0)
+            .clone();
+        let lost = probe.highest_generated().map_or(0, |h| h + 1);
+        derive_through(&mut probe, &key_source, lost + 2).expect("derive the probe rows");
+        let rows = (0..=lost + 1)
+            .filter(|index| *index != lost)
+            .map(|index| {
+                let mut row = probe.addresses()[&index].clone();
+                row.state = AddressState::Used;
+                row
+            })
+            .collect();
+
+        restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![entry(
+                AccountType::IdentityInvitation,
+                probe.pool_type(),
+                rows,
+            )],
+        );
+
+        let next = info
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account")
+            .next_address(Some(&xpub))
+            .expect("next funding address");
+        assert_eq!(next, probe.addresses()[&(lost + 2)].address);
+    }
+
+    #[test]
+    fn should_share_one_gap_fill_budget_across_entries_for_the_same_pool() {
+        let (wallet, mut info) = wallet_and_info();
+        let mut probe = external_pool(&mut info).clone();
+        let first = probe.highest_generated().map_or(0, |h| h + 1) + MAX_RESTORE_GAP_FILL / 2;
+        let second = first + 1 + MAX_RESTORE_GAP_FILL / 2 + 1;
+        derive_through(&mut probe, &wallet.key_source_for_account(BIP44_0), second)
+            .expect("derive the persisted rows");
+        let row = |index: u32| vec![probe.addresses()[&index].clone()];
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![
+                entry(BIP44_0, AddressPoolType::External, row(first)),
+                entry(BIP44_0, AddressPoolType::External, row(second)),
+            ],
+        );
+
+        assert_eq!(
+            stats,
+            AddressPoolRestoreStats {
+                routed: 1,
+                dropped: 1
+            }
+        );
     }
 
     #[test]
