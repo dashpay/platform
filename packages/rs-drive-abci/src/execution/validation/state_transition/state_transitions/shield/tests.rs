@@ -1418,6 +1418,7 @@ mod tests {
             insert_anchor_into_state, serialize_authorized_bundle_u64,
         };
         use crate::platform_types::platform::PlatformRef;
+        use crate::platform_types::platform_state::PlatformState;
         use crate::platform_types::platform_state::PlatformStateV0Methods;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
@@ -1585,7 +1586,7 @@ mod tests {
         ) {
             let old = PlatformVersion::get(13).expect("PV13");
             let latest = PlatformVersion::latest();
-            let mut platform = setup_platform_at_protocol_version(13);
+            let mut platform = setup_platform_at_protocol_version(13).with_no_core_masternodes();
             let (signer, address) = funded_address(&mut platform);
             let (historical, mut notes) = historical_bundle_with_notes(1_000_000_000, &[], 13014);
             let shield = signed_shield(&signer, address, 1, &historical).await;
@@ -1623,6 +1624,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &state,
+                    &mut PlatformState::clone(&state),
                     &BlockInfo::default(),
                     &tx,
                     13,
@@ -1668,7 +1670,7 @@ mod tests {
         async fn should_refuse_historical_credit_rho_reuse_on_first_pv14_candidate() {
             let old_version = PlatformVersion::get(13).expect("protocol 13");
             let new_version = PlatformVersion::latest();
-            let mut platform = setup_platform_at_protocol_version(13);
+            let mut platform = setup_platform_at_protocol_version(13).with_no_core_masternodes();
             let (signer, address) = funded_address(&mut platform);
             let historical = historical_bundle(&[], 14013);
             let first = signed_shield(&signer, address, 1, &historical).await;
@@ -1737,6 +1739,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &candidate_state,
+                    &mut PlatformState::clone(&candidate_state),
                     &BlockInfo::default(),
                     &candidate,
                     13,

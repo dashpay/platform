@@ -381,6 +381,104 @@ impl DataContractInSerializationFormat {
             }),
         }
     }
+
+    /// The contract in the format state transitions, query responses and clients carry at
+    /// `platform_version` (`contract_serialization_version`), as reading it into a
+    /// [`DataContract`] without full validation and converting that contract back gives it,
+    /// without parsing its document schemas: reading them builds every document type, its
+    /// patterns compiled. The fields the contract structure of `platform_version` holds are
+    /// kept (format version 2 its format version 1, keywords lowercased), the config lowered
+    /// to what `platform_version` admits, and the document schemas and `$defs` kept as given,
+    /// as a document type keeps its schema. Unlike reading it, this refuses no schema that does
+    /// not parse at `platform_version`.
+    pub(in crate::data_contract) fn try_into_carried_format(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let mut format_v1 = match self {
+            DataContractInSerializationFormat::V0(v0) => DataContractInSerializationFormatV1 {
+                id: v0.id,
+                config: v0.config,
+                version: v0.version,
+                owner_id: v0.owner_id,
+                schema_defs: v0.schema_defs,
+                document_schemas: v0.document_schemas,
+                created_at: None,
+                updated_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                created_at_epoch: None,
+                updated_at_epoch: None,
+                groups: Default::default(),
+                tokens: Default::default(),
+                keywords: Default::default(),
+                description: None,
+            },
+            DataContractInSerializationFormat::V1(v1) => v1,
+            DataContractInSerializationFormat::V2(v2) => v2.into(),
+        };
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
+            // DataContractV0 holds none of format version 1's own fields
+            0 => {
+                format_v1.created_at = None;
+                format_v1.updated_at = None;
+                format_v1.created_at_block_height = None;
+                format_v1.updated_at_block_height = None;
+                format_v1.created_at_epoch = None;
+                format_v1.updated_at_epoch = None;
+                format_v1.groups = Default::default();
+                format_v1.tokens = Default::default();
+                format_v1.keywords = Default::default();
+                format_v1.description = None;
+            }
+            1 => {
+                format_v1.keywords = std::mem::take(&mut format_v1.keywords)
+                    .into_iter()
+                    .map(|keyword| keyword.to_lowercase())
+                    .collect();
+            }
+            version => {
+                return Err(ProtocolError::UnknownVersionMismatch {
+                    method: "DataContractInSerializationFormat::try_into_carried_format"
+                        .to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                })
+            }
+        }
+        format_v1
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
+        format_v1.config = format_v1
+            .config
+            .config_valid_for_platform_version(platform_version);
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_serialization_version
+            .default_current_version
+        {
+            0 => Ok(DataContractInSerializationFormatV0 {
+                id: format_v1.id,
+                config: format_v1.config,
+                version: format_v1.version,
+                owner_id: format_v1.owner_id,
+                schema_defs: format_v1.schema_defs,
+                document_schemas: format_v1.document_schemas,
+            }
+            .into()),
+            1 => Ok(format_v1.into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractInSerializationFormat::try_into_carried_format".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFormat {

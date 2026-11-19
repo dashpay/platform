@@ -565,7 +565,6 @@ mod tests {
                 true,
                 None,
                 version,
-                None,
             )
             .expect("expected to delete the post");
 

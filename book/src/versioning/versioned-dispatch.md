@@ -80,7 +80,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -91,11 +90,11 @@ impl Drive {
         {
             0 => self.update_contract_v0(
                 contract, block_info, apply,
-                transaction, platform_version, previous_fee_versions,
+                transaction, platform_version,
             ),
             1 => self.update_contract_v1(
                 contract, block_info, apply,
-                transaction, platform_version, previous_fee_versions,
+                transaction, platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),

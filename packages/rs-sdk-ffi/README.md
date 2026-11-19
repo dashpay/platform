@@ -183,7 +183,9 @@ result = lib.dash_sdk_create(byref(config))
 - `dash_sdk_document_create()` - Create a new document
 - `dash_sdk_document_update()` - Update an existing document
 - `dash_sdk_document_delete()` - Delete a document
+- `dash_sdk_document_erase()` - Erase the retained revisions of a deleted keep-history document
 - `dash_sdk_document_fetch()` - Fetch documents by query
+- `dash_sdk_document_fetch_history()` - Fetch a document's revision history and lifecycle state
 
 #### Data Contract Operations
 - `dash_sdk_data_contract_create()` - Create a new data contract

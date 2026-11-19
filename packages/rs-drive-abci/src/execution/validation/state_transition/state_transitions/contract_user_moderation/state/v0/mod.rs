@@ -13,7 +13,8 @@ use crate::execution::validation::state_transition::common::seated_moderation_ch
 use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_not_expired;
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::{
-    fetch_document_with_id, read_property_constraint_aggregates_for_moderator_change,
+    fetch_document_with_id, fetch_document_with_id_and_storage_flags,
+    read_property_constraint_aggregates_for_moderator_change,
     read_property_constraint_aggregates_for_restore,
 };
 use crate::platform_types::platform::PlatformRef;
@@ -132,25 +133,14 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         let moderator_id = self.owner_id();
         let action = self.action();
 
-        let (contract_fetch_fee, maybe_contract_fetch_info) =
-            platform.drive.get_contract_with_fetch_info_and_fee(
-                contract_id.to_buffer(),
-                Some(&block_info.epoch),
-                false,
-                tx,
-                platform_version,
-            )?;
-        // The read is billed from the fee this call returns, whether the contract was pulled
-        // from disk, was in the cache or does not exist. The fee a cached fetch info carries is
-        // only there when that entry was built with an epoch, which differs from node to node,
-        // so billing it would make the fee, and the app hash, depend on the cache.
-        let contract_fetch_fee =
-            contract_fetch_fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "fee must exist for the contract fetch of a contract user moderation transition",
-            )))?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
-            contract_fetch_fee,
-        ));
+        let maybe_contract_fetch_info = fetch_moderated_contract(
+            contract_id,
+            platform,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
 
         let bump_action = || {
             StateTransitionAction::BumpIdentityDataContractNonceAction(
@@ -252,6 +242,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                     document_type_name,
                     *document_id,
                     fields,
+                    false,
                     execution_context,
                     tx,
                     platform_version,
@@ -399,6 +390,37 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
             moderation_action.into(),
         ))
     }
+}
+
+/// Reads the moderated contract and bills the read, for every generation of the transformation.
+pub(super) fn fetch_moderated_contract<C: CoreRPCLike>(
+    contract_id: Identifier,
+    platform: &PlatformRef<C>,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
+    let (contract_fetch_fee, maybe_contract_fetch_info) =
+        platform.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            Some(&block_info.epoch),
+            false,
+            tx,
+            platform_version,
+        )?;
+    // The read is billed from the fee this call returns, whether the contract was pulled
+    // from disk, was in the cache or does not exist. The fee a cached fetch info carries is
+    // only there when that entry was built with an epoch, which differs from node to node,
+    // so billing it would make the fee, and the app hash, depend on the cache.
+    let contract_fetch_fee =
+        contract_fetch_fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "fee must exist for the contract fetch of a contract user moderation transition",
+        )))?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        contract_fetch_fee,
+    ));
+    Ok(maybe_contract_fetch_info)
 }
 
 /// A document deletion: the document type exists and says moderators may delete its
@@ -1382,8 +1404,14 @@ fn document_deletion_context<C: CoreRPCLike>(
 /// among it, so that Drive stores it without reading again. A moderator's change is not the
 /// owner's modification: the window a type gives its moderators to delete a document is not
 /// opened again by it.
+///
+/// `keeps_storage_holder` is what generation 1 of the transformation asks for and generation 0
+/// does not: the read of the stored document also returns who its storage flags name, and the
+/// action carries that identity, so that Drive writes the change in its name and the storage
+/// stays where it is. Without it the read is generation 0's and the action names nobody, which
+/// writes the change in the name of the document's owner.
 #[allow(clippy::too_many_arguments)]
-fn transform_document_fields_change_v0<C: CoreRPCLike>(
+pub(super) fn transform_document_fields_change_v0<C: CoreRPCLike>(
     transition: &ContractUserModerationTransition,
     platform: &PlatformRef<C>,
     block_info: &BlockInfo,
@@ -1391,6 +1419,7 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
     document_type_name: &str,
     document_id: Identifier,
     fields: &BTreeMap<String, Value>,
+    keeps_storage_holder: bool,
     execution_context: &mut StateTransitionExecutionContext,
     tx: TransactionArg,
     platform_version: &PlatformVersion,
@@ -1485,17 +1514,37 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         return refuse(error);
     }
 
-    let Some(stored) = fetch_document_with_id(
-        platform.drive,
-        contract,
-        document_type,
-        document_id,
-        &block_info.epoch,
-        execution_context,
-        tx,
-        platform_version,
-    )?
-    else {
+    let stored = if keeps_storage_holder {
+        fetch_document_with_id_and_storage_flags(
+            platform.drive,
+            contract,
+            document_type,
+            document_id,
+            &block_info.epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?
+        .map(|(document, storage_flags)| {
+            let storage_holder_id = storage_flags
+                .and_then(|flags| flags.owner_id().copied())
+                .map(Identifier::from);
+            (document, storage_holder_id)
+        })
+    } else {
+        fetch_document_with_id(
+            platform.drive,
+            contract,
+            document_type,
+            document_id,
+            &block_info.epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?
+        .map(|document| (document, None))
+    };
+    let Some((stored, storage_holder_id)) = stored else {
         return refuse(ConsensusError::StateError(
             StateError::DocumentNotFoundError(DocumentNotFoundError::new(document_id)),
         ));
@@ -1648,6 +1697,7 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
             ContractDocumentChangeContext {
                 data_contract_fetch_info: Arc::clone(contract_fetch_info),
                 document: changed,
+                storage_holder_id,
             },
         );
     let moderation_action = moderators.count_for_signer(

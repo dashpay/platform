@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn should_validate_required_since_on_document_types_added_by_the_update() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let old_data_contract = get_data_contract_fixture(
             None,
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn should_reject_a_token_added_by_the_update_whose_release_totals_over_the_limit() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let over_limit_releases: [&[TokenAmount]; 2] = [
             &[i64::MAX as TokenAmount + 1],
             &[i64::MAX as TokenAmount, 1],
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn should_accept_a_token_added_by_the_update_whose_release_totals_the_limit() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let (old_data_contract, new_data_contract) = contract_and_its_update(
             BTreeMap::new(),
@@ -311,7 +311,7 @@ mod tests {
     /// the ones it carries over.
     #[test]
     fn should_not_judge_the_release_totals_of_tokens_the_contract_already_had() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let legacy_token = token_releasing(&[i64::MAX as TokenAmount, 1]);
         let (old_data_contract, new_data_contract) = contract_and_its_update(
@@ -350,7 +350,7 @@ mod tests {
     /// error.
     #[test]
     fn should_refuse_a_defs_change_under_a_keyword_without_a_shared_rule() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let defs = |max_properties: u64| {
             platform_value!({
                 "lastName": { "type": "string" },

@@ -1,3 +1,5 @@
+/// Blocks and the transactions in them, verified against Tenderdash block proofs
+pub mod blocks;
 /// Verified chained-document (provable semi-join) result: two grovedb
 /// proofs — the inner indexOnly page and the outer by-ids fetch derived
 /// from its proven values — bound to one quorum-signed root.
@@ -56,7 +58,7 @@ use crate::from_request::TryFromRequest;
 use crate::verify::{
     document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
-use crate::{types::*, ContextProvider, DataContractProvider, Error};
+use crate::{types::*, ContextProvider, ContextProviderError, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
@@ -113,9 +115,10 @@ use drive::query::vote_poll_vote_state_query::{
 use drive::query::vote_polls_by_document_type_query::{
     ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
 };
-use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{ContractLookupFn, DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use crate::error::MapGroveDbError;
@@ -439,12 +442,13 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
-// The producer's signed version selects how the producer laid out its proof, while
-// security checks keep the caller's verifier version. For the non-unique identity
-// lookup it selects the GroveDB version its merged queries are built with and, for a
-// two-proof answer, the tables that decode the identity after the strict checks. For a
-// state transition outcome it selects only whether the proof carries the owner balance:
-// every key and query is rebuilt with the caller's rules. Metadata is untrusted until
+// The producer's signed version selects its proof layout. History verifiers also use
+// the producer's signed tables; other security checks keep the caller's version.
+// For the non-unique identity lookup it selects the GroveDB version for merged queries
+// and the tables that decode the identity in a two-proof answer after strict checks.
+// For a state transition outcome it selects whether the proof carries the owner balance
+// and the document history layout its document queries read; every other key and query
+// is rebuilt with the caller's rules. Metadata is untrusted until
 // the signature binds it to the root. A producer newer than this build is read with the
 // newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess
 // cannot authenticate data the signed root does not hold, and a changed layout is
@@ -464,6 +468,57 @@ fn proof_query_platform_version(
             metadata.protocol_version
         ),
     })
+}
+
+/// A context provider's configuration error, kept aside while Drive, whose errors cannot
+/// carry it, verifies a proof with what the provider answers.
+///
+/// The provider is set up so that it cannot serve what Drive asked for, whichever node's
+/// answer is verified with it, so the error replaces the verification failure it caused.
+#[derive(Default)]
+struct ProviderMisconfiguration(RefCell<Option<ContextProviderError>>);
+
+impl ProviderMisconfiguration {
+    /// The text Drive is given of the provider's `error`; a configuration error is kept.
+    fn describe(&self, error: ContextProviderError) -> String {
+        let reason = error.to_string();
+        if matches!(error, ContextProviderError::Config(_)) {
+            *self.0.borrow_mut() = Some(error);
+        }
+        reason
+    }
+
+    /// `result`, or the kept configuration error in place of the failure it caused.
+    fn in_place_of_failure<T>(self, result: Result<T, Error>) -> Result<T, Error> {
+        match (result, self.0.into_inner()) {
+            (Err(_), Some(error)) => Err(Error::ContextProviderError(error)),
+            (result, _) => result,
+        }
+    }
+}
+
+/// Runs `verify` with a lookup of the data contracts it needs in `provider`.
+///
+/// The lookup gives Drive a failed lookup as text, as
+/// [`crate::DataContractProvider::as_contract_lookup_fn`] does, and a configuration error
+/// is reported in place of the failure it caused ([`ProviderMisconfiguration`]).
+fn with_contract_lookup<T>(
+    provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
+    verify: impl FnOnce(&ContractLookupFn) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let misconfiguration = ProviderMisconfiguration::default();
+    let lookup = |id: &Identifier| {
+        provider
+            .get_data_contract(id, platform_version)
+            .map_err(|error| {
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(
+                    misconfiguration.describe(error),
+                ))
+            })
+    };
+    let result = verify(&lookup);
+    misconfiguration.in_place_of_failure(result)
 }
 
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
@@ -1472,6 +1527,195 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     }
 }
 
+fn verify_document_history_response_v0(
+    request: platform::get_document_history_request::GetDocumentHistoryRequestV0,
+    response: &platform::GetDocumentHistoryResponse,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
+    let proof = response.proof().or(Err(Error::NoProofInResult))?;
+    let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+    let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
+        Error::ProtocolError {
+            error: error.to_string(),
+        }
+    })?;
+    let document_id =
+        Identifier::from_bytes(&request.document_id).map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let limit = u32_to_u16_opt(request.limit.unwrap_or_default())?;
+    let offset = u32_to_u16_opt(request.offset.unwrap_or_default())?;
+    let contract = provider
+        .get_data_contract(&contract_id, platform_version)?
+        .ok_or(Error::NotFound)?;
+    let document_type = contract
+        .document_type_for_name(&request.document_type_name)
+        .map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let query_version = proof_query_platform_version(metadata)?;
+    let (root, history) = Drive::verify_document_history_after_time(
+        supported_grovedb_proof_bytes(proof)?,
+        contract_id.to_buffer(),
+        &request.document_type_name,
+        document_type,
+        document_id.to_buffer(),
+        request.start_at_ms,
+        limit,
+        offset,
+        query_version,
+    )
+    .map_drive_error(proof, metadata)?;
+    verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    Ok((
+        history.map(|history| DocumentHistory {
+            entries: history
+                .into_iter()
+                .map(|(time_ms, document)| DocumentHistoryEntry {
+                    time_ms,
+                    revision: document.revision().unwrap_or(1),
+                    document,
+                })
+                .collect(),
+            lifecycle: None,
+        }),
+        metadata.clone(),
+        proof.clone(),
+    ))
+}
+
+fn verify_document_history_response_v1(
+    request: platform::get_document_history_request::GetDocumentHistoryRequestV1,
+    response: &platform::GetDocumentHistoryResponse,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
+    };
+    use platform::get_document_history_request::get_document_history_request_v1::Filter;
+    let proof = response.proof().or(Err(Error::NoProofInResult))?;
+    let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+    let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
+        Error::ProtocolError {
+            error: error.to_string(),
+        }
+    })?;
+    let document_id =
+        Identifier::from_bytes(&request.document_id).map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let filter = match request.filter.ok_or_else(|| Error::RequestError {
+        error: "history filter is required".to_owned(),
+    })? {
+        Filter::StartAtMs(time) => DocumentHistoryFilter::StartAtTime(time),
+        Filter::StartAfter(cursor) => DocumentHistoryFilter::StartAfter {
+            time_ms: cursor.time_ms,
+            revision: cursor.revision,
+        },
+        Filter::StartAtRevision(revision) => DocumentHistoryFilter::StartAtRevision(revision),
+        Filter::Revision(revision) => DocumentHistoryFilter::Revision(revision),
+    };
+    let query =
+        DocumentHistoryDriveQuery {
+            contract_id: contract_id.to_buffer(),
+            document_type_name: request.document_type_name,
+            document_id: document_id.to_buffer(),
+            filter,
+            limit: request.limit.map(u16::try_from).transpose().map_err(|_| {
+                Error::RequestError {
+                    error: "history limit out of bounds".to_owned(),
+                }
+            })?,
+        };
+    query.validate()?;
+    let contract = provider
+        .get_data_contract(&contract_id, platform_version)?
+        .ok_or(Error::NotFound)?;
+    let document_type = contract
+        .document_type_for_name(&query.document_type_name)
+        .map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let query_version = proof_query_platform_version(metadata)?;
+    let (root, history) = Drive::verify_document_history(
+        &query,
+        supported_grovedb_proof_bytes(proof)?,
+        document_type,
+        query_version,
+    )
+    .map_drive_error(proof, metadata)?;
+    verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    Ok((
+        Some(DocumentHistory {
+            entries: history.entries,
+            lifecycle: history.lifecycle,
+        }),
+        metadata.clone(),
+        proof.clone(),
+    ))
+}
+
+impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo {
+    type Request = platform::GetDocumentHistoryRequest;
+    type Response = platform::GetDocumentHistoryResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response = response.into();
+        let Some(platform::get_document_history_response::Version::V1(wire)) = &response.version
+        else {
+            return Err(Error::ResponseDecodeError {
+                error: "history proof info requires a version 1 response".to_owned(),
+            });
+        };
+        let wire = wire.clone();
+        let (history, metadata, proof) = DocumentHistory::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+        Ok((
+            history.map(|history| Self {
+                history,
+                response: wire,
+            }),
+            metadata,
+            proof,
+        ))
+    }
+}
+
+impl DocumentHistoryProofInfo {
+    /// Independently authenticate the retained response against its original request.
+    pub fn verify(
+        &self,
+        request: platform::GetDocumentHistoryRequest,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &dyn ContextProvider,
+    ) -> Result<Option<DocumentHistory>, Error> {
+        DocumentHistory::maybe_from_proof(
+            request,
+            platform::GetDocumentHistoryResponse::from(self.response.clone()),
+            network,
+            platform_version,
+            provider,
+        )
+    }
+}
+
 impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     type Request = platform::GetDocumentHistoryRequest;
     type Response = platform::GetDocumentHistoryResponse;
@@ -1488,70 +1732,30 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
-
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
-        let (contract_id, document_type_name, document_id, limit, offset, start_at_ms) =
-            match request.version.ok_or(Error::EmptyVersion)? {
-                get_document_history_request::Version::V0(v0) => {
-                    let contract_id =
-                        Identifier::from_bytes(&v0.data_contract_id).map_err(|e| {
-                            Error::ProtocolError {
-                                error: e.to_string(),
-                            }
-                        })?;
-                    let document_id = Identifier::from_bytes(&v0.document_id).map_err(|e| {
-                        Error::ProtocolError {
-                            error: e.to_string(),
-                        }
-                    })?;
-                    let limit = u32_to_u16_opt(v0.limit.unwrap_or_default())?;
-                    let offset = u32_to_u16_opt(v0.offset.unwrap_or_default())?;
-                    (
-                        contract_id,
-                        v0.document_type_name,
-                        document_id,
-                        limit,
-                        offset,
-                        v0.start_at_ms,
-                    )
-                }
-            };
-
-        let data_contract = provider
-            .get_data_contract(&contract_id, platform_version)?
-            .ok_or(Error::NotFound)?;
-        let document_type = data_contract
-            .document_type_for_name(&document_type_name)
-            .map_err(|e| Error::ProtocolError {
-                error: e.to_string(),
-            })?;
-
-        let (root_hash, maybe_history) = Drive::verify_document_history(
-            supported_grovedb_proof_bytes(proof)?,
-            contract_id.into_buffer(),
-            &document_type_name,
-            document_type,
-            document_id.into_buffer(),
-            start_at_ms,
-            limit,
-            offset,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
-
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        // Preserve the distinction between a verified-but-empty history page
-        // (e.g. an offset/start_at_ms past the last revision) and an absent
-        // result: DocumentHistory carries retrieved values, not proof-of-absence,
-        // so a proven empty page is a legitimate `Some(empty)` rather than `None`.
-        Ok((
-            maybe_history.map(IndexMap::from_iter),
-            mtd.clone(),
-            proof.clone(),
-        ))
+        // A response without a proof or metadata is refused before the request
+        // is even looked at, as for every other proved query.
+        response.proof().or(Err(Error::NoProofInResult))?;
+        response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        match (
+            request.version.ok_or(Error::EmptyVersion)?,
+            &response.version,
+        ) {
+            (
+                get_document_history_request::Version::V0(request),
+                Some(platform::get_document_history_response::Version::V0(_)),
+            ) => {
+                verify_document_history_response_v0(request, &response, platform_version, provider)
+            }
+            (
+                get_document_history_request::Version::V1(request),
+                Some(platform::get_document_history_response::Version::V1(_)),
+            ) => {
+                verify_document_history_response_v1(request, &response, platform_version, provider)
+            }
+            _ => Err(Error::ResponseDecodeError {
+                error: "document history response version must match its request".to_owned(),
+            }),
+        }
     }
 }
 
@@ -1596,8 +1800,6 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let query_platform_version = proof_query_platform_version(mtd)?;
 
-        let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
-
         // Transition families whose proof cannot be bound to execution
         // (balance top-ups, credit transfers/withdrawals, address funds
         // movements, shields, no-history token operations) yield a verified
@@ -1607,15 +1809,17 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
         let (root_hash, outcome) =
-            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
-                &state_transition,
-                &block_info,
-                supported_grovedb_proof_bytes(proof)?,
-                &contracts_provider_fn,
-                query_platform_version,
-                platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+            with_contract_lookup(provider, platform_version, |contracts_provider_fn| {
+                Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                    &state_transition,
+                    &block_info,
+                    supported_grovedb_proof_bytes(proof)?,
+                    contracts_provider_fn,
+                    query_platform_version,
+                    platform_version,
+                )
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1949,6 +2153,42 @@ where
     type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
+    /// The verifier refuses a query carrying composite sub-queries, which it would otherwise
+    /// ignore, and rebuilds Drive's path query from the request alone before it reads the
+    /// proof: the where-clause shape, the route (by id, through an index, indexOnly) and the
+    /// index it reads. It does so without the cursor document on every page, so a request whose
+    /// path query cannot be built that way, such as one no index covers, can never verify; every
+    /// node refuses it too. The path query is built at `platform_version`, the version the
+    /// request is encoded with: a shape only a later version serves carries a protocol feature,
+    /// and the SDK's protocol gate encodes such a request at the network's version before this
+    /// check runs, so the check never refuses what that later version serves.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        let request: DriveDocumentQuery<'dq> =
+            request
+                .clone()
+                .try_into()
+                .map_err(|e: Q::Error| Error::RequestError {
+                    error: e.to_string(),
+                })?;
+        request
+            .ensure_no_sub_queries("verify_proof")
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })?;
+        request
+            .construct_path_query(None, platform_version)
+            .map(drop)
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -2093,9 +2333,9 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
-        let resolved_request = drive_query.resolve_with_known_contracts_provider(
-            &provider.as_contract_lookup_fn(platform_version),
-        )?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2141,9 +2381,9 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Resolve request to get verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2199,10 +2439,9 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2255,19 +2494,21 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
-        let (root_hash, voters) = verify_page_drive_proves(drive_query.limit, |limit| {
-            ContestedResourceVotesGivenByIdentityQuery {
-                limit,
-                ..drive_query.clone()
-            }
-            .verify_identity_votes_given_proof::<Vec<_>>(
-                grovedb_proof,
-                &contract_provider_fn,
-                platform_version,
-            )
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, voters) =
+            with_contract_lookup(provider, platform_version, |contract_provider_fn| {
+                verify_page_drive_proves(drive_query.limit, |limit| {
+                    ContestedResourceVotesGivenByIdentityQuery {
+                        limit,
+                        ..drive_query.clone()
+                    }
+                    .verify_identity_votes_given_proof::<Vec<_>>(
+                        grovedb_proof,
+                        contract_provider_fn,
+                        platform_version,
+                    )
+                })
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2465,18 +2706,23 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
 
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
-        let (root_hash, credits) = Drive::verify_total_credits_in_system(
+        // Drive asks for the activation height only when the unpaid epoch is the first one.
+        let misconfiguration = ProviderMisconfiguration::default();
+        let verified = Drive::verify_total_credits_in_system(
             supported_grovedb_proof_bytes(proof)?,
             core_subsidy_halving_interval,
             || {
                 provider.get_platform_activation_height().map_err(|e| {
-                    drive::error::Error::Proof(ProofError::MissingContextRequirement(e.to_string()))
+                    drive::error::Error::Proof(ProofError::MissingContextRequirement(
+                        misconfiguration.describe(e),
+                    ))
                 })
             },
             mtd.core_chain_locked_height,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_drive_error(proof, mtd);
+        let (root_hash, credits) = misconfiguration.in_place_of_failure(verified)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -3092,7 +3338,11 @@ macro_rules! define_length {
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
-define_length!(DocumentHistory, |d: &DocumentHistory| d.len());
+define_length!(DocumentHistoryProofInfo, |d: &DocumentHistoryProofInfo| d
+    .history
+    .entries
+    .len());
+define_length!(DocumentHistory, |d: &DocumentHistory| d.entries.len());
 define_length!(Document);
 define_length!(Identity);
 define_length!(IdentityBalance);
@@ -3141,6 +3391,57 @@ impl<L: Length> IntoOption for L {
 mod tests {
     use super::*;
     use platform_serialization::PLATFORM_BINCODE_CONFIG;
+
+    /// A plain documents page cannot verify the sub-queries a composite request carries: its
+    /// verifier refuses them rather than report them verified, so its check refuses them before
+    /// sending, and sends the page alone.
+    #[test]
+    fn should_refuse_sub_queries_before_sending_a_documents_page() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use drive::query::{DriveSubQuery, SubQueryKind};
+
+        let platform_version = PlatformVersion::latest();
+        let contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("the fixture has this document type");
+        let mut page = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version)
+            .expect("a plain page is sent");
+
+        page.sub_queries.push(DriveSubQuery {
+            contract: &contract,
+            document_type,
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: Some(10),
+            binding: None,
+        });
+        match <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version) {
+            Err(Error::RequestError { error }) => {
+                assert!(error.contains("sub-queries"), "{error}")
+            }
+            other => panic!("a page with sub-queries must be refused, got {other:?}"),
+        }
+    }
 
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {
@@ -3550,6 +3851,93 @@ mod tests {
         }
     }
 
+    /// Answers every data contract lookup with the error its function makes.
+    struct FailingContractProvider(fn() -> ContextProviderError);
+
+    impl dash_context_provider::ContextProvider for FailingContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, ContextProviderError> {
+            Err((self.0)())
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<Option<dpp::data_contract::TokenConfiguration>, ContextProviderError> {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, ContextProviderError> {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
+    fn no_contract_source() -> ContextProviderError {
+        ContextProviderError::Config("no contract source".to_string())
+    }
+
+    /// Drive verifies some proofs without the contract a failed lookup could not give, such
+    /// as a deletion a removal record proves. A configuration error then changes nothing:
+    /// the verification's own result is kept.
+    #[test]
+    fn should_keep_a_verification_that_succeeds_after_a_failed_contract_lookup() {
+        let provider = FailingContractProvider(no_contract_source);
+        let result = with_contract_lookup(&provider, PlatformVersion::latest(), |lookup| {
+            assert!(lookup(&Identifier::new([1; 32])).is_err());
+            Ok(7)
+        });
+        assert!(matches!(result, Ok(7)), "{result:?}");
+    }
+
+    /// A verification that fails after the provider refused a lookup with a configuration
+    /// error fails with that error, which the SDK attributes to its own setup. Any other
+    /// provider failure stays the Drive error it was.
+    #[test]
+    fn should_report_only_a_configuration_error_in_place_of_the_failure_it_caused() {
+        let verify = |provider: &dyn ContextProvider| {
+            with_contract_lookup(provider, PlatformVersion::latest(), |lookup| {
+                lookup(&Identifier::new([1; 32]))?;
+                Ok(())
+            })
+        };
+
+        let misconfigured = verify(&FailingContractProvider(no_contract_source));
+        assert!(
+            matches!(
+                &misconfigured,
+                Err(Error::ContextProviderError(ContextProviderError::Config(reason)))
+                    if reason == "no contract source"
+            ),
+            "{misconfigured:?}"
+        );
+
+        let unavailable = verify(&FailingContractProvider(|| {
+            ContextProviderError::Generic("timed out".to_string())
+        }));
+        assert!(
+            matches!(
+                &unavailable,
+                Err(Error::DriveError { error })
+                    if error.contains("could not be retrieved") && error.contains("timed out")
+            ),
+            "{unavailable:?}"
+        );
+    }
+
     /// Build a fully-populated `GetIdentityResponse` shell so that
     /// `response.proof()` and `response.metadata()` both succeed. The
     /// enclosed proof is empty, so any real verification would fail — but
@@ -3568,12 +3956,13 @@ mod tests {
 
     fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
         use platform::get_document_history_response::{
-            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
-            Version,
+            get_document_history_response_v1, GetDocumentHistoryResponseV1, Version,
         };
         platform::GetDocumentHistoryResponse {
-            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
+            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+                result: Some(get_document_history_response_v1::Result::Proof(
+                    Proof::default(),
+                )),
                 metadata: Some(ResponseMetadata::default()),
             })),
         }
@@ -3584,17 +3973,17 @@ mod tests {
         document_type_name: &str,
         document_id: Vec<u8>,
         limit: Option<u32>,
-        offset: Option<u32>,
     ) -> platform::GetDocumentHistoryRequest {
-        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
-        GetDocumentHistoryRequestV0 {
+        use dapi_grpc::platform::v0::get_document_history_request::{
+            get_document_history_request_v1::Filter, GetDocumentHistoryRequestV1,
+        };
+        GetDocumentHistoryRequestV1 {
             data_contract_id,
             document_type_name: document_type_name.to_string(),
             document_id,
             limit,
-            offset,
-            start_at_ms: 0,
             prove: true,
+            filter: Some(Filter::StartAtMs(0)),
         }
         .into()
     }
@@ -5174,13 +5563,14 @@ mod tests {
     #[test]
     fn document_history_empty_response_metadata() {
         use platform::get_document_history_response::{
-            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
-            Version,
+            get_document_history_response_v1, GetDocumentHistoryResponseV1, Version,
         };
         let request = platform::GetDocumentHistoryRequest::default();
         let response = platform::GetDocumentHistoryResponse {
-            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
+            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+                result: Some(get_document_history_response_v1::Result::Proof(
+                    Proof::default(),
+                )),
                 metadata: None,
             })),
         };
@@ -5203,9 +5593,33 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_document_history_response_version_mismatches() {
+        use platform::get_document_history_request::GetDocumentHistoryRequestV0;
+        use platform::get_document_history_response::{
+            get_document_history_response_v0, GetDocumentHistoryResponseV0,
+        };
+        let provider = unreachable_provider();
+        let v0_request: platform::GetDocumentHistoryRequest =
+            GetDocumentHistoryRequestV0::default().into();
+        let v1_request = document_history_request(vec![0; 32], "note", vec![1; 32], None);
+        let v0_response: platform::GetDocumentHistoryResponse = GetDocumentHistoryResponseV0 {
+            result: Some(get_document_history_response_v0::Result::Proof(
+                Proof::default(),
+            )),
+            metadata: Some(ResponseMetadata::default()),
+        }
+        .into();
+        let v1_response = document_history_response_with_proof_and_metadata();
+        for (request, response) in [(v0_request, v1_response), (v1_request, v0_response)] {
+            let error = document_history_error(request, response, &provider);
+            assert!(matches!(error, Error::ResponseDecodeError { error }
+                if error == "document history response version must match its request"));
+        }
+    }
+
+    #[test]
     fn document_history_rejects_bad_contract_id_length() {
-        let request =
-            document_history_request(vec![0u8; 5], "niceDocument", vec![1u8; 32], None, None);
+        let request = document_history_request(vec![0u8; 5], "niceDocument", vec![1u8; 32], None);
         let response = document_history_response_with_proof_and_metadata();
         let provider = unreachable_provider();
 
@@ -5216,8 +5630,7 @@ mod tests {
 
     #[test]
     fn document_history_rejects_bad_document_id_length() {
-        let request =
-            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 5], None, None);
+        let request = document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 5], None);
         let response = document_history_response_with_proof_and_metadata();
         let provider = unreachable_provider();
 
@@ -5228,13 +5641,8 @@ mod tests {
 
     #[test]
     fn document_history_rejects_overflowing_limit() {
-        let request = document_history_request(
-            vec![0u8; 32],
-            "niceDocument",
-            vec![1u8; 32],
-            Some(100_000),
-            None,
-        );
+        let request =
+            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], Some(100_000));
         let response = document_history_response_with_proof_and_metadata();
         let provider = unreachable_provider();
 
@@ -5245,8 +5653,7 @@ mod tests {
 
     #[test]
     fn document_history_returns_not_found_when_contract_provider_misses() {
-        let request =
-            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], None, None);
+        let request = document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], None);
         let response = document_history_response_with_proof_and_metadata();
         let provider = NoDataContractProvider;
 
@@ -5267,8 +5674,7 @@ mod tests {
         let provider = StaticDataContractProvider {
             data_contract: std::sync::Arc::new(data_contract),
         };
-        let request =
-            document_history_request(contract_id, "missingDocument", vec![1u8; 32], None, None);
+        let request = document_history_request(contract_id, "missingDocument", vec![1u8; 32], None);
         let response = document_history_response_with_proof_and_metadata();
 
         let err = document_history_error(request, response, &provider);

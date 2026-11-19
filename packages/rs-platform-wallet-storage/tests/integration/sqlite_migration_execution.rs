@@ -65,7 +65,54 @@ fn copy_fixture(dir: &Path) -> PathBuf {
 fn copy_fixture_as(dir: &Path, file_name: &str) -> PathBuf {
     let dst = dir.join(file_name);
     std::fs::copy(fixture_src(), &dst).expect("copy fixture");
+    correct_fixture_transaction_id(&dst);
     dst
+}
+
+/// The historical generator assigned a synthetic txid to an empty transaction.
+/// Preserve the committed schema fixture; make only this test copy self-consistent.
+fn correct_fixture_transaction_id(path: &Path) {
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use platform_wallet_storage::sqlite::schema::blob;
+
+    let mut conn = Connection::open(path).unwrap();
+    let tx = conn.transaction().unwrap();
+    let (_, bytes) = transaction_height_and_blob(&tx, &wid(FULL_WALLET));
+    let mut record: TransactionRecord = blob::decode(&bytes).unwrap();
+    let previous = record.txid;
+    record.txid = record.transaction.txid();
+    tx.execute("UPDATE core_transactions SET txid = ?1, record_blob = ?2 WHERE wallet_id = ?3 AND txid = ?4",
+        rusqlite::params![record.txid.as_byte_array().as_slice(), blob::encode(&record).unwrap(), wid(FULL_WALLET).as_slice(), previous.as_byte_array().as_slice()]).unwrap();
+    tx.execute(
+        "UPDATE core_utxos SET outpoint = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
+        rusqlite::params![
+            blob::encode_outpoint(&dashcore::OutPoint::new(record.txid, 0)).unwrap(),
+            wid(FULL_WALLET).as_slice(),
+            blob::encode_outpoint(&dashcore::OutPoint::new(previous, 0)).unwrap()
+        ],
+    )
+    .unwrap();
+    tx.commit().unwrap();
+}
+
+#[test]
+fn should_reject_legacy_fixture_with_a_synthetic_transaction_id() {
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("invalid-record.db");
+    std::fs::copy(fixture_src(), &path).unwrap();
+    let before = transaction_height_and_blob(&ro_conn(&path), &wid(FULL_WALLET));
+
+    assert!(matches!(
+        SqlitePersister::open(SqlitePersisterConfig::new(&path)),
+        Err(WalletStorageError::Migration(_))
+    ));
+
+    let conn = ro_conn(&path);
+    assert_eq!(schema_version(&conn), 6);
+    assert_eq!(
+        transaction_height_and_blob(&conn, &wid(FULL_WALLET)),
+        before
+    );
 }
 
 /// Names of the `pre-migration-*` backups sitting in `dir`.
@@ -633,4 +680,36 @@ fn reopen_of_migrated_store_is_idempotent() {
         "first open migrates to the newest embedded version"
     );
     assert_eq!(first, second, "reopen is a byte-stable no-op");
+}
+
+#[test]
+fn should_refuse_a_database_that_skipped_an_earlier_migration() {
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("wallet.db");
+    drop(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
+    let history = |conn: &Connection| -> Vec<i64> {
+        let mut stmt = conn
+            .prepare("SELECT version FROM refinery_schema_history ORDER BY version")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let before = {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("DELETE FROM refinery_schema_history WHERE version = 18", [])
+            .unwrap();
+        history(&conn)
+    };
+
+    match SqlitePersister::open(SqlitePersisterConfig::new(&path)) {
+        Err(WalletStorageError::Migration(error)) => assert!(
+            matches!(error.kind(), refinery::error::Kind::MissingVersion(m) if m.version() == 18),
+            "expected MissingVersion(18), got {error:?}"
+        ),
+        Err(other) => panic!("expected a migration error, got {other:?}"),
+        Ok(_) => panic!("a skipped migration must not be applied out of order or ignored"),
+    }
+    assert_eq!(history(&Connection::open(&path).unwrap()), before);
 }

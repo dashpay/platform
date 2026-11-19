@@ -21,6 +21,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 document_create_transition: 0,
                 document_delete_transition: 0,
                 document_index_only_delete_transition: 0,
+                document_erase_transition: None,
                 // PROTOCOL_VERSION_13: v1 rewrites a transferred or purchased
                 // DPNS domain document's `records.identity` to the new owner
                 // so the username resolves to the buyer. v0 stays for
@@ -80,6 +81,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_shielded_transfer_with_shielded_fee_transition: 0,
                 token_unshield_with_shielded_fee_transition: 0,
                 token_purchase_from_shielded_pool_transition: 0,
+                private_document_create_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
             document_from_create_transition_action: 1,  // changed

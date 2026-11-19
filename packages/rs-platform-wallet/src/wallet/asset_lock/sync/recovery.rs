@@ -108,6 +108,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let lock = TrackedAssetLock {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -1105,7 +1106,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if local_finality.is_none() {
             if let Some(cap_error) = match status {
                 AssetLockStatus::Built | AssetLockStatus::Broadcast => {
-                    input_cap_violation(&tx, out_point.vout, self.sdk.version())
+                    input_cap_violation(&tx, self.sdk.version())
                 }
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
@@ -2224,6 +2225,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2360,6 +2362,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2573,6 +2576,7 @@ mod tests {
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
         let mut restored_info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -2580,10 +2584,12 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
             operation_id: None,
+            shielded_recipient: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2861,6 +2867,7 @@ mod tests {
                 self.out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4372,6 +4379,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4886,6 +4894,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5010,6 +5019,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5513,6 +5523,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5618,6 +5629,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5897,6 +5909,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6042,6 +6055,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -6244,6 +6258,7 @@ mod tests {
                             amount: amount_duffs,
                             status,
                             proof: None,
+                            shielded_recipient: None,
                         },
                     );
             }

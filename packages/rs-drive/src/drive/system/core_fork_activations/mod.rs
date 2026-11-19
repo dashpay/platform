@@ -1,5 +1,6 @@
-//! The Dash Core forks Platform has seen active, each with the chain locked Core height of the
-//! first Platform block that saw it.
+//! The Dash Core forks Platform has seen active, each with the chain locked Core height at which
+//! Platform first observed it active. That is not Core's activation height, and it can trail it
+//! without bound.
 
 mod fetch_core_fork_activation_height;
 mod store_core_fork_activation_height;

@@ -563,7 +563,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// prune backstop); the pass outcome is logged, not surfaced.
 ///
 /// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
-fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
     let ambiguous = matches!(
         result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
@@ -596,19 +596,24 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
 /// withdraw) to a typed FFI result, mirroring the identity-create sibling's
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
-fn map_spend_result(
+pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        // Ambiguous: the broadcast was accepted but its execution result
-        // couldn't be confirmed — the host must NOT re-submit. For the
-        // spend-based operations the notes stay reserved wallet-side; a
-        // shield reserves nothing. Either way the next sync (or an app
-        // restart) reconciles the outcome; the typed Display already
-        // carries the operation name and guidance.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+        // Outcome not known: a dispatch may have reached a node and the
+        // execution result couldn't be confirmed, so the host must NOT
+        // re-submit. For the spend-based operations the notes stay reserved
+        // wallet-side, with the recovery record saved before the broadcast;
+        // a shield from Platform addresses reserves nothing. Either way the
+        // next sync reconciles a transition that landed; the typed Display
+        // already carries the operation name and guidance.
+        // A broadcast that may have been delivered reads the same: it may
+        // still execute, so its notes and recovery record stay, and a host
+        // must not pay again.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
                 e.to_string(),
@@ -618,8 +623,40 @@ fn map_spend_result(
         // built or broadcast. Preserve that distinction from an unconfirmed
         // submission so hosts can wait for the original payment's sync.
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
+        // An identity shield whose proved balance cannot cover the amount and
+        // fee: refused before anything was armed or broadcast, code 39 with the
+        // figures in the stable JSON detail.
+        | Err(e @ PlatformWalletError::InsufficientIdentityCredits { .. })
+        // No balance for the identity on Platform yet (right after
+        // registration): refused before anything was armed, code 58, retry.
+        | Err(e @ PlatformWalletError::IdentityBalanceUnavailable(..))
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
+        // A private contact request in flight, or paid and not yet read back
+        // from the store: nothing new was paid, and a later private sync
+        // settles it, so it keeps its own pending code; unrestored private
+        // payments keep theirs, and so does a persister that cannot keep a
+        // private payment's recovery marker. A wallet removed before the
+        // payment started keeps the lifecycle refusal code (`NotFound`) every
+        // other export gives it. A protocol-version refusal from the store
+        // read before any payment keeps the blanket conversion's split: a
+        // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
+        // the catch-all.
+        // So does a public request to the pair whose outcome is unconfirmed,
+        // which holds the private send and accepts as it holds a public one.
+        // So does a private store read that did not finish before deciding
+        // (nothing reserved or sent), and a pair whose requests came or went
+        // privately, which the in-kind accept can raise.
+        Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
+        | Err(e @ PlatformWalletError::PublicContactRequestUnconfirmed(..))
+        | Err(e @ PlatformWalletError::PrivateContactStoreNotRead(..))
+        | Err(e @ PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..))
+        | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
+        | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
+        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
+        | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
+            e.into()
+        }
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -628,17 +665,19 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the transition was not executed and the notes
-        // were released; the host may retry.
+        // Definitive failure: the transition never left the wallet (refused
+        // before anything was sent); a spend's notes were released and the
+        // host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("{operation} failed: {e}"),
         ),
-        // Definitively failed on an address-nonce race (a shield spends platform
-        // address funds; a shield reserves no notes). Its own code carries the
-        // safe-to-retry contract AND lets the host recognize the self-healing
-        // nonce mismatch — a plain retry re-fetches the nonce. Without this arm
-        // it would regress to the generic `ErrorWalletOperation` below.
+        // An address-nonce race keeps its own code, so the host can recognize
+        // the self-healing nonce mismatch: a plain retry re-fetches the nonce.
+        // No operation mapped here reports it today: a shield from Platform
+        // addresses reads an endpoint's nonce verdict on a dispatched shield
+        // as unconfirmed, above. The arm keeps the code from regressing to the
+        // generic `ErrorWalletOperation` below if one does.
         Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
@@ -659,6 +698,18 @@ fn map_spend_result(
         // here as the blanket `From` conversion does, so hosts route to key
         // repair instead of reading a generic wallet failure. Structural
         // position-0 check only, never a substring sniff of the rendering.
+        // The SDK's unconfirmed outcome (`StateTransitionResultUnconfirmed`)
+        // that reached here unclassified: the transition may have executed,
+        // so it keeps the blanket conversion's unconfirmed code rather than
+        // reading as a failure a host may retry.
+        Err(e)
+            if matches!(
+                &e,
+                PlatformWalletError::Sdk(source) if source.is_state_transition_result_unconfirmed()
+            ) =>
+        {
+            e.into()
+        }
         Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
             format!("{operation} failed: {e}"),
@@ -681,56 +732,6 @@ fn is_preserved_signer_key_unavailable(error: &PlatformWalletError) -> bool {
     )
 }
 
-/// Render a caught panic payload as a human-readable string.
-fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(s) = payload.downcast_ref::<&'static str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "<non-string panic payload>".to_string()
-    }
-}
-
-/// Run an FFI export body under [`std::panic::catch_unwind`], converting a panic into the
-/// operation's contract-appropriate result `code` (with `guidance` appended to the message)
-/// instead of letting it reach the `extern "C"` frame.
-///
-/// A Rust panic cannot unwind through a C ABI boundary: it aborts the process. The JNI layer
-/// wraps its calls in `support::guard` (which catches panics and raises a Java exception), but
-/// that guard sits on the FAR side of this `extern "C"` export, so it never sees the unwind — the
-/// process is already gone. `block_on_worker` makes this reachable rather than theoretical: it
-/// `.expect`s on the tokio `JoinError`, so any panic inside the proving future (Halo 2 synthesis,
-/// note bookkeeping, the SDK) re-panics right here inside the export.
-///
-/// The `code` must be chosen per operation to preserve that operation's result contract — a
-/// panic can strike after side effects (note reservation, a broadcast) have happened, so the
-/// outcome is genuinely ambiguous and the code must never promise a definitive failure. See
-/// [`catch_spend_panic`] and the per-export call sites.
-///
-/// NOTE: this guard is only effective where panics unwind. The Android (`*-android`) and
-/// host/test profiles build with `panic = "unwind"`, so it works there; the iOS profiles
-/// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
-/// tuning (see the workspace `Cargo.toml` profile comments), so on iOS a panic still aborts the
-/// process before this guard can see it.
-pub(crate) fn catch_panic_to_code(
-    operation: &str,
-    code: PlatformWalletFFIResultCode,
-    guidance: &str,
-    body: impl FnOnce() -> PlatformWalletFFIResult,
-) -> PlatformWalletFFIResult {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
-        Ok(result) => result,
-        Err(payload) => PlatformWalletFFIResult::err(
-            code,
-            format!(
-                "{operation} panicked: {}. {guidance}",
-                panic_payload_message(payload.as_ref())
-            ),
-        ),
-    }
-}
-
 /// Post-panic guidance for the note-spending exports. Paired with
 /// `ErrorShieldedSpendUnconfirmed` in [`catch_spend_panic`].
 const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast — do NOT \
@@ -742,8 +743,8 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// a definitive failure code: a panic can strike after the notes were reserved and even after the
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
-/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
-fn catch_spend_panic(
+/// in place, and the next nullifier sync reconciles whether the spend landed.
+pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
@@ -853,7 +854,8 @@ fn map_asset_lock_funding_result(
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockNotTracked(_)
-            | PlatformWalletError::AssetLockFundingMismatch { .. }),
+            | PlatformWalletError::AssetLockFundingMismatch { .. }
+            | PlatformWalletError::AssetLockRecipientMismatch { .. }),
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockInputConflict { .. }
@@ -1302,6 +1304,168 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
             PlatformWalletFFIResult::ok()
         }
         Err(e) => map_spend_result(Err(e), "shielded shield from identity"),
+    }
+}
+
+/// Shield credits from one of the wallet's Platform identities to an arbitrary
+/// external Orchard recipient: the Type 21 `ShieldFromIdentity` transition with
+/// the note addressed to `recipient_raw_43` instead of the wallet's own
+/// shielded account. The identity is debited `amount` plus the metered fee plus
+/// the shielded compute fee.
+///
+/// `memo_text` is an optional NUL-terminated UTF-8 string attached to the recipient's note, with
+/// the same rules as `platform_wallet_manager_shielded_shield_to_recipient`: `null` or empty means
+/// no memo; a non-empty memo's UTF-8 byte length must be <= 32.
+///
+/// A shielded sub-wallet must still be bound at `shielded_account`: its outgoing
+/// viewing key enables outgoing-note recovery, and the activity is recorded
+/// under that account. A recipient recognized by the account's incoming viewing
+/// key is rejected with `ErrorWalletOperation` (code 6); self-shields use
+/// [`platform_wallet_manager_shielded_shield_from_identity`].
+///
+/// `identity_id` is the 32-byte identity id; the identity must be managed by
+/// this wallet. `recipient_raw_43` is the recipient's raw 43-byte Orchard
+/// address. `signer_identity_handle` is a `*const SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` that can sign with the identity's TRANSFER
+/// key (the same handle credit transfers use). The caller retains ownership.
+///
+/// `out_new_balance`, when non-null, receives the identity's proven
+/// post-debit balance, written only on success. A result proof that is not this
+/// identity's balance proof, or a failure verdict the proven identity nonce
+/// cannot rule out, is reported as `ErrorShieldedSpendUnconfirmed` (the
+/// transition may have executed; do not resubmit, the next sync reconciles).
+///
+/// An identity whose proved balance is below `amount` plus the shielded
+/// identity-debit fee floor (`platform_wallet_shielded_estimate_fee` kind 3, two
+/// actions) is refused before anything is armed or broadcast, as
+/// `ErrorInsufficientIdentityCredits` (39, JSON detail with `required` and `available`).
+///
+/// A signer that reports the TRANSFER key unavailable surfaces as code 31
+/// (`ErrorSigningKeyUnavailable`), the same key-repair signal the other
+/// identity-signed operations use.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `identity_id` must point to 32 readable bytes.
+/// - `recipient_raw_43` must point to 43 readable bytes.
+/// - `memo_text`, when non-null, must be a valid NUL-terminated UTF-8 C string for the duration
+///   of the call.
+/// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle`
+///   that outlives this call and points at a `VTableSigner` with the callback
+///   variant.
+/// - `out_new_balance` must be null or point to writable `u64` storage.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    identity_id: *const u8,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    signer_identity_handle: *const SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    // Under `catch_unwind` like the other spend exports: a panic must not cross the C ABI, and
+    // the transition may already be broadcast, so the spend-unconfirmed contract applies.
+    catch_spend_panic("shielded shield from identity to recipient", || {
+        shielded_shield_from_identity_to_recipient_inner(
+            handle,
+            wallet_id_bytes,
+            shielded_account,
+            identity_id,
+            recipient_raw_43,
+            amount,
+            memo_text,
+            signer_identity_handle,
+            out_new_balance,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_shield_from_identity_to_recipient`], as an
+/// ordinary Rust function so a panic unwinds into [`catch_spend_panic`].
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_shield_from_identity_to_recipient_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    identity_id: *const u8,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    signer_identity_handle: *const SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(identity_id);
+    check_ptr!(recipient_raw_43);
+    check_ptr!(signer_identity_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+    let mut recipient = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient.as_mut_ptr(), 43);
+
+    // Decode the optional memo string before resolving the wallet so a
+    // malformed memo fails fast without touching wallet state.
+    let memo_str = if memo_text.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(memo_text).to_str() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                    format!("memo_text is not valid UTF-8: {e}"),
+                );
+            }
+        }
+    };
+    let memo = match encode_memo_text(memo_str) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Same pointer round-trip as `platform_wallet_manager_shielded_shield_from_identity`.
+    let signer_addr = signer_identity_handle as usize;
+
+    let result = block_on_worker(async move {
+        // SAFETY: valid for the duration of this synchronously-awaited task per
+        // the caller's documented lifetime contract.
+        let identity_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_identity_to_recipient(
+                &coordinator,
+                shielded_account,
+                &identity_id,
+                &recipient,
+                amount,
+                memo,
+                identity_signer,
+                &prover,
+            )
+            .await
+    });
+    poke_sync_on_unconfirmed(&result, handle);
+    match result {
+        Ok(new_balance) => {
+            if !out_new_balance.is_null() {
+                *out_new_balance = new_balance;
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => map_spend_result(Err(e), "shielded shield from identity to recipient"),
     }
 }
 
@@ -2327,6 +2491,30 @@ pub(crate) fn resolve_wallet_and_coordinator(
     Ok((wallet, coordinator))
 }
 
+/// The coordinator half of [`resolve_wallet_and_coordinator`], with the same
+/// errors. It blocks on the runtime, so it must not run on one of its async
+/// workers: call it from the export's thread or from `spawn_blocking`.
+pub(crate) fn resolve_shielded_coordinator(
+    handle: Handle,
+) -> Result<
+    std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+    PlatformWalletFFIResult,
+> {
+    match PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_coordinator())
+    }) {
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        )),
+        Some(None) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "shielded support not configured: call platform_wallet_manager_configure_shielded first",
+        )),
+        Some(Some(coordinator)) => Ok(coordinator),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2338,6 +2526,7 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_wallet::wallet::shielded::store::PendingRedrive;
     use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
+    use std::ffi::CString;
 
     #[test]
     fn encode_memo_text_none_is_empty() {
@@ -2425,6 +2614,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
+                    anchor_height: None,
                 },
             )
             .expect("seed malformed durable metadata");
@@ -2962,6 +3152,16 @@ mod tests {
             "no-recorded-anchor message must be the retryable guidance"
         );
 
+        // No identity balance on Platform yet (the identity shield's
+        // precheck): its own retryable code, not the generic failure.
+        let no_balance: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::IdentityBalanceUnavailable([7; 32].into()),
+        );
+        assert_eq!(
+            map_spend_result(no_balance, "shielded shield from identity").code,
+            PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
+        );
+
         let other: Result<(), PlatformWalletError> =
             Err(PlatformWalletError::ShieldedNoUnspentNotes);
         let result = map_spend_result(other, "shielded withdraw");
@@ -2974,6 +3174,547 @@ mod tests {
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
         );
+    }
+
+    /// Arguments for `platform_wallet_manager_shielded_shield_from_identity_to_recipient` that
+    /// are valid except for the one a test nulls out. The signer is a dangling, never-read pointer:
+    /// every path under test returns before it is dereferenced.
+    struct ToRecipientArgs {
+        wallet_id: [u8; 32],
+        identity_id: [u8; 32],
+        recipient: [u8; 43],
+        signer: *const SignerHandle,
+    }
+
+    impl ToRecipientArgs {
+        fn new() -> Self {
+            Self {
+                wallet_id: [1; 32],
+                identity_id: [2; 32],
+                recipient: [3; 43],
+                signer: std::ptr::NonNull::<SignerHandle>::dangling().as_ptr(),
+            }
+        }
+
+        /// Call the export with `NULL_HANDLE`, nulling the pointer argument named by `null`.
+        fn call(&self, null: &str, out: *mut u64) -> PlatformWalletFFIResult {
+            self.call_with_memo(null, std::ptr::null(), out)
+        }
+
+        /// As [`Self::call`], with an explicit `memo_text`.
+        fn call_with_memo(
+            &self,
+            null: &str,
+            memo_text: *const c_char,
+            out: *mut u64,
+        ) -> PlatformWalletFFIResult {
+            let pick = |name: &str, p: *const u8| {
+                if null == name {
+                    std::ptr::null()
+                } else {
+                    p
+                }
+            };
+            unsafe {
+                platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+                    NULL_HANDLE,
+                    pick("wallet_id", self.wallet_id.as_ptr()),
+                    0,
+                    pick("identity_id", self.identity_id.as_ptr()),
+                    pick("recipient", self.recipient.as_ptr()),
+                    1,
+                    memo_text,
+                    if null == "signer" {
+                        std::ptr::null()
+                    } else {
+                        self.signer
+                    },
+                    out,
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn shield_from_identity_to_recipient_rejects_each_null_pointer() {
+        let args = ToRecipientArgs::new();
+        for name in ["wallet_id", "identity_id", "recipient", "signer"] {
+            let result = args.call(name, std::ptr::null_mut());
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                "a null {name} pointer must be rejected before the handle is resolved"
+            );
+        }
+    }
+
+    /// The memo is decoded before the handle is resolved: with an unknown handle, a memo over 32
+    /// UTF-8 bytes is refused with the siblings' `ErrorInvalidParameter`.
+    #[test]
+    fn shield_from_identity_to_recipient_refuses_a_memo_over_32_bytes() {
+        let args = ToRecipientArgs::new();
+        let memo = CString::new("a".repeat(MEMO_PAYLOAD_SIZE + 1)).unwrap();
+        let mut out: u64 = 0xDEAD_BEEF;
+        let result = args.call_with_memo("", memo.as_ptr(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            out, 0xDEAD_BEEF,
+            "out_new_balance must not be written on error"
+        );
+    }
+
+    /// A NULL, empty or valid (including exactly 32 bytes) memo passes the decode and reaches the
+    /// handle lookup, which is where an unknown handle is reported.
+    #[test]
+    fn shield_from_identity_to_recipient_accepts_no_memo_empty_and_valid_memos() {
+        let args = ToRecipientArgs::new();
+        let empty = CString::new("").unwrap();
+        let hi = CString::new("hi").unwrap();
+        let max = CString::new("a".repeat(MEMO_PAYLOAD_SIZE)).unwrap();
+        for memo in [std::ptr::null(), empty.as_ptr(), hi.as_ptr(), max.as_ptr()] {
+            let result = args.call_with_memo("", memo, std::ptr::null_mut());
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        }
+    }
+
+    /// A memo that is not UTF-8 is `ErrorUtf8Conversion`, as in the siblings.
+    #[test]
+    fn shield_from_identity_to_recipient_refuses_a_memo_that_is_not_utf8() {
+        let args = ToRecipientArgs::new();
+        let memo = CString::new(vec![0xFF, 0xFE]).unwrap();
+        let result = args.call_with_memo("", memo.as_ptr(), std::ptr::null_mut());
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion
+        );
+    }
+
+    /// The pointer checks keep their place ahead of the memo decode.
+    #[test]
+    fn shield_from_identity_to_recipient_checks_pointers_before_the_memo() {
+        let args = ToRecipientArgs::new();
+        let memo = CString::new("a".repeat(MEMO_PAYLOAD_SIZE + 1)).unwrap();
+        let result = args.call_with_memo("signer", memo.as_ptr(), std::ptr::null_mut());
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// With every pointer valid and an unknown handle the export reports `ErrorInvalidHandle`
+    /// (a code that means nothing was broadcast), and `out_new_balance` is left untouched.
+    #[test]
+    fn shield_from_identity_to_recipient_leaves_out_balance_untouched_on_error() {
+        let args = ToRecipientArgs::new();
+        let mut out: u64 = 0xDEAD_BEEF;
+        let result = args.call("", &mut out);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(
+            out, 0xDEAD_BEEF,
+            "out_new_balance must not be written on error"
+        );
+
+        let mut out: u64 = 0xDEAD_BEEF;
+        let result = args.call("recipient", &mut out);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(
+            out, 0xDEAD_BEEF,
+            "out_new_balance must not be written on error"
+        );
+
+        // A null out_new_balance is allowed: it is not a null-pointer error.
+        let result = args.call("", std::ptr::null_mut());
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+    }
+
+    /// The contract's error map for this export: 18 unconfirmed, 55 earlier debit pending, 31
+    /// signing key unavailable, 6 build failed before broadcast (own or invalid recipient).
+    #[test]
+    fn shield_from_identity_to_recipient_error_map_pins_18_31_55_6() {
+        let op = "shielded shield from identity to recipient";
+        let cases: [(PlatformWalletError, PlatformWalletFFIResultCode, i32); 4] = [
+            (
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "shield from identity",
+                    reason: "balance proof not confirmed".to_string(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+                18,
+            ),
+            (
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(
+                    format!("{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}transfer key missing"),
+                ))),
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
+                31,
+            ),
+            (
+                PlatformWalletError::ShieldedIdentityDebitPending {
+                    identity_id: [7; 32],
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending,
+                55,
+            ),
+            (
+                PlatformWalletError::ShieldedBuildError(
+                    "recipient belongs to this shielded account".to_string(),
+                ),
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                6,
+            ),
+        ];
+        for (error, code, number) in cases {
+            let result = map_spend_result(Err(error), op);
+            assert_eq!(result.code, code);
+            assert_eq!(result.code as i32, number);
+        }
+    }
+
+    /// A balance that cannot cover the amount and fee is refused before anything is armed or
+    /// broadcast; the host reads it as 39 with the figures in the stable JSON detail, not as 6.
+    #[test]
+    fn shield_from_identity_insufficient_balance_maps_to_code_39() {
+        let identity_id = dpp::prelude::Identifier::from([7; 32]);
+        let result = map_spend_result(
+            Err(PlatformWalletError::InsufficientIdentityCredits {
+                identity_id,
+                required: 200,
+                available: 100,
+            }),
+            "shielded shield from identity to recipient",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits
+        );
+        assert_eq!(result.code as i32, 39);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&result)).unwrap();
+        assert_eq!(detail["required"], 200);
+        assert_eq!(detail["available"], 100);
+    }
+
+    /// The recipient and signer are real; the wallet, its bound shielded account and the managed
+    /// identity are real too. Only the network is a mock: its answer for the identity's proved
+    /// balance is `proved_balance`, and it has no answer for anything else (the nonce fetch that
+    /// follows a passed balance check, so a call that reaches it stops there).
+    struct IdentityShieldFixture {
+        handle: Handle,
+        wallet_id: [u8; 32],
+        identity_id: [u8; 32],
+        store_path: std::path::PathBuf,
+        signer: *mut SignerHandle,
+    }
+
+    impl IdentityShieldFixture {
+        const SEED: [u8; 64] = [42; 64];
+
+        fn new(proved_balance: u64) -> Self {
+            use dash_sdk::query_types::IdentityBalance;
+            use dpp::identity::v0::IdentityV0;
+            use dpp::prelude::Identifier;
+
+            unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+                0
+            }
+            unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+                0
+            }
+            unsafe extern "C" fn sign(
+                _: *const c_void,
+                _: *const u8,
+                _: usize,
+                _: u8,
+                _: *const u8,
+                _: usize,
+                _: *mut c_void,
+                _: rs_sdk_ffi::SignCompletionCallback,
+            ) {
+                unreachable!("a refused identity shield signs nothing")
+            }
+            unsafe extern "C" fn can_sign(_: *const c_void, _: *const u8, _: usize, _: u8) -> bool {
+                false
+            }
+
+            let identity_id = Identifier::from([0x71; 32]);
+            let mut sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk");
+            runtime().block_on(async {
+                sdk.mock()
+                    .expect_fetch::<IdentityBalance, Identifier>(identity_id, Some(proved_balance))
+                    .await
+                    .expect("balance expectation");
+            });
+            let manager = crate::test_fixtures::mock_manager_on(
+                sdk,
+                crate::persistence::FFIPersister::new_with_persistence_capabilities(
+                    PersistenceCallbacks {
+                        on_changeset_begin_fn: Some(begin),
+                        on_changeset_end_fn: Some(end),
+                        on_persist_shielded_viewing_keys_fn: Some(
+                            crate::test_fixtures::noop_persist_viewing_keys,
+                        ),
+                        on_load_shielded_viewing_keys_fn: Some(
+                            crate::test_fixtures::noop_load_viewing_keys,
+                        ),
+                        on_load_shielded_viewing_keys_free_fn: Some(
+                            crate::test_fixtures::noop_free_viewing_keys,
+                        ),
+                        ..Default::default()
+                    },
+                    platform_wallet::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS.union(
+                        platform_wallet::changeset::PersistenceCapabilities::SHIELDED_VIEWING_KEYS,
+                    ),
+                ),
+            );
+            let store_path = std::env::temp_dir().join(format!(
+                "ffi-identity-shield-{}-{}.sqlite",
+                std::process::id(),
+                next_handle()
+            ));
+            let wallet_id = runtime().block_on(async {
+                let wallet = manager
+                    .create_wallet_from_seed_bytes(
+                        dashcore::Network::Testnet,
+                        &Self::SEED,
+                        WalletAccountCreationOptions::Default,
+                        Some(0),
+                    )
+                    .await
+                    .expect("create wallet");
+                manager
+                    .configure_shielded(&store_path)
+                    .await
+                    .expect("configure shielded");
+                let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+                wallet
+                    .bind_shielded(&Self::SEED, &[0], &coordinator)
+                    .await
+                    .expect("bind shielded");
+                wallet
+                    .wallet_manager()
+                    .write()
+                    .await
+                    .get_wallet_info_mut(&wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(
+                        dpp::identity::Identity::V0(IdentityV0 {
+                            id: identity_id,
+                            public_keys: Default::default(),
+                            balance: u64::MAX / 2,
+                            revision: 0,
+                        }),
+                        0,
+                        wallet.wallet_id(),
+                        wallet.persister(),
+                    )
+                    .expect("manage the identity");
+                wallet.wallet_id()
+            });
+            let signer = unsafe {
+                rs_sdk_ffi::dash_sdk_signer_create_with_ctx(
+                    std::ptr::null_mut(),
+                    sign,
+                    can_sign,
+                    None,
+                )
+            };
+            Self {
+                handle: PLATFORM_WALLET_MANAGER_STORAGE.insert(manager),
+                wallet_id,
+                identity_id: identity_id.to_buffer(),
+                store_path,
+                signer,
+            }
+        }
+
+        fn own_address(&self) -> [u8; 43] {
+            let mut out = [0u8; 43];
+            let mut present = false;
+            let result = unsafe {
+                crate::platform_wallet_manager_shielded_default_address(
+                    self.handle,
+                    self.wallet_id.as_ptr(),
+                    0,
+                    out.as_mut_ptr(),
+                    &mut present,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert!(present);
+            out
+        }
+
+        fn third_party_address() -> [u8; 43] {
+            platform_wallet::wallet::shielded::OrchardKeySet::from_seed(
+                &[0x24; 32],
+                dashcore::Network::Testnet,
+                0,
+            )
+            .expect("keys")
+            .default_address
+            .to_raw_address_bytes()
+        }
+
+        fn shield(
+            &self,
+            recipient: &[u8; 43],
+            memo: *const c_char,
+            out: *mut u64,
+        ) -> PlatformWalletFFIResult {
+            unsafe {
+                platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+                    self.handle,
+                    self.wallet_id.as_ptr(),
+                    0,
+                    self.identity_id.as_ptr(),
+                    recipient.as_ptr(),
+                    1_000_000,
+                    memo,
+                    self.signer,
+                    out,
+                )
+            }
+        }
+
+        /// Nothing was armed and no activity row was recorded for the account.
+        fn assert_nothing_armed_or_recorded(&self) {
+            let id = SubwalletId::new(self.wallet_id, 0);
+            let (redrives, activity) = PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(self.handle, |manager| {
+                    runtime().block_on(async {
+                        let coordinator =
+                            manager.shielded_coordinator().await.expect("coordinator");
+                        let store = coordinator.store().read().await;
+                        (
+                            store.pending_redrives(id).expect("redrives"),
+                            store.get_activity_ids(id).expect("activity"),
+                        )
+                    })
+                })
+                .expect("live manager");
+            assert!(redrives.is_empty(), "no redrive guard");
+            assert!(activity.is_empty(), "no activity row");
+        }
+    }
+
+    impl Drop for IdentityShieldFixture {
+        fn drop(&mut self) {
+            unsafe {
+                rs_sdk_ffi::dash_sdk_signer_destroy(self.signer);
+                let _ = platform_wallet_manager_destroy(self.handle);
+            }
+            let _ = std::fs::remove_file(&self.store_path);
+        }
+    }
+
+    const UNTOUCHED: u64 = 0xDEAD_BEEF;
+
+    /// The account's own address is not a third-party recipient: build failure before broadcast,
+    /// code 6, nothing armed or recorded, `out_new_balance` untouched.
+    #[test]
+    fn identity_recipient_shield_export_refuses_the_accounts_own_address_with_6() {
+        let fixture = IdentityShieldFixture::new(u64::MAX / 2);
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(&fixture.own_address(), std::ptr::null(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(result.code as i32, 6);
+        assert!(message_of(&result).contains("belongs to this shielded account"));
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A proved balance below the amount plus the fee floor is refused as code 39 with the
+    /// figures in the JSON detail; nothing is armed or recorded and `out_new_balance` is
+    /// untouched. The mock has no nonce answer, so the refusal is the balance check's.
+    #[test]
+    fn identity_recipient_shield_export_refuses_an_unfunded_identity_with_39() {
+        let fixture = IdentityShieldFixture::new(999_999);
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(
+            &IdentityShieldFixture::third_party_address(),
+            std::ptr::null(),
+            &mut out,
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits
+        );
+        assert_eq!(result.code as i32, 39);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&result)).unwrap();
+        assert_eq!(detail["available"], 999_999);
+        assert!(detail["required"].as_u64().unwrap() > 1_000_000, "{detail}");
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A balance that covers the amount and fee passes the check and reaches the identity nonce
+    /// fetch, where the mock (no network) stops the call. This is where the export path stops
+    /// without a network mock for the nonce, proof and broadcast.
+    #[test]
+    fn identity_recipient_shield_export_passes_the_balance_check_and_stops_at_the_nonce_fetch() {
+        let fixture = IdentityShieldFixture::new(u64::MAX / 2);
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(
+            &IdentityShieldFixture::third_party_address(),
+            std::ptr::null(),
+            &mut out,
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert!(message_of(&result).contains("fetch identity nonce"));
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A memo over 32 bytes is `ErrorInvalidParameter` and invalid UTF-8 is
+    /// `ErrorUtf8Conversion`, both before the wallet is touched, with a real wallet behind the
+    /// handle: nothing armed or recorded, `out_new_balance` untouched.
+    #[test]
+    fn identity_recipient_shield_export_refuses_a_bad_memo_with_a_real_wallet() {
+        let fixture = IdentityShieldFixture::new(u64::MAX / 2);
+        let recipient = IdentityShieldFixture::third_party_address();
+
+        let too_long = CString::new("a".repeat(MEMO_PAYLOAD_SIZE + 1)).unwrap();
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(&recipient, too_long.as_ptr(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(out, UNTOUCHED);
+
+        let not_utf8 = CString::new(vec![0xFF, 0xFE]).unwrap();
+        let mut out = UNTOUCHED;
+        let result = fixture.shield(&recipient, not_utf8.as_ptr(), &mut out);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion
+        );
+        assert_eq!(out, UNTOUCHED);
+        fixture.assert_nothing_armed_or_recorded();
+    }
+
+    /// A panic in the new export's body must become code 18 (never abort the host), under the
+    /// export's own operation label.
+    #[test]
+    fn shield_from_identity_to_recipient_panic_maps_to_code_18() {
+        let result = catch_spend_panic("shielded shield from identity to recipient", || {
+            panic!("proving worker panicked");
+        });
+        assert_eq!(result.code as i32, 18);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+        assert!(message_of(&result).contains("do NOT retry"));
     }
 
     #[test]
@@ -2990,6 +3731,81 @@ mod tests {
         );
         assert_eq!(message_of(&result), rendered);
         assert!(message_of(&result).contains("this request was not started"));
+    }
+
+    /// A protocol-version refusal from the store read a private send or
+    /// accept makes before paying keeps the blanket conversion's split: a
+    /// lasting refusal is code 70, a transient one the catch-all.
+    #[test]
+    fn map_spend_result_keeps_a_protocol_version_refusal_typed() {
+        let refused = |cause: Option<Box<dash_sdk::Error>>| {
+            map_spend_result(
+                Err(PlatformWalletError::Sdk(
+                    dash_sdk::Error::ProtocolVersionNotActive {
+                        method: "get_private_document_entries",
+                        required: 15,
+                        feature: None,
+                        network: 14,
+                        pinned: false,
+                        cause,
+                    },
+                )),
+                "private contact request",
+            )
+        };
+        let lasting = refused(None);
+        assert_eq!(
+            lasting.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(lasting.code as i32, 70);
+        let transient = refused(Some(Box::new(dash_sdk::Error::Generic(
+            "no node answered".to_string(),
+        ))));
+        assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request",
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
+    }
+
+    /// A persister that cannot keep a private payment's recovery state is
+    /// refused by the explicit private send and accept before anything is
+    /// sealed or paid; the refusal keeps its own code (73) through the spend
+    /// mapper they use, as the in-kind accept's blanket conversion does.
+    #[test]
+    fn map_spend_result_keeps_the_storage_configuration_refusal_at_73() {
+        let result = map_spend_result(
+            Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+            "private contact request",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+        );
+        assert_eq!(result.code as i32, 73);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactRecoveryUnsupported)
+                .code
+        );
+    }
+
+    /// A private payment refused because its wallet was removed first keeps
+    /// the lifecycle refusal code, not the generic operation failure.
+    #[test]
+    fn map_spend_result_keeps_a_wallet_removed_before_send_at_not_found() {
+        let removed: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::WalletRemovedBeforeSend("wallet removed".to_string()),
+        );
+        let result = map_spend_result(removed, "private contact request");
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(result.code as i32, 98);
+        assert!(message_of(&result).contains("wallet removed"));
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet
@@ -3125,6 +3941,23 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
         );
         assert!(message_of(&not_tracked).contains("is not tracked by this wallet"));
+
+        // A resume naming another recipient than the row recorded is the one
+        // refusal a host must render as "wrong destination", never as a
+        // generic operation failure.
+        let recipient_mismatch = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockRecipientMismatch {
+                out_point,
+                recorded: [1; 43],
+                requested: [2; 43],
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            recipient_mismatch.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        assert!(message_of(&recipient_mismatch).contains("cannot be resumed to"));
 
         let mismatch = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockFundingMismatch {

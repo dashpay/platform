@@ -112,7 +112,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("should apply batch");
 

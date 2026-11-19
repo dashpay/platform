@@ -24,7 +24,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -128,7 +127,6 @@ impl FundedPool {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         if !shielded {
@@ -614,7 +612,6 @@ impl FundedPool {
                 &transaction,
                 &mut 0,
                 version,
-                &CachedEpochIndexFeeVersions::new(),
             )
             .expect("execute and charge real event");
         self.platform
@@ -734,7 +731,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "01b1aa765b58c73b580de019d98fdb10106003b0941b738769a96dc0feba8741"
+        "cf69ef6453230e20690be3b3bc3ce08a7db20409a297f1dcc24e14ba1f3dce52"
     );
     assert_eq!(
         pool.platform
@@ -1896,9 +1893,9 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_785_480)
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_916_360)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2147,10 +2144,13 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
+        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
+        // incidental Debug output; keep actions, charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
-        );
+        )
+        .replace(", documents_can_be_erased: false", "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2185,39 +2185,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "761e92d28f8cef61e908c2ae3b24938b405868e468f44fd22a68f61da64b682c",
+                "7dc04b305978bbe10c536bdc48dd78d5de4e97df259557c6c144b64f7074a2d2",
             ),
             "valid-payment" => (
                 "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "5a8fa6e02357c351ba35b210eaaadb09cb9786d7b12d06b1483e75411c478d3f",
+                "c02bb91ee2f7c6a3bbdbe5f4872e7e09b9ef26f300325d6e54d8ea81cec78f2f",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "1dee6b00d4f6ab7be85238448840e8a124b75260a445a3ec38b0c2283633544b",
+                "0371f7c9a204d21e095852f8252e3605c050a52f8f6c161873cfc0b141da1db1",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "5557745a60262645a038803fffb5c3e7f5a85b0822d0d81f515b30cfca8a5316",
+                "58ac5c36b2f2e2b026b35e5f9779bc6e7f455239d628930a342980bf0ff98b97",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "a8fa01705072cdaddf01155bc21a707da71765cca36e829ed8689bc010721571",
+                "f4926cd89acca5f8e4e83faf2e9443c6596faba5d33cb6fd4ff2a623931a6f66",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "2cc8ac005b08d6bdba5713b81653f43d8db6d62f1f0c64f2e11dc987dd6587be",
+                "149ce9457c30a7ae11564b1d87d1891e2755067b899fc244a11eac605ee30a8f",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "cc45783c058f65155e440957bde48a991854eda553fe868586c4688e7e608963",
+                "0eb8bb2257372efdc4c3f226edf4bc673909ace34dddf9d88b83da7089f9c59e",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "a15f8c988bf4aac48480c32842c9e0b1d04b6304fbfd427b289dc7dc9fb54b8a",
+                "e18f310b05100d9d760e9dba56a95739b011f58a9e584f2e39a2e67c6ef05089",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "d799aab48f5ce1eb60b3076e576b663c982e59ac003b42210565753f68848591",
+                "086f76c36de8a93f1a659ac36f3f2937690443a51a230cb154f0aad0462bc2c0",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

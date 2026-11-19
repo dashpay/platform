@@ -59,7 +59,6 @@ fn apply(drive: &Drive, operations: Vec<ContractFeePotOperationType>, apply: boo
             &BlockInfo::default(),
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("expected to apply the fee pot operations")
 }
@@ -175,7 +174,6 @@ fn should_deduct_from_a_pot_and_refuse_more_than_it_holds() {
         &BlockInfo::default(),
         None,
         PlatformVersion::latest(),
-        None,
     );
     assert!(result.is_err(), "a pot can not go below zero");
     assert_eq!(

@@ -22,11 +22,30 @@ pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
     unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
         0
     }
-    let persister = FFIPersister::new(PersistenceCallbacks {
+    mock_manager_with(FFIPersister::new(PersistenceCallbacks {
         on_changeset_begin_fn: Some(begin),
         on_changeset_end_fn: Some(end),
         ..Default::default()
-    });
+    }))
+}
+
+/// [`mock_manager`] over `persister`.
+pub(crate) fn mock_manager_with(persister: FFIPersister) -> PlatformWalletManager<FFIPersister> {
+    mock_manager_on(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(dashcore::Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+        persister,
+    )
+}
+
+/// [`mock_manager_with`] over a caller-built mock `sdk`, for tests that seed
+/// the mock's expectations before the manager takes ownership of it.
+pub(crate) fn mock_manager_on(
+    sdk: dash_sdk::Sdk,
+    persister: FFIPersister,
+) -> PlatformWalletManager<FFIPersister> {
     let events = FFIEventHandler::new(
         EventHandlerCallbacks {
             context: std::ptr::null_mut(),
@@ -41,16 +60,7 @@ pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
         None,
     );
     let _runtime_guard = runtime().enter();
-    PlatformWalletManager::new(
-        Arc::new(
-            dash_sdk::SdkBuilder::new_mock()
-                .with_network(dashcore::Network::Testnet)
-                .build()
-                .expect("mock sdk"),
-        ),
-        Arc::new(persister),
-        Arc::new(events),
-    )
+    PlatformWalletManager::new(Arc::new(sdk), Arc::new(persister), Arc::new(events))
 }
 
 /// Runs `call` with a dangling out pointer and returns the C string it wrote,
@@ -71,4 +81,34 @@ pub(crate) fn out_string(
     let string = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_owned();
     unsafe { platform_wallet_free_string(out) };
     Ok(Some(string))
+}
+
+// Viewing-key callbacks that store nothing and load nothing: enough for a
+// persister to declare `SHIELDED_VIEWING_KEYS`, which a seed-backed shielded
+// bind requires.
+#[cfg(feature = "shielded")]
+pub(crate) unsafe extern "C" fn noop_persist_viewing_keys(
+    _ctx: *mut std::ffi::c_void,
+    _wallet_id: *const u8,
+    _entries: *const crate::shielded_persistence::ShieldedViewingKeyFFI,
+    _count: usize,
+) -> i32 {
+    0
+}
+#[cfg(feature = "shielded")]
+pub(crate) unsafe extern "C" fn noop_load_viewing_keys(
+    _ctx: *mut std::ffi::c_void,
+    out_entries: *mut *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+    out_count: *mut usize,
+) -> i32 {
+    *out_entries = std::ptr::null();
+    *out_count = 0;
+    0
+}
+#[cfg(feature = "shielded")]
+pub(crate) unsafe extern "C" fn noop_free_viewing_keys(
+    _ctx: *mut std::ffi::c_void,
+    _entries: *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+    _count: usize,
+) {
 }

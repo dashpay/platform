@@ -704,6 +704,66 @@ mod tests {
         }
     }
 
+    /// Platform versions that verify chain locks locally from version 1 on.
+    fn platform_versions_verifying_chain_locks_locally_from_version_1(
+    ) -> impl Iterator<Item = &'static PlatformVersion> {
+        let platform_versions = PLATFORM_VERSIONS.iter().filter(|platform_version| {
+            platform_version
+                .drive_abci
+                .methods
+                .core_chain_lock
+                .verify_chain_lock_locally
+                >= 1
+        });
+        assert!(
+            platform_versions.clone().next().is_some(),
+            "some protocol version verifies chain locks locally from version 1 on"
+        );
+        platform_versions
+    }
+
+    /// Version 1 fails every chain lock in a mining window without the DKG mining schedules of
+    /// its version table, and so every validator fails the block. A table that selects it must
+    /// carry them, not inherit `None` from an earlier table.
+    #[test]
+    fn should_have_dkg_mining_schedules_in_every_platform_version_verifying_chain_locks_locally_from_version_1(
+    ) {
+        for platform_version in platform_versions_verifying_chain_locks_locally_from_version_1() {
+            assert!(
+                platform_version
+                    .drive_abci
+                    .methods
+                    .core_chain_lock
+                    .dkg_mining_schedules
+                    .is_some(),
+                "protocol version {} has no DKG mining schedules",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// Version 1 leaves to Core chain locks version 0 rejected locally, so it is only safe when
+    /// Core checks their signature: from `verify_chain_lock_through_core` 1, `verifychainlock`
+    /// does before `submitchainlock`, which skips that check for a height Core already has a
+    /// chain lock at or above. With `verify_chain_lock_through_core` 0 a forged chain lock at
+    /// such a height would be accepted.
+    #[test]
+    fn should_check_chain_locks_left_to_core_with_verifychainlock_in_every_platform_version_verifying_locally_from_version_1(
+    ) {
+        for platform_version in platform_versions_verifying_chain_locks_locally_from_version_1() {
+            assert!(
+                platform_version
+                    .drive_abci
+                    .methods
+                    .core_chain_lock
+                    .verify_chain_lock_through_core
+                    >= 1,
+                "protocol version {} submits chain locks left to Core without verifychainlock",
+                platform_version.protocol_version
+            );
+        }
+    }
+
     #[test]
     fn should_find_first_possible_quorum_change_from_dash_core_dkg_schedule() {
         // Dash Core mines a commitment only at offsets mining_window_start..=mining_window_end
