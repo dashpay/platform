@@ -1576,7 +1576,10 @@ impl PlatformWalletError {
     pub fn is_retryable(&self) -> bool {
         match self.payment_delivery() {
             PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => false,
+            // Every variant states its decision; no wildcard arm, so a new
+            // variant does not compile until it is given one.
             PaymentDelivery::NotSent => match self {
+                // Transient: the same call gets past it by running again.
                 Self::ShieldedNoRecordedAnchor(_)
                 | Self::ShieldedBroadcastFailed(_)
                 | Self::ShutdownIncomplete(_)
@@ -1589,7 +1592,110 @@ impl PlatformWalletError {
                 // retry a transient flush allows is another flush, not the
                 // operation.
                 Self::PersisterFlush(_) => false,
-                _ => false,
+                // Refusals running the same call again does not get past:
+                // the request, the wallet's state or the network has to
+                // change first.
+                Self::DocumentEraseBusy
+                | Self::WalletCreation(_)
+                | Self::PersisterRestore(_)
+                | Self::AccountNotFound(_)
+                | Self::WalletRemovedBeforeSend(_)
+                | Self::PreparedPaymentAddressTaken(_)
+                | Self::WalletAlreadyExists(_)
+                | Self::IdentityAlreadyExists(_)
+                | Self::IdentityNotFound(_)
+                | Self::IdentityBalanceUnavailable(_)
+                | Self::NoPrimaryIdentity
+                | Self::InvitationNetworkMismatch { .. }
+                | Self::ContactRequestNotFound(_)
+                | Self::IdentityIndexNotSet(_)
+                | Self::IdentityDiscoveryIncomplete { .. }
+                | Self::DashpayReceivingAccountAlreadyExists { .. }
+                | Self::DashpayExternalAccountAlreadyExists { .. }
+                | Self::MessageSigningAddressInvalid { .. }
+                | Self::MessageSigningMessageInvalid { .. }
+                | Self::MessageSigningKeyUnavailable { .. }
+                | Self::MessageSigningFailed { .. }
+                | Self::InvalidParameter(_)
+                | Self::MasternodeListUnavailable
+                | Self::AddressNotFound(_)
+                | Self::WalletLocked
+                | Self::SeedMismatch { .. }
+                | Self::SeedBindingUnanswered { .. }
+                | Self::ContactSyncUnreachable { .. }
+                | Self::SpvAlreadyRunning
+                | Self::NoWalletsConfigured
+                | Self::SpvProcessRestartRequired(_)
+                | Self::DpnsNameNotFound { .. }
+                | Self::DecisionProposalNotFound { .. }
+                | Self::ContestedNameNotTradable { .. }
+                | Self::TransactionBuild(_)
+                | Self::StaleReservation
+                | Self::CoreInsufficientFunds { .. }
+                | Self::CorePooledInsufficientFunds { .. }
+                | Self::NoSpendableInputs { .. }
+                | Self::OnlyOutputAddressesFunded { .. }
+                | Self::OnlyDustInputs { .. }
+                | Self::ChangeBelowMinimumOutput { .. }
+                | Self::InputSumOverflow
+                | Self::AssetLockNotTracked(_)
+                | Self::AssetLockFundingMismatch { .. }
+                | Self::AssetLockInsufficientFunds { .. }
+                | Self::AssetLockFundsAwaitingFinality { .. }
+                | Self::AssetLockTooManyInputs { .. }
+                | Self::AssetLockInputConflict { .. }
+                | Self::ShieldedNoUnspentNotes
+                | Self::ShieldedInsufficientBalance { .. }
+                | Self::PlatformShieldCapacityExceeded { .. }
+                | Self::ShieldedMerkleWitnessUnavailable(_)
+                | Self::ShieldedKeyDerivation(_)
+                | Self::ShieldedNotBound
+                | Self::ShieldedSyncFailed(_)
+                | Self::ShieldedTreeUpdateFailed(_)
+                | Self::PrivateContactRequestNeedsPrivateReply(_)
+                | Self::PrivateContactPaymentsNotRestored
+                | Self::PrivateContactRecoveryUnsupported
+                | Self::TransactionBroadcast(_)
+                | Self::Sdk(_)
+                | Self::TokenOperationFailed { .. } => false,
+                // Never `NotSent` (see [`Self::payment_delivery`]), so the
+                // arm above already answered; listed to keep the match
+                // exhaustive.
+                Self::TransactionBroadcastUnconfirmed(_)
+                | Self::ShieldedBroadcastMaybeDelivered(_)
+                | Self::ShieldedBroadcastUnconfirmed { .. }
+                | Self::ShieldedSpendUnconfirmed { .. }
+                | Self::MasternodeWithdrawalUnconfirmed { .. }
+                | Self::PublicContactRequestUnconfirmed(_)
+                | Self::InputMidBroadcast { .. }
+                | Self::PrivateContactRequestPending(_)
+                | Self::ShieldedIdentityDebitPending { .. }
+                | Self::ShieldedRecoveryCorrupted { .. }
+                | Self::ShieldedRecoveryKeysRequired { .. }
+                | Self::FinalityTimeout(_)
+                | Self::AssetLockInputContested { .. }
+                | Self::AssetLockRecipientMismatch { .. }
+                | Self::AssetLockProofWait(_)
+                | Self::AssetLockAlreadyConsumed(_)
+                | Self::AssetLockExpired(_)
+                | Self::AssetLockNotChainLocked(_)
+                | Self::AddressNonceMismatch { .. }
+                | Self::DocumentNotForSale { .. }
+                | Self::DocumentPriceChanged { .. }
+                | Self::InsufficientIdentityCredits { .. }
+                | Self::WalletNotFound(_)
+                | Self::Persistence(_)
+                | Self::InvalidIdentityData(_)
+                | Self::AssetLockTransaction(_)
+                | Self::AddressSync(_)
+                | Self::AddressOperation(_)
+                | Self::KeyDerivation(_)
+                | Self::SpvError(_)
+                | Self::QuorumNotVerified { .. }
+                | Self::TokenError(_)
+                | Self::ShieldedBuildError(_)
+                | Self::ShieldedStoreError(_)
+                | Self::PaymentAlreadyDispatched { .. } => false,
             },
         }
     }
