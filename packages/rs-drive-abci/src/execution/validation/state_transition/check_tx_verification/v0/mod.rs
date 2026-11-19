@@ -39,6 +39,7 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
 use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_patterns::validate_contract_schema_patterns_for_check_tx;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
@@ -259,6 +260,23 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             } else {
                 None
             };
+
+            // A contract create or update is held to the mempool's pattern bound before the
+            // balance pre-check estimates its registration fee: before protocol version 15 the
+            // estimate parses every index, compiling each `regexPattern` of a contested index,
+            // and nothing has bounded how many there are or how large they compile. After the
+            // signature, so only the holder of an identity's key has a contract's patterns
+            // read. Mempool policy, as the bound describes; block execution never runs this
+            // function.
+            let result =
+                validate_contract_schema_patterns_for_check_tx(state_transition, platform_version)?;
+            if !result.is_valid() {
+                return Ok(
+                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        result.errors,
+                    ),
+                );
+            }
 
             // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
             // processing amount and the transfer amount.
@@ -631,6 +649,20 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                     None => false,
                 };
+
+                // As on the first check, before the non-validating parse compiles the patterns
+                let result = validate_contract_schema_patterns_for_check_tx(
+                    state_transition,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+
                 let state_transition_action_result = transform_into_action_for_check_tx(
                     state_transition,
                     platform,

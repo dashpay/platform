@@ -22,6 +22,9 @@ pub use dash_sdk::platform::transition::asset_lock_submission::{
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
+    #[error("An erase for this document is already in flight; read history before retrying")]
+    DocumentEraseBusy,
+
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
@@ -723,11 +726,16 @@ pub enum PlatformWalletError {
     /// identity, public or private, until a proved read shows the request on
     /// Platform (it is then recorded as sent) or shows the transition can no
     /// longer write it. A public contact request sync settles it, broadcasting
-    /// the same transition again while it may still execute. Unconfirmed, not
-    /// failed: it is not submitted again.
+    /// the same transition again while it may still execute and a public
+    /// request to the identity would still go out. Unconfirmed, not failed:
+    /// it is not submitted again.
+    ///
+    /// Also what a public send gets while another public request to the
+    /// identity is being sent: that one's outcome is not known yet either,
+    /// and nothing is signed for the second.
     #[error(
-        "a public contact request to {0} was broadcast and its outcome is not proved yet; sync \
-         contact requests to settle it"
+        "a public contact request to {0} is being sent or was broadcast, and its outcome is not \
+         proved yet; sync contact requests to settle it"
     )]
     PublicContactRequestUnconfirmed(Identifier),
 

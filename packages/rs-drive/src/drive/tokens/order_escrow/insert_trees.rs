@@ -9,7 +9,7 @@ use grovedb::{Element, TransactionArg};
 use grovedb_path::SubtreePath;
 
 impl Drive {
-    /// Inserts the two escrow trees of the token marketplace (protocol version 15) if they do not
+    /// Inserts the two escrow trees of the token marketplace (protocol version 16) if they do not
     /// exist yet:
     ///
     /// - `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, an empty BigSumTree that holds one SumTree per
@@ -21,9 +21,9 @@ impl Drive {
     ///   specialized balances root is a SumTree, so the credit conservation check counts it
     ///   without a change.
     ///
-    /// CONSENSUS-CRITICAL: both the genesis path (`Drive::create_initial_state_structure_v5`)
-    /// and the upgrade path (`Platform::transition_to_version_15`) call this one helper, in the
-    /// same position, so a chain born at protocol version 15 and a chain upgraded to it build
+    /// CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v5`) calls
+    /// this helper last, and the upgrade to protocol version 16 must call it too, in the same
+    /// position, so a chain born at that version and a chain upgraded to it build
     /// byte-identical `[Tokens]` and `[PreFundedSpecializedBalances]` subtrees.
     pub fn insert_token_order_escrow_trees(
         &self,
