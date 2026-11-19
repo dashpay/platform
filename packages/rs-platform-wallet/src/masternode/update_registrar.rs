@@ -726,7 +726,8 @@ mod tests {
     use super::*;
     use crate::broadcaster::BroadcastError;
     use crate::test_support::{
-        funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
+        funded_wallet_manager, funded_wallet_manager_with_outputs,
+        wallet_manager_with_registered_collateral, WalletSigner,
     };
     use dashcore::hash_types::InputsHash;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
@@ -1375,6 +1376,54 @@ mod tests {
             panic!("the transaction must carry the ProUpRegTx payload");
         };
         assert_eq!(payload.inputs_hash, tx.hash_inputs());
+    }
+
+    /// The fee of a ProUpRegTx is funded like any send, so it never spends
+    /// the masternode's collateral: with a 5 DASH coin beside the 1,000 DASH
+    /// collateral the fee comes from the 5 DASH coin, and with that coin also
+    /// locked there is nothing left to pay it with.
+    #[tokio::test]
+    async fn should_fund_an_update_registrar_fee_without_the_masternode_collateral() {
+        const DASH: u64 = 100_000_000;
+        let (wallet_manager, wallet_id, generation, signer, _collateral, spare) =
+            wallet_manager_with_registered_collateral(StandardAccountType::BIP44Account, 5 * DASH)
+                .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(RecordingBroadcaster::default()),
+            generation,
+        );
+
+        let prepared =
+            build_sign_update_registrar(&core, registrar_placeholder(), owner(), &signer)
+                .await
+                .expect("the spare coin pays the fee");
+        let inputs: Vec<_> = prepared
+            .transaction()
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(inputs, vec![spare], "only the spare coin may pay the fee");
+        core.abandon_transaction(&prepared).await;
+
+        {
+            let mut wm = core.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&core.wallet_id())
+                .expect("wallet present in manager");
+            assert!(info.core_wallet.lock_outpoint(spare));
+        }
+        let err = build_sign_update_registrar(&core, registrar_placeholder(), owner(), &signer)
+            .await
+            .expect_err("only the collateral is left to pay the fee");
+        assert!(
+            matches!(err, PlatformWalletError::CorePooledInsufficientFunds { .. }),
+            "expected a funding shortfall, got {err:?}"
+        );
     }
 
     /// Without the data output a lone 600-duff UTXO assembles into a

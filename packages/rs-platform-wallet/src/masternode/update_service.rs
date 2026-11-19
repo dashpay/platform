@@ -153,8 +153,11 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+    // Only a list that follows the chain: the payload restates the entry's
+    // own addresses, and a list restored from disk can still hold the ones
+    // a later ProUpServTx replaced.
     let entries = spv
-        .masternode_list_entries()
+        .current_masternode_list_entries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
     let (entry, list_shows_v24) = update_service_target(&entries, &params.pro_tx_hash)?;
