@@ -1,6 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -367,6 +367,14 @@ pub struct PlatformWalletInfo {
     /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier). In
     /// memory only.
     pub rewind_barrier: crate::changeset::core_bridge::RewindBarrier,
+    /// The collateral of every tracked masternode whose registration is
+    /// known: outpoints this wallet locks once it holds the coin, whether the
+    /// coin was here when the collateral became tracked or a transaction
+    /// check brings it in later. A wallet that never holds the coin never
+    /// locks it. In memory only, filled again from the tracked registry on
+    /// load, so the collateral of a masternode the user stops tracking stays
+    /// here until then; see `wallet::outpoint_locks`.
+    pub(crate) tracked_collaterals: BTreeSet<OutPoint>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
