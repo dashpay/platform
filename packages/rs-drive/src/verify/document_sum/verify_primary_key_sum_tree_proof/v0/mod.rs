@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
+use crate::query::sum_width::proved_element_sum;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -29,10 +30,13 @@ impl DriveDocumentSumQuery<'_> {
         // (SumTree absent) or has a single
         // `(path, [SUM_TREE_KEY], Some(SumTree))` triple. Extract the
         // sum if present; 0 otherwise.
-        let sum = elements
-            .into_iter()
-            .find_map(|(_, _, elem)| elem.map(|e| e.sum_value_or_default()))
-            .unwrap_or(0);
+        // At either width a type keeps its sums in: what the 64-bit accessor returns for
+        // every element holding no 128-bit sum (`crate::query::sum_width`), which is every
+        // element before protocol version 15.
+        let sum = match elements.into_iter().find_map(|(_, _, elem)| elem) {
+            Some(element) => proved_element_sum(&element, root_hash)?,
+            None => 0,
+        };
         Ok((root_hash, sum))
     }
 }

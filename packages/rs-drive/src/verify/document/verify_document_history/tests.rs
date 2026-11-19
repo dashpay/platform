@@ -393,8 +393,8 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
             )
         } else {
             (
-                "345843c481567f2c52b2245f36ab9e8ff22dc6eb0972c779b7ac5f2bbd8e3a18",
-                "234aacc1287d406f115f9a69469bba948a052f9374b5375e1b5f0361006294e6",
+                "3f39b80804340c9998a6eefed6dda10e75f4c7f61a8632d5a4c55b7f952cc3df",
+                "7e8123556c7fc68d290bcac46857c047990cd7ca8f6465c8d8a21026ef3d6854",
             )
         };
         let mut reference = selected.clone();
@@ -492,7 +492,7 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                 if selected.protocol_version == 14 {
                     (110_781_000, 1_773_200)
                 } else {
-                    (178_335_000, 2_789_600)
+                    (178_416_000, 2_790_800)
                 }
             );
             assert_eq!(
@@ -611,7 +611,7 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                 let expected_nested_proof = if selected.protocol_version == 14 {
                     "9a1b6f2933735c9a54d7eadac8872d08ce5936e4bc798aa6d00abebd73248578"
                 } else {
-                    "d5a96f13bd5f69e3bba2d20b5573a6e060524b03285c5d9518a5770cd775a233"
+                    "ff0db42b87ea46a86c76ae0c84b1016cf6929f0c5bb6cc4390ab4ad2833c91ba"
                 };
                 assert_eq!(
                     sha256::Hash::hash(&nested_proof).to_string(),

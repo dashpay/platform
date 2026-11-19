@@ -11,7 +11,8 @@ where
     C: CoreRPCLike,
 {
     /// Clears stale contract fees and runs activation, including operator-payout reconciliation,
-    /// before migrating history in the same transaction.
+    /// before migrating history and converting the trees of document sums that widen in the
+    /// same transaction.
     pub(super) fn perform_events_on_first_block_of_protocol_change_v3(
         &self,
         platform_state: &PlatformState,
@@ -38,6 +39,14 @@ where
                 .drive
                 .migrate_document_history_storage(transaction, platform_version)?;
             tracing::info!(?stats, "Migrated document history storage");
+            // After the histories are moved, so the trees converted are the ones the
+            // version's layout keeps: a document type whose summed property may pass 2^27
+            // keeps its sums in 128 bits from this version, and the trees it stored them in
+            // before are converted where they stand. The same rule on errors applies.
+            let stats = self
+                .drive
+                .convert_document_sums_to_big_sums(transaction, platform_version)?;
+            tracing::info!(?stats, "Converted document sums to 128 bits");
         }
         Ok(())
     }
@@ -166,6 +175,12 @@ mod tests {
         let registered = subtree_rows(&fresh.drive, preorder_path.clone(), None, latest);
         let mut v4 = latest.clone();
         v4.drive.grove_version = old.drive.grove_version.clone();
+        // The activation converts the trees of document sums that widen, which only the
+        // selected engine offers: the reference keeps the released engine in all else.
+        let insert = &mut v4.drive.grove_version.grovedb_versions.operations.insert;
+        insert.convert_to_big_sum_tree = 1;
+        insert.provable_count_provable_big_sum_tree_creation = 1;
+        insert.big_sum_tree_twins_creation = 1;
         let mut roots = vec![];
         for (version, commit) in [(&v4, false), (latest, true)] {
             platform.drive.cache.data_contracts.clear_block_cache();
@@ -256,7 +271,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 hex::encode(root),
-                "eb3abfdbeb12039eaf6e9c45e8daafb8803482288090be30255faafac936948e",
+                "9ae54e50d0bf18cf7d3783c0a945e4a008849246b63e85fdbbf0b8f9c2bdcbfb",
                 "activation includes the current system contracts and retained-history migration",
             );
             roots.push(root);

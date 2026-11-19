@@ -95,6 +95,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
     max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
     max_summed_value_magnitude_without_type_total: None, // read from protocol version 15
+    max_summed_value_magnitude_in_64_bit_sums: None, // read from protocol version 15
     max_indexed_array_items: None,
     max_windowed_indexed_array_items: None,
     max_index_entries_per_document: None,

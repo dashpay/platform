@@ -543,6 +543,18 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions that do not read it.
     pub max_summed_value_magnitude_without_type_total: Option<u64>,
+    /// The largest magnitude a summed property may declare for its document type to keep its
+    /// sums in 64 bits. A type whose summed property declares a `maximum` of at most this and a
+    /// `minimum` of at least its negation keeps every sum in the trees with an `i64` total,
+    /// where a sum of fewer than 2^36 documents cannot leave the range. Any other summed
+    /// property, one that declares no bound included, has its type keep every sum in the trees
+    /// with an `i128` total, which no number of `i64` values can leave. Read by the document
+    /// type parser from generation 3 on, which records the outcome on the type
+    /// (`DocumentTypeV2Getters::uses_big_sums`) and on its index levels
+    /// (`IndexLevelTypeInfo::big_sums`).
+    ///
+    /// `None` keeps every sum in 64 bits, as the protocol versions that do not read it do.
+    pub max_summed_value_magnitude_in_64_bit_sums: Option<u64>,
     /// The highest `maxItems` a typed array may declare when an index keys the document by
     /// its elements, enforced when a contract is registered or updated (full validation only,
     /// like `max_typed_array_items`). Each distinct element is one index entry, so this is the

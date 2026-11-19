@@ -73,7 +73,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
 use super::dynamic_reference::validate_dynamic_reference_sources;
-#[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
@@ -127,11 +126,23 @@ const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 /// its own axes, so Avg, whose wider sort key leaves the least room, wins at
 /// a level that carries it, and an Avg ranking at another level of the index
 /// does not tighten this one.
+///
+/// A summing index of a type that keeps its sums in 128 bits (`big_sums`,
+/// `DocumentTypeV2Getters::uses_big_sums`) ranks its sums on the big sum axis,
+/// whose sort key is 16 bytes like Avg's, so its sum ranking takes Avg's
+/// ceiling. A `summableOffCountIndex` index sums counters and keeps the sum
+/// axis. `big_sums` is false for every type parsed before protocol version 15.
 #[cfg(feature = "validation")]
-fn ranked_level_key_length_limit(index: &Index, index_property_name: &str) -> Option<u16> {
+fn ranked_level_key_length_limit(
+    index: &Index,
+    index_property_name: &str,
+    big_sums: bool,
+) -> Option<u16> {
     let is_last = index.properties.last().map(|p| p.name.as_str()) == Some(index_property_name);
     let names_it = |at_levels: &[String]| at_levels.iter().any(|at| at == index_property_name);
-    let average = (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at);
+    let big_sum = big_sums && is_last && index.ranked_summable && index.summable.is_some();
+    let average =
+        (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at) || big_sum;
     let count_or_sum = (is_last && (index.ranked_countable || index.ranked_summable))
         || names_it(&index.ranked_countable_at)
         || names_it(&index.ranked_summable_at);
@@ -171,6 +182,31 @@ fn validate_ranked_index_property_key_length(
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
+    validate_ranked_index_property_key_length_at_width(
+        document_type_name,
+        index,
+        index_property_name,
+        reported_property_name,
+        property_type,
+        false,
+        platform_version,
+    )
+}
+
+/// [`validate_ranked_index_property_key_length`] for a type that keeps its sums in 128 bits
+/// when `big_sums` is set ([`ranked_level_key_length_limit`]). The shared parser runs the
+/// 64-bit form on every indexed property before the width is known;
+/// [`validate_big_sum_ranked_key_lengths`] runs this form once it is.
+#[cfg(feature = "validation")]
+fn validate_ranked_index_property_key_length_at_width(
+    document_type_name: &str,
+    index: &Index,
+    index_property_name: &str,
+    reported_property_name: &str,
+    property_type: &DocumentPropertyType,
+    big_sums: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
     // Only a property whose level hosts an indexed tree gets its encoded
     // value mirrored into the ordered secondary behind the sort key — the
     // **terminal** property for the boolean axes, the **`at`** property for
@@ -178,7 +214,7 @@ fn validate_ranked_index_property_key_length(
     // that is where the tightened ceiling comes from. Every other property
     // of a ranked index is an ordinary grovedb path segment, bound by the
     // generic limits checked after this.
-    let Some(limit) = ranked_level_key_length_limit(index, index_property_name) else {
+    let Some(limit) = ranked_level_key_length_limit(index, index_property_name, big_sums) else {
         return Ok(());
     };
 
@@ -729,6 +765,15 @@ fn parse_generation_3(
         }
     }
 
+    // After every aggregate declaration is applied: the width of the type's sums follows the
+    // bounds of the one property they all sum. In every build and with or without full
+    // validation, since it decides the trees Drive stores and reads.
+    apply_summed_value_width(&mut v2, schema_defs, platform_version)?;
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_big_sum_ranked_key_lengths(&v2, name, platform_version)?;
+    }
+
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
     // default (`true` when the key is omitted).
@@ -1063,12 +1108,13 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             {
                                 return Err(refusal(reason));
                             }
-                            validate_ranked_index_property_key_length(
+                            validate_ranked_index_property_key_length_at_width(
                                 name,
                                 index,
                                 &index_property.name,
                                 &index_property.name,
                                 &property.property_type,
+                                declaring.big_sums,
                                 platform_version,
                             )?;
                             common::check_indexable_property_shape(
@@ -1729,13 +1775,110 @@ fn validate_summed_value_bounds(
     ))
 }
 
+/// Holds the group key of every sum ranking of a type that keeps its sums in 128 bits to the
+/// ceiling of the big sum axis it ranks on ([`ranked_level_key_length_limit`]), which is tighter
+/// than the sum axis's: a key between the two would be refused when a document is written.
+/// The shared parser checks every indexed property against the 64-bit ceilings before the
+/// width is decided, so a type that keeps big sums has its sum rankings checked again here. A
+/// derived index property is checked where it is resolved, against the declaring type's width;
+/// a system property encodes to at most 32 bytes.
+///
+/// Full validation only, like the check it repeats. Inert before protocol version 15, when no
+/// type keeps big sums.
+#[cfg(feature = "validation")]
+fn validate_big_sum_ranked_key_lengths(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    if !document_type.big_sums {
+        return Ok(());
+    }
+    for index in document_type.indices.values() {
+        if !index.ranked_summable || index.summable.is_none() {
+            continue;
+        }
+        let Some(group) = index.properties.last() else {
+            continue;
+        };
+        let Some(property) = document_type.flattened_properties.get(&group.name) else {
+            continue;
+        };
+        // A typed array is keyed by its elements, judged as the shared parser judges them
+        if let DocumentPropertyType::TypedArray(typed_array) = &property.property_type {
+            validate_ranked_index_property_key_length_at_width(
+                name,
+                index,
+                &group.name,
+                &format!("{}.items", group.name),
+                &typed_array.item_type,
+                true,
+                platform_version,
+            )?;
+            continue;
+        }
+        validate_ranked_index_property_key_length_at_width(
+            name,
+            index,
+            &group.name,
+            &group.name,
+            &property.property_type,
+            true,
+            platform_version,
+        )?;
+    }
+    Ok(())
+}
+
+/// Records whether `document_type` keeps its sums in 128 bits (`DocumentTypeV2::big_sums` and
+/// the `big_sums` of its summing index levels): it does when its summed property is not
+/// declared within `SystemLimits::max_summed_value_magnitude_in_64_bit_sums` on both sides.
+/// Such a property's values can take a 64-bit sum out of range, and a tree with a 128-bit total
+/// holds any number of them. A property declared within the limit keeps the 64-bit trees.
+///
+/// Does nothing before protocol version 15: the limit is `None` in every earlier limits table,
+/// and the function returns on that before reading anything else, so every type parsed under
+/// those versions keeps `big_sums` false.
+///
+/// The bounds are compared as numbers, as `validate_summed_value_bounds` compares them.
+fn apply_summed_value_width(
+    document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_summed_value_magnitude_in_64_bit_sums
+    else {
+        return Ok(());
+    };
+    let Some((_, property_schema)) = summed_property_schema(document_type, schema_defs)? else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let within_limit = matches!(
+        (bound(property_names::MINIMUM), bound(property_names::MAXIMUM)),
+        (Some(minimum), Some(maximum)) if minimum >= -limit_value && maximum <= limit_value
+    );
+    if !within_limit {
+        document_type.big_sums = true;
+        document_type.index_structure.mark_big_sums();
+    }
+    Ok(())
+}
+
 /// The property a document type sums and its schema, `None` when the type sums nothing. The
 /// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
 /// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
 /// (`apply_doctype_aggregates`). The schema is followed through `$ref`s into `schema_defs`, so
 /// the bounds are read from it rather than from the inferred type, which is `i64` whatever they
 /// are without `sizedIntegerTypes`.
-#[cfg(feature = "validation")]
 #[allow(clippy::type_complexity)]
 fn summed_property_schema<'a>(
     document_type: &'a DocumentTypeV2,
@@ -2249,6 +2392,8 @@ mod refusal_test_support;
 mod summable_off_count_index_tests;
 #[cfg(all(test, feature = "validation"))]
 mod summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod summed_value_width_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod dynamic_reference_tests;

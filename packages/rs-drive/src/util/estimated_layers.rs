@@ -208,6 +208,10 @@ fn tree_type_key(tree_type: TreeType, key: &mut Vec<u64>) {
         TreeType::ProvableCountProvableSumIndexedTree => (15, 0),
         TreeType::PrivateDocumentStore(parameter) => (16, parameter),
         TreeType::ProvableCountProvableBigSumTree => (17, 0),
+        TreeType::CountBigSumTree => (18, 0),
+        TreeType::ProvableBigSumTree => (19, 0),
+        TreeType::ProvableBigSumIndexedTree => (20, 0),
+        TreeType::ProvableCountProvableBigSumIndexedTree => (21, 0),
     };
     key.extend([variant, parameter as u64]);
 }
@@ -226,6 +230,8 @@ fn sum_trees_key(sum_trees: EstimatedSumTrees, key: &mut Vec<u64>) {
             provable_count_sum_trees_weight,
             provable_count_provable_sum_trees_weight,
             provable_count_provable_big_sum_trees_weight,
+            count_big_sum_trees_weight,
+            provable_big_sum_trees_weight,
         } => key.extend([
             1,
             sum_trees_weight as u64,
@@ -238,6 +244,8 @@ fn sum_trees_key(sum_trees: EstimatedSumTrees, key: &mut Vec<u64>) {
             provable_count_sum_trees_weight as u64,
             provable_count_provable_sum_trees_weight as u64,
             provable_count_provable_big_sum_trees_weight as u64,
+            count_big_sum_trees_weight as u64,
+            provable_big_sum_trees_weight as u64,
         ]),
         EstimatedSumTrees::AllSumTrees => key.push(2),
         EstimatedSumTrees::AllBigSumTrees => key.push(3),
@@ -248,6 +256,8 @@ fn sum_trees_key(sum_trees: EstimatedSumTrees, key: &mut Vec<u64>) {
         EstimatedSumTrees::AllProvableCountSumTrees => key.push(8),
         EstimatedSumTrees::AllProvableCountProvableSumTrees => key.push(9),
         EstimatedSumTrees::AllProvableCountProvableBigSumTrees => key.push(10),
+        EstimatedSumTrees::AllCountBigSumTrees => key.push(11),
+        EstimatedSumTrees::AllProvableBigSumTrees => key.push(12),
     }
 }
 

@@ -161,6 +161,13 @@ pub struct IndexLevelTypeInfo {
     /// member entries. `None` on every other index, which is every index of
     /// every pre-PV14 contract.
     pub summable_off_count_index: Option<String>,
+    /// Whether the trees that hold this index's sums of the [`Self::summable`] property keep
+    /// a 128-bit total (the big sum trees) rather than a 64-bit one. Decided for the whole
+    /// document type from the bounds its summed property declares
+    /// (`SystemLimits::max_summed_value_magnitude_in_64_bit_sums`) and stamped by the
+    /// document type parser, so it is `false` on every level without a `summable` property
+    /// and on every level parsed under a protocol version before 15.
+    pub big_sums: bool,
 }
 
 impl IndexLevelTypeInfo {
@@ -487,6 +494,22 @@ impl IndexLevel {
             .fold(1, u64::max)
     }
 
+    /// Marks every level at or below this one where an index summing a property terminates
+    /// as keeping its sums in 128 bits ([`IndexLevelTypeInfo::big_sums`]). Called by the
+    /// document type parser once it has decided the width from the summed property's bounds;
+    /// every summing index of a type sums the same property, so the mark is the same for all
+    /// of them.
+    pub(in crate::data_contract::document_type) fn mark_big_sums(&mut self) {
+        if let Some(info) = self.has_index_with_type.as_mut() {
+            if info.summable.is_some() {
+                info.big_sums = true;
+            }
+        }
+        for sub_level in self.sub_index_levels.values_mut() {
+            sub_level.mark_big_sums();
+        }
+    }
+
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
         // Was `Option<IndexLevelTypeInfo>` (Copy) before the v3 sum-tree
         // expansion added `summable: Option<String>` to the struct, which
@@ -811,6 +834,9 @@ impl IndexLevel {
             skip_if_absent_properties: index.skip_if_absent_properties.clone(),
             // Same PV14+ gating as `terminal`.
             summable_off_count_index: index.summable_off_count_index.clone(),
+            // Decided from the summed property's schema, which an index does not hold: the
+            // document type parser stamps it afterwards (`IndexLevel::mark_big_sums`).
+            big_sums: false,
         }
     }
 

@@ -312,6 +312,10 @@ pub mod drive_document_count_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_sum_query;
 
+/// Reading a document index's sum at the width its type keeps it in.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod sum_width;
+
 /// A query to compute the average of an integer property across
 /// documents using `CountSumTree` / `ProvableCountProvableSumTree`
 /// (PCPS) elements. Averages are NOT computed server-side; the

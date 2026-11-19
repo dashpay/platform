@@ -10,7 +10,7 @@ use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::storage_flags::StorageFlags;
 
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
@@ -353,6 +353,18 @@ impl Drive {
                         &mut batch_operations,
                         &platform_version.drive,
                     )?,
+                    // A type that keeps its sums in 128 bits. No type does before protocol version
+                    // 15 (`tree_type_for_sum_width`), so no earlier version reaches this arm.
+                    tree_type @ (TreeType::BigSumTree
+                    | TreeType::CountBigSumTree
+                    | TreeType::ProvableBigSumTree
+                    | TreeType::ProvableCountProvableBigSumTree) => {
+                        batch_operations.push(tree_type.empty_tree_operation_for_known_path_key(
+                            type_path.iter().map(|segment| segment.to_vec()).collect(),
+                            vec![0],
+                            storage_flags.as_ref(),
+                        )?)
+                    }
                     _ => self.batch_insert_empty_tree(
                         type_path,
                         key_info,
@@ -468,6 +480,28 @@ impl Drive {
                                 &mut batch_operations,
                                 &platform_version.drive,
                             )?,
+                        // The trees of a type that keeps its sums in 128 bits. No type does before
+                        // protocol version 15 (`tree_type_for_sum_width`), so no earlier version
+                        // reaches these arms.
+                        tree_type @ (TreeType::ProvableBigSumTree
+                        | TreeType::ProvableCountProvableBigSumTree) => batch_operations.push(
+                            tree_type.empty_tree_operation_for_known_path_key(
+                                type_path.iter().map(|segment| segment.to_vec()).collect(),
+                                index_bytes.to_vec(),
+                                storage_flags.as_ref(),
+                            )?,
+                        ),
+                        tree_type @ (TreeType::ProvableBigSumIndexedTree
+                        | TreeType::ProvableCountProvableBigSumIndexedTree) => batch_operations
+                            .push(
+                                LowLevelDriveOperation::for_known_path_key_empty_indexed_tree(
+                                    type_path.iter().map(|segment| segment.to_vec()).collect(),
+                                    index_bytes.to_vec(),
+                                    tree_type,
+                                    &ranked_axes,
+                                    storage_flags.as_ref(),
+                                )?,
+                            ),
                         // NormalTree, and defensively anything the resolver
                         // could grow later: a plain subtree.
                         _ => self.batch_insert_empty_tree(

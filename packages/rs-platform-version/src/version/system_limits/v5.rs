@@ -31,11 +31,15 @@ use crate::version::system_limits::SystemLimits;
 ///   `minimum` of at least 0 on a type that keeps the total of the property over all its
 ///   documents. Registration and update refuse any other; document create state validation 3
 ///   and replace state validation 2 hold that total in the range the type's sums hold.
+/// * Sum width: a document type whose summed property is not declared within ±2^27
+///   (`max_summed_value_magnitude_in_64_bit_sums`, `None` before) keeps every sum in a tree
+///   with a 128-bit total, where earlier versions keep every sum in 64 bits.
 /// * Document history layout: the first block of the version moves retained document histories
 ///   to the composite-key layout in batches of about 500 GroveDB operations
 ///   (`max_history_migration_batch_operations`, `None` before).
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
     max_summed_value_magnitude_without_type_total: Some(1 << 27), // changed: larger summed values need a minimum of 0 and the type's total
+    max_summed_value_magnitude_in_64_bit_sums: Some(1 << 27), // changed: a type summing larger values keeps its sums in 128 bits
     max_document_revisions_erased_per_transition: Some(100), // one bounded lifecycle erasure chunk (note 41)
     max_enum_violation_listed_values: Some(16), // changed: an enum violation lists at most 16 allowed values
     max_enum_violation_listed_bytes: Some(256), // changed: whose JSON takes at most 256 bytes together

@@ -737,8 +737,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26005987270
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         let check_result = platform
@@ -1415,8 +1416,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26011974540
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26011978620
         );
 
         let check_result = platform
@@ -1904,8 +1906,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26005987270
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         platform
@@ -2005,8 +2008,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            31006811010
+            // contact request's encryptedShieldedAddress, and each compiled document type of the
+            // contract read and of the one stored records the width of its sums (one byte each)
+            31006813300
         );
 
         let check_result = platform
@@ -2603,8 +2607,9 @@ mod tests {
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations, the
             // privateContactRequest type (one more document type registration fee) and the
-            // contact request's encryptedShieldedAddress
-            26005987270
+            // contact request's encryptedShieldedAddress, and each of its four compiled document
+            // types records the width of its sums (one byte each)
+            26005989310
         );
 
         platform

@@ -295,6 +295,12 @@ fn tree_kind_name(tree_type: TreeType) -> &'static str {
         TreeType::ProvableCountProvableSumIndexedTree => "ProvableCountProvableSumIndexedTree",
         TreeType::PrivateDocumentStore(_) => "PrivateDocumentStore",
         TreeType::ProvableCountProvableBigSumTree => "ProvableCountProvableBigSumTree",
+        TreeType::CountBigSumTree => "CountBigSumTree",
+        TreeType::ProvableBigSumTree => "ProvableBigSumTree",
+        TreeType::ProvableBigSumIndexedTree => "ProvableBigSumIndexedTree",
+        TreeType::ProvableCountProvableBigSumIndexedTree => {
+            "ProvableCountProvableBigSumIndexedTree"
+        }
     }
 }
 
@@ -311,6 +317,7 @@ fn axis_name(axis: IndexAxis) -> &'static str {
         IndexAxis::Count => "count",
         IndexAxis::Sum => "sum",
         IndexAxis::Avg => "avg",
+        IndexAxis::BigSum => "bigSum",
     }
 }
 

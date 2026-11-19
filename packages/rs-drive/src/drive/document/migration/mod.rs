@@ -72,6 +72,10 @@ impl PendingHistoryWrites {
     }
 }
 
+mod big_sums;
+pub use big_sums::DocumentSumConversionStats;
+#[cfg(test)]
+mod big_sums_tests;
 #[cfg(test)]
 mod index_tests;
 #[cfg(test)]

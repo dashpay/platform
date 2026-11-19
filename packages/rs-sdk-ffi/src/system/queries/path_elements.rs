@@ -194,6 +194,10 @@ fn format_element_data(element: &Element) -> String {
         Element::ProvableCountProvableBigSumTree(_, count, sum, _) => {
             format!("provable_count_provable_big_sum_tree:{}:{}", count, sum)
         }
+        Element::CountBigSumTree(_, count, sum, _) => {
+            format!("count_big_sum_tree:{}:{}", count, sum)
+        }
+        Element::ProvableBigSumTree(_, sum, _) => format!("provable_big_sum_tree:{}", sum),
         Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
         // Indexed trees render their aggregate exactly like the
         // non-indexed Provable* tree they mirror. The secondary root
@@ -209,6 +213,15 @@ fn format_element_data(element: &Element) -> String {
         }
         Element::ProvableCountProvableSumIndexedTree(_, count, sum, _, _) => {
             format!("provable_count_provable_sum_indexed_tree:{}:{}", count, sum)
+        }
+        Element::ProvableBigSumIndexedTree(_, _, sum, _) => {
+            format!("provable_big_sum_indexed_tree:{}", sum)
+        }
+        Element::ProvableCountProvableBigSumIndexedTree(_, count, sum, _, _) => {
+            format!(
+                "provable_count_provable_big_sum_indexed_tree:{}:{}",
+                count, sum
+            )
         }
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
@@ -257,11 +270,19 @@ fn format_element_type(element: &Element) -> String {
         Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
             "provable_count_provable_big_sum_tree".to_string()
         }
+        Element::CountBigSumTree(_, _, _, _) => "count_big_sum_tree".to_string(),
+        Element::ProvableBigSumTree(_, _, _) => "provable_big_sum_tree".to_string(),
         Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
         Element::ProvableSumIndexedTree(_, _, _, _) => "provable_sum_indexed_tree".to_string(),
         Element::ProvableCountIndexedTree(_, _, _, _) => "provable_count_indexed_tree".to_string(),
         Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
             "provable_count_provable_sum_indexed_tree".to_string()
+        }
+        Element::ProvableBigSumIndexedTree(_, _, _, _) => {
+            "provable_big_sum_indexed_tree".to_string()
+        }
+        Element::ProvableCountProvableBigSumIndexedTree(_, _, _, _, _) => {
+            "provable_count_provable_big_sum_indexed_tree".to_string()
         }
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),

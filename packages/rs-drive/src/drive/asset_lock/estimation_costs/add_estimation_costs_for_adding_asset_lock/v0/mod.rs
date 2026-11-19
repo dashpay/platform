@@ -76,6 +76,8 @@ impl Drive {
                         provable_count_sum_trees_weight: 0,
                         provable_count_provable_sum_trees_weight: 0,
                         provable_count_provable_big_sum_trees_weight: 0,
+                        count_big_sum_trees_weight: 0,
+                        provable_big_sum_trees_weight: 0,
                     },
                     None,
                 ),

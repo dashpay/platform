@@ -36,10 +36,14 @@ export type GroveElementType =
   | "provableCountSumTree"
   | "provableCountProvableSumTree"
   | "provableCountProvableBigSumTree"
+  | "countBigSumTree"
+  | "provableBigSumTree"
   | "provableSumTree"
   | "provableSumIndexedTree"
   | "provableCountIndexedTree"
   | "provableCountProvableSumIndexedTree"
+  | "provableBigSumIndexedTree"
+  | "provableCountProvableBigSumIndexedTree"
   | "commitmentTree"
   | "mmrTree"
   | "bulkAppendTree"
@@ -59,10 +63,14 @@ export type GroveElementType =
   | "nonCountedProvableCountSumTree"
   | "nonCountedProvableCountProvableSumTree"
   | "nonCountedProvableCountProvableBigSumTree"
+  | "nonCountedCountBigSumTree"
+  | "nonCountedProvableBigSumTree"
   | "nonCountedProvableSumTree"
   | "nonCountedProvableSumIndexedTree"
   | "nonCountedProvableCountIndexedTree"
   | "nonCountedProvableCountProvableSumIndexedTree"
+  | "nonCountedProvableBigSumIndexedTree"
+  | "nonCountedProvableCountProvableBigSumIndexedTree"
   | "nonCountedCommitmentTree"
   | "nonCountedMmrTree"
   | "nonCountedBulkAppendTree"
@@ -74,6 +82,8 @@ export type GroveElementType =
   | "notSummedProvableCountSumTree"
   | "notSummedProvableCountProvableSumTree"
   | "notSummedProvableCountProvableBigSumTree"
+  | "notSummedCountBigSumTree"
+  | "notSummedProvableBigSumTree"
   | "notSummedProvableSumTree"
   | "notCountedOrSummedSumTree"
   | "notCountedOrSummedBigSumTree"
@@ -81,6 +91,8 @@ export type GroveElementType =
   | "notCountedOrSummedProvableCountSumTree"
   | "notCountedOrSummedProvableCountProvableSumTree"
   | "notCountedOrSummedProvableCountProvableBigSumTree"
+  | "notCountedOrSummedCountBigSumTree"
+  | "notCountedOrSummedProvableBigSumTree"
   | "notCountedOrSummedProvableSumTree";
 "#;
 
@@ -888,6 +900,8 @@ fn element_sum(element: &Element) -> Option<i128> {
         Element::ProvableCountSumTree(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableCountProvableSumTree(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableCountProvableBigSumTree(_, _, sum, _) => Some(*sum),
+        Element::CountBigSumTree(_, _, sum, _) => Some(*sum),
+        Element::ProvableBigSumTree(_, sum, _) => Some(*sum),
         Element::ReferenceWithSumItem(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableSumTree(_, sum, _) => Some(*sum as i128),
         // Indexed trees carry the same aggregate as their non-indexed
@@ -900,6 +914,8 @@ fn element_sum(element: &Element) -> Option<i128> {
         // deliberately absent here and falls through to `None`.
         Element::ProvableSumIndexedTree(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableCountProvableSumIndexedTree(_, _, sum, _, _) => Some(*sum as i128),
+        Element::ProvableBigSumIndexedTree(_, _, sum, _) => Some(*sum),
+        Element::ProvableCountProvableBigSumIndexedTree(_, _, sum, _, _) => Some(*sum),
         Element::NonCounted(inner)
         | Element::NotSummed(inner)
         | Element::NotCountedOrSummed(inner) => element_sum(inner),
@@ -958,11 +974,17 @@ fn element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountSumTree(_, _, _, _) => "provableCountSumTree",
         Element::ProvableCountProvableSumTree(_, _, _, _) => "provableCountProvableSumTree",
         Element::ProvableCountProvableBigSumTree(_, _, _, _) => "provableCountProvableBigSumTree",
+        Element::CountBigSumTree(_, _, _, _) => "countBigSumTree",
+        Element::ProvableBigSumTree(_, _, _) => "provableBigSumTree",
         Element::ProvableSumTree(_, _, _) => "provableSumTree",
         Element::ProvableSumIndexedTree(_, _, _, _) => "provableSumIndexedTree",
         Element::ProvableCountIndexedTree(_, _, _, _) => "provableCountIndexedTree",
         Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
             "provableCountProvableSumIndexedTree"
+        }
+        Element::ProvableBigSumIndexedTree(_, _, _, _) => "provableBigSumIndexedTree",
+        Element::ProvableCountProvableBigSumIndexedTree(_, _, _, _, _) => {
+            "provableCountProvableBigSumIndexedTree"
         }
         Element::CommitmentTree(_, _, _) => "commitmentTree",
         Element::MmrTree(_, _) => "mmrTree",
@@ -1001,11 +1023,17 @@ fn non_counted_element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
             "nonCountedProvableCountProvableBigSumTree"
         }
+        Element::CountBigSumTree(_, _, _, _) => "nonCountedCountBigSumTree",
+        Element::ProvableBigSumTree(_, _, _) => "nonCountedProvableBigSumTree",
         Element::ProvableSumTree(_, _, _) => "nonCountedProvableSumTree",
         Element::ProvableSumIndexedTree(_, _, _, _) => "nonCountedProvableSumIndexedTree",
         Element::ProvableCountIndexedTree(_, _, _, _) => "nonCountedProvableCountIndexedTree",
         Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
             "nonCountedProvableCountProvableSumIndexedTree"
+        }
+        Element::ProvableBigSumIndexedTree(_, _, _, _) => "nonCountedProvableBigSumIndexedTree",
+        Element::ProvableCountProvableBigSumIndexedTree(_, _, _, _, _) => {
+            "nonCountedProvableCountProvableBigSumIndexedTree"
         }
         Element::CommitmentTree(_, _, _) => "nonCountedCommitmentTree",
         Element::MmrTree(_, _) => "nonCountedMmrTree",
@@ -1031,6 +1059,8 @@ fn not_summed_element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
             "notSummedProvableCountProvableBigSumTree"
         }
+        Element::CountBigSumTree(_, _, _, _) => "notSummedCountBigSumTree",
+        Element::ProvableBigSumTree(_, _, _) => "notSummedProvableBigSumTree",
         Element::ProvableSumTree(_, _, _) => "notSummedProvableSumTree",
         _ => element_type_name(element),
     }
@@ -1048,6 +1078,8 @@ fn not_counted_or_summed_element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountProvableBigSumTree(_, _, _, _) => {
             "notCountedOrSummedProvableCountProvableBigSumTree"
         }
+        Element::CountBigSumTree(_, _, _, _) => "notCountedOrSummedCountBigSumTree",
+        Element::ProvableBigSumTree(_, _, _) => "notCountedOrSummedProvableBigSumTree",
         Element::ProvableSumTree(_, _, _) => "notCountedOrSummedProvableSumTree",
         _ => element_type_name(element),
     }
@@ -2062,6 +2094,26 @@ mod tests {
                 "provableCountSumTree",
             ),
             (Element::ProvableSumTree(None, 2, None), "provableSumTree"),
+            (
+                Element::CountBigSumTree(None, 1, 2, None),
+                "countBigSumTree",
+            ),
+            (
+                Element::ProvableBigSumTree(None, 2, None),
+                "provableBigSumTree",
+            ),
+            (
+                Element::NonCounted(Box::new(Element::CountBigSumTree(None, 1, 2, None))),
+                "nonCountedCountBigSumTree",
+            ),
+            (
+                Element::NotSummed(Box::new(Element::ProvableBigSumTree(None, 2, None))),
+                "notSummedProvableBigSumTree",
+            ),
+            (
+                Element::NotCountedOrSummed(Box::new(Element::CountBigSumTree(None, 1, 2, None))),
+                "notCountedOrSummedCountBigSumTree",
+            ),
             (Element::CommitmentTree(1, 2, None), "commitmentTree"),
             (Element::MmrTree(1, None), "mmrTree"),
             (Element::BulkAppendTree(1, 2, None), "bulkAppendTree"),
@@ -2105,6 +2157,20 @@ mod tests {
             (
                 Element::ProvableCountIndexedTree(None, None, 1, None),
                 "provableCountIndexedTree",
+            ),
+            (
+                Element::ProvableBigSumIndexedTree(None, None, 2, None),
+                "provableBigSumIndexedTree",
+            ),
+            (
+                Element::ProvableCountProvableBigSumIndexedTree(None, 1, 2, vec![(0, None)], None),
+                "provableCountProvableBigSumIndexedTree",
+            ),
+            (
+                Element::NonCounted(Box::new(Element::ProvableBigSumIndexedTree(
+                    None, None, 2, None,
+                ))),
+                "nonCountedProvableBigSumIndexedTree",
             ),
             (
                 Element::ProvableCountProvableSumIndexedTree(None, 1, 2, vec![(0, None)], None),
