@@ -517,6 +517,17 @@ A wildcard is correct only over enums from other repositories that are
 
 ## Client layers
 
+### Native ABI stability
+
+The SDK's C ABI is not generally stable between releases. Exported functions,
+callback tables and `#[repr(C)]` struct layouts may change. Build and ship
+consumers with matching generated headers, language bindings and native
+libraries from the same SDK release or source revision. Mixing versions can
+corrupt memory.
+
+Explicit stability guarantees still apply to individual interfaces, including
+shipped FFI error-code values and layouts documented as frozen.
+
 ### Proof verification is layered
 
 `drive::verify` does the GroveDB work: each verifier is a method on the
