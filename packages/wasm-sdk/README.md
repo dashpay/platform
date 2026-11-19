@@ -291,3 +291,25 @@ await sdk.tokenTransfer('contractId', 0, '1000', 'senderIdentityId', 'recipientI
 
 client.free();
 ```
+
+### Giving up a DPNS name
+
+From protocol version 15 the identity holding a DPNS name can throw it away, one of two ways. `name` is the label (`alice`) or the full name (`alice.dash`); `identityKey` and `signer` are the same as for `dpnsRegisterName`.
+
+```js
+// Delete: the name is free again, anybody may register it.
+// Resolves to the id of the deleted domain document.
+const deletedId = await client.dpnsDeleteName({ name: 'a-name-i-no-longer-want.dash', identityKey, signer });
+
+// Tombstone: the name is deleted and nobody can register it again.
+// Resolves to the tombstone Document the network stored.
+const tombstone = await client.dpnsTombstoneName({ name: 'alice.dash', identity, identityKey, signer });
+
+await client.dpnsIsNameTombstoned('alice.dash'); // true
+await client.dpnsIsNameAvailable('alice');       // false: a tombstoned name is not available
+```
+
+- **A contested name can only be tombstoned.** A name whose normalized label is 3 to 19 characters of `a-z`, `0`, `1` and `-` is contested (`WasmSdk.dpnsIsContestedUsername(label)`): a masternode vote awards it, and the network refuses a delete of it. `dpnsDeleteName` rejects such a name before anything is broadcast.
+- **A tombstone can not be undone by anyone.** Neither its owner nor anybody else can delete a tombstone. The DPNS contract says only that a tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO.
+
+Before protocol version 15 both calls are refused, and no name is tombstoned: `dpnsIsNameTombstoned` answers false when its read succeeds. At any protocol version a read that fails rejects; it is never answered as false.
