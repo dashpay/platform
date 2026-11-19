@@ -23,8 +23,11 @@ use super::*;
 mod reference_expression_tests {
     use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::super::reference_test_setup::{
-        create_document, register_contract_at, replace_document,
+        create_document, create_transition, register_contract_at, replace_document,
     };
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::platform_types::platform::PlatformRef;
+    use dpp::fee::Credits;
     use super::*;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
@@ -285,6 +288,94 @@ mod reference_expression_tests {
             fixture.add_moderator(charter_id(2), stranger).await;
             (fixture, member, moderator, stranger)
         }
+    }
+
+    impl ExpressionFixture {
+        /// The fee check tx judges a resignation by the founder for `charter_id` with `values`
+        /// set by, on its first check, the reservations included, less the gas it reports the
+        /// resignation as wanting: the bounds check tx reserves for it.
+        async fn reserved_bounds_of_resignation(
+            &mut self,
+            charter_id: Identifier,
+            values: &[(&str, Value)],
+        ) -> Credits {
+            let platform_version = PlatformVersion::latest();
+            let mut all = vec![
+                ("submittedCharterId", id_value(charter_id)),
+                ("title", "resigning".into()),
+            ];
+            all.extend(values.iter().cloned());
+            let owner = self.id(Who::Founder);
+            let nonce = self.founder.take_nonce();
+            let (_, transition) = create_transition(
+                &self.contract,
+                "resignation",
+                &all,
+                owner,
+                &self.founder.key,
+                nonce,
+                &self.founder.signer,
+                &mut self.rng,
+                platform_version,
+            )
+            .await;
+            let raw = transition
+                .serialize_to_bytes()
+                .expect("expected the transition to serialize");
+            let state = self.platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &self.platform.drive,
+                state: &state,
+                config: &self.platform.config,
+                core_rpc: &self.platform.core_rpc,
+            };
+            let result = self
+                .platform
+                .check_tx(
+                    &raw,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to check the transaction");
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
+            let checked = result.data.expect("expected a check tx result");
+            checked
+                .fee_result
+                .expect("expected an estimated fee")
+                .total_base_fee()
+                - checked.gas_wanted
+        }
+    }
+
+    /// A typed array's references are checked once for each distinct identifier the array
+    /// holds: the block skips an element repeating an earlier one. Check tx reserves them the
+    /// same way, so `[member, member]` is reserved what `[member]` is, the allowance of each of
+    /// the expression's two lookups once.
+    #[tokio::test]
+    async fn should_reserve_the_lookups_of_a_repeated_element_once() {
+        let (mut fixture, member, _, _) = ExpressionFixture::with_members().await;
+        let once = fixture
+            .reserved_bounds_of_resignation(
+                charter_id(1),
+                &[("members", Value::Array(vec![id_value(member)]))],
+            )
+            .await;
+        let twice = fixture
+            .reserved_bounds_of_resignation(
+                charter_id(1),
+                &[(
+                    "members",
+                    Value::Array(vec![id_value(member), id_value(member)]),
+                )],
+            )
+            .await;
+        let allowance = PlatformVersion::latest()
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert_eq!(once, 2 * allowance);
+        assert_eq!(twice, once);
     }
 
     fn assert_successful(result: &StateTransitionExecutionResult) {

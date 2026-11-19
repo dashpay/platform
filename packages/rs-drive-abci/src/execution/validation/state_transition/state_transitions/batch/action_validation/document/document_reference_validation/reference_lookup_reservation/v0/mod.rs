@@ -1,8 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::{PropertyReference, ReferenceHolder};
+use dpp::data_contract::document_type::{
+    DocumentPropertyReferenceTarget, PropertyReference, ReferenceCombinator, ReferenceHolder,
+};
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
@@ -21,14 +23,16 @@ use crate::execution::types::execution_operation::ValidationOperation;
 
 /// Generation 0: for every lookup leaf of every reference a create's document type declares
 /// (each leaf of an `anyOf` or `allOf` counted, as any of them may be checked), and each value
-/// it is checked for (the property's value, each element of a typed array, the writer for
-/// `ownerRefersTo` and `creatorRefersTo`), the double SHA-256 of its computed key by the blocks
-/// the create's values make it (but for a `chooseFirst` lookup, whose `findBy` hash
-/// `choose_first_reservation` reserves), billed, `lookup_query_credits_reserved`, a bound, and
-/// for a lookup declaring `consume` Drive's estimated delete of a document of the consumed type,
-/// billed
-/// (see [`super::reference_lookup_reservation`]). An unset property makes no lookup, and a
-/// key whose preimage cannot be assembled is refused by structure validation before any read.
+/// it is checked for (the property's value, each distinct identifier of a typed array, as a
+/// block checks a repeated element once, the writer for `ownerRefersTo` and `creatorRefersTo`),
+/// the double SHA-256 of its computed key by the blocks the create's values make it (but for a
+/// `chooseFirst` lookup, whose `findBy` hash `choose_first_reservation` reserves),
+/// `lookup_query_credits_reserved`, and for a lookup declaring `consume` Drive's estimated
+/// delete of a document of the consumed type (see [`super::reference_lookup_reservation`]).
+/// The allowance is a bound; the hash and the delete are billed for a leaf a block checks
+/// whenever the write holds, and bounds for one it checks only when an earlier `anyOf` operand
+/// fails ([`leaves_checked_when_the_write_holds`]). An unset property makes no lookup, and a key
+/// whose preimage cannot be assembled is refused by structure validation before any read.
 #[inline(always)]
 pub(super) fn reference_lookup_reservation_v0(
     action: &StateTransitionAction,
@@ -76,22 +80,22 @@ pub(super) fn reference_lookup_reservation_v0(
             if values == 0 {
                 continue;
             }
-            for declaration in target
-                .leaves()
-                .into_iter()
-                .filter_map(|leaf| leaf.as_any_document_reference())
-            {
+            for (leaf, checked_when_held) in leaves_checked_when_the_write_holds(target) {
+                let Some(declaration) = leaf.as_any_document_reference() else {
+                    continue;
+                };
                 let Some(lookup) = declaration.lookup else {
                     continue;
                 };
                 let mut operations = CheckTxReservation::default();
+                let mut billed_or_bound = Vec::new();
                 // A key's `"."` reads the identifier the reference holds, any of which is as
                 // long as the writer's id, or names the property carrying the reference
                 let reference_id = reads_an_identifier.then_some(writer_id);
                 if let (None, Some((_, key))) = (&lookup.choose_first, lookup.hash_key()) {
                     if let Ok(preimage) = key.preimage(document_type, reference_id, writer_id, data)
                     {
-                        operations.billed.push(ValidationOperation::DoubleSha256(
+                        billed_or_bound.push(ValidationOperation::DoubleSha256(
                             key.function.block_count(preimage.len()),
                         ));
                     }
@@ -128,12 +132,15 @@ pub(super) fn reference_lookup_reservation_v0(
                         }
                     };
                     if let Some(delete_fee) = delete_fee {
-                        operations
-                            .billed
-                            .push(ValidationOperation::PrecalculatedOperation(
-                                FeeResult::new_from_processing_fee(delete_fee),
-                            ));
+                        billed_or_bound.push(ValidationOperation::PrecalculatedOperation(
+                            FeeResult::new_from_processing_fee(delete_fee),
+                        ));
                     }
+                }
+                if checked_when_held {
+                    operations.billed.extend(billed_or_bound);
+                } else {
+                    operations.bounds.extend(billed_or_bound);
                 }
                 for _ in 0..values {
                     reservation.extend(operations.clone());
@@ -145,8 +152,10 @@ pub(super) fn reference_lookup_reservation_v0(
 }
 
 /// How many values a create's reference held by `holder` is checked for: one for the writer
-/// (`ownerRefersTo`, `creatorRefersTo`), one for a set property, each element of a set typed
-/// array when the reference is on its `items`, and none for an unset property.
+/// (`ownerRefersTo`, `creatorRefersTo`), one for a set property, each distinct identifier of a
+/// set typed array when the reference is on its `items` (a block reads each element as a
+/// 32-byte identifier and skips one an earlier element repeats), and none for an unset
+/// property.
 fn checked_values(
     holder: &ReferenceHolder,
     data: &BTreeMap<String, Value>,
@@ -157,7 +166,39 @@ fn checked_values(
     };
     match data.get_optional_at_path(path) {
         Ok(None) | Ok(Some(Value::Null)) | Err(_) => 0,
-        Ok(Some(Value::Array(elements))) if on_elements => elements.len(),
+        Ok(Some(Value::Array(elements))) if on_elements => elements
+            .iter()
+            .filter_map(|element| element.to_hash256().ok())
+            .collect::<BTreeSet<[u8; 32]>>()
+            .len(),
         Ok(Some(_)) => usize::from(!on_elements),
     }
+}
+
+/// The single targets of `target` in declared order, each with whether a block checks it
+/// whenever the write holds: every operand of an `allOf`, and the first of an `anyOf`, which
+/// stops at the first operand that holds. A later `anyOf` operand is checked only when every
+/// earlier one fails.
+fn leaves_checked_when_the_write_holds(
+    target: &DocumentPropertyReferenceTarget,
+) -> Vec<(&DocumentPropertyReferenceTarget, bool)> {
+    fn walk<'a>(
+        target: &'a DocumentPropertyReferenceTarget,
+        checked_when_held: bool,
+        leaves: &mut Vec<(&'a DocumentPropertyReferenceTarget, bool)>,
+    ) {
+        match target.combinator() {
+            None => leaves.push((target, checked_when_held)),
+            Some((combinator, operands)) => {
+                for (index, operand) in operands.operands().iter().enumerate() {
+                    let checked = checked_when_held
+                        && (combinator == ReferenceCombinator::AllOf || index == 0);
+                    walk(operand, checked, leaves);
+                }
+            }
+        }
+    }
+    let mut leaves = Vec::new();
+    walk(target, true, &mut leaves);
+    leaves
 }
