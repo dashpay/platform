@@ -53,7 +53,9 @@ pub(crate) fn create_owner_only_dirs(dir: &Path) -> std::io::Result<()> {
             .recursive(true)
             .mode(0o700)
             .create(dir)?;
-        for component in missing {
+        // A path ending in `..` names a directory that already existed (its
+        // own parent's parent), so it is not one this call created.
+        for component in missing.into_iter().filter(|c| c.file_name().is_some()) {
             std::fs::set_permissions(component, std::fs::Permissions::from_mode(0o700))?;
         }
     }

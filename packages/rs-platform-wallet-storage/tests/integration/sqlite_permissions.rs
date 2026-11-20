@@ -447,3 +447,27 @@ fn should_warn_once_per_restore_under_insecure_destination_parent() {
         }
     });
 }
+
+/// A `..` in a not-yet-existing backup path resolves to a directory that
+/// already exists; only the directories actually created become owner-only.
+#[test]
+fn should_not_chmod_pre_existing_dir_reached_through_dot_dot_in_backup_path() {
+    let tmp = common::secure_tempdir().unwrap();
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(tmp.path().join("w.db"))).unwrap();
+    let existing = tmp.path().join("existing");
+    std::fs::create_dir(&existing).unwrap();
+    std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let dest_dir = existing.join("missing").join("..").join("new");
+
+    persister.backup_to(&dest_dir.join("manual.db")).unwrap();
+
+    let mode = |path: &std::path::Path| std::fs::metadata(path).unwrap().mode() & 0o777;
+    assert_eq!(
+        mode(&existing),
+        0o755,
+        "a pre-existing directory must keep its mode"
+    );
+    assert_eq!(mode(&existing.join("missing")), 0o700);
+    assert_eq!(mode(&existing.join("new")), 0o700);
+}
