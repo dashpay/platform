@@ -26,17 +26,18 @@
 //! session-scoped; hosts read
 //! [`PersistenceCapabilities::TRACKED_MASTERNODES`] to know which they got.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dash_sdk::platform::Fetch;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
-use dashcore::{Address as DashAddress, Network};
+use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, Txid};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
+use key_wallet_manager::WalletManager;
 use serde_json::{json, Value};
 
 use super::list::MasternodeListSummary;
@@ -53,6 +54,11 @@ use crate::manager::PlatformWalletManager;
 use crate::wallet::masternode_withdrawal::{
     execute_masternode_withdrawal, MasternodeWithdrawalKey, RawSecretCoreSigner,
 };
+use crate::wallet::outpoint_locks::{
+    named_collateral, persist_outpoint_locks, track_masternode_collaterals,
+    untrack_masternode_collateral_blocking,
+};
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 // ---------------------------------------------------------------------------
 // Model
@@ -500,6 +506,9 @@ pub struct TrackedMasternodes {
     sdk: std::sync::Arc<dash_sdk::Sdk>,
     persister: std::sync::Arc<dyn PlatformWalletPersistence>,
     network: Network,
+    /// The manager's wallets, so a refresh that learns a registration can
+    /// have the wallet that holds its collateral lock it.
+    wallet_manager: std::sync::Arc<tokio::sync::RwLock<WalletManager<PlatformWalletInfo>>>,
 }
 
 /// Apply one registry mutation and durably replace the persisted set as one
@@ -672,6 +681,24 @@ impl TrackedMasternodes {
         }
     }
 
+    /// The collateral of every tracked masternode whose registration has
+    /// been fetched (see [`Self::refresh`]).
+    pub(crate) fn known_collaterals(&self) -> BTreeSet<OutPoint> {
+        self.registry
+            .rows
+            .read()
+            .expect("tracked masternode registry lock poisoned")
+            .values()
+            .filter_map(|tracked| {
+                let registration = tracked.snapshot.registration.as_ref()?;
+                Some(named_collateral(
+                    &tracked.pro_tx_hash,
+                    registration.collateral,
+                ))
+            })
+            .collect()
+    }
+
     /// The wire proTxHashes currently tracked (for locate's
     /// `already_tracked` mark).
     pub fn hashes(&self) -> std::collections::BTreeSet<[u8; 32]> {
@@ -734,9 +761,20 @@ impl TrackedMasternodes {
 
     /// Stop tracking. Returns `Ok(true)` when a row was removed. The
     /// host owns any attached keys (secure storage) and deletes them
-    /// itself. Blocking.
+    /// itself. The wallets stop watching the masternode's collateral; a
+    /// lock already made stays. Blocking.
     pub fn untrack_blocking(&self, pro_tx_hash: &[u8; 32]) -> Result<bool, PlatformWalletError> {
-        self.mutate_and_persist(|guard| Ok(guard.remove(pro_tx_hash).is_some()))
+        let removed = self.mutate_and_persist(|guard| Ok(guard.remove(pro_tx_hash)))?;
+        let collateral = removed
+            .as_ref()
+            .and_then(|tracked| tracked.snapshot.registration.as_ref())
+            .map(|registration| named_collateral(pro_tx_hash, registration.collateral));
+        if let Some(collateral) = collateral {
+            if !self.known_collaterals().contains(&collateral) {
+                untrack_masternode_collateral_blocking(self.wallet_manager.as_ref(), &collateral);
+            }
+        }
+        Ok(removed.is_some())
     }
 
     /// Rename a tracked masternode (`None` / blank clears the label).
@@ -812,6 +850,19 @@ impl TrackedMasternodes {
             |snapshot| self.learn(pro_tx_hash, snapshot),
         )
         .await?;
+
+        // Once the registration is known, the wallet that holds its
+        // collateral keeps it out of coin selection, now or when the coin
+        // arrives: spending it would end the registration.
+        if let Some(registration) = tracked.snapshot.registration.as_ref() {
+            let collateral = named_collateral(&tracked.pro_tx_hash, registration.collateral);
+            let locked = track_masternode_collaterals(
+                self.wallet_manager.as_ref(),
+                &BTreeSet::from([collateral]),
+            )
+            .await;
+            persist_outpoint_locks(self.persister.as_ref(), locked);
+        }
 
         let entry = outcome
             .list_now
@@ -918,10 +969,12 @@ impl TrackedMasternodes {
         if snapshot.registration.is_none() {
             match self.sdk.get_transaction(&hex::encode(display)).await {
                 Ok(Some(fetched)) => {
-                    if let Some(details) =
-                        registration_from_transaction(&fetched.transaction, fetched.height)
-                    {
-                        snapshot.registration = Some(details);
+                    match fetched_registration(pro_tx_hash, &fetched.transaction, fetched.height) {
+                        Ok(Some(details)) => snapshot.registration = Some(details),
+                        Ok(None) => {}
+                        Err(e) => {
+                            first_error.get_or_insert(e);
+                        }
                     }
                 }
                 Ok(None) => {}
@@ -1066,6 +1119,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sdk: self.sdk_arc(),
             persister: std::sync::Arc::clone(&self.persister) as _,
             network: self.sdk().network,
+            wallet_manager: std::sync::Arc::clone(&self.wallet_manager),
         }
     }
 
@@ -1094,6 +1148,29 @@ fn p2pkh_address(hash: &[u8; 20], network: Network) -> String {
         Payload::PubkeyHash(PubkeyHash::from_byte_array(*hash)),
     )
     .to_string()
+}
+
+/// The registration details of the transaction DAPI returned for
+/// `pro_tx_hash` (wire order), binding the reply to the request first.
+///
+/// DAPI's get-transaction reply is not authenticated, and the details are
+/// cached and name the collateral the wallets keep out of coin selection. So
+/// the transaction must hash to the requested proTxHash before its payload
+/// is trusted: without the check a reply carrying another ProRegTx could
+/// lock an unrelated coin of the wallet.
+fn fetched_registration(
+    pro_tx_hash: &[u8; 32],
+    transaction: &Transaction,
+    height: u32,
+) -> Result<Option<RegistrationDetails>, PlatformWalletError> {
+    let expected = Txid::from_byte_array(*pro_tx_hash);
+    let actual = transaction.txid();
+    if actual != expected {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "DAPI returned transaction {actual} for requested registration transaction {expected}"
+        )));
+    }
+    Ok(registration_from_transaction(transaction, height))
 }
 
 /// Lift a ProRegTx into [`RegistrationDetails`]; `None` for any other
@@ -1606,6 +1683,24 @@ mod tests {
             special_transaction_payload: None,
         };
         assert_eq!(registration_from_transaction(&plain, 1), None);
+    }
+
+    /// A reply that is not the requested transaction is refused, so its
+    /// registration is never cached and its collateral never locked.
+    #[test]
+    fn should_refuse_a_fetched_registration_that_is_not_the_requested_transaction() {
+        use super::super::record::core_v24_vectors::*;
+
+        let transaction = decode(PRO_REG_TX_ONE_PAYOUT);
+        let requested = transaction.txid().to_byte_array();
+
+        assert!(fetched_registration(&requested, &transaction, 15_146)
+            .expect("the requested transaction")
+            .is_some());
+        assert!(matches!(
+            fetched_registration(&[0x99; 32], &transaction, 15_146),
+            Err(PlatformWalletError::InvalidIdentityData(_))
+        ));
     }
 
     /// A tracked node's ProRegTx is fetched once and cached, so a version-3

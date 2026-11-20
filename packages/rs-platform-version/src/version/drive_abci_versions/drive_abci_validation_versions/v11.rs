@@ -28,7 +28,8 @@ use super::{
 ///   and the profile create and replace triggers, as the DashPay contract v3
 ///   (`SYSTEM_DATA_CONTRACT_VERSIONS_V4`) declares their checks as schema keywords; and with a
 ///   refusal of a document transition's replace or delete of a token market contract order
-///   (`ask` and `bid`), as only the token marketplace transitions write them.
+///   (`ask` and `bid`), as only the token marketplace transitions write them. That contract
+///   exists from protocol version 16, so nothing matches these bindings before it.
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
@@ -126,7 +127,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); the token market contract's orders are written by the marketplace transitions only
+                    bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); also lists the token market order rejects, unreachable before that contract exists (protocol version 16)
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
                         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10

@@ -79,10 +79,14 @@ impl<C> Platform<C> {
             )));
         }
 
-        let maybe_contract_fetch_info = self
-            .drive
-            .fetch_contract(contract_id.to_buffer(), None, None, None, platform_version)
-            .unwrap()?;
+        // Through the contract cache, as `getDataContract` reads: a contract stored as its
+        // schemas is parsed, every pattern it holds compiled, each time it is read from state
+        let maybe_contract_fetch_info = self.drive.get_contract_with_fetch_info(
+            contract_id.to_buffer(),
+            true,
+            None,
+            platform_version,
+        )?;
         let contract_fetch_info = check_validation_result_with_data!(maybe_contract_fetch_info
             .ok_or_else(|| {
                 QueryError::NotFound(format!("data contract {} not found", contract_id))

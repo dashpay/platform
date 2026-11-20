@@ -206,7 +206,7 @@ pub enum PlatformWalletFFIResultCode {
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
     /// address-funds transition (a transfer or withdrawal from Platform
-    /// addresses, or an identity registration or top-up from them)
+    /// addresses, or an identity registration from them)
     /// because the submitted address nonce raced Platform's expected next
     /// value (a lagging DAPI replica stale read; consensus code 40603). Its
     /// OWN code so hosts can recognize this specific, self-healing
@@ -214,7 +214,10 @@ pub enum PlatformWalletFFIResultCode {
     /// the mismatch without host intervention. A shield from Platform
     /// addresses does not report it: an endpoint's nonce verdict on a shield
     /// that was dispatched reads as [`Self::ErrorShieldedSpendUnconfirmed`],
-    /// as no proof backs it. The submitted and Platform-
+    /// as no proof backs it, and an identity top-up from Platform addresses
+    /// never reports it: its nonce verdict reads as
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`] (20) for the same
+    /// reason. The submitted and Platform-
     /// expected nonce values travel in the result `message` (the typed
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
@@ -764,6 +767,9 @@ pub enum PlatformWalletFFIResultCode {
     /// failed: do not submit it again. A public contact request sync settles
     /// it, recording the request once its document is proved on Platform and
     /// freeing the pair once its transition is proved unable to write it.
+    /// Also what a public send or accept gets while another public request
+    /// to that identity is being sent: one public request to an identity is
+    /// sent at a time, and nothing is signed for the second.
     /// A private request pending to the identity is
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
@@ -773,8 +779,10 @@ pub enum PlatformWalletFFIResultCode {
     /// failure of the lookup, not Platform's answer that the identity does not
     /// exist, which is [`Self::ErrorIdentityNotFound`] (7)). Nothing was
     /// signed, reserved or broadcast, so the operation may be retried as it
-    /// is; a host need not treat it as possibly delivered. Returned by the
-    /// external identity top-up from Platform addresses.
+    /// is; a host need not treat it as possibly delivered. Returned by every
+    /// identity top-up from Platform addresses (the identity lookup before
+    /// signing): the top-up of any identity and the deprecated external and
+    /// managed ones.
     ErrorIdentityLookupFailed = 80,
 
     /// The named thing does not exist.
@@ -1054,6 +1062,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
+            PlatformWalletError::DocumentEraseBusy => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             PlatformWalletError::IdentityBalanceUnavailable(_) => {
                 PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
             }
@@ -1168,7 +1179,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
-            // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
+            // via `?`/`.into()` from the address-funds paths that promote it;
+            // an identity top-up from addresses never does). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
             // out of scope: `PlatformWalletFFIResult` is by-value and has no
             // per-error value fields, so the values travel in the message

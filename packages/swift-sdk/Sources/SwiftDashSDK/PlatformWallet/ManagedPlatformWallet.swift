@@ -88,6 +88,77 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         )
     }
 
+    // MARK: - Locked outpoints
+
+    /// A transaction output: the txid's raw 32 bytes (the order the FFI
+    /// carries, as `PersistentTxo.outpoint`) and the output index.
+    public struct Outpoint: Hashable, Sendable {
+        public let txid: Data
+        public let vout: UInt32
+
+        public init(txid: Data, vout: UInt32) {
+            self.txid = txid
+            self.vout = vout
+        }
+    }
+
+    /// The outpoints this wallet keeps out of coin selection: the collateral
+    /// of the masternode registrations the wallet has seen in a block (or
+    /// that created their collateral), and every outpoint locked with
+    /// `lockOutpoint`. An entry may name a coin the
+    /// wallet does not hold yet; the coin arrives locked.
+    public func lockedOutpoints() throws -> [Outpoint] {
+        var entries: UnsafePointer<OutPointFFI>?
+        var count: UInt = 0
+        let result = platform_wallet_locked_outpoints(handle, &entries, &count)
+        try result.check()
+        guard let entries, count > 0 else { return [] }
+        defer {
+            platform_wallet_locked_outpoints_free(UnsafeMutablePointer(mutating: entries), count)
+        }
+        return (0..<Int(count)).map { index in
+            Outpoint(txid: hashData(entries[index].txid), vout: entries[index].vout)
+        }
+    }
+
+    /// Lock `outpoint`, so no send, asset lock or special-transaction fee
+    /// spends it until `unlockOutpoint`. Returns `true` when it was not
+    /// locked before. The lock is persisted before this returns.
+    @discardableResult
+    public func lockOutpoint(_ outpoint: Outpoint) async throws -> Bool {
+        try await setOutpointLock(outpoint, locked: true)
+    }
+
+    /// Unlock `outpoint`, so coin selection may spend it again. Unlocking a
+    /// masternode collateral lets a send spend it, and spending it ends the
+    /// masternode registration. Returns `true` when it was locked. The
+    /// unlock is persisted before this returns.
+    @discardableResult
+    public func unlockOutpoint(_ outpoint: Outpoint) async throws -> Bool {
+        try await setOutpointLock(outpoint, locked: false)
+    }
+
+    private func setOutpointLock(_ outpoint: Outpoint, locked: Bool) async throws -> Bool {
+        guard outpoint.txid.count == 32 else {
+            throw PlatformWalletError.invalidParameter("txid must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var entry = OutPointFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                    outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                entry.vout = outpoint.vout
+                var changed = false
+                let result = locked
+                    ? platform_wallet_lock_outpoint(handle, &entry, &changed)
+                    : platform_wallet_unlock_outpoint(handle, &entry, &changed)
+                try result.check()
+                return changed
+            }
+        }.value
+    }
+
     // MARK: - Sub-wallet access
 
     /// Get the platform address wallet for BLAST sync, transfers, and withdrawals.
@@ -797,8 +868,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
     /// identity and updates a managed one's balance the same way. This
     /// method differs only in throwing `PlatformWalletError.identityNotFound`
-    /// for an identity the wallet does not manage. Arguments and signer
-    /// handling match `topUpIdentityFromAddresses`.
+    /// for an identity the wallet does not manage, before Platform is asked,
+    /// and `PlatformWalletError.identityBalanceUnavailable` (retryable) when
+    /// Platform does not show the wallet's identity yet. Arguments and
+    /// signer handling match `topUpIdentityFromAddresses`.
     ///
     /// - Returns: the new credit balance reported by Platform.
     @available(*, deprecated, message: "Use topUpIdentityFromAddresses")
@@ -887,9 +960,6 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                 "identityId must be 32 bytes, got \(identityId.count)"
             )
         }
-        guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter("inputs is empty")
-        }
         // Reject malformed address hashes up front. Earlier
         // revisions used `.prefix(20)` on the FFI build below,
         // which silently truncates oversize hashes and zero-pads
@@ -947,10 +1017,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             let result = withExtendedLifetime((self, addressSigner)) {
                 ffiInputs.withUnsafeBufferPointer { inputsBuf in
                     withUnsafePointer(to: &idTuple) { idPtr in
+                        // An empty list goes over as `(NULL, 0)`; Rust
+                        // refuses it as an invalid parameter.
                         call(
                             handle,
                             idPtr,
-                            inputsBuf.baseAddress,
+                            inputsBuf.isEmpty ? nil : inputsBuf.baseAddress,
                             UInt(inputsBuf.count),
                             addressSignerHandle,
                             &newBalance
@@ -5098,6 +5170,43 @@ extension ManagedPlatformWallet {
 
             try result.check()
             return Data(documentIdBytes)
+        }.value
+    }
+
+    /// Rust owns eligibility, key selection, one submission and lifecycle observations.
+    public func eraseDocumentAndObserve(
+        submittingIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        signer: KeychainSigner
+    ) async throws -> DocumentEraseOutcome {
+        guard submittingIdentityId.count == 32, contractId.count == 32, documentId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Identifiers must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            var output = DocumentEraseOutcomeFFI()
+            let result = withExtendedLifetime((self, signer)) {
+                submittingIdentityId.withUnsafeBytes { owner in
+                    contractId.withUnsafeBytes { contract in
+                        documentType.withCString { type in
+                            documentId.withUnsafeBytes { document in
+                                platform_wallet_document_erase_and_observe(
+                                    self.handle,
+                                    owner.bindMemory(to: UInt8.self).baseAddress!,
+                                    contract.bindMemory(to: UInt8.self).baseAddress!,
+                                    type,
+                                    document.bindMemory(to: UInt8.self).baseAddress!,
+                                    signer.handle,
+                                    &output
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            try result.check()
+            return try DocumentEraseOutcome(ffi: output)
         }.value
     }
 

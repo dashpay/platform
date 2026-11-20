@@ -523,7 +523,9 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * a host shows the pair as unconfirmed and offers neither. A DashPay sync
      * settles it: a request found is recorded as sent, a nonce proved used
      * frees the pair, and otherwise the same signed bytes are broadcast
-     * again. Read it beside [privateRepliesPending]. Empty when the identity
+     * again only while the wallet's tracked state still allows a public
+     * request to the contact; a private send never broadcasts them again.
+     * Read it beside [privateRepliesPending]. Empty when the identity
      * isn't managed.
      * ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
      * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).

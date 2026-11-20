@@ -70,10 +70,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorMasternodeListUnavailable = 46
     /// Address-nonce race: Platform rejected an address-funds transition (a
     /// transfer or withdrawal from Platform addresses, or an identity
-    /// registration or top-up from them) because the submitted address nonce
+    /// registration from them) because the submitted address nonce
     /// raced Platform's expected value (a lagging DAPI replica read). Safe to
     /// retry; the retry re-fetches the nonce and self-heals. A shield does not
-    /// return it (see `errorShieldedSpendUnconfirmed`). The submitted/expected
+    /// return it (see `errorShieldedSpendUnconfirmed`), nor does an identity
+    /// top-up from Platform addresses (its nonce verdict is
+    /// `errorTransactionBroadcastUnconfirmed`, 20). The submitted/expected
     /// nonce values travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
     /// Atomic Core selection found no or insufficient unreserved UTXOs.
@@ -747,7 +749,9 @@ public enum PlatformWalletError: LocalizedError {
     /// settles it: the request proved on Platform is recorded as sent, and one
     /// proved unable to write it frees the pair.
     /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
-    /// reads whether the pair is still held so.
+    /// reads whether the pair is still held so. Also thrown by a public send
+    /// or accept made while another public request to that identity is being
+    /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String)
     /// Platform could not be asked for an identity the operation names (code
     /// 80): the lookup itself failed, before anything was signed, reserved or
@@ -805,12 +809,14 @@ public enum PlatformWalletError: LocalizedError {
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
-    /// Address-nonce race (transfer or withdrawal from Platform addresses, or
-    /// identity registration / top-up from them): Platform rejected the
-    /// transition because the submitted address nonce raced its expected
-    /// value. Safe to retry: the retry re-fetches the address nonce so the
-    /// mismatch self-heals. A shield does not return it. The submitted and
-    /// expected nonce values are in the message.
+    /// Address-nonce race for a transfer, withdrawal, or identity registration
+    /// from Platform addresses: Platform rejected the transition because the
+    /// submitted address nonce raced its expected value. Safe to retry: the
+    /// retry re-fetches the address nonce so the mismatch self-heals. Shields
+    /// and address-funded identity top-ups do not return this error: a top-up
+    /// that cannot be confirmed after a nonce refusal returns
+    /// `transactionBroadcastUnconfirmed` instead. The submitted and expected
+    /// nonce values are in the message.
     case addressNonceMismatch(String)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once

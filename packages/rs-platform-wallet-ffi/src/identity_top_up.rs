@@ -54,7 +54,8 @@ mod submission_result_tests;
 
 /// What a host should know after an address top-up export panicked.
 const ADDRESS_TOP_UP_PANIC_GUIDANCE: &str = "The top-up may have been signed and broadcast \
-     and may still execute: do NOT submit it again; the next sync settles the outcome.";
+     and may still execute: do NOT submit it again. A later sync refreshes balances but \
+     does not confirm this top-up: the wallet keeps no record of it.";
 
 /// [`catch_panic_to_code`] for the address top-up exports. A panic can strike
 /// in the identity lookup, the signing, after the broadcast or in the
@@ -91,9 +92,12 @@ fn catch_address_top_up_panic(
 /// post-transition credit balance.
 ///
 /// Before anything is signed or broadcast: an identity Platform does not
-/// know is `ErrorIdentityNotFound` (7), a failed lookup
-/// `ErrorIdentityLookupFailed` (80), and empty or overflowing funding rows
-/// `ErrorInvalidParameter`.
+/// know is `ErrorIdentityNotFound` (7), a lookup that fails (a transport or
+/// proof failure, not Platform's answer) `ErrorIdentityLookupFailed` (80),
+/// so it may be retried as it is, and empty or overflowing funding rows
+/// `ErrorInvalidParameter`. A wallet removed or re-created since the handle
+/// was taken, or while the host signed, is `NotFound` (98), nothing
+/// broadcast.
 ///
 /// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
 /// executed or may still execute: its result was not proved, or the call
@@ -101,8 +105,15 @@ fn catch_address_top_up_panic(
 /// when it shows every input address at or past the nonce this top-up was
 /// signed with AND the identity balance above the balance the top-up started
 /// from, the one in the identity fetched from Platform before signing; any
-/// other proof is 20 and nothing is reconciled from it. The host must not
-/// submit it again; the next sync settles the outcome.
+/// other proof is 20 and nothing is reconciled from it. So is a broadcast an
+/// endpoint refused once a dispatch may have reached it: the refusal is no
+/// proof that the signed top-up was left out of every mempool, so an
+/// address-nonce refusal is 20 too, and this export never returns
+/// `ErrorAddressNonceMismatch` (21). The host must not submit it again and
+/// keeps it pending. Nothing in the wallet holds its input addresses yet: a
+/// top-up submitted again reads a fresh nonce and is signed and broadcast,
+/// so once this one executed it is a second payment (a durable,
+/// execution-bound record of the pending top-up is dashpay/platform#4270).
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -110,7 +121,8 @@ fn catch_address_top_up_panic(
 ///   the duration of the call.
 /// - `inputs` must point at a valid `[IdentityFundingInputFFI;
 ///   inputs_count]` array; each row's `hash` is a 20-byte address
-///   hash.
+///   hash. It may be null when `inputs_count` is 0: no rows is
+///   `ErrorInvalidParameter`, refused by the library.
 /// - `signer_address_handle` must be a valid, non-destroyed
 ///   `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`.
 ///   The caller retains ownership; this function does NOT destroy it.
@@ -147,11 +159,10 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_from_addresses_with_sig
 /// **Deprecated:** use
 /// [`platform_wallet_top_up_identity_from_addresses_with_signer`], which
 /// tops up any identity and updates a managed one's balance the same way.
-/// This export differs only in refusing an identity the wallet does not
-/// manage with `ErrorIdentityNotFound` (7) before Platform is asked. It
-/// wraps the deprecated
+/// It wraps the deprecated
 /// [`PlatformWallet::top_up_from_addresses`](platform_wallet::PlatformWallet::top_up_from_addresses),
-/// itself built on the top-up of any identity.
+/// itself built on the top-up of any identity, and differs from it only in
+/// the errors below.
 ///
 /// On success `out_new_balance` is populated with the post-transition
 /// credit balance returned by Platform. The Rust-side
@@ -160,18 +171,17 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_from_addresses_with_sig
 /// `ManagedIdentity::balance` read on the same handle reflects the
 /// new value without an extra round trip.
 ///
-/// The identity is read from Platform before anything is signed: a failed
-/// read is `ErrorIdentityLookupFailed` (80) and an identity Platform does
-/// not know `ErrorIdentityNotFound` (7), nothing sent.
+/// An identity the wallet does not manage is `ErrorIdentityNotFound` (7)
+/// before Platform is asked. The identity, and so its balance, is then read
+/// from Platform before anything is signed: a failed read is
+/// `ErrorIdentityLookupFailed` (80) and no identity from Platform
+/// `ErrorIdentityBalanceUnavailable` (58), nothing sent.
 ///
-/// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
-/// executed or may still execute: its result was not proved, or the call
-/// panicked, possibly after signing or broadcast. A result proof counts only
-/// when it shows every input address at or past the nonce this top-up was
-/// signed with AND the identity balance above the balance the top-up started
-/// from, a fresh read from Platform taken before signing; any other proof is
-/// 20 and nothing is reconciled from it. The host must not submit it again;
-/// the next sync settles the outcome.
+/// `ErrorTransactionBroadcastUnconfirmed` (20) and the never-returned
+/// `ErrorAddressNonceMismatch` (21) read as for
+/// [`platform_wallet_top_up_identity_from_addresses_with_signer`]: the host
+/// must not submit the top-up again and keeps it pending
+/// (dashpay/platform#4270).
 ///
 /// # Safety
 /// Same contract as
@@ -204,27 +214,12 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 ///
 /// **Deprecated:** now the same call as
 /// [`platform_wallet_top_up_identity_from_addresses_with_signer`], which
-/// tops up any identity; use that instead.
+/// tops up any identity, with the same result codes; use that instead.
 ///
 /// The identity is fetched from Platform rather than read from the wallet,
 /// is never added to the wallet's identity manager, and the spent
 /// platform-address balances are reconciled. Should the wallet manage the
 /// identity after all, its balance is updated as well.
-///
-/// On success `out_new_balance` is populated with the identity's
-/// post-transition credit balance returned by Platform. An identity
-/// Platform does not know returns `ErrorIdentityNotFound` (7) and a failed
-/// lookup `ErrorIdentityLookupFailed` (80), before anything is signed or
-/// broadcast.
-///
-/// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
-/// executed or may still execute: its result was not proved, or the call
-/// panicked, possibly after signing or broadcast. A result proof counts only
-/// when it shows every input address at or past the nonce this top-up was
-/// signed with AND the identity balance above the balance the top-up started
-/// from, a fresh read from Platform taken before signing; any other proof is
-/// 20 and nothing is reconciled from it. The host must not submit it again;
-/// the next sync settles the outcome.
 ///
 /// # Safety
 /// Same contract as
@@ -280,7 +275,6 @@ unsafe fn address_top_up(
     route: AddressTopUpRoute,
 ) -> PlatformWalletFFIResult {
     check_ptr!(identity_id);
-    check_ptr!(inputs);
     check_ptr!(signer_address_handle);
     check_ptr!(out_new_balance);
     let identity_id_bytes: [u8; 32] = *identity_id;
@@ -327,15 +321,26 @@ unsafe fn address_top_up(
 
 /// Marshal the address-input rows of an address-funded top-up into the
 /// funding rows the library takes; the library sums rows naming the same
-/// address and refuses what it cannot act on.
+/// address and refuses what it cannot act on, no rows at all included.
+/// An empty list may be passed as `(NULL, 0)`; a null `inputs` with a
+/// nonzero count is `ErrorNullPointer`.
 ///
 /// # Safety
 /// `inputs` must point at a valid `[IdentityFundingInputFFI; inputs_count]`
-/// array.
+/// array, or be null when `inputs_count` is 0.
 unsafe fn funding_rows(
     inputs: *const IdentityFundingInputFFI,
     inputs_count: usize,
 ) -> Result<Vec<(PlatformAddress, Credits)>, PlatformWalletFFIResult> {
+    if inputs_count == 0 {
+        return Ok(Vec::new());
+    }
+    if inputs.is_null() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "inputs ptr is null",
+        ));
+    }
     slice::from_raw_parts(inputs, inputs_count)
         .iter()
         .map(|entry| match entry.address_type {

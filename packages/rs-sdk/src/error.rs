@@ -29,7 +29,7 @@ pub enum Error {
     #[error("SDK misconfigured: {0}")]
     Config(String),
     /// The request cannot succeed as written on any node: the SDK refused it before sending
-    /// it, because no node serves it or no answer to it verifies as the requested result
+    /// it, because its query syntax or bounds are invalid, no node serves it, or no answer verifies as the requested result
     /// type, or a fresh verified answer showed that the result cannot be returned as that
     /// type (for example several documents for a single-document fetch).
     ///

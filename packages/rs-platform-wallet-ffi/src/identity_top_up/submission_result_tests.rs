@@ -13,12 +13,11 @@ use dash_sdk::dapi_grpc::platform::v0::{
     StateTransitionBroadcastError, WaitForStateTransitionResultRequest,
     WaitForStateTransitionResultResponse,
 };
-use dash_sdk::dapi_grpc::tonic::metadata::MetadataValue;
 use dash_sdk::dapi_grpc::tonic::Status;
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::query_types::{AddressInfo, AddressInfos};
-use dash_sdk::{Error as SdkError, RequestSettings, Sdk, SdkBuilder};
+use dash_sdk::{RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
@@ -33,7 +32,6 @@ use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTop
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-use platform_wallet::error::promote_address_nonce_error;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::{PlatformWallet, PlatformWalletManager};
@@ -370,15 +368,23 @@ async fn should_keep_unsigned_wait_nonce_verdict_out_of_replacement_recovery() {
     }
 }
 
+/// An endpoint's refusal of the first broadcast dispatch is no proof that the
+/// signed top-up was left out of every mempool: the top-up waits for its
+/// result and, short of a proof, reports unconfirmed (20), never a
+/// safe-to-retry failure.
 #[tokio::test(flavor = "multi_thread")]
-async fn should_preserve_definite_broadcast_refusal_without_waiting() {
+async fn should_wait_for_the_result_after_an_endpoint_refused_the_first_broadcast() {
     Fixture::new(
         Err(Status::invalid_argument("invalid transition")),
         Ok(WaitForStateTransitionResultResponse::default()),
         true,
     )
     .await
-    .check(PlatformWalletFFIResultCode::ErrorUnknown, 1, 0)
+    .check(
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        1,
+        1,
+    )
     .await;
 }
 
@@ -392,26 +398,4 @@ async fn should_preserve_preflight_failure_without_dispatching() {
     .await
     .check(PlatformWalletFFIResultCode::ErrorUnknown, 0, 0)
     .await;
-}
-
-#[test]
-fn should_preserve_definite_nonce_refusal_through_sdk_wallet_and_ffi_conversion() {
-    // MockableStatus drops metadata when serializing transport fixtures. Feed
-    // the real status directly through the same conversion/promotion functions.
-    let mut status = Status::invalid_argument("address nonce mismatch");
-    status.metadata_mut().insert_bin(
-        "dash-serialized-consensus-error-bin",
-        MetadataValue::from_bytes(&nonce_error_bytes()),
-    );
-    let error = SdkError::from(DapiClientError::Transport(TransportError::Grpc(status)));
-    let wallet_error = promote_address_nonce_error(&error)
-        .expect("a definite nonce refusal retains its typed wallet error");
-    let result = PlatformWalletFFIResult::from(wallet_error);
-    assert_eq!(
-        result.code,
-        PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
-    );
-    let message = unsafe { CStr::from_ptr(result.message) }.to_string_lossy();
-    assert!(message.contains("submitted nonce 1"));
-    assert!(message.contains("Platform expected 2"));
 }

@@ -250,13 +250,11 @@ fn address_top_up(
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return 0;
         };
+        // Zero decoded rows go through: the wallet refuses them as an
+        // invalid parameter after its handle and generation checks.
         let Some(inputs) = decode_inputs_blob(env, &inputs_blob) else {
             return 0;
         };
-        if inputs.is_empty() {
-            throw_sdk_exception(env, 1, "inputsBlob contained no funding inputs");
-            return 0;
-        }
 
         let mut out_balance: u64 = 0;
         let result = unsafe {

@@ -260,7 +260,10 @@ class IdentityCredits internal constructor(
      *
      * **Deprecated:** use [topUpIdentityFromAddresses], which tops up any
      * identity and updates a managed one's balance the same way; this one
-     * differs only in refusing an identity the wallet does not manage.
+     * differs only in refusing an identity the wallet does not manage
+     * (`IdentityNotFound`) before Platform is asked, and in reporting
+     * Platform not showing the wallet's identity yet as the retryable
+     * `IdentityBalanceUnavailable`.
      *
      * Cancellation: as for [topUpIdentityFromAddresses].
      */
