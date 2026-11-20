@@ -773,7 +773,7 @@ where
     S: ShieldedStore,
     D: Fn(&dash_sdk::Error) -> String,
 {
-    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     // A transition that names no input is no shield from addresses: its
     // result then shows nothing spent, and it settles as unconfirmed.
     let no_inputs = BTreeMap::new();
@@ -3090,7 +3090,7 @@ async fn broadcast_identity_create(
         })
     };
 
-    match broadcast_tracking_delivery(sdk, st).await {
+    match broadcast_tracking_delivery(sdk, st, None).await {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -4616,7 +4616,7 @@ async fn broadcast_shielded_spend_classified(
     operation: &'static str,
     wait: SpendResultWait,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
-    match broadcast_tracking_delivery(sdk, state_transition).await {
+    match broadcast_tracking_delivery(sdk, state_transition, None).await {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
