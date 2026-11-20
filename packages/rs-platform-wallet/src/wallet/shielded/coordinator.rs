@@ -417,12 +417,14 @@ impl NetworkShieldedCoordinator {
         db_path: PathBuf,
         store: FileBackedShieldedStore,
     ) -> Self {
+        let anchor_cache = RecordedAnchorCache::new();
+        let _ = anchor_cache.for_sdk(&sdk);
         Self {
             sdk,
             network,
             db_path,
             store: Arc::new(RwLock::new(store)),
-            anchor_cache: RecordedAnchorCache::new(),
+            anchor_cache,
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
@@ -536,6 +538,9 @@ impl NetworkShieldedCoordinator {
     ///
     /// [`RECORDED_ANCHOR_CACHE_TTL`]: super::anchor_cache::RECORDED_ANCHOR_CACHE_TTL
     pub async fn prefetch_recorded_anchors(&self) -> Result<(), PlatformWalletError> {
+        let Some(_in_flight) = self.anchor_cache.try_begin_prefetch() else {
+            return Ok(());
+        };
         let tree_size = self
             .store
             .read()
@@ -545,9 +550,6 @@ impl NetworkShieldedCoordinator {
         if self.anchor_cache.get(tree_size).is_some() {
             return Ok(());
         }
-        let Some(_in_flight) = self.anchor_cache.try_begin_prefetch() else {
-            return Ok(());
-        };
         let fetch_started = FetchStamp::now();
         let (recorded, height) = fetch_recorded_anchor_set(&self.sdk).await?;
         self.anchor_cache

@@ -39,7 +39,7 @@
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
@@ -55,6 +55,7 @@ pub const RECORDED_ANCHOR_CACHE_TTL: Duration = Duration::from_secs(30);
 #[derive(Debug)]
 pub struct RecordedAnchorCache {
     ttl: Duration,
+    sdk: OnceLock<Weak<dash_sdk::Sdk>>,
     state: Mutex<CacheState>,
     prefetch_in_flight: AtomicBool,
 }
@@ -149,9 +150,15 @@ impl RecordedAnchorCache {
     pub fn with_ttl(ttl: Duration) -> Self {
         Self {
             ttl,
+            sdk: OnceLock::new(),
             state: Mutex::new(CacheState::default()),
             prefetch_in_flight: AtomicBool::new(false),
         }
+    }
+
+    pub(crate) fn for_sdk(&self, sdk: &Arc<dash_sdk::Sdk>) -> Option<&Self> {
+        let owner = self.sdk.get_or_init(|| Arc::downgrade(sdk));
+        owner.ptr_eq(&Arc::downgrade(sdk)).then_some(self)
     }
 
     /// The cached set, if one is younger than the TTL and was fetched while
@@ -229,6 +236,19 @@ mod tests {
 
     fn set(bytes: &[u8]) -> Arc<HashSet<[u8; 32]>> {
         Arc::new(bytes.iter().map(|b| [*b; 32]).collect())
+    }
+
+    #[test]
+    fn should_reject_a_cache_proved_by_another_sdk() {
+        let first = Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap());
+        let other = Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap());
+        let cache = RecordedAnchorCache::new();
+        assert!(cache.for_sdk(&first).is_some());
+        cache.insert(set(&[1]), FetchStamp::now(), 10, 100);
+        assert!(cache.for_sdk(&other).is_none());
+        assert_eq!(cache.for_sdk(&first).unwrap().get(10).unwrap().1, 100);
+        drop(first);
+        assert!(cache.for_sdk(&other).is_none());
     }
 
     #[test]
