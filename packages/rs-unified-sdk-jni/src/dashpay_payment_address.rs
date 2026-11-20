@@ -11,7 +11,7 @@
 //! `platform_wallet_ffi::dashpay_profile_payment_address`; these exports
 //! only marshal.
 
-use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jbooleanArray, jbyteArray, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -95,11 +95,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_payment
             throw_sdk_exception(env, 1, "text must not be null");
             return ptr::null_mut();
         }
-        let text: String = match env.get_string(&text) {
-            Ok(value) => value.into(),
+        let text: String = match read_jstring(env, &text) {
+            Ok(value) => value,
             Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, &format!("text is not a readable string: {e}"));
+                throw_sdk_exception(env, 1, &format!("text {e}"));
                 return ptr::null_mut();
             }
         };

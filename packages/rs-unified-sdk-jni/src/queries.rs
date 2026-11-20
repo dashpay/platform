@@ -10,7 +10,7 @@ use crate::results::{
     throw_sdk_error, unwrap_address_info, unwrap_address_info_map, unwrap_handle,
     unwrap_identity_balance_map, unwrap_string,
 };
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, read_jstring, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
 use jni::sys::{jboolean, jint, jlong, jobject, jstring};
 use jni::JNIEnv;
@@ -52,13 +52,29 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-/// Convert a nullable JString into an owned CString (None for null/invalid).
-fn opt_c_string(env: &mut JNIEnv, value: &JString) -> Option<CString> {
+/// Convert a nullable JString into an owned CString: `Ok(None)` for JVM
+/// null. An unreadable or malformed string, or one with an interior NUL,
+/// throws and returns `Err(())`, so a filter or cursor is never dropped or
+/// rewritten silently.
+fn opt_c_string(env: &mut JNIEnv, value: &JString, field: &str) -> Result<Option<CString>, ()> {
     if value.is_null() {
-        return None;
+        return Ok(None);
     }
-    let s: String = env.get_string(value).ok()?.into();
-    CString::new(s).ok()
+    let s = match read_jstring(env, value) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
+            return Err(());
+        }
+    };
+    match CString::new(s) {
+        Ok(c) => Ok(Some(c)),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
+    }
 }
 
 fn c_ptr(opt: &Option<CString>) -> *const c_char {
@@ -101,11 +117,12 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
 
 /// Shorthand for the guard + required-string preamble every query shares.
 macro_rules! require_cstr {
-    ($env:expr, $val:expr) => {
-        match opt_c_string($env, &$val) {
-            Some(s) => s,
-            None => {
-                crate::support::throw_sdk_exception($env, 1, "required string argument was null");
+    ($env:expr, $val:expr, $field:expr) => {
+        match opt_c_string($env, &$val, $field) {
+            Ok(Some(s)) => s,
+            Err(()) => return ptr::null_mut(),
+            Ok(None) => {
+                throw_sdk_exception($env, 1, &format!("{} was null", $field));
                 return ptr::null_mut();
             }
         }
@@ -121,7 +138,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     identity_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result = unsafe { dash_sdk_identity_fetch(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
@@ -138,7 +155,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     identity_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result =
             unsafe { dash_sdk_identity_fetch_balance(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
@@ -161,7 +178,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     key_ids: jni::objects::JIntArray,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let key_ids: Vec<u32> = match env.get_array_length(&key_ids) {
             Ok(len) if len > 0 => {
                 let mut buf = vec![0i32; len as usize];
@@ -203,7 +220,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsRes
     name: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let name = require_cstr!(env, name);
+        let name = require_cstr!(env, name, "name");
         let result = unsafe { dash_sdk_dpns_resolve(sdk as *const SDKHandle, name.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
@@ -220,7 +237,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsChe
     label: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let label = require_cstr!(env, label);
+        let label = require_cstr!(env, label, "label");
         let result =
             unsafe { dash_sdk_dpns_check_availability(sdk as *const SDKHandle, label.as_ptr()) };
         unsafe { unwrap_string(env, result) }
@@ -238,7 +255,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsNor
     name: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let name = require_cstr!(env, name);
+        let name = require_cstr!(env, name, "name");
         let result = unsafe { dash_sdk_dpns_normalize_username(name.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
@@ -256,7 +273,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsGet
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result = unsafe {
             dash_sdk_dpns_get_usernames(sdk as *const SDKHandle, id.as_ptr(), limit.max(0) as u32)
         };
@@ -276,7 +293,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dpnsSea
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let prefix = require_cstr!(env, prefix);
+        let prefix = require_cstr!(env, prefix, "prefix");
         let result = unsafe {
             dash_sdk_dpns_search(
                 sdk as *const SDKHandle,
@@ -299,7 +316,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     contract_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, contract_id);
+        let id = require_cstr!(env, contract_id, "contractId");
         let result =
             unsafe { dash_sdk_data_contract_fetch_json(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
@@ -318,10 +335,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     contract_id: JString,
 ) -> jlong {
     guard(&mut env, 0, |env| {
-        let id = match opt_c_string(env, &contract_id) {
-            Some(s) => s,
-            None => {
-                crate::support::throw_sdk_exception(env, 1, "contractId was null");
+        let id = match opt_c_string(env, &contract_id, "contractId") {
+            Ok(Some(s)) => s,
+            Err(()) => return 0,
+            Ok(None) => {
+                throw_sdk_exception(env, 1, "contractId was null");
                 return 0;
             }
         };
@@ -358,8 +376,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     ids_only: jboolean,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let after = opt_c_string(env, &start_after);
-        let at = opt_c_string(env, &start_at);
+        let Ok(after) = opt_c_string(env, &start_after, "startAfter") else {
+            return ptr::null_mut();
+        };
+        let Ok(at) = opt_c_string(env, &start_at, "startAt") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_data_contracts_fetch_by_range(
                 sdk as *const SDKHandle,
@@ -390,9 +412,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
     start_at: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let doc_type = require_cstr!(env, document_type);
-        let where_c = opt_c_string(env, &where_json);
-        let order_c = opt_c_string(env, &order_by_json);
+        let doc_type = require_cstr!(env, document_type, "documentType");
+        let Ok(where_c) = opt_c_string(env, &where_json, "whereJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(order_c) = opt_c_string(env, &order_by_json, "orderByJson") else {
+            return ptr::null_mut();
+        };
         let params = DashSDKDocumentSearchParams {
             data_contract_handle: contract_handle as *const DataContractHandle,
             document_type: doc_type.as_ptr(),
@@ -422,10 +448,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
     limit: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let doc_type = require_cstr!(env, document_type);
-        let where_c = opt_c_string(env, &where_json);
-        let order_c = opt_c_string(env, &order_by_json);
-        let group_c = opt_c_string(env, &group_by_json);
+        let doc_type = require_cstr!(env, document_type, "documentType");
+        let Ok(where_c) = opt_c_string(env, &where_json, "whereJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(order_c) = opt_c_string(env, &order_by_json, "orderByJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(group_c) = opt_c_string(env, &group_by_json, "groupByJson") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_document_count(
                 sdk as *const SDKHandle,
@@ -483,9 +515,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
             );
             return ptr::null_mut();
         }
-        let contract_c = require_cstr!(env, contract_id);
-        let doc_type = require_cstr!(env, document_type);
-        let doc_id = require_cstr!(env, document_id);
+        let contract_c = require_cstr!(env, contract_id, "contractId");
+        let doc_type = require_cstr!(env, document_type, "documentType");
+        let doc_id = require_cstr!(env, document_id, "documentId");
         let result = unsafe {
             dash_sdk_document_fetch_history(
                 sdk as *const SDKHandle,
@@ -519,11 +551,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
     limit: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let doc_type = require_cstr!(env, document_type);
-        let property = require_cstr!(env, sum_property);
-        let where_c = opt_c_string(env, &where_json);
-        let order_c = opt_c_string(env, &order_by_json);
-        let group_c = opt_c_string(env, &group_by_json);
+        let doc_type = require_cstr!(env, document_type, "documentType");
+        let property = require_cstr!(env, sum_property, "sumProperty");
+        let Ok(where_c) = opt_c_string(env, &where_json, "whereJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(order_c) = opt_c_string(env, &order_by_json, "orderByJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(group_c) = opt_c_string(env, &group_by_json, "groupByJson") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_document_sum(
                 sdk as *const SDKHandle,
@@ -557,11 +595,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
     limit: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let doc_type = require_cstr!(env, document_type);
-        let property = require_cstr!(env, sum_property);
-        let where_c = opt_c_string(env, &where_json);
-        let order_c = opt_c_string(env, &order_by_json);
-        let group_c = opt_c_string(env, &group_by_json);
+        let doc_type = require_cstr!(env, document_type, "documentType");
+        let property = require_cstr!(env, sum_property, "sumProperty");
+        let Ok(where_c) = opt_c_string(env, &where_json, "whereJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(order_c) = opt_c_string(env, &order_by_json, "orderByJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(group_c) = opt_c_string(env, &group_by_json, "groupByJson") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_document_average(
                 sdk as *const SDKHandle,
@@ -593,7 +637,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_calcula
     position: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
+        let contract = require_cstr!(env, contract_id, "contractId");
         let pos = position.clamp(0, u16::MAX as jint) as u16;
         let result = unsafe { dash_sdk_calculate_token_id(contract.as_ptr(), pos) };
         unsafe { unwrap_string(env, result) }
@@ -614,8 +658,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     token_ids: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
-        let ids = require_cstr!(env, token_ids);
+        let id = require_cstr!(env, identity_id, "identityId");
+        let ids = require_cstr!(env, token_ids, "tokenIds");
         let result = unsafe {
             dash_sdk_identity_fetch_token_balances(
                 sdk as *const SDKHandle,
@@ -641,7 +685,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
     token_ids: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let ids = require_cstr!(env, token_ids);
+        let ids = require_cstr!(env, token_ids, "tokenIds");
         let result = unsafe { dash_sdk_token_get_statuses(sdk as *const SDKHandle, ids.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
@@ -662,7 +706,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
     token_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, token_id);
+        let id = require_cstr!(env, token_id, "tokenId");
         let result =
             unsafe { dash_sdk_token_get_contract_info(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
@@ -682,7 +726,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     identity_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result =
             unsafe { dash_sdk_identity_fetch_public_keys(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
@@ -700,7 +744,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     identity_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result = unsafe {
             dash_sdk_identity_fetch_balance_and_revision(sdk as *const SDKHandle, id.as_ptr())
         };
@@ -720,7 +764,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     public_key_hash: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let hash = require_cstr!(env, public_key_hash);
+        let hash = require_cstr!(env, public_key_hash, "publicKeyHash");
         let result = unsafe {
             dash_sdk_identity_fetch_by_public_key_hash(sdk as *const SDKHandle, hash.as_ptr())
         };
@@ -742,8 +786,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     start_after: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let hash = require_cstr!(env, public_key_hash);
-        let start = opt_c_string(env, &start_after);
+        let hash = require_cstr!(env, public_key_hash, "publicKeyHash");
+        let Ok(start) = opt_c_string(env, &start_after, "startAfter") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_identity_fetch_by_non_unique_public_key_hash(
                 sdk as *const SDKHandle,
@@ -908,11 +954,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_contest
     order_ascending: jboolean,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
-        let doc_type = require_cstr!(env, document_type_name);
-        let index = require_cstr!(env, index_name);
-        let start = opt_c_string(env, &start_index_values_json);
-        let end = opt_c_string(env, &end_index_values_json);
+        let contract = require_cstr!(env, contract_id, "contractId");
+        let doc_type = require_cstr!(env, document_type_name, "documentTypeName");
+        let index = require_cstr!(env, index_name, "indexName");
+        let Ok(start) = opt_c_string(env, &start_index_values_json, "startIndexValuesJson") else {
+            return ptr::null_mut();
+        };
+        let Ok(end) = opt_c_string(env, &end_index_values_json, "endIndexValuesJson") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_contested_resource_get_resources(
                 sdk as *const SDKHandle,
@@ -949,10 +999,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_contest
     count: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
-        let doc_type = require_cstr!(env, document_type_name);
-        let index = require_cstr!(env, index_name);
-        let values = require_cstr!(env, index_values_json);
+        let contract = require_cstr!(env, contract_id, "contractId");
+        let doc_type = require_cstr!(env, document_type_name, "documentTypeName");
+        let index = require_cstr!(env, index_name, "indexName");
+        let values = require_cstr!(env, index_values_json, "indexValuesJson");
         let result = unsafe {
             dash_sdk_contested_resource_get_vote_state(
                 sdk as *const SDKHandle,
@@ -988,11 +1038,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_contest
     order_ascending: jboolean,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
-        let doc_type = require_cstr!(env, document_type_name);
-        let index = require_cstr!(env, index_name);
-        let values = require_cstr!(env, index_values_json);
-        let contestant = require_cstr!(env, contestant_id);
+        let contract = require_cstr!(env, contract_id, "contractId");
+        let doc_type = require_cstr!(env, document_type_name, "documentTypeName");
+        let index = require_cstr!(env, index_name, "indexName");
+        let values = require_cstr!(env, index_values_json, "indexValuesJson");
+        let contestant = require_cstr!(env, contestant_id, "contestantId");
         let result = unsafe {
             dash_sdk_contested_resource_get_voters_for_identity(
                 sdk as *const SDKHandle,
@@ -1023,7 +1073,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_contest
     order_ascending: jboolean,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result = unsafe {
             dash_sdk_contested_resource_get_identity_votes(
                 sdk as *const SDKHandle,
@@ -1087,7 +1137,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_evonode
     ids_json: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let ids = require_cstr!(env, ids_json);
+        let ids = require_cstr!(env, ids_json, "idsJson");
         let result = unsafe {
             dash_sdk_evonode_get_proposed_epoch_blocks_by_ids(
                 sdk as *const SDKHandle,
@@ -1114,8 +1164,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_evonode
     start_at: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let after = opt_c_string(env, &start_after);
-        let at = opt_c_string(env, &start_at);
+        let Ok(after) = opt_c_string(env, &start_after, "startAfter") else {
+            return ptr::null_mut();
+        };
+        let Ok(at) = opt_c_string(env, &start_at, "startAt") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
                 sdk as *const SDKHandle,
@@ -1179,7 +1233,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_protoco
     count: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let start = opt_c_string(env, &start_pro_tx_hash);
+        let Ok(start) = opt_c_string(env, &start_pro_tx_hash, "startProTxHash") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_protocol_version_get_upgrade_vote_status(
                 sdk as *const SDKHandle,
@@ -1207,8 +1263,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_systemG
     keys_json: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let path = require_cstr!(env, path_json);
-        let keys = opt_c_string(env, &keys_json);
+        let path = require_cstr!(env, path_json, "pathJson");
+        let Ok(keys) = opt_c_string(env, &keys_json, "keysJson") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_system_get_path_elements(sdk as *const SDKHandle, path.as_ptr(), c_ptr(&keys))
         };
@@ -1227,7 +1285,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_systemG
     id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, id);
+        let id = require_cstr!(env, id, "id");
         let result = unsafe {
             dash_sdk_system_get_prefunded_specialized_balance(sdk as *const SDKHandle, id.as_ptr())
         };
@@ -1280,7 +1338,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_systemG
     ascending: jboolean,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let start = opt_c_string(env, &start_epoch);
+        let Ok(start) = opt_c_string(env, &start_epoch, "startEpoch") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_system_get_epochs_info(
                 sdk as *const SDKHandle,
@@ -1307,7 +1367,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_groupGe
     group_contract_position: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
+        let contract = require_cstr!(env, contract_id, "contractId");
         let result = unsafe {
             dash_sdk_group_get_info(
                 sdk as *const SDKHandle,
@@ -1336,8 +1396,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_groupGe
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
-        let start = opt_c_string(env, &start_at_action_id);
+        let contract = require_cstr!(env, contract_id, "contractId");
+        let Ok(start) = opt_c_string(env, &start_at_action_id, "startAtActionId") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_group_get_actions(
                 sdk as *const SDKHandle,
@@ -1367,8 +1429,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_groupGe
     action_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract = require_cstr!(env, contract_id);
-        let action = require_cstr!(env, action_id);
+        let contract = require_cstr!(env, contract_id, "contractId");
+        let action = require_cstr!(env, action_id, "actionId");
         let result = unsafe {
             dash_sdk_group_get_action_signers(
                 sdk as *const SDKHandle,
@@ -1395,7 +1457,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
     token_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, token_id);
+        let id = require_cstr!(env, token_id, "tokenId");
         let result =
             unsafe { dash_sdk_token_get_total_supply(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
@@ -1415,8 +1477,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
     identity_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let token = require_cstr!(env, token_id);
-        let identity = require_cstr!(env, identity_id);
+        let token = require_cstr!(env, token_id, "tokenId");
+        let identity = require_cstr!(env, identity_id, "identityId");
         let result = unsafe {
             dash_sdk_token_get_perpetual_distribution_last_claim(
                 sdk as *const SDKHandle,
@@ -1440,7 +1502,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
     token_ids: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let ids = require_cstr!(env, token_ids);
+        let ids = require_cstr!(env, token_ids, "tokenIds");
         let result = unsafe {
             dash_sdk_token_get_direct_purchase_prices(sdk as *const SDKHandle, ids.as_ptr())
         };
@@ -1464,8 +1526,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let token = require_cstr!(env, token_id);
-        let recipient = opt_c_string(env, &start_recipient);
+        let token = require_cstr!(env, token_id, "tokenId");
+        let Ok(recipient) = opt_c_string(env, &start_recipient, "startRecipient") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_token_get_pre_programmed_distributions(
                 sdk as *const SDKHandle,
@@ -1493,7 +1557,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     identity_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, identity_id);
+        let id = require_cstr!(env, identity_id, "identityId");
         let result = unsafe { dash_sdk_identity_fetch_nonce(sdk as *const SDKHandle, id.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
@@ -1511,8 +1575,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     contract_id: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let identity = require_cstr!(env, identity_id);
-        let contract = require_cstr!(env, contract_id);
+        let identity = require_cstr!(env, identity_id, "identityId");
+        let contract = require_cstr!(env, contract_id, "contractId");
         let result = unsafe {
             dash_sdk_identity_fetch_contract_nonce(
                 sdk as *const SDKHandle,
@@ -1540,10 +1604,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
     purposes: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let ids = require_cstr!(env, identity_ids);
-        let contract = require_cstr!(env, contract_id);
-        let purposes = require_cstr!(env, purposes);
-        let document_type = opt_c_string(env, &document_type_name);
+        let ids = require_cstr!(env, identity_ids, "identityIds");
+        let contract = require_cstr!(env, contract_id, "contractId");
+        let purposes = require_cstr!(env, purposes, "purposes");
+        let Ok(document_type) = opt_c_string(env, &document_type_name, "documentTypeName") else {
+            return ptr::null_mut();
+        };
         let result = unsafe {
             dash_sdk_identities_fetch_contract_keys(
                 sdk as *const SDKHandle,
@@ -1580,7 +1646,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     contract_id: JString,
 ) -> jobject {
     guard(&mut env, ptr::null_mut(), |env| {
-        let id = require_cstr!(env, contract_id);
+        let id = require_cstr!(env, contract_id, "contractId");
         let mut result = unsafe {
             dash_sdk_data_contract_fetch_with_serialization(
                 sdk as *const SDKHandle,
@@ -1679,9 +1745,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_addKnow
     serialized_contracts: JObjectArray,
 ) {
     guard(&mut env, (), |env| {
-        let ids = match opt_c_string(env, &contract_ids) {
-            Some(s) => s,
-            None => {
+        let ids = match opt_c_string(env, &contract_ids, "contractIds") {
+            Ok(Some(s)) => s,
+            Err(()) => return,
+            Ok(None) => {
                 throw_sdk_exception(env, 1, "contractIds was null");
                 return;
             }
@@ -1789,7 +1856,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
         let Some(contract) = read_bytes(env, &serialized_contract, "serializedContract") else {
             return ptr::null_mut();
         };
-        let document_type = require_cstr!(env, document_type);
+        let document_type = require_cstr!(env, document_type, "documentType");
         // `contract` and `document_type` outlive the synchronous call.
         let result = unsafe {
             dash_sdk_data_contract_get_property_constraints(
@@ -1836,8 +1903,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
         let Some(contract) = read_bytes(env, &serialized_contract, "serializedContract") else {
             return ptr::null_mut();
         };
-        let document_type = require_cstr!(env, document_type);
-        let properties = require_cstr!(env, properties_json);
+        let document_type = require_cstr!(env, document_type, "documentType");
+        let properties = require_cstr!(env, properties_json, "propertiesJson");
         // The FFI reads exactly 32 bytes behind the owner pointer.
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
@@ -1880,7 +1947,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     contract_json: JString,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let contract_json = require_cstr!(env, contract_json);
+        let contract_json = require_cstr!(env, contract_json, "contractJson");
         // `contract_json` outlives the synchronous call.
         let result = unsafe {
             dash_sdk_data_contract_json_expand_property_type_shorthands(contract_json.as_ptr())

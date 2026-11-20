@@ -18,7 +18,7 @@
 //! `can_sign_with` stays synchronous: a fast Kotlin lookup.
 
 use crate::results::{unwrap_handle, unwrap_signature};
-use crate::support::{guard, JVM};
+use crate::support::{guard, read_jstring, throw_sdk_exception, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jbyteArray, jint, jlong};
 use jni::JNIEnv;
@@ -265,12 +265,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_complete
         let message: String = if error_message.is_null() {
             String::from("signing failed")
         } else {
-            env.get_string(&error_message)
-                .map(|s| s.into())
-                .unwrap_or_else(|_| {
-                    let _ = env.exception_clear();
-                    String::from("signing failed")
-                })
+            read_jstring(env, &error_message).unwrap_or_else(|_| {
+                let _ = env.exception_clear();
+                String::from("signing failed")
+            })
         };
         unsafe { complete_with_error(*pending, error_code, &message) };
     });
@@ -294,7 +292,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
             env.convert_byte_array(&data),
         ) else {
             let _ = env.exception_clear();
-            crate::support::throw_sdk_exception(env, 1, "invalid signer arguments");
+            throw_sdk_exception(env, 1, "invalid signer arguments");
             return ptr::null_mut();
         };
         let mut key = key;
@@ -369,22 +367,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         // Decode the non-secret arguments FIRST, the mnemonic LAST: a
         // sibling-conversion failure must never orphan an already-decoded
         // plaintext copy of the phrase.
-        let (Ok(path_str), Ok(payload)) = (
-            env.get_string(&derivation_path).map(String::from),
-            env.convert_byte_array(&data),
-        ) else {
+        // Each read short-circuits: after a failed read an exception may be
+        // pending, and CheckJNI aborts on any further JNI call.
+        let Ok(path_str) = read_jstring(env, &derivation_path) else {
             let _ = env.exception_clear();
-            crate::support::throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
+            throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
+            return ptr::null_mut();
+        };
+        let Ok(payload) = env.convert_byte_array(&data) else {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "invalid mnemonic-sign arguments");
             return ptr::null_mut();
         };
         let Ok(path_c) = CString::new(path_str) else {
             // Interior NULs would truncate the C string mid-derivation-path;
             // reject rather than silently sign under a wrong path.
-            crate::support::throw_sdk_exception(
-                env,
-                1,
-                "derivation path contained an interior NUL",
-            );
+            throw_sdk_exception(env, 1, "derivation path contained an interior NUL");
             return ptr::null_mut();
         };
 
@@ -402,7 +400,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
             Ok(len) if len >= 0 => len as usize,
             _ => {
                 let _ = env.exception_clear();
-                crate::support::throw_sdk_exception(env, 1, "invalid mnemonic argument");
+                throw_sdk_exception(env, 1, "invalid mnemonic argument");
                 return ptr::null_mut();
             }
         };
@@ -417,7 +415,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
             };
             if env.get_byte_array_region(&mnemonic_utf8, 0, dst).is_err() {
                 let _ = env.exception_clear();
-                crate::support::throw_sdk_exception(env, 1, "invalid mnemonic argument");
+                throw_sdk_exception(env, 1, "invalid mnemonic argument");
                 return ptr::null_mut();
             }
         }
@@ -425,7 +423,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         // rather than sign under a partial phrase. Then NUL-terminate in place —
         // capacity is already N+1, so this `push` cannot reallocate.
         if mnemonic_bytes.contains(&0) {
-            crate::support::throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
+            throw_sdk_exception(env, 1, "mnemonic contained an interior NUL");
             return ptr::null_mut();
         }
         mnemonic_bytes.push(0);
@@ -468,11 +466,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         drop(mnemonic_bytes);
 
         if rc != 0 || err_tag != SIGN_WITH_MNEMONIC_OK {
-            crate::support::throw_sdk_exception(
-                env,
-                1,
-                &format!("derive-and-sign failed (tag {err_tag})"),
-            );
+            throw_sdk_exception(env, 1, &format!("derive-and-sign failed (tag {err_tag})"));
             return ptr::null_mut();
         }
 

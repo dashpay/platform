@@ -44,7 +44,9 @@
 
 use crate::decision_proposals::read_fixed_bytes;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
+use crate::support::{
+    guard, read_jstring, take_pwffi_error, throw_sdk_exception, JStringError, JVM,
+};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -222,11 +224,11 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let owned: String = match env.get_string(s) {
-        Ok(v) => v.into(),
-        Err(_) => {
+    let owned: String = match read_jstring(env, s) {
+        Ok(v) => v,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return None;
         }
     };
@@ -257,11 +259,11 @@ fn read_cstring_opt(
     if s.is_null() {
         return Ok(None);
     }
-    let owned: String = match env.get_string(s) {
-        Ok(v) => v.into(),
-        Err(_) => {
+    let owned: String = match read_jstring(env, s) {
+        Ok(v) => v,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return Err(());
         }
     };
@@ -1480,49 +1482,25 @@ const IDENTITY_BALANCE_BLOB_LEN: usize = 1 + 4 + 8;
 /// holds an unpaired surrogate, or holds a NUL (a C string ends at its
 /// first). A caller for which null is a value checks for it first.
 ///
-/// The code units are read as UTF-16 and decoded strictly. The modified
-/// UTF-8 view `get_string` reads is not used here: for a string holding
-/// both a supplementary character and a NUL, ART's encoding of it does not
-/// decode, and the fallback is a lossy one that would replace the NUL
-/// instead of refusing it. Unlike [`read_cstring_required`] an empty string
+/// The string is read through [`read_jstring`], which decodes the UTF-16
+/// code units strictly. Unlike [`read_cstring_required`] an empty string
 /// passes, for Rust to judge.
 fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
-    // `GetStringLength` requires a non-null string: checked here, at the raw
-    // call, whatever the caller checked.
     if s.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let raw = env.get_raw();
-    // SAFETY: `raw` is this thread's live `JNIEnv`, and `s` a live string
-    // reference, non-null as checked above. `GetStringRegion` writes
-    // exactly `length` code units into a buffer of that length.
-    let units = unsafe {
-        match ((**raw).GetStringLength, (**raw).GetStringRegion) {
-            (Some(string_length), Some(string_region)) => {
-                let length = string_length(raw, s.as_raw());
-                usize::try_from(length).ok().map(|capacity| {
-                    let mut units = vec![0u16; capacity];
-                    string_region(raw, s.as_raw(), 0, length, units.as_mut_ptr());
-                    units
-                })
-            }
-            _ => None,
+    let text = match read_jstring(env, s) {
+        Ok(text) => text,
+        Err(JStringError::MalformedUtf16) => {
+            throw_sdk_exception(env, 1, &format!("{field} is not valid UTF-16"));
+            return None;
         }
-    };
-    // A pending exception (or one that cannot be checked) is a failed read.
-    if !matches!(env.exception_check(), Ok(false)) {
-        let _ = env.exception_clear();
-        throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
-        return None;
-    }
-    let Some(units) = units else {
-        throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
-        return None;
-    };
-    let Ok(text) = String::from_utf16(&units) else {
-        throw_sdk_exception(env, 1, &format!("{field} is not valid UTF-16"));
-        return None;
+        Err(JStringError::Jni(_)) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
+            return None;
+        }
     };
     match std::ffi::CString::new(text) {
         Ok(c) => Some(c),

@@ -22,7 +22,7 @@
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
 };
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, read_jstring, throw_sdk_exception};
 use dashcore::{Address, BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
 use jni::objects::{JByteArray, JClass, JIntArray, JLongArray, JObject, JObjectArray, JString};
 use jni::sys::jint;
@@ -185,10 +185,7 @@ fn read_outputs(
         let element = env
             .get_object_array_element(addresses, i as i32)
             .map_err(jni_err)?;
-        let text: String = env
-            .get_string(&JString::from(element))
-            .map_err(jni_err)?
-            .into();
+        let text = read_jstring(env, &JString::from(element)).map_err(|e| e.to_string())?;
         let address = Address::from_str(&text)
             .map_err(|e| format!("bad fixture address {text}: {e}"))?
             .assume_checked();

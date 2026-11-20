@@ -1,6 +1,7 @@
 //! Shared JNI plumbing: JVM caching, panic guards, exception throwing.
 
-use jni::objects::{JThrowable, JValue};
+use jni::errors::{Error as JniError, JniError as JniCallError};
+use jni::objects::{JString, JThrowable, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use platform_wallet_ffi::error::{
@@ -9,8 +10,10 @@ use platform_wallet_ffi::error::{
 };
 use rs_sdk_ffi::{DashSDKConsensusErrorKind, FFINetwork};
 use std::ffi::CStr;
+use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
+use zeroize::Zeroize;
 
 /// The platform-wallet kind that shares each rs-sdk-ffi consensus kind's
 /// meaning. The match is exhaustive, so a family added to one FFI alone
@@ -207,6 +210,117 @@ fn throw_sdk_exception_with(
     }
 }
 
+/// Why a Java `String` argument could not be read by [`read_jstring`].
+#[derive(Debug)]
+pub(crate) enum JStringError {
+    /// The string could not be read: a null reference, a Java exception
+    /// raised by the read (left pending for the caller to clear or
+    /// propagate), or a buffer that could not be allocated.
+    Jni(JniError),
+    /// The string holds an unpaired UTF-16 surrogate, so it has no UTF-8
+    /// form. Nothing is pending.
+    MalformedUtf16,
+}
+
+impl fmt::Display for JStringError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JStringError::Jni(e) => write!(f, "could not be read: {e}"),
+            JStringError::MalformedUtf16 => f.write_str("is not well-formed UTF-16"),
+        }
+    }
+}
+
+impl From<JStringError> for JniError {
+    fn from(e: JStringError) -> Self {
+        match e {
+            JStringError::Jni(e) => e,
+            JStringError::MalformedUtf16 => JniError::WrongJValueType(
+                "well-formed UTF-16 String",
+                "String with an unpaired surrogate",
+            ),
+        }
+    }
+}
+
+/// Read a Java `String` as UTF-8, rejecting an unpaired surrogate.
+///
+/// `JNIEnv::get_string(..).into()` decodes Java's modified UTF-8 and, when
+/// that fails, silently falls back to a lossy conversion, so a string with an
+/// unpaired surrogate reaches Rust as different text (U+FFFD in its place).
+/// Every string argument goes through this helper instead: it copies the
+/// UTF-16 code units with `GetStringRegion` and decodes them strictly, so
+/// malformed input is refused rather than rewritten, whichever way the VM
+/// encodes modified UTF-8.
+///
+/// After a failed read it makes no further JNI call, so a pending exception
+/// is never followed by one (CheckJNI aborts on that). The code units are
+/// validated before any text is decoded, the output is allocated once at its
+/// exact size, and the UTF-16 copy is zeroed before it is dropped, since one
+/// argument is a mnemonic.
+pub(crate) fn read_jstring(env: &mut JNIEnv, s: &JString) -> Result<String, JStringError> {
+    if s.is_null() {
+        return Err(JStringError::Jni(JniError::NullPtr("read_jstring string")));
+    }
+    let mut units = read_utf16_units(env, s)?;
+    let decoded = decode_utf16_strict(&units);
+    units.zeroize();
+    decoded
+}
+
+fn read_utf16_units(env: &mut JNIEnv, s: &JString) -> Result<Vec<u16>, JStringError> {
+    let raw = env.get_raw();
+    // SAFETY: `raw` is this thread's live `JNIEnv` and its function table is
+    // valid for the thread's lifetime.
+    let functions = unsafe { ((**raw).GetStringLength, (**raw).GetStringRegion) };
+    let (Some(string_length), Some(string_region)) = functions else {
+        return Err(JStringError::Jni(JniError::JNIEnvMethodNotFound(
+            "GetStringRegion",
+        )));
+    };
+    // SAFETY: `s` is a live, non-null string reference (checked by the
+    // caller); `GetStringLength` neither throws nor retains it.
+    let length = unsafe { string_length(raw, s.as_raw()) };
+    let capacity = usize::try_from(length)
+        .map_err(|_| JStringError::Jni(JniError::JniCall(JniCallError::Other(length))))?;
+    let mut units: Vec<u16> = Vec::new();
+    if units.try_reserve_exact(capacity).is_err() {
+        return Err(JStringError::Jni(JniError::JniCall(JniCallError::NoMemory)));
+    }
+    units.resize(capacity, 0);
+    // SAFETY: `units` holds exactly `length` code units, which is what
+    // `GetStringRegion` writes for the range `0..length` of `s`.
+    unsafe { string_region(raw, s.as_raw(), 0, length, units.as_mut_ptr()) };
+    if !matches!(env.exception_check(), Ok(false)) {
+        units.zeroize();
+        return Err(JStringError::Jni(JniError::JavaException));
+    }
+    Ok(units)
+}
+
+/// Strict UTF-16 to UTF-8: an unpaired surrogate is an error, never U+FFFD.
+///
+/// The whole input is validated before any character is written, so a
+/// rejected string leaves no decoded prefix behind, and the output is
+/// reserved once at its exact length, so it is never reallocated (which
+/// would leave an unwiped copy).
+fn decode_utf16_strict(units: &[u16]) -> Result<String, JStringError> {
+    let mut utf8_len = 0usize;
+    for c in char::decode_utf16(units.iter().copied()) {
+        match c {
+            Ok(c) => utf8_len += c.len_utf8(),
+            Err(_) => return Err(JStringError::MalformedUtf16),
+        }
+    }
+    let mut out = String::new();
+    if out.try_reserve_exact(utf8_len).is_err() {
+        return Err(JStringError::Jni(JniError::JniCall(JniCallError::NoMemory)));
+    }
+    // Every item is `Ok`: the loop above returned on the first error.
+    out.extend(char::decode_utf16(units.iter().copied()).filter_map(Result::ok));
+    Ok(out)
+}
+
 /// Run an export body under `catch_unwind` so a Rust panic surfaces as a
 /// Java `RuntimeException` instead of unwinding across the JNI boundary
 /// (which is undefined behavior).
@@ -229,7 +343,7 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 
 #[cfg(test)]
 mod tests {
-    use super::net_from_ord;
+    use super::{decode_utf16_strict, net_from_ord, JStringError};
     use rs_sdk_ffi::FFINetwork;
 
     #[test]
@@ -239,5 +353,34 @@ mod tests {
         assert_eq!(net_from_ord(2), FFINetwork::Devnet);
         assert_eq!(net_from_ord(3), FFINetwork::Regtest);
         assert_eq!(net_from_ord(-1), FFINetwork::Testnet, "unknown → Testnet");
+    }
+
+    fn utf16(s: &str) -> Vec<u16> {
+        s.encode_utf16().collect()
+    }
+
+    #[test]
+    fn should_decode_well_formed_utf16_including_supplementary_characters() {
+        for text in ["", "memo", "caf\u{e9}", "\u{1F600} pay", "a\u{0}b"] {
+            let decoded = decode_utf16_strict(&utf16(text)).unwrap();
+            assert_eq!(decoded, text);
+            // Reserved once at the exact size: no reallocation left an
+            // unwiped earlier buffer behind.
+            assert_eq!(decoded.capacity(), text.len());
+        }
+    }
+
+    #[test]
+    fn should_reject_an_unpaired_surrogate_instead_of_replacing_it() {
+        let lone_high = [u16::from(b'a'), 0xD800, u16::from(b'b')];
+        let lone_low = [0xDC00, u16::from(b'a')];
+        let trailing_high = [u16::from(b'a'), 0xDBFF];
+        let reversed_pair = [0xDE00, 0xD83D];
+        for units in [&lone_high[..], &lone_low, &trailing_high, &reversed_pair] {
+            assert!(matches!(
+                decode_utf16_strict(units),
+                Err(JStringError::MalformedUtf16)
+            ));
+        }
     }
 }

@@ -21,7 +21,7 @@
 
 use crate::identity::ManagedIdentityHandleGuard;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{
     jboolean, jbooleanArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE, JNI_TRUE,
@@ -47,16 +47,12 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
     // bare throw_new would look for a (String) ctor that does not exist
     // and surface as NoSuchMethodError instead of a DashSdkError.
     if arr.is_null() {
-        crate::support::throw_sdk_exception(env, 1, &format!("{field} must not be null"));
+        throw_sdk_exception(env, 1, &format!("{field} must not be null"));
         return None;
     }
     let len = env.get_array_length(arr).ok()? as usize;
     if len != 32 {
-        crate::support::throw_sdk_exception(
-            env,
-            1,
-            &format!("{field} must be 32 bytes, got {len}"),
-        );
+        throw_sdk_exception(env, 1, &format!("{field} must be 32 bytes, got {len}"));
         return None;
     }
     let mut buf = [0i8; 32];
@@ -295,11 +291,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_searchD
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let prefix_str: String = match env.get_string(&prefix) {
-            Ok(s) => s.into(),
-            Err(_) => return ptr::null_mut(),
+        let prefix_str: String = match read_jstring(env, &prefix) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, &format!("prefix {e}"));
+                return ptr::null_mut();
+            }
         };
         let Ok(prefix_c) = std::ffi::CString::new(prefix_str) else {
+            throw_sdk_exception(env, 1, "prefix contained an interior NUL");
             return ptr::null_mut();
         };
         let mut results: *mut platform_wallet_ffi::DpnsSearchResultFFI = ptr::null_mut();
@@ -715,11 +716,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
             match env.convert_byte_array(&avatar_bytes) {
                 Ok(bytes) => Some(bytes),
                 Err(e) => {
-                    crate::support::throw_sdk_exception(
-                        env,
-                        1,
-                        &format!("avatarBytes is not readable: {e}"),
-                    );
+                    throw_sdk_exception(env, 1, &format!("avatarBytes is not readable: {e}"));
                     return ptr::null_mut();
                 }
             }
@@ -842,23 +839,16 @@ fn opt_jstring_to_cstring(
     if s.is_null() {
         return Ok(None);
     }
-    let value: String = match env.get_string(s) {
-        Ok(v) => v.into(),
+    let value: String = match read_jstring(env, s) {
+        Ok(v) => v,
         Err(e) => {
-            crate::support::throw_sdk_exception(
-                env,
-                1,
-                &format!("{field} is not a readable string: {e}"),
-            );
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return Err(());
         }
     };
     std::ffi::CString::new(value).map(Some).map_err(|_| {
-        crate::support::throw_sdk_exception(
-            env,
-            1,
-            &format!("{field} must not contain a NUL character"),
-        );
+        throw_sdk_exception(env, 1, &format!("{field} must not contain a NUL character"));
     })
 }
 
@@ -930,7 +920,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendCon
         let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
             Ok(Some(c)) => c,
             Ok(None) => {
-                crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+                throw_sdk_exception(env, 1, "uri must not be null");
                 return 0;
             }
             Err(()) => return 0,
@@ -1005,7 +995,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseIn
         let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
             Ok(Some(c)) => c,
             Ok(None) => {
-                crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+                throw_sdk_exception(env, 1, "uri must not be null");
                 return ptr::null_mut();
             }
             Err(()) => return ptr::null_mut(),
@@ -1079,19 +1069,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
         if amount_duffs <= 0 {
-            crate::support::throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            throw_sdk_exception(env, 1, "amountDuffs must be positive");
             return ptr::null_mut();
         }
         if funding_account_index < 0 {
-            crate::support::throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
+            throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
             return ptr::null_mut();
         }
         if !(1..=jlong::from(u32::MAX)).contains(&now_unix) {
-            crate::support::throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
+            throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
             return ptr::null_mut();
         }
         if core_signer_handle == 0 {
-            crate::support::throw_sdk_exception(env, 1, "coreSignerHandle must be non-zero");
+            throw_sdk_exception(env, 1, "coreSignerHandle must be non-zero");
             return ptr::null_mut();
         }
         let inviter_id = if inviter_identity_id.is_null() {
@@ -1107,7 +1097,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             Err(()) => return ptr::null_mut(),
         };
         if inviter_id.is_some() && username_c.is_none() {
-            crate::support::throw_sdk_exception(
+            throw_sdk_exception(
                 env,
                 1,
                 "inviterUsername is required when inviterIdentityId is set",
@@ -1146,7 +1136,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             // result: the funded voucher is recorded (persistence callback)
             // and reclaimable from the Sent list, but there is nothing to
             // share — fail loudly instead of returning "".
-            crate::support::throw_sdk_exception(
+            throw_sdk_exception(
                 env,
                 99,
                 "create succeeded but returned no link; the voucher is recorded and reclaimable",
@@ -1185,17 +1175,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
         let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
             Ok(Some(c)) => c,
             Ok(None) => {
-                crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+                throw_sdk_exception(env, 1, "uri must not be null");
                 return ptr::null_mut();
             }
             Err(()) => return ptr::null_mut(),
         };
         if identity_index < 0 {
-            crate::support::throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
             return ptr::null_mut();
         }
         if signer_handle == 0 {
-            crate::support::throw_sdk_exception(env, 1, "signerHandle must be non-zero");
+            throw_sdk_exception(env, 1, "signerHandle must be non-zero");
             return ptr::null_mut();
         }
         // Same clock guard as createInvitation — the shared C API takes a
@@ -1203,7 +1193,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
         // (the FFI itself ignores the claim timestamp, but the two
         // invitation entry points stay consistent).
         if !(1..=jlong::from(u32::MAX)).contains(&now_unix) {
-            crate::support::throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
+            throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
             return ptr::null_mut();
         }
         let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
@@ -1234,11 +1224,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
         let identity_id = match env.byte_array_from_slice(&out_id) {
             Ok(value) => value,
             Err(_) => {
-                crate::support::throw_sdk_exception(
-                    env,
-                    99,
-                    "identity result byte[] allocation failed",
-                );
+                throw_sdk_exception(env, 99, "identity result byte[] allocation failed");
                 return ptr::null_mut();
             }
         };
@@ -1257,11 +1243,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
             }
             Err(_) => {
                 let _ = env.exception_clear();
-                crate::support::throw_sdk_exception(
-                    env,
-                    99,
-                    "identity result object allocation failed",
-                );
+                throw_sdk_exception(env, 99, "identity result object allocation failed");
                 ptr::null_mut()
             }
         }

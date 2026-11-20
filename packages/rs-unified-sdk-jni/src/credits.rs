@@ -29,7 +29,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
@@ -140,11 +140,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_withdra
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return;
         };
-        let addr_str: String = match env.get_string(&to_address) {
-            Ok(s) => s.into(),
-            Err(_) => {
+        let addr_str: String = match read_jstring(env, &to_address) {
+            Ok(s) => s,
+            Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "toAddress string was null/invalid");
+                throw_sdk_exception(env, 1, &format!("toAddress {e}"));
                 return;
             }
         };

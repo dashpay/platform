@@ -5,7 +5,7 @@
 
 use crate::decision_proposals::{read_cstring, string_or_null};
 use crate::results::{unwrap_handle, unwrap_void};
-use crate::support::{guard, net_from_ord};
+use crate::support::{guard, net_from_ord, read_jstring, throw_sdk_exception};
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -152,8 +152,12 @@ fn create(
     settings: SdkSettings,
 ) -> jlong {
     guard(env, 0, |env| {
-        let dapi = to_c_string(env, &settings.dapi_addresses);
-        let quorum = to_c_string(env, &settings.quorum_url);
+        let Ok(dapi) = to_c_string(env, &settings.dapi_addresses, "dapiAddresses") else {
+            return 0;
+        };
+        let Ok(quorum) = to_c_string(env, &settings.quorum_url, "quorumUrl") else {
+            return 0;
+        };
         let config = DashSDKConfig {
             network: net_from_ord(settings.network),
             dapi_addresses: dapi.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
@@ -242,7 +246,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SdkNative_enableFileL
     session_root: JString,
 ) -> jboolean {
     guard(&mut env, JNI_FALSE, |env| {
-        let Some(path) = to_c_string(env, &session_root) else {
+        let Ok(Some(path)) = to_c_string(env, &session_root, "sessionRoot") else {
             return JNI_FALSE;
         };
         let installed = unsafe {
@@ -272,14 +276,29 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SdkNative_hasShielded
     }
 }
 
-/// Convert a nullable `JString` to an owned `CString`, treating JNI failures
-/// as null. The returned pointer feeds borrowed-string FFI config fields.
-fn to_c_string(env: &mut JNIEnv, value: &JString) -> Option<CString> {
+/// Convert a nullable `JString` to an owned `CString`: `Ok(None)` for JVM
+/// null. An unreadable or malformed string, or one with an interior NUL,
+/// throws and returns `Err(())` rather than falling back to the default the
+/// null pointer selects. The pointer feeds borrowed-string FFI config fields.
+fn to_c_string(env: &mut JNIEnv, value: &JString, field: &str) -> Result<Option<CString>, ()> {
     if value.is_null() {
-        return None;
+        return Ok(None);
     }
-    let rust_string: String = env.get_string(value).ok()?.into();
-    CString::new(rust_string).ok()
+    let rust_string = match read_jstring(env, value) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
+            return Err(());
+        }
+    };
+    match CString::new(rust_string) {
+        Ok(c) => Ok(Some(c)),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
+    }
 }
 
 // Keep the raw C ABI of the dependent FFI crates reachable so their symbols

@@ -46,7 +46,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jstring, JNI_TRUE};
 use jni::JNIEnv;
@@ -132,23 +132,25 @@ fn read_opt_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Opti
 }
 
 /// Read an optional Java `String` into `Option<CString>`. JVM null →
-/// `Ok(None)`. Returns `Err(())` (after throwing) on an interior NUL; a JNI
-/// read error is treated as null.
-fn read_cstring_opt(env: &mut JNIEnv, s: &JString) -> Result<Option<CString>, ()> {
+/// `Ok(None)`. Returns `Err(())` (after throwing) on an unreadable or
+/// malformed string or an interior NUL, so a note is never dropped or
+/// rewritten silently.
+fn read_cstring_opt(env: &mut JNIEnv, s: &JString, field: &str) -> Result<Option<CString>, ()> {
     if s.is_null() {
         return Ok(None);
     }
-    let owned: String = match env.get_string(s) {
-        Ok(v) => v.into(),
-        Err(_) => {
+    let owned: String = match read_jstring(env, s) {
+        Ok(v) => v,
+        Err(e) => {
             let _ = env.exception_clear();
-            return Ok(None);
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
+            return Err(());
         }
     };
     match CString::new(owned) {
         Ok(c) => Ok(Some(c)),
         Err(_) => {
-            throw_sdk_exception(env, 1, "string argument contained an interior NUL");
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             Err(())
         }
     }
@@ -291,7 +293,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenMin
             Ok(v) => v,
             Err(()) => return ptr::null_mut(),
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return ptr::null_mut();
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -370,7 +372,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenBur
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
             return ptr::null_mut();
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return ptr::null_mut();
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -448,7 +450,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenTra
         let Some(recipient) = read_id32(env, &recipient_id, "recipientId") else {
             return ptr::null_mut();
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return ptr::null_mut();
         };
         let Some(token_position) = checked_position(env, token_position, "tokenPosition") else {
@@ -508,7 +510,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenFre
         let Some(frozen) = read_id32(env, &frozen_identity_id, "frozenIdentityId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -578,7 +580,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUnf
         let Some(frozen) = read_id32(env, &frozen_identity_id, "frozenIdentityId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -648,7 +650,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenDes
         let Some(frozen) = read_id32(env, &frozen_identity_id, "frozenIdentityId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -714,7 +716,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenPau
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -779,7 +781,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenRes
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -849,7 +851,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenSet
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -965,7 +967,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenCla
         let Some(contract) = read_id32(env, &token_contract_id, "tokenContractId") else {
             return;
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return;
         };
         let Some(token_position) = checked_position(env, token_position, "tokenPosition") else {
@@ -1027,10 +1029,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpd
         };
         // Payload is required by the FFI for the supported tags; a JVM-null
         // payload becomes a null C pointer the FFI rejects with a clear error.
-        let Ok(payload) = read_cstring_opt(env, &change_item_payload_json) else {
+        let Ok(payload) = read_cstring_opt(env, &change_item_payload_json, "changeItemPayloadJson")
+        else {
             return ptr::null_mut();
         };
-        let Ok(note) = read_cstring_opt(env, &public_note) else {
+        let Ok(note) = read_cstring_opt(env, &public_note, "publicNote") else {
             return ptr::null_mut();
         };
         let action = match read_opt_id32(env, &group_info_action_id, "groupInfoActionId") {
@@ -1203,7 +1206,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendCont
         let Some(recipient) = read_id32(env, &recipient_identity_id, "recipientIdentityId") else {
             return 0;
         };
-        let Ok(label) = read_cstring_opt(env, &account_label) else {
+        let Ok(label) = read_cstring_opt(env, &account_label, "accountLabel") else {
             return 0;
         };
         // Optional proof bytes (any length). JVM null → (null, 0).
@@ -1411,7 +1414,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_sendDash
         let Some(to_id) = read_id32(env, &to_contact_identity_id, "toContactIdentityId") else {
             return ptr::null_mut();
         };
-        let Ok(memo_c) = read_cstring_opt(env, &memo) else {
+        let Ok(memo_c) = read_cstring_opt(env, &memo, "memo") else {
             return ptr::null_mut();
         };
         let mut txid = [0u8; 32];

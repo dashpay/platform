@@ -17,7 +17,7 @@
 use crate::decision_proposals::{
     c_ptr, read_cstring, read_optional_cstring, string_or_null, to_unsigned,
 };
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, read_jstring, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObjectArray, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_TRUE};
 use jni::JNIEnv;
@@ -81,16 +81,18 @@ fn read_cstring_array(env: &mut JNIEnv, arr: &JObjectArray, field: &str) -> Opti
         let value = if element.is_null() {
             None
         } else {
-            env.get_string(&element)
+            read_jstring(env, &element)
                 .ok()
-                .and_then(|value| CString::new(String::from(value)).ok())
+                .and_then(|value| CString::new(value).ok())
         };
         let Some(value) = value else {
             let _ = env.exception_clear();
             throw_sdk_exception(
                 env,
                 1,
-                &format!("{field}[{index}] was null, unreadable or held a NUL"),
+                &format!(
+                    "{field}[{index}] was null, unreadable, not well-formed UTF-16 or held a NUL"
+                ),
             );
             return None;
         };

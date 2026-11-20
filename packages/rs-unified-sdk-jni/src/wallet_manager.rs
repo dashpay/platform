@@ -51,7 +51,9 @@ use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, slice_or_empty, KotlinPersistenceCtx,
 };
-use crate::support::{guard, take_pwffi_error, throw_pwffi_result, throw_sdk_exception, JVM};
+use crate::support::{
+    guard, read_jstring, take_pwffi_error, throw_pwffi_result, throw_sdk_exception, JVM,
+};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
     jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE,
@@ -451,11 +453,11 @@ fn create_wallet_from_mnemonic_impl(
         throw_sdk_exception(env, 1, "outWalletId must be a non-null byte[32]");
         return;
     }
-    let phrase: String = match env.get_string(mnemonic) {
-        Ok(s) => s.into(),
-        Err(_) => {
+    let phrase: String = match read_jstring(env, mnemonic) {
+        Ok(s) => s,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "mnemonic string was null/invalid");
+            throw_sdk_exception(env, 1, &format!("mnemonic {e}"));
             return;
         }
     };
@@ -1165,11 +1167,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             throw_sdk_exception(env, 1, "message was null");
             return ptr::null_mut();
         }
-        let message: String = match env.get_string(&message) {
-            Ok(v) => v.into(),
-            Err(_) => {
+        let message: String = match read_jstring(env, &message) {
+            Ok(v) => v,
+            Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "message string was invalid");
+                throw_sdk_exception(env, 1, &format!("message {e}"));
                 return ptr::null_mut();
             }
         };
@@ -3540,19 +3542,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
             return;
         };
         // Optional strings: JVM null → Rust None (null C ptr).
-        let user_agent_c = match read_cstring_opt(env, &user_agent) {
-            Ok(c) => c,
-            Err(_) => {
-                throw_sdk_exception(env, 1, "user_agent contained an interior NUL");
-                return;
-            }
+        let Ok(user_agent_c) = read_cstring_opt(env, &user_agent, "user_agent") else {
+            return;
         };
-        let devnet_name_c = match read_cstring_opt(env, &devnet_name) {
-            Ok(c) => c,
-            Err(_) => {
-                throw_sdk_exception(env, 1, "devnet_name contained an interior NUL");
-                return;
-            }
+        let Ok(devnet_name_c) = read_cstring_opt(env, &devnet_name, "devnet_name") else {
+            return;
         };
 
         // Peers: String[] → Vec<CString> → Vec<*const c_char>. The CStrings
@@ -4486,10 +4480,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
-        let raw = match env.get_string(&queries_json) {
-            Ok(s) => String::from(s),
-            Err(_) => {
-                throw_sdk_exception(env, 1, "outpoint queries must be a String");
+        let raw = match read_jstring(env, &queries_json) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, &format!("outpoint queries {e}"));
                 return ptr::null_mut();
             }
         };
@@ -4767,11 +4762,11 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let owned: String = match env.get_string(s) {
-        Ok(v) => v.into(),
-        Err(_) => {
+    let owned: String = match read_jstring(env, s) {
+        Ok(v) => v,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return None;
         }
     };
@@ -4789,22 +4784,30 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
 }
 
 /// Read an optional Java `String` into `Option<CString>`; JVM null →
-/// `Ok(None)`. Returns `Err` only on an interior NUL (the caller throws).
-/// A JNI read error is treated as null.
-fn read_cstring_opt(env: &mut JNIEnv, s: &JString) -> Result<Option<std::ffi::CString>, ()> {
+/// `Ok(None)`. Returns `Err(())` (after throwing) on an unreadable or
+/// malformed string or an interior NUL.
+fn read_cstring_opt(
+    env: &mut JNIEnv,
+    s: &JString,
+    field: &str,
+) -> Result<Option<std::ffi::CString>, ()> {
     if s.is_null() {
         return Ok(None);
     }
-    let owned: String = match env.get_string(s) {
-        Ok(v) => v.into(),
-        Err(_) => {
+    let owned: String = match read_jstring(env, s) {
+        Ok(v) => v,
+        Err(e) => {
             let _ = env.exception_clear();
-            return Ok(None);
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
+            return Err(());
         }
     };
     match std::ffi::CString::new(owned) {
         Ok(c) => Ok(Some(c)),
-        Err(_) => Err(()),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
     }
 }
 
@@ -4824,18 +4827,19 @@ fn read_cstring_array(
     let len = env.get_array_length(arr)? as usize;
     let mut owned: Vec<std::ffi::CString> = Vec::with_capacity(len);
     for i in 0..len {
-        // One local frame per element: the element and the two class
-        // references `get_string` takes would otherwise stay in the native
-        // frame until the call returns, three per entry of the list.
+        // One local frame per element: the element and the references the
+        // string read takes would otherwise stay in the native frame until
+        // the call returns.
         let entry = env.with_local_frame(4, |env| -> Result<_, jni::errors::Error> {
             let element = env.get_object_array_element(arr, i as i32)?;
             if element.is_null() {
                 return Ok(std::ffi::CString::default());
             }
-            // A string the JVM cannot hand over (out of memory) fails the
-            // whole call: the caller must not start with part of the list.
+            // A string the JVM cannot hand over (out of memory) or that is not
+            // well-formed UTF-16 fails the whole call: the caller must not
+            // start with part of the list or with a rewritten entry.
             let jstr = JString::from(element);
-            let s: String = env.get_string(&jstr)?.into();
+            let s: String = read_jstring(env, &jstr)?;
             Ok(std::ffi::CString::new(s).unwrap_or_default())
         })?;
         owned.push(entry);

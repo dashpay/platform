@@ -47,7 +47,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{guard, net_from_ord, JVM};
+use crate::support::{guard, net_from_ord, read_jstring, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::jstring;
 use jni::JNIEnv;
@@ -4505,7 +4505,7 @@ fn read_opt_cstring_field(
     if obj.is_null() {
         return Ok(None);
     }
-    let s: String = env.get_string(&JString::from(obj))?.into();
+    let s: String = read_jstring(env, &JString::from(obj))?;
     Ok(CString::new(s).ok())
 }
 
@@ -4530,7 +4530,7 @@ fn read_req_cstring_field(
             "null",
         ));
     }
-    let s: String = env.get_string(&JString::from(obj))?.into();
+    let s: String = read_jstring(env, &JString::from(obj))?;
     CString::new(s).map_err(|_| {
         log::error!("load: required string field `{field}` contains an interior NUL");
         jni::errors::Error::WrongJValueType("String without interior NUL", "String with NUL")

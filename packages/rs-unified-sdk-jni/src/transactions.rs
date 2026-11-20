@@ -42,7 +42,7 @@
 
 use crate::decision_proposals::{c_ptr, read_fixed_bytes, read_optional_cstring, to_unsigned};
 use crate::pubkey_rows::decode_update_pubkeys_blob;
-use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, read_jstring, take_pwffi_error, throw_sdk_exception};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
 use jni::objects::{JByteArray, JClass, JString};
@@ -122,11 +122,11 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let raw: String = match env.get_string(s) {
-        Ok(js) => js.into(),
-        Err(_) => {
+    let raw: String = match read_jstring(env, s) {
+        Ok(js) => js,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return None;
         }
     };
@@ -980,9 +980,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         let contender: Option<CString> = if contender_identity_id.is_null() {
             None
         } else {
-            match env.get_string(&contender_identity_id) {
-                Ok(s) => {
-                    let raw: String = s.into();
+            match read_jstring(env, &contender_identity_id) {
+                Ok(raw) => {
                     if raw.is_empty() {
                         None
                     } else {
@@ -999,9 +998,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
                         }
                     }
                 }
-                Err(_) => {
+                Err(e) => {
                     let _ = env.exception_clear();
-                    None
+                    throw_sdk_exception(env, 1, &format!("contenderIdentityId {e}"));
+                    return;
                 }
             }
         };

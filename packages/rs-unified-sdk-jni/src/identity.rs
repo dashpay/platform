@@ -33,7 +33,7 @@
 
 use crate::decision_proposals::to_unsigned;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
@@ -458,11 +458,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
             )
         };
         if pubkey.is_empty() {
-            crate::support::throw_sdk_exception(
-                env,
-                99,
-                "slot derive returned no public key bytes",
-            );
+            throw_sdk_exception(env, 99, "slot derive returned no public key bytes");
             return ptr::null_mut();
         }
 
@@ -478,7 +474,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
         })();
         build.unwrap_or_else(|_| {
             let _ = env.exception_clear();
-            crate::support::throw_sdk_exception(env, 99, "keypair marshalling failed");
+            throw_sdk_exception(env, 99, "keypair marshalling failed");
             ptr::null_mut()
         })
     })
@@ -1027,11 +1023,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
-        let label_str: String = match env.get_string(&label) {
-            Ok(s) => s.into(),
-            Err(_) => {
+        let label_str: String = match read_jstring(env, &label) {
+            Ok(s) => s,
+            Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "label string was null/invalid");
+                throw_sdk_exception(env, 1, &format!("label {e}"));
                 return ptr::null_mut();
             }
         };
@@ -1088,11 +1084,11 @@ fn read_optional_cstring(
     if s.is_null() {
         return Ok(None);
     }
-    let raw: String = match env.get_string(s) {
-        Ok(js) => js.into(),
-        Err(_) => {
+    let raw: String = match read_jstring(env, s) {
+        Ok(js) => js,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return Err(());
         }
     };
@@ -1141,11 +1137,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
             throw_sdk_exception(env, 1, "documentsSchemaJson is required");
             return ptr::null_mut();
         }
-        let documents: String = match env.get_string(&documents_schema_json) {
-            Ok(s) => s.into(),
-            Err(_) => {
+        let documents: String = match read_jstring(env, &documents_schema_json) {
+            Ok(s) => s,
+            Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "documentsSchemaJson was invalid");
+                throw_sdk_exception(env, 1, &format!("documentsSchemaJson {e}"));
                 return ptr::null_mut();
             }
         };
@@ -1254,11 +1250,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
             throw_sdk_exception(env, 1, "documentsSchemaJson is required");
             return ptr::null_mut();
         }
-        let documents: String = match env.get_string(&documents_schema_json) {
-            Ok(s) => s.into(),
-            Err(_) => {
+        let documents: String = match read_jstring(env, &documents_schema_json) {
+            Ok(s) => s,
+            Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "documentsSchemaJson was invalid");
+                throw_sdk_exception(env, 1, &format!("documentsSchemaJson {e}"));
                 return ptr::null_mut();
             }
         };

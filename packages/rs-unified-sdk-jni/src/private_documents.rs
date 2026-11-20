@@ -9,7 +9,7 @@
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.PrivateDocumentsNative`.
 
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring};
 use jni::JNIEnv;
@@ -206,11 +206,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_PrivateDocumentsNativ
             throw_sdk_exception(env, 1, "documentTypeName was null");
             return ptr::null_mut();
         }
-        let name: String = match env.get_string(&document_type_name) {
-            Ok(name) => name.into(),
-            Err(_) => {
+        let name: String = match read_jstring(env, &document_type_name) {
+            Ok(name) => name,
+            Err(e) => {
                 let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "documentTypeName was not a readable string");
+                throw_sdk_exception(env, 1, &format!("documentTypeName {e}"));
                 return ptr::null_mut();
             }
         };

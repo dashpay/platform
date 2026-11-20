@@ -18,7 +18,7 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.DecisionProposalsNative`.
 
 use crate::results::{take_error, unwrap_string};
-use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, read_jstring, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jbyte, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
@@ -55,11 +55,11 @@ pub(crate) fn read_optional_cstring(
     if s.is_null() {
         return Some(None);
     }
-    let raw: String = match env.get_string(s) {
-        Ok(js) => js.into(),
-        Err(_) => {
+    let raw: String = match read_jstring(env, s) {
+        Ok(js) => js,
+        Err(e) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            throw_sdk_exception(env, 1, &format!("{field} {e}"));
             return None;
         }
     };
