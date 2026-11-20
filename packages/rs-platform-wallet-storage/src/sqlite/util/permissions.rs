@@ -80,7 +80,7 @@ pub(crate) fn create_owner_only_dirs(dir: &Path) -> std::io::Result<()> {
 ///
 /// The `fchmod` goes through an `O_NOFOLLOW` handle. A umask that stripped
 /// the owner's read bit makes that open fail with `EACCES`, so the fallback
-/// is `fchmodat(AT_SYMLINK_NOFOLLOW)`, which needs no read access.
+/// is [`chmod_dir_no_follow`], which needs no read access.
 #[cfg(unix)]
 fn restrict_created_dir(path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -90,16 +90,41 @@ fn restrict_created_dir(path: &Path) -> std::io::Result<()> {
         .open(path)
     {
         Ok(handle) => handle.set_permissions(std::fs::Permissions::from_mode(0o700)),
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => chmod_no_follow(path, 0o700),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => chmod_dir_no_follow(path),
         Err(e) => Err(e),
+    }
+}
+
+/// Set the directory at `path` to `0o700` without following a symlink and
+/// without opening it.
+///
+/// Where libc cannot chmod without following (glibc before 2.32, or no
+/// `/proc` for its emulation), the path is chmodded only after
+/// `symlink_metadata` confirms a real directory; a link swapped in between
+/// the two calls is the residual window.
+#[cfg(unix)]
+fn chmod_dir_no_follow(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    match chmod_no_follow(path, 0o700) {
+        Err(e)
+            if e.raw_os_error()
+                .is_some_and(|code| code == libc::ENOTSUP || code == libc::EOPNOTSUPP) =>
+        {
+            if std::fs::symlink_metadata(path)?.is_dir() {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            } else {
+                Err(e)
+            }
+        }
+        result => result,
     }
 }
 
 /// `chmod` that refuses a symlink rather than changing its target.
 ///
 /// Linux has no native no-follow `chmod` before `fchmodat2` (kernel 6.6);
-/// libc emulates it there through `/proc` and fails with `EOPNOTSUPP` when it
-/// cannot.
+/// libc emulates it there through `/proc` and fails with `ENOTSUP` when it
+/// cannot, as it does for a symlink.
 #[cfg(unix)]
 #[expect(unsafe_code, reason = "libc fchmodat has no std equivalent")]
 fn chmod_no_follow(path: &Path, mode: libc::mode_t) -> std::io::Result<()> {
@@ -198,7 +223,9 @@ pub fn apply_secure_permissions(path: &Path) -> Result<(), WalletStorageError> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{chmod_no_follow, create_owner_only_dirs, restrict_created_dir};
+    use super::{
+        chmod_dir_no_follow, chmod_no_follow, create_owner_only_dirs, restrict_created_dir,
+    };
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
@@ -335,7 +362,25 @@ mod tests {
         let link = tmp.path().join("link");
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        assert!(chmod_no_follow(&link, 0o700).is_err());
+        // macOS changes the link's own mode; Linux refuses. Neither follows.
+        let _ = chmod_no_follow(&link, 0o700);
+        assert_eq!(mode(&target), 0o755);
+    }
+
+    /// glibc reports a symlink to `fchmodat(AT_SYMLINK_NOFOLLOW)` with the same
+    /// `ENOTSUP` as a libc that cannot chmod without following at all, so
+    /// the path-based fallback for that case must still refuse the link.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn should_refuse_a_symlink_when_no_follow_chmod_is_unsupported() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(chmod_dir_no_follow(&link).is_err());
         assert_eq!(mode(&target), 0o755);
     }
 }
