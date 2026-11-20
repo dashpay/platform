@@ -128,6 +128,10 @@ impl MasternodeListSummary {
 /// serialization and, when known, the legacy one. A version-1 entry holds
 /// the legacy bytes of the same key, so a comparison against the basic bytes
 /// alone would miss it.
+///
+/// The match is on the serialized bytes, whichever scheme the entry uses.
+/// The registrar update refuses a key on this match, so the key picker
+/// reports as taken exactly the keys that update would refuse.
 pub(crate) fn operator_key_holder<'a>(
     summaries: impl IntoIterator<Item = &'a MasternodeListSummary>,
     key: &[u8; 48],

@@ -1413,15 +1413,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     false,
                 ) {
                     Ok(key) => {
-                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
-                            operator_index.insert(bytes, index);
-                        }
-                        if let Some(legacy) = key
-                            .legacy_public_key_bytes
-                            .as_deref()
-                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
-                        {
-                            operator_index.insert(legacy, index);
+                        if let Some((basic, legacy)) = key.operator_key_forms() {
+                            operator_index.insert(basic, index);
+                            if let Some(legacy) = legacy {
+                                operator_index.insert(legacy, index);
+                            }
                         }
                     }
                     // First failure ⇒ no operator account (or unavailable) ⇒ stop.

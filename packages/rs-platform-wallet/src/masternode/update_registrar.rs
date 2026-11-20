@@ -32,14 +32,14 @@ use dashcore::blockdata::transaction::special_transaction::{
 use dashcore::bls_sig_utils::{BLSPublicKey, BlsScheme};
 use dashcore::crypto::ecdsa::{EcdsaRecSignature, EcdsaSecretKey};
 use dashcore::hashes::hash160;
-use dashcore::{Network, PubkeyHash, PublicKey, Transaction, Txid};
+use dashcore::{Network, PubkeyHash, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
 use zeroize::Zeroizing;
 
 use super::list::{operator_key_holder, MasternodeListSummary};
-use super::locator::p2pkh_script_hash;
+use super::locator::{ecdsa_key_id, p2pkh_script_hash};
 use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload;
 
 use super::update_service::{
@@ -123,7 +123,7 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
     // transaction is fetched because an internal collateral is one of its
     // own outputs.
     let registration_tx = fetch_registration_transaction(wallet, &params.pro_tx_hash).await?;
-    let registration = registration_payload(registration_tx.clone())?;
+    let registration = registration_payload(&registration_tx)?.clone();
     let collateral_script =
         resolve_collateral_script(wallet, &registration_tx, &registration).await?;
 
@@ -431,13 +431,8 @@ pub(crate) fn verify_owner_secret(
     expected_owner_key_hash: &PubkeyHash,
     owner: &OwnerSecret,
 ) -> Result<(), PlatformWalletError> {
-    let public = owner_secret_key(owner)?.public_key();
-    let public = if owner.compressed {
-        PublicKey::new(public)
-    } else {
-        PublicKey::new_uncompressed(public)
-    };
-    if public.pubkey_hash() != *expected_owner_key_hash {
+    let key_id = ecdsa_key_id(&owner.secret, owner.compressed).ok_or_else(invalid_owner_secret)?;
+    if key_id != expected_owner_key_hash.to_byte_array() {
         return Err(PlatformWalletError::InvalidParameter(
             "the owner key does not match this masternode's registered owner key".to_string(),
         ));
@@ -449,11 +444,13 @@ pub(crate) fn verify_owner_secret(
 /// scalar. The key erases itself when dropped; the `Zeroizing` on
 /// [`OwnerSecret::secret`] covers only the caller's bytes.
 fn owner_secret_key(owner: &OwnerSecret) -> Result<EcdsaSecretKey, PlatformWalletError> {
-    EcdsaSecretKey::from_bytes(&owner.secret).map_err(|_| {
-        PlatformWalletError::InvalidParameter(
-            "the owner key is not a valid secp256k1 private key".to_string(),
-        )
-    })
+    EcdsaSecretKey::from_bytes(&owner.secret).map_err(|_| invalid_owner_secret())
+}
+
+fn invalid_owner_secret() -> PlatformWalletError {
+    PlatformWalletError::InvalidParameter(
+        "the owner key is not a valid secp256k1 private key".to_string(),
+    )
 }
 
 /// The payout rule for a registrar update: the payload replaces the owner

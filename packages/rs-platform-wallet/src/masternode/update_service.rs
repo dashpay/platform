@@ -853,20 +853,20 @@ pub(crate) async fn fetch_registration_payload(
     pro_tx_hash: &[u8; 32],
 ) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
     let transaction = fetch_registration_transaction(wallet, pro_tx_hash).await?;
-    registration_payload(transaction)
+    registration_payload(&transaction).cloned()
 }
 
 /// The payload of a registration transaction that
 /// [`fetch_registration_transaction`] returned, which has already bound it
 /// to the requested proTxHash.
 pub(crate) fn registration_payload(
-    transaction: Transaction,
-) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
-    let txid = transaction.txid();
-    match transaction.special_transaction_payload {
+    transaction: &Transaction,
+) -> Result<&ProviderRegistrationPayload, PlatformWalletError> {
+    match &transaction.special_transaction_payload {
         Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => Ok(registration),
         _ => Err(PlatformWalletError::InvalidParameter(format!(
-            "transaction {txid} is not a provider registration transaction"
+            "transaction {} is not a provider registration transaction",
+            transaction.txid()
         ))),
     }
 }
@@ -1115,10 +1115,7 @@ fn require_listed_platform_p2p_port(
         .iter()
         .filter(|(purpose, _)| *purpose == NetInfoPurpose::PlatformP2P)
         .flat_map(|(_, entries)| entries)
-        .filter_map(|entry| match entry {
-            NetInfoEntry::Service { port, .. } | NetInfoEntry::Domain { port, .. } => Some(*port),
-            NetInfoEntry::Invalid => None,
-        })
+        .filter_map(NetInfoEntry::port)
         .collect();
     if listed.contains(&port) {
         return Ok(());
@@ -2480,13 +2477,14 @@ mod tests {
 
     #[test]
     fn should_read_the_payload_of_a_registration_transaction_only() {
-        let registration = registration_payload(registration_transaction(500))
-            .expect("a registration transaction is accepted");
+        let transaction = registration_transaction(500);
+        let registration =
+            registration_payload(&transaction).expect("a registration transaction is accepted");
         assert_eq!(registration.operator_reward, 500);
 
         let mut not_registration = registration_transaction(0);
         not_registration.special_transaction_payload = None;
-        let err = registration_payload(not_registration)
+        let err = registration_payload(&not_registration)
             .expect_err("a non-registration transaction must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
