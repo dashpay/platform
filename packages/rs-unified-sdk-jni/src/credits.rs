@@ -218,9 +218,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
 /// credit balance. The identity is fetched from Platform and never added
 /// to the wallet.
 ///
-/// `inputsBlob` has the same layout as `topUpFromAddresses`. An empty
-/// input list is not checked here: the library owns that rule (an empty
-/// `Vec`'s pointer is non-null, so it reaches the library).
+/// `inputsBlob` has the same layout and empty-input handling as
+/// `topUpFromAddresses`.
 ///
 /// Wraps `platform_wallet_top_up_external_identity_from_addresses_with_signer`.
 #[no_mangle]

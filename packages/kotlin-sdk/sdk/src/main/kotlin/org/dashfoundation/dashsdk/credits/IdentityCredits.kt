@@ -91,6 +91,8 @@ class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val resumeTopUpNative: ResumeTopUpNativeCall =
         ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
+    private val topUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpFromAddresses),
     private val externalTopUpNative: AddressTopUpNativeCall =
         AddressTopUpNativeCall(CreditsNative::topUpExternalIdentityFromAddresses),
 ) {
@@ -224,17 +226,37 @@ class IdentityCredits internal constructor(
     }
 
     /**
-     * Top up [identityId] (32 bytes) from Platform-address [inputs],
-     * signed via [signerHandle]. Returns the post-transition balance.
+     * Top up [identityId] (32 bytes), an identity this wallet manages, from
+     * Platform-address [inputs], signed via [signerHandle]. Returns the
+     * post-transition balance. Rust owns the input rules (empty or
+     * overflowing inputs are refused there).
+     *
+     * Outcomes the caller must tell apart:
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *   Platform returned no balance for the identity; nothing was signed or
+     *   sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed]:
+     *   the identity's balance could not be read from Platform; nothing was
+     *   signed or sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
+     *   the top-up may have executed or may still execute; do not submit it
+     *   again, the next sync settles it.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.NotFound]:
+     *   the wallet was removed or re-created before anything was sent.
+     *
+     * The native call cannot observe coroutine cancellation, so a top-up can
+     * finish after the caller was cancelled; its balance is then returned
+     * rather than thrown away ([opReturningCompletedResult]), so a completed
+     * payment is never hidden and retried.
      */
     suspend fun topUpFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
-            CreditsNative.topUpFromAddresses(
+            topUpNative.call(
                 walletHandle,
                 identityId,
                 FundingInput.encode(inputs),
