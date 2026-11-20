@@ -282,6 +282,10 @@ impl From<&ShieldedSpendPlan> for ShieldedSpendPlanFFI {
                 ShieldedSpendKind::Withdrawal { .. } => 2,
                 ShieldedSpendKind::IdentityTopUp => 4,
             },
+            core_fee_per_byte: match plan.kind {
+                ShieldedSpendKind::Withdrawal { core_fee_per_byte } => core_fee_per_byte,
+                _ => 0,
+            },
             amount: plan.amount,
             recipient_amount: plan.recipient_amount,
             fee: plan.fee,
@@ -774,6 +778,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 
 /// [`platform_wallet_manager_shielded_withdraw`] against a plan, refused as
 /// [`platform_wallet_manager_shielded_transfer_with_plan`] is when it moved.
+/// `core_fee_per_byte` must be the plan's `core_fee_per_byte`: another rate
+/// refuses with `ErrorShieldedPlanChanged`.
 ///
 /// # Safety
 /// As [`platform_wallet_manager_shielded_withdraw`], and
@@ -3454,17 +3460,18 @@ mod tests {
     }
 
     #[test]
-    fn should_marshal_a_spend_plan_with_the_fee_kind_numbering() {
-        for (kind, byte) in [
-            (ShieldedSpendKind::Transfer, 0),
-            (ShieldedSpendKind::Unshield, 1),
+    fn should_marshal_a_spend_plan_with_the_fee_kind_numbering_and_its_core_fee_rate() {
+        for (kind, byte, rate) in [
+            (ShieldedSpendKind::Transfer, 0, 0),
+            (ShieldedSpendKind::Unshield, 1, 0),
             (
                 ShieldedSpendKind::Withdrawal {
                     core_fee_per_byte: 5,
                 },
                 2,
+                5,
             ),
-            (ShieldedSpendKind::IdentityTopUp, 4),
+            (ShieldedSpendKind::IdentityTopUp, 4, 0),
         ] {
             assert_eq!(shielded_spend_kind(byte, 5), Some(kind));
             let plan = ShieldedSpendPlan {
@@ -3480,6 +3487,7 @@ mod tests {
                 ShieldedSpendPlanFFI::from(&plan),
                 ShieldedSpendPlanFFI {
                     kind: byte,
+                    core_fee_per_byte: rate,
                     amount: 10,
                     recipient_amount: 7,
                     fee: 3,

@@ -100,6 +100,10 @@ pub struct ShieldedShieldPreflightFFI {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ShieldedSpendPlanFFI {
     pub kind: u8,
+    /// The Core fee rate a withdrawal (kind `2`) was planned at, `0` for the
+    /// other kinds. Pass the same rate to the withdraw `_with_plan` export:
+    /// another rate refuses with `ErrorShieldedPlanChanged`.
+    pub core_fee_per_byte: u32,
     /// What the spend reserves for the recipient: the amount sent, or for a
     /// withdrawal the reserve for Core, of which the Core fee is taken.
     pub amount: u64,

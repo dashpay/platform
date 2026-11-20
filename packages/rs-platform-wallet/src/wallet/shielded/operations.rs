@@ -2814,10 +2814,8 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
 
     // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
     let platform_version = sdk.version();
-    // The amount is the reserve for Core: outside the protocol bounds for this Core fee rate
-    // consensus rejects the transition after the proof, so refuse it before any note is reserved.
-    ensure_positive_amount(amount)?;
-    ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?;
+    // The amount is the reserve for Core: `reserve_unspent_notes` refuses it outside the
+    // protocol bounds for this Core fee rate before any note is reserved.
     let kind = ShieldedSpendKind::Withdrawal { core_fee_per_byte };
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
@@ -3749,9 +3747,10 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// and builds the transition at it, so an SDK whose version moves meanwhile cannot change the fee.
 ///
 /// A network whose protocol version `sdk` already verified and has no tables for is refused
-/// here with [`PlatformWalletError::NetworkProtocolVersionUnsupported`], before any note is
-/// reserved or the network is asked for anything; one learned later, during the anchor fetch,
-/// is refused by [`ensure_version_unchanged`].
+/// here with [`PlatformWalletError::NetworkProtocolVersionUnsupported`], first: before any
+/// check priced at `platform_version`, any note is reserved or the network is asked for
+/// anything; one learned later, during the anchor fetch, is refused by
+/// [`ensure_version_unchanged`].
 async fn reserve_unspent_notes<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -3761,11 +3760,18 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     expected_plan: Option<&[u8; 32]>,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
+    // An unsupported network version first: the checks below are priced at the SDK's version,
+    // which the network does not run, so their verdicts would be wrong.
+    ensure_verified_network_version_supported(sdk)?;
     // All amount-based spends reject zero before waiting on a concurrent sync's store lock, and
     // a transition their protocol version does not activate.
     ensure_positive_amount(amount)?;
     ensure_spend_kind_active(kind, platform_version)?;
-    ensure_verified_network_version_supported(sdk)?;
+    // A withdrawal's amount is the reserve for Core: outside the protocol bounds for its Core
+    // fee rate consensus rejects the transition after the proof.
+    if let ShieldedSpendKind::Withdrawal { core_fee_per_byte } = kind {
+        ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?;
+    }
     reserve_notes_matching(
         store,
         id,
@@ -10699,6 +10705,100 @@ mod spend_plan_tests {
                 drop(held);
                 let _ = std::fs::remove_file(&case.path);
             }
+        }
+    }
+
+    /// A spend whose verified network version this SDK has no tables for is refused as
+    /// unsupported before any check priced at the SDK's own version: a withdrawal amount out of
+    /// range at the SDK's version, or a transition the SDK's version does not activate, would
+    /// otherwise be reported for a version the network does not run.
+    #[tokio::test]
+    async fn should_refuse_an_unsupported_network_version_before_any_check_priced_at_the_sdk_version(
+    ) {
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        let is_unsupported = |result: &Result<(), PlatformWalletError>| {
+            matches!(
+                result,
+                Err(PlatformWalletError::NetworkProtocolVersionUnsupported { network, .. })
+                    if *network == unsupported
+            )
+        };
+        async fn withdraw_one_credit(
+            case: &VersionMovesDuringAnchorFetch,
+            plan: Option<&[u8; 32]>,
+        ) -> Result<(), PlatformWalletError> {
+            let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0).expect("keys");
+            withdraw_with_plan(
+                &case.sdk,
+                &case.store,
+                None,
+                WALLET_ID,
+                &keys,
+                0,
+                &dashcore::Address::dummy(Network::Testnet, 1),
+                1,
+                1,
+                &UnreachableProver,
+                plan,
+            )
+            .await
+        }
+        let withdrawal = ShieldedSpendKind::Withdrawal {
+            core_fee_per_byte: 1,
+        };
+
+        for planned in [true, false] {
+            // A one-credit withdrawal is out of range at the SDK's version...
+            let case = VersionMovesDuringAnchorFetch::serving_pinned(
+                withdrawal,
+                start_version(withdrawal),
+            )
+            .await;
+            let digest = planned.then_some(case.plan.digest);
+            let out_of_range = withdraw_one_credit(&case, digest.as_ref()).await;
+            assert!(
+                matches!(
+                    out_of_range,
+                    Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. })
+                ),
+                "planned={planned}: got {out_of_range:?}"
+            );
+            // ...but with an unsupported verified network version it is refused as that.
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+            let refused = withdraw_one_credit(&case, digest.as_ref()).await;
+            assert!(
+                is_unsupported(&refused),
+                "planned={planned}: got {refused:?}"
+            );
+            let _ = std::fs::remove_file(&case.path);
+
+            // An identity top-up is not active at 13, the SDK's pinned version...
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Transfer, 13)
+                    .await;
+            let digest = planned.then_some(case.plan.digest);
+            let inactive = case
+                .run(ShieldedSpendKind::IdentityTopUp, digest.as_ref())
+                .await;
+            assert!(
+                matches!(&inactive, Err(PlatformWalletError::ShieldedBuildError(message))
+                    if message.contains("not active")),
+                "planned={planned}: got {inactive:?}"
+            );
+            // ...but with an unsupported verified network version it is refused as that.
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+            let refused = case
+                .run(ShieldedSpendKind::IdentityTopUp, digest.as_ref())
+                .await;
+            assert!(
+                is_unsupported(&refused),
+                "planned={planned}: got {refused:?}"
+            );
+            let _ = std::fs::remove_file(&case.path);
         }
     }
 }
