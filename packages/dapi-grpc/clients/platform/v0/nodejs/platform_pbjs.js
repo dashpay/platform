@@ -59363,6 +59363,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] WaitForStateTransitionResultResponseV0 proof
                              * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance|null} [successWithOwnerBalance] WaitForStateTransitionResultResponseV0 successWithOwnerBalance
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] WaitForStateTransitionResultResponseV0 metadata
+                             * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock|null} [stateBeforeBlock] WaitForStateTransitionResultResponseV0 stateBeforeBlock
                              */
 
                             /**
@@ -59412,6 +59413,14 @@ $root.org = (function() {
                              */
                             WaitForStateTransitionResultResponseV0.prototype.metadata = null;
 
+                            /**
+                             * WaitForStateTransitionResultResponseV0 stateBeforeBlock.
+                             * @member {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock|null|undefined} stateBeforeBlock
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultResponseV0.prototype.stateBeforeBlock = null;
+
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
@@ -59458,6 +59467,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 if (message.successWithOwnerBalance != null && Object.hasOwnProperty.call(message, "successWithOwnerBalance"))
                                     $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.encode(message.successWithOwnerBalance, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.stateBeforeBlock != null && Object.hasOwnProperty.call(message, "stateBeforeBlock"))
+                                    $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.encode(message.stateBeforeBlock, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                 return writer;
                             };
 
@@ -59503,6 +59514,9 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.stateBeforeBlock = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -59573,6 +59587,11 @@ $root.org = (function() {
                                     if (error)
                                         return "metadata." + error;
                                 }
+                                if (message.stateBeforeBlock != null && message.hasOwnProperty("stateBeforeBlock")) {
+                                    var error = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.verify(message.stateBeforeBlock);
+                                    if (error)
+                                        return "stateBeforeBlock." + error;
+                                }
                                 return null;
                             };
 
@@ -59608,6 +59627,11 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
+                                if (object.stateBeforeBlock != null) {
+                                    if (typeof object.stateBeforeBlock !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.stateBeforeBlock: object expected");
+                                    message.stateBeforeBlock = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.fromObject(object.stateBeforeBlock);
+                                }
                                 return message;
                             };
 
@@ -59624,8 +59648,10 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.metadata = null;
+                                    object.stateBeforeBlock = null;
+                                }
                                 if (message.error != null && message.hasOwnProperty("error")) {
                                     object.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(message.error, options);
                                     if (options.oneofs)
@@ -59643,6 +59669,8 @@ $root.org = (function() {
                                     if (options.oneofs)
                                         object.result = "successWithOwnerBalance";
                                 }
+                                if (message.stateBeforeBlock != null && message.hasOwnProperty("stateBeforeBlock"))
+                                    object.stateBeforeBlock = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.toObject(message.stateBeforeBlock, options);
                                 return object;
                             };
 
@@ -59658,6 +59686,226 @@ $root.org = (function() {
                             };
 
                             return WaitForStateTransitionResultResponseV0;
+                        })();
+
+                        WaitForStateTransitionResultResponse.StateBeforeBlock = (function() {
+
+                            /**
+                             * Properties of a StateBeforeBlock.
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
+                             * @interface IStateBeforeBlock
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] StateBeforeBlock proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] StateBeforeBlock metadata
+                             */
+
+                            /**
+                             * Constructs a new StateBeforeBlock.
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
+                             * @classdesc Represents a StateBeforeBlock.
+                             * @implements IStateBeforeBlock
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock=} [properties] Properties to set
+                             */
+                            function StateBeforeBlock(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * StateBeforeBlock proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @instance
+                             */
+                            StateBeforeBlock.prototype.proof = null;
+
+                            /**
+                             * StateBeforeBlock metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @instance
+                             */
+                            StateBeforeBlock.prototype.metadata = null;
+
+                            /**
+                             * Creates a new StateBeforeBlock instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock instance
+                             */
+                            StateBeforeBlock.create = function create(properties) {
+                                return new StateBeforeBlock(properties);
+                            };
+
+                            /**
+                             * Encodes the specified StateBeforeBlock message. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock} message StateBeforeBlock message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateBeforeBlock.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified StateBeforeBlock message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock} message StateBeforeBlock message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateBeforeBlock.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a StateBeforeBlock message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateBeforeBlock.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a StateBeforeBlock message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateBeforeBlock.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a StateBeforeBlock message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            StateBeforeBlock.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a StateBeforeBlock message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock
+                             */
+                            StateBeforeBlock.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock();
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a StateBeforeBlock message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} message StateBeforeBlock
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            StateBeforeBlock.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.proof = null;
+                                    object.metadata = null;
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this StateBeforeBlock to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            StateBeforeBlock.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return StateBeforeBlock;
                         })();
 
                         return WaitForStateTransitionResultResponse;

@@ -417,6 +417,7 @@ CF_EXTERN_C_BEGIN
 @class TenderdashBlockProof_Header;
 @class TenderdashTransactionProof;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
+@class WaitForStateTransitionResultResponse_StateBeforeBlock;
 @class WaitForStateTransitionResultResponse_SuccessWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
@@ -7978,6 +7979,7 @@ typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResu
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_SuccessWithOwnerBalance = 4,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_StateBeforeBlock = 5,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
@@ -8008,12 +8010,47 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
+/**
+ * The state of the proof's keys at the block before the one that executed
+ * the state transition. Present when the node had been asked for the
+ * transition's proof before its block was finalized: `proof` and `metadata`
+ * are then of the block that executed the transition, so the two proofs
+ * show what that block changed. Absent otherwise, and `proof` is then of
+ * whatever block the node had reached when it answered.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) WaitForStateTransitionResultResponse_StateBeforeBlock *stateBeforeBlock;
+/** Test to see if @c stateBeforeBlock has been set. */
+@property(nonatomic, readwrite) BOOL hasStateBeforeBlock;
+
 @end
 
 /**
  * Clears whatever value was set for the oneof 'result'.
  **/
 void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_ClearResultOneOfCase(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 *message);
+
+#pragma mark - WaitForStateTransitionResultResponse_StateBeforeBlock
+
+typedef GPB_ENUM(WaitForStateTransitionResultResponse_StateBeforeBlock_FieldNumber) {
+  WaitForStateTransitionResultResponse_StateBeforeBlock_FieldNumber_Proof = 1,
+  WaitForStateTransitionResultResponse_StateBeforeBlock_FieldNumber_Metadata = 2,
+};
+
+/**
+ * A proof of a state transition's keys at the block before the one that
+ * executed it, with that block's metadata
+ **/
+GPB_FINAL @interface WaitForStateTransitionResultResponse_StateBeforeBlock : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
 
 #pragma mark - GetRecentStateTransitionStatusRequest
 

@@ -3,9 +3,12 @@ use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
+use dapi_grpc::drive::v0::GetStateTransitionExecutionProofResponse;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
-use dapi_grpc::platform::v0::wait_for_state_transition_result_response::SuccessWithOwnerBalance;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
+    StateBeforeBlock, SuccessWithOwnerBalance,
+};
 use dapi_grpc::platform::v0::{
     GetIdentityBalanceRequest, Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
     WaitForStateTransitionResultResponse, get_identity_balance_request,
@@ -16,6 +19,7 @@ use dapi_grpc::tonic::{Request, Response};
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
+use dpp::util::hash::hash_single;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
@@ -92,6 +96,13 @@ impl PlatformServiceImpl {
                 }
             };
 
+            // The transition is not in a block yet, so Drive can still prove the state before
+            // its block: that proof can only be made before the block is committed.
+            if v0.prove {
+                self.register_state_transition_execution_proof(&state_transition_hash)
+                    .await;
+            }
+
             // Wait for transaction event with timeout
             let timeout_duration =
                 Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
@@ -154,6 +165,7 @@ impl PlatformServiceImpl {
             wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
                 result: None,
                 metadata: None,
+                state_before_block: None,
             };
 
         // Check if transaction had an error
@@ -217,6 +229,7 @@ impl PlatformServiceImpl {
                     wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
                         result: None,
                         metadata: None,
+                        state_before_block: None,
                 };
                 // Success case - generate proof if requested, else report what
                 // can be read without one
@@ -277,6 +290,23 @@ impl PlatformServiceImpl {
         executed_at_height: u64,
     ) {
         if prove {
+            // The proofs Drive made around the transition's block, when the transition was
+            // registered with it in time. Without them the proof is of the state Drive holds
+            // now, as before.
+            if let Some((before, after)) = self
+                .fetch_state_transition_execution_proof(&tx_bytes, executed_at_height)
+                .await
+            {
+                response_v0.result = Some(
+                    wait_for_state_transition_result_response_v0::Result::Proof(after.0),
+                );
+                response_v0.metadata = Some(after.1);
+                response_v0.state_before_block = Some(StateBeforeBlock {
+                    proof: Some(before.0),
+                    metadata: Some(before.1),
+                });
+                return;
+            }
             match self.fetch_proof_for_state_transition(tx_bytes).await {
                 Ok((proof, metadata)) => {
                     response_v0.result = Some(
@@ -360,6 +390,53 @@ impl PlatformServiceImpl {
         }
     }
 
+    /// Asks Drive to prove the state before and after the block that executes the state
+    /// transition with this hash. Best effort: when Drive refuses or cannot be reached, the
+    /// wait still answers with a proof of the state Drive holds when the transition is found.
+    async fn register_state_transition_execution_proof(&self, state_transition_hash: &[u8]) {
+        let request = dapi_grpc::drive::v0::RegisterStateTransitionExecutionProofRequest {
+            state_transition_hash: state_transition_hash.to_vec(),
+        };
+
+        if let Err(status) = self
+            .drive_client
+            .get_internal_client()
+            .register_state_transition_execution_proof(request)
+            .await
+        {
+            debug!(
+                %status,
+                "Drive did not register the state transition for an execution proof"
+            );
+        }
+    }
+
+    /// The proofs Drive made of the state before and after the block that executed the state
+    /// transition, each with its block's metadata, when Drive has them and they are the pair
+    /// around the block at `executed_at_height`.
+    async fn fetch_state_transition_execution_proof(
+        &self,
+        tx_bytes: &[u8],
+        executed_at_height: u64,
+    ) -> Option<((Proof, ResponseMetadata), (Proof, ResponseMetadata))> {
+        let request = dapi_grpc::drive::v0::GetStateTransitionExecutionProofRequest {
+            state_transition_hash: hash_single(tx_bytes).to_vec(),
+        };
+
+        let response = self
+            .drive_client
+            .get_internal_client()
+            .get_state_transition_execution_proof(request)
+            .await
+            .inspect_err(|status| {
+                debug!(%status, "Failed to fetch the execution proof from Drive");
+            })
+            .ok()?
+            .into_inner();
+
+        execution_proof_around_block(response, executed_at_height)
+    }
+
     /// Fetch Drive proofs for the provided state transition bytes, returning proof and metadata.
     async fn fetch_proof_for_state_transition(
         &self,
@@ -395,6 +472,34 @@ impl PlatformServiceImpl {
             }
         }
     }
+}
+
+/// The two sides of an execution proof, each with its block's metadata, when both are whole and
+/// they are the pair around the block at `executed_at_height`: the state the block before it
+/// left, and the state it left. Anything else is no pair, and the caller falls back to a proof
+/// of the state Drive holds now.
+fn execution_proof_around_block(
+    response: GetStateTransitionExecutionProofResponse,
+    executed_at_height: u64,
+) -> Option<((Proof, ResponseMetadata), (Proof, ResponseMetadata))> {
+    let before = response.before?;
+    let after = response.after?;
+    let before = (before.proof?, before.metadata?);
+    let after = (after.proof?, after.metadata?);
+
+    if after.1.height != executed_at_height
+        || before.1.height.checked_add(1) != Some(after.1.height)
+    {
+        tracing::warn!(
+            before_height = before.1.height,
+            after_height = after.1.height,
+            executed_at_height,
+            "Drive's execution proof is not of the block that executed the transition; not using it"
+        );
+        return None;
+    }
+
+    Some((before, after))
 }
 
 /// The identity that owns a state transition: the one whose credit balance a
@@ -445,6 +550,79 @@ pub(super) fn build_wait_for_state_transition_error_response(
 
 #[cfg(test)]
 mod tests {
+    mod execution_proof {
+        use super::super::execution_proof_around_block;
+        use dapi_grpc::drive::v0::GetStateTransitionExecutionProofResponse;
+        use dapi_grpc::drive::v0::get_state_transition_execution_proof_response::StateAtBlock;
+        use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+
+        fn state_at(height: u64) -> StateAtBlock {
+            StateAtBlock {
+                proof: Some(Proof {
+                    grovedb_proof: vec![height as u8],
+                    ..Default::default()
+                }),
+                metadata: Some(ResponseMetadata {
+                    height,
+                    ..Default::default()
+                }),
+            }
+        }
+
+        fn pair(before: u64, after: u64) -> GetStateTransitionExecutionProofResponse {
+            GetStateTransitionExecutionProofResponse {
+                before: Some(state_at(before)),
+                after: Some(state_at(after)),
+            }
+        }
+
+        #[test]
+        fn should_use_the_pair_around_the_block_that_executed_the_transition() {
+            let (before, after) =
+                execution_proof_around_block(pair(9, 10), 10).expect("expected the pair");
+
+            assert_eq!(before.0.grovedb_proof, vec![9]);
+            assert_eq!(before.1.height, 9);
+            assert_eq!(after.0.grovedb_proof, vec![10]);
+            assert_eq!(after.1.height, 10);
+        }
+
+        #[test]
+        fn should_use_no_pair_when_drive_has_none() {
+            assert!(
+                execution_proof_around_block(
+                    GetStateTransitionExecutionProofResponse::default(),
+                    10
+                )
+                .is_none()
+            );
+        }
+
+        #[test]
+        fn should_use_no_pair_that_misses_a_side_or_a_part_of_one() {
+            let mut no_before = pair(9, 10);
+            no_before.before = None;
+            let mut no_after = pair(9, 10);
+            no_after.after = None;
+            let mut no_proof = pair(9, 10);
+            no_proof.before.as_mut().unwrap().proof = None;
+            let mut no_metadata = pair(9, 10);
+            no_metadata.after.as_mut().unwrap().metadata = None;
+
+            for response in [no_before, no_after, no_proof, no_metadata] {
+                assert!(execution_proof_around_block(response, 10).is_none());
+            }
+        }
+
+        #[test]
+        fn should_use_no_pair_of_another_block() {
+            // The pair is of block 10, the transition was executed in block 11
+            assert!(execution_proof_around_block(pair(9, 10), 11).is_none());
+            // The two sides are not of consecutive blocks
+            assert!(execution_proof_around_block(pair(8, 10), 10).is_none());
+        }
+    }
+
     use super::*;
     use dapi_grpc::platform::v0::StateTransitionBroadcastError;
     use dpp::serialization::PlatformSerializable;

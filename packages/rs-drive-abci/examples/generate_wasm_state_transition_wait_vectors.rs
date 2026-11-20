@@ -197,6 +197,7 @@ fn wait_response(
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
                 ),
                 metadata: Some(metadata),
+                state_before_block: None,
             },
         )),
     }

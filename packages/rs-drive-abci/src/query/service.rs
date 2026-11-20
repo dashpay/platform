@@ -5,12 +5,20 @@ use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::platform_types::state_transition_execution_proofs::{
+    ProofOfStateAtBlock, RegistrationRefused, StateTransitionHash,
+};
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
-use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::drive::v0::get_state_transition_execution_proof_response::StateAtBlock;
+use dapi_grpc::drive::v0::{
+    GetProofsRequest, GetProofsResponse, GetStateTransitionExecutionProofRequest,
+    GetStateTransitionExecutionProofResponse, RegisterStateTransitionExecutionProofRequest,
+    RegisterStateTransitionExecutionProofResponse,
+};
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
@@ -1212,6 +1220,54 @@ impl DriveInternal for QueryService {
         )
         .await
     }
+
+    async fn register_state_transition_execution_proof(
+        &self,
+        request: Request<RegisterStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<RegisterStateTransitionExecutionProofResponse>, Status> {
+        let hash = state_transition_hash(&request.get_ref().state_transition_hash)?;
+
+        self.platform
+            .state_transition_execution_proofs
+            .register(hash)
+            .map_err(|refused| match refused {
+                RegistrationRefused::TooManyRegistered => Status::resource_exhausted(
+                    "too many state transitions are registered for an execution proof",
+                ),
+            })?;
+
+        Ok(Response::new(
+            RegisterStateTransitionExecutionProofResponse {},
+        ))
+    }
+
+    async fn get_state_transition_execution_proof(
+        &self,
+        request: Request<GetStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<GetStateTransitionExecutionProofResponse>, Status> {
+        let hash = state_transition_hash(&request.get_ref().state_transition_hash)?;
+
+        let proof = self.platform.state_transition_execution_proofs.get(&hash);
+        let state_at_block = |state: &ProofOfStateAtBlock| StateAtBlock {
+            proof: Some(state.proof.clone()),
+            metadata: Some(state.metadata.clone()),
+        };
+
+        Ok(Response::new(GetStateTransitionExecutionProofResponse {
+            before: proof.as_deref().map(|proof| state_at_block(&proof.before)),
+            after: proof.as_deref().map(|proof| state_at_block(&proof.after)),
+        }))
+    }
+}
+
+/// The hash a state transition is registered and fetched by, which is 32 bytes.
+fn state_transition_hash(bytes: &[u8]) -> Result<StateTransitionHash, Status> {
+    bytes.try_into().map_err(|_| {
+        Status::invalid_argument(format!(
+            "state_transition_hash must be 32 bytes, got {}",
+            bytes.len()
+        ))
+    })
 }
 
 fn query_error_into_status(error: QueryError) -> Status {
@@ -1330,6 +1386,16 @@ fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_take_a_state_transition_hash_of_32_bytes_only() {
+        assert_eq!(state_transition_hash(&[7; 32]).unwrap(), [7; 32]);
+
+        for length in [0, 31, 33] {
+            let status = state_transition_hash(&vec![7; length]).unwrap_err();
+            assert_eq!(status.code(), Code::InvalidArgument);
+        }
+    }
     use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 
     #[test]

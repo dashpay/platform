@@ -6,6 +6,18 @@ import "platform/v0/platform.proto";
 
 service DriveInternal {
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
+  // Asks Drive to prove the keys of a state transition before and after the
+  // block that executes it. The proof of the state before a block can only be
+  // made before that block is committed, so this has to arrive before the
+  // transition's block is finalized. RESOURCE_EXHAUSTED when Drive already
+  // holds as many registrations as it keeps.
+  rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
+      returns (RegisterStateTransitionExecutionProofResponse);
+  // The proofs Drive made for a registered state transition. Both are absent
+  // when Drive has none: the transition was not registered in time, its block
+  // is not finalized yet, or the proofs are older than Drive keeps them.
+  rpc getStateTransitionExecutionProof(GetStateTransitionExecutionProofRequest)
+      returns (GetStateTransitionExecutionProofResponse);
 }
 
 message GetProofsRequest {
@@ -15,4 +27,29 @@ message GetProofsRequest {
 message GetProofsResponse {
   org.dash.platform.dapi.v0.Proof proof = 1; // Cryptographic proof for the requested data
   org.dash.platform.dapi.v0.ResponseMetadata metadata = 2;  // Metadata about the blockchain state
+}
+
+message RegisterStateTransitionExecutionProofRequest {
+  // The hash of the state transition's bytes, its transaction hash in a block.
+  bytes state_transition_hash = 1;
+}
+
+message RegisterStateTransitionExecutionProofResponse {}
+
+message GetStateTransitionExecutionProofRequest {
+  // The hash of the state transition's bytes, its transaction hash in a block.
+  bytes state_transition_hash = 1;
+}
+
+message GetStateTransitionExecutionProofResponse {
+  // A proof of the state transition's keys, with the block whose state it is of.
+  message StateAtBlock {
+    org.dash.platform.dapi.v0.Proof proof = 1;
+    org.dash.platform.dapi.v0.ResponseMetadata metadata = 2;
+  }
+
+  // The state the block before the state transition's block left.
+  StateAtBlock before = 1;
+  // The state the state transition's block left.
+  StateAtBlock after = 2;
 }

@@ -45,6 +45,7 @@ pub mod groups;
 pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
 pub mod private_document_entries;
+pub mod state_before_block;
 pub mod token_contract_info;
 pub mod token_direct_purchase;
 pub mod token_info;
@@ -4700,6 +4701,7 @@ mod tests {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
                 result: Some(V0Result::Proof(Proof::default())),
                 metadata: Some(ResponseMetadata::default()),
+                state_before_block: None,
             })),
         };
         let provider = unreachable_provider();
@@ -7008,7 +7010,8 @@ mod tests {
         let response = platform::WaitForStateTransitionResultResponse {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
                 result: Some(V0Result::Proof(Proof::default())),
-                metadata: None, // missing — would trigger EmptyResponseMetadata if reached
+                metadata: None, // missing — would trigger EmptyResponseMetadata if reached,
+                state_before_block: None,
             })),
         };
         let provider = unreachable_provider();

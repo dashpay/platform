@@ -2722,6 +2722,19 @@ message WaitForStateTransitionResultResponse {
       SuccessWithOwnerBalance success_with_owner_balance = 4;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
+    // The state of the proof's keys at the block before the one that executed
+    // the state transition. Present when the node had been asked for the
+    // transition's proof before its block was finalized: `proof` and `metadata`
+    // are then of the block that executed the transition, so the two proofs
+    // show what that block changed. Absent otherwise, and `proof` is then of
+    // whatever block the node had reached when it answered.
+    StateBeforeBlock state_before_block = 5;
+  }
+  // A proof of a state transition's keys at the block before the one that
+  // executed it, with that block's metadata
+  message StateBeforeBlock {
+    Proof proof = 1;
+    ResponseMetadata metadata = 2;
   }
   oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }

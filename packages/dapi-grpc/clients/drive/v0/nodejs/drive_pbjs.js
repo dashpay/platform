@@ -119,6 +119,72 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.drive.v0.DriveInternal#registerStateTransitionExecutionProof}.
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @typedef registerStateTransitionExecutionProofCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse} [response] RegisterStateTransitionExecutionProofResponse
+                         */
+
+                        /**
+                         * Calls registerStateTransitionExecutionProof.
+                         * @function registerStateTransitionExecutionProof
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @instance
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofRequest} request RegisterStateTransitionExecutionProofRequest message or plain object
+                         * @param {org.dash.platform.drive.v0.DriveInternal.registerStateTransitionExecutionProofCallback} callback Node-style callback called with the error, if any, and RegisterStateTransitionExecutionProofResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(DriveInternal.prototype.registerStateTransitionExecutionProof = function registerStateTransitionExecutionProof(request, callback) {
+                            return this.rpcCall(registerStateTransitionExecutionProof, $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest, $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse, request, callback);
+                        }, "name", { value: "registerStateTransitionExecutionProof" });
+
+                        /**
+                         * Calls registerStateTransitionExecutionProof.
+                         * @function registerStateTransitionExecutionProof
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @instance
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofRequest} request RegisterStateTransitionExecutionProofRequest message or plain object
+                         * @returns {Promise<org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.drive.v0.DriveInternal#getStateTransitionExecutionProof}.
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @typedef getStateTransitionExecutionProofCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse} [response] GetStateTransitionExecutionProofResponse
+                         */
+
+                        /**
+                         * Calls getStateTransitionExecutionProof.
+                         * @function getStateTransitionExecutionProof
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @instance
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofRequest} request GetStateTransitionExecutionProofRequest message or plain object
+                         * @param {org.dash.platform.drive.v0.DriveInternal.getStateTransitionExecutionProofCallback} callback Node-style callback called with the error, if any, and GetStateTransitionExecutionProofResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(DriveInternal.prototype.getStateTransitionExecutionProof = function getStateTransitionExecutionProof(request, callback) {
+                            return this.rpcCall(getStateTransitionExecutionProof, $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest, $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse, request, callback);
+                        }, "name", { value: "getStateTransitionExecutionProof" });
+
+                        /**
+                         * Calls getStateTransitionExecutionProof.
+                         * @function getStateTransitionExecutionProof
+                         * @memberof org.dash.platform.drive.v0.DriveInternal
+                         * @instance
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofRequest} request GetStateTransitionExecutionProofRequest message or plain object
+                         * @returns {Promise<org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse>} Promise
+                         * @variation 2
+                         */
+
                         return DriveInternal;
                     })();
 
@@ -536,6 +602,998 @@ $root.org = (function() {
                         };
 
                         return GetProofsResponse;
+                    })();
+
+                    v0.RegisterStateTransitionExecutionProofRequest = (function() {
+
+                        /**
+                         * Properties of a RegisterStateTransitionExecutionProofRequest.
+                         * @memberof org.dash.platform.drive.v0
+                         * @interface IRegisterStateTransitionExecutionProofRequest
+                         * @property {Uint8Array|null} [stateTransitionHash] RegisterStateTransitionExecutionProofRequest stateTransitionHash
+                         */
+
+                        /**
+                         * Constructs a new RegisterStateTransitionExecutionProofRequest.
+                         * @memberof org.dash.platform.drive.v0
+                         * @classdesc Represents a RegisterStateTransitionExecutionProofRequest.
+                         * @implements IRegisterStateTransitionExecutionProofRequest
+                         * @constructor
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofRequest=} [properties] Properties to set
+                         */
+                        function RegisterStateTransitionExecutionProofRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * RegisterStateTransitionExecutionProofRequest stateTransitionHash.
+                         * @member {Uint8Array} stateTransitionHash
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @instance
+                         */
+                        RegisterStateTransitionExecutionProofRequest.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                        /**
+                         * Creates a new RegisterStateTransitionExecutionProofRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest} RegisterStateTransitionExecutionProofRequest instance
+                         */
+                        RegisterStateTransitionExecutionProofRequest.create = function create(properties) {
+                            return new RegisterStateTransitionExecutionProofRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified RegisterStateTransitionExecutionProofRequest message. Does not implicitly {@link org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofRequest} message RegisterStateTransitionExecutionProofRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        RegisterStateTransitionExecutionProofRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified RegisterStateTransitionExecutionProofRequest message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofRequest} message RegisterStateTransitionExecutionProofRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        RegisterStateTransitionExecutionProofRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a RegisterStateTransitionExecutionProofRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest} RegisterStateTransitionExecutionProofRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        RegisterStateTransitionExecutionProofRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.stateTransitionHash = reader.bytes();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a RegisterStateTransitionExecutionProofRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest} RegisterStateTransitionExecutionProofRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        RegisterStateTransitionExecutionProofRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a RegisterStateTransitionExecutionProofRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        RegisterStateTransitionExecutionProofRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
+                                    return "stateTransitionHash: buffer expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a RegisterStateTransitionExecutionProofRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest} RegisterStateTransitionExecutionProofRequest
+                         */
+                        RegisterStateTransitionExecutionProofRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest();
+                            if (object.stateTransitionHash != null)
+                                if (typeof object.stateTransitionHash === "string")
+                                    $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
+                                else if (object.stateTransitionHash.length >= 0)
+                                    message.stateTransitionHash = object.stateTransitionHash;
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a RegisterStateTransitionExecutionProofRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest} message RegisterStateTransitionExecutionProofRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        RegisterStateTransitionExecutionProofRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.stateTransitionHash = "";
+                                else {
+                                    object.stateTransitionHash = [];
+                                    if (options.bytes !== Array)
+                                        object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
+                                }
+                            if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this RegisterStateTransitionExecutionProofRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        RegisterStateTransitionExecutionProofRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return RegisterStateTransitionExecutionProofRequest;
+                    })();
+
+                    v0.RegisterStateTransitionExecutionProofResponse = (function() {
+
+                        /**
+                         * Properties of a RegisterStateTransitionExecutionProofResponse.
+                         * @memberof org.dash.platform.drive.v0
+                         * @interface IRegisterStateTransitionExecutionProofResponse
+                         */
+
+                        /**
+                         * Constructs a new RegisterStateTransitionExecutionProofResponse.
+                         * @memberof org.dash.platform.drive.v0
+                         * @classdesc Represents a RegisterStateTransitionExecutionProofResponse.
+                         * @implements IRegisterStateTransitionExecutionProofResponse
+                         * @constructor
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofResponse=} [properties] Properties to set
+                         */
+                        function RegisterStateTransitionExecutionProofResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * Creates a new RegisterStateTransitionExecutionProofResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse} RegisterStateTransitionExecutionProofResponse instance
+                         */
+                        RegisterStateTransitionExecutionProofResponse.create = function create(properties) {
+                            return new RegisterStateTransitionExecutionProofResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified RegisterStateTransitionExecutionProofResponse message. Does not implicitly {@link org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofResponse} message RegisterStateTransitionExecutionProofResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        RegisterStateTransitionExecutionProofResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified RegisterStateTransitionExecutionProofResponse message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IRegisterStateTransitionExecutionProofResponse} message RegisterStateTransitionExecutionProofResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        RegisterStateTransitionExecutionProofResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a RegisterStateTransitionExecutionProofResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse} RegisterStateTransitionExecutionProofResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        RegisterStateTransitionExecutionProofResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a RegisterStateTransitionExecutionProofResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse} RegisterStateTransitionExecutionProofResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        RegisterStateTransitionExecutionProofResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a RegisterStateTransitionExecutionProofResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        RegisterStateTransitionExecutionProofResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a RegisterStateTransitionExecutionProofResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse} RegisterStateTransitionExecutionProofResponse
+                         */
+                        RegisterStateTransitionExecutionProofResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse)
+                                return object;
+                            return new $root.org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse();
+                        };
+
+                        /**
+                         * Creates a plain object from a RegisterStateTransitionExecutionProofResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse} message RegisterStateTransitionExecutionProofResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        RegisterStateTransitionExecutionProofResponse.toObject = function toObject() {
+                            return {};
+                        };
+
+                        /**
+                         * Converts this RegisterStateTransitionExecutionProofResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.drive.v0.RegisterStateTransitionExecutionProofResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        RegisterStateTransitionExecutionProofResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return RegisterStateTransitionExecutionProofResponse;
+                    })();
+
+                    v0.GetStateTransitionExecutionProofRequest = (function() {
+
+                        /**
+                         * Properties of a GetStateTransitionExecutionProofRequest.
+                         * @memberof org.dash.platform.drive.v0
+                         * @interface IGetStateTransitionExecutionProofRequest
+                         * @property {Uint8Array|null} [stateTransitionHash] GetStateTransitionExecutionProofRequest stateTransitionHash
+                         */
+
+                        /**
+                         * Constructs a new GetStateTransitionExecutionProofRequest.
+                         * @memberof org.dash.platform.drive.v0
+                         * @classdesc Represents a GetStateTransitionExecutionProofRequest.
+                         * @implements IGetStateTransitionExecutionProofRequest
+                         * @constructor
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofRequest=} [properties] Properties to set
+                         */
+                        function GetStateTransitionExecutionProofRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetStateTransitionExecutionProofRequest stateTransitionHash.
+                         * @member {Uint8Array} stateTransitionHash
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @instance
+                         */
+                        GetStateTransitionExecutionProofRequest.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                        /**
+                         * Creates a new GetStateTransitionExecutionProofRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest} GetStateTransitionExecutionProofRequest instance
+                         */
+                        GetStateTransitionExecutionProofRequest.create = function create(properties) {
+                            return new GetStateTransitionExecutionProofRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetStateTransitionExecutionProofRequest message. Does not implicitly {@link org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofRequest} message GetStateTransitionExecutionProofRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStateTransitionExecutionProofRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetStateTransitionExecutionProofRequest message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofRequest} message GetStateTransitionExecutionProofRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStateTransitionExecutionProofRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetStateTransitionExecutionProofRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest} GetStateTransitionExecutionProofRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStateTransitionExecutionProofRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.stateTransitionHash = reader.bytes();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetStateTransitionExecutionProofRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest} GetStateTransitionExecutionProofRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStateTransitionExecutionProofRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetStateTransitionExecutionProofRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetStateTransitionExecutionProofRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
+                                    return "stateTransitionHash: buffer expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetStateTransitionExecutionProofRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest} GetStateTransitionExecutionProofRequest
+                         */
+                        GetStateTransitionExecutionProofRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest();
+                            if (object.stateTransitionHash != null)
+                                if (typeof object.stateTransitionHash === "string")
+                                    $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
+                                else if (object.stateTransitionHash.length >= 0)
+                                    message.stateTransitionHash = object.stateTransitionHash;
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetStateTransitionExecutionProofRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @static
+                         * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest} message GetStateTransitionExecutionProofRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetStateTransitionExecutionProofRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.stateTransitionHash = "";
+                                else {
+                                    object.stateTransitionHash = [];
+                                    if (options.bytes !== Array)
+                                        object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
+                                }
+                            if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetStateTransitionExecutionProofRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetStateTransitionExecutionProofRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return GetStateTransitionExecutionProofRequest;
+                    })();
+
+                    v0.GetStateTransitionExecutionProofResponse = (function() {
+
+                        /**
+                         * Properties of a GetStateTransitionExecutionProofResponse.
+                         * @memberof org.dash.platform.drive.v0
+                         * @interface IGetStateTransitionExecutionProofResponse
+                         * @property {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock|null} [before] GetStateTransitionExecutionProofResponse before
+                         * @property {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock|null} [after] GetStateTransitionExecutionProofResponse after
+                         */
+
+                        /**
+                         * Constructs a new GetStateTransitionExecutionProofResponse.
+                         * @memberof org.dash.platform.drive.v0
+                         * @classdesc Represents a GetStateTransitionExecutionProofResponse.
+                         * @implements IGetStateTransitionExecutionProofResponse
+                         * @constructor
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofResponse=} [properties] Properties to set
+                         */
+                        function GetStateTransitionExecutionProofResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetStateTransitionExecutionProofResponse before.
+                         * @member {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock|null|undefined} before
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @instance
+                         */
+                        GetStateTransitionExecutionProofResponse.prototype.before = null;
+
+                        /**
+                         * GetStateTransitionExecutionProofResponse after.
+                         * @member {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock|null|undefined} after
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @instance
+                         */
+                        GetStateTransitionExecutionProofResponse.prototype.after = null;
+
+                        /**
+                         * Creates a new GetStateTransitionExecutionProofResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse} GetStateTransitionExecutionProofResponse instance
+                         */
+                        GetStateTransitionExecutionProofResponse.create = function create(properties) {
+                            return new GetStateTransitionExecutionProofResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetStateTransitionExecutionProofResponse message. Does not implicitly {@link org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofResponse} message GetStateTransitionExecutionProofResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStateTransitionExecutionProofResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.before != null && Object.hasOwnProperty.call(message, "before"))
+                                $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.encode(message.before, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.after != null && Object.hasOwnProperty.call(message, "after"))
+                                $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.encode(message.after, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetStateTransitionExecutionProofResponse message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.IGetStateTransitionExecutionProofResponse} message GetStateTransitionExecutionProofResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStateTransitionExecutionProofResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetStateTransitionExecutionProofResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse} GetStateTransitionExecutionProofResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStateTransitionExecutionProofResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.before = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.after = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetStateTransitionExecutionProofResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse} GetStateTransitionExecutionProofResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStateTransitionExecutionProofResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetStateTransitionExecutionProofResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetStateTransitionExecutionProofResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.before != null && message.hasOwnProperty("before")) {
+                                var error = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.verify(message.before);
+                                if (error)
+                                    return "before." + error;
+                            }
+                            if (message.after != null && message.hasOwnProperty("after")) {
+                                var error = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.verify(message.after);
+                                if (error)
+                                    return "after." + error;
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetStateTransitionExecutionProofResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse} GetStateTransitionExecutionProofResponse
+                         */
+                        GetStateTransitionExecutionProofResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse();
+                            if (object.before != null) {
+                                if (typeof object.before !== "object")
+                                    throw TypeError(".org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.before: object expected");
+                                message.before = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.fromObject(object.before);
+                            }
+                            if (object.after != null) {
+                                if (typeof object.after !== "object")
+                                    throw TypeError(".org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.after: object expected");
+                                message.after = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.fromObject(object.after);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetStateTransitionExecutionProofResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @static
+                         * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse} message GetStateTransitionExecutionProofResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetStateTransitionExecutionProofResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                object.before = null;
+                                object.after = null;
+                            }
+                            if (message.before != null && message.hasOwnProperty("before"))
+                                object.before = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.toObject(message.before, options);
+                            if (message.after != null && message.hasOwnProperty("after"))
+                                object.after = $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.toObject(message.after, options);
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetStateTransitionExecutionProofResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetStateTransitionExecutionProofResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetStateTransitionExecutionProofResponse.StateAtBlock = (function() {
+
+                            /**
+                             * Properties of a StateAtBlock.
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                             * @interface IStateAtBlock
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] StateAtBlock proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] StateAtBlock metadata
+                             */
+
+                            /**
+                             * Constructs a new StateAtBlock.
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse
+                             * @classdesc Represents a StateAtBlock.
+                             * @implements IStateAtBlock
+                             * @constructor
+                             * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock=} [properties] Properties to set
+                             */
+                            function StateAtBlock(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * StateAtBlock proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @instance
+                             */
+                            StateAtBlock.prototype.proof = null;
+
+                            /**
+                             * StateAtBlock metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @instance
+                             */
+                            StateAtBlock.prototype.metadata = null;
+
+                            /**
+                             * Creates a new StateAtBlock instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock=} [properties] Properties to set
+                             * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock} StateAtBlock instance
+                             */
+                            StateAtBlock.create = function create(properties) {
+                                return new StateAtBlock(properties);
+                            };
+
+                            /**
+                             * Encodes the specified StateAtBlock message. Does not implicitly {@link org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock} message StateAtBlock message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateAtBlock.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified StateAtBlock message, length delimited. Does not implicitly {@link org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.IStateAtBlock} message StateAtBlock message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateAtBlock.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a StateAtBlock message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock} StateAtBlock
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateAtBlock.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a StateAtBlock message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock} StateAtBlock
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateAtBlock.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a StateAtBlock message.
+                             * @function verify
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            StateAtBlock.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a StateAtBlock message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock} StateAtBlock
+                             */
+                            StateAtBlock.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock)
+                                    return object;
+                                var message = new $root.org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock();
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a StateAtBlock message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @static
+                             * @param {org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock} message StateAtBlock
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            StateAtBlock.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.proof = null;
+                                    object.metadata = null;
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this StateAtBlock to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.drive.v0.GetStateTransitionExecutionProofResponse.StateAtBlock
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            StateAtBlock.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return StateAtBlock;
+                        })();
+
+                        return GetStateTransitionExecutionProofResponse;
                     })();
 
                     return v0;
@@ -59871,6 +60929,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] WaitForStateTransitionResultResponseV0 proof
                              * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance|null} [successWithOwnerBalance] WaitForStateTransitionResultResponseV0 successWithOwnerBalance
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] WaitForStateTransitionResultResponseV0 metadata
+                             * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock|null} [stateBeforeBlock] WaitForStateTransitionResultResponseV0 stateBeforeBlock
                              */
 
                             /**
@@ -59920,6 +60979,14 @@ $root.org = (function() {
                              */
                             WaitForStateTransitionResultResponseV0.prototype.metadata = null;
 
+                            /**
+                             * WaitForStateTransitionResultResponseV0 stateBeforeBlock.
+                             * @member {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock|null|undefined} stateBeforeBlock
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultResponseV0.prototype.stateBeforeBlock = null;
+
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
@@ -59966,6 +61033,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 if (message.successWithOwnerBalance != null && Object.hasOwnProperty.call(message, "successWithOwnerBalance"))
                                     $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.encode(message.successWithOwnerBalance, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.stateBeforeBlock != null && Object.hasOwnProperty.call(message, "stateBeforeBlock"))
+                                    $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.encode(message.stateBeforeBlock, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                 return writer;
                             };
 
@@ -60011,6 +61080,9 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.stateBeforeBlock = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -60081,6 +61153,11 @@ $root.org = (function() {
                                     if (error)
                                         return "metadata." + error;
                                 }
+                                if (message.stateBeforeBlock != null && message.hasOwnProperty("stateBeforeBlock")) {
+                                    var error = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.verify(message.stateBeforeBlock);
+                                    if (error)
+                                        return "stateBeforeBlock." + error;
+                                }
                                 return null;
                             };
 
@@ -60116,6 +61193,11 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
+                                if (object.stateBeforeBlock != null) {
+                                    if (typeof object.stateBeforeBlock !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.stateBeforeBlock: object expected");
+                                    message.stateBeforeBlock = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.fromObject(object.stateBeforeBlock);
+                                }
                                 return message;
                             };
 
@@ -60132,8 +61214,10 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.metadata = null;
+                                    object.stateBeforeBlock = null;
+                                }
                                 if (message.error != null && message.hasOwnProperty("error")) {
                                     object.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(message.error, options);
                                     if (options.oneofs)
@@ -60151,6 +61235,8 @@ $root.org = (function() {
                                     if (options.oneofs)
                                         object.result = "successWithOwnerBalance";
                                 }
+                                if (message.stateBeforeBlock != null && message.hasOwnProperty("stateBeforeBlock"))
+                                    object.stateBeforeBlock = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.toObject(message.stateBeforeBlock, options);
                                 return object;
                             };
 
@@ -60166,6 +61252,226 @@ $root.org = (function() {
                             };
 
                             return WaitForStateTransitionResultResponseV0;
+                        })();
+
+                        WaitForStateTransitionResultResponse.StateBeforeBlock = (function() {
+
+                            /**
+                             * Properties of a StateBeforeBlock.
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
+                             * @interface IStateBeforeBlock
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] StateBeforeBlock proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] StateBeforeBlock metadata
+                             */
+
+                            /**
+                             * Constructs a new StateBeforeBlock.
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
+                             * @classdesc Represents a StateBeforeBlock.
+                             * @implements IStateBeforeBlock
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock=} [properties] Properties to set
+                             */
+                            function StateBeforeBlock(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * StateBeforeBlock proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @instance
+                             */
+                            StateBeforeBlock.prototype.proof = null;
+
+                            /**
+                             * StateBeforeBlock metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @instance
+                             */
+                            StateBeforeBlock.prototype.metadata = null;
+
+                            /**
+                             * Creates a new StateBeforeBlock instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock instance
+                             */
+                            StateBeforeBlock.create = function create(properties) {
+                                return new StateBeforeBlock(properties);
+                            };
+
+                            /**
+                             * Encodes the specified StateBeforeBlock message. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock} message StateBeforeBlock message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateBeforeBlock.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified StateBeforeBlock message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IStateBeforeBlock} message StateBeforeBlock message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateBeforeBlock.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a StateBeforeBlock message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateBeforeBlock.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a StateBeforeBlock message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateBeforeBlock.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a StateBeforeBlock message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            StateBeforeBlock.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a StateBeforeBlock message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} StateBeforeBlock
+                             */
+                            StateBeforeBlock.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock();
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a StateBeforeBlock message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock} message StateBeforeBlock
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            StateBeforeBlock.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.proof = null;
+                                    object.metadata = null;
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this StateBeforeBlock to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.StateBeforeBlock
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            StateBeforeBlock.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return StateBeforeBlock;
                         })();
 
                         return WaitForStateTransitionResultResponse;

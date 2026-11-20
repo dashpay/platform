@@ -14,7 +14,11 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsRequest, TransactionsWithProofsResponse,
 };
 use dapi_grpc::drive::v0::drive_internal_server::{DriveInternal, DriveInternalServer};
-use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::drive::v0::{
+    GetProofsRequest, GetProofsResponse, GetStateTransitionExecutionProofRequest,
+    GetStateTransitionExecutionProofResponse, RegisterStateTransitionExecutionProofRequest,
+    RegisterStateTransitionExecutionProofResponse,
+};
 use dapi_grpc::tonic::codegen::http::{HeaderMap, Request as HttpRequest};
 use dapi_grpc::tonic::transport::Server;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -126,6 +130,20 @@ impl DriveInternal for RecordingService {
         &self,
         _: Request<GetProofsRequest>,
     ) -> Result<Response<GetProofsResponse>, Status> {
+        self.response()
+    }
+
+    async fn register_state_transition_execution_proof(
+        &self,
+        _: Request<RegisterStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<RegisterStateTransitionExecutionProofResponse>, Status> {
+        self.response()
+    }
+
+    async fn get_state_transition_execution_proof(
+        &self,
+        _: Request<GetStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<GetStateTransitionExecutionProofResponse>, Status> {
         self.response()
     }
 }

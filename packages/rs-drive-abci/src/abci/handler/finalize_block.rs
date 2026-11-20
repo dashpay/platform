@@ -162,6 +162,21 @@ where
         .block_platform_state()
         .current_platform_version()?;
 
+    // The proofs of the state before this block, for the state transitions in it that a
+    // client registered to have proved. This has to come before `finalize_block_proposal`,
+    // which makes the platform state this block's, and before the commit: until then the
+    // committed state and the platform state are both the previous block's.
+    let state_transition_proofs_before_block = app
+        .platform()
+        .prove_registered_state_transitions_before_block(
+            request
+                .block
+                .as_ref()
+                .and_then(|block| block.data.as_ref())
+                .map(|data| data.txs.as_slice())
+                .unwrap_or_default(),
+        );
+
     let request_finalize_block: FinalizeBlockCleanedRequest = request.try_into()?;
 
     let block_height = request_finalize_block.height;
@@ -259,6 +274,17 @@ where
     app.platform()
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
+
+    // The proofs of the state after this block, for the same state transitions. Outside
+    // consensus: it reads committed state, and a transition that cannot be proved is skipped.
+    app.platform()
+        .prove_registered_state_transitions_after_block(
+            state_transition_proofs_before_block,
+            block_height,
+        );
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("prove_registered_state_transitions");
 
     // Reclaim the storage of any TTL'd time-range buckets the block's
     // transaction flat-dropped (grovedb#848 / PR #849): the drops' redo
@@ -1277,5 +1303,349 @@ mod tests {
         finalize_real_block(&platform, &app, 3, next_interval_time, Some(second_time))
             .expect("third block after the restart");
         assert_eq!(registered_checkpoint_heights(&platform), vec![3]);
+    }
+
+    mod state_transition_execution_proofs {
+        use super::*;
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use dpp::dash_to_credits;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::signer::Signer;
+        use dpp::identity::{
+            Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel,
+        };
+        use dpp::prelude::Identifier;
+        use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
+        use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+        use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use dpp::state_transition::StateTransition;
+        use dpp::util::hash::hash_single;
+        use drive::drive::Drive;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        use simple_signer::signer::SimpleSigner;
+        use std::collections::BTreeMap;
+
+        const FIRST_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+        const SECOND_BLOCK_TIME_MS: u64 = 1_700_000_003_000;
+        const TRANSFER_AMOUNT: u64 = 500_000;
+
+        struct Sender {
+            identity: Identity,
+            signer: SimpleSigner,
+            transfer_key: IdentityPublicKey,
+        }
+
+        fn platform() -> TempPlatform<MockCoreRPCLike> {
+            let mut config = PlatformConfig::default_testnet();
+            config.testing_configs.block_commit_signature_verification = false;
+            TestPlatformBuilder::new()
+                .with_config(config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        /// An identity with a transfer key and a balance of one Dash, added to committed state.
+        fn sender(platform: &mut TempPlatform<MockCoreRPCLike>, seed: u64) -> Sender {
+            let platform_version = PlatformVersion::latest();
+            let credits = dash_to_credits!(1.0);
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut signer = SimpleSigner::default();
+
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected a master key");
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+            let (transfer_key, transfer_private_key) =
+                IdentityPublicKey::random_key_with_known_attributes(
+                    1,
+                    &mut rng,
+                    Purpose::TRANSFER,
+                    SecurityLevel::CRITICAL,
+                    KeyType::ECDSA_SECP256K1,
+                    None,
+                    platform_version,
+                )
+                .expect("expected a transfer key");
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
+
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(0, master_key), (1, transfer_key.clone())]),
+                balance: credits,
+                revision: 0,
+            }
+            .into();
+
+            platform
+                .drive
+                .add_to_system_credits(credits, None, platform_version)
+                .expect("expected to add to system credits");
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the identity");
+
+            Sender {
+                identity,
+                signer,
+                transfer_key,
+            }
+        }
+
+        async fn transfer(sender: &Sender, recipient_id: Identifier, nonce: u64) -> Vec<u8> {
+            let transfer: IdentityCreditTransferTransition = IdentityCreditTransferTransitionV0 {
+                identity_id: sender.identity.id(),
+                recipient_id,
+                amount: TRANSFER_AMOUNT,
+                nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: sender.transfer_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut state_transition: StateTransition = transfer.into();
+            let data = state_transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            state_transition.set_signature(
+                sender
+                    .signer
+                    .sign(&sender.transfer_key, data.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize")
+        }
+
+        /// Runs a block that holds `raw_state_transitions` through `finalize_block` on `app`,
+        /// committing it into `platform` for real. The transitions are applied to the block's
+        /// transaction first, as processing the block's proposal would have.
+        fn finalize_real_block_with_state_transitions<'a>(
+            platform: &'a TempPlatform<MockCoreRPCLike>,
+            app: &FullAbciApplication<'a, MockCoreRPCLike>,
+            height: u64,
+            block_time_ms: u64,
+            previous_block_time_ms: Option<u64>,
+            raw_state_transitions: Vec<Vec<u8>>,
+        ) -> Vec<StateTransitionExecutionResult> {
+            app.start_transaction();
+
+            let platform_state = (**platform.state.load()).clone();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected a platform version");
+            let quorum_hash: [u8; 32] = platform_state.current_validator_set_quorum_hash().into();
+
+            let results = {
+                let transaction_guard = app.transaction().read().unwrap();
+                let transaction = transaction_guard
+                    .as_ref()
+                    .expect("expected the block's transaction");
+                platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &raw_state_transitions,
+                        &platform_state,
+                        &BlockInfo::default(),
+                        transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process the state transitions")
+                    .into_execution_results()
+            };
+
+            app.block_execution_context
+                .write()
+                .unwrap()
+                .replace(block_execution_context(
+                    platform_state,
+                    height,
+                    block_time_ms,
+                    previous_block_time_ms,
+                ));
+
+            let mut request = finalize_block_request(
+                platform.config.abci.chain_id.clone(),
+                quorum_hash,
+                height,
+                block_time_ms,
+            );
+            request
+                .block
+                .as_mut()
+                .expect("expected the request to hold a block")
+                .data = Some(Data {
+                txs: raw_state_transitions,
+            });
+
+            finalize_block::<_, MockCoreRPCLike>(app, request).expect("the block must finalize");
+
+            results
+        }
+
+        fn committed_root(platform: &TempPlatform<MockCoreRPCLike>) -> [u8; 32] {
+            platform
+                .drive
+                .grove
+                .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash")
+        }
+
+        /// The balances of the sender and the recipient of a credit transfer that `proof`
+        /// holds, and the root hash `proof` verifies against.
+        fn transfer_balances_in(raw_state_transition: &[u8], proof: &[u8]) -> ([u8; 32], u64, u64) {
+            let state_transition =
+                StateTransition::deserialize_from_bytes_untrusted(raw_state_transition)
+                    .expect("expected to deserialize the transfer");
+
+            let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+                &state_transition,
+                &BlockInfo::default(),
+                proof,
+                &|_| Ok(None),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the proof to verify");
+
+            let StateTransitionProofResult::VerifiedBalanceTransfer(sender, recipient) =
+                outcome.into_result()
+            else {
+                panic!("expected the balances of a credit transfer");
+            };
+
+            (
+                root_hash,
+                sender.balance.expect("expected the sender's balance"),
+                recipient.balance.expect("expected the recipient's balance"),
+            )
+        }
+
+        #[tokio::test]
+        async fn should_prove_the_state_before_and_after_the_block_of_a_registered_state_transition(
+        ) {
+            let mut platform = platform();
+            let alice = sender(&mut platform, 200);
+            let bob = sender(&mut platform, 201);
+            let carol = sender(&mut platform, 202);
+            let app = FullAbciApplication::new(&platform.platform);
+            let proofs = &platform.state_transition_execution_proofs;
+
+            // A first block, so that the block under test has a committed block before it
+            finalize_real_block(&platform, &app, 1, FIRST_BLOCK_TIME_MS, None)
+                .expect("the first block must finalize");
+
+            let registered = transfer(&alice, bob.identity.id(), 1).await;
+            let not_registered = transfer(&carol, bob.identity.id(), 1).await;
+            let registered_hash = hash_single(&registered);
+            let never_in_a_block = [9u8; 32];
+            proofs
+                .register(registered_hash)
+                .expect("expected to register");
+            proofs
+                .register(never_in_a_block)
+                .expect("expected to register");
+
+            let root_before_block = committed_root(&platform);
+
+            let results = finalize_real_block_with_state_transitions(
+                &platform,
+                &app,
+                2,
+                SECOND_BLOCK_TIME_MS,
+                Some(FIRST_BLOCK_TIME_MS),
+                vec![registered.clone(), not_registered.clone()],
+            );
+
+            let root_after_block = committed_root(&platform);
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } =
+                &results[0]
+            else {
+                panic!("expected the registered transfer to succeed");
+            };
+
+            let proof = proofs
+                .get(&registered_hash)
+                .expect("expected the registered transition to be proved");
+
+            // Each side names the block it is of
+            assert_eq!(proof.before.metadata.height, 1);
+            assert_eq!(proof.before.metadata.time_ms, FIRST_BLOCK_TIME_MS);
+            assert_eq!(proof.after.metadata.height, 2);
+            assert_eq!(proof.after.metadata.time_ms, SECOND_BLOCK_TIME_MS);
+
+            // And verifies against the state that block left
+            let (root_before, sender_before, recipient_before) =
+                transfer_balances_in(&registered, &proof.before.proof.grovedb_proof);
+            let (root_after, sender_after, recipient_after) =
+                transfer_balances_in(&registered, &proof.after.proof.grovedb_proof);
+            assert_eq!(root_before, root_before_block);
+            assert_eq!(root_after, root_after_block);
+
+            assert_eq!(
+                sender_after,
+                sender_before - TRANSFER_AMOUNT - fee_result.total_base_fee()
+            );
+            // The two proofs show what the block changed, not what one transition did: the
+            // recipient was also paid by the other transfer of the block
+            assert_eq!(recipient_after, recipient_before + 2 * TRANSFER_AMOUNT);
+
+            // A proved transition is no longer waiting, one that was not registered has no
+            // proof, and one that no block held is still waiting
+            assert!(!proofs.is_registered(&registered_hash));
+            assert_eq!(proofs.get(&hash_single(&not_registered)), None);
+            assert!(proofs.is_registered(&never_in_a_block));
+        }
+
+        #[tokio::test]
+        async fn should_not_prove_a_registered_state_transition_of_the_first_block() {
+            let mut platform = platform();
+            let alice = sender(&mut platform, 210);
+            let bob = sender(&mut platform, 211);
+            let app = FullAbciApplication::new(&platform.platform);
+            let proofs = &platform.state_transition_execution_proofs;
+
+            let registered = transfer(&alice, bob.identity.id(), 1).await;
+            let registered_hash = hash_single(&registered);
+            proofs
+                .register(registered_hash)
+                .expect("expected to register");
+
+            // No block is committed before the first one, so no signed state exists to prove
+            // the state before it against
+            finalize_real_block_with_state_transitions(
+                &platform,
+                &app,
+                1,
+                FIRST_BLOCK_TIME_MS,
+                None,
+                vec![registered],
+            );
+
+            assert_eq!(proofs.get(&registered_hash), None);
+            assert!(proofs.is_registered(&registered_hash));
+        }
     }
 }

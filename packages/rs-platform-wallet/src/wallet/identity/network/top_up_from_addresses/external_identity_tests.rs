@@ -187,6 +187,7 @@ impl Fixture {
                         protocol_version: PlatformVersion::latest().protocol_version,
                         ..Default::default()
                     }),
+                    state_before_block: None,
                 })),
             })),
         );

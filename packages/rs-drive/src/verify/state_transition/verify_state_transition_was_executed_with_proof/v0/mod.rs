@@ -399,7 +399,7 @@ impl Drive {
                                 // the execution.
                                 let result = VerifiedDocuments(documents);
 
-                                let outcome = if Self::state_transition_proof_binds_execution(
+                                let outcome = if Self::state_transition_proof_binds_execution_v0(
                                     state_transition,
                                     known_contracts_provider_fn,
                                 )? {
@@ -3024,7 +3024,7 @@ impl Drive {
             None
         };
 
-        let outcome = if Self::state_transition_proof_binds_execution(
+        let outcome = if Self::state_transition_proof_binds_execution_v0(
             state_transition,
             known_contracts_provider_fn,
         )? {
@@ -3129,7 +3129,7 @@ impl Drive {
     /// document transitions bind their document or deletion outcome, except for
     /// erase, index-only storage, and shielded token payments, whose affected
     /// state does not identify the specific request that produced it.
-    fn state_transition_proof_binds_execution(
+    pub(super) fn state_transition_proof_binds_execution_v0(
         state_transition: &StateTransition,
         known_contracts_provider_fn: &ContractLookupFn,
     ) -> Result<bool, Error> {
@@ -6782,7 +6782,7 @@ mod tests {
         ];
 
         for (name, st) in snapshot_only {
-            let binds = Drive::state_transition_proof_binds_execution(&st, no_contracts)
+            let binds = Drive::state_transition_proof_binds_execution_v0(&st, no_contracts)
                 .expect("classifier should not error for contract-independent families");
             assert!(
                 !binds,

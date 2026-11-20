@@ -13,9 +13,29 @@ type DriveInternalgetProofs = {
   readonly responseType: typeof drive_pb.GetProofsResponse;
 };
 
+type DriveInternalregisterStateTransitionExecutionProof = {
+  readonly methodName: string;
+  readonly service: typeof DriveInternal;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof drive_pb.RegisterStateTransitionExecutionProofRequest;
+  readonly responseType: typeof drive_pb.RegisterStateTransitionExecutionProofResponse;
+};
+
+type DriveInternalgetStateTransitionExecutionProof = {
+  readonly methodName: string;
+  readonly service: typeof DriveInternal;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof drive_pb.GetStateTransitionExecutionProofRequest;
+  readonly responseType: typeof drive_pb.GetStateTransitionExecutionProofResponse;
+};
+
 export class DriveInternal {
   static readonly serviceName: string;
   static readonly getProofs: DriveInternalgetProofs;
+  static readonly registerStateTransitionExecutionProof: DriveInternalregisterStateTransitionExecutionProof;
+  static readonly getStateTransitionExecutionProof: DriveInternalgetStateTransitionExecutionProof;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -58,6 +78,24 @@ export class DriveInternalClient {
   getProofs(
     requestMessage: drive_pb.GetProofsRequest,
     callback: (error: ServiceError|null, responseMessage: drive_pb.GetProofsResponse|null) => void
+  ): UnaryResponse;
+  registerStateTransitionExecutionProof(
+    requestMessage: drive_pb.RegisterStateTransitionExecutionProofRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: drive_pb.RegisterStateTransitionExecutionProofResponse|null) => void
+  ): UnaryResponse;
+  registerStateTransitionExecutionProof(
+    requestMessage: drive_pb.RegisterStateTransitionExecutionProofRequest,
+    callback: (error: ServiceError|null, responseMessage: drive_pb.RegisterStateTransitionExecutionProofResponse|null) => void
+  ): UnaryResponse;
+  getStateTransitionExecutionProof(
+    requestMessage: drive_pb.GetStateTransitionExecutionProofRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: drive_pb.GetStateTransitionExecutionProofResponse|null) => void
+  ): UnaryResponse;
+  getStateTransitionExecutionProof(
+    requestMessage: drive_pb.GetStateTransitionExecutionProofRequest,
+    callback: (error: ServiceError|null, responseMessage: drive_pb.GetStateTransitionExecutionProofResponse|null) => void
   ): UnaryResponse;
 }
 
