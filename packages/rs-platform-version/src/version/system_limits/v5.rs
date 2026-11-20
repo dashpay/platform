@@ -16,9 +16,11 @@ use crate::version::system_limits::SystemLimits;
 ///   `None` before. A `PrivateDocumentCreateFromShieldedPool` appends at most 16 entries
 ///   (`max_private_document_entries_per_transition`, `None` before).
 /// * Schema patterns: protocol version 15 is the first whose consensus reads
-///   `max_contract_schema_patterns` (32) and `max_schema_pattern_compiled_size` (128 KiB),
-///   through `validate_schema_patterns` 0. The numbers are unchanged from the earlier tables,
-///   which hold them for `check_tx` alone.
+///   `max_contract_schema_patterns` (32), `max_schema_pattern_compiled_size` (128 KiB),
+///   `max_schema_pattern_bytes` (256), `max_contract_schema_pattern_bytes` (4 KiB) and
+///   `max_schema_pattern_case_folded_code_points` (4096), through `validate_schema_patterns`
+///   0. The numbers are unchanged from the earlier tables, which hold them for `check_tx`
+///   alone.
 /// * Retained-history erasure: one transition removes at most 100 revisions
 ///   (`max_document_revisions_erased_per_transition`, `None` before), as enforced by
 ///   `erase_document_for_contract_operations` 0.

@@ -7,9 +7,10 @@ use crate::execution::validation::state_transition::state_transitions::data_cont
     assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
     assert_refused_unpaid_as_not_active, assert_unpaid_internal_error, check_and_process,
     expiring_summed_schema, one_pattern_too_many, patterned_schema, private_schema,
-    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema,
+    transient_summed_schema, Outcome,
     EXPIRING_UNBOUNDED_SUM_MESSAGE, PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE,
-    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE, TOO_MANY_PATTERNS_MESSAGE,
+    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE, TOO_MANY_PATTERNS_MESSAGE, TRANSIENT_SUMMED_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -269,6 +270,20 @@ async fn should_refuse_an_update_adding_a_summed_u64_property_with_a_paid_consen
 
     assert_eq!(outcome.nonce_before, None);
     assert_paid_contract_structure_error(&outcome, SUMMED_U64_MESSAGE, UPDATE_NONCE);
+}
+
+/// An update is held to the rule on the contract it would store, as a registration is: `check_tx`
+/// refuses the transition with the error the block charges the owner for.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_summed_transient_property_with_a_paid_consensus_error() {
+    let outcome = update_contract_adding_schema(
+        transient_summed_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_eq!(outcome.nonce_before, None);
+    assert_paid_contract_structure_error(&outcome, TRANSIENT_SUMMED_MESSAGE, UPDATE_NONCE);
 }
 
 #[tokio::test]

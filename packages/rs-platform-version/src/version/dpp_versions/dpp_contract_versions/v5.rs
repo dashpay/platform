@@ -34,6 +34,7 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
         equal_ignoring_time_fields: 0,
         registration_cost: 1,
         validate_schema_patterns: None,
+        validate_no_transient_summed_property: None,
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {

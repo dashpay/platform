@@ -22,12 +22,15 @@ use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_con
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
+use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
@@ -1026,6 +1029,14 @@ struct SummedRankContract {
     /// The type keeps the history of its documents, which registration refuses on a
     /// contested type from protocol version 15
     keeps_history: bool,
+    /// `rank` is left out of the contested index, declared between 0 and 1000 and listed as
+    /// transient, which registration refuses on a type summing it from protocol version 15
+    transient_rank: bool,
+    /// The type sums `stats.rank`, an integer between 0 and 1000 in a required `stats` object,
+    /// instead of `rank`: a dotted name, which registration refuses from protocol version 14
+    dotted_summed_name: bool,
+    /// The type sums `rank` through its `identityId` index alone instead of `documentsSummable`
+    rank_summed_by_an_index: bool,
 }
 
 /// A platform at `platform_version` with [`SUMMED_RANK_CONTRACT`] changed as `changes` say,
@@ -1045,6 +1056,38 @@ fn platform_with_summed_rank_contract(
     }
     if changes.keeps_history {
         domain["documentsKeepHistory"] = true.into();
+    }
+    if changes.transient_rank {
+        domain["indices"][0]["properties"] = serde_json::json!([
+            { "normalizedParentDomainName": "asc" },
+            { "normalizedLabel": "asc" },
+        ]);
+        domain["properties"]["rank"]["minimum"] = 0.into();
+        domain["properties"]["rank"]["maximum"] = 1000.into();
+        domain["transient"] = serde_json::json!(["rank"]);
+    }
+    if changes.dotted_summed_name {
+        domain["properties"]["stats"] = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "rank": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 0 },
+            },
+            "required": ["rank"],
+            "additionalProperties": false,
+            "position": 8,
+        });
+        domain["required"]
+            .as_array_mut()
+            .expect("expected the required list")
+            .push("stats".into());
+        domain["documentsSummable"] = "stats.rank".into();
+    }
+    if changes.rank_summed_by_an_index {
+        domain
+            .as_object_mut()
+            .expect("expected the domain schema")
+            .remove("documentsSummable");
+        domain["indices"][1]["summable"] = "rank".into();
     }
     let contract_file = tempfile::Builder::new()
         .suffix(".json")
@@ -1111,6 +1154,36 @@ async fn join_summed_rank_contest(
     time_ms: TimestampMillis,
     platform_version: &PlatformVersion,
 ) -> (Identifier, Identifier) {
+    let (identity, document, result) = submit_summed_rank_contender(
+        platform,
+        contract,
+        rng,
+        label,
+        rank,
+        time_ms,
+        platform_version,
+    )
+    .await;
+    assert_matches!(
+        result,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "the contender must join the contest"
+    );
+    (identity, document)
+}
+
+/// A new identity submits a create joining a contest on `label` with `rank` in
+/// [`SUMMED_RANK_CONTRACT`] in a block at `time_ms`; returns the identity's id, its document's
+/// and what the block made of the create
+async fn submit_summed_rank_contender(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    rng: &mut StdRng,
+    label: &str,
+    rank: i64,
+    time_ms: TimestampMillis,
+    platform_version: &PlatformVersion,
+) -> (Identifier, Identifier, StateTransitionExecutionResult) {
     let (identity, signer, key) = setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
     let domain = contract
         .document_type_for_name("domain")
@@ -1134,6 +1207,10 @@ async fn join_summed_rank_contest(
     document.set("label", label.into());
     document.set("normalizedLabel", label.into());
     document.set("rank", Value::I64(rank));
+    // A type summing `stats.rank` holds the rank there too
+    if domain.properties().contains_key("stats") {
+        document.set("stats.rank", Value::I64(rank));
+    }
     document
         .set_id_for_creation(domain, &entropy.0, 2, platform_version)
         .expect("expected to set the document id");
@@ -1194,12 +1271,11 @@ async fn join_summed_rank_contest(
         .commit_transaction(transaction)
         .unwrap()
         .expect("expected to commit transaction");
-    assert_matches!(
+    (
+        identity.id(),
+        document.id(),
         processing_result.into_execution_results().remove(0),
-        StateTransitionExecutionResult::SuccessfulExecution { .. },
-        "the contender must join the contest"
-    );
-    (identity.id(), document.id())
+    )
 }
 
 /// The contest on `label` with `rank` in [`SUMMED_RANK_CONTRACT`]
@@ -1225,6 +1301,187 @@ async fn should_leave_a_contest_open_on_a_type_summing_values_past_the_contested
     let platform_version = PlatformVersion::latest();
     let (mut platform, contract, mut rng) =
         platform_with_summed_rank_contract(SummedRankContract::default(), platform_version);
+    let (contender, document_id) = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
+    let vote_poll = summed_rank_vote_poll(&contract, "quantum", 1);
+    let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the block to go through");
+
+    assert_holds_what_it_held(
+        &platform,
+        &vote_poll,
+        &[document_id],
+        &before,
+        platform_version,
+    );
+    assert_only_left_open_listed(&platform, &[&vote_poll], platform_version);
+    assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
+}
+
+/// A contested create stores its document without the values of the type's transient
+/// properties, so the winner's document of a type summing one does not hold the value the
+/// type's sums read. From protocol version 15 registration refuses such a type and a create
+/// refuses to open a contest on one; a contest opened earlier is left open at its end, as any
+/// winner whose document cannot be written is.
+#[tokio::test]
+async fn should_leave_a_contest_open_when_the_winner_does_not_hold_its_summed_value() {
+    let platform_version = PlatformVersion::latest();
+    // From protocol version 15 a create on such a type is refused, so its contest opened
+    // before, in a block of protocol version 14
+    let joined_at = protocol_version_14();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            transient_rank: true,
+            ..Default::default()
+        },
+        joined_at,
+    );
+    let (contender, document_id) = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        joined_at,
+    )
+    .await;
+    let vote_poll = ContestedDocumentResourceVotePoll {
+        contract_id: contract.id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        index_values: vec![
+            Value::Text("dash".to_string()),
+            Value::Text("quantum".to_string()),
+        ],
+    };
+    let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the block to go through");
+
+    assert_holds_what_it_held(
+        &platform,
+        &vote_poll,
+        &[document_id],
+        &before,
+        platform_version,
+    );
+    assert_only_left_open_listed(&platform, &[&vote_poll], platform_version);
+    assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
+}
+
+/// From protocol version 15 a create on a type summing a property it lists as transient, which a
+/// contract registered earlier may hold, is refused before it reaches Drive, as a paid
+/// consensus error: no contest on such a type opens.
+#[tokio::test]
+async fn should_refuse_to_open_a_contest_on_a_type_summing_a_transient_property() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            transient_rank: true,
+            ..Default::default()
+        },
+        platform_version,
+    );
+    let (_, _, result) = submit_summed_rank_contender(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
+
+    assert_matches!(
+        result,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(message)
+            )),
+            ..
+        } if message.contains("which it lists as transient")
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+}
+
+/// A type summing its transient property through an index alone, without `documentsSummable`,
+/// is left open as well: Drive reads the value of every index the document enters.
+#[tokio::test]
+async fn should_leave_a_contest_open_when_the_winner_does_not_hold_the_value_an_index_sums() {
+    let platform_version = PlatformVersion::latest();
+    // From protocol version 15 a create on such a type is refused, so its contest opened
+    // before, in a block of protocol version 14
+    let joined_at = protocol_version_14();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            transient_rank: true,
+            rank_summed_by_an_index: true,
+            ..Default::default()
+        },
+        joined_at,
+    );
+    let (contender, document_id) = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        joined_at,
+    )
+    .await;
+    let vote_poll = ContestedDocumentResourceVotePoll {
+        contract_id: contract.id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        index_values: vec![
+            Value::Text("dash".to_string()),
+            Value::Text("quantum".to_string()),
+        ],
+    };
+    let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the block to go through");
+
+    assert_holds_what_it_held(
+        &platform,
+        &vote_poll,
+        &[document_id],
+        &before,
+        platform_version,
+    );
+    assert_only_left_open_listed(&platform, &[&vote_poll], platform_version);
+    assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
+}
+
+/// Drive reads a summed value from the top level of a document, so the winner's document of a
+/// type summing a property named by a dotted path holds no value its sums read either. Such a
+/// contest is left open too.
+#[tokio::test]
+async fn should_leave_a_contest_open_on_a_type_summing_a_dotted_name() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            bounded_rank: true,
+            dotted_summed_name: true,
+            ..Default::default()
+        },
+        platform_version,
+    );
     let (contender, document_id) = join_summed_rank_contest(
         &mut platform,
         &contract,
@@ -1336,6 +1593,7 @@ async fn should_leave_a_contest_open_when_a_deleted_document_retains_the_awarded
         SummedRankContract {
             bounded_rank: true,
             keeps_history: true,
+            ..Default::default()
         },
         platform_version,
     );

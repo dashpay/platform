@@ -451,6 +451,14 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             action
                 .data_contract_ref()
                 .ensure_compiled_size(&mut validation_operations, platform_version)?;
+            // A document type summing a property it lists as transient is refused on the
+            // contract registration would store, after the parse, so parsing a contract stored
+            // earlier, as decoding a document with its contract does, never refuses it. Edited
+            // in place: the method's gate, `validate_no_transient_summed_property`, is `None`
+            // before protocol version 15, so it refuses nothing there
+            action
+                .data_contract_ref()
+                .validate_no_transient_summed_property(platform_version)?;
             Ok(action)
         });
 

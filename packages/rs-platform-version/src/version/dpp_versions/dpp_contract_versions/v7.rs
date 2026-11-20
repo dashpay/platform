@@ -44,8 +44,14 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   property names, on an integer property;
 /// - `validate_schema_patterns`, `Some(0)` rather than `None`: registration and update refuse
 ///   a contract whose document schemas and `$defs` hold more than
-///   `max_contract_schema_patterns` patterns, or one that does not compile within
-///   `max_schema_pattern_compiled_size`;
+///   `max_contract_schema_patterns` patterns, patterns of more than
+///   `max_contract_schema_pattern_bytes` bytes together, or one longer than
+///   `max_schema_pattern_bytes`, folding more than `max_schema_pattern_case_folded_code_points`
+///   code points, or not compiling within `max_schema_pattern_compiled_size`;
+/// - `validate_no_transient_summed_property`, `Some(0)` rather than `None`: registration and
+///   update refuse a contract one of whose document types sums a property it lists as
+///   transient, and a document create on such a type, which a contract registered earlier may
+///   hold, is refused with the same error;
 /// - `registration_cost`, 3 rather than 2: the fee a state transition's contract is estimated
 ///   at bills each index by the keys it declares instead of parsing it, which compiled the
 ///   field matches of a contested index before anything bounded them;
@@ -76,6 +82,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         validate_document: 2,
         // changed: a contract's schemas hold a bounded number of patterns of bounded size
         validate_schema_patterns: Some(0),
+        validate_no_transient_summed_property: Some(0),
         // changed: the fee estimate bills an index without compiling its field matches
         registration_cost: 3,
         // changed: an update of a contract whose stored schema repeats a key is refused

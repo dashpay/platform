@@ -16,6 +16,7 @@ use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::document::paths::document_history_path;
+use drive::drive::document::read_document_sum_contribution;
 use drive::drive::votes::paths::VOTE_POLLS_LEFT_OPEN_END_DATE;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
@@ -149,6 +150,16 @@ where
     ///   protocol version 14 may sum values of any size and sign, and then nothing read before
     ///   the write tells whether a sum stays in range. A schema the limit cannot be read from
     ///   counts as past it: that depends on the contract alone, never on a node's storage;
+    /// - the document holds, for every property the type's sums read, a value Drive writes into
+    ///   them: an integer that fits an `i64`, at the top level of the document
+    ///   (`read_document_sum_contribution`). A contender's document is stored without the values
+    ///   of the type's transient properties, and Drive reads a summed value by its property's
+    ///   top-level name. From protocol version 15 registration refuses a type summing a
+    ///   transient property, and from protocol version 14 a summed property named by a dotted
+    ///   path; a type registered earlier may sum either. Every summing declaration is read,
+    ///   an index's too where the document would not enter that index: such a type is one
+    ///   registration no longer admits, and its contest is left open for a later protocol
+    ///   version to decide;
     /// - no other document holds a value of one of its unique indexes. The document is
     ///   checked as stored: its owner is the identity it is awarded to;
     /// - no document of its type holds its id: neither a document in the type's primary
@@ -172,6 +183,13 @@ where
             ) {
                 return Ok(false);
             }
+        }
+        if document_type
+            .summed_properties()
+            .into_iter()
+            .any(|property| read_document_sum_contribution(document, property).is_err())
+        {
+            return Ok(false);
         }
         if !self
             .drive

@@ -11,8 +11,10 @@ mod sum_overflow_tests {
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::data_contract::config::v1::DataContractConfigSettersV1;
+    use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
@@ -36,6 +38,23 @@ mod sum_overflow_tests {
     const TAGGED: &str = "tagged";
     /// The most tags a `tagged` document holds.
     const MAX_TAGS: i64 = 3;
+    /// The document type keeping the total of an `amount` it lists as transient.
+    const TRANSIENT_AMOUNT: &str = "transientAmount";
+
+    /// A type keeping the total of an `amount` it lists as transient: one registration refuses
+    /// from protocol version 15, and a contract registered earlier may hold.
+    fn transient_amount_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsSummable": "amount",
+            "properties": {
+                "amount": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 0 }
+            },
+            "required": ["amount"],
+            "transient": ["amount"],
+            "additionalProperties": false
+        })
+    }
 
     /// A mutable, transferable type keeping the total of an `amount` that is never negative.
     /// The contract does not size its integers, so `amount` reaches `i64::MAX`.
@@ -121,6 +140,20 @@ mod sum_overflow_tests {
 
     impl SumFixture {
         fn new(protocol_version: u32) -> Self {
+            Self::with_types(
+                protocol_version,
+                vec![(TIP, tip_schema()), (TAGGED, tagged_schema())],
+                true,
+            )
+        }
+
+        /// Two identities and one contract with the types `types`, parsed with
+        /// `full_validation` and stored without the other checks of a registration.
+        fn with_types(
+            protocol_version: u32,
+            types: Vec<(&str, Value)>,
+            full_validation: bool,
+        ) -> Self {
             let platform_version =
                 PlatformVersion::get(protocol_version).expect("expected a known protocol version");
             let mut platform = TestPlatformBuilder::new()
@@ -137,9 +170,15 @@ mod sum_overflow_tests {
                 get_data_contract_fixture(Some(writers[0].0.id()), 0, protocol_version)
                     .data_contract_owned();
             contract.config_mut().set_sized_integer_types_enabled(false);
-            for (name, schema) in [(TIP, tip_schema()), (TAGGED, tagged_schema())] {
+            for (name, schema) in types {
                 contract
-                    .set_document_schema(name, schema, true, &mut Vec::new(), platform_version)
+                    .set_document_schema(
+                        name,
+                        schema,
+                        full_validation,
+                        &mut Vec::new(),
+                        platform_version,
+                    )
                     .expect("expected to add the document type");
             }
             platform
@@ -725,5 +764,49 @@ mod sum_overflow_tests {
         assert_eq!(outcome.nonce_after, outcome.nonce_before);
         assert_eq!(outcome.charged(), 0);
         assert_eq!(fixture.stored(TIP), stored_before);
+    }
+
+    /// A contract registered before protocol version 15 may keep the total of a property it
+    /// lists as transient. Its documents are stored without the value, so no write can put
+    /// one into the type's sums: a create is refused as a paid consensus error, its nonce
+    /// bumped and its fee charged, rather than reaching Drive.
+    #[tokio::test]
+    async fn should_refuse_a_create_on_a_type_summing_a_transient_property_as_a_paid_error() {
+        // Parsed as a contract read from state is, as a protocol version before 15 registered it
+        let mut fixture = SumFixture::with_types(
+            PlatformVersion::latest().protocol_version,
+            vec![(TRANSIENT_AMOUNT, transient_amount_schema())],
+            false,
+        );
+
+        let (outcome, _) = fixture.create(0, TRANSIENT_AMOUNT, 5).await;
+
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error, actual_fees, ..
+        } = &outcome.result
+        else {
+            panic!("expected a paid consensus error, got {:?}", outcome.result);
+        };
+        assert_matches!(
+            error,
+            ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(message)
+            )) if message.contains("which it lists as transient"),
+            "{error:?}"
+        );
+        assert_eq!(
+            outcome
+                .nonce_after
+                .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+            Some(outcome.transition_nonce),
+            "the nonce is bumped to the transition's"
+        );
+        assert!(outcome.charged() > 0, "the refusal is charged");
+        assert_eq!(
+            outcome.charged(),
+            actual_fees.total_base_fee(),
+            "the writer pays the fee the result reports"
+        );
+        assert!(fixture.stored(TRANSIENT_AMOUNT).is_empty());
     }
 }

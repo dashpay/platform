@@ -140,6 +140,25 @@ pub(in crate::execution) fn expiring_summed_schema(amount: Value) -> Value {
     })
 }
 
+/// The fragment of the parser's message for a summed property the type lists as transient.
+pub(in crate::execution) const TRANSIENT_SUMMED_MESSAGE: &str = "which it lists as transient";
+
+/// A document type that sums `amount`, an integer between 0 and 1000 it lists as transient.
+/// Protocol version 15 refuses it at registration: a transient value is never stored, and the
+/// type's sums read the value of every document.
+pub(in crate::execution) fn transient_summed_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsSummable": "amount",
+        "properties": {
+            "amount": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 0 },
+        },
+        "required": ["amount"],
+        "transient": ["amount"],
+        "additionalProperties": false,
+    })
+}
+
 /// The fragment of the parser's message for a `terminal` outside an indexOnly type.
 pub(in crate::execution) const TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE: &str =
     "which is only allowed on indexOnly document types";
@@ -218,6 +237,20 @@ pub(in crate::execution) const TOO_MANY_PATTERNS_MESSAGE: &str = "patterns (`pat
 /// The fragment of the pattern bound's message for a pattern that compiles to too much.
 pub(in crate::execution) const PATTERN_TOO_LARGE_MESSAGE: &str =
     "is not a regular expression that compiles within";
+
+/// The fragment of the pattern bound's message for a pattern longer than a pattern may be.
+pub(in crate::execution) const PATTERN_TOO_LONG_MESSAGE: &str = "bytes long";
+
+/// The fragment of the pattern bound's message for a pattern folding more code points than a
+/// pattern may.
+pub(in crate::execution) const PATTERN_FOLDS_TOO_MUCH_MESSAGE: &str = "may fold more than";
+
+/// A bracketed class of `count` `\P{Any}` under `(?i)`: each item folds every code point
+/// before it is negated to nothing, so the class compiles to almost nothing however long
+/// translating it takes.
+pub(in crate::execution) fn folding_every_code_point(count: usize) -> String {
+    format!("(?i)[{}]", r"\P{Any}".repeat(count))
+}
 
 /// A pattern any limit admits.
 pub(in crate::execution) const SMALL_PATTERN: &str = "^[a-z]{1,20}$";
