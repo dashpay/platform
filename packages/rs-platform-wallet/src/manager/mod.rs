@@ -1350,7 +1350,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
         #[cfg(feature = "shielded")]
-        self.shielded_prefetch.shutdown().await;
+        let prefetch_status = self.shielded_prefetch.shutdown().await;
         // Stop serving SPV quorum keys before SPV stops, whether or not the
         // stop is clean: a stopping client must not answer proof lookups.
         #[cfg(feature = "spv-context")]
@@ -1454,7 +1454,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         #[cfg(feature = "shielded")]
         report
             .per_worker
-            .insert(WalletWorker::ShieldedPrefetch, WorkerStatus::Ok);
+            .insert(WalletWorker::ShieldedPrefetch, prefetch_status);
         report.per_worker.insert(WalletWorker::Spv, spv_status);
         report.per_worker.insert(
             WalletWorker::DashPayPayments,

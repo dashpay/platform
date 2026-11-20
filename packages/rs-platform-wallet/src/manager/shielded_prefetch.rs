@@ -3,6 +3,8 @@ use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
 use std::task::Poll;
 
+use dash_async::WorkerStatus;
+use tokio::runtime::{Handle, RuntimeFlavor};
 use tokio::task::JoinHandle;
 
 use super::PlatformWalletManager;
@@ -12,7 +14,12 @@ use crate::error::PlatformWalletError;
 #[derive(Default)]
 struct PrefetchState {
     sealed: bool,
-    task: Option<JoinHandle<()>>,
+    task: Option<TrackedTask>,
+}
+
+struct TrackedTask {
+    handle: JoinHandle<()>,
+    runtime: Handle,
 }
 
 #[derive(Default)]
@@ -27,46 +34,85 @@ impl ShieldedPrefetch {
         if state.sealed {
             return false;
         }
-        if state.task.as_ref().is_none_or(JoinHandle::is_finished) {
-            state.task = Some(tokio::spawn(future));
+        if state
+            .task
+            .as_ref()
+            .is_none_or(|task| task.handle.is_finished())
+        {
+            state.task = Some(TrackedTask {
+                handle: tokio::spawn(future),
+                runtime: Handle::current(),
+            });
         }
         true
     }
 
     /// SDK proof callbacks borrow their host context, so cancellation must be
     /// joined through any synchronous callback; a timeout cannot permit teardown.
-    pub(super) async fn shutdown(&self) {
+    pub(super) async fn shutdown(&self) -> WorkerStatus {
         {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.sealed = true;
             if let Some(task) = &state.task {
-                task.abort();
+                task.handle.abort();
             }
         }
         let _drain = self.drain.lock().await;
         poll_fn(|cx| {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             if let Some(task) = state.task.as_mut() {
-                match Pin::new(task).poll(cx) {
+                match Pin::new(&mut task.handle).poll(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(Err(error)) if !error.is_cancelled() => {
                         tracing::warn!(%error, "shielded prefetch task failed");
+                        state.task = None;
+                        return Poll::Ready(WorkerStatus::Panicked(error.to_string()));
                     }
                     Poll::Ready(_) => {}
                 }
             }
             state.task = None;
-            Poll::Ready(())
+            Poll::Ready(WorkerStatus::Ok)
         })
-        .await;
+        .await
     }
 }
 
 impl Drop for ShieldedPrefetch {
     fn drop(&mut self) {
         let state = self.state.get_mut().unwrap_or_else(PoisonError::into_inner);
-        if let Some(task) = &state.task {
-            task.abort();
+        if let Some(task) = state.task.take() {
+            task.handle.abort();
+            if task.handle.is_finished() {
+                return;
+            }
+            let TrackedTask { handle, runtime } = task;
+            let flavor = runtime.runtime_flavor();
+            let join = move || {
+                runtime.block_on(async {
+                    let _ = handle.await;
+                });
+            };
+            match flavor {
+                RuntimeFlavor::MultiThread if Handle::try_current().is_ok() => {
+                    tokio::task::block_in_place(join)
+                }
+                RuntimeFlavor::MultiThread | RuntimeFlavor::CurrentThread
+                    if Handle::try_current().is_err() =>
+                {
+                    join()
+                }
+                RuntimeFlavor::CurrentThread => {
+                    // A current-thread runtime cannot be synchronously joined
+                    // from its worker without deadlocking. Manager drops on
+                    // that runtime are unsupported; explicit shutdown remains
+                    // the required async ownership barrier.
+                    panic!("dropping PlatformWalletManager on a current-thread runtime requires shutdown()")
+                }
+                _ => panic!(
+                    "dropping PlatformWalletManager on an unsupported runtime requires shutdown()"
+                ),
+            }
         }
     }
 }
@@ -160,5 +206,30 @@ mod tests {
             .await
             .unwrap();
         assert!(tasks.state.lock().unwrap().task.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_join_an_active_prefetch_when_dropped() {
+        let tasks = ShieldedPrefetch::default();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        assert!(tasks.spawn(async move {
+            let _ = entered_tx.send(());
+            release_rx.recv().unwrap();
+        }));
+        entered_rx.await.unwrap();
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let drop_thread = std::thread::spawn(move || {
+            drop(tasks);
+            done_tx.send(()).unwrap();
+        });
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(20)).is_err(),
+            "drop detached an active callback-capable task"
+        );
+        release_tx.send(()).unwrap();
+        done_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        drop_thread.join().unwrap();
     }
 }
