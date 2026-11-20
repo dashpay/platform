@@ -181,30 +181,15 @@ mod tests {
     }
 
     fn members(order: &[&'static str]) -> Vec<(&'static str, Value)> {
-        let positions: Vec<_> = order
+        order
             .iter()
-            .map(|name| match *name {
-                "a" => (*name, 2),
-                "b" => (*name, 0),
-                "c" => (*name, 1),
-                other => panic!("no member {other}"),
-            })
-            .collect();
-        members_at(&positions)
-    }
-
-    /// `members` at the positions given: an object's members are stored by position.
-    fn members_at(positions: &[(&'static str, u32)]) -> Vec<(&'static str, Value)> {
-        positions
-            .iter()
-            .map(|(name, position)| {
+            .map(|name| {
                 let schema = match *name {
-                    "a" | "b" => {
-                        platform_value!({"type": "string", "maxLength": 20, "position": position})
+                    "a" => platform_value!({"type": "string", "maxLength": 20, "position": 2}),
+                    "b" => platform_value!({"type": "string", "maxLength": 20, "position": 0}),
+                    "c" => {
+                        platform_value!({"type": "integer", "minimum": 0, "maximum": 10, "position": 1})
                     }
-                    "c" => platform_value!({
-                        "type": "integer", "minimum": 0, "maximum": 10, "position": position
-                    }),
                     other => panic!("no member {other}"),
                 };
                 (*name, schema)
@@ -315,14 +300,11 @@ mod tests {
         for (name, settings) in configurations() {
             let written = document_type(settings.clone(), members(&["b", "c"]));
             let revision = written.as_ref().requires_revision().then_some(4);
-            for (change, positions) in [
-                ("reordered", &[("c", 0), ("b", 1)][..]),
-                (
-                    "prepended optional member",
-                    &[("a", 0), ("b", 1), ("c", 2)][..],
-                ),
+            for (change, order) in [
+                ("reordered", &["c", "b"][..]),
+                ("prepended optional member", &["a", "b", "c"][..]),
             ] {
-                let updated = document_type(settings.clone(), members_at(positions));
+                let updated = document_type(settings.clone(), members(order));
                 for format in 0..=3 {
                     let bytes = serialize(&document(revision, Some([3; 32])), format, &written);
                     assert!(

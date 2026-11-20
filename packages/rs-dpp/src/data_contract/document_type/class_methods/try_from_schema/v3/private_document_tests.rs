@@ -976,21 +976,21 @@ fn boolean(position: u32) -> Value {
 }
 
 /// An entry of a private type is immutable and is read with the type as it is now, in the order
-/// the type parses its properties and each object's members (by `position`), so an update may
-/// only add properties after the existing ones, at the end of the type and of every object. One
-/// putting a property before them is refused; appending is accepted, however the schema's map
-/// lists them. These types are parsed without full validation, which would require positions
-/// without a gap: the gap cases are defensive, and the registrable case follows.
+/// the type parses its properties (by `position`) and each object's members (in the schema's
+/// map order), so an update may only add properties after the existing ones, at the end of the
+/// type and of every object. One putting a property before them, or reordering them, is refused;
+/// appending is accepted, however the schema's map lists the type's own properties. These types
+/// are parsed without full validation, which would require top-level positions without a gap:
+/// the gap case is defensive, and the registrable case follows.
 #[test]
 fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() {
     let platform_version = PlatformVersion::latest();
-    // `meta` at position 4 leaves positions 2 and 3 free for a property to sort before it, and
-    // its members from 1 leave position 0 free for a member to sort before them.
+    // `meta` at position 4 leaves positions 2 and 3 free for a property to sort before it.
     let meta = |members: Value| object(members, 4);
     let old = private_type_with(platform_value!({
         "accountReference": account_reference(),
         "encryptedPublicKey": encrypted_public_key(),
-        "meta": meta(platform_value!({ "y": boolean(1), "z": boolean(2) })),
+        "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
     }));
     let update = |new: &DocumentType| {
         old.as_ref()
@@ -1000,11 +1000,20 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
 
     for (case, new, list) in [
         (
-            "a member at a position before the object's existing ones, listed last",
+            "a member put before the object's existing ones",
             private_type_with(platform_value!({
                 "accountReference": account_reference(),
                 "encryptedPublicKey": encrypted_public_key(),
-                "meta": meta(platform_value!({ "y": boolean(1), "z": boolean(2), "x": boolean(0) })),
+                "meta": meta(platform_value!({ "x": boolean(2), "y": boolean(0), "z": boolean(1) })),
+            })),
+            "the object meta",
+        ),
+        (
+            "the object's members reordered",
+            private_type_with(platform_value!({
+                "accountReference": account_reference(),
+                "encryptedPublicKey": encrypted_public_key(),
+                "meta": meta(platform_value!({ "z": boolean(1), "y": boolean(0) })),
             })),
             "the object meta",
         ),
@@ -1013,7 +1022,7 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
             private_type_with(platform_value!({
                 "accountReference": account_reference(),
                 "encryptedPublicKey": encrypted_public_key(),
-                "meta": meta(platform_value!({ "y": boolean(1), "z": boolean(2) })),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
                 "note": boolean(3),
             })),
             "the type",
@@ -1034,19 +1043,11 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
 
     for (case, new) in [
         (
-            "a member at a position after the object's existing ones, listed first",
+            "a member added after the object's existing ones",
             private_type_with(platform_value!({
                 "accountReference": account_reference(),
                 "encryptedPublicKey": encrypted_public_key(),
-                "meta": meta(platform_value!({ "x": boolean(3), "y": boolean(1), "z": boolean(2) })),
-            })),
-        ),
-        (
-            "the object's members listed in another order",
-            private_type_with(platform_value!({
-                "accountReference": account_reference(),
-                "encryptedPublicKey": encrypted_public_key(),
-                "meta": meta(platform_value!({ "z": boolean(2), "y": boolean(1) })),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1), "x": boolean(2) })),
             })),
         ),
         (
@@ -1055,7 +1056,7 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
                 "note": boolean(5),
                 "accountReference": account_reference(),
                 "encryptedPublicKey": encrypted_public_key(),
-                "meta": meta(platform_value!({ "y": boolean(1), "z": boolean(2) })),
+                "meta": meta(platform_value!({ "y": boolean(0), "z": boolean(1) })),
             })),
         ),
     ] {
@@ -1065,12 +1066,11 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
 }
 
 /// The same rule on a type that registers under full validation (top-level positions run on
-/// from 0 without a gap, an object's from its lowest) and one level deeper: `meta` holds an
-/// unchanged object `side` before the object `inner` an update changes, so the check must look
-/// past an unchanged sibling and into a nested object. `inner`'s positions start at 1, so a
-/// member can take position 0 before them: that, or removing a member before another, is refused
-/// and names `the object meta.inner`; appending to it at the next position, listing its members
-/// in another order, or appending a property to the type at the next position, is accepted.
+/// without a gap) and one level deeper: `meta` holds an unchanged object `side` before the object
+/// `inner` an update changes, so the check must look past an unchanged sibling and into a nested
+/// object. Prepending to `inner` or reordering it is refused and names `the object meta.inner`,
+/// and removing a member before another is refused as every removal is; appending to it, or
+/// appending a property to the type at the next position, is accepted.
 #[test]
 fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth() {
     let platform_version = PlatformVersion::latest();
@@ -1095,7 +1095,7 @@ fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth()
         )
         .expect("the type registers under full validation")
     };
-    let old = registrable(platform_value!({ "p": boolean(1), "q": boolean(2) }), None);
+    let old = registrable(platform_value!({ "p": boolean(0), "q": boolean(1) }), None);
     let update = |new: &DocumentType| {
         old.as_ref()
             .validate_update(new.as_ref(), 2, platform_version)
@@ -1104,15 +1104,15 @@ fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth()
 
     for (case, new) in [
         (
-            "a member at a position before inner's existing ones, listed last",
+            "a member put before inner's existing ones",
             registrable(
-                platform_value!({ "p": boolean(1), "q": boolean(2), "o": boolean(0) }),
+                platform_value!({ "o": boolean(2), "p": boolean(0), "q": boolean(1) }),
                 None,
             ),
         ),
         (
-            "a member removed from inner before another",
-            registrable(platform_value!({ "q": boolean(2) }), None),
+            "inner's members reordered",
+            registrable(platform_value!({ "q": boolean(1), "p": boolean(0) }), None),
         ),
     ] {
         let result = update(&new);
@@ -1128,22 +1128,30 @@ fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth()
         );
     }
 
+    // A member removed before another is refused as every removal is, by schema compatibility
+    let result = update(&registrable(platform_value!({ "q": boolean(1) }), None));
+    assert!(
+        result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(error))
+                if error.operation() == "remove"
+        )),
+        "a member removed from inner before another: expected the removal refusal, got {:?}",
+        result.errors
+    );
+
     for (case, new) in [
         (
-            "a member at the next position of inner, listed first",
+            "a member added after inner's existing ones",
             registrable(
-                platform_value!({ "r": boolean(3), "p": boolean(1), "q": boolean(2) }),
+                platform_value!({ "p": boolean(0), "q": boolean(1), "r": boolean(2) }),
                 None,
             ),
         ),
         (
-            "inner's members listed in another order",
-            registrable(platform_value!({ "q": boolean(2), "p": boolean(1) }), None),
-        ),
-        (
             "a property appended to the type at the next position",
             registrable(
-                platform_value!({ "p": boolean(1), "q": boolean(2) }),
+                platform_value!({ "p": boolean(0), "q": boolean(1) }),
                 Some(("note", boolean(3))),
             ),
         ),

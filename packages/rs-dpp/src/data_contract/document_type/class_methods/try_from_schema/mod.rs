@@ -317,75 +317,44 @@ fn enter_ref(
     Ok(())
 }
 
-/// The order an object's members are stored in, which the parse inserts them in.
-#[derive(Clone, Copy)]
-pub(super) enum NestedMemberOrder {
-    /// The order the object's `properties` map writes them in: parser generations 0 to 3, which
-    /// every contract stored before protocol version 15 was registered under.
-    SchemaMap,
-    /// By `position`, as a document type's own properties are stored: parser generation 4. Under
-    /// full validation an object's positions must follow one another from its lowest.
-    Position { full_validation: bool },
-}
-
-/// The members of an object's `properties` map `properties`, in `position` order: the order
-/// [`NestedMemberOrder::Position`] stores them in.
-///
-/// A member written twice in the map is first resolved as the schema-map order resolves it, at
-/// its first place with its last schema, so it keeps the schema it had in either order; the
-/// flattened walk (`insert_values`) still parses both of its schemas. The sort
-/// is stable, so members sharing a position keep their map order. Without full validation an
-/// object whose positions are not all integers from 0 keeps its map order, the order a stored
-/// contract registered under an earlier generation stores it in; under full validation it is
-/// refused, and so are positions that do not follow one another from the object's lowest. A
-/// document type's own properties are held to that from 0.
-fn members_by_position<'a>(
+/// Checks the `position`s of the members of an object's `properties` map `properties`: each is
+/// an integer from 0, and together they follow one another from the lowest, with no gap and
+/// none taken twice, as a document type's own positions follow one another from 0. Parser
+/// generation 4 runs it under full validation; an object may start above 0, as DPNS `records`
+/// does. Reading the positions never panics on adversarial schema input.
+fn validate_member_positions(
     object_name: &str,
-    properties: &'a [(Value, Value)],
-    full_validation: bool,
-) -> Result<Vec<(&'a str, &'a Value)>, DataContractError> {
-    let mut members: IndexMap<&str, &Value> = IndexMap::new();
-    for (key, value) in properties {
-        let key = key.as_text().ok_or(DataContractError::KeyWrongType(
-            "property key must be a string".to_string(),
-        ))?;
-        members.insert(key, value);
-    }
-    let positions: Option<Vec<u64>> = members
-        .values()
-        .map(|member| member.get_integer::<u64>(property_names::POSITION).ok())
-        .collect();
-    let Some(positions) = positions else {
-        if full_validation {
+    properties: &[(Value, Value)],
+) -> Result<(), DataContractError> {
+    let mut positions = Vec::with_capacity(properties.len());
+    for (_, member) in properties {
+        let Ok(position) = member.get_integer::<u64>(property_names::POSITION) else {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "every member of the object '{object_name}' needs a position, an integer from 0"
             )));
-        }
-        return Ok(members.into_iter().collect());
+        };
+        positions.push(position);
+    }
+    positions.sort_unstable();
+    let Some(&first) = positions.first() else {
+        return Ok(());
     };
-    let mut members: Vec<(u64, (&str, &Value))> = positions.into_iter().zip(members).collect();
-    members.sort_by_key(|(position, _)| *position);
-    if full_validation {
-        if let Some((first, _)) = members.first() {
-            let first = *first;
-            for (index, (position, _)) in members.iter().enumerate() {
-                let expected = first.checked_add(index as u64);
-                if Some(*position) != expected {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "the members of the object '{object_name}' must take positions one after \
-                         another from the lowest, {first}: {}",
-                        match expected {
-                            Some(expected) if *position > expected => {
-                                format!("position {expected} is missing")
-                            }
-                            _ => format!("position {position} is taken twice"),
-                        }
-                    )));
+    for (index, position) in positions.iter().enumerate() {
+        let expected = first.checked_add(index as u64);
+        if Some(*position) != expected {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "the members of the object '{object_name}' must take positions one after \
+                 another from the lowest, {first}: {}",
+                match expected {
+                    Some(expected) if *position > expected => {
+                        format!("position {expected} is missing")
+                    }
+                    _ => format!("position {position} is taken twice"),
                 }
-            }
+            )));
         }
     }
-    Ok(members.into_iter().map(|(_, member)| member).collect())
+    Ok(())
 }
 
 // TODO: This is quite big
@@ -401,7 +370,7 @@ fn insert_values_nested(
     property_value: &Value,
     root_schema: &Value,
     ref_path: &mut Vec<*const Value>,
-    member_order: NestedMemberOrder,
+    check_member_positions: bool,
     config: &DataContractConfig,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
@@ -443,16 +412,19 @@ fn insert_values_nested(
                             "properties must be a map".to_string(),
                         ))?;
 
-                // The members are inserted below in the order the object stores them, and
-                // that `IndexMap` order is consensus-observable: the encoder writes them in
-                // it. Generations 0 to 3 keep the schema's map order, the order every contract
-                // stored before protocol version 15 was committed in, so sorting under them
-                // would read any contract whose map order differs from its position order
-                // differently, and they parse every member in map order, a repeated one
-                // included, as they always did. Generation 4 sorts by `position`, as the type's
-                // own properties are sorted: from protocol version 15 an object is stored as a
-                // document type is. Its `position` read never panics on adversarial schema
-                // input (`members_by_position`).
+                // The members are inserted below in the schema's map order (the
+                // `properties.iter()` loop), and that `IndexMap` order is consensus-observable:
+                // the encoder writes an object's members in it, at every protocol version, and
+                // every stored document was written in it. Sorting them by `position` would read
+                // any stored document whose object lists its members out of position order
+                // differently, so no generation sorts them, and a `position` read here must
+                // never panic. Generation 4 checks the positions under full validation
+                // (`validate_member_positions`), and from protocol version 15 a contract's
+                // registration, and an update for the objects it adds, also require the map to
+                // list the members in position order, so for such objects the two orders agree.
+                if check_member_positions {
+                    validate_member_positions(&property_key, properties)?;
+                }
 
                 // Create a new set with the prefix removed from the keys: an entry for
                 // a member of this object is the object's name, one separator byte, then
@@ -483,40 +455,27 @@ fn insert_values_nested(
                     })
                     .collect();
 
-                let mut insert_member = |name: String, value: &Value| {
+                for (object_property_key, object_property_value) in properties.iter() {
+                    let object_property_string = object_property_key
+                        .as_text()
+                        .ok_or(DataContractError::KeyWrongType(
+                            "property key must be a string".to_string(),
+                        ))?
+                        .to_string();
+
                     insert_values_nested(
                         &mut nested_properties,
                         &stripped_required,
                         &stripped_transient,
                         false,
-                        name,
-                        value,
+                        object_property_string,
+                        object_property_value,
                         root_schema,
                         ref_path,
-                        member_order,
+                        check_member_positions,
                         config,
                         platform_version,
-                    )
-                };
-                match member_order {
-                    NestedMemberOrder::SchemaMap => {
-                        for (object_property_key, object_property_value) in properties.iter() {
-                            let object_property_string = object_property_key
-                                .as_text()
-                                .ok_or(DataContractError::KeyWrongType(
-                                    "property key must be a string".to_string(),
-                                ))?
-                                .to_string();
-                            insert_member(object_property_string, object_property_value)?;
-                        }
-                    }
-                    NestedMemberOrder::Position { full_validation } => {
-                        for (name, value) in
-                            members_by_position(&property_key, properties, full_validation)?
-                        {
-                            insert_member(name.to_string(), value)?;
-                        }
-                    }
+                    )?;
                 }
             }
 

@@ -259,7 +259,7 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 &mut Vec::new(),
-                try_from_schema::NestedMemberOrder::SchemaMap,
+                false,
                 data_contact_config,
                 platform_version,
             )

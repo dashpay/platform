@@ -1,13 +1,14 @@
 //! What an update keeps of every object of a document type, at every depth.
 //!
 //! A stored document is read with the type as it is now. Inside an object the members are
-//! stored one after another in the order the type parses them (by `position`, as the type's own
-//! properties), a member required at every contract version without the presence byte an
+//! stored one after another in the order the type parses them (the schema's map order, at every
+//! protocol version), a member required at every contract version without the presence byte an
 //! optional one (or one required from a contract version) carries, so an object's members must
-//! keep their place and their requiredness, and a member may only be added after them. Positions
-//! never change on update, and the parse holds an object's positions to one after another from
-//! its lowest, so a member added after them takes the next free position. Its requiredness is
-//! what the type's parse makes of it, whatever made it so: the
+//! keep their place and their requiredness, and a member may only be added after them. Contract
+//! `validate_update` 2 also holds an added member to a position above the existing ones', and an
+//! object the update adds to listing its members in position order
+//! (`first_member_position_order_error`). Its requiredness is what the type's parse makes of
+//! it, whatever made it so: the
 //! object's own `required`, a `required` beside its `$ref`, a dotted name in an enclosing
 //! `required`, or the parser reading a required name of an enclosing property as naming it (a
 //! name made of the object's name, any one character and the member's name). These rules compare
@@ -33,13 +34,10 @@ use platform_value::{Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeRef<'_> {
-    /// Every object of the type keeps its members in their order, and the members an update adds
-    /// come after them: a document stored before reads the added members as absent. Positions are
-    /// frozen and the parse holds them to one after another (from 0 for the type's own
-    /// properties, from an object's lowest inside it), so this refuses a member added at a
-    /// position before the existing ones, which only an object whose positions start above 0
-    /// leaves free. A member removed after the others is left to the schema compatibility check,
-    /// which refuses every removal.
+    /// Every object of the type keeps its members in their order (the schema's map order, the
+    /// positions for the type's own properties), and the members an update adds come after them:
+    /// a document stored before reads the added members as absent. A list that loses a member is
+    /// left to the schema compatibility check, which refuses every removal.
     pub(super) fn validate_member_order_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -56,9 +54,8 @@ impl DocumentTypeRef<'_> {
                 format!(
                     "a document type can only add properties after its existing ones: {} would \
                      no longer start with its existing properties in their order ({}), so the \
-                     documents stored before would read wrong; inside an object, as in the type, \
-                     the stored order is position order, so an added member takes a position \
-                     after the others",
+                     documents stored before would read wrong; inside an object the stored order \
+                     is the schema's map order, so an added member goes after the others there",
                     reordered.place, reordered.stored_order
                 ),
             )
@@ -108,7 +105,9 @@ impl DocumentTypeRef<'_> {
     /// so the version it names never decides how a document is read. Under a property the type
     /// lists as `immutable`, with a condition or without, a member added to an existing object is
     /// optional: a replace sends the whole document again, so a document stored before would
-    /// have to add the member, which changes the property it may not change.
+    /// have to add the member, which changes the property it may not change. So it is in a type
+    /// whose moderators change fields (`moderatorAbilities.changeFields`): a moderator's change
+    /// checks the whole document again, and can not add the member to one stored before.
     pub(super) fn validate_member_requiredness_kept(
         &self,
         new_document_type: DocumentTypeRef,
@@ -122,11 +121,7 @@ impl DocumentTypeRef<'_> {
                 .chain(new_document_type.immutable_field_conditions().keys())
                 .map(String::as_str)
                 .collect(),
-            moderator_only: new_document_type
-                .moderator_changeable_fields()
-                .iter()
-                .map(String::as_str)
-                .collect(),
+            moderators_change_fields: !new_document_type.moderator_changeable_fields().is_empty(),
             new_schema: new_document_type.schema(),
             new_contract_version,
         };
@@ -156,14 +151,15 @@ struct ReorderedMemberList {
 /// The first member list of `new` whose members do not start with `old`'s in their order, as
 /// far as both go: the type's own properties when `path` is `None`, else those of the object at
 /// `path`, searched at every depth. `None` when every pair of lists agrees on the members they
-/// both hold at each place, a longer `new` adding members after `old`'s and a shorter one
-/// removing them from the end.
+/// both hold at each place, a longer `new` adding members after `old`'s, and when `new` lacks a
+/// member of `old`: the schema compatibility check refuses that removal (10246).
 fn first_reordered_member_list(
     old: &IndexMap<String, DocumentProperty>,
     new: &IndexMap<String, DocumentProperty>,
     path: Option<&str>,
 ) -> Option<ReorderedMemberList> {
-    let keeps_order = old.keys().zip(new.keys()).all(|(old, new)| old == new);
+    let removes_a_member = old.keys().any(|name| !new.contains_key(name));
+    let keeps_order = removes_a_member || old.keys().zip(new.keys()).all(|(old, new)| old == new);
     if !keeps_order {
         return Some(ReorderedMemberList {
             place: path.map_or_else(
@@ -200,8 +196,9 @@ struct AddedMembers<'a> {
     required_fields: &'a BTreeSet<String>,
     /// The type's own properties the new type lists as `immutable`, with a condition or without.
     immutable: BTreeSet<&'a str>,
-    /// The type's own properties only its moderators write (`moderatorAbilities.changeFields`).
-    moderator_only: BTreeSet<&'a str>,
+    /// Whether the type's moderators change fields of its documents
+    /// (`moderatorAbilities.changeFields`).
+    moderators_change_fields: bool,
     /// The new type's schema, as written.
     new_schema: &'a Value,
     new_contract_version: u32,
@@ -316,11 +313,12 @@ fn added_member_error(
                  changes '{top_level}'; add it as optional"
             ));
         }
-        if added.moderator_only.contains(top_level) {
+        if added.moderators_change_fields {
             return Some(format!(
-                "new required field '{path}' can not be added under '{top_level}', which only \
-                 the type's moderators write: its owner would have to add it on replace, which \
-                 changes '{top_level}'; add it as optional"
+                "new required field '{path}' can not be added to a type whose moderators change \
+                 fields of its documents: a moderator's change checks the whole document \
+                 again, and one stored before does not hold the member, which the moderator \
+                 can not add; add it as optional"
             ));
         }
     }
@@ -469,7 +467,38 @@ fn first_required_list_change(
             }
         }
     }
+    // The `properties` written beside a `$ref` are not parsed, but the document validator reads
+    // them, so an entry an update writes there holds no dotted name either
+    if has_ref(new_schema) {
+        let old_entries = properties_as_written(old_schema);
+        for (name, entry) in properties_as_written(new_schema) {
+            if old_entries.contains_key(name) {
+                continue;
+            }
+            if let Some(change) = first_dotted_name_in_added_object(entry, &member_path(path, name))
+            {
+                return Some(change);
+            }
+        }
+    }
     None
+}
+
+/// The entries of `schema`'s `properties` map as written, beside a `$ref` too.
+fn properties_as_written(schema: &Value) -> BTreeMap<&str, &Value> {
+    let mut entries = BTreeMap::new();
+    if let Some(properties) = schema
+        .as_map()
+        .and_then(|schema| schema.get_optional_key(PROPERTIES))
+        .and_then(Value::as_map)
+    {
+        for (name, entry) in properties {
+            if let Some(name) = name.as_text() {
+                entries.entry(name).or_insert(entry);
+            }
+        }
+    }
+    entries
 }
 
 /// Why an object holding the member at `path` keeps it from being added as required, read in

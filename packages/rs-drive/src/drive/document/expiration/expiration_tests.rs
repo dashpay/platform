@@ -1280,3 +1280,163 @@ fn should_estimate_at_least_what_shrinking_an_expiring_array_costs() {
         );
     }
 }
+
+/// A `ttl` type `page` whose object `metadata` lists its members out of position order (`slug`
+/// at 2, `title` at 0, `description` at 1), indexed by `metadata.slug`, with the members
+/// `required` names, built at `platform_version` (which must register it).
+fn page_listing_its_object_out_of_position_order(
+    required: &[&str],
+    platform_version: &PlatformVersion,
+) -> DataContract {
+    let member = |name: &str, position: u64| {
+        (
+            Value::Text(name.to_string()),
+            platform_value!({ "type": "string", "maxLength": 20, "position": position }),
+        )
+    };
+    let metadata = Value::Map(vec![
+        (Value::Text("type".into()), Value::Text("object".into())),
+        (
+            Value::Text("properties".into()),
+            Value::Map(vec![
+                member("slug", 2),
+                member("title", 0),
+                member("description", 1),
+            ]),
+        ),
+        (
+            Value::Text("required".into()),
+            Value::Array(
+                required
+                    .iter()
+                    .map(|name| Value::Text(name.to_string()))
+                    .collect(),
+            ),
+        ),
+        (
+            Value::Text("additionalProperties".into()),
+            Value::Bool(false),
+        ),
+        (Value::Text("position".into()), Value::U64(0)),
+    ]);
+    let page = Value::Map(vec![
+        (Value::Text("type".into()), Value::Text("object".into())),
+        (Value::Text("documentsMutable".into()), Value::Bool(true)),
+        (Value::Text("ttl".into()), Value::U32(TWO_WEEKS_S)),
+        (
+            Value::Text("properties".into()),
+            Value::Map(vec![(Value::Text("metadata".into()), metadata)]),
+        ),
+        (
+            Value::Text("indices".into()),
+            platform_value!([{ "name": "bySlug", "properties": [{ "metadata.slug": "asc" }] }]),
+        ),
+        (
+            Value::Text("required".into()),
+            platform_value!(["$createdAt", "metadata"]),
+        ),
+        (
+            Value::Text("additionalProperties".into()),
+            Value::Bool(false),
+        ),
+    ]);
+    DataContractFactory::new(platform_version.protocol_version)
+        .expect("expected a contract factory")
+        .create_with_value_config(
+            Identifier::from([7; 32]),
+            0,
+            Value::Map(vec![(Value::Text("page".into()), page)]),
+            None,
+            None,
+        )
+        .expect("expected the contract to register")
+        .data_contract_owned()
+}
+
+/// A document stored under protocol version 14 is read as it was written after protocol
+/// version 15 activates, also when its object's `properties` map lists the members out of
+/// their `position` order: an object is stored in map order at every protocol version. The
+/// cleanup of an expired document of such a type, indexed by a member of the object, deletes
+/// it, where a read in another member order would look for the wrong index entry and fail the
+/// block, or not decode the document at all.
+#[test]
+fn should_expire_a_document_stored_at_protocol_version_14_whose_object_is_out_of_position_order() {
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let latest = PlatformVersion::latest();
+    for required in [
+        &[][..],
+        &["slug", "title", "description"][..],
+        &["slug"][..],
+    ] {
+        let contract = page_listing_its_object_out_of_position_order(required, protocol_version_14);
+        let drive = setup_drive_with_initial_state_structure(Some(protocol_version_14));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                protocol_version_14,
+            )
+            .expect("the contract applies at protocol version 14");
+        let mut id = [5u8; 32];
+        id[1..9].copy_from_slice(&START_MS.to_be_bytes());
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from(id),
+            owner_id: Identifier::from(OWNER),
+            properties: BTreeMap::from([(
+                "metadata".to_string(),
+                Value::Map(vec![
+                    (Value::Text("slug".into()), Value::Text("the-slug".into())),
+                    (Value::Text("title".into()), Value::Text("the-title".into())),
+                    (
+                        Value::Text("description".into()),
+                        Value::Text("the-desc".into()),
+                    ),
+                ]),
+            )]),
+            revision: Some(1),
+            created_at: Some(START_MS),
+            ..Default::default()
+        });
+        insert_at_version(
+            &drive,
+            &contract,
+            "page",
+            &document,
+            true,
+            protocol_version_14,
+        );
+        drive.cache.data_contracts.clear();
+
+        let transaction = drive.grove.start_transaction();
+        let removed = drive
+            .remove_expired_documents(
+                &block_at(START_MS + u64::from(TWO_WEEKS_S) * 1000),
+                128,
+                latest
+                    .system_limits
+                    .max_document_expiration_weight_per_block,
+                Some(&transaction),
+                latest,
+            )
+            .unwrap_or_else(|error| {
+                panic!("required {required:?}: the cleanup must not fail: {error:?}")
+            });
+        assert_eq!(
+            (removed.deleted_documents, removed.orphaned_entries),
+            (1, 0),
+            "required {required:?}: the stored document is read as written and deleted"
+        );
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commits");
+        assert!(
+            stored_document(&drive, &contract, "page", Identifier::from(id)).is_none(),
+            "required {required:?}: the document is gone"
+        );
+    }
+}

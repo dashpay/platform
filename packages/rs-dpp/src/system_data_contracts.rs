@@ -269,11 +269,11 @@ mod tests {
         }
     }
 
-    /// From protocol version 15 an object's members are stored in `position` order, before it in
-    /// the schema's map order. Every object of every system contract, at every protocol version
-    /// that has it, writes its members in the map in position order, one after another, so every
-    /// document a system contract ever stored reads the same under either order, and every
-    /// object passes the position rules of registration.
+    /// An object stores its members in the schema's map order, and from protocol version 15 a
+    /// contract's objects must list them in position order, one after another. Every object of
+    /// every system contract, at every protocol version that has it, already does, so the system
+    /// contracts pass the rule new contracts are held to, and their objects are stored in their
+    /// position order.
     #[test]
     fn should_write_every_system_contract_object_in_position_order() {
         use platform_version::version::PLATFORM_VERSIONS;

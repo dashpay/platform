@@ -177,7 +177,7 @@ fn member_cases() -> Vec<Case> {
     let required = |names: Value| document_type_schema(with_meta(meta_yz()), names);
     vec![
         case(
-            "an object's members written in another map order, their positions kept",
+            "an object's members reordered",
             required(platform_value!(["a"])),
             document_type_schema(
                 with_meta(object(
@@ -187,10 +187,10 @@ fn member_cases() -> Vec<Case> {
                 )),
                 platform_value!(["a"]),
             ),
-            Expected::Accepted,
+            ORDER,
         ),
         case(
-            "a member written first in an object's map, at a position after its existing ones",
+            "a member put before an object's existing ones",
             required(platform_value!(["a"])),
             document_type_schema(
                 with_meta(object(
@@ -200,39 +200,7 @@ fn member_cases() -> Vec<Case> {
                 )),
                 platform_value!(["a"]),
             ),
-            Expected::Accepted,
-        ),
-        case(
-            "a member written last in an object's map, at a position before an existing one",
-            document_type_schema(
-                with_meta(object(platform_value!({ "z": integer(1) }), 1, None)),
-                platform_value!(["a"]),
-            ),
-            document_type_schema(
-                with_meta(object(
-                    platform_value!({ "z": integer(1), "x": boolean(0) }),
-                    1,
-                    None,
-                )),
-                platform_value!(["a"]),
-            ),
             ORDER,
-        ),
-        case(
-            "a member added at the next position of an object whose positions start at 1",
-            document_type_schema(
-                with_meta(object(platform_value!({ "z": integer(1) }), 1, None)),
-                platform_value!(["a"]),
-            ),
-            document_type_schema(
-                with_meta(object(
-                    platform_value!({ "z": integer(1), "x": boolean(2) }),
-                    1,
-                    None,
-                )),
-                platform_value!(["a"]),
-            ),
-            Expected::Accepted,
         ),
         case(
             "a member added after an object's existing ones",
@@ -248,12 +216,12 @@ fn member_cases() -> Vec<Case> {
             Expected::Accepted,
         ),
         case(
-            "a member added to an object inside an object, at a position before its existing one",
+            "an object inside an object with its members reordered",
             document_type_schema(
                 with_meta(object(
                     platform_value!({
                         "y": boolean(0),
-                        "inner": object(platform_value!({ "q": integer(1) }), 1, None),
+                        "inner": object(platform_value!({ "p": boolean(0), "q": integer(1) }), 1, None),
                     }),
                     1,
                     None,
@@ -470,7 +438,7 @@ fn member_cases() -> Vec<Case> {
             Expected::Accepted,
         ),
         Case {
-            name: "a definition's members written in another map order, their positions kept",
+            name: "a definition's members reordered",
             old: document_type_schema(
                 platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
                 platform_value!(["a"]),
@@ -481,10 +449,10 @@ fn member_cases() -> Vec<Case> {
             ),
             old_defs: definitions(platform_value!({ "y": boolean(0), "z": integer(1) })),
             new_defs: definitions(platform_value!({ "z": integer(1), "y": boolean(0) })),
-            expected: Expected::Accepted,
+            expected: ORDER,
         },
         Case {
-            name: "a member written first in a definition's map, at a position after its existing ones",
+            name: "a member put before a definition's existing ones",
             old: document_type_schema(
                 platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
                 platform_value!(["a"]),
@@ -497,20 +465,6 @@ fn member_cases() -> Vec<Case> {
             new_defs: definitions(
                 platform_value!({ "x": boolean(2), "y": boolean(0), "z": integer(1) }),
             ),
-            expected: Expected::Accepted,
-        },
-        Case {
-            name: "a member written last in a definition's map, at a position before an existing one",
-            old: document_type_schema(
-                platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
-                platform_value!(["a"]),
-            ),
-            new: document_type_schema(
-                platform_value!({ "a": string(0, 10), "meta": meta_ref(None) }),
-                platform_value!(["a"]),
-            ),
-            old_defs: definitions(platform_value!({ "z": integer(1) })),
-            new_defs: definitions(platform_value!({ "z": integer(1), "x": boolean(0) })),
             expected: ORDER,
         },
         Case {
@@ -1266,10 +1220,11 @@ fn should_refuse_a_member_required_from_the_new_version_that_no_document_could_m
     run(&cases, PlatformVersion::latest());
 }
 
-/// An object only moderators write is like an immutable one for its owner: a replace that adds
-/// a member required from the new version would change it, so such a member is refused there.
+/// A moderator's change of a field checks the whole document again, and can not add a member
+/// to a document stored before, so in a type whose moderators change fields a member is added to
+/// an existing object only as optional, whichever field the moderators write.
 #[test]
-fn should_refuse_a_member_required_from_the_new_version_under_a_field_only_moderators_write() {
+fn should_refuse_a_member_required_from_the_new_version_in_a_type_whose_moderators_change_fields() {
     use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 
     let platform_version = PlatformVersion::latest();
@@ -1281,14 +1236,18 @@ fn should_refuse_a_member_required_from_the_new_version_under_a_field_only_moder
             moderators: ContractModerators::ContractOwner,
             warnings: false,
         }));
-    let make = |members: Value, required: Option<Value>| {
+    let make = |members: Value, required: Option<Value>, change_fields: &str| {
         let schema = with(
             document_type_schema(
-                with_meta(object(members, 1, required)),
+                platform_value!({
+                    "a": string(0, 10),
+                    "meta": object(members, 1, required),
+                    "flag": boolean(2),
+                }),
                 platform_value!(["a"]),
             ),
             "moderatorAbilities",
-            platform_value!({ "changeFields": ["meta"] }),
+            platform_value!({ "changeFields": [change_fields] }),
         );
         DocumentType::try_from_schema(
             Identifier::new([1; 32]),
@@ -1305,35 +1264,43 @@ fn should_refuse_a_member_required_from_the_new_version_under_a_field_only_moder
         )
         .expect("expected the type to parse")
     };
-    let old = make(platform_value!({ "y": boolean(0) }), None);
-    let required = make(
-        platform_value!({ "y": boolean(0), "x": with(boolean(1), "requiredSince", Value::U32(2)) }),
-        Some(platform_value!(["x"])),
-    );
-    let optional = make(platform_value!({ "y": boolean(0), "x": boolean(1) }), None);
+    for change_fields in ["meta", "flag"] {
+        let old = make(platform_value!({ "y": boolean(0) }), None, change_fields);
+        let required = make(
+            platform_value!({ "y": boolean(0), "x": with(boolean(1), "requiredSince", Value::U32(2)) }),
+            Some(platform_value!(["x"])),
+            change_fields,
+        );
+        let optional = make(
+            platform_value!({ "y": boolean(0), "x": boolean(1) }),
+            None,
+            change_fields,
+        );
 
-    let result = old
-        .as_ref()
-        .validate_update(required.as_ref(), 2, platform_version)
-        .expect("expected the update to be judged");
-    assert_verdict(
-        "a member required from the new version under a field only moderators write",
-        &result,
-        Expected::Refused(10276, "moderators"),
-    );
-    let result = old
-        .as_ref()
-        .validate_update(optional.as_ref(), 2, platform_version)
-        .expect("expected the update to be judged");
-    assert_verdict(
-        "an optional member under a field only moderators write",
-        &result,
-        Expected::Accepted,
-    );
+        let result = old
+            .as_ref()
+            .validate_update(required.as_ref(), 2, platform_version)
+            .expect("expected the update to be judged");
+        assert_verdict(
+            &format!("a member required from the new version, moderators changing {change_fields}"),
+            &result,
+            Expected::Refused(10276, "moderators"),
+        );
+        let result = old
+            .as_ref()
+            .validate_update(optional.as_ref(), 2, platform_version)
+            .expect("expected the update to be judged");
+        assert_verdict(
+            &format!("an optional member, moderators changing {change_fields}"),
+            &result,
+            Expected::Accepted,
+        );
+    }
 }
 
 /// Through a `$ref` members are added only as optional, whatever lists the schema writes
-/// beside the `$ref`; and the lists written beside a `$ref` an update adds hold no dotted name.
+/// beside the `$ref`; and the lists written beside a `$ref` an update adds, or in an entry it
+/// writes beside a kept one, hold no dotted name.
 #[test]
 fn should_hold_additions_through_a_ref_to_optional_members() {
     let overlay = |entries: Value| {
@@ -1420,6 +1387,21 @@ fn should_hold_additions_through_a_ref_to_optional_members() {
             old_defs: with_n(definition(false)),
             new_defs: with_n(definition(false)),
             expected: Expected::Refused(10276, "x.y"),
+        },
+        Case {
+            name: "a dotted name in a new entry written beside a kept $ref",
+            old: overlay(platform_value!({ "r": r_entry() })),
+            new: overlay(platform_value!({
+                "r": r_entry(),
+                "s": object(
+                    platform_value!({ "a": boolean(0) }),
+                    2,
+                    Some(platform_value!(["a.z"])),
+                ),
+            })),
+            old_defs: definition(false),
+            new_defs: definition(false),
+            expected: Expected::Refused(10276, "a.z"),
         },
     ];
     run(&cases, PlatformVersion::latest());

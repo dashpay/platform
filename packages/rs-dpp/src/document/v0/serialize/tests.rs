@@ -1764,11 +1764,7 @@ fn stamp_survives_the_wire_for_documents_stamped_past_required_since() {
 
 /// `{ meta: { y, x } }`, `x` required from contract version 2 when `with_x`, else
 /// `{ meta: { y } }`: the type before and after the update that adds `x`.
-fn nested_required_since_document_type(
-    with_x: bool,
-) -> crate::data_contract::document_type::DocumentType {
-    use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::DocumentType;
+fn nested_required_since_document_type(with_x: bool) -> DocumentType {
     use platform_value::platform_value;
 
     let platform_version = PlatformVersion::latest();
@@ -1896,7 +1892,6 @@ fn should_read_a_document_stored_before_its_object_gained_a_member() {
 /// optional one behind a presence byte.
 #[test]
 fn should_keep_the_protocol_version_14_layout_of_an_object() {
-    use crate::data_contract::document_type::DocumentType;
     use platform_value::platform_value;
 
     let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
@@ -2036,35 +2031,24 @@ fn stored_member_order(document_type: &DocumentType, path: &str) -> Vec<String> 
     unreachable!("a path has at least one segment")
 }
 
-/// From protocol version 15 an object stores its members by `position`, as a document type stores
-/// its own properties; protocol version 14 keeps the schema's map order it always stored them in.
+/// An object stores its members in the order its `properties` map lists them, at every protocol
+/// version, whatever their positions: a contract registered before protocol version 15 may list
+/// them out of position order, and its stored documents read as they were written.
 #[test]
-fn should_store_an_objects_members_in_position_order_from_protocol_version_15() {
-    let latest = PlatformVersion::latest();
-    let v14 = PlatformVersion::get(14).expect("expected protocol version 14");
+fn should_store_an_objects_members_in_map_order_at_every_protocol_version() {
     let members = [("slug", 2), ("title", 0), ("description", 1)];
     let values = meta_properties(&[("slug", "s"), ("title", "t"), ("description", "d")]);
 
-    for (platform_version, order, expected) in [
-        (
-            v14,
-            ["slug", "title", "description"],
-            [6u8, 1, b's', 1, b't', 1, b'd'],
-        ),
-        (
-            latest,
-            ["title", "description", "slug"],
-            [6u8, 1, b't', 1, b'd', 1, b's'],
-        ),
+    for platform_version in [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        PlatformVersion::latest(),
     ] {
-        // An object reads back with its members in the order it stores them
-        let stored = meta_properties(&order.map(|name| (name, &name[..1])));
         let version = platform_version.protocol_version;
         let document_type =
             meta_document_type(positioned_object(&members, 0), None, platform_version);
         assert_eq!(
             stored_member_order(&document_type, "meta"),
-            order,
+            ["slug", "title", "description"],
             "protocol version {version}"
         );
 
@@ -2074,23 +2058,20 @@ fn should_store_an_objects_members_in_position_order_from_protocol_version_15() 
             .expect("expected the document to serialize");
         assert_eq!(
             meta_bytes(&serialized),
-            expected,
+            [6u8, 1, b's', 1, b't', 1, b'd'],
             "protocol version {version}"
         );
         let deserialized =
             DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
                 .expect("expected the document to deserialize");
-        assert_eq!(
-            deserialized.properties, stored,
-            "protocol version {version}"
-        );
+        assert_eq!(deserialized, document, "protocol version {version}");
     }
 }
 
-/// The members a `$ref` brings and those of an object inside an object are stored by `position`
+/// The members a `$ref` brings and those of an object inside an object are stored in map order
 /// too.
 #[test]
-fn should_store_members_in_position_order_through_a_ref_and_inside_an_object() {
+fn should_store_members_in_map_order_through_a_ref_and_inside_an_object() {
     use platform_value::platform_value;
 
     let platform_version = PlatformVersion::latest();
@@ -2101,7 +2082,7 @@ fn should_store_members_in_position_order_through_a_ref_and_inside_an_object() {
             .expect("expected the members")
     };
     let inner = members_value(&[("slug", "s"), ("title", "t"), ("description", "d")]);
-    let stored = members_value(&[("title", "t"), ("description", "d"), ("slug", "s")]);
+    let stored = inner.clone();
 
     let through_ref = meta_document_type(
         platform_value!({ "$ref": "#/$defs/page", "position": 0 }),
@@ -2136,7 +2117,7 @@ fn should_store_members_in_position_order_through_a_ref_and_inside_an_object() {
             "meta",
             BTreeMap::from([("meta".to_string(), inner.clone())]),
             BTreeMap::from([("meta".to_string(), stored.clone())]),
-            vec![9u8, 1, 1, b't', 1, 1, b'd', 1, 1, b's'],
+            vec![9u8, 1, 1, b's', 1, 1, b't', 1, 1, b'd'],
         ),
         (
             &inside_an_object,
@@ -2149,12 +2130,12 @@ fn should_store_members_in_position_order_through_a_ref_and_inside_an_object() {
                 "meta".to_string(),
                 Value::Map(vec![(Value::Text("page".to_string()), stored.clone())]),
             )]),
-            vec![7u8, 6, 1, b't', 1, b'd', 1, b's'],
+            vec![7u8, 6, 1, b's', 1, b't', 1, b'd'],
         ),
     ] {
         assert_eq!(
             stored_member_order(document_type, path),
-            ["title", "description", "slug"],
+            ["slug", "title", "description"],
             "{path}"
         );
         let document = stamped_document(Some(1), properties, document_type.as_ref());
@@ -2169,11 +2150,11 @@ fn should_store_members_in_position_order_through_a_ref_and_inside_an_object() {
     }
 }
 
-/// A member an update adds at the object's next position reads as absent in a document stored
-/// before, wherever the map lists it: an optional member, one required from the new version, and
-/// an object.
+/// A member an update adds after the object's existing ones, in its map and at its next
+/// position, reads as absent in a document stored before: an optional member, one required from
+/// the new version, and an object.
 #[test]
-fn should_read_a_document_stored_before_its_object_gained_a_member_listed_first() {
+fn should_read_a_document_stored_before_its_object_gained_a_member_of_each_kind() {
     use platform_value::platform_value;
 
     let platform_version = PlatformVersion::latest();
@@ -2222,7 +2203,7 @@ fn should_read_a_document_stored_before_its_object_gained_a_member_listed_first(
             platform_value!({
                 "type": "object",
                 "position": 0,
-                "properties": { "x": x, "y": positioned_string(0) },
+                "properties": { "y": positioned_string(0), "x": x },
                 "required": required,
                 "additionalProperties": false,
             }),

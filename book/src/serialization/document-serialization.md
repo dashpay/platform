@@ -193,7 +193,7 @@ All numeric values use **big-endian** byte order.
 | `identifier` | 32 bytes raw |
 | `date` | 8 bytes big-endian f64 (when optional: `0xff` prefix + 8 bytes) |
 | `array` (typed array, protocol v14) | varint element count + each element encoded exactly as a required property of the element's type (rows above): an identifier element is 32 raw bytes, an integer element takes the width its bounds give it, a fixed-size byte array element is raw, a string or variable-size byte array element has a varint length prefix. Elements never carry a presence byte |
-| `object` | varint length prefix + its members serialized recursively, in `position` order from protocol v15 (before it, in the order the schema lists them; from v15 too for a stored object whose positions are not all integers, and among members sharing a position); an optional member takes a presence byte, and so does a member required from a contract version (`requiredSince`, protocol v15), whatever the document's stamp |
+| `object` | varint length prefix + its members serialized recursively, in the order the schema lists them (not sorted by `position`; from protocol v15 a new object must list them in position order, so the two agree); an optional member takes a presence byte, and so does a member required from a contract version (`requiredSince`, protocol v15), whatever the document's stamp |
 
 **Note on date types**: User-property `date` fields are encoded as **f64** (8 bytes). System timestamps (`$createdAt`, `$updatedAt`, `$transferredAt`) are **u64** milliseconds. Both are 8 bytes big-endian but use different numeric representations.
 

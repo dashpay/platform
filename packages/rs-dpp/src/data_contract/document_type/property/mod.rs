@@ -3080,10 +3080,10 @@ impl DocumentPropertyType {
                         if let Some(value) = value_map.remove(key) {
                             let mut serialized_value = field
                                 .property_type
-                                .encode_value_with_size(value, field.required)?;
+                                .encode_value_with_size(value, field.always_required())?;
                             r_vec.append(&mut serialized_value);
                             Ok(())
-                        } else if field.required {
+                        } else if field.always_required() {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),

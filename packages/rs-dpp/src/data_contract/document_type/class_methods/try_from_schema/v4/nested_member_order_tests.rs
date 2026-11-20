@@ -1,6 +1,6 @@
-//! An object's members as generation 4 orders them: by `position`, as the type's own
-//! properties, with positions that follow one another from the object's lowest under full
-//! validation.
+//! An object's members as generation 4 parses them: stored in the schema's map order, as every
+//! generation stores them, with positions that follow one another from the object's lowest
+//! under full validation.
 use super::*;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentPropertyType;
@@ -79,7 +79,7 @@ fn should_hold_an_objects_positions_to_one_after_another_from_its_lowest() {
             platform_value!({ "identity": boolean(1.into()) }),
         ),
         (
-            "positions from 1, listed in another order",
+            "positions from 1, listed out of position order, which registration judges",
             platform_value!({ "b": boolean(2.into()), "a": boolean(1.into()) }),
         ),
     ] {
@@ -179,13 +179,18 @@ fn should_refuse_a_member_position_that_is_not_an_integer_under_full_validation(
     }
 }
 
-/// A stored contract is read without full validation, and must read as it always did when its
-/// positions are not what registration now requires. An object whose positions are not all
-/// integers from 0 keeps its map order; members sharing a position keep theirs; gaps sort.
+/// A stored contract is read without full validation, and reads as it always did whatever its
+/// positions: an object's members keep the schema's map order, out of position order, with a
+/// gap, a repeated, float or missing position alike.
 #[test]
-fn should_read_every_stored_objects_positions_without_failing() {
+fn should_read_every_stored_objects_members_in_map_order() {
     let latest = PlatformVersion::latest();
     for (case, members, order) in [
+        (
+            "out of position order",
+            platform_value!({ "b": boolean(1.into()), "a": boolean(0.into()) }),
+            ["b", "a"],
+        ),
         (
             "a float position",
             platform_value!({ "b": boolean(Value::Float(1.0)), "a": boolean(0.into()) }),
@@ -204,12 +209,7 @@ fn should_read_every_stored_objects_positions_without_failing() {
         (
             "a gap",
             platform_value!({ "b": boolean(5.into()), "a": boolean(2.into()) }),
-            ["a", "b"],
-        ),
-        (
-            "positions written as different integer types",
-            platform_value!({ "b": boolean(Value::U64(2)), "a": boolean(Value::U8(1)) }),
-            ["a", "b"],
+            ["b", "a"],
         ),
     ] {
         let document_type = parse_at(with_meta(members), None, latest, false)
@@ -218,9 +218,8 @@ fn should_read_every_stored_objects_positions_without_failing() {
     }
 }
 
-/// A member a stored schema writes twice is the one the schema's map order resolves: its first
-/// place, with its last schema. Ordering by position keeps that resolution, so the member keeps
-/// the type it had at protocol version 14.
+/// A member a stored schema writes twice is the one the schema's map order resolves, its first
+/// place with its last schema, at protocol version 14 and from 15 alike.
 #[test]
 fn should_resolve_a_member_written_twice_as_the_schema_map_order_does() {
     let members = Value::Map(vec![
@@ -259,23 +258,23 @@ fn should_resolve_a_member_written_twice_as_the_schema_map_order_does() {
     }
 }
 
-/// A member that takes its schema from a `$ref` is placed by the `position` written beside the
-/// `$ref`, never by one its definition carries: the definition's would put `x` after `y`.
+/// The positions full validation checks are the ones written beside a member's `$ref`, never one
+/// its definition carries: the definition's would leave a gap.
 #[test]
-fn should_place_a_member_by_the_position_written_beside_its_ref() {
+fn should_check_the_position_written_beside_a_members_ref() {
     let document_type = parse_at(
         with_meta(platform_value!({
-            "y": boolean(1.into()),
             "x": { "$ref": "#/$defs/flag", "position": 0 },
+            "y": boolean(1.into()),
         })),
         Some(BTreeMap::from([(
             "flag".to_string(),
             platform_value!({ "type": "boolean", "position": 5 }),
         )])),
         PlatformVersion::latest(),
-        false,
+        true,
     )
-    .expect("expected the type to parse");
+    .expect("positions 0 and 1, written beside the members, follow one another");
     assert_eq!(stored_order(&document_type, &[]), ["x", "y"]);
 }
 

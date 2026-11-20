@@ -6,10 +6,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 
 /// Introduced in protocol version 15. Differs from v6 in:
 /// - `try_from_schema`, 4 rather than 3: parses `canBeErased` and admits deletable
-///   keep-history types, and stores an object's members by `position`, as a type's own
-///   properties are stored, instead of the schema's map order, under full validation holding an
-///   object's positions to one after another from its lowest; otherwise it preserves generation
-///   3's parsing;
+///   keep-history types, and under full validation holds an object's member positions to
+///   integers that follow one another from its lowest; otherwise it preserves generation 3's
+///   parsing, an object's members stored in the schema's map order as before;
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
@@ -85,8 +84,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     },
     document_type_versions: DocumentTypeVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
-            // lifecycle flags extend the schema-v3 grammar (note 41); an object's members are
-            // stored by position (note 49)
+            // lifecycle flags extend the schema-v3 grammar (note 41); an object's member
+            // positions are checked (note 49)
             try_from_schema: 4,
             ..CONTRACT_VERSIONS_V6
                 .document_type_versions
