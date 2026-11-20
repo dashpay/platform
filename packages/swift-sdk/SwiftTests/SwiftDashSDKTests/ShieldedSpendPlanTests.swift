@@ -228,12 +228,79 @@ final class ShieldedSpendPlanTests: XCTestCase {
         await manager.shutdown()
     }
 
-    func testShouldPassAPlanToEverySpendsFFI() async {
-        let manager = makeManager()
-        let resolver = MnemonicResolver()
-        for (name, spend) in spends(manager, resolver: resolver, digestCount: 32) {
-            await assertThrows(name, Self.isInvalidHandle, spend)
+    /// Records which native spend export ran and the digest it was handed.
+    private final class SpendLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [(String, Data?)] = []
+        func record(_ name: String, _ digest: UnsafePointer<UInt8>?) {
+            lock.withLock { items.append((name, digest.map { Data(bytes: $0, count: 32) })) }
         }
-        await manager.shutdown()
+        var entries: [(String, Data?)] { lock.withLock { items } }
+    }
+
+    private nonisolated static func recordingCalls(_ log: SpendLog) -> PlatformWalletNativeShieldedSpendCalls {
+        @Sendable func ok() -> PlatformWalletFFIResult {
+            PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        return PlatformWalletNativeShieldedSpendCalls(
+            planSpend: { _, _, _, _, _, _, _, _ in log.record("planSpend", nil); return ok() },
+            transfer: { _, _, _, _, _, _, _ in log.record("transfer", nil); return ok() },
+            transferWithPlan: { _, _, _, _, _, _, _, d in log.record("transferWithPlan", d); return ok() },
+            unshield: { _, _, _, _, _, _ in log.record("unshield", nil); return ok() },
+            unshieldWithPlan: { _, _, _, _, _, _, d in log.record("unshieldWithPlan", d); return ok() },
+            topUp: { _, _, _, _, _, _ in log.record("topUp", nil); return ok() },
+            topUpWithPlan: { _, _, _, _, _, _, d in log.record("topUpWithPlan", d); return ok() },
+            withdraw: { _, _, _, _, _, _, _ in log.record("withdraw", nil); return ok() },
+            withdrawWithPlan: { _, _, _, _, _, _, _, d in log.record("withdrawWithPlan", d); return ok() })
+    }
+
+    /// Each `plan:` overload calls its `_with_plan` export exactly once with
+    /// the plan's exact digest bytes and never the plain export; each plain
+    /// overload calls only the plain export.
+    func testShouldRouteEverySpendToTheExportMatchingItsPlan() async throws {
+        let digest = Data((0..<32).map { UInt8($0 * 7 + 1) })
+        let resolver = MnemonicResolver()
+        func plan(_ kind: ShieldedSpendKind) -> ShieldedSpendPlan {
+            ShieldedSpendPlan(
+                kind: kind, amount: 1, recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3,
+                noteCount: 1, digest: digest)
+        }
+        let cases: [(String, (PlatformWalletManager) async throws -> Void)] = [
+            ("transferWithPlan", { try await $0.shieldedTransfer(
+                walletId: Self.walletId, resolver: resolver,
+                recipientRaw43: Data(repeating: 1, count: 43), amount: 1, plan: plan(.transfer)) }),
+            ("transfer", { try await $0.shieldedTransfer(
+                walletId: Self.walletId, resolver: resolver,
+                recipientRaw43: Data(repeating: 1, count: 43), amount: 1) }),
+            ("unshieldWithPlan", { try await $0.shieldedUnshield(
+                walletId: Self.walletId, resolver: resolver, toPlatformAddress: "tdash1x",
+                amount: 1, plan: plan(.unshield)) }),
+            ("unshield", { try await $0.shieldedUnshield(
+                walletId: Self.walletId, resolver: resolver, toPlatformAddress: "tdash1x",
+                amount: 1) }),
+            ("withdrawWithPlan", { try await $0.shieldedWithdraw(
+                walletId: Self.walletId, resolver: resolver, toCoreAddress: "yX", amount: 1,
+                plan: plan(.withdrawal)) }),
+            ("withdraw", { try await $0.shieldedWithdraw(
+                walletId: Self.walletId, resolver: resolver, toCoreAddress: "yX", amount: 1) }),
+            ("topUpWithPlan", { try await $0.shieldedIdentityTopUpFromPool(
+                walletId: Self.walletId, resolver: resolver,
+                identityId: Data(repeating: 2, count: 32), amount: 1, plan: plan(.identityTopUp)) }),
+            ("topUp", { try await $0.shieldedIdentityTopUpFromPool(
+                walletId: Self.walletId, resolver: resolver,
+                identityId: Data(repeating: 2, count: 32), amount: 1) })
+        ]
+        for (expected, spend) in cases {
+            let manager = makeManager()
+            let log = SpendLog()
+            manager.nativeShieldedSpendCalls = Self.recordingCalls(log)
+            try await spend(manager)
+            let entries = log.entries
+            XCTAssertEqual(entries.map(\.0), [expected], "\(expected): wrong export(s) called")
+            if expected.hasSuffix("WithPlan") {
+                XCTAssertEqual(entries.first?.1, digest, "\(expected): digest bytes differ")
+            }
+            await manager.shutdown()
+        }
     }
 }

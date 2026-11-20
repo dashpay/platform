@@ -145,6 +145,10 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedFundFromAssetLock")
+        defer { finishNativeOp() }
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the
@@ -232,6 +236,10 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedFundFromCoinJoinDrain")
+        defer { finishNativeOp() }
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the entire
@@ -319,6 +327,10 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedResumeFundFromAssetLock")
+        defer { finishNativeOp() }
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
         let coreSigner = MnemonicResolver()
@@ -426,6 +438,10 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("seedShieldedPoolNotes")
+        defer { finishNativeOp() }
         let handle = self.handle
 
         try await Task.detached(priority: .userInitiated) {

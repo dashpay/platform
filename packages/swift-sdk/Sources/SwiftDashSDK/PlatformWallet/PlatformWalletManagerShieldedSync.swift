@@ -173,6 +173,66 @@ typealias ShieldFromIdentityToRecipientCall = @Sendable (
     UInt64, UnsafePointer<CChar>?, OpaquePointer, UnsafeMutablePointer<UInt64>
 ) -> PlatformWalletFFIResult
 
+/// Test seam for the native calls behind `shieldedPlanSpend` and the four
+/// note spends (each with and without a plan); injectable through
+/// `PlatformWalletManager.nativeShieldedSpendCalls`. Production keeps `.live`.
+struct PlatformWalletNativeShieldedSpendCalls: Sendable {
+    typealias Resolver = UnsafeMutablePointer<MnemonicResolverHandle>
+    typealias Digest = UnsafePointer<UInt8>
+    typealias PlanSpend = @Sendable (
+        Handle, UnsafePointer<UInt8>, UInt32, UInt8, UInt64, Bool, UInt32,
+        UnsafeMutablePointer<ShieldedSpendPlanFFI>
+    ) -> PlatformWalletFFIResult
+    typealias Transfer = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<UInt8>, UInt64,
+        UnsafePointer<CChar>?
+    ) -> PlatformWalletFFIResult
+    typealias TransferWithPlan = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<UInt8>, UInt64,
+        UnsafePointer<CChar>?, Digest
+    ) -> PlatformWalletFFIResult
+    typealias Unshield = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<CChar>, UInt64
+    ) -> PlatformWalletFFIResult
+    typealias UnshieldWithPlan = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<CChar>, UInt64, Digest
+    ) -> PlatformWalletFFIResult
+    typealias TopUp = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<UInt8>, UInt64
+    ) -> PlatformWalletFFIResult
+    typealias TopUpWithPlan = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<UInt8>, UInt64, Digest
+    ) -> PlatformWalletFFIResult
+    typealias Withdraw = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<CChar>, UInt64, UInt32
+    ) -> PlatformWalletFFIResult
+    typealias WithdrawWithPlan = @Sendable (
+        Handle, UnsafePointer<UInt8>, Resolver, UInt32, UnsafePointer<CChar>, UInt64, UInt32, Digest
+    ) -> PlatformWalletFFIResult
+
+    var planSpend: PlanSpend
+    var transfer: Transfer
+    var transferWithPlan: TransferWithPlan
+    var unshield: Unshield
+    var unshieldWithPlan: UnshieldWithPlan
+    var topUp: TopUp
+    var topUpWithPlan: TopUpWithPlan
+    var withdraw: Withdraw
+    var withdrawWithPlan: WithdrawWithPlan
+
+    static let live = PlatformWalletNativeShieldedSpendCalls(
+        planSpend: platform_wallet_manager_shielded_plan_spend,
+        transfer: platform_wallet_manager_shielded_transfer,
+        transferWithPlan: platform_wallet_manager_shielded_transfer_with_plan,
+        unshield: platform_wallet_manager_shielded_unshield,
+        unshieldWithPlan: platform_wallet_manager_shielded_unshield_with_plan,
+        topUp: platform_wallet_manager_shielded_identity_top_up_from_pool,
+        topUpWithPlan: platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan,
+        withdraw: platform_wallet_manager_shielded_withdraw,
+        withdrawWithPlan: platform_wallet_manager_shielded_withdraw_with_plan
+    )
+}
+
 extension PlatformWalletManager {
     /// Shutdown leaves the handle live for admitted operations after its
     /// early shielded stop. Do not restart or mutate that lifecycle while
@@ -914,7 +974,12 @@ extension PlatformWalletManager {
         case .sweepAll: (credits, sweepAll) = (0, true)
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedPlanSpend")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let planSpend = nativeShieldedSpendCalls.planSpend
         // The plan reads the shielded store under its lock: off the caller's actor.
         return try await Task.detached(priority: .userInitiated) {
             try walletId.withUnsafeBytes { widRaw in
@@ -924,7 +989,7 @@ extension PlatformWalletManager {
                 }
                 // A plain value struct: nothing in it is allocated by Rust.
                 var out = ShieldedSpendPlanFFI()
-                try platform_wallet_manager_shielded_plan_spend(
+                try planSpend(
                     handle, widPtr, account, kind.rawValue, credits, sweepAll,
                     coreFeePerByte ?? 0, &out
                 ).check()
@@ -1031,7 +1096,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedTransfer")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // MnemonicResolver is passed to Rust via `passUnretained`,
             // so the Rust ctx pointer dangles unless the Swift owner
@@ -1059,9 +1129,9 @@ extension PlatformWalletManager {
                         let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
                             try withPlanDigest(plan) { digest in
                                 try (digest.map {
-                                    platform_wallet_manager_shielded_transfer_with_plan(
+                                    calls.transferWithPlan(
                                         handle, widPtr, resolverHandle, account, recipientPtr, amount, memoCStr, $0)
-                                } ?? platform_wallet_manager_shielded_transfer(
+                                } ?? calls.transfer(
                                     handle, widPtr, resolverHandle, account, recipientPtr, amount, memoCStr)).check()
                             }
                         }
@@ -1116,6 +1186,10 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedShieldPreflight")
+        defer { finishNativeOp() }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) {
             () -> ShieldedShieldPreflight in
@@ -1196,6 +1270,10 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedShield")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = addressSigner.handle
 
@@ -1276,6 +1354,10 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedShieldFromIdentity")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = identitySigner.handle
 
@@ -1475,6 +1557,10 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedShieldToRecipient")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = addressSigner.handle
 
@@ -1598,7 +1684,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedUnshield")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
@@ -1611,9 +1702,9 @@ extension PlatformWalletManager {
                     try toPlatformAddress.withCString { addrCStr in
                         try withPlanDigest(plan) { digest in
                             try (digest.map {
-                                platform_wallet_manager_shielded_unshield_with_plan(
+                                calls.unshieldWithPlan(
                                     handle, widPtr, resolverHandle, account, addrCStr, amount, $0)
-                            } ?? platform_wallet_manager_shielded_unshield(
+                            } ?? calls.unshield(
                                 handle, widPtr, resolverHandle, account, addrCStr, amount)).check()
                         }
                     }
@@ -1709,7 +1800,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedIdentityTopUpFromPool")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
@@ -1729,9 +1825,9 @@ extension PlatformWalletManager {
                         }
                         try withPlanDigest(plan) { digest in
                             try (digest.map {
-                                platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan(
+                                calls.topUpWithPlan(
                                     handle, widPtr, resolverHandle, account, idPtr, amount, $0)
-                            } ?? platform_wallet_manager_shielded_identity_top_up_from_pool(
+                            } ?? calls.topUp(
                                 handle, widPtr, resolverHandle, account, idPtr, amount)).check()
                         }
                     }
@@ -1822,7 +1918,12 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedWithdraw")
+        defer { finishNativeOp() }
         let handle = self.handle
+        let calls = nativeShieldedSpendCalls
         try await Task.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
@@ -1835,9 +1936,9 @@ extension PlatformWalletManager {
                     try toCoreAddress.withCString { addrCStr in
                         try withPlanDigest(plan) { digest in
                             try (digest.map {
-                                platform_wallet_manager_shielded_withdraw_with_plan(
+                                calls.withdrawWithPlan(
                                     handle, widPtr, resolverHandle, account, addrCStr, amount, coreFeePerByte, $0)
-                            } ?? platform_wallet_manager_shielded_withdraw(
+                            } ?? calls.withdraw(
                                 handle, widPtr, resolverHandle, account, addrCStr, amount, coreFeePerByte)).check()
                         }
                     }
@@ -1916,6 +2017,10 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedIdentityCreateFromPool")
+        defer { finishNativeOp() }
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
         let fallbackAddressBytes = sendToAddressOnCreationFailure

@@ -48,6 +48,10 @@ extension PlatformWalletManager {
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId must be exactly 32 bytes")
         }
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("shieldedIdentityDebitRecoveryRecords")
+        defer { finishNativeOp() }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) {
             try walletId.withUnsafeBytes { raw in
@@ -86,6 +90,10 @@ extension PlatformWalletManager {
         guard walletId.count == 32, activityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId and activityId must be exactly 32 bytes")
         }
+        // Admitted through the detached call and the result delivery, like
+        // `shieldedShieldFromIdentityToRecipient`.
+        try admitNativeOp("abandonShieldedIdentityDebit")
+        defer { finishNativeOp() }
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             try walletId.withUnsafeBytes { wallet in
