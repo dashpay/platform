@@ -6,9 +6,7 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 
 /// Introduced in protocol version 15. Differs from v6 in:
 /// - `try_from_schema`, 4 rather than 3: parses `canBeErased` and admits deletable
-///   keep-history types, and under full validation holds an object's member positions to
-///   integers that follow one another from its lowest; otherwise it preserves generation 3's
-///   parsing, an object's members stored in the schema's map order as before;
+///   keep-history types, while preserving generation 3's non-lifecycle parsing;
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
@@ -25,7 +23,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   every new document type must have a validation schema;
 /// - `validate_update`, 2 rather than 1: an update of a contract is refused when an object of
 ///   a stored document type's schema, or of the stored `$defs`, names a key twice, as
-///   registration from this version refuses a schema that does;
+///   registration from this version refuses a schema that does, and when an object the update
+///   adds is not listed at consecutive member positions or an existing one does not keep its
+///   members' order and gain new ones at its next free positions (note 49);
 /// - `validate_max_depth`, 2 rather than 1: the depth and cycle check resolves `$ref`
 ///   pointers by RFC 6901, as the native validator does;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
@@ -85,15 +85,14 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         validate_no_transient_summed_property: Some(0),
         // changed: the fee estimate bills an index without compiling its field matches
         registration_cost: 3,
-        // changed: an update of a contract whose stored schema repeats a key is refused
+        // changed: an update of a contract whose stored schema repeats a key is refused, and the
+        // objects it adds or changes are held to their member positions (note 49)
         validate_update: 2,
         ..CONTRACT_VERSIONS_V6.methods
     },
     document_type_versions: DocumentTypeVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
-            // lifecycle flags extend the schema-v3 grammar (note 41); an object's member
-            // positions are checked (note 49)
-            try_from_schema: 4,
+            try_from_schema: 4, // lifecycle flags extend the schema-v3 grammar (note 41)
             ..CONTRACT_VERSIONS_V6
                 .document_type_versions
                 .class_method_versions

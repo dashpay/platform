@@ -1475,3 +1475,127 @@ fn should_refuse_an_existing_member_gaining_or_losing_required_since() {
     ];
     run(&cases, PlatformVersion::latest());
 }
+
+/// A type that requires an object's member only through a dotted name in its own `required`
+/// accepts no document, since the validator reads the dotted name as a property named with a dot.
+/// Moving the requirement into the object's own `required` repairs it: the member was already
+/// parsed as required, so nothing about how documents are stored changes.
+#[test]
+fn should_let_a_dotted_name_only_requirement_move_into_its_objects_required() {
+    let cases = vec![case(
+        "a dotted name moved into its object's own required",
+        document_type_schema(with_meta(meta_yz()), platform_value!(["a", "meta.y"])),
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": boolean(0), "z": integer(1) }),
+                1,
+                Some(platform_value!(["y"])),
+            )),
+            platform_value!(["a"]),
+        ),
+        Expected::Accepted,
+    )];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// What an object an update adds to a type can not hold: a `required` name that is no member of
+/// the object, when it is written inline; and a dotted name in an entry the update writes, at any
+/// depth, beside a `$ref` it keeps. A `required` written on a schema that is no object is not
+/// read as naming members.
+#[test]
+fn should_refuse_required_lists_no_document_could_meet() {
+    let overlay = |entries: Value| {
+        document_type_schema(
+            platform_value!({
+                "a": string(0, 10),
+                "meta": meta_ref(Some(("properties", entries))),
+            }),
+            platform_value!(["a"]),
+        )
+    };
+    let definition = || {
+        definitions(platform_value!({ "r": object(platform_value!({ "b": boolean(0) }), 0, None) }))
+    };
+    let cases = vec![
+        case(
+            "an object the update adds requiring a name that is not one of its members",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "y": boolean(0) }),
+                    1,
+                    Some(platform_value!(["w"])),
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Refused(10276, "'w'"),
+        ),
+        case(
+            "an object the update adds holding a scalar member with a meaningless required",
+            document_type_schema(
+                platform_value!({ "a": string(0, 10) }),
+                platform_value!(["a"]),
+            ),
+            document_type_schema(
+                with_meta(object(
+                    platform_value!({ "s": with(string(0, 10), "required", platform_value!(["x"])) }),
+                    1,
+                    None,
+                )),
+                platform_value!(["a"]),
+            ),
+            Expected::Accepted,
+        ),
+        Case {
+            name: "a dotted name inside an entry kept beside a $ref",
+            old: overlay(platform_value!({
+                "r": object(platform_value!({ "b": boolean(0) }), 0, None),
+            })),
+            new: overlay(platform_value!({
+                "r": object(
+                    platform_value!({
+                        "b": boolean(0),
+                        "s": object(
+                            platform_value!({ "c": boolean(0) }),
+                            1,
+                            Some(platform_value!(["c.z"])),
+                        ),
+                    }),
+                    0,
+                    None,
+                ),
+            })),
+            old_defs: definition(),
+            new_defs: definition(),
+            expected: Expected::Refused(10276, "c.z"),
+        },
+    ];
+    run(&cases, PlatformVersion::latest());
+}
+
+/// Changing the version an existing member is required from changes its value, which the schema
+/// compatibility check refuses (10246), as it refuses changing any keyword of an existing member.
+#[test]
+fn should_refuse_changing_the_version_an_existing_member_is_required_from() {
+    let since = |version: u32| with(boolean(0), "requiredSince", Value::U32(version));
+    let meta = |y: Value| {
+        document_type_schema(
+            with_meta(object(
+                platform_value!({ "y": y, "z": integer(1) }),
+                1,
+                Some(platform_value!(["y"])),
+            )),
+            platform_value!(["a"]),
+        )
+    };
+    let cases = vec![case(
+        "an existing member's requiredSince raised",
+        meta(since(1)),
+        meta(since(2)),
+        Expected::Refused(10246, "requiredSince"),
+    )];
+    run(&cases, PlatformVersion::latest());
+}

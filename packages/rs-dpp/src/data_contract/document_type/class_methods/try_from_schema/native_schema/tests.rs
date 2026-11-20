@@ -17,6 +17,7 @@ use crate::data_contract::config::moderation::{ContractModerationConfig, Contrac
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validation_schema::ValidationSchema;
+use crate::data_contract::document_type::schema::MemberPositionOrder;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -29,7 +30,7 @@ use platform_version::version::PlatformVersion;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::{json, Value as JsonValue};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 // ---- what the comparisons run ----
@@ -1767,38 +1768,42 @@ fn should_admit_private_which_the_meta_schema_refuses() {
     }
 }
 
-/// Every deployed contract and fixture passes generation 4's rule on an object's positions, which
-/// every update of a contract from protocol version 15 is parsed under: positions that follow one
-/// another from the object's lowest. A contract failing it could not be updated.
+/// Every deployed contract and fixture stays updatable under the rule on an object's member order:
+/// unchanged, none of its objects is judged by the positions a new object is held to. Read as a
+/// new registration, only the testnet contracts known to list an object out of position order
+/// would be refused.
 #[test]
-fn should_hold_every_deployed_object_to_the_nested_position_rule() {
-    let latest = PlatformVersion::latest();
-    let mut refused = Vec::new();
+fn should_keep_every_deployed_contract_updatable_under_the_member_order_rule() {
+    let census = BTreeSet::from([
+        "5hr7uQGA8WQpQS1WzgBKg9vKHjsRxuTBzmP7xsPmnuPP".to_string(),
+        "HnNVSS2byYwjH2BmoTLUJG94xtoDNihBBzWVvh8c5TGD".to_string(),
+        "XJMWN5fHC8p2BjHbWJvyBegj575DNhQTGSghpN2ToFk".to_string(),
+    ]);
+    let mut unupdatable = Vec::new();
+    let mut unregistrable = BTreeSet::new();
     for case in written_cases().into_iter().chain(corpus_cases()) {
         let defs = case.schema_defs().unwrap();
-        let result = DocumentType::try_from_schema(
-            case.contract_id,
-            1,
-            case.config.version(),
-            &case.name,
-            Value::from(case.schema.clone()),
-            defs.as_ref(),
-            &case.tokens,
-            &case.config,
-            true,
-            &mut vec![],
-            latest,
-        );
-        if let Err(error) = result {
-            let message = error.to_string();
-            if message.contains("must take positions one after another")
-                || message.contains("needs a position")
-            {
-                refused.push(format!("{}: {message}", case.origin));
-            }
+        let judge = MemberPositionOrder::new(defs.as_ref());
+        let schema = Value::from(case.schema.clone());
+        if judge
+            .first_error_of_document_type(Some(&schema), &schema)
+            .is_some()
+            || judge.first_error_of_definitions(defs.as_ref()).is_some()
+        {
+            unupdatable.push(case.origin.clone());
+        }
+        if judge.first_error_of_document_type(None, &schema).is_some()
+            || judge.first_error_of_definitions(None).is_some()
+        {
+            unregistrable.insert(case.contract_id.to_string(Encoding::Base58));
         }
     }
-    assert!(refused.is_empty(), "{refused:#?}");
+    assert!(unupdatable.is_empty(), "{unupdatable:#?}");
+    assert!(
+        unregistrable.is_subset(&census),
+        "deployed contracts a registration from protocol version 15 would refuse: \
+         {unregistrable:?}"
+    );
 }
 
 #[test]

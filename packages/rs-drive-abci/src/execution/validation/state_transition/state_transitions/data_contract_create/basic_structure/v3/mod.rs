@@ -2,10 +2,7 @@ use crate::error::Error;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::Network;
-use dpp::data_contract::document_type::schema::{
-    first_member_position_order_error, first_member_position_order_error_of_document_type,
-    MemberPositionOrderError,
-};
+use dpp::data_contract::document_type::schema::{MemberPositionOrder, MemberPositionOrderError};
 use dpp::data_contract::errors::DataContractError;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -25,7 +22,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
 impl DataContractCreateStateTransitionBasicStructureValidationV3 for DataContractCreateTransition {
     /// Generation 2, once every object of the contract's document schemas and of its `$defs`
-    /// lists its members in position order (protocol version 15).
+    /// lists its members at consecutive positions, and every `$ref` points into its `$defs` at
+    /// a schema whose objects do (protocol version 15).
     ///
     /// An object is stored with its members in the order its `properties` map lists them, while
     /// a document type's own properties are stored in `position` order. Requiring a new
@@ -44,22 +42,16 @@ impl DataContractCreateStateTransitionBasicStructureValidationV3 for DataContrac
 
         // Nothing is stored yet, so every object is one the contract gains
         let data_contract = self.data_contract();
-        let error =
-            data_contract
-                .document_schemas()
-                .values()
-                .find_map(|schema| first_member_position_order_error_of_document_type(None, schema))
-                .or_else(|| {
-                    data_contract.schema_defs().into_iter().flatten().find_map(
-                        |(name, definition)| {
-                            first_member_position_order_error(
-                                None,
-                                definition,
-                                &format!("$defs.{name}"),
-                            )
-                        },
-                    )
-                });
+        let judge = MemberPositionOrder::new(data_contract.schema_defs());
+        let error = data_contract
+            .document_schemas()
+            .values()
+            .find_map(|schema| judge.first_error_of_document_type(None, schema))
+            .or_else(|| {
+                judge
+                    .first_error_of_definitions(None)
+                    .map(|(_, error)| error)
+            });
         if let Some(
             MemberPositionOrderError::ListedOutOfPositionOrder(details)
             | MemberPositionOrderError::AddedBeforeExistingMembers(details),
@@ -79,6 +71,7 @@ impl DataContractCreateStateTransitionBasicStructureValidationV3 for DataContrac
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
     use assert_matches::assert_matches;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
     use dpp::platform_value::{platform_value, Value};
@@ -153,7 +146,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(BasicError::ContractError(
                 DataContractError::InvalidContractStructure(details)
-            ))] if details.contains(&format!("'{path}'")) && details.contains("position order")
+            ))] if details.contains(&format!("'{path}'"))
         );
     }
 
@@ -164,7 +157,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let in_order = object(vec![string_member("title", 0), string_member("slug", 1)], 0);
         let result = create_transition(in_order, None, platform_version)
-            .validate_basic_structure_v3(Network::Testnet, platform_version)
+            .validate_basic_structure(Network::Testnet, platform_version)
             .expect("expected the structure to be judged");
         assert!(result.is_valid(), "{:?}", result.errors);
 
@@ -178,7 +171,7 @@ mod tests {
         );
         refused_as_out_of_position_order(
             &create_transition(out_of_order.clone(), None, platform_version)
-                .validate_basic_structure_v3(Network::Testnet, platform_version)
+                .validate_basic_structure(Network::Testnet, platform_version)
                 .expect("expected the structure to be judged"),
             "metadata",
         );
@@ -198,7 +191,7 @@ mod tests {
         );
         refused_as_out_of_position_order(
             &create_transition(nested, None, platform_version)
-                .validate_basic_structure_v3(Network::Testnet, platform_version)
+                .validate_basic_structure(Network::Testnet, platform_version)
                 .expect("expected the structure to be judged"),
             "metadata.inner",
         );
@@ -212,10 +205,76 @@ mod tests {
                 Some(BTreeMap::from([("meta".to_string(), definition)])),
                 platform_version,
             )
-            .validate_basic_structure_v3(Network::Testnet, platform_version)
+            .validate_basic_structure(Network::Testnet, platform_version)
             .expect("expected the structure to be judged"),
-            "$defs.meta",
+            "#/$defs/meta",
         );
+    }
+
+    /// The members of a new contract's objects take consecutive integer positions, and a `$ref`
+    /// points into its `$defs`; a pointer to a definition's scalar member is accepted.
+    #[test]
+    fn should_refuse_a_new_contract_whose_object_skips_repeats_or_misreads_a_position() {
+        let platform_version = PlatformVersion::latest();
+        let float_member = (
+            Value::Text("b".to_string()),
+            platform_value!({ "type": "string", "maxLength": 20, "position": 1.0 }),
+        );
+        for (case, metadata, fragment) in [
+            (
+                "a gap",
+                object(vec![string_member("a", 0), string_member("b", 2)], 0),
+                "leaving a gap",
+            ),
+            (
+                "a repeat",
+                object(vec![string_member("a", 0), string_member("b", 0)], 0),
+                "as 'a' does",
+            ),
+            (
+                "a float",
+                object(vec![string_member("a", 0), float_member], 0),
+                "needs a position",
+            ),
+            (
+                "a $ref outside $defs",
+                platform_value!({ "$ref": "#/properties/other", "position": 0 }),
+                "points into its `$defs`",
+            ),
+        ] {
+            let result = create_transition(metadata, None, platform_version)
+                .validate_basic_structure(Network::Testnet, platform_version)
+                .expect("expected the structure to be judged");
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(details)
+                    ))] if details.contains(fragment)
+                ),
+                "{case}: {:?}",
+                result.errors
+            );
+        }
+
+        let keys = BTreeMap::from([(
+            "keys".to_string(),
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "recipient": { "type": "string", "maxLength": 20, "position": 0 },
+                },
+                "additionalProperties": false,
+            }),
+        )]);
+        let result = create_transition(
+            platform_value!({ "$ref": "#/$defs/keys/properties/recipient", "position": 0 }),
+            Some(keys),
+            platform_version,
+        )
+        .validate_basic_structure(Network::Testnet, platform_version)
+        .expect("expected the structure to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
     }
 
     /// Protocol version 14 registers such a contract, as it always did.
@@ -224,7 +283,7 @@ mod tests {
         let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let out_of_order = object(vec![string_member("slug", 1), string_member("title", 0)], 0);
         let result = create_transition(out_of_order, None, platform_version)
-            .validate_basic_structure_v2(Network::Testnet, platform_version)
+            .validate_basic_structure(Network::Testnet, platform_version)
             .expect("expected the structure to be judged");
         assert!(result.is_valid(), "{:?}", result.errors);
     }

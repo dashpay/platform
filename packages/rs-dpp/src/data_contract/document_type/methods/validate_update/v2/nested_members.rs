@@ -5,10 +5,9 @@
 //! protocol version), a member required at every contract version without the presence byte an
 //! optional one (or one required from a contract version) carries, so an object's members must
 //! keep their place and their requiredness, and a member may only be added after them. Contract
-//! `validate_update` 2 also holds an added member to a position above the existing ones', and an
-//! object the update adds to listing its members in position order
-//! (`first_member_position_order_error`). Its requiredness is what the type's parse makes of
-//! it, whatever made it so: the
+//! `validate_update` 2 also holds an added member to the object's next free position, and an
+//! object the update adds to consecutive positions in map order (`MemberPositionOrder`). Its
+//! requiredness is what the type's parse makes of it, whatever made it so: the
 //! object's own `required`, a `required` beside its `$ref`, a dotted name in an enclosing
 //! `required`, or the parser reading a required name of an enclosing property as naming it (a
 //! name made of the object's name, any one character and the member's name). These rules compare
@@ -25,7 +24,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::property_names::{
-    CONST, ENUM, MAX_PROPERTIES, PROPERTIES, REF, REQUIRED,
+    CONST, ENUM, MAX_PROPERTIES, PROPERTIES, REF, REQUIRED, TYPE,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
@@ -66,7 +65,8 @@ impl DocumentTypeRef<'_> {
     /// The `required` lists the document validator reads keep what they hold, as the
     /// type's own `required` does: in the list of every object the old type has (its own list,
     /// or the one beside its `$ref`) no name is removed, and a name is added only for a member
-    /// the same update adds to that object. A dotted name is never one of an object's own
+    /// the same update adds to that object, or for one the type already parses as required
+    /// through a dotted name, which repairs that requirement. A dotted name is never one of an object's own
     /// members, so none is added to any list, the type's own included, nor written in the list
     /// of an object the update adds: the validator reads it as a property named with a dot,
     /// which no document can hold, while the parser reads it as a nested requirement. One may leave a list when another list still requires the member it
@@ -395,7 +395,10 @@ fn first_required_list_change(
             return Some(format!("removed required field '{path}.{removed}'"));
         }
         for added in new_names.difference(&old_names) {
-            if old.contains_key(*added) {
+            // A member the type already parses as required (through a dotted name in an
+            // enclosing list) may be named here, which repairs a requirement the validator
+            // could not read without changing how a document is stored
+            if old.get(*added).is_some_and(|member| !member.required) {
                 return Some(format!(
                     "existing property '{path}.{added}' cannot become required"
                 ));
@@ -461,27 +464,39 @@ fn first_required_list_change(
         }
         if let Some(added_schema) = new_member_schemas.get(name.as_str()) {
             if let Some(change) =
-                first_dotted_name_in_added_object(added_schema, &member_path(path, name))
+                first_unmet_name_in_added_object(added_schema, &member_path(path, name), true)
             {
                 return Some(change);
             }
         }
     }
     // The `properties` written beside a `$ref` are not parsed, but the document validator reads
-    // them, so an entry an update writes there holds no dotted name either
+    // them, so an entry an update writes there, at any depth, holds no dotted name either
     if has_ref(new_schema) {
-        let old_entries = properties_as_written(old_schema);
-        for (name, entry) in properties_as_written(new_schema) {
-            if old_entries.contains_key(name) {
-                continue;
-            }
-            if let Some(change) = first_dotted_name_in_added_object(entry, &member_path(path, name))
-            {
-                return Some(change);
-            }
-        }
+        return first_dotted_name_in_entries_added(old_schema, new_schema, path);
     }
     None
+}
+
+/// The first dotted name in an entry of `new_schema`'s `properties`, as written, that
+/// `old_schema`'s does not have, at any depth below the entries both have.
+fn first_dotted_name_in_entries_added(
+    old_schema: &Value,
+    new_schema: &Value,
+    path: Option<&str>,
+) -> Option<String> {
+    let old_entries = properties_as_written(old_schema);
+    properties_as_written(new_schema)
+        .into_iter()
+        .find_map(|(name, entry)| {
+            let entry_path = member_path(path, name);
+            match old_entries.get(name) {
+                Some(old_entry) => {
+                    first_dotted_name_in_entries_added(old_entry, entry, Some(&entry_path))
+                }
+                None => first_unmet_name_in_added_object(entry, &entry_path, false),
+            }
+        })
 }
 
 /// The entries of `schema`'s `properties` map as written, beside a `$ref` too.
@@ -534,25 +549,52 @@ fn holding_object_refusal(schema: &Value, path: &str) -> Option<String> {
     None
 }
 
-/// The first dotted name in a `required` list of the object the update adds at `path`, whose
-/// schema is `schema`, or of an object written inside it, beside a `$ref` too.
-fn first_dotted_name_in_added_object(schema: &Value, path: &str) -> Option<String> {
-    if let Some(dotted) = required_names(schema)
-        .into_iter()
-        .find(|name| name.contains('.'))
-    {
+/// The first `required` name in the object the update adds at `path`, whose schema is `schema`,
+/// or in an object written inside it (beside a `$ref` too), that no document could meet: a
+/// dotted name, which the validator reads as a property named with a dot, and, when
+/// `inline_members_known`, a name an object written inline does not list among its members. An
+/// entry written beside a `$ref` restates members its definition supplies, so its names are not
+/// checked against the entry's own `properties`.
+fn first_unmet_name_in_added_object(
+    schema: &Value,
+    path: &str,
+    inline_members_known: bool,
+) -> Option<String> {
+    let names = required_names(schema);
+    if let Some(dotted) = names.iter().find(|name| name.contains('.')) {
         return Some(format!(
             "the required of '{path}' can not name the dotted name '{dotted}': a required list \
              names the members of its own object, and the document validator reads a dotted \
              name as a property named with a dot, which no document can hold"
         ));
     }
+    let is_inline_object = !has_ref(schema)
+        && schema
+            .as_map()
+            .and_then(|schema| schema.get_optional_key(TYPE))
+            .and_then(Value::as_text)
+            == Some("object");
+    if inline_members_known && is_inline_object {
+        let members = inline_member_schemas(schema);
+        if let Some(unknown) = names.iter().find(|name| !members.contains_key(*name)) {
+            return Some(format!(
+                "the required of '{path}' names '{unknown}', which is not one of its members, \
+                 so no document can hold the object"
+            ));
+        }
+    }
     let members = schema
         .as_map()
         .and_then(|schema| schema.get_optional_key(PROPERTIES))
         .and_then(Value::as_map)?;
+    // The members written beside a `$ref` restate the definition's
+    let inline_members_known = inline_members_known && !has_ref(schema);
     members.iter().find_map(|(name, member)| {
-        first_dotted_name_in_added_object(member, &member_path(Some(path), name.as_text()?))
+        first_unmet_name_in_added_object(
+            member,
+            &member_path(Some(path), name.as_text()?),
+            inline_members_known,
+        )
     })
 }
 
