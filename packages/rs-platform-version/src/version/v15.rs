@@ -1001,7 +1001,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     unique indexes or its id (a deleted document's retained revisions hold its id too), or its
 ///     type sums a property whose schema does not keep its values within
 ///     `max_contested_summed_value_magnitude`, which only a type registered before protocol
-///     version 14 can do. No other contender is awarded in its place. The contest is left open:
+///     version 14 can do, or the document does not hold, at its top level and as an `i64`, the
+///     value of every property its type sums: a contender's document is stored without its
+///     transient values, and a type registered before protocol version 15 may sum a transient
+///     property (before 14, one named by a dotted path). No other contender is awarded in its
+///     place. The contest is left open:
 ///     nothing of it is awarded, recorded or cleaned up, so its contenders, their documents, its
 ///     votes and its prefunded balance stay, and it moves from its end date to
 ///     `VOTE_POLLS_LEFT_OPEN_END_DATE`, which no block time reaches, where a later protocol
@@ -1026,7 +1030,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     total of the property over all its documents (`documentsSummable` or
 ///     `documentsAverageable`); a type no transition creates documents of
 ///     (`creationRestrictionMode` 2) is left alone. Values within ±2^27 keep every sum in
-///     range short of 2^36 documents. With values that are never negative no sum of the type
+///     range short of 2^36 documents. Parser generation 4 also refuses, under full validation,
+///     a summed property the type lists as transient: a transient value is never stored, and
+///     the type's sums read the stored value of each document. With values that are never negative no sum of the type
 ///     holds more than the type's total times the entries one document adds to a summed
 ///     index, so document create state validation 3 and replace state validation 2 read that
 ///     total (`fetch_document_type_sum` `Some(0)`) and refuse a create outside a contest, or

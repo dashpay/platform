@@ -13,10 +13,22 @@
 //!
 //! The generation reuses the complete current parser body with a generation-owned
 //! admission flag. Earlier generations retain their refusal of deletable history.
+//!
+//! Under full validation it also refuses a summed property the type lists as transient
+//! ([`validate_no_transient_summed_property`]), after the generation-3 body has parsed the
+//! type.
 
 use crate::data_contract::config::DataContractConfig;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::is_transient;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "validation")]
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -37,7 +49,8 @@ use super::common;
 /// ordinary reads while its retained revisions stay readable. It also admits
 /// the `canBeErased` keyword, which additionally allows a deleted document's
 /// revisions to be purged, and it refuses a keep-history type that carries a
-/// contested index.
+/// contested index. Under full validation it refuses a type summing a property it lists as
+/// transient.
 #[allow(clippy::too_many_arguments)]
 fn try_from_schema_generation_4(
     data_contract_id: Identifier,
@@ -52,7 +65,7 @@ fn try_from_schema_generation_4(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    super::v3::try_from_schema_generation_3(
+    let document_type = super::v3::try_from_schema_generation_3(
         data_contract_id,
         data_contract_system_version,
         contract_config_version,
@@ -65,7 +78,47 @@ fn try_from_schema_generation_4(
         validation_operations,
         &PARSER_GENERATION,
         platform_version,
-    )
+    )?;
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_no_transient_summed_property(&document_type, name)?;
+    }
+    Ok(document_type)
+}
+
+/// No property the type sums is transient. Drive writes a document's value of the property
+/// into the type's sums when it stores the document, from the stored document's own
+/// properties, and a transient value is never stored. Every summing declaration of a type
+/// (`documentsSummable`, `documentsAverageable`, and an index's `summable` or `averageable`)
+/// names one property (`apply_doctype_aggregates`); each is read here.
+///
+/// Full validation only: a contract stored with such a type still loads. An update re-parses
+/// the whole contract under full validation, and neither the `transient` list nor what a type
+/// sums can change on update, so a contract stored with such a type can no longer be updated;
+/// no contract on mainnet or testnet has one.
+#[cfg(feature = "validation")]
+fn validate_no_transient_summed_property(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    let summed_properties = document_type.documents_summable.iter().chain(
+        document_type
+            .indices
+            .values()
+            .filter_map(|index| index.summable.as_ref()),
+    );
+    for property in summed_properties {
+        if is_transient(DocumentTypeRef::V2(document_type), property) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" sums \"{property}\", which it lists as \
+                     transient: a transient value is never stored, and the type's sums read \
+                     the stored value of each of its documents"
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl DocumentType {
@@ -113,3 +166,5 @@ mod keep_history_tests;
 
 #[cfg(test)]
 mod nested_member_order_tests;
+#[cfg(all(test, feature = "validation"))]
+mod transient_summed_property_tests;

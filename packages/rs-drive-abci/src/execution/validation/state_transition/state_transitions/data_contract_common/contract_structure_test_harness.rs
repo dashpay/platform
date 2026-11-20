@@ -140,6 +140,25 @@ pub(in crate::execution) fn expiring_summed_schema(amount: Value) -> Value {
     })
 }
 
+/// The fragment of the parser's message for a summed property the type lists as transient.
+pub(in crate::execution) const TRANSIENT_SUMMED_MESSAGE: &str = "which it lists as transient";
+
+/// A document type that sums `amount`, an integer between 0 and 1000 it lists as transient.
+/// Protocol version 15 refuses it at registration: a transient value is never stored, and the
+/// type's sums read the value of every document.
+pub(in crate::execution) fn transient_summed_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsSummable": "amount",
+        "properties": {
+            "amount": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 0 },
+        },
+        "required": ["amount"],
+        "transient": ["amount"],
+        "additionalProperties": false,
+    })
+}
+
 /// The fragment of the parser's message for a `terminal` outside an indexOnly type.
 pub(in crate::execution) const TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE: &str =
     "which is only allowed on indexOnly document types";

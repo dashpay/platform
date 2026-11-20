@@ -5,7 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -16,6 +16,7 @@ use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::document::paths::document_history_path;
+use drive::drive::document::read_document_sum_contribution;
 use drive::drive::votes::paths::VOTE_POLLS_LEFT_OPEN_END_DATE;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
@@ -149,6 +150,13 @@ where
     ///   protocol version 14 may sum values of any size and sign, and then nothing read before
     ///   the write tells whether a sum stays in range. A schema the limit cannot be read from
     ///   counts as past it: that depends on the contract alone, never on a node's storage;
+    /// - the document holds, for every property the type's sums read, a value Drive writes into
+    ///   them: an integer that fits an `i64`, at the top level of the document
+    ///   (`read_document_sum_contribution`). A contender's document is stored without the values
+    ///   of the type's transient properties, and Drive reads a summed value by its property's
+    ///   top-level name. From protocol version 15 registration refuses a type summing a
+    ///   transient property, and from protocol version 14 a summed property named by a dotted
+    ///   path; a type registered earlier may sum either;
     /// - no other document holds a value of one of its unique indexes. The document is
     ///   checked as stored: its owner is the identity it is awarded to;
     /// - no document of its type holds its id: neither a document in the type's primary
@@ -170,6 +178,17 @@ where
                     .summed_property_past_contested_limit(contract.schema_defs(), platform_version),
                 Ok(None)
             ) {
+                return Ok(false);
+            }
+            let mut summed_properties = document_type.documents_summable().into_iter().chain(
+                document_type
+                    .indexes()
+                    .values()
+                    .filter_map(|index| index.summable.as_deref()),
+            );
+            if summed_properties
+                .any(|property| read_document_sum_contribution(document, property).is_err())
+            {
                 return Ok(false);
             }
         }

@@ -519,7 +519,10 @@ pub(crate) fn make_document_reference_with_sum_item(
 /// a U64-typed property whose schema allows values > i64::MAX would
 /// pass DPP validation and fail here, so that branch returns
 /// `DriveError::InvalidInput` (user-facing) rather than corruption.
-pub(crate) fn read_document_sum_contribution(
+///
+/// Public so that the end of a contest can ask, before it writes the winner's document, whether
+/// the document holds every value its type's sums read.
+pub fn read_document_sum_contribution(
     document: &Document,
     sum_property: &str,
 ) -> Result<i64, crate::error::Error> {

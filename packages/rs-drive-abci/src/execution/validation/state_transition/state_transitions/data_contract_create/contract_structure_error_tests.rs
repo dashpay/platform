@@ -9,10 +9,11 @@ use crate::execution::validation::state_transition::state_transitions::data_cont
     contested_unbounded_sum_schema, expiring_unbounded_sum_schema,
     field_matches_before_an_unknown_index_key_schema, one_pattern_too_many, patterned_schema,
     private_schema, regex_format_schema,
-    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema,
+    transient_summed_schema, Outcome,
     CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, PATTERN_TOO_LARGE_MESSAGE,
     PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
-    TOO_MANY_PATTERNS_MESSAGE,
+    TOO_MANY_PATTERNS_MESSAGE, TRANSIENT_SUMMED_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -412,6 +413,42 @@ fn dotted_summable_schema() -> Value {
 /// The document meta-schema refuses the name. `check_tx` parses a contract without full
 /// validation, so the meta-schema does not run there, and the block refuses the transition with
 /// the meta-schema's error, charging the owner and bumping its nonce.
+/// A registration rule checked under full validation only: `check_tx`, which parses a contract
+/// without it, admits the transition, and the block refuses it, charging the owner and bumping
+/// its nonce.
+#[tokio::test]
+async fn should_refuse_a_summed_transient_property_with_a_paid_consensus_error() {
+    let outcome = register_contract_with_schema(
+        transient_summed_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_eq!(outcome.nonce_before, Some(0));
+    assert_paid_contract_structure_error_in_block(&outcome, TRANSIENT_SUMMED_MESSAGE, 1);
+}
+
+#[tokio::test]
+async fn should_keep_registering_a_summed_transient_property_at_protocol_version_14() {
+    let outcome = register_contract_with_schema(transient_summed_schema(), 14)
+        .await
+        .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
+}
+
 #[tokio::test]
 async fn should_refuse_a_dotted_summable_name_with_a_paid_consensus_error() {
     let outcome = register_contract_with_schema(
