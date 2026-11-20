@@ -1,14 +1,22 @@
 package org.dashfoundation.dashsdk.wallet
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.NativeSignerBridge
 import org.dashfoundation.dashsdk.ffi.SignerNative
+import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -34,7 +42,11 @@ import org.junit.runner.RunWith
  *    the FFI by Rust's `encode_memo_text` (the single owner of the 32-byte
  *    rule) as `ErrorInvalidParameter`, before the handle is resolved;
  *  - a well-formed call with dead manager handle 0 reaches the FFI's handle
- *    lookup and comes back as `ErrorInvalidHandle`.
+ *    lookup and comes back as `ErrorInvalidHandle`;
+ *  - through the public [PlatformWalletManager] method on a live, empty
+ *    manager, the FFI's wallet lookup names the wallet id it received, which
+ *    pins that the two 32-byte ids are not swapped anywhere between Kotlin
+ *    and the FFI (the width checks cannot tell them apart).
  *
  * The signer is a real native handle over a bridge that holds no keys, so
  * the calls stay memory-safe even if the FFI ever borrows the signer before
@@ -159,6 +171,43 @@ class ShieldFromIdentityToRecipientBindingTest {
         for (memo in listOf(null, "", "€".repeat(10))) {
             val e = callExpectingThrow(memo = memo)
             assertEquals("memo=${memo?.length}: ${e.message}", INVALID_HANDLE, e.code)
+        }
+    }
+
+    @Test
+    fun shouldForwardTheWalletIdToTheWalletSlot() = runBlocking {
+        // A live manager with no wallets, offline: the FFI resolves the wallet
+        // first and fails with "wallet not found: <hex wallet id>" before it
+        // needs a shielded coordinator, the signer or the network. Distinct
+        // fill bytes show which id reached the wallet slot.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = DashDatabase.createInMemory(context)
+        val sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
+        try {
+            PlatformWalletManager(sdk, Network.TESTNET, db, WalletStorage(context)).use { manager ->
+                val e = assertThrows(DashSdkError::class.java) {
+                    runBlocking {
+                        manager.shieldedShieldFromIdentityToRecipient(
+                            walletId = ByteArray(32) { 0x11 },
+                            identityId = ByteArray(32) { 0x22 },
+                            recipientRaw43 = ByteArray(43) { 0x33 },
+                            amount = 1_000L,
+                        )
+                    }
+                }
+                val message = e.message.orEmpty()
+                assertTrue(
+                    "the wallet lookup must name the wallet id, got: $message",
+                    message.contains("wallet not found: " + "11".repeat(32)),
+                )
+                assertFalse(
+                    "the identity id must not reach the wallet slot, got: $message",
+                    message.contains("22".repeat(32)),
+                )
+            }
+        } finally {
+            runCatching { db.close() }
+            runCatching { sdk.close() }
         }
     }
 }
