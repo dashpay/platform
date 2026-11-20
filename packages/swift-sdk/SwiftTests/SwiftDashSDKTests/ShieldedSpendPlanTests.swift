@@ -130,6 +130,71 @@ final class ShieldedSpendPlanTests: XCTestCase {
         await manager.shutdown()
     }
 
+    /// The arguments one native plan call received.
+    private struct PlanSpendArguments: Equatable {
+        let walletId: Data
+        let account: UInt32
+        let kind: UInt8
+        let credits: UInt64
+        let sweepAll: Bool
+        let coreFeePerByte: UInt32
+    }
+
+    private final class PlanSpendRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var recorded: [PlanSpendArguments] = []
+
+        func record(_ arguments: PlanSpendArguments) {
+            lock.lock()
+            defer { lock.unlock() }
+            recorded.append(arguments)
+        }
+
+        var calls: [PlanSpendArguments] {
+            lock.lock()
+            defer { lock.unlock() }
+            return recorded
+        }
+    }
+
+    /// Every kind and both amounts reach the native planner as the Swift inputs say: the
+    /// account, the kind byte, the credits, the sweep flag and a withdrawal's rate.
+    func testShouldSendTheSwiftInputsToTheNativePlanner() async throws {
+        let manager = makeManager()
+        let recorder = PlanSpendRecorder()
+        manager.nativeShieldedSpendCalls.planSpend = {
+            _, walletId, account, kind, credits, sweepAll, coreFeePerByte, out in
+            recorder.record(PlanSpendArguments(
+                walletId: Data(bytes: walletId, count: 32), account: account, kind: kind,
+                credits: credits, sweepAll: sweepAll, coreFeePerByte: coreFeePerByte))
+            out.pointee.kind = kind
+            out.pointee.core_fee_per_byte = coreFeePerByte
+            return PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        let kinds: [ShieldedSpendKind] = [.transfer, .unshield, .withdrawal, .identityTopUp]
+        let amounts: [ShieldedSpendAmount] = [.exact(5), .sweepAll]
+        var expected: [PlanSpendArguments] = []
+        for kind in kinds {
+            for amount in amounts {
+                let rate: UInt32? = kind == .withdrawal ? 8 : nil
+                _ = try await manager.shieldedPlanSpend(
+                    walletId: Self.walletId, account: 3, kind: kind, amount: amount,
+                    coreFeePerByte: rate)
+                let (credits, sweepAll): (UInt64, Bool)
+                switch amount {
+                case .exact(let value): (credits, sweepAll) = (value, false)
+                case .sweepAll: (credits, sweepAll) = (0, true)
+                }
+                expected.append(PlanSpendArguments(
+                    walletId: Self.walletId, account: 3, kind: kind.rawValue, credits: credits,
+                    sweepAll: sweepAll, coreFeePerByte: rate ?? 0))
+            }
+        }
+        XCTAssertEqual(recorder.calls, expected)
+        await manager.shutdown()
+    }
+
     /// The FFI refuses an unknown kind byte, and a sweep with an amount, with
     /// `invalidParameter` before it looks the manager up: reaching the handle
     /// lookup shows every kind and both amounts were marshalled as it reads them.

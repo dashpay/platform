@@ -116,8 +116,11 @@ public struct ShieldedSpendPlan: Sendable, Equatable {
     /// withdrawal the reserve for Core, of which the Core fee is taken.
     public let amount: UInt64
     /// What the recipient receives: `amount`, except for a withdrawal, where
-    /// it is the output the protocol pays: `amount` truncated to whole duffs,
-    /// minus the Core fee from protocol version 14.
+    /// it is a quote at the plan's protocol version of the output the protocol
+    /// pays: `amount` truncated to whole duffs at versions 12 and 13, minus the
+    /// Core fee as well from 14. The spend checks `amount` and `fee`, not this:
+    /// a withdrawal still queued when a later version pools it is paid at that
+    /// version.
     public let recipientAmount: UInt64
     /// The exact fee for the selected notes.
     public let fee: UInt64
@@ -946,9 +949,12 @@ extension PlatformWalletManager {
     ///
     /// `coreFeePerByte` is the Core fee rate of a `.withdrawal`, required for
     /// it and ignored for the other kinds. A withdrawal's amount is the
-    /// reserve for Core: the plan's `recipientAmount` is what reaches the Core
-    /// address: the reserve's whole duffs minus the Core fee, and the withdrawal must run with the same
-    /// rate (another rate throws `shieldedPlanChanged`). A withdrawal sweep is
+    /// reserve for Core, which the spend checks with the fee. The plan's
+    /// `recipientAmount` is a quote at the plan's protocol version of what
+    /// reaches the Core address: the reserve's whole duffs at versions 12 and
+    /// 13, minus the Core fee as well from 14; a withdrawal still queued when a
+    /// later version pools it is paid at that version. The withdrawal must run
+    /// with the same rate (another rate throws `shieldedPlanChanged`). A withdrawal sweep is
     /// capped at the protocol's largest withdrawal.
     ///
     /// Throws `invalidParameter` for a kind or amount Rust refuses (or a
