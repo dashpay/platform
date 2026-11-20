@@ -251,6 +251,52 @@ mod tests {
         }
     }
 
+    /// Set for the re-executed child of the owner-read-stripping umask test.
+    const UMASK_NO_READ_CHILD_DIR: &str = "PLATFORM_WALLET_STORAGE_UMASK_NO_READ_CHILD_DIR";
+
+    /// A umask that strips only the owner's read bit keeps `mkdir` usable but
+    /// makes the `O_RDONLY` handle fail, so the no-follow `fchmodat` fallback
+    /// must restrict every created component.
+    #[test]
+    #[expect(unsafe_code, reason = "libc umask requires an unsafe call")]
+    fn should_create_owner_only_dirs_under_a_umask_that_strips_only_owner_read() {
+        if let Some(base) = std::env::var_os(UMASK_NO_READ_CHILD_DIR) {
+            // SAFETY: umask only swaps the process file-mode mask; this
+            // re-executed process runs this single test.
+            let previous = unsafe { libc::umask(0o477) };
+            let result = create_owner_only_dirs(&Path::new(&base).join("a").join("b"));
+            // SAFETY: as above.
+            unsafe { libc::umask(previous) };
+            result.expect("create_owner_only_dirs under umask 0477");
+            return;
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let module = module_path!().split_once("::").unwrap().1;
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!(
+                    "{module}::should_create_owner_only_dirs_under_a_umask_that_strips_only_owner_read"
+                ),
+                "--test-threads=1",
+            ])
+            .env(UMASK_NO_READ_CHILD_DIR, tmp.path())
+            .status()
+            .unwrap();
+        assert!(status.success(), "child process failed: {status}");
+
+        let a = tmp.path().join("a");
+        for created in [a.clone(), a.join("b")] {
+            assert_eq!(
+                mode(&created),
+                0o700,
+                "{} must be owner-only",
+                created.display()
+            );
+        }
+    }
+
     #[test]
     fn should_leave_existing_components_alone_and_restrict_only_created_ones() {
         let tmp = tempfile::tempdir().unwrap();
