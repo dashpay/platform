@@ -512,9 +512,12 @@ pub(crate) fn make_document_reference_with_sum_item(
 /// contribution of a proved summable indexOnly entry from the created
 /// document.
 ///
-/// The DPP validator guarantees the named property exists and is in
-/// the document's `required` array — a missing value here means
-/// contract corruption (`CorruptedCodeExecution`). The integer
+/// Registration holds the named property to the document's `required`
+/// array, so a missing value is reported as `CorruptedCodeExecution`. It
+/// is reachable for a type registered before the rules that keep the
+/// value in a stored document: a summed property named by a dotted path
+/// (refused from protocol version 14), or one listed as transient
+/// (refused from protocol version 15). The integer
 /// conversion failure, however, IS reachable from valid user input:
 /// a U64-typed property whose schema allows values > i64::MAX would
 /// pass DPP validation and fail here, so that branch returns

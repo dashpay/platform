@@ -1037,9 +1037,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     total of the property over all its documents (`documentsSummable` or
 ///     `documentsAverageable`); a type no transition creates documents of
 ///     (`creationRestrictionMode` 2) is left alone. Values within ±2^27 keep every sum in
-///     range short of 2^36 documents. Parser generation 4 also refuses, under full validation,
-///     a summed property the type lists as transient: a transient value is never stored, and
-///     the type's sums read the stored value of each document. With values that are never negative no sum of the type
+///     range short of 2^36 documents. With values that are never negative no sum of the type
 ///     holds more than the type's total times the entries one document adds to a summed
 ///     index, so document create state validation 3 and replace state validation 2 read that
 ///     total (`fetch_document_type_sum` `Some(0)`) and refuse a create outside a contest, or
@@ -1050,6 +1048,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     which is required where a field moderators write is not. A contract registered earlier
 ///     keeps the types it has: one that keeps a total is held to it, and one that does not
 ///     is written as before. Protocol v14 and earlier register any bounds and read no total.
+///     Parser generation 4 also refuses, under full validation, a summed property the type
+///     lists as transient: a transient value is never stored, and the type's sums read the
+///     stored value of each document.
 ///
 /// 47. **The token bundle of a token pool transition paid from the credit pool binds its fee
 ///     bundle**: `TokenShieldedTransferWithShieldedFee`, `TokenUnshieldWithShieldedFee` and

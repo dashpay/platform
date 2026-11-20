@@ -412,9 +412,6 @@ fn dotted_summable_schema() -> Value {
     })
 }
 
-/// The document meta-schema refuses the name. `check_tx` parses a contract without full
-/// validation, so the meta-schema does not run there, and the block refuses the transition with
-/// the meta-schema's error, charging the owner and bumping its nonce.
 /// A registration rule checked under full validation only: `check_tx`, which parses a contract
 /// without it, admits the transition, and the block refuses it, charging the owner and bumping
 /// its nonce.
@@ -451,6 +448,9 @@ async fn should_keep_registering_a_summed_transient_property_at_protocol_version
     );
 }
 
+/// The document meta-schema refuses the name. `check_tx` parses a contract without full
+/// validation, so the meta-schema does not run there, and the block refuses the transition with
+/// the meta-schema's error, charging the owner and bumping its nonce.
 #[tokio::test]
 async fn should_refuse_a_dotted_summable_name_with_a_paid_consensus_error() {
     let outcome = register_contract_with_schema(

@@ -1033,6 +1033,8 @@ struct SummedRankContract {
     /// The type sums `stats.rank`, an integer between 0 and 1000 in a required `stats` object,
     /// instead of `rank`: a dotted name, which registration refuses from protocol version 14
     dotted_summed_name: bool,
+    /// The type sums `rank` through its `identityId` index alone instead of `documentsSummable`
+    rank_summed_by_an_index: bool,
 }
 
 /// A platform at `platform_version` with [`SUMMED_RANK_CONTRACT`] changed as `changes` say,
@@ -1077,6 +1079,13 @@ fn platform_with_summed_rank_contract(
             .expect("expected the required list")
             .push("stats".into());
         domain["documentsSummable"] = "stats.rank".into();
+    }
+    if changes.rank_summed_by_an_index {
+        domain
+            .as_object_mut()
+            .expect("expected the domain schema")
+            .remove("documentsSummable");
+        domain["indices"][1]["summable"] = "rank".into();
     }
     let contract_file = tempfile::Builder::new()
         .suffix(".json")
@@ -1299,6 +1308,54 @@ async fn should_leave_a_contest_open_when_the_winner_does_not_hold_its_summed_va
     let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
         SummedRankContract {
             transient_rank: true,
+            ..Default::default()
+        },
+        platform_version,
+    );
+    let (contender, document_id) = join_summed_rank_contest(
+        &mut platform,
+        &contract,
+        &mut rng,
+        "quantum",
+        1,
+        5000,
+        platform_version,
+    )
+    .await;
+    let vote_poll = ContestedDocumentResourceVotePoll {
+        contract_id: contract.id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        index_values: vec![
+            Value::Text("dash".to_string()),
+            Value::Text("quantum".to_string()),
+        ],
+    };
+    let before = contest_state(&platform, &vote_poll, &[document_id], platform_version);
+
+    end_first_due_vote_polls(&platform, platform_version)
+        .expect("expected the block to go through");
+
+    assert_holds_what_it_held(
+        &platform,
+        &vote_poll,
+        &[document_id],
+        &before,
+        platform_version,
+    );
+    assert_only_left_open_listed(&platform, &[&vote_poll], platform_version);
+    assert!(awarded_domains(&platform, &contract, contender, platform_version).is_empty());
+}
+
+/// A type summing its transient property through an index alone, without `documentsSummable`,
+/// is left open as well: Drive reads the value of every index the document enters.
+#[tokio::test]
+async fn should_leave_a_contest_open_when_the_winner_does_not_hold_the_value_an_index_sums() {
+    let platform_version = PlatformVersion::latest();
+    let (mut platform, contract, mut rng) = platform_with_summed_rank_contract(
+        SummedRankContract {
+            transient_rank: true,
+            rank_summed_by_an_index: true,
             ..Default::default()
         },
         platform_version,

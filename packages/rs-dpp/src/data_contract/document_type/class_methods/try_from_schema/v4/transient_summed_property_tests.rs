@@ -3,6 +3,8 @@
 //! stored. A registration rule: a stored contract still parses, and protocol version 14
 //! registers what it registered.
 use super::*;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
@@ -118,11 +120,9 @@ fn should_refuse_a_summed_property_listed_as_transient() {
         assert!(
             matches!(
                 consensus.as_ref(),
-                crate::consensus::ConsensusError::BasicError(
-                    crate::consensus::basic::BasicError::ContractError(
-                        DataContractError::InvalidContractStructure(message)
-                    )
-                ) if message.contains("sums \"amount\"") && message.contains("transient")
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(message)
+                )) if message.contains("sums \"amount\"") && message.contains("transient")
             ),
             "{declaration}: expected an invalid-contract-structure error naming the property, \
              got {consensus:?}"

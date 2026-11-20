@@ -156,7 +156,10 @@ where
     ///   of the type's transient properties, and Drive reads a summed value by its property's
     ///   top-level name. From protocol version 15 registration refuses a type summing a
     ///   transient property, and from protocol version 14 a summed property named by a dotted
-    ///   path; a type registered earlier may sum either;
+    ///   path; a type registered earlier may sum either. Every summing declaration is read,
+    ///   an index's too where the document would not enter that index: such a type is one
+    ///   registration no longer admits, and its contest is left open for a later protocol
+    ///   version to decide;
     /// - no other document holds a value of one of its unique indexes. The document is
     ///   checked as stored: its owner is the identity it is awarded to;
     /// - no document of its type holds its id: neither a document in the type's primary
