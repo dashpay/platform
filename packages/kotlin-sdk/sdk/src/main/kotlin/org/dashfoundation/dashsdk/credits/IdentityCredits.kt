@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.credits
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +17,15 @@ internal fun interface ResumeTopUpNativeCall {
         identityId: ByteArray,
         coreSignerHandle: Long,
         consumeInvitationVoucher: Boolean,
+    ): Long
+}
+
+internal fun interface AddressTopUpNativeCall {
+    fun call(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputsBlob: ByteArray,
+        signerHandle: Long,
     ): Long
 }
 
@@ -81,6 +91,10 @@ class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val resumeTopUpNative: ResumeTopUpNativeCall =
         ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
+    private val topUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpFromAddresses),
+    private val externalTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpExternalIdentityFromAddresses),
 ) {
 
     /**
@@ -212,17 +226,92 @@ class IdentityCredits internal constructor(
     }
 
     /**
-     * Top up [identityId] (32 bytes) from Platform-address [inputs],
-     * signed via [signerHandle]. Returns the post-transition balance.
+     * Top up [identityId] (32 bytes), an identity this wallet manages, from
+     * Platform-address [inputs], signed via [signerHandle]. Returns the
+     * post-transition balance. Rust owns the input rules (empty or
+     * overflowing inputs are refused there).
+     *
+     * Outcomes the caller must tell apart:
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *   Platform returned no balance for the identity; nothing was signed or
+     *   sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed]:
+     *   the identity's balance could not be read from Platform; nothing was
+     *   signed or sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
+     *   the top-up may have executed or may still execute. Do not submit it
+     *   again; keep it pending. Nothing in the wallet holds its inputs, so a
+     *   resubmission is signed with a fresh nonce and, if this one executed,
+     *   pays twice (dashpay/platform#4270). A nonce refusal from Platform is
+     *   reported this way too: neither top-up returns
+     *   `ErrorAddressNonceMismatch` (native code 21).
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.NotFound]:
+     *   the wallet was removed or re-created before anything was sent,
+     *   including while the top-up was being signed.
+     *
+     * The native call cannot observe coroutine cancellation, so a top-up can
+     * finish after the caller was cancelled; its balance is then returned
+     * rather than thrown away ([opReturningCompletedResult]), so a completed
+     * payment is never hidden and retried.
      */
     suspend fun topUpFromAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         inputs: List<FundingInput>,
         signerHandle: Long,
-    ): Long = gate.op {
+    ): Long = gate.opReturningCompletedResult {
         mapNativeErrors {
-            CreditsNative.topUpFromAddresses(
+            topUpNative.call(
+                walletHandle,
+                identityId,
+                FundingInput.encode(inputs),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Top up [identityId] (32 bytes), an identity this wallet does **not**
+     * manage (someone else's), from the wallet's Platform-address [inputs],
+     * signed via [signerHandle]. Returns the identity's post-transition
+     * balance. ← Swift `ManagedPlatformWallet.topUpExternalIdentityFromAddresses`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
+     *
+     * Rust fetches the identity from Platform and never adds it to the
+     * wallet; the spent addresses' balances are reconciled as for
+     * [topUpFromAddresses]. Rust also owns the input rules (empty or
+     * overflowing inputs are refused there).
+     *
+     * Outcomes the caller must tell apart:
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]: Platform
+     *   does not know the identity; nothing was signed or sent.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed]:
+     *   the identity could not be read from Platform; nothing was signed or
+     *   sent, and the call can be retried.
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]:
+     *   the top-up may have executed or may still execute. Do not submit it
+     *   again; keep it pending. Nothing in the wallet holds its inputs, so a
+     *   resubmission is signed with a fresh nonce and, if this one executed,
+     *   pays twice (dashpay/platform#4270). A nonce refusal from Platform is
+     *   reported this way too: neither top-up returns
+     *   `ErrorAddressNonceMismatch` (native code 21).
+     * - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.NotFound]:
+     *   the wallet was removed or re-created before anything was sent,
+     *   including while the top-up was being signed.
+     *
+     * The native call cannot observe coroutine cancellation, so a top-up can
+     * finish after the caller was cancelled; its balance is then returned
+     * rather than thrown away ([opReturningCompletedResult]), so a completed
+     * payment is never hidden and retried.
+     */
+    suspend fun topUpExternalIdentityFromAddresses(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputs: List<FundingInput>,
+        signerHandle: Long,
+    ): Long = gate.opReturningCompletedResult {
+        mapNativeErrors {
+            externalTopUpNative.call(
                 walletHandle,
                 identityId,
                 FundingInput.encode(inputs),
