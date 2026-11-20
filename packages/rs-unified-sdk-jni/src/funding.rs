@@ -812,10 +812,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// transition is authorized by the identity's TRANSFER key. The caller
 /// retains ownership.
 ///
-/// Blocks for the ~30s Halo 2 proof; returns the identity's proven
-/// post-debit credit balance (the wallet only confirms on the identity's own
-/// balance proof), mirroring [`Java_..._transferCreditsToAddresses`]. The
-/// note itself arrives on the next shielded sync pass.
+/// Blocks for the ~30s Halo 2 proof; returns the funding identity's credit
+/// balance from the verified snapshot (or a newer one the wallet already
+/// knows), not a receipt for this debit. The shielded scan confirms the
+/// outgoing activity when it observes the note commitments.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldFromIdentity(
     mut env: JNIEnv,

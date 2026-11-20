@@ -185,8 +185,9 @@ internal object FundingNative {
      * [signerIdentityHandle] is the Keystore identity signer (the manager's
      * `signerHandle`): the same handle credit transfers use, since the
      * transition is authorized by the identity's TRANSFER key. Blocks for the
-     * ~30s Halo 2 proof; returns the identity's proven post-debit credit
-     * balance (the wallet only confirms on the identity's own balance proof).
+     * ~30s Halo 2 proof; returns the funding identity's credit balance from
+     * the verified snapshot (or a newer one the wallet already knows), not a
+     * receipt for this debit.
      */
     external fun shieldedShieldFromIdentity(
         managerHandle: Long,

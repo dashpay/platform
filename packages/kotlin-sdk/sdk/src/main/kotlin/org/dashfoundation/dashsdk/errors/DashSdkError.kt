@@ -517,10 +517,12 @@ sealed class DashSdkError(
         /**
          * `ErrorInsufficientIdentityCredits` (native code 39). The identity
          * cannot cover the required credits: a DPNS purchase's price plus its
-         * fee reserve, or an identity-funded shield's amount plus its fee. An
-         * identity-funded shield reports this before signing or broadcasting;
-         * other operations can report it after Platform rejects a submitted
-         * transition.
+         * fee reserve, or an identity-funded shield's amount plus its
+         * admission fee floor. For a shield, [requiredCredits] minus the
+         * amount is that floor, not the fee that would be charged; the metered
+         * fee can be lower. An identity-funded shield reports this before
+         * signing or broadcasting; other operations can report it after
+         * Platform rejects a submitted transition.
          */
         class InsufficientIdentityCredits(
             val identityId: String,

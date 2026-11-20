@@ -1921,17 +1921,20 @@ class PlatformWalletManager(
      *
      * Refused before anything is signed or broadcast, so nothing was debited:
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
-     *    the identity's proved balance cannot cover [amount] plus the fee;
-     *    the error carries the required and available credits.
+     *    the identity's proved balance cannot cover [amount] plus the
+     *    admission fee floor. The error reports the required and available
+     *    credits, not the final metered fee, which can be lower.
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
      *    Platform has no balance for the identity yet; retry later.
      *
      * @param walletId the 32-byte wallet id.
      * @param identityId the 32-byte funding identity id.
      * @param amount credits to shield (1 DASH = 1e11).
-     * @return the identity's proven post-debit credit balance; the wallet only
-     *   confirms on the identity's own balance proof, any other result throws
-     *   the shielded-spend-unconfirmed error (do not resubmit).
+     * @return the funding identity's credit balance from the verified snapshot,
+     *   or a newer balance already known to the wallet. This balance does not
+     *   confirm the debit; the shielded scan confirms the activity separately.
+     *   An unconfirmed outcome throws the shielded-spend-unconfirmed error
+     *   (do not resubmit).
      */
     suspend fun shieldedShieldFromIdentity(
         walletId: ByteArray,
@@ -1981,8 +1984,9 @@ class PlatformWalletManager(
      *
      * Refused before anything is signed or broadcast, so nothing was debited:
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
-     *    the identity's proved balance cannot cover [amount] plus the fee;
-     *    the error carries the required and available credits.
+     *    the identity's proved balance cannot cover [amount] plus the
+     *    admission fee floor. The error reports the required and available
+     *    credits, not the final metered fee, which can be lower.
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
      *    Platform has no balance for the identity yet; retry later.
      *
