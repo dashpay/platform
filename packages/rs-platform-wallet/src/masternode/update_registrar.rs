@@ -30,22 +30,21 @@ use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
 };
 use dashcore::bls_sig_utils::{BLSPublicKey, BlsScheme};
+use dashcore::crypto::ecdsa::{EcdsaRecSignature, EcdsaSecretKey};
 use dashcore::hashes::hash160;
-use dashcore::{Address as DashAddress, Network, PubkeyHash, Transaction, Txid};
-use dpp::secp256k1::ecdsa::RecoverableSignature;
-use dpp::secp256k1::{Message, SecretKey};
+use dashcore::{Network, PubkeyHash, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
 use zeroize::Zeroizing;
 
-use super::list::MasternodeListSummary;
-use super::locator::p2pkh_script_hash;
+use super::list::{operator_key_holder, MasternodeListSummary};
+use super::locator::{ecdsa_key_id, p2pkh_script_hash};
 use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload;
 
 use super::update_service::{
     broadcast_special_transaction_guarded, display_hex, fetch_registration_transaction,
-    fetch_transaction_checked, registration_payload_from_fetched, require_standard_payout_script,
+    fetch_transaction_checked, payout_script_for_address, registration_payload,
 };
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -124,8 +123,7 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
     // transaction is fetched because an internal collateral is one of its
     // own outputs.
     let registration_tx = fetch_registration_transaction(wallet, &params.pro_tx_hash).await?;
-    let registration =
-        registration_payload_from_fetched(&params.pro_tx_hash, registration_tx.clone())?;
+    let registration = registration_payload(&registration_tx)?.clone();
     let collateral_script =
         resolve_collateral_script(wallet, &registration_tx, &registration).await?;
 
@@ -254,19 +252,11 @@ pub(crate) fn assemble_update_registrar_placeholder(
                 None,
                 false,
             )?;
-            let bytes: [u8; 48] = derived
-                .public_key_bytes
-                .as_slice()
-                .try_into()
-                .map_err(|_| {
-                    PlatformWalletError::KeyDerivation(
-                        "derived operator public key is not 48 bytes".to_string(),
-                    )
-                })?;
-            let legacy: Option<[u8; 48]> = derived
-                .legacy_public_key_bytes
-                .as_deref()
-                .and_then(|b| b.try_into().ok());
+            let (bytes, legacy) = derived.operator_key_forms().ok_or_else(|| {
+                PlatformWalletError::KeyDerivation(
+                    "derived operator public key is not 48 bytes".to_string(),
+                )
+            })?;
             ensure_operator_key_unused(summaries, &params.pro_tx_hash, &bytes, legacy.as_ref())?;
             bytes
         }
@@ -441,28 +431,26 @@ pub(crate) fn verify_owner_secret(
     expected_owner_key_hash: &PubkeyHash,
     owner: &OwnerSecret,
 ) -> Result<(), PlatformWalletError> {
-    let mut secret = SecretKey::from_secret_bytes(*owner.secret).map_err(|_| {
-        PlatformWalletError::InvalidParameter(
-            "the owner key is not a valid secp256k1 private key".to_string(),
-        )
-    })?;
-    let public = secret.public_key();
-    // `SecretKey` is `Copy` with no erasing destructor — scrub this local
-    // scalar (the `Zeroizing` on `OwnerSecret.secret` covers only the
-    // caller's bytes) as soon as the public key is out, on every path.
-    secret.non_secure_erase();
-    let serialized: Vec<u8> = if owner.compressed {
-        public.serialize().to_vec()
-    } else {
-        public.serialize_uncompressed().to_vec()
-    };
-    let hash = hash160::Hash::hash(&serialized);
-    if hash.to_byte_array() != expected_owner_key_hash.to_byte_array() {
+    let key_id = ecdsa_key_id(&owner.secret, owner.compressed).ok_or_else(invalid_owner_secret)?;
+    if key_id != expected_owner_key_hash.to_byte_array() {
         return Err(PlatformWalletError::InvalidParameter(
             "the owner key does not match this masternode's registered owner key".to_string(),
         ));
     }
     Ok(())
+}
+
+/// The owner's secret as a key, refusing bytes that are not a secp256k1
+/// scalar. The key erases itself when dropped; the `Zeroizing` on
+/// [`OwnerSecret::secret`] covers only the caller's bytes.
+fn owner_secret_key(owner: &OwnerSecret) -> Result<EcdsaSecretKey, PlatformWalletError> {
+    EcdsaSecretKey::from_bytes(&owner.secret).map_err(|_| invalid_owner_secret())
+}
+
+fn invalid_owner_secret() -> PlatformWalletError {
+    PlatformWalletError::InvalidParameter(
+        "the owner key is not a valid secp256k1 private key".to_string(),
+    )
 }
 
 /// The payout rule for a registrar update: the payload replaces the owner
@@ -480,22 +468,7 @@ pub(crate) fn resolve_owner_payout_script(
                 .to_string(),
         ));
     }
-    let address = trimmed
-        .parse::<DashAddress<dashcore::address::NetworkUnchecked>>()
-        .map_err(|e| {
-            PlatformWalletError::InvalidParameter(format!(
-                "payout address is not a valid Dash address: {e}"
-            ))
-        })?
-        .require_network(network)
-        .map_err(|e| {
-            PlatformWalletError::InvalidParameter(format!(
-                "payout address is for another network: {e}"
-            ))
-        })?;
-    let script = address.script_pubkey();
-    require_standard_payout_script(&script)?;
-    Ok(script)
+    payout_script_for_address(trimmed, network, "payout address")
 }
 
 /// Refuse a candidate operator key already registered to any masternode
@@ -511,7 +484,7 @@ pub(crate) fn ensure_operator_key_unused(
     candidate: &[u8; 48],
     candidate_legacy: Option<&[u8; 48]>,
 ) -> Result<(), PlatformWalletError> {
-    if let Some(entry) = operator_key_holder(summaries, target, candidate, candidate_legacy) {
+    if let Some(entry) = other_operator_key_holder(summaries, target, candidate, candidate_legacy) {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "the chosen operator key is already used by masternode {} — operator keys must \
              be unique; pick an unused key",
@@ -533,7 +506,8 @@ pub(crate) fn ensure_kept_legacy_operator_key_unused(
     kept_basic: &[u8; 48],
     kept_legacy: &[u8; 48],
 ) -> Result<(), PlatformWalletError> {
-    if let Some(entry) = operator_key_holder(summaries, target, kept_basic, Some(kept_legacy)) {
+    if let Some(entry) = other_operator_key_holder(summaries, target, kept_basic, Some(kept_legacy))
+    {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "the masternode's current operator key is also registered to masternode {}; this \
              update moves the key to the basic BLS scheme, where it must be unique — rotate \
@@ -546,19 +520,19 @@ pub(crate) fn ensure_kept_legacy_operator_key_unused(
 
 /// The masternode other than `target` that holds an operator key, matched
 /// under either serialization.
-fn operator_key_holder<'a>(
+fn other_operator_key_holder<'a>(
     summaries: &'a [MasternodeListSummary],
     target: &[u8; 32],
     key: &[u8; 48],
     key_legacy: Option<&[u8; 48]>,
 ) -> Option<&'a MasternodeListSummary> {
-    summaries
-        .iter()
-        .filter(|entry| entry.pro_tx_hash != *target)
-        .find(|entry| {
-            entry.operator_public_key == *key
-                || key_legacy.is_some_and(|legacy| entry.operator_public_key == *legacy)
-        })
+    operator_key_holder(
+        summaries
+            .iter()
+            .filter(|entry| entry.pro_tx_hash != *target),
+        key,
+        key_legacy,
+    )
 }
 
 /// Consensus rejects a P2PKH payout paid to the owner key or the payload's
@@ -625,28 +599,29 @@ pub(crate) fn normalize_operator_key_to_basic(
 /// `CHashSigner` form: `[27 + recovery_id + (compressed ? 4 : 0)] ‖ r ‖ s`
 /// (65 bytes) — the hash is signed directly, with no message prefix. The
 /// real testnet ProUpRegTx vector's signature starts `0x1f` = 31 =
-/// 27 + 0 + 4, confirming the convention.
+/// 27 + 0 + 4, confirming the convention. rust-dashcore's
+/// [`EcdsaRecSignature`] writes that header; signing gives the compressed
+/// form, which is restated for an uncompressed owner key.
 pub(crate) fn owner_compact_signature(
     payload: &ProviderUpdateRegistrarPayload,
     owner: &OwnerSecret,
 ) -> Result<Vec<u8>, PlatformWalletError> {
-    let mut secret = SecretKey::from_secret_bytes(*owner.secret).map_err(|_| {
-        PlatformWalletError::InvalidParameter(
-            "the owner key is not a valid secp256k1 private key".to_string(),
-        )
-    })?;
     let digest = payload.base_payload_hash().to_byte_array();
-    let message = Message::from_digest(digest);
-    let recoverable = RecoverableSignature::sign_ecdsa_recoverable(message, &secret);
-    // `SecretKey` is `Copy` with no erasing destructor — scrub this local
-    // scalar (the `Zeroizing` on `OwnerSecret.secret` covers only the
-    // caller's bytes) as soon as the signature is made.
-    secret.non_secure_erase();
-    let (recovery_id, compact) = recoverable.serialize_compact();
-    let mut signature = Vec::with_capacity(65);
-    signature.push(27 + u8::from(recovery_id) + if owner.compressed { 4 } else { 0 });
-    signature.extend_from_slice(&compact);
-    Ok(signature)
+    let signature = owner_secret_key(owner)?.sign_recoverable(&digest);
+    let signature = if owner.compressed {
+        signature
+    } else {
+        signature
+            .signature()
+            .and_then(|plain| EcdsaRecSignature::from_parts(plain, signature.recovery_id()?, false))
+            .map_err(|e| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "the owner signature could not be written for an uncompressed key: {e}"
+                ))
+            })?
+    };
+    let bytes: &[u8] = signature.as_ref();
+    Ok(bytes.to_vec())
 }
 
 /// The funding builder for a ProUpRegTx: the placeholder payload, the
@@ -733,7 +708,9 @@ mod tests {
     };
     use dashcore::hash_types::InputsHash;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
-    use dpp::secp256k1::ecdsa::RecoveryId;
+    use dashcore::Address as DashAddress;
+    use dpp::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+    use dpp::secp256k1::{Message, SecretKey};
     use key_wallet::account::StandardAccountType;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
@@ -824,17 +801,7 @@ mod tests {
     /// 27 + recovery_id (+4 compressed), recovering to the owner key.
     #[test]
     fn owner_signature_is_compact_recoverable_over_the_payload_hash() {
-        let payload = ProviderUpdateRegistrarPayload {
-            version: 2,
-            pro_tx_hash: Txid::all_zeros(),
-            provider_mode: 0,
-            operator_public_key: BLSPublicKey::from([4u8; 48]),
-            voting_key_hash: PubkeyHash::from_byte_array([3u8; 20]),
-            script_payout: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([5u8; 20])),
-            inputs_hash: InputsHash::all_zeros(),
-            payload_sig: Vec::new(),
-            payouts: None,
-        };
+        let payload = unsigned_payload();
         let signature = owner_compact_signature(&payload, &owner()).expect("signs");
         assert_eq!(signature.len(), 65);
         assert!(
@@ -855,6 +822,67 @@ mod tests {
             hash160::Hash::hash(&recovered.serialize()).to_byte_array(),
             owner_key_hash().to_byte_array(),
             "the signature must recover to the owner key id"
+        );
+    }
+
+    fn unsigned_payload() -> ProviderUpdateRegistrarPayload {
+        ProviderUpdateRegistrarPayload {
+            version: 2,
+            pro_tx_hash: Txid::all_zeros(),
+            provider_mode: 0,
+            operator_public_key: BLSPublicKey::from([4u8; 48]),
+            voting_key_hash: PubkeyHash::from_byte_array([3u8; 20]),
+            script_payout: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([5u8; 20])),
+            inputs_hash: InputsHash::all_zeros(),
+            payload_sig: Vec::new(),
+            payouts: None,
+        }
+    }
+
+    /// An owner key registered uncompressed has its own key id, and Core
+    /// recovers that key only from a header without the compression bit
+    /// (27 + recovery id). The signature itself is the compressed one's.
+    #[test]
+    fn should_verify_and_sign_with_an_uncompressed_owner_key() {
+        let public = SecretKey::from_secret_bytes(OWNER_SECRET)
+            .expect("valid scalar")
+            .public_key();
+        let uncompressed_key_hash = PubkeyHash::from_byte_array(
+            hash160::Hash::hash(&public.serialize_uncompressed()).to_byte_array(),
+        );
+        let uncompressed = OwnerSecret {
+            secret: Zeroizing::new(OWNER_SECRET),
+            compressed: false,
+        };
+
+        verify_owner_secret(&uncompressed_key_hash, &uncompressed)
+            .expect("the uncompressed key id is accepted");
+        verify_owner_secret(&owner_key_hash(), &uncompressed)
+            .expect_err("the compressed key id is another key id");
+
+        let payload = unsigned_payload();
+        let signature = owner_compact_signature(&payload, &uncompressed).expect("signs");
+        let compressed = owner_compact_signature(&payload, &owner()).expect("signs");
+        assert_eq!(signature.len(), 65);
+        assert!(
+            (27..=30).contains(&signature[0]),
+            "uncompressed-key header byte, got {}",
+            signature[0]
+        );
+        assert_eq!(signature[0] + 4, compressed[0]);
+        assert_eq!(signature[1..], compressed[1..]);
+
+        let recovery_id = RecoveryId::try_from(i32::from(signature[0] - 27)).expect("recovery id");
+        let recovered = RecoverableSignature::from_compact(&signature[1..], recovery_id)
+            .expect("compact body")
+            .recover_ecdsa(Message::from_digest(
+                payload.base_payload_hash().to_byte_array(),
+            ))
+            .expect("recovers");
+        assert_eq!(
+            hash160::Hash::hash(&recovered.serialize_uncompressed()).to_byte_array(),
+            uncompressed_key_hash.to_byte_array(),
+            "the signature must recover to the uncompressed owner key id"
         );
     }
 
@@ -1545,8 +1573,10 @@ mod tests {
 #[cfg(test)]
 mod review_tests {
     use super::super::locator::bls_public_keys;
+    use super::super::update_service::require_standard_payout_script;
     use super::*;
-    use dpp::secp256k1::PublicKey as SecpPublicKey;
+    use dashcore::Address as DashAddress;
+    use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
 
     /// Consensus accepts only P2PKH / P2SH payouts (`bad-protx-payee`). A
     /// Dash address is always one of the two, so the script check is what

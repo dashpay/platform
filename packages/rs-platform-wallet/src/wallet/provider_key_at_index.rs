@@ -354,6 +354,23 @@ pub struct ProviderDerivedKey {
     pub private_key_wif: Option<Zeroizing<String>>,
 }
 
+impl ProviderDerivedKey {
+    /// A BLS operator key's 48 public bytes in the basic serialization, with
+    /// the legacy serialization of the same key when it was derived. `None`
+    /// for a key that is not 48 bytes: the other provider key families.
+    ///
+    /// A masternode-list entry holds one serialization or the other, so the
+    /// callers that look a wallet key up in the list need both.
+    pub(crate) fn operator_key_forms(&self) -> Option<([u8; 48], Option<[u8; 48]>)> {
+        let basic = self.public_key_bytes.as_slice().try_into().ok()?;
+        let legacy = self
+            .legacy_public_key_bytes
+            .as_deref()
+            .and_then(|bytes| bytes.try_into().ok());
+        Some((basic, legacy))
+    }
+}
+
 /// The operator seed↔xpub cross-check guard, factored out so it can be
 /// unit-tested without a full [`PlatformWallet`].
 ///

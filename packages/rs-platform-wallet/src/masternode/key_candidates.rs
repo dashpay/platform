@@ -14,7 +14,7 @@ use dashcore::hashes::hash160;
 /// failure — the FFI re-exports the same value for hosts.
 pub const MAX_PROVIDER_KEY_CANDIDATES: u32 = 256;
 
-use super::list::MasternodeListSummary;
+use super::list::{operator_key_holder, MasternodeListSummary};
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::PlatformWallet;
@@ -110,20 +110,10 @@ pub fn provider_key_candidates(
     for index in 0..count {
         let derived = wallet.derive_provider_key_at_index(kind, index, None, false)?;
         let used_by = match kind {
-            ProviderKeyKind::Operator => {
-                let modern: Option<[u8; 48]> = derived.public_key_bytes.as_slice().try_into().ok();
-                let legacy: Option<[u8; 48]> = derived
-                    .legacy_public_key_bytes
-                    .as_deref()
-                    .and_then(|b| b.try_into().ok());
-                summaries
-                    .iter()
-                    .find(|entry| {
-                        modern.is_some_and(|k| entry.operator_public_key == k)
-                            || legacy.is_some_and(|k| entry.operator_public_key == k)
-                    })
-                    .map(|entry| entry.pro_tx_hash)
-            }
+            ProviderKeyKind::Operator => derived
+                .operator_key_forms()
+                .and_then(|(basic, legacy)| operator_key_holder(summaries, &basic, legacy.as_ref()))
+                .map(|entry| entry.pro_tx_hash),
             ProviderKeyKind::Voting => {
                 let key_id = hash160::Hash::hash(&derived.public_key_bytes).to_byte_array();
                 summaries
