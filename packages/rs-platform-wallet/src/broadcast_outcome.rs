@@ -3,7 +3,8 @@
 //! Shared by every Platform money-moving path that must keep "never left the
 //! wallet, safe to retry" apart from "may have reached a node, may still
 //! execute, do not retry". Shielded spends that consume notes, shields from
-//! Platform addresses and masternode credit withdrawals broadcast through
+//! Platform addresses, identity top-ups from Platform addresses and
+//! masternode credit withdrawals broadcast through
 //! [`broadcast_tracking_delivery`], which keeps every dispatch's outcome so an
 //! earlier dispatch that may have been delivered is never hidden by a later
 //! refusal: only a refusal before anything was sent reads as failed. The
@@ -12,6 +13,8 @@
 //! whether it waits for a result: it reports unconfirmed either way. The
 //! shapes are SDK-transport facts, not operation-specific, so they live here
 //! rather than behind the `shielded` feature.
+
+use dash_sdk::platform::transition::put_settings::PutSettings;
 
 /// Whether an SDK error carries Platform's own consensus verdict on the
 /// transition. Two shapes qualify:
@@ -70,8 +73,9 @@ pub(crate) fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
 /// failed while it may still execute invites a second one, so every path
 /// whose retry signs a new transition classifies with
 /// [`broadcast_tracking_delivery`] instead: shielded spends, shields from
-/// Platform addresses (to the wallet's own notes or to a recipient's) and
-/// masternode credit withdrawals. The one caller left here is the shield
+/// Platform addresses (to the wallet's own notes or to a recipient's),
+/// identity top-ups from Platform addresses and masternode credit
+/// withdrawals. The one caller left here is the shield
 /// from an identity, which holds a durable guard on the exact signed
 /// transition: a refusal only makes it skip the result wait for a proven
 /// read of the identity nonce, and it reports unconfirmed either way.
@@ -141,14 +145,31 @@ pub(crate) enum BroadcastDelivery {
 }
 
 /// How many single dispatches [`broadcast_tracking_delivery`] makes at most
-/// on `sdk`: its configured overall budget, one dispatch and its effective
-/// retries, so a client configured with no retries dispatches once.
-pub(crate) fn spend_broadcast_dispatches(sdk: &dash_sdk::Sdk) -> usize {
-    sdk.query_settings()
-        .request_settings
+/// on `sdk` under the caller's `settings`: the overall budget the SDK's
+/// configuration overridden by `settings` gives, one dispatch and its
+/// effective retries, so a client or a caller asking for no retries
+/// dispatches once.
+pub(crate) fn spend_broadcast_dispatches(
+    sdk: &dash_sdk::Sdk,
+    settings: Option<&PutSettings>,
+) -> usize {
+    let configured = *sdk.query_settings().request_settings;
+    settings
+        .map_or(configured, |settings| {
+            configured.override_by(settings.request_settings)
+        })
         .finalize()
         .retries
         .saturating_add(1)
+}
+
+/// The settings of each single dispatch of [`broadcast_tracking_delivery`]:
+/// the caller's `settings` (timeouts, address banning, fee increase, …) with
+/// no SDK retry inside the dispatch, as the tracker makes the retries.
+pub(crate) fn single_dispatch_settings(settings: Option<PutSettings>) -> PutSettings {
+    let mut single = settings.unwrap_or_default();
+    single.request_settings.retries = Some(0);
+    single
 }
 
 /// Broadcast `state_transition` (a shielded spend, a shield from Platform
@@ -177,11 +198,16 @@ pub(crate) fn spend_broadcast_dispatches(sdk: &dash_sdk::Sdk) -> usize {
 /// dispatch can reach that node again and spend one of the budget's
 /// dispatches on the same answer. The broadcast is maybe delivered either
 /// way.
+///
+/// `settings` are the caller's request settings: every dispatch is sent with
+/// them ([`single_dispatch_settings`]), and their retries, or the SDK's when
+/// they name none, set the budget.
 pub(crate) async fn broadcast_tracking_delivery(
     sdk: &dash_sdk::Sdk,
     state_transition: &dpp::state_transition::StateTransition,
+    settings: Option<PutSettings>,
 ) -> BroadcastDelivery {
-    broadcast_tracking_delivery_checked(sdk, state_transition, || {
+    broadcast_tracking_delivery_checked(sdk, state_transition, settings, || {
         Ok::<(), std::convert::Infallible>(())
     })
     .await
@@ -206,25 +232,16 @@ pub(crate) struct DispatchStopped<E> {
 pub(crate) async fn broadcast_tracking_delivery_checked<E>(
     sdk: &dash_sdk::Sdk,
     state_transition: &dpp::state_transition::StateTransition,
+    settings: Option<PutSettings>,
     check: impl FnMut() -> Result<(), E>,
 ) -> Result<BroadcastDelivery, DispatchStopped<E>> {
-    use dash_sdk::dapi_client::RequestSettings;
     use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-    use dash_sdk::platform::transition::put_settings::PutSettings;
 
-    let single_dispatch = PutSettings {
-        request_settings: RequestSettings {
-            retries: Some(0),
-            ..RequestSettings::default()
-        },
-        ..PutSettings::default()
-    };
-    track_delivery_checked(
-        state_transition,
-        spend_broadcast_dispatches(sdk),
-        check,
-        || state_transition.broadcast(sdk, Some(single_dispatch)),
-    )
+    let dispatches = spend_broadcast_dispatches(sdk, settings.as_ref());
+    let single_dispatch = single_dispatch_settings(settings);
+    track_delivery_checked(state_transition, dispatches, check, || {
+        state_transition.broadcast(sdk, Some(single_dispatch))
+    })
     .await
 }
 
@@ -232,7 +249,7 @@ pub(crate) async fn broadcast_tracking_delivery_checked<E>(
 /// `state_transition`'s broadcast, over the outcomes `dispatch` returns, one
 /// call per single dispatch, at most `dispatches` of them.
 #[cfg(test)]
-async fn track_delivery<F, Fut>(
+pub(crate) async fn track_delivery<F, Fut>(
     state_transition: &dpp::state_transition::StateTransition,
     dispatches: usize,
     dispatch: F,
@@ -456,6 +473,7 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
+    use std::time::Duration;
 
     /// Another error of the same shape as `error`, which is not `Clone`.
     fn copy(error: &dash_sdk::Error) -> dash_sdk::Error {
@@ -620,7 +638,7 @@ mod tests {
             })
             .build()
             .expect("an SDK");
-        assert_eq!(spend_broadcast_dispatches(&no_retries), 1);
+        assert_eq!(spend_broadcast_dispatches(&no_retries, None), 1);
         let three_retries = dash_sdk::SdkBuilder::new_mock()
             .with_settings(RequestSettings {
                 retries: Some(3),
@@ -628,12 +646,12 @@ mod tests {
             })
             .build()
             .expect("an SDK");
-        assert_eq!(spend_broadcast_dispatches(&three_retries), 4);
+        assert_eq!(spend_broadcast_dispatches(&three_retries, None), 4);
 
         let dispatched = Mutex::new(0usize);
         let delivery = track_delivery(
             &withdrawal(),
-            spend_broadcast_dispatches(&no_retries),
+            spend_broadcast_dispatches(&no_retries, None),
             || {
                 *dispatched.lock().expect("count") += 1;
                 std::future::ready(Err(grpc(Code::Unavailable)))
@@ -642,6 +660,64 @@ mod tests {
         .await;
         assert!(matches!(delivery, BroadcastDelivery::MaybeDelivered(_)));
         assert_eq!(*dispatched.lock().expect("count"), 1);
+    }
+
+    /// The caller's settings reach every dispatch: its request fields and fee
+    /// increase are kept, only the per-dispatch retries are forced to none,
+    /// and its retries set the budget over the SDK's.
+    #[test]
+    fn should_send_each_dispatch_with_the_callers_settings() {
+        use dash_sdk::dapi_client::RequestSettings;
+
+        let caller = PutSettings {
+            request_settings: RequestSettings {
+                connect_timeout: Some(Duration::from_secs(3)),
+                timeout: Some(Duration::from_secs(7)),
+                retries: Some(2),
+                ban_failed_address: Some(false),
+                ..RequestSettings::default()
+            },
+            user_fee_increase: Some(5),
+            wait_timeout: Some(Duration::from_secs(11)),
+            ..PutSettings::default()
+        };
+
+        let single = single_dispatch_settings(Some(caller));
+        let request = single.request_settings;
+        assert_eq!(
+            (
+                request.connect_timeout,
+                request.timeout,
+                request.retries,
+                request.ban_failed_address
+            ),
+            (
+                Some(Duration::from_secs(3)),
+                Some(Duration::from_secs(7)),
+                Some(0),
+                Some(false)
+            )
+        );
+        assert_eq!(single.user_fee_increase, Some(5));
+        assert_eq!(single.wait_timeout, Some(Duration::from_secs(11)));
+        assert_eq!(
+            single_dispatch_settings(None).request_settings.retries,
+            Some(0)
+        );
+
+        let three_retries = dash_sdk::SdkBuilder::new_mock()
+            .with_settings(RequestSettings {
+                retries: Some(3),
+                ..RequestSettings::default()
+            })
+            .build()
+            .expect("an SDK");
+        assert_eq!(spend_broadcast_dispatches(&three_retries, Some(&caller)), 3);
+        let no_retries_named = PutSettings::default();
+        assert_eq!(
+            spend_broadcast_dispatches(&three_retries, Some(&no_retries_named)),
+            4
+        );
     }
 
     /// An attempt admitted with its response lost, then retries refused for
@@ -730,13 +806,14 @@ mod tests {
         let transition = withdrawal();
 
         let delivery =
-            broadcast_tracking_delivery(&test_sdks::sdk_without_addresses(), &transition).await;
+            broadcast_tracking_delivery(&test_sdks::sdk_without_addresses(), &transition, None)
+                .await;
         assert!(
             matches!(delivery, BroadcastDelivery::NeverDelivered(_)),
             "{delivery:?}"
         );
         let (refusing, _port) = test_sdks::sdk_refusing_connections();
-        let delivery = broadcast_tracking_delivery(&refusing, &transition).await;
+        let delivery = broadcast_tracking_delivery(&refusing, &transition, None).await;
         assert!(
             matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
             "{delivery:?}"

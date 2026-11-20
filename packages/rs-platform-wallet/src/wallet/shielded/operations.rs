@@ -775,7 +775,7 @@ where
     S: ShieldedStore,
     D: Fn(&dash_sdk::Error) -> String,
 {
-    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     // A transition that names no input is no shield from addresses: its
     // result then shows nothing spent, and it settles as unconfirmed.
     let no_inputs = BTreeMap::new();
@@ -3303,7 +3303,7 @@ async fn broadcast_identity_create(
         })
     };
 
-    match broadcast_tracking_delivery(sdk, st).await {
+    match broadcast_tracking_delivery(sdk, st, None).await {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -5112,34 +5112,35 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         // version meanwhile, or while an earlier dispatch is in flight), and the SDK's own
         // retries are not used: no attempt is sent unchecked. A refusal sends nothing more.
         // The claimed attempt stays counted and the record stays, unretired.
-        let broadcast_result =
-            match broadcast_tracking_delivery_checked(sdk, &st, || match &redrive.spend_context {
+        let broadcast_result = match broadcast_tracking_delivery_checked(sdk, &st, None, || {
+            match &redrive.spend_context {
                 Some(context)
                     if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) =>
                 {
                     Err(())
                 }
                 _ => Ok(()),
-            })
-            .await
-            {
-                Ok(BroadcastDelivery::Admitted) => Ok(()),
-                // Recovery never retires a record from here: a spend that was never delivered is
-                // resolved by the spend that saved it, the scan or the prune backstop.
-                Ok(BroadcastDelivery::MaybeDelivered(e) | BroadcastDelivery::NeverDelivered(e)) => {
-                    Err(e)
-                }
-                Err(stopped) => {
-                    warn!(
-                        saved = ?redrive.spend_context,
-                        may_have_been_delivered = stopped.may_have_been_delivered,
-                        "redrive: the context the spend was priced in stopped holding before a \
-                         dispatch; not sending it again, keeping the record and its notes (an \
-                         earlier dispatch, if any, may have been delivered)"
-                    );
-                    continue;
-                }
-            };
+            }
+        })
+        .await
+        {
+            Ok(BroadcastDelivery::Admitted) => Ok(()),
+            // Recovery never retires a record from here: a spend that was never delivered is
+            // resolved by the spend that saved it, the scan or the prune backstop.
+            Ok(BroadcastDelivery::MaybeDelivered(e) | BroadcastDelivery::NeverDelivered(e)) => {
+                Err(e)
+            }
+            Err(stopped) => {
+                warn!(
+                    saved = ?redrive.spend_context,
+                    may_have_been_delivered = stopped.may_have_been_delivered,
+                    "redrive: the context the spend was priced in stopped holding before a \
+                     dispatch; not sending it again, keeping the record and its notes (an \
+                     earlier dispatch, if any, may have been delivered)"
+                );
+                continue;
+            }
+        };
         let err_display = broadcast_result
             .as_ref()
             .err()
@@ -5246,44 +5247,41 @@ async fn broadcast_shielded_spend_classified(
     wait: SpendResultWait,
     still_dispatchable: impl FnMut() -> Result<(), PlatformWalletError>,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
-    let delivery = match broadcast_tracking_delivery_checked(
-        sdk,
-        state_transition,
-        still_dispatchable,
-    )
-    .await
-    {
-        Ok(delivery) => delivery,
-        // The check refused a dispatch: the transition is not sent again, whatever the
-        // build, the writes and the earlier dispatches were made under.
-        Err(stopped) if !stopped.may_have_been_delivered => {
-            return Err(SpendFailure {
-                error: stopped.error,
-                never_delivered: true,
-            });
-        }
-        // An earlier dispatch may have been delivered and may still execute: the outcome
-        // stays unconfirmed, with the notes reserved and the record saved, for the scan
-        // and the redrive pass (which holds to the same context) to resolve.
-        Err(stopped) => {
-            warn!(
-                operation,
-                error = %stopped.error,
-                "Shielded spend not dispatched again: its context no longer holds, and an \
-                 earlier dispatch may have been delivered"
-            );
-            return Err(SpendFailure::from(
-                PlatformWalletError::ShieldedSpendUnconfirmed {
+    let delivery =
+        match broadcast_tracking_delivery_checked(sdk, state_transition, None, still_dispatchable)
+            .await
+        {
+            Ok(delivery) => delivery,
+            // The check refused a dispatch: the transition is not sent again, whatever the
+            // build, the writes and the earlier dispatches were made under.
+            Err(stopped) if !stopped.may_have_been_delivered => {
+                return Err(SpendFailure {
+                    error: stopped.error,
+                    never_delivered: true,
+                });
+            }
+            // An earlier dispatch may have been delivered and may still execute: the outcome
+            // stays unconfirmed, with the notes reserved and the record saved, for the scan
+            // and the redrive pass (which holds to the same context) to resolve.
+            Err(stopped) => {
+                warn!(
                     operation,
-                    reason: format!(
-                        "a later dispatch was not sent because its context no longer \
+                    error = %stopped.error,
+                    "Shielded spend not dispatched again: its context no longer holds, and an \
+                     earlier dispatch may have been delivered"
+                );
+                return Err(SpendFailure::from(
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation,
+                        reason: format!(
+                            "a later dispatch was not sent because its context no longer \
                              holds ({}), and an earlier one may have been delivered",
-                        stopped.error
-                    ),
-                },
-            ));
-        }
-    };
+                            stopped.error
+                        ),
+                    },
+                ));
+            }
+        };
     match delivery {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
@@ -8549,7 +8547,7 @@ mod redrive_tests {
             .expect("serializes");
         assert_eq!(
             sdk.mock().request_count(&request).await,
-            spend_broadcast_dispatches(&handle),
+            spend_broadcast_dispatches(&handle, None),
             "every failed dispatch is followed by another, up to the budget"
         );
         let left = store.read().await.pending_redrives(id).expect("records");
