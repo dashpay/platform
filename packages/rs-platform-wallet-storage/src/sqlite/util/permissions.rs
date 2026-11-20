@@ -35,6 +35,33 @@ pub fn reject_symlink(path: &Path) -> Result<(), WalletStorageError> {
     }
 }
 
+/// Create `dir` and its missing ancestors owner-only (`0o700`) on Unix,
+/// whatever the umask. Components that already exist keep their mode: they
+/// belong to the caller, not to this crate.
+pub(crate) fn create_owner_only_dirs(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let missing: Vec<&Path> = dir
+            .ancestors()
+            .take_while(|component| !component.as_os_str().is_empty() && !component.exists())
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+        for component in missing {
+            std::fs::set_permissions(component, std::fs::Permissions::from_mode(0o700))?;
+        }
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(dir)?;
+    Ok(())
+}
+
 /// Pre-create the DB file at `path` with mode `0o600` before rusqlite
 /// opens it, closing the umask window (the file is born owner-only, not
 /// created at the umask default then chmod'd) and the final-component

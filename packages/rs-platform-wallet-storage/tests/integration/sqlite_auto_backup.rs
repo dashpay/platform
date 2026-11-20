@@ -98,6 +98,37 @@ fn should_auto_backup_under_replaceable_ancestor_and_warn() {
     )));
 }
 
+/// A caller-supplied auto-backup directory that already exists is not ours:
+/// its mode is left alone, and an insecure one is only reported.
+#[cfg(unix)]
+#[test]
+#[tracing_test::traced_test]
+fn should_leave_pre_existing_auto_backup_dir_mode_alone_and_warn() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = common::secure_tempdir().unwrap();
+    let backup_dir = tmp.path().join("existing-backups");
+    std::fs::create_dir(&backup_dir).unwrap();
+    std::fs::set_permissions(&backup_dir, std::fs::Permissions::from_mode(0o775)).unwrap();
+    let path = tmp.path().join("w.db");
+    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(backup_dir.clone()));
+    let persister = SqlitePersister::open(cfg).unwrap();
+    let w = wid(0x36);
+    ensure_wallet_meta(&persister, &w);
+
+    persister
+        .delete_wallet(w)
+        .expect("a pre-existing group-writable backup dir must not fail the auto-backup");
+
+    let mode = std::fs::metadata(&backup_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o775, "a pre-existing directory must not be chmodded");
+    assert!(std::fs::read_dir(&backup_dir).unwrap().next().is_some());
+    assert!(logs_contain(&format!(
+        "chmod go-w {}",
+        backup_dir.display()
+    )));
+}
+
 /// TC-052: delete_wallet with auto_backup_dir = None returns AutoBackupDisabled.
 #[test]
 fn tc052_delete_wallet_auto_backup_disabled() {

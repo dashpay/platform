@@ -25,7 +25,9 @@ use crate::sqlite::rehydrate::{
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
-use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
+use crate::sqlite::util::permissions::{
+    apply_secure_permissions, create_owner_only_dirs, precreate_secure,
+};
 use crate::sqlite::util::safe_cast;
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
@@ -567,7 +569,6 @@ impl SqlitePersister {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        warn_on_insecure_ancestors("database", parent);
 
         // Refuse to overwrite a database a live persister in this process is
         // still holding open: that handle's buffer/connection would silently
@@ -2277,48 +2278,10 @@ pub(crate) fn run_auto_backup(
 }
 
 fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
-    #[cfg(unix)]
-    let mut missing_components = Vec::new();
-    if !dir.exists() {
-        #[cfg(unix)]
-        {
-            let mut component = dir;
-            while !component.exists() && !component.as_os_str().is_empty() {
-                missing_components.push(component.to_path_buf());
-                let Some(parent) = component.parent() else {
-                    break;
-                };
-                component = parent;
-            }
-        }
-        #[cfg(unix)]
-        let create_result = {
-            use std::os::unix::fs::DirBuilderExt;
-            let mut builder = std::fs::DirBuilder::new();
-            builder.recursive(true).mode(0o700).create(dir)
-        };
-        #[cfg(not(unix))]
-        let create_result = std::fs::create_dir_all(dir);
-        create_result.map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
-            dir: dir.to_path_buf(),
-            source,
-        })?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if missing_components.is_empty() {
-            missing_components.push(dir.to_path_buf());
-        }
-        for component in missing_components {
-            std::fs::set_permissions(&component, std::fs::Permissions::from_mode(0o700)).map_err(
-                |source| WalletStorageError::AutoBackupDirUnwritable {
-                    dir: component,
-                    source,
-                },
-            )?;
-        }
-    }
+    create_owner_only_dirs(dir).map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
+        dir: dir.to_path_buf(),
+        source,
+    })?;
     warn_on_insecure_ancestors("auto-backup directory", dir);
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the

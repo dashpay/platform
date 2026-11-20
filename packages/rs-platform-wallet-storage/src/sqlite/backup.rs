@@ -11,7 +11,9 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::parent_permissions::warn_on_insecure_ancestors;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
-use crate::sqlite::util::permissions::{apply_secure_permissions, reject_symlink};
+use crate::sqlite::util::permissions::{
+    apply_secure_permissions, create_owner_only_dirs, reject_symlink,
+};
 
 struct CreatedDestinationGuard {
     path: PathBuf,
@@ -172,8 +174,8 @@ pub(crate) fn sanitize_db_stem(db_path: &Path) -> String {
 /// atomically (no TOCTOU window), and the parent dir is fsynced afterward.
 pub(crate) fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     if let Some(parent) = dest.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent)?;
+        if !parent.as_os_str().is_empty() {
+            create_owner_only_dirs(parent)?;
         }
     }
     // Stage in an unguessable temp file in the same dir; the same-FS

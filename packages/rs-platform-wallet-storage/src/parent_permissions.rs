@@ -142,47 +142,83 @@ fn classify_ancestor(
     }
 }
 
+/// What one walk over a directory's ancestors found.
+#[cfg(unix)]
+#[derive(Default)]
+struct AncestorReport {
+    /// Ancestors another local user could replace.
+    insecure: Vec<(PathBuf, InsecureAncestor)>,
+    /// Ancestors the walk could not stat or resolve.
+    uninspected: Vec<(PathBuf, std::io::Error)>,
+}
+
 /// Every ancestor of `parent`, through `/`, that another local user could
 /// replace.
 ///
 /// Both the lexical path and its canonical target are walked, so a symlink
 /// cannot hide an unsafe target ancestor. An ancestor seen by both walks is
-/// listed once.
+/// listed once. A component that cannot be inspected is recorded and the walk
+/// goes on, so it never hides what the rest of the walk finds.
 #[cfg(unix)]
-fn insecure_ancestors(parent: &Path) -> std::io::Result<Vec<(PathBuf, InsecureAncestor)>> {
+fn insecure_ancestors(parent: &Path) -> AncestorReport {
     use std::os::unix::fs::MetadataExt;
 
+    let mut report = AncestorReport::default();
     let current_uid = effective_uid();
     let trusted_groups = trusted_groups(current_uid);
-    let root_uid = std::fs::metadata("/")?.uid();
+    // An unreadable `/` is recorded by the lexical walk when it reaches it.
+    let root_uid = std::fs::metadata("/").map_or(0, |meta| meta.uid());
     let absolute = if parent.is_absolute() {
         parent.to_path_buf()
     } else {
-        std::env::current_dir()?.join(parent)
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(parent),
+            Err(error) => {
+                report.uninspected.push((parent.to_path_buf(), error));
+                return report;
+            }
+        }
     };
-    let canonical = std::fs::canonicalize(&absolute)?;
 
-    let mut found: Vec<(PathBuf, InsecureAncestor)> = Vec::new();
     for ancestor in absolute.ancestors() {
-        let meta = std::fs::symlink_metadata(ancestor)?;
+        let meta = match std::fs::symlink_metadata(ancestor) {
+            Ok(meta) => meta,
+            Err(error) => {
+                report.uninspected.push((ancestor.to_path_buf(), error));
+                continue;
+            }
+        };
         let mode = meta.mode() & 0o7777;
         let writable = !meta.file_type().is_symlink()
             && writable_without_sticky(mode, meta.gid(), &trusted_groups);
         if let Some(reason) = classify_ancestor(meta.uid(), mode, writable, current_uid, root_uid) {
-            found.push((ancestor.to_path_buf(), reason));
+            report.insecure.push((ancestor.to_path_buf(), reason));
         }
     }
+    let canonical = match std::fs::canonicalize(&absolute) {
+        Ok(canonical) => canonical,
+        Err(error) => {
+            report.uninspected.push((absolute, error));
+            return report;
+        }
+    };
     for ancestor in canonical.ancestors() {
-        let meta = std::fs::metadata(ancestor)?;
+        let meta = match std::fs::metadata(ancestor) {
+            Ok(meta) => meta,
+            Err(error) => {
+                report.uninspected.push((ancestor.to_path_buf(), error));
+                continue;
+            }
+        };
         let mode = meta.mode() & 0o7777;
         let writable = writable_without_sticky(mode, meta.gid(), &trusted_groups);
         if let Some(reason) = classify_ancestor(meta.uid(), mode, writable, current_uid, root_uid) {
-            if !found.iter().any(|(seen, _)| seen == ancestor) {
-                found.push((ancestor.to_path_buf(), reason));
+            if !report.insecure.iter().any(|(seen, _)| seen == ancestor) {
+                report.insecure.push((ancestor.to_path_buf(), reason));
             }
         }
     }
-    Ok(found)
+    report
 }
 
 /// Report, in one warning, every ancestor of `parent` another local user could
@@ -190,32 +226,39 @@ fn insecure_ancestors(parent: &Path) -> std::io::Result<Vec<(PathBuf, InsecureAn
 ///
 /// Advisory only: the directories above the ones this crate creates are not
 /// this crate's to police, so neither a finding nor a failed walk ever fails
-/// the caller. A walk that cannot stat an ancestor (sandboxed or unreadable
-/// path components are normal on mobile platforms) is logged at `debug`.
+/// the caller. Ancestors that cannot be inspected (sandboxed or unreadable
+/// path components are normal on mobile platforms) are logged at `debug`.
 #[cfg(unix)]
 pub(crate) fn warn_on_insecure_ancestors(subject: &str, parent: &Path) {
-    match insecure_ancestors(parent) {
-        Ok(found) if found.is_empty() => {}
-        Ok(found) => {
-            let findings = found
-                .iter()
-                .map(|(ancestor, reason)| insecure_ancestor_message(subject, ancestor, reason))
-                .collect::<Vec<_>>()
-                .join("; ");
-            tracing::warn!(
-                subject,
-                directory = %parent.display(),
-                findings = %findings,
-                "insecure ancestor directory permissions: another local user may be able to \
-                 replace wallet files below them; continuing"
-            );
-        }
-        Err(error) => tracing::debug!(
+    let report = insecure_ancestors(parent);
+    if !report.insecure.is_empty() {
+        let findings = report
+            .insecure
+            .iter()
+            .map(|(ancestor, reason)| insecure_ancestor_message(subject, ancestor, reason))
+            .collect::<Vec<_>>()
+            .join("; ");
+        tracing::warn!(
             subject,
             directory = %parent.display(),
-            %error,
-            "skipped the ancestor directory permission report: an ancestor could not be inspected"
-        ),
+            findings = %findings,
+            "insecure ancestor directory permissions: another local user may be able to \
+             replace wallet files below them; continuing"
+        );
+    }
+    if !report.uninspected.is_empty() {
+        let skipped = report
+            .uninspected
+            .iter()
+            .map(|(ancestor, error)| format!("{}: {error}", ancestor.display()))
+            .collect::<Vec<_>>()
+            .join("; ");
+        tracing::debug!(
+            subject,
+            directory = %parent.display(),
+            skipped = %skipped,
+            "ancestor directory permission report is incomplete: some ancestors could not be inspected"
+        );
     }
 }
 
@@ -321,5 +364,24 @@ mod tests {
         );
         assert!(owned.contains("chown 1000 /parent"));
         assert!(!owned.contains("chmod"), "got {owned}");
+    }
+
+    /// A component the walk cannot stat must not discard what it already
+    /// found: a missing directory behind `..` fails every stat below it.
+    #[test]
+    #[tracing_test::traced_test]
+    fn should_warn_about_findings_collected_around_an_uninspectable_ancestor() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let writable = dir.path().join("writable");
+        std::fs::create_dir(&writable).unwrap();
+        std::fs::set_permissions(&writable, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let parent = writable.join("missing").join("..").join("wallet");
+
+        super::warn_on_insecure_ancestors("database", &parent);
+
+        assert!(logs_contain("insecure ancestor directory permissions"));
+        assert!(logs_contain(&format!("chmod go-w {}", writable.display())));
+        assert!(logs_contain("could not be inspected"));
     }
 }
