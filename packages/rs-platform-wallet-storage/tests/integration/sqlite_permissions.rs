@@ -448,6 +448,38 @@ fn should_warn_once_per_restore_under_insecure_destination_parent() {
     });
 }
 
+/// A manual backup reports an insecure ancestor of its destination exactly
+/// once, like every other operation that writes below it.
+#[test]
+#[tracing_test::traced_test]
+fn should_warn_once_per_manual_backup_under_insecure_ancestor() {
+    let tmp = common::secure_tempdir().unwrap();
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(tmp.path().join("w.db"))).unwrap();
+    let insecure = tmp.path().join("manual-insecure");
+    std::fs::create_dir(&insecure).unwrap();
+    std::fs::set_permissions(&insecure, std::fs::Permissions::from_mode(0o777)).unwrap();
+
+    persister
+        .backup_to(&insecure.join("nested").join("manual.db"))
+        .expect("an insecure ancestor must not fail a manual backup");
+
+    assert!(logs_contain(&format!("chmod go-w {}", insecure.display())));
+    logs_assert(|lines: &[&str]| {
+        let count = lines
+            .iter()
+            .filter(|line| line.contains(ANCESTOR_WARNING))
+            .count();
+        if count == 1 {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected one ancestor warning per manual backup, got {count}"
+            ))
+        }
+    });
+}
+
 /// A `..` in a not-yet-existing backup path resolves to a directory that
 /// already exists; only the directories actually created become owner-only.
 #[test]

@@ -91,11 +91,23 @@ fn should_auto_backup_under_replaceable_ancestor_and_warn() {
         let mode = std::fs::metadata(&created).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "{} must be owner-only", created.display());
     }
-    assert!(logs_contain("insecure ancestor directory permissions"));
     assert!(logs_contain(&format!(
         "chmod go-w {}",
         replaceable.display()
     )));
+    logs_assert(|lines: &[&str]| {
+        let count = lines
+            .iter()
+            .filter(|line| line.contains("insecure ancestor directory permissions"))
+            .count();
+        if count == 1 {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected one ancestor warning per auto-backup, got {count}"
+            ))
+        }
+    });
 }
 
 /// A caller-supplied auto-backup directory that already exists is not ours:

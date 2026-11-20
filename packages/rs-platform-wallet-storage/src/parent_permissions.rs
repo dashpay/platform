@@ -35,6 +35,16 @@ enum InsecureAncestor {
         /// The process's effective uid.
         current_uid: u32,
     },
+    /// Both at once. The owner can undo a `chmod`, and the current user may
+    /// not be able to run one, so the remediation names both.
+    UntrustedOwnerAndWritable {
+        /// The ancestor's owner uid.
+        uid: u32,
+        /// The process's effective uid.
+        current_uid: u32,
+        /// The offending POSIX mode bits.
+        mode: u32,
+    },
 }
 
 /// One actionable sentence naming the exact ancestor and the exact command.
@@ -51,6 +61,15 @@ fn insecure_ancestor_message(subject: &str, ancestor: &Path, reason: &InsecureAn
         InsecureAncestor::UntrustedOwner { uid, current_uid } => format!(
             "{subject} ancestor {path} is owned by uid {uid}, neither the current user \
              ({current_uid}) nor root; run `chown {current_uid} {path}`"
+        ),
+        InsecureAncestor::UntrustedOwnerAndWritable {
+            uid,
+            current_uid,
+            mode,
+        } => format!(
+            "{subject} ancestor {path} is owned by uid {uid}, neither the current user \
+             ({current_uid}) nor root, and is group/other-writable (mode {mode:04o}) and not \
+             sticky; as root, run `chown {current_uid} {path}` and `chmod go-w {path}`"
         ),
     }
 }
@@ -122,9 +141,9 @@ fn effective_uid() -> u32 {
 /// Classify one ancestor; `None` when nobody outside the trusted set can
 /// replace entries in it.
 ///
-/// Write access is checked first: it is the condition whose mode is worth
-/// printing. The filesystem root's owner is trusted as root for
-/// user-namespace environments where uid 0 is mapped to another uid.
+/// An ancestor that is both foreign-owned and writable is reported for both.
+/// The filesystem root's owner is trusted as root for user-namespace
+/// environments where uid 0 is mapped to another uid.
 #[cfg(unix)]
 fn classify_ancestor(
     uid: u32,
@@ -133,12 +152,16 @@ fn classify_ancestor(
     current_uid: u32,
     root_uid: u32,
 ) -> Option<InsecureAncestor> {
-    if writable_without_sticky {
-        Some(InsecureAncestor::WritableWithoutSticky { mode })
-    } else if !trusted_owner(uid, current_uid, root_uid, PLATFORM_IDS) {
-        Some(InsecureAncestor::UntrustedOwner { uid, current_uid })
-    } else {
-        None
+    let untrusted_owner = !trusted_owner(uid, current_uid, root_uid, PLATFORM_IDS);
+    match (untrusted_owner, writable_without_sticky) {
+        (true, true) => Some(InsecureAncestor::UntrustedOwnerAndWritable {
+            uid,
+            current_uid,
+            mode,
+        }),
+        (true, false) => Some(InsecureAncestor::UntrustedOwner { uid, current_uid }),
+        (false, true) => Some(InsecureAncestor::WritableWithoutSticky { mode }),
+        (false, false) => None,
     }
 }
 
@@ -270,7 +293,8 @@ pub(crate) fn warn_on_insecure_ancestors(_subject: &str, _parent: &Path) {}
 #[cfg(all(test, unix))]
 mod tests {
     use super::{
-        insecure_ancestor_message, trusted_owner, writable_without_sticky, InsecureAncestor,
+        classify_ancestor, insecure_ancestor_message, trusted_owner, writable_without_sticky,
+        InsecureAncestor,
     };
     use std::path::Path;
 
@@ -364,6 +388,44 @@ mod tests {
         );
         assert!(owned.contains("chown 1000 /parent"));
         assert!(!owned.contains("chmod"), "got {owned}");
+    }
+
+    /// A foreign-owned ancestor that is also writable needs both fixes: its
+    /// owner can undo a `chmod`, and the current user may not be able to run one.
+    #[test]
+    fn should_report_both_owner_and_mode_of_a_foreign_owned_writable_ancestor() {
+        let reason = classify_ancestor(2000, 0o777, true, 1000, 0)
+            .expect("a foreign-owned writable ancestor must be reported");
+        assert_eq!(
+            reason,
+            InsecureAncestor::UntrustedOwnerAndWritable {
+                uid: 2000,
+                current_uid: 1000,
+                mode: 0o777,
+            }
+        );
+
+        let message = insecure_ancestor_message("vault", Path::new("/parent"), &reason);
+        assert!(message.contains("uid 2000"), "got {message}");
+        assert!(message.contains("0777"), "got {message}");
+        assert!(message.contains("chown 1000 /parent"), "got {message}");
+        assert!(message.contains("chmod go-w /parent"), "got {message}");
+    }
+
+    #[test]
+    fn should_classify_by_the_single_condition_present() {
+        assert_eq!(
+            classify_ancestor(1000, 0o777, true, 1000, 0),
+            Some(InsecureAncestor::WritableWithoutSticky { mode: 0o777 })
+        );
+        assert_eq!(
+            classify_ancestor(2000, 0o755, false, 1000, 0),
+            Some(InsecureAncestor::UntrustedOwner {
+                uid: 2000,
+                current_uid: 1000,
+            })
+        );
+        assert_eq!(classify_ancestor(0, 0o755, false, 1000, 0), None);
     }
 
     /// A component the walk cannot stat must not discard what it already

@@ -173,14 +173,15 @@ pub(crate) fn sanitize_db_stem(db_path: &Path) -> String {
 /// materialises a partial `.db`. A pre-existing `dest` is rejected
 /// atomically (no TOCTOU window), and the parent dir is fsynced afterward.
 pub(crate) fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
-    if let Some(parent) = dest.parent() {
-        if !parent.as_os_str().is_empty() {
-            create_owner_only_dirs(parent)?;
-        }
-    }
+    let parent = dest
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    create_owner_only_dirs(parent)?;
+    // The one ancestor report for every backup, manual or automatic.
+    warn_on_insecure_ancestors("backup", parent);
     // Stage in an unguessable temp file in the same dir; the same-FS
     // guarantee makes `persist` an atomic rename.
-    let parent = dest.parent().unwrap_or(Path::new("."));
     let tmp = tempfile::NamedTempFile::new_in(parent)?;
     // chmod 0o600 BEFORE persist so the destination inherits owner-only
     // mode via the rename; chmod after would leave an observable window.

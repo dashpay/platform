@@ -2282,7 +2282,6 @@ fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
         dir: dir.to_path_buf(),
         source,
     })?;
-    warn_on_insecure_ancestors("auto-backup directory", dir);
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the
     // worst case is a later typed error instead of this early one.

@@ -38,30 +38,88 @@ pub fn reject_symlink(path: &Path) -> Result<(), WalletStorageError> {
 /// Create `dir` and its missing ancestors owner-only (`0o700`) on Unix,
 /// whatever the umask. Components that already exist keep their mode: they
 /// belong to the caller, not to this crate.
+///
+/// Components are created one `mkdir` at a time, outward from the nearest
+/// existing ancestor, and each is restricted right after its own `mkdir`
+/// succeeds, so its children can be created even under a umask that strips
+/// owner bits. A component another process creates first (`AlreadyExists`)
+/// is treated as the caller's and left alone.
 pub(crate) fn create_owner_only_dirs(dir: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-        let missing: Vec<&Path> = dir
-            .ancestors()
-            .take_while(|component| !component.as_os_str().is_empty() && !component.exists())
-            .collect();
-        if missing.is_empty() {
-            return Ok(());
-        }
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir)?;
-        // A path ending in `..` names a directory that already existed (its
-        // own parent's parent), so it is not one this call created.
-        for component in missing.into_iter().filter(|c| c.file_name().is_some()) {
-            std::fs::set_permissions(component, std::fs::Permissions::from_mode(0o700))?;
+        use std::os::unix::fs::DirBuilderExt;
+        use std::path::{Component, PathBuf};
+
+        let components: Vec<Component<'_>> = dir.components().collect();
+        let existing = (1..=components.len())
+            .rev()
+            .find(|&len| components[..len].iter().collect::<PathBuf>().exists())
+            .unwrap_or(0);
+        let mut current: PathBuf = components[..existing].iter().collect();
+        for component in &components[existing..] {
+            current.push(component);
+            // `..` names a directory that already exists; only real names
+            // are created here.
+            if !matches!(component, Component::Normal(_)) {
+                continue;
+            }
+            match std::fs::DirBuilder::new().mode(0o700).create(&current) {
+                Ok(()) => restrict_created_dir(&current)?,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e),
+            }
         }
     }
     #[cfg(not(unix))]
     std::fs::create_dir_all(dir)?;
     Ok(())
+}
+
+/// Set a directory this process just created to `0o700` without following a
+/// symlink planted in its place.
+///
+/// The `fchmod` goes through an `O_NOFOLLOW` handle. A umask that stripped
+/// the owner's read bit makes that open fail with `EACCES`, so the fallback
+/// is `fchmodat(AT_SYMLINK_NOFOLLOW)`, which needs no read access.
+#[cfg(unix)]
+fn restrict_created_dir(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)
+    {
+        Ok(handle) => handle.set_permissions(std::fs::Permissions::from_mode(0o700)),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => chmod_no_follow(path, 0o700),
+        Err(e) => Err(e),
+    }
+}
+
+/// `chmod` that refuses a symlink rather than changing its target.
+///
+/// Linux has no native no-follow `chmod` before `fchmodat2` (kernel 6.6);
+/// libc emulates it there through `/proc` and fails with `EOPNOTSUPP` when it
+/// cannot.
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "libc fchmodat has no std equivalent")]
+fn chmod_no_follow(path: &Path, mode: libc::mode_t) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+    // SAFETY: `c_path` is a live NUL-terminated string, read only for the
+    // duration of the call; `AT_FDCWD` resolves it like any relative path.
+    let result = unsafe {
+        libc::fchmodat(
+            libc::AT_FDCWD,
+            c_path.as_ptr(),
+            mode,
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 /// Pre-create the DB file at `path` with mode `0o600` before rusqlite
@@ -136,4 +194,102 @@ pub fn apply_secure_permissions(path: &Path) -> Result<(), WalletStorageError> {
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{chmod_no_follow, create_owner_only_dirs, restrict_created_dir};
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    fn mode(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// Set by the parent test for the re-executed child; `umask` is
+    /// process-wide, so the restrictive mask is applied in a child process
+    /// that runs this one test and nothing else.
+    const UMASK_CHILD_DIR: &str = "PLATFORM_WALLET_STORAGE_UMASK_CHILD_DIR";
+
+    #[test]
+    #[expect(unsafe_code, reason = "libc umask requires an unsafe call")]
+    fn should_create_owner_only_dirs_under_a_umask_that_strips_owner_bits() {
+        if let Some(base) = std::env::var_os(UMASK_CHILD_DIR) {
+            // SAFETY: umask only swaps the process file-mode mask; this
+            // re-executed process runs this single test.
+            let previous = unsafe { libc::umask(0o777) };
+            let result = create_owner_only_dirs(&Path::new(&base).join("a").join("b").join("c"));
+            // SAFETY: as above.
+            unsafe { libc::umask(previous) };
+            result.expect("create_owner_only_dirs under umask 0777");
+            return;
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let module = module_path!().split_once("::").unwrap().1;
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!(
+                    "{module}::should_create_owner_only_dirs_under_a_umask_that_strips_owner_bits"
+                ),
+                "--test-threads=1",
+            ])
+            .env(UMASK_CHILD_DIR, tmp.path())
+            .status()
+            .unwrap();
+        assert!(status.success(), "child process failed: {status}");
+
+        let a = tmp.path().join("a");
+        for created in [a.clone(), a.join("b"), a.join("b").join("c")] {
+            assert_eq!(
+                mode(&created),
+                0o700,
+                "{} must be owner-only",
+                created.display()
+            );
+        }
+    }
+
+    #[test]
+    fn should_leave_existing_components_alone_and_restrict_only_created_ones() {
+        let tmp = tempfile::tempdir().unwrap();
+        let existing = tmp.path().join("existing");
+        std::fs::create_dir(&existing).unwrap();
+        std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o775)).unwrap();
+
+        create_owner_only_dirs(&existing.join("new").join("leaf")).unwrap();
+
+        assert_eq!(mode(&existing), 0o775);
+        assert_eq!(mode(&existing.join("new")), 0o700);
+        assert_eq!(mode(&existing.join("new").join("leaf")), 0o700);
+    }
+
+    /// The tighten step must never chmod through a symlink: a link planted
+    /// in place of a just-created directory points at someone else's file.
+    #[test]
+    fn should_not_follow_a_symlink_when_restricting_a_created_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(restrict_created_dir(&link).is_err());
+        assert_eq!(mode(&target), 0o755);
+    }
+
+    #[test]
+    fn should_not_follow_a_symlink_in_the_no_follow_chmod_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(chmod_no_follow(&link, 0o700).is_err());
+        assert_eq!(mode(&target), 0o755);
+    }
 }
