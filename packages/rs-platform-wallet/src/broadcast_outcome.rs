@@ -200,14 +200,15 @@ pub(crate) async fn broadcast_tracking_delivery(
 
 /// [`broadcast_tracking_delivery`], with each dispatch sent to one node the
 /// SDK's address list selects, through an SDK scoped to it
-/// ([`dash_sdk::Sdk::scoped_to_address`]), so the node a dispatch reached is
-/// known: the one that admitted it, or else the last one a dispatch may have
-/// been delivered to. That node holds the transition, so it alone may be
-/// asked about it afterwards (see the privacy note of
-/// `Sdk::state_transition_outcome`). The shared SDK's address list is not
-/// changed. With no live address to select, a dispatch goes through the
-/// shared SDK, which reports why, and no node is returned; none is for a
-/// broadcast never delivered either.
+/// ([`dash_sdk::Sdk::scoped_to_address`]). The node is returned only when it
+/// is known to hold the transition ([`dispatch_reached_node`]): it admitted
+/// it, or answered that it already holds it. That node alone may be asked
+/// about the transition afterwards (see the privacy note of
+/// `Sdk::state_transition_outcome`). A dispatch that may have been delivered
+/// without that answer (a transport failure, a timeout, a verdict) returns no
+/// node. The shared SDK's address list is not changed. With no live address
+/// to select, a dispatch goes through the shared SDK, which reports why, and
+/// keeps no node.
 pub(crate) async fn broadcast_tracking_endpoint(
     sdk: &dash_sdk::Sdk,
     state_transition: &dpp::state_transition::StateTransition,
@@ -249,6 +250,8 @@ pub(crate) async fn broadcast_tracking_endpoint(
                 }
                 address
             };
+            // With no live address to select, the shared SDK reports why;
+            // no node is kept from that dispatch.
             let Some(address) = address else {
                 return state_transition.broadcast(sdk, Some(single_dispatch)).await;
             };
@@ -256,7 +259,7 @@ pub(crate) async fn broadcast_tracking_endpoint(
             let result = state_transition
                 .broadcast(&scoped, Some(single_dispatch))
                 .await;
-            if !matches!(&result, Err(error) if refused_before_sending(error)) {
+            if dispatch_reached_node(&result) {
                 if let Ok(mut reached) = reached_ref.lock() {
                     *reached = Some(address);
                 }
@@ -284,6 +287,8 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
 {
+    use dash_sdk::dapi_client::DapiClientError;
+
     let mut maybe_delivered: Option<dash_sdk::Error> = None;
     for _ in 0..dispatches.max(1) {
         let error = match dispatch().await {
@@ -291,7 +296,21 @@ where
             Err(error) if node_holds_transition(&error) => return BroadcastDelivery::Admitted,
             Err(error) => error,
         };
-        if refused_before_sending(&error) {
+        // Refused before anything was sent: no address, or the SDK's own
+        // refusal of a kind the network does not serve yet.
+        let never_sent = matches!(
+            error,
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                | dash_sdk::Error::ProtocolVersionNotActive { .. }
+        ) || matches!(
+            &error,
+            dash_sdk::Error::NoAvailableAddressesToRetry(inner)
+                if matches!(
+                    **inner,
+                    dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                )
+        );
+        if never_sent {
             return match maybe_delivered {
                 Some(_) => BroadcastDelivery::MaybeDelivered(error),
                 None => BroadcastDelivery::NeverDelivered(error),
@@ -315,23 +334,16 @@ where
     }
 }
 
-/// Whether `error` refused a dispatch before anything was sent: no address,
-/// or the SDK's own refusal of a kind the network does not serve yet.
-pub(crate) fn refused_before_sending(error: &dash_sdk::Error) -> bool {
-    use dash_sdk::dapi_client::DapiClientError;
-
-    matches!(
-        error,
-        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
-            | dash_sdk::Error::ProtocolVersionNotActive { .. }
-    ) || matches!(
-        error,
-        dash_sdk::Error::NoAvailableAddressesToRetry(inner)
-            if matches!(
-                **inner,
-                dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
-            )
-    )
+/// Whether a single dispatch's `result` shows its node holds the transition:
+/// it admitted it, or answered that it already holds it
+/// ([`node_holds_transition`]). Only such a node may be asked about the
+/// transition. Every other outcome, a failed connection or a timeout
+/// included, does not show the node received it.
+pub(crate) fn dispatch_reached_node(result: &Result<(), dash_sdk::Error>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => node_holds_transition(error),
+    }
 }
 
 /// Whether `error` says a node already holds the transition
@@ -757,11 +769,12 @@ mod tests {
         );
     }
 
-    /// A broadcast that tracks its node keeps the node a dispatch may have
-    /// reached, and the shared SDK's list stays as it was; one never
-    /// delivered keeps none.
+    /// A broadcast that tracks its node returns a node only when one is known
+    /// to hold the transition: never for a broadcast never delivered, nor for
+    /// a dispatch whose connection failed. The shared SDK's list stays as it
+    /// was.
     #[tokio::test]
-    async fn should_keep_the_node_a_dispatch_may_have_reached() {
+    async fn should_return_no_node_unless_a_dispatch_shows_it_holds_the_transition() {
         let transition = withdrawal();
 
         let (delivery, endpoint) =
@@ -779,12 +792,39 @@ mod tests {
             matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
             "{delivery:?}"
         );
-        assert_eq!(endpoint.as_ref(), node.first());
+        assert!(endpoint.is_none(), "a failed connection delivered nothing");
         assert_eq!(
             refusing.address_list().get_live_addresses(),
             node,
             "the shared list neither loses nor bans the node"
         );
+    }
+
+    /// Only an admission or a node's answer that it already holds the
+    /// transition shows the node received it.
+    #[test]
+    fn should_read_only_an_admission_or_a_duplicate_as_the_node_holding_the_transition() {
+        use dash_sdk::dapi_client::DapiClientError;
+
+        assert!(dispatch_reached_node(&Ok(())));
+        assert!(dispatch_reached_node(&Err(dash_sdk::Error::AlreadyExists(
+            "held".to_string()
+        ))));
+        assert!(dispatch_reached_node(&Err(
+            dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                dash_sdk::Error::AlreadyExists("held".to_string())
+            ))
+        )));
+        for not_received in [
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(1), "wait".to_string()),
+            dash_sdk::Error::Generic("connection refused".to_string()),
+        ] {
+            assert!(
+                !dispatch_reached_node(&Err(not_received)),
+                "a dispatch that does not show the node holds it keeps no node"
+            );
+        }
     }
 
     /// A node that reads an input address's nonce as ahead of its own state

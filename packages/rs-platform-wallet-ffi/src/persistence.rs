@@ -2242,28 +2242,6 @@ impl PlatformWalletPersistence for FFIPersister {
             && self.callbacks.on_persist_wallet_changeset_fn.is_some()
     }
 
-    fn persists_shielded_settlement(&self) -> bool {
-        // `store` skips activity rows without the activity callback, saved
-        // notes without the notes callback and spent notes without the
-        // nullifiers-spent callback, and still acknowledges the round: a held
-        // identity create's record may only go where all three reach the
-        // host. The notes callback is the one that writes a consumed note the
-        // host never held: a spent-nullifier update skips a note it lacks.
-        #[cfg(feature = "shielded")]
-        {
-            self.callbacks.on_persist_shielded_activity_fn.is_some()
-                && self.callbacks.on_persist_shielded_notes_fn.is_some()
-                && self
-                    .callbacks
-                    .on_persist_shielded_nullifiers_spent_fn
-                    .is_some()
-        }
-        #[cfg(not(feature = "shielded"))]
-        {
-            false
-        }
-    }
-
     fn store_commits_inline(&self) -> bool {
         // The end callback commits (or rolls back) the host transaction before
         // `store` returns. `flush` is only a later general-purpose notification.
@@ -4801,7 +4779,7 @@ fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirecti
 }
 
 /// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
-/// 1 Confirmed, 2 Failed, 3 Unknown, 4 InputsConsumed).
+/// 1 Confirmed, 2 Failed, 3 Unknown).
 #[cfg(feature = "shielded")]
 fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
     match s {
@@ -4809,7 +4787,6 @@ fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
         ShieldedActivityStatus::Confirmed => 1,
         ShieldedActivityStatus::Failed => 2,
         ShieldedActivityStatus::Unknown => 3,
-        ShieldedActivityStatus::InputsConsumed => 4,
     }
 }
 
@@ -4821,7 +4798,6 @@ fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
         1 => ShieldedActivityStatus::Confirmed,
         2 => ShieldedActivityStatus::Failed,
         3 => ShieldedActivityStatus::Unknown,
-        4 => ShieldedActivityStatus::InputsConsumed,
         other => {
             tracing::warn!(
                 status = other,
@@ -4844,7 +4820,6 @@ mod activity_status_tests {
             (ShieldedActivityStatus::Confirmed, 1),
             (ShieldedActivityStatus::Failed, 2),
             (ShieldedActivityStatus::Unknown, 3),
-            (ShieldedActivityStatus::InputsConsumed, 4),
         ] {
             assert_eq!(activity_status_tag(&status), tag);
             assert_eq!(activity_status_from_tag(tag), status);
@@ -9900,61 +9875,6 @@ mod tests {
 
         assert!(FFIPersister::new(callbacks).store_commits_inline());
         assert!(!FFIPersister::new(PersistenceCallbacks::default()).store_commits_inline());
-    }
-
-    /// A host with the end callback commits inline, but persists a settled
-    /// shielded identity create only with the activity, the notes and the
-    /// nullifiers-spent callbacks: missing any, its records are kept.
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn shielded_settlement_needs_every_shielded_settlement_callback() {
-        unsafe extern "C" fn noop_activity(
-            _context: *mut c_void,
-            _wallet_id: *const u8,
-            _entries: *const crate::shielded_persistence::ShieldedActivityFFI,
-            _count: usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn noop_spent(
-            _context: *mut c_void,
-            _wallet_id: *const u8,
-            _entries: *const crate::shielded_persistence::ShieldedNullifierSpentFFI,
-            _count: usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn noop_notes(
-            _context: *mut c_void,
-            _wallet_id: *const u8,
-            _entries: *const crate::shielded_persistence::ShieldedNoteFFI,
-            _count: usize,
-        ) -> i32 {
-            0
-        }
-        let with = |activity: bool, notes: bool, spent: bool| {
-            FFIPersister::new(PersistenceCallbacks {
-                on_changeset_end_fn: Some(noop_end),
-                on_persist_shielded_activity_fn: activity.then_some(noop_activity as _),
-                on_persist_shielded_notes_fn: notes.then_some(noop_notes as _),
-                on_persist_shielded_nullifiers_spent_fn: spent.then_some(noop_spent as _),
-                ..PersistenceCallbacks::default()
-            })
-        };
-
-        assert!(with(true, true, true).persists_shielded_settlement());
-        assert!(with(false, true, true).store_commits_inline());
-        for (activity, notes, spent) in [
-            (false, true, true),
-            (true, false, true),
-            (true, true, false),
-            (false, false, false),
-        ] {
-            assert!(
-                !with(activity, notes, spent).persists_shielded_settlement(),
-                "{activity} {notes} {spent}"
-            );
-        }
     }
 
     /// Partial callback pairs attest only complete, independently testable

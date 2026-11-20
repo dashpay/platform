@@ -324,8 +324,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorPublicContactRequestUnconfirmed = 76
     /// An identity create from the shielded pool did not create its identity
     /// and can never execute, as proven reads show: its notes are spent and
-    /// the identity is absent. The wallet marked the notes spent. Do not
-    /// re-submit.
+    /// the identity is absent. The wallet keeps the notes reserved until a
+    /// scan sees them spent. Do not re-submit.
     case errorShieldedIdentityCreateInputsConsumed = 77
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -770,8 +770,9 @@ public enum PlatformWalletError: LocalizedError {
     /// An identity create from the pool did not create its identity and can
     /// never execute, as proven reads show (code 77): every note it spends is
     /// spent and the identity is absent at or above the height they were
-    /// spent by. The wallet marked the notes spent, dropped the saved
-    /// transition and marked the activity row failed; do not re-submit. The
+    /// spent by. The wallet keeps the notes reserved, the saved transition
+    /// and the pending activity row, as for an unconfirmed create, until a
+    /// scan sees the notes spent; do not re-submit. The
     /// reads do not say what spent the notes: Platform's paid failure path for
     /// this transition (a key-state check failing in the block, such as a
     /// public-key hash already registered, which credits the denomination

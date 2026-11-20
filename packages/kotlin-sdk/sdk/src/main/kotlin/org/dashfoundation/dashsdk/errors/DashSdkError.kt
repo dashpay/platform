@@ -802,8 +802,8 @@ sealed class DashSdkError(
          * `ErrorShieldedIdentityCreateInputsConsumed` (native code 77). An
          * identity create from the shielded pool did not create its identity
          * and can never execute, as proven reads show: its notes are spent and
-         * the identity is absent. The wallet marked the notes spent. Not
-         * retryable: the notes are gone. The reads do not say what spent them:
+         * the identity is absent. The wallet keeps the notes reserved until a
+         * scan sees them spent. Not retryable: the notes are gone. The reads do not say what spent them:
          * Platform's paid failure path for this transition (which credits the
          * denomination minus a penalty to its fallback address) is one
          * possible cause, the same notes spent by another transition (another

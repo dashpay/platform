@@ -311,62 +311,6 @@ fn gate_account_writers(vtable: &mut PersistenceCallbacks, registrations: bool, 
     }
 }
 
-/// Leave the shielded activity, note and spent-nullifier slots of `vtable`
-/// unwired when the concrete `bridge` inherits `NativePersistenceBridge`'s
-/// success-returning no-op for them (see [`bridge_overrides`]).
-///
-/// Those three slots are how `FFIPersister` answers
-/// [`persists_shielded_settlement`](platform_wallet::changeset::PlatformWalletPersistence::persists_shielded_settlement),
-/// and on that answer the wallet drops a settled identity create's recovery
-/// record. An inherited no-op would acknowledge the terminal activity row and
-/// the spent notes without keeping them, and the record would be gone.
-/// Unwired, settlement is not attested and the record stays.
-#[cfg(feature = "shielded")]
-pub(crate) fn restrict_shielded_settlement_writers(
-    env: &mut JNIEnv,
-    bridge: &JObject,
-    vtable: &mut PersistenceCallbacks,
-) {
-    let activity = bridge_overrides(
-        env,
-        bridge,
-        "onPersistShieldedActivity",
-        SHIELDED_ACTIVITY_DESCRIPTOR,
-    );
-    let notes = bridge_overrides(
-        env,
-        bridge,
-        "onPersistShieldedNote",
-        SHIELDED_NOTE_DESCRIPTOR,
-    );
-    let spent = bridge_overrides(
-        env,
-        bridge,
-        "onPersistShieldedNullifierSpent",
-        SHIELDED_NULLIFIER_SPENT_DESCRIPTOR,
-    );
-    gate_shielded_settlement_writers(vtable, activity, notes, spent);
-}
-
-/// The slot half of [`restrict_shielded_settlement_writers`].
-#[cfg(feature = "shielded")]
-fn gate_shielded_settlement_writers(
-    vtable: &mut PersistenceCallbacks,
-    activity: bool,
-    notes: bool,
-    spent: bool,
-) {
-    if !activity {
-        vtable.on_persist_shielded_activity_fn = None;
-    }
-    if !notes {
-        vtable.on_persist_shielded_notes_fn = None;
-    }
-    if !spent {
-        vtable.on_persist_shielded_nullifiers_spent_fn = None;
-    }
-}
-
 /// Which optional `NativePersistenceBridge` callbacks the concrete bridge
 /// supplies its own body for (see [`bridge_overrides`]).
 #[derive(Debug, Clone, Copy)]
@@ -2329,7 +2273,7 @@ unsafe extern "C" fn tramp_persist_shielded_notes(
                 env.call_method(
                     bridge,
                     "onPersistShieldedNote",
-                    SHIELDED_NOTE_DESCRIPTOR,
+                    "([B[BIJ[B[BJBJ[B)I",
                     &[
                         (&wid).into(),
                         (&nwid).into(),
@@ -2353,21 +2297,6 @@ unsafe extern "C" fn tramp_persist_shielded_notes(
     })
 }
 
-/// JNI descriptor of `onPersistShieldedNote`, the method
-/// [`tramp_persist_shielded_notes`] calls.
-#[cfg(feature = "shielded")]
-const SHIELDED_NOTE_DESCRIPTOR: &str = "([B[BIJ[B[BJBJ[B)I";
-
-/// JNI descriptor of `onPersistShieldedNullifierSpent`, the method
-/// [`tramp_persist_shielded_nullifiers_spent`] calls.
-#[cfg(feature = "shielded")]
-const SHIELDED_NULLIFIER_SPENT_DESCRIPTOR: &str = "([B[BI[B)I";
-
-/// JNI descriptor of `onPersistShieldedActivity`, the method
-/// [`tramp_persist_shielded_activity`] calls.
-#[cfg(feature = "shielded")]
-const SHIELDED_ACTIVITY_DESCRIPTOR: &str = "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I";
-
 #[cfg(feature = "shielded")]
 unsafe extern "C" fn tramp_persist_shielded_nullifiers_spent(
     context: *mut c_void,
@@ -2384,7 +2313,7 @@ unsafe extern "C" fn tramp_persist_shielded_nullifiers_spent(
                 env.call_method(
                     bridge,
                     "onPersistShieldedNullifierSpent",
-                    SHIELDED_NULLIFIER_SPENT_DESCRIPTOR,
+                    "([B[BI[B)I",
                     &[
                         (&wid).into(),
                         (&nwid).into(),
@@ -2500,7 +2429,7 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
                 env.call_method(
                     bridge,
                     "onPersistShieldedActivity",
-                    SHIELDED_ACTIVITY_DESCRIPTOR,
+                    "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I",
                     &[
                         (&wid).into(),
                         (&nwid).into(),
@@ -5697,40 +5626,6 @@ mod tests {
                 "int"
             ),
             ACCOUNT_REGISTRATION_DESCRIPTOR
-        );
-    }
-
-    /// A bridge inheriting the no-op shielded activity, note or
-    /// spent-nullifier writer loses that slot, so `FFIPersister` does not
-    /// attest shielded settlement and a settled identity create keeps its
-    /// recovery record.
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn shielded_settlement_slots_follow_the_bridges_overrides() {
-        for mask in 0..8u8 {
-            let (activity, notes, spent) = (mask & 1 != 0, mask & 2 != 0, mask & 4 != 0);
-            let mut vtable = build_vtable(std::ptr::null_mut());
-            gate_shielded_settlement_writers(&mut vtable, activity, notes, spent);
-            assert_eq!(vtable.on_persist_shielded_activity_fn.is_some(), activity);
-            assert_eq!(vtable.on_persist_shielded_notes_fn.is_some(), notes);
-            assert_eq!(
-                vtable.on_persist_shielded_nullifiers_spent_fn.is_some(),
-                spent
-            );
-            // `release_fn` must not run on the null context when this drops.
-            vtable.release_fn = None;
-        }
-        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
-        assert_eq!(
-            method_descriptor(&names(&["[B", "[B", "int", "[B"]), "int"),
-            SHIELDED_NULLIFIER_SPENT_DESCRIPTOR
-        );
-        assert_eq!(
-            method_descriptor(
-                &names(&["[B", "[B", "int", "long", "[B", "[B", "long", "byte", "long", "[B"]),
-                "int"
-            ),
-            SHIELDED_NOTE_DESCRIPTOR
         );
     }
 

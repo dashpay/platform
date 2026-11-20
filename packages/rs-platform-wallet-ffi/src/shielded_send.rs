@@ -1070,9 +1070,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Proven unable to execute: its notes are spent and its identity is absent. The notes
-        // were marked spent wallet-side; `out_identity_id` is not written, as the identity does
-        // not exist.
+        // Proven unable to execute: its notes are spent and its identity is absent.
+        // `out_identity_id` is not written, as the identity does not exist.
         Err(e @ PlatformWalletError::ShieldedIdentityCreateInputsConsumed { .. }) => e.into(),
         // Definitive failure: the transition was not executed and the spent notes were released.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
@@ -2446,8 +2445,6 @@ mod tests {
             .arm_redrive(
                 SubwalletId::new([7; 32], 9),
                 PendingRedrive {
-                    outcome_endpoint: None,
-                    identity_outcome: None,
                     activity_id: [8; 32],
                     anchor: [9; 32],
                     nullifiers: vec![[10; 32]],

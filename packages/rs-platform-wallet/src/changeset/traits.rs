@@ -315,23 +315,6 @@ pub trait PlatformWalletPersistence: Send + Sync {
         false
     }
 
-    /// Whether this backend persists both effects a settled shielded identity
-    /// create puts on a changeset: its activity rows
-    /// (`ShieldedChangeSet::activity_entries`) and its spent notes
-    /// (`ShieldedChangeSet::nullifiers_spent`).
-    ///
-    /// The shielded sync pass drops a held identity create's recovery record
-    /// only after a store (and, where it is not inline, a flush) of those
-    /// effects succeeds on a backend that answers `true`. A successful
-    /// `store` alone does not show they were written.
-    ///
-    /// **Fail-closed:** the default is `false`. Such a backend keeps the
-    /// record, and every pass writes the create's row and spent notes again
-    /// from it: repeated, never lost.
-    fn persists_shielded_settlement(&self) -> bool {
-        false
-    }
-
     /// Compatibility summary for older invitation callers. It is true when the
     /// backend attests atomic changesets plus durably persisted invitation rows
     /// and asset-lock funding indices. This does not attest restart hydration;

@@ -1124,9 +1124,9 @@ pub enum PlatformWalletError {
     /// The shielded identity create (Type 20) did not create its identity and can never execute,
     /// as proven reads show: every nullifier it spends is spent at or before
     /// `consumed_by_height`, and the identity `identity_id` is absent at a height at or above it.
-    /// Its notes are gone, so the wallet marks them spent and marks its activity row failed; the
-    /// create's recovery record keeps the outcome until the sync pass has written that row
-    /// durably. Nothing is to be re-submitted.
+    /// The notes stay reserved and the create's recovery record and pending activity row are
+    /// kept, as for an unconfirmed create, until a scan sees the notes spent. Nothing is to be
+    /// re-submitted.
     ///
     /// The reads show that the inputs are taken, not what took them. One possible cause is
     /// Platform's paid failure path for this transition (a key-state check failing in the block),

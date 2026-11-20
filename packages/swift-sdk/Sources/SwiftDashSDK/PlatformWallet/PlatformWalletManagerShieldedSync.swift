@@ -24,11 +24,6 @@ public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
     public let identityId: Data
     public let message: String
     public var errorDescription: String? { message }
-
-    public init(identityId: Data, message: String) {
-        self.identityId = identityId
-        self.message = message
-    }
 }
 
 /// Per-wallet outcome from a completed shielded sync pass.

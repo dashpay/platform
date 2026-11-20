@@ -232,10 +232,6 @@ struct ShieldedActivityListView: View {
                         Text("Failed")
                             .font(.caption2)
                             .foregroundColor(.red)
-                    } else if entry.status == 4 {
-                        Text("Failed, inputs spent")
-                            .font(.caption2)
-                            .foregroundColor(.red)
                     }
                 }
             }
@@ -260,7 +256,6 @@ struct ShieldedActivityDetailView: View {
         case 0: return "Pending"
         case 1: return "Confirmed"
         case 2: return "Failed"
-        case 4: return "Failed, inputs spent"
         default: return "Unknown"
         }
     }

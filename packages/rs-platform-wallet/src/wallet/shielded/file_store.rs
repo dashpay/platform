@@ -23,9 +23,8 @@ use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retentio
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
-    IdentityCreateOutcome, PendingRedrive, PrivateContactPayment, PrivatePaymentEntry,
-    PrivatePaymentRecord, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
-    SubwalletId, SubwalletState,
+    PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord, ShieldedNote,
+    ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
@@ -192,8 +191,8 @@ impl FileBackedShieldedStore {
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             tx.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment, anchor_height, outcome_endpoint, identity_outcome, identity_outcome_height) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment, anchor_height) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -210,9 +209,6 @@ impl FileBackedShieldedStore {
                     redrive
                         .anchor_height
                         .and_then(|height| i64::try_from(height).ok()),
-                    redrive.outcome_endpoint,
-                    identity_outcome_code(redrive.identity_outcome),
-                    identity_outcome_height(redrive.identity_outcome),
                 ],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
@@ -483,38 +479,6 @@ impl FileBackedShieldedStore {
                     FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
                 })?;
         }
-        // The node an identity create was delivered to, when one was kept
-        // (`PendingRedrive::outcome_endpoint`): NULL for every other record.
-        if !columns
-            .iter()
-            .any(|existing| existing == "outcome_endpoint")
-        {
-            pending_conn
-                .execute(
-                    "ALTER TABLE shielded_pending_spends ADD COLUMN outcome_endpoint TEXT",
-                    [],
-                )
-                .map_err(|e| {
-                    FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
-                })?;
-        }
-        // Where a held identity create stands (`PendingRedrive::identity_outcome`):
-        // NULL for every other record.
-        for (column, ty) in [
-            ("identity_outcome", "INTEGER"),
-            ("identity_outcome_height", "INTEGER"),
-        ] {
-            if !columns.iter().any(|existing| existing == column) {
-                pending_conn
-                    .execute(
-                        &format!("ALTER TABLE shielded_pending_spends ADD COLUMN {column} {ty}"),
-                        [],
-                    )
-                    .map_err(|e| {
-                        FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
-                    })?;
-            }
-        }
         // The private payment journal: one record per private contact request
         // payment that may have reached the network, by wallet and entry
         // commitment, and the wallets whose journal is open. Never purged.
@@ -612,8 +576,7 @@ impl FileBackedShieldedStore {
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
                  attempts, identity_nonce_finalized, identity_user_abandoned, \
-                 private_contact_payment, anchor_height, outcome_endpoint, identity_outcome, \
-                 identity_outcome_height FROM shielded_pending_spends",
+                 private_contact_payment, anchor_height FROM shielded_pending_spends",
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
@@ -648,36 +611,6 @@ impl FileBackedShieldedStore {
                     .ok()
                     .flatten()
                     .and_then(|height| u64::try_from(height).ok());
-                // A node that does not read is not known: the create stays
-                // unconfirmed rather than being read from another node.
-                let outcome_endpoint = row.get::<_, Option<String>>(11).ok().flatten();
-                // An identity create from the pool is held whatever its
-                // outcome column holds: one saved before creates were held
-                // (NULL), or one whose outcome does not read, is held awaiting
-                // its outcome, never left to the scan. A record saved before
-                // creates were held from their save is also held once it has
-                // a node, as that build held it.
-                let identity_create = classifiable_st_bytes.as_deref().is_some_and(|bytes| {
-                    matches!(
-                        StateTransition::deserialize_from_bytes_trusted(bytes),
-                        Ok(StateTransition::IdentityCreateFromShieldedPool(_))
-                    )
-                });
-                let saved_code = row.get::<_, Option<i64>>(12);
-                let identity_outcome = (identity_create || outcome_endpoint.is_some()).then(|| {
-                    saved_code
-                        .as_ref()
-                        .ok()
-                        .and_then(|code| {
-                            read_identity_outcome(
-                                *code,
-                                row.get::<_, Option<i64>>(13).ok().flatten(),
-                            )
-                        })
-                        .unwrap_or(IdentityCreateOutcome::Awaiting)
-                });
-                // Kept durably below, so the row says what was restored.
-                let promoted = identity_create && !matches!(saved_code, Ok(Some(_)));
                 let decoded: rusqlite::Result<_> = (|| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -696,23 +629,16 @@ impl FileBackedShieldedStore {
                     readable_wallet_id,
                     private_contact_payment,
                     anchor_height,
-                    outcome_endpoint,
-                    identity_outcome,
-                    promoted,
                     decoded,
                 ))
             })
             .map_err(|e| FileShieldedStoreError::Storage(format!("query rehydrate: {e}")))?;
-        let mut promote = Vec::new();
         for row in rows {
             let (
                 classifiable_st_bytes,
                 readable_wallet_id,
                 private_contact_payment,
                 anchor_height,
-                outcome_endpoint,
-                identity_outcome,
-                promoted,
                 decoded,
             ) = row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
                 account_index: None,
@@ -798,8 +724,6 @@ impl FileBackedShieldedStore {
                 Ok((
                     SubwalletId::new(wallet_id, account_index),
                     PendingRedrive {
-                        outcome_endpoint,
-                        identity_outcome,
                         activity_id,
                         anchor,
                         nullifiers,
@@ -845,27 +769,7 @@ impl FileBackedShieldedStore {
                     redrive.anchor_height,
                 );
             }
-            if promoted {
-                promote.push((id, redrive.activity_id));
-            }
             sw.arm_redrive(redrive);
-        }
-        drop(stmt);
-        for (id, activity_id) in promote {
-            conn.execute(
-                "UPDATE shielded_pending_spends SET identity_outcome = ?4, \
-                 identity_outcome_height = NULL \
-                 WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
-                rusqlite::params![
-                    id.wallet_id.as_slice(),
-                    id.account_index,
-                    activity_id.as_slice(),
-                    identity_outcome_code(Some(IdentityCreateOutcome::Awaiting)),
-                ],
-            )
-            .map_err(|e| {
-                FileShieldedStoreError::Storage(format!("hold restored identity create: {e}"))
-            })?;
         }
         Ok(())
     }
@@ -1017,43 +921,6 @@ impl FileBackedShieldedStore {
         }
         Ok(())
     }
-}
-
-/// The `identity_outcome` column of a record's
-/// [`PendingRedrive::identity_outcome`]: NULL for none, 0 awaiting, 1 created,
-/// 2 inputs consumed (with its height in `identity_outcome_height`).
-fn identity_outcome_code(outcome: Option<IdentityCreateOutcome>) -> Option<i64> {
-    outcome.map(|outcome| match outcome {
-        IdentityCreateOutcome::Awaiting => 0,
-        IdentityCreateOutcome::Created => 1,
-        IdentityCreateOutcome::InputsConsumed { .. } => 2,
-    })
-}
-
-/// The `identity_outcome_height` column of a record's
-/// [`PendingRedrive::identity_outcome`]. A height past SQLite's integer range
-/// is not kept, which reads the outcome back as awaiting.
-fn identity_outcome_height(outcome: Option<IdentityCreateOutcome>) -> Option<i64> {
-    match outcome {
-        Some(IdentityCreateOutcome::InputsConsumed { consumed_by_height }) => {
-            i64::try_from(consumed_by_height).ok()
-        }
-        _ => None,
-    }
-}
-
-/// The [`PendingRedrive::identity_outcome`] [`identity_outcome_code`] and
-/// [`identity_outcome_height`] wrote. A value that does not read is a held
-/// create whose outcome is not known: it is read again.
-fn read_identity_outcome(code: Option<i64>, height: Option<i64>) -> Option<IdentityCreateOutcome> {
-    let code = code?;
-    Some(match (code, height.and_then(|h| u64::try_from(h).ok())) {
-        (1, _) => IdentityCreateOutcome::Created,
-        (2, Some(consumed_by_height)) => {
-            IdentityCreateOutcome::InputsConsumed { consumed_by_height }
-        }
-        _ => IdentityCreateOutcome::Awaiting,
-    })
 }
 
 impl ShieldedStore for FileBackedShieldedStore {
@@ -1521,84 +1388,6 @@ impl ShieldedStore for FileBackedShieldedStore {
             .collect())
     }
 
-    fn set_redrive_outcome_endpoint(
-        &mut self,
-        id: SubwalletId,
-        activity_id: &[u8; 32],
-        endpoint: &str,
-    ) -> Result<bool, Self::Error> {
-        // Persist first, as `bump_redrive_attempts` does.
-        if self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.redrive_attempts(activity_id))
-            .is_none()
-        {
-            return Ok(false);
-        }
-        {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            conn.execute(
-                "UPDATE shielded_pending_spends SET outcome_endpoint = ?4, \
-                 identity_outcome = COALESCE(identity_outcome, ?5) \
-                 WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
-                rusqlite::params![
-                    id.wallet_id.as_slice(),
-                    id.account_index,
-                    activity_id.as_slice(),
-                    endpoint,
-                    identity_outcome_code(Some(IdentityCreateOutcome::Awaiting)),
-                ],
-            )
-            .map_err(|e| {
-                FileShieldedStoreError::Storage(format!("keep redrive outcome endpoint: {e}"))
-            })?;
-        }
-        Ok(self
-            .subwallets
-            .get_mut(&id)
-            .is_some_and(|sw| sw.set_redrive_outcome_endpoint(activity_id, endpoint)))
-    }
-
-    fn set_redrive_identity_outcome(
-        &mut self,
-        id: SubwalletId,
-        activity_id: &[u8; 32],
-        outcome: IdentityCreateOutcome,
-    ) -> Result<bool, Self::Error> {
-        // Persist first, as `bump_redrive_attempts` does.
-        if self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.redrive_attempts(activity_id))
-            .is_none()
-        {
-            return Ok(false);
-        }
-        {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            conn.execute(
-                "UPDATE shielded_pending_spends SET identity_outcome = ?4, \
-                 identity_outcome_height = ?5 \
-                 WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
-                rusqlite::params![
-                    id.wallet_id.as_slice(),
-                    id.account_index,
-                    activity_id.as_slice(),
-                    identity_outcome_code(Some(outcome)),
-                    identity_outcome_height(Some(outcome)),
-                ],
-            )
-            .map_err(|e| {
-                FileShieldedStoreError::Storage(format!("keep redrive identity outcome: {e}"))
-            })?;
-        }
-        Ok(self
-            .subwallets
-            .get_mut(&id)
-            .is_some_and(|sw| sw.set_redrive_identity_outcome(activity_id, outcome)))
-    }
-
     fn bump_redrive_attempts(
         &mut self,
         id: SubwalletId,
@@ -1978,8 +1767,6 @@ mod tests {
         let path = temp_tree_path("redrive_roundtrip");
         let id = SubwalletId::new([7u8; 32], 0);
         let redrive = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [1u8; 32],
             anchor: [2u8; 32],
             nullifiers: vec![[3u8; 32], [4u8; 32]],
@@ -2042,8 +1829,6 @@ mod tests {
         let wallet_id = [0x5A; 32];
         let id = SubwalletId::new(wallet_id, 0);
         let record = |activity: u8, nullifier: u8| PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [activity; 32],
             anchor: [2u8; 32],
             nullifiers: vec![[nullifier; 32]],
@@ -2117,8 +1902,6 @@ mod tests {
         let id = SubwalletId::new(wallet_id, 0);
         let other = SubwalletId::new([0x5D; 32], 0);
         let record = |activity: u8, nullifier: u8| PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [activity; 32],
             anchor: [2u8; 32],
             nullifiers: vec![[nullifier; 32]],
@@ -2199,8 +1982,6 @@ mod tests {
         let path = temp_tree_path("identity_debit_guard");
         let id = SubwalletId::new([9u8; 32], 4);
         let redrive = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [1u8; 32],
             anchor: [2u8; 32],
             nullifiers: vec![],
@@ -2262,10 +2043,6 @@ mod tests {
                 !record.identity_user_abandoned,
                 "legacy guards require explicit recovery"
             );
-            assert_eq!(
-                record.identity_outcome, None,
-                "only an identity create is held for its outcome"
-            );
             record.identity_nonce_finalized = true;
             record.identity_user_abandoned = true;
             store.arm_redrive(id, record).unwrap();
@@ -2303,8 +2080,6 @@ mod tests {
                 .arm_redrive(
                     SubwalletId::new([1; 32], 2),
                     PendingRedrive {
-                        outcome_endpoint: None,
-                        identity_outcome: None,
                         activity_id: [2; 32],
                         anchor: [3; 32],
                         nullifiers: vec![],
@@ -2362,8 +2137,6 @@ mod tests {
         }
         .into();
         let record = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [0x11; 32],
             anchor: [0x52; 32],
             nullifiers: vec![[0x13; 32]],
@@ -2478,8 +2251,6 @@ mod tests {
             }
             .into();
             let guard = PendingRedrive {
-                outcome_endpoint: None,
-                identity_outcome: None,
                 activity_id: [0x61; 32],
                 anchor: [0x71; 32],
                 nullifiers: vec![],
@@ -2495,8 +2266,6 @@ mod tests {
                     .arm_redrive(
                         note_id,
                         PendingRedrive {
-                            outcome_endpoint: None,
-                            identity_outcome: None,
                             activity_id: [0x21; 32],
                             anchor: [0x51; 32],
                             nullifiers: vec![[0x91; 32]],
@@ -2563,8 +2332,6 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
-                        outcome_endpoint: None,
-                        identity_outcome: None,
                         activity_id: [0xD1; 32],
                         anchor: [0xC1; 32],
                         nullifiers: vec![],
@@ -2619,8 +2386,6 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
-                        outcome_endpoint: None,
-                        identity_outcome: None,
                         activity_id: [0xD2; 32],
                         anchor: [0xF1; 32],
                         nullifiers: vec![[0xC2; 32]],
@@ -2655,8 +2420,6 @@ mod tests {
         let path = temp_tree_path("redrive_park_failure");
         let id = SubwalletId::new([0x91; 32], 2);
         let record = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [0x12; 32],
             anchor: [0x23; 32],
             nullifiers: vec![],
@@ -2685,8 +2448,6 @@ mod tests {
         let path = temp_tree_path("clear_redrive_failure");
         let id = SubwalletId::new([0x91; 32], 2);
         let redrive = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [0x12; 32],
             anchor: [0x23; 32],
             nullifiers: vec![],
@@ -2737,8 +2498,6 @@ mod tests {
         let wallet_id = [0xA4; 32];
         let id = SubwalletId::new(wallet_id, 8);
         let identity_guard = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [0x15; 32],
             anchor: [0x26; 32],
             nullifiers: vec![],
@@ -2749,8 +2508,6 @@ mod tests {
             anchor_height: None,
         };
         let note_spend = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [0x48; 32],
             anchor: [0x59; 32],
             nullifiers: vec![[0x6A; 32]],
@@ -2797,8 +2554,6 @@ mod tests {
         let id_a = SubwalletId::new([0xA1; 32], 0);
         let id_b = SubwalletId::new([0xB2; 32], 0);
         let redrive = |activity: u8, nf: u8| PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [activity; 32],
             anchor: [0x22; 32],
             nullifiers: vec![[nf; 32]],
@@ -2877,8 +2632,6 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
-                        outcome_endpoint: None,
-                        identity_outcome: None,
                         activity_id: [0x7; 32],
                         anchor: [0x22; 32],
                         nullifiers: vec![nf],
@@ -3303,8 +3056,6 @@ mod tests {
             account_reference: 7,
         };
         let redrive = PendingRedrive {
-            outcome_endpoint: None,
-            identity_outcome: None,
             activity_id: [0x21; 32],
             anchor: [0x22; 32],
             nullifiers: vec![[0x23; 32], [0x24; 32]],
@@ -3459,8 +3210,6 @@ mod tests {
             let wallet_id = [0x5C; 32];
             let id = SubwalletId::new(wallet_id, 0);
             let redrive = PendingRedrive {
-                outcome_endpoint: None,
-                identity_outcome: None,
                 activity_id: [0x31; 32],
                 anchor: [0x32; 32],
                 nullifiers: vec![[0x33; 32]],
@@ -3562,8 +3311,6 @@ mod tests {
                     .arm_private_contact_payment(
                         id,
                         PendingRedrive {
-                            outcome_endpoint: None,
-                            identity_outcome: None,
                             activity_id: [0x31; 32],
                             anchor: [0x32; 32],
                             nullifiers: vec![[0x33; 32]],
@@ -3629,8 +3376,6 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
-                        outcome_endpoint: None,
-                        identity_outcome: None,
                         activity_id: [0x41; 32],
                         anchor: [0x42; 32],
                         nullifiers: vec![[0x43; 32]],
