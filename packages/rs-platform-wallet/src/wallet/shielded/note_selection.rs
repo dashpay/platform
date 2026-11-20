@@ -17,11 +17,7 @@ use dpp::shielded::{
     is_allowed_identity_create_denomination, max_shielded_actions_per_transition,
 };
 use dpp::state_transition::StateTransitionType;
-use dpp::version::feature_initial_protocol_versions::{
-    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-    SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-};
-use dpp::version::{PlatformVersion, ProtocolVersion};
+use dpp::version::PlatformVersion;
 use dpp::withdrawal::preflight_shielded_withdrawal;
 use dpp::ProtocolError;
 use sha2::{Digest, Sha256};
@@ -210,16 +206,19 @@ pub fn select_notes_with_fee<'a>(
             )
         })?;
         let count = index + 1;
+        // The transition carries this many actions: the fee is priced at it and the size
+        // limit admits it, so a quote never prices actions that cannot fit.
+        let actions = count.max(min_actions);
         let fee = fee_kind
-            .compute(count.max(min_actions), platform_version)
+            .compute(actions, platform_version)
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         required = amount.checked_add(fee).ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError("amount + fee overflows u64".to_string())
         })?;
         if total >= required {
-            if count > max_notes {
+            if actions > max_notes {
                 return Err(PlatformWalletError::ShieldedSpendTooManyNotes {
-                    needed: count,
+                    needed: actions,
                     max: max_notes,
                 });
             }
@@ -274,8 +273,12 @@ fn sweep_amount(
                 "shielded note values sum overflows u64".to_string(),
             )
         })?;
+        let actions = (index + 1).max(SPEND_MIN_ACTIONS);
+        if actions > max_notes {
+            break;
+        }
         let fee = fee_kind
-            .compute((index + 1).max(SPEND_MIN_ACTIONS), platform_version)
+            .compute(actions, platform_version)
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         if let Some(sent) = total.checked_sub(fee).filter(|sent| *sent > 0) {
             if best.is_none_or(|best| sent > best) {
@@ -332,27 +335,14 @@ impl ShieldedSpendKind {
         }
     }
 
-    /// The state transition the spend executes as, and the protocol version it activates at:
-    /// the activation DPP's `StateTransition::active_version_range` and Drive-ABCI's
-    /// `is_allowed` gate enforce.
-    fn activation(self) -> (StateTransitionType, ProtocolVersion) {
+    /// The state transition the spend executes as. Its active protocol versions are DPP's
+    /// (`StateTransitionType::fixed_active_version_range`), the ones consensus applies.
+    fn transition_type(self) -> StateTransitionType {
         match self {
-            ShieldedSpendKind::Transfer => (
-                StateTransitionType::ShieldedTransfer,
-                SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-            ),
-            ShieldedSpendKind::Unshield => (
-                StateTransitionType::Unshield,
-                SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-            ),
-            ShieldedSpendKind::Withdrawal { .. } => (
-                StateTransitionType::ShieldedWithdrawal,
-                SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-            ),
-            ShieldedSpendKind::IdentityTopUp => (
-                StateTransitionType::IdentityTopUpFromShieldedPool,
-                IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-            ),
+            ShieldedSpendKind::Transfer => StateTransitionType::ShieldedTransfer,
+            ShieldedSpendKind::Unshield => StateTransitionType::Unshield,
+            ShieldedSpendKind::Withdrawal { .. } => StateTransitionType::ShieldedWithdrawal,
+            ShieldedSpendKind::IdentityTopUp => StateTransitionType::IdentityTopUpFromShieldedPool,
         }
     }
 
@@ -387,9 +377,12 @@ pub struct ShieldedSpendPlan {
     /// What the spend reserves for the recipient: the amount sent, or for a withdrawal the
     /// reserve for Core, of which the Core fee is taken.
     pub amount: Credits,
-    /// What the recipient receives. The amount, except for a withdrawal: there the output DPP
-    /// pays for the reserve, in credits: the reserve truncated to whole duffs, minus the Core
-    /// fee at the kind's rate from protocol version 14.
+    /// What the recipient receives. The amount, except for a withdrawal: there it is a quote
+    /// at the plan's protocol version, in credits, of the output DPP pays for the reserve: the
+    /// reserve truncated to whole duffs, with no Core fee taken from it at protocol versions 12
+    /// and 13, and minus the Core fee at the kind's rate from 14. The spend checks `amount` and
+    /// `fee`, not this: Drive-ABCI pays a queued withdrawal at the version of the block that
+    /// pools it, so one pooled after an upgrade can pay a different output.
     pub recipient_amount: Credits,
     /// The exact fee for the selected notes.
     pub fee: Credits,
@@ -502,8 +495,11 @@ impl ShieldedSpendPlan {
 ///
 /// A withdrawal must pass DPP's shared preflight ([`ensure_withdrawal_amount_in_range`]): a rate
 /// that cannot execute is refused, and an amount outside the protocol bounds is
-/// [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]. The plan's `recipient_amount` is
-/// the rounded output DPP pays; its `amount` stays the gross reserve.
+/// [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]. The plan's `amount` stays the
+/// gross reserve, which the spend checks with the fee. Its `recipient_amount` is a quote of the
+/// output DPP pays at `platform_version`, not checked by the spend: protocol versions 12 and 13
+/// truncate the reserve to whole duffs and take no Core fee from it, 14 also takes the Core fee,
+/// and a withdrawal still queued when a later version pools it is paid at that version.
 pub fn plan_spend(
     unspent: &[ShieldedNote],
     kind: ShieldedSpendKind,
@@ -579,15 +575,26 @@ pub(crate) fn ensure_spend_kind_active(
     kind: ShieldedSpendKind,
     platform_version: &PlatformVersion,
 ) -> Result<(), PlatformWalletError> {
-    let (transition, active_from) = kind.activation();
-    if platform_version.protocol_version < active_from {
+    let transition = kind.transition_type();
+    let version = platform_version.protocol_version;
+    // Every spend kind executes as a transition whose range does not depend on its contents, so
+    // DPP answers before anything is built; an unanswered type is refused, never assumed active.
+    let range = transition.fixed_active_version_range().ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(format!(
+            "the active protocol versions of {transition} depend on its contents"
+        ))
+    })?;
+    if !range.contains(&version) {
+        // Below the range, its start is the version to reach; above it, its end is the last
+        // version that accepts the transition, as Drive-ABCI reports it.
+        let boundary = if version > *range.end() {
+            *range.end()
+        } else {
+            *range.start()
+        };
         return Err(PlatformWalletError::ShieldedBuildError(
-            StateTransitionNotActiveError::new(
-                transition.to_string(),
-                platform_version.protocol_version,
-                active_from,
-            )
-            .to_string(),
+            StateTransitionNotActiveError::new(transition.to_string(), version, boundary)
+                .to_string(),
         ));
     }
     Ok(())
@@ -1399,6 +1406,37 @@ mod tests {
             .expect("fits one transition");
             assert_eq!(fits.note_count(), max, "{kind:?}");
         }
+    }
+
+    /// The size limit admits the action count the fee is priced at, not only the selected notes:
+    /// one note covering everything with an action floor past the limit is refused, not quoted.
+    #[test]
+    fn should_refuse_an_action_floor_past_the_transition_size_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max = max_notes_per_transition(platform_version);
+        let notes = vec![test_note(1_000 * NOTE, 0)];
+
+        let selected = select_notes_with_fee(
+            &notes,
+            NOTE,
+            max + 1,
+            ShieldedFeeKind::Base,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                selected,
+                Err(PlatformWalletError::ShieldedSpendTooManyNotes { needed, max: limit })
+                    if needed == max + 1 && limit == max
+            ),
+            "got {:?}",
+            selected.map(|(notes, ..)| notes.len())
+        );
+        // At the limit the same note is still quoted.
+        assert!(
+            select_notes_with_fee(&notes, NOTE, max, ShieldedFeeKind::Base, platform_version)
+                .is_ok()
+        );
     }
 
     /// The 20 KiB transition-size limit, not the action cap, bounds a spend: an amount that

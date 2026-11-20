@@ -3773,6 +3773,7 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
         ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?;
     }
     reserve_notes_matching(
+        Some(sdk),
         store,
         id,
         amount,
@@ -4027,15 +4028,33 @@ async fn reserve_notes_covering<S: ShieldedStore>(
     outputs: usize,
     fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
-    reserve_notes_matching(store, id, amount, outputs, fee_kind, None, sdk.version()).await
+    reserve_notes_matching(
+        None,
+        store,
+        id,
+        amount,
+        outputs,
+        fee_kind,
+        None,
+        sdk.version(),
+    )
+    .await
 }
 
 /// [`reserve_notes_covering`], refusing with [`PlatformWalletError::ShieldedPlanChanged`],
 /// before any note is reserved, a selection that does not match `expected_plan`: the plan
 /// digest of a spend of that kind. With a plan, a selection the notes can no longer make (they
-/// were spent or reserved since, or no longer cover it) is a changed plan too.
+/// were spent or reserved since, no longer cover it, or no longer fit one transition) is a
+/// changed plan too.
+///
+/// With `network_version_gate` (the four spends [`reserve_unspent_notes`] serves, which gate
+/// on it before waiting too), a network version that SDK verified while the spend waited for
+/// the store, and has no tables for, is refused with
+/// [`PlatformWalletError::NetworkProtocolVersionUnsupported`] once the lock is held, before any
+/// note is selected or reserved.
 #[allow(clippy::too_many_arguments)]
 async fn reserve_notes_matching<S: ShieldedStore>(
+    network_version_gate: Option<&Arc<dash_sdk::Sdk>>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     amount: u64,
@@ -4045,14 +4064,22 @@ async fn reserve_notes_matching<S: ShieldedStore>(
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
     let mut guard = store.write().await;
+    // A verified response can record a network version this SDK has no tables for while the
+    // spend waits for the store: refuse it before selecting at the old tables or marking notes.
+    if let Some(sdk) = network_version_gate {
+        ensure_verified_network_version_supported(sdk)?;
+    }
     let unspent = guard
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let selection =
         match select_notes_with_fee(&unspent, amount, outputs, fee_kind, platform_version) {
+            // The notes no longer make the confirmed selection: spent or reserved since, no
+            // longer covering it, or now needing more actions than one transition fits.
             Err(
                 PlatformWalletError::ShieldedNoUnspentNotes
-                | PlatformWalletError::ShieldedInsufficientBalance { .. },
+                | PlatformWalletError::ShieldedInsufficientBalance { .. }
+                | PlatformWalletError::ShieldedSpendTooManyNotes { .. },
             ) if expected_plan.is_some() => {
                 return Err(PlatformWalletError::ShieldedPlanChanged {
                     fresh_fee: 0,
@@ -9894,6 +9921,51 @@ mod spend_plan_tests {
         }
     }
 
+    /// With a plan, notes that still cover it but no longer fit one transition (another spend
+    /// took the large note it used) are a changed plan; without one the size error stays.
+    #[tokio::test]
+    async fn should_report_a_selection_that_no_longer_fits_one_transition_as_a_changed_plan() {
+        let amount = 6 * NOTE;
+        let mut notes = vec![note(0, 10 * NOTE)];
+        notes.extend((1..=7).map(|i| note(i, NOTE)));
+        let store = store_with(&notes).await;
+        let plan = plan(&store, amount).await;
+        store.write().await.mark_spent(ID, &[0; 32]).expect("spent");
+        let reserve = |expected: Option<[u8; 32]>| {
+            let store = Arc::clone(&store);
+            async move {
+                reserve_unspent_notes(
+                    &sdk(),
+                    &store,
+                    ID,
+                    amount,
+                    ShieldedSpendKind::Transfer,
+                    expected.as_ref(),
+                    PlatformVersion::latest(),
+                )
+                .await
+                .map(|(selected, ..)| selected.len())
+            }
+        };
+
+        let planned = reserve(Some(plan.digest)).await;
+        assert!(
+            matches!(
+                planned,
+                Err(PlatformWalletError::ShieldedPlanChanged { .. })
+            ),
+            "with a plan: got {planned:?}"
+        );
+        let bare = reserve(None).await;
+        assert!(
+            matches!(
+                bare,
+                Err(PlatformWalletError::ShieldedSpendTooManyNotes { needed: 7, max: 6 })
+            ),
+            "without a plan: got {bare:?}"
+        );
+    }
+
     /// The public identity top-up runs against a plan as the other spends do: an unchanged
     /// plan reaches the mocked anchor fetch, a moved one is refused with nothing reserved.
     #[tokio::test]
@@ -10701,6 +10773,60 @@ mod spend_plan_tests {
                 );
                 drop(spend);
                 drop(held);
+                let _ = std::fs::remove_file(&case.path);
+            }
+        }
+    }
+
+    /// A network version this SDK has no tables for, verified by another task while a spend
+    /// waits for the store lock to reserve its notes, refuses every spend kind, planned or not,
+    /// once the lock is held: nothing is selected at the old tables or reserved, and the host
+    /// gets the app-update signal without an anchor request.
+    #[tokio::test]
+    async fn should_refuse_every_spend_when_the_network_version_turns_unsupported_while_it_waits_for_the_store(
+    ) {
+        use std::task::{Context, Poll, Waker};
+
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        for kind in EVERY_SPEND_KIND {
+            for planned in [true, false] {
+                let case =
+                    VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+                // Hold the store: the spend passes its early gate and waits for the lock.
+                let held = case.store.read().await;
+                let mut spend = Box::pin(case.run(kind, planned.then_some(&case.plan.digest)));
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(
+                    spend.as_mut().poll(&mut cx).is_pending(),
+                    "{kind:?} planned={planned} waits for the store"
+                );
+                case.sdk
+                    .mock_verified_protocol_version(unsupported)
+                    .expect("a mock SDK");
+                drop(held);
+
+                let Poll::Ready(refused) = spend.as_mut().poll(&mut cx) else {
+                    panic!("{kind:?} planned={planned} went on to the anchor fetch");
+                };
+                assert!(
+                    matches!(
+                        &refused,
+                        Err(PlatformWalletError::NetworkProtocolVersionUnsupported { network, .. })
+                            if *network == unsupported
+                    ),
+                    "{kind:?} planned={planned}: got {refused:?}"
+                );
+                drop(spend);
+                assert_eq!(
+                    case.store
+                        .read()
+                        .await
+                        .get_unspent_notes(ID)
+                        .expect("notes")
+                        .len(),
+                    1,
+                    "nothing reserved ({kind:?} planned={planned})"
+                );
                 let _ = std::fs::remove_file(&case.path);
             }
         }
