@@ -1082,10 +1082,8 @@ sealed class DashSdkError(
             77 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
             78 -> PlatformWallet.ShieldedSpendTooManyNotes(message, cause) // ErrorShieldedSpendTooManyNotes
             79 -> PlatformWallet.ShieldedWithdrawalAmountOutOfRange(message, cause) // ErrorShieldedWithdrawalAmountOutOfRange
-            81 -> PlatformWallet.NetworkProtocolVersionUnsupported(message, cause) // ErrorNetworkProtocolVersionUnsupported
-
-        /**
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            81 -> PlatformWallet.NetworkProtocolVersionUnsupported(message, cause) // ErrorNetworkProtocolVersionUnsupported
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
