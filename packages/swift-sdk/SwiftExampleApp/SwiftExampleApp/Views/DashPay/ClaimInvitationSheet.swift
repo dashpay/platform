@@ -204,6 +204,13 @@ struct ClaimInvitationSheet: View {
                 // The wallet leases the slot the claim's keys are derived at;
                 // a retry of this invitation gets the same slot back.
                 var slot = try await wallet.acquireInvitationClaimSlot(uri: submittedURI)
+                // A lease this sheet held for another invitation (the URI was
+                // edited after a refused claim) is given back first: nothing
+                // else would ever release it. A refusal means it may have
+                // reached Platform, and its outcome frees it.
+                if let previous = claimSlot, previous.invitationOutPoint != slot.invitationOutPoint {
+                    try? await wallet.releaseInvitationClaimSlot(previous)
+                }
                 claimSlot = slot
                 var slotTakenRetries = 0
                 var newIdentityId: Identifier?
