@@ -49,8 +49,9 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
 
     private func plan(_ kind: ShieldedSpendKind) -> ShieldedSpendPlan {
         ShieldedSpendPlan(
-            kind: kind, amount: 1, recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3,
-            noteCount: 1, digest: Data(repeating: 9, count: 32))
+            kind: kind, coreFeePerByte: kind == .withdrawal ? 1 : 0, amount: 1, recipientAmount: 1,
+            fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
+            digest: Data(repeating: 9, count: 32))
     }
 
     /// Runs `operation` with its native call parked (`park` installs the
@@ -185,9 +186,10 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
                 }
             },
             operation: { manager in
+                let plan = self.plan(.withdrawal)
                 try await manager.shieldedWithdraw(
                     walletId: Self.walletId, resolver: MnemonicResolver(),
-                    toCoreAddress: "yX", amount: 1, plan: self.plan(.withdrawal))
+                    toCoreAddress: "yX", amount: 1, coreFeePerByte: plan.coreFeePerByte, plan: plan)
             })
     }
 
@@ -293,10 +295,22 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         }
     }
 
-    func testShouldAdmitAPoolNoteSeed() async {
-        await assertAdmitted("seedShieldedPoolNotes") { manager in
-            try await manager.seedShieldedPoolNotes(walletId: Self.walletId)
-        }
+    /// The pool-note seed is a long devnet/testnet QA loop that does not
+    /// watch for shutdown, so it is deliberately left unadmitted: an admitted
+    /// seed would hold `shutdown()` (and reject every synchronous call) for
+    /// the whole run.
+    func testShouldNotAdmitAPoolNoteSeedSoShutdownDoesNotWaitForIt() async {
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 71,
+            calls: PlatformWalletNativeTeardownCalls(
+                spvStop: { _ in Self.success }, platformAddressSyncStop: { _ in Self.success },
+                shieldedSyncStop: { _ in Self.success }, dashPaySyncStop: { _ in Self.success },
+                dpnsSyncStop: { _ in Self.success }, destroy: { _ in Self.success }))
+        var admitted: [String] = []
+        manager.nativeOpAdmissionObserver = { admitted.append($0) }
+        _ = try? await manager.seedShieldedPoolNotes(walletId: Self.walletId)
+        XCTAssertEqual(admitted, [], "seedShieldedPoolNotes must not be admitted")
+        await manager.shutdown()
     }
 
     func testShouldAdmitAnIdentityDebitRecoveryRead() async {

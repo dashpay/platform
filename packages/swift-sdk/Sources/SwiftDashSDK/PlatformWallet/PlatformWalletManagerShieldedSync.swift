@@ -108,6 +108,10 @@ public enum ShieldedSpendAmount: Sendable, Equatable {
 /// `PlatformWalletError.shieldedPlanChanged` when the notes moved since.
 public struct ShieldedSpendPlan: Sendable, Equatable {
     public let kind: ShieldedSpendKind
+    /// The Core fee rate (duffs/byte) a withdrawal plan was made at, `0` for
+    /// the other kinds. Pass it as `coreFeePerByte` to the withdrawal's
+    /// `plan:` overload: another rate throws `shieldedPlanChanged`.
+    public let coreFeePerByte: UInt32
     /// What the spend reserves for the recipient: the amount sent, or for a
     /// withdrawal the reserve for Core, of which the Core fee is taken.
     public let amount: UInt64
@@ -135,6 +139,7 @@ extension ShieldedSpendPlan {
         }
         self.init(
             kind: kind,
+            coreFeePerByte: ffi.core_fee_per_byte,
             amount: ffi.amount,
             recipientAmount: ffi.recipient_amount,
             fee: ffi.fee,
@@ -682,6 +687,11 @@ extension PlatformWalletManager {
     public func syncShieldedNow() async throws {
         try ensureShieldedLifecycleAllowed("syncShieldedNow")
         try ensureNoShieldedStopInFlight(before: "a manual shielded sync")
+        // Not admitted (`admitNativeOp`): a sync pass, not a payment, so it
+        // is left outside the admission rule. `shutdown()` stops it through
+        // the native `shielded_sync_stop`, which cancels the pass and waits
+        // for it to drain; the race of a manual pass with a wallet deletion
+        // is tracked separately.
         // No generation reset needed: this run's completion event snapshots
         // the current generation and passes the guard, while a trailing
         // event from a prior stopped run still carries the older generation.
@@ -945,7 +955,10 @@ extension PlatformWalletManager {
     /// withdrawal without `coreFeePerByte`), `shieldedWithdrawalAmountOutOfRange`
     /// for a withdrawal amount outside the protocol bounds for its rate, and
     /// `walletOperation` when the notes cannot pay the amount and its fee
-    /// (or the amount is zero), as the spends do.
+    /// (or the amount is zero), `shieldedSpendTooManyNotes` when only more
+    /// notes than one transition spends would cover the amount, and
+    /// `networkProtocolVersionUnsupported` when the network runs a protocol
+    /// version this SDK has no tables for, as the spends do.
     public func shieldedPlanSpend(
         walletId: Data,
         account: UInt32 = 0,
@@ -1872,14 +1885,16 @@ extension PlatformWalletManager {
     /// `shieldedWithdraw` against a plan from `shieldedPlanSpend`: the spend runs
     /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
     /// with nothing reserved or sent, when the wallet's notes no longer
-    /// select it.
+    /// select it. `coreFeePerByte` has no default here: pass the rate the
+    /// plan was made at (`plan.coreFeePerByte`); another rate also throws
+    /// `shieldedPlanChanged`.
     public func shieldedWithdraw(
         walletId: Data,
         resolver: MnemonicResolver,
         account: UInt32 = 0,
         toCoreAddress: String,
         amount: UInt64,
-        coreFeePerByte: UInt32 = 1,
+        coreFeePerByte: UInt32,
         plan: ShieldedSpendPlan
     ) async throws {
         try await spendShieldedWithdraw(
@@ -2126,6 +2141,11 @@ extension PlatformWalletManager {
             )
         }
 
+        // Not admitted (`admitNativeOp`): a sync pass, not a payment, so it
+        // is left outside the admission rule. `shutdown()` stops it through
+        // the native `shielded_sync_stop`, which cancels the pass and waits
+        // for it to drain; the race of a manual pass with a wallet deletion
+        // is tracked separately.
         let handle = self.handle
         let walletIdCopy = walletId
         try await Task.detached(priority: .userInitiated) {

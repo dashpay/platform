@@ -28,7 +28,8 @@ final class ShieldedSpendPlanTests: XCTestCase {
 
     private func plan(kind: ShieldedSpendKind, digestCount: Int = 32) -> ShieldedSpendPlan {
         ShieldedSpendPlan(
-            kind: kind, amount: 1, recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
+            kind: kind, coreFeePerByte: kind == .withdrawal ? 5 : 0, amount: 1, recipientAmount: 1,
+            fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
             digest: Data(repeating: 9, count: digestCount))
     }
 
@@ -70,7 +71,8 @@ final class ShieldedSpendPlanTests: XCTestCase {
 
     func testShouldDecodeEveryFieldOfThePlan() throws {
         var ffi = ShieldedSpendPlanFFI()
-        ffi.kind = 4
+        ffi.kind = 2
+        ffi.core_fee_per_byte = .max
         ffi.amount = 100
         ffi.recipient_amount = 60
         ffi.fee = .max
@@ -83,8 +85,9 @@ final class ShieldedSpendPlanTests: XCTestCase {
         XCTAssertEqual(
             try ShieldedSpendPlan(ffi: ffi),
             ShieldedSpendPlan(
-                kind: .identityTopUp, amount: 100, recipientAmount: 60, fee: .max, totalInput: 300,
-                totalDebited: 200, noteCount: .max, digest: Data((0..<32).map(UInt8.init))))
+                kind: .withdrawal, coreFeePerByte: .max, amount: 100, recipientAmount: 60, fee: .max,
+                totalInput: 300, totalDebited: 200, noteCount: .max,
+                digest: Data((0..<32).map(UInt8.init))))
     }
 
     /// A withdrawal plan without its Core fee rate is refused before the FFI.
@@ -209,9 +212,12 @@ final class ShieldedSpendPlanTests: XCTestCase {
             ("unshield", { try await manager.shieldedUnshield(
                 walletId: Self.walletId, resolver: resolver, toPlatformAddress: "tdash1x",
                 amount: 1, plan: self.plan(kind: .unshield, digestCount: digestCount)) }),
-            ("withdraw", { try await manager.shieldedWithdraw(
-                walletId: Self.walletId, resolver: resolver, toCoreAddress: "yX", amount: 1,
-                plan: self.plan(kind: .withdrawal, digestCount: digestCount)) }),
+            ("withdraw", {
+                let plan = self.plan(kind: .withdrawal, digestCount: digestCount)
+                try await manager.shieldedWithdraw(
+                    walletId: Self.walletId, resolver: resolver, toCoreAddress: "yX", amount: 1,
+                    coreFeePerByte: plan.coreFeePerByte, plan: plan)
+            }),
             ("top up", { try await manager.shieldedIdentityTopUpFromPool(
                 walletId: Self.walletId, resolver: resolver,
                 identityId: Data(repeating: 2, count: 32), amount: 1,
@@ -228,14 +234,20 @@ final class ShieldedSpendPlanTests: XCTestCase {
         await manager.shutdown()
     }
 
-    /// Records which native spend export ran and the digest it was handed.
+    /// Records which native spend export ran, the digest it was handed and,
+    /// for a withdrawal, the Core fee rate.
     private final class SpendLog: @unchecked Sendable {
         private let lock = NSLock()
         private var items: [(String, Data?)] = []
-        func record(_ name: String, _ digest: UnsafePointer<UInt8>?) {
-            lock.withLock { items.append((name, digest.map { Data(bytes: $0, count: 32) })) }
+        private var rates: [UInt32] = []
+        func record(_ name: String, _ digest: UnsafePointer<UInt8>?, rate: UInt32? = nil) {
+            lock.withLock {
+                items.append((name, digest.map { Data(bytes: $0, count: 32) }))
+                if let rate { rates.append(rate) }
+            }
         }
         var entries: [(String, Data?)] { lock.withLock { items } }
+        var coreFeeRates: [UInt32] { lock.withLock { rates } }
     }
 
     private nonisolated static func recordingCalls(_ log: SpendLog) -> PlatformWalletNativeShieldedSpendCalls {
@@ -250,20 +262,24 @@ final class ShieldedSpendPlanTests: XCTestCase {
             unshieldWithPlan: { _, _, _, _, _, _, d in log.record("unshieldWithPlan", d); return ok() },
             topUp: { _, _, _, _, _, _ in log.record("topUp", nil); return ok() },
             topUpWithPlan: { _, _, _, _, _, _, d in log.record("topUpWithPlan", d); return ok() },
-            withdraw: { _, _, _, _, _, _, _ in log.record("withdraw", nil); return ok() },
-            withdrawWithPlan: { _, _, _, _, _, _, _, d in log.record("withdrawWithPlan", d); return ok() })
+            withdraw: { _, _, _, _, _, _, rate in log.record("withdraw", nil, rate: rate); return ok() },
+            withdrawWithPlan: { _, _, _, _, _, _, rate, d in
+                log.record("withdrawWithPlan", d, rate: rate); return ok()
+            })
     }
 
     /// Each `plan:` overload calls its `_with_plan` export exactly once with
-    /// the plan's exact digest bytes and never the plain export; each plain
+    /// the plan's exact digest bytes (and a withdrawal the rate the caller
+    /// passed, the plan's own) and never the plain export; each plain
     /// overload calls only the plain export.
     func testShouldRouteEverySpendToTheExportMatchingItsPlan() async throws {
         let digest = Data((0..<32).map { UInt8($0 * 7 + 1) })
         let resolver = MnemonicResolver()
         func plan(_ kind: ShieldedSpendKind) -> ShieldedSpendPlan {
             ShieldedSpendPlan(
-                kind: kind, amount: 1, recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3,
-                noteCount: 1, digest: digest)
+                kind: kind, coreFeePerByte: kind == .withdrawal ? 5 : 0, amount: 1,
+                recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
+                digest: digest)
         }
         let cases: [(String, (PlatformWalletManager) async throws -> Void)] = [
             ("transferWithPlan", { try await $0.shieldedTransfer(
@@ -280,7 +296,7 @@ final class ShieldedSpendPlanTests: XCTestCase {
                 amount: 1) }),
             ("withdrawWithPlan", { try await $0.shieldedWithdraw(
                 walletId: Self.walletId, resolver: resolver, toCoreAddress: "yX", amount: 1,
-                plan: plan(.withdrawal)) }),
+                coreFeePerByte: plan(.withdrawal).coreFeePerByte, plan: plan(.withdrawal)) }),
             ("withdraw", { try await $0.shieldedWithdraw(
                 walletId: Self.walletId, resolver: resolver, toCoreAddress: "yX", amount: 1) }),
             ("topUpWithPlan", { try await $0.shieldedIdentityTopUpFromPool(
@@ -299,6 +315,9 @@ final class ShieldedSpendPlanTests: XCTestCase {
             XCTAssertEqual(entries.map(\.0), [expected], "\(expected): wrong export(s) called")
             if expected.hasSuffix("WithPlan") {
                 XCTAssertEqual(entries.first?.1, digest, "\(expected): digest bytes differ")
+            }
+            if expected == "withdrawWithPlan" {
+                XCTAssertEqual(log.coreFeeRates, [5], "the plan's Core fee rate reaches the FFI")
             }
             await manager.shutdown()
         }
