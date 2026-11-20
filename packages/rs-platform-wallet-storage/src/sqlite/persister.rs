@@ -14,6 +14,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use crate::parent_permissions::warn_on_insecure_ancestors;
 use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::{Buffer, PendingWrites};
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
@@ -261,8 +262,6 @@ impl SqlitePersister {
     /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
     ///   `config.path` does not exist. The persister refuses to create
     ///   parent directories silently.
-    /// - [`WalletStorageError::InsecureParentDir`] — a database ancestor has
-    ///   unsafe replacement permissions or ownership on Unix.
     /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
     ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
     ///   (no FK support compiled in).
@@ -313,14 +312,7 @@ impl SqlitePersister {
                 format!("database parent directory not found: {}", parent.display()),
             )));
         }
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                WalletStorageError::Io(source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                WalletStorageError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
+        warn_on_insecure_ancestors("database", parent);
 
         // Claim the path BEFORE anything touches the file. The registry exists
         // to stop two handles diverging, and the most destructive thing an
@@ -575,14 +567,7 @@ impl SqlitePersister {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                WalletStorageError::Io(source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                WalletStorageError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
+        warn_on_insecure_ancestors("database", parent);
 
         // Refuse to overwrite a database a live persister in this process is
         // still holding open: that handle's buffer/connection would silently
@@ -2334,17 +2319,7 @@ fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
             )?;
         }
     }
-    crate::parent_permissions::check_parent_perms(dir).map_err(|error| match error {
-        crate::parent_permissions::ParentPermissionsError::Io(source) => {
-            WalletStorageError::AutoBackupDirUnwritable {
-                dir: dir.to_path_buf(),
-                source,
-            }
-        }
-        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-            WalletStorageError::InsecureParentDir { ancestor, reason }
-        }
-    })?;
+    warn_on_insecure_ancestors("auto-backup directory", dir);
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the
     // worst case is a later typed error instead of this early one.

@@ -8,6 +8,7 @@ use rusqlite::Connection;
 
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use crate::parent_permissions::warn_on_insecure_ancestors;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
 use crate::sqlite::util::permissions::{apply_secure_permissions, reject_symlink};
@@ -263,14 +264,7 @@ pub(crate) fn restore_from(
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-        crate::parent_permissions::ParentPermissionsError::Io(source) => {
-            WalletStorageError::Io(source)
-        }
-        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-            WalletStorageError::InsecureParentDir { ancestor, reason }
-        }
-    })?;
+    warn_on_insecure_ancestors("database", parent);
     // Ahead of the placeholder block below: `exists()` follows a link to a
     // live target, so a planted symlink would skip that block entirely and
     // be opened — and restored over — directly.

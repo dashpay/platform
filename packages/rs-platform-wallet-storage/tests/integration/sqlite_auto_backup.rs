@@ -68,25 +68,34 @@ fn auto_backup_directory_is_owner_only() {
 
 #[cfg(unix)]
 #[test]
-fn auto_backup_rejects_replaceable_ancestor() {
+#[tracing_test::traced_test]
+fn should_auto_backup_under_replaceable_ancestor_and_warn() {
     use std::os::unix::fs::PermissionsExt;
 
     let tmp = common::secure_tempdir().unwrap();
     let replaceable = tmp.path().join("replaceable");
     std::fs::create_dir(&replaceable).unwrap();
     std::fs::set_permissions(&replaceable, std::fs::Permissions::from_mode(0o777)).unwrap();
-    let backup_dir = replaceable.join("backups");
+    let backup_dir = replaceable.join("nested").join("backups");
     let path = tmp.path().join("w.db");
-    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(backup_dir));
+    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(backup_dir.clone()));
     let persister = SqlitePersister::open(cfg).unwrap();
     let w = wid(0x35);
     ensure_wallet_meta(&persister, &w);
 
-    let result = persister.delete_wallet(w);
-    assert!(
-        matches!(result, Err(WalletStorageError::InsecureParentDir { .. })),
-        "replaceable backup ancestor must be rejected; got {result:?}"
-    );
+    persister
+        .delete_wallet(w)
+        .expect("a replaceable backup ancestor must not fail the auto-backup");
+
+    for created in [replaceable.join("nested"), backup_dir] {
+        let mode = std::fs::metadata(&created).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{} must be owner-only", created.display());
+    }
+    assert!(logs_contain("insecure ancestor directory permissions"));
+    assert!(logs_contain(&format!(
+        "chmod go-w {}",
+        replaceable.display()
+    )));
 }
 
 /// TC-052: delete_wallet with auto_backup_dir = None returns AutoBackupDisabled.

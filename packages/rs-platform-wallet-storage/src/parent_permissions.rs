@@ -1,29 +1,25 @@
-//! Shared parent-directory permission check for file-backed stores.
+//! Advisory ancestor-directory permission report for file-backed stores.
+//!
+//! Directories this crate creates are owner-only; the directories above them
+//! belong to the user and the platform. An ancestor another local user could
+//! replace is reported with a warning and never fails an operation.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
-#[derive(Debug)]
-pub(crate) enum ParentPermissionsError {
-    Io(std::io::Error),
-    Insecure {
-        ancestor: PathBuf,
-        reason: InsecureAncestor,
-    },
-}
-
-/// Why an ancestor directory of a wallet file or vault was refused.
+/// Why an ancestor directory of a wallet file or vault is reported.
 ///
 /// The two causes need different remediations, and a mode alone cannot tell
-/// them apart: an ancestor rejected for its OWNER usually carries a perfectly
+/// them apart: an ancestor reported for its OWNER usually carries a perfectly
 /// ordinary `0755`, so reporting that mode and asking for `chmod go-w` sends
 /// the user to a command that cannot work.
 ///
-/// Unix-only. `check_parent_perms` is a no-op on other targets — Windows ACL
-/// inspection is tracked by dashpay/platform#3754 — so no value of this type is
-/// ever produced there, and the POSIX remediation each arm names is always
-/// correct where it can appear.
+/// Unix-only. `warn_on_insecure_ancestors` is a no-op on other targets —
+/// Windows ACL inspection is tracked by dashpay/platform#3754.
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InsecureAncestor {
+enum InsecureAncestor {
     /// Group- or other-writable without the sticky bit: any local user can
     /// replace entries in it, and so replace the `0600` file below it.
     WritableWithoutSticky {
@@ -43,13 +39,9 @@ pub enum InsecureAncestor {
 
 /// One actionable sentence naming the exact ancestor and the exact command.
 ///
-/// `subject` is the artefact being protected ("database" / "vault"), so the two
-/// error enums that carry this rejection phrase it identically.
-pub(crate) fn insecure_ancestor_message(
-    subject: &str,
-    ancestor: &Path,
-    reason: &InsecureAncestor,
-) -> String {
+/// `subject` is the artefact being protected ("database" / "vault").
+#[cfg(unix)]
+fn insecure_ancestor_message(subject: &str, ancestor: &Path, reason: &InsecureAncestor) -> String {
     let path = ancestor.display();
     match reason {
         InsecureAncestor::WritableWithoutSticky { mode } => format!(
@@ -68,11 +60,11 @@ pub(crate) fn insecure_ancestor_message(
 ///
 /// Android creates every app's private storage beneath `/data`, `/data/user`,
 /// `/data/user/0` and `/data/data`, all owned `system:system` (`AID_SYSTEM`,
-/// 1000) and mostly `0771`. No app-private path can pass the walk without
-/// trusting that identity. `AID_SYSTEM` is the platform itself — it already
+/// 1000) and mostly `0771`. Without trusting that identity every app-private
+/// path would be reported. `AID_SYSTEM` is the platform itself — it already
 /// administers every app's data — and no third-party app can run as it or join
 /// its group, so a `system`-group-writable ancestor is not replaceable by
-/// anything the check defends against.
+/// another app.
 #[cfg(target_os = "android")]
 const PLATFORM_IDS: &[u32] = &[1000];
 #[cfg(all(unix, not(target_os = "android")))]
@@ -127,97 +119,117 @@ fn effective_uid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
-/// Validate Unix ownership and replacement permissions up to the filesystem root.
+/// Classify one ancestor; `None` when nobody outside the trusted set can
+/// replace entries in it.
 ///
-/// Both the lexical path and its canonical target are walked through `/`, so a
-/// symlink cannot hide unsafe target ancestors. A writable component is
-/// accepted only with the sticky bit, and every component must be owned by the
-/// effective user or a root identity. The filesystem root's owner is treated
-/// as root for user-namespace environments where uid 0 is mapped to another uid.
-///
-/// Both walks classify through here, so neither can report an ownership
-/// rejection as a permission one. Write access is checked first: it is the
-/// condition whose mode is worth printing.
+/// Write access is checked first: it is the condition whose mode is worth
+/// printing. The filesystem root's owner is trusted as root for
+/// user-namespace environments where uid 0 is mapped to another uid.
 #[cfg(unix)]
-fn reject_ancestor(
-    ancestor: &Path,
+fn classify_ancestor(
     uid: u32,
     mode: u32,
     writable_without_sticky: bool,
     current_uid: u32,
     root_uid: u32,
-) -> Result<(), ParentPermissionsError> {
-    let reason = if writable_without_sticky {
-        InsecureAncestor::WritableWithoutSticky { mode }
+) -> Option<InsecureAncestor> {
+    if writable_without_sticky {
+        Some(InsecureAncestor::WritableWithoutSticky { mode })
     } else if !trusted_owner(uid, current_uid, root_uid, PLATFORM_IDS) {
-        InsecureAncestor::UntrustedOwner { uid, current_uid }
+        Some(InsecureAncestor::UntrustedOwner { uid, current_uid })
     } else {
-        return Ok(());
-    };
-    Err(ParentPermissionsError::Insecure {
-        ancestor: ancestor.to_path_buf(),
-        reason,
-    })
+        None
+    }
 }
 
+/// Every ancestor of `parent`, through `/`, that another local user could
+/// replace.
+///
+/// Both the lexical path and its canonical target are walked, so a symlink
+/// cannot hide an unsafe target ancestor. An ancestor seen by both walks is
+/// listed once.
 #[cfg(unix)]
-pub(crate) fn check_parent_perms(parent: &Path) -> Result<(), ParentPermissionsError> {
+fn insecure_ancestors(parent: &Path) -> std::io::Result<Vec<(PathBuf, InsecureAncestor)>> {
     use std::os::unix::fs::MetadataExt;
 
     let current_uid = effective_uid();
     let trusted_groups = trusted_groups(current_uid);
-    let root_uid = std::fs::metadata("/")
-        .map_err(ParentPermissionsError::Io)?
-        .uid();
+    let root_uid = std::fs::metadata("/")?.uid();
     let absolute = if parent.is_absolute() {
         parent.to_path_buf()
     } else {
-        std::env::current_dir()
-            .map_err(ParentPermissionsError::Io)?
-            .join(parent)
+        std::env::current_dir()?.join(parent)
     };
-    let canonical = std::fs::canonicalize(&absolute).map_err(ParentPermissionsError::Io)?;
+    let canonical = std::fs::canonicalize(&absolute)?;
 
+    let mut found: Vec<(PathBuf, InsecureAncestor)> = Vec::new();
     for ancestor in absolute.ancestors() {
-        let meta = std::fs::symlink_metadata(ancestor).map_err(ParentPermissionsError::Io)?;
+        let meta = std::fs::symlink_metadata(ancestor)?;
         let mode = meta.mode() & 0o7777;
-        let writable_without_sticky = !meta.file_type().is_symlink()
+        let writable = !meta.file_type().is_symlink()
             && writable_without_sticky(mode, meta.gid(), &trusted_groups);
-        reject_ancestor(
-            ancestor,
-            meta.uid(),
-            mode,
-            writable_without_sticky,
-            current_uid,
-            root_uid,
-        )?;
+        if let Some(reason) = classify_ancestor(meta.uid(), mode, writable, current_uid, root_uid) {
+            found.push((ancestor.to_path_buf(), reason));
+        }
     }
     for ancestor in canonical.ancestors() {
-        let meta = std::fs::metadata(ancestor).map_err(ParentPermissionsError::Io)?;
+        let meta = std::fs::metadata(ancestor)?;
         let mode = meta.mode() & 0o7777;
-        let writable_without_sticky = writable_without_sticky(mode, meta.gid(), &trusted_groups);
-        reject_ancestor(
-            ancestor,
-            meta.uid(),
-            mode,
-            writable_without_sticky,
-            current_uid,
-            root_uid,
-        )?;
+        let writable = writable_without_sticky(mode, meta.gid(), &trusted_groups);
+        if let Some(reason) = classify_ancestor(meta.uid(), mode, writable, current_uid, root_uid) {
+            if !found.iter().any(|(seen, _)| seen == ancestor) {
+                found.push((ancestor.to_path_buf(), reason));
+            }
+        }
     }
-    Ok(())
+    Ok(found)
+}
+
+/// Report, in one warning, every ancestor of `parent` another local user could
+/// replace — and with it the `0600` file `subject` names below it.
+///
+/// Advisory only: the directories above the ones this crate creates are not
+/// this crate's to police, so neither a finding nor a failed walk ever fails
+/// the caller. A walk that cannot stat an ancestor (sandboxed or unreadable
+/// path components are normal on mobile platforms) is logged at `debug`.
+#[cfg(unix)]
+pub(crate) fn warn_on_insecure_ancestors(subject: &str, parent: &Path) {
+    match insecure_ancestors(parent) {
+        Ok(found) if found.is_empty() => {}
+        Ok(found) => {
+            let findings = found
+                .iter()
+                .map(|(ancestor, reason)| insecure_ancestor_message(subject, ancestor, reason))
+                .collect::<Vec<_>>()
+                .join("; ");
+            tracing::warn!(
+                subject,
+                directory = %parent.display(),
+                findings = %findings,
+                "insecure ancestor directory permissions: another local user may be able to \
+                 replace wallet files below them; continuing"
+            );
+        }
+        Err(error) => tracing::debug!(
+            subject,
+            directory = %parent.display(),
+            %error,
+            "skipped the ancestor directory permission report: an ancestor could not be inspected"
+        ),
+    }
 }
 
 // Windows ACL checks require platform-specific security APIs; tracked by
 // https://github.com/dashpay/platform/issues/3754.
 #[cfg(not(unix))]
-pub(crate) fn check_parent_perms(_parent: &Path) -> Result<(), ParentPermissionsError> {
-    Ok(())
-}
+pub(crate) fn warn_on_insecure_ancestors(_subject: &str, _parent: &Path) {}
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{trusted_owner, writable_without_sticky};
+    use super::{
+        insecure_ancestor_message, trusted_owner, writable_without_sticky, InsecureAncestor,
+    };
+    use std::path::Path;
 
     const ANDROID_SYSTEM: &[u32] = &[1000];
 
@@ -285,5 +297,29 @@ mod tests {
         assert!(!writable_without_sticky(0o1777, 2000, &[]));
         assert!(!writable_without_sticky(0o755, 2000, &[]));
         assert!(!writable_without_sticky(0o700, 2000, &[]));
+    }
+
+    #[test]
+    fn should_name_the_ancestor_and_the_command_that_fixes_it() {
+        let writable = insecure_ancestor_message(
+            "vault",
+            Path::new("/parent"),
+            &InsecureAncestor::WritableWithoutSticky { mode: 0o777 },
+        );
+        assert!(writable.contains("0777"));
+        assert!(writable.contains("chmod go-w /parent"));
+
+        // An ownership finding must NOT hand out `chmod`: the mode is very
+        // likely unremarkable and changing it would not help.
+        let owned = insecure_ancestor_message(
+            "vault",
+            Path::new("/parent"),
+            &InsecureAncestor::UntrustedOwner {
+                uid: 999,
+                current_uid: 1000,
+            },
+        );
+        assert!(owned.contains("chown 1000 /parent"));
+        assert!(!owned.contains("chmod"), "got {owned}");
     }
 }
