@@ -44,8 +44,10 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   property names, on an integer property;
 /// - `validate_schema_patterns`, `Some(0)` rather than `None`: registration and update refuse
 ///   a contract whose document schemas and `$defs` hold more than
-///   `max_contract_schema_patterns` patterns, or one that does not compile within
-///   `max_schema_pattern_compiled_size`;
+///   `max_contract_schema_patterns` patterns, patterns of more than
+///   `max_contract_schema_pattern_bytes` bytes together, or one longer than
+///   `max_schema_pattern_bytes`, folding more than `max_schema_pattern_case_folded_code_points`
+///   code points, or not compiling within `max_schema_pattern_compiled_size`;
 /// - `registration_cost`, 3 rather than 2: the fee a state transition's contract is estimated
 ///   at bills each index by the keys it declares instead of parsing it, which compiled the
 ///   field matches of a contested index before anything bounded them;

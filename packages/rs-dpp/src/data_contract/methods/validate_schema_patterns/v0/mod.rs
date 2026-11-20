@@ -1,13 +1,19 @@
+mod case_folding;
+
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::schema::validation_schema::validator_regex_within;
+use crate::data_contract::document_type::schema::validation_schema::{
+    regex_syntax_parser, validator_regex_syntax, validator_regex_within,
+};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DocumentName;
 use crate::prelude::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
+use case_folding::case_folded_code_points;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use regex::RegexBuilder;
+use regex_syntax::ast::Ast;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The key a property schema holds its pattern under.
@@ -39,6 +45,15 @@ impl Compiler {
                 .size_limit(size_limit)
                 .build()
                 .is_ok(),
+        }
+    }
+
+    /// The syntax tree of `pattern` as this compiler reads it before it compiles it, `None`
+    /// when it does not parse: then it does not compile either.
+    fn syntax(self, pattern: &str) -> Option<Ast> {
+        match self {
+            Compiler::DocumentValidator => validator_regex_syntax(pattern),
+            Compiler::IndexParser => regex_syntax_parser().parse(pattern).ok(),
         }
     }
 
@@ -89,6 +104,14 @@ struct Found<'a> {
 }
 
 impl<'a> Found<'a> {
+    /// The bytes of the patterns found, as written.
+    fn pattern_bytes(&self) -> usize {
+        self.patterns
+            .iter()
+            .map(|(_, pattern)| pattern.len())
+            .fold(0, usize::saturating_add)
+    }
+
     /// Every string `root` holds under one of the keys above, at any depth. Not recursive:
     /// nothing has bounded the depth of the value yet.
     fn within(root: &'a Value) -> Self {
@@ -153,6 +176,8 @@ struct Definitions<'a> {
     definitions: BTreeMap<&'a str, Found<'a>>,
     /// Every pattern the definitions hold.
     patterns: usize,
+    /// The bytes of every pattern the definitions hold.
+    pattern_bytes: usize,
 }
 
 impl<'a> Definitions<'a> {
@@ -163,17 +188,27 @@ impl<'a> Definitions<'a> {
             .map(|(name, definition)| (name.as_str(), Found::within(definition)))
             .collect();
         let patterns = definitions.values().map(|found| found.patterns.len()).sum();
+        let pattern_bytes = definitions
+            .values()
+            .map(Found::pattern_bytes)
+            .fold(0, usize::saturating_add);
         Definitions {
             definitions,
             patterns,
+            pattern_bytes,
         }
     }
 
-    /// For each definition, how many patterns compiling what a `$ref` to it names compiles,
-    /// when each `$ref` met on the way compiles what it names in turn: its own, and those of
-    /// every `$ref` it holds. Counted up to `ceiling` and no further, which a cycle of
-    /// definitions reaching a pattern arrives at.
-    fn patterns_compiled_through_each(&self, ceiling: usize) -> BTreeMap<&'a str, usize> {
+    /// For each definition, how much compiling what a `$ref` to it names compiles, measuring
+    /// what a definition holds itself by `own` (its patterns, or their bytes), when each `$ref`
+    /// met on the way compiles what it names in turn: its own, and what every `$ref` it holds
+    /// compiles. Counted up to `ceiling` and no further, which a cycle of definitions reaching a
+    /// pattern arrives at.
+    fn compiled_through_each(
+        &self,
+        own: impl Fn(&Found) -> usize,
+        ceiling: usize,
+    ) -> BTreeMap<&'a str, usize> {
         let mut compiled: BTreeMap<&str, usize> = BTreeMap::new();
         let mut referrers: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         // Each count still to add to what the definitions referring to one compile
@@ -182,7 +217,7 @@ impl<'a> Definitions<'a> {
             for &definition in &found.references {
                 referrers.entry(definition).or_default().push(name);
             }
-            let own = found.patterns.len().min(ceiling);
+            let own = own(found).min(ceiling);
             compiled.insert(name, own);
             if own > 0 {
                 pending.push((name, own));
@@ -206,10 +241,14 @@ impl<'a> Definitions<'a> {
 }
 
 impl DataContract {
-    /// Refuses more than `max_contract_schema_patterns` patterns without compiling any, then
-    /// the first that does not compile within `max_schema_pattern_compiled_size`, each
-    /// distinct pattern compiled once. With `refuse_regex_format`, also refuses a schema
-    /// declaring `format: regex`.
+    /// Refuses, without compiling any pattern, more than `max_contract_schema_patterns`
+    /// patterns, a pattern longer than `max_schema_pattern_bytes`, patterns longer than
+    /// `max_contract_schema_pattern_bytes` together (counted as the patterns are counted), and
+    /// with `refuse_regex_format` a schema declaring `format: regex`; then, still compiling
+    /// none, the first that does not parse or that case-folds more than
+    /// `max_schema_pattern_case_folded_code_points` code points; and only then the first that
+    /// does not compile within `max_schema_pattern_compiled_size`, each distinct pattern read
+    /// and compiled once.
     #[inline(always)]
     pub(super) fn validate_schema_patterns_v0(
         document_schemas: &BTreeMap<DocumentName, Value>,
@@ -219,6 +258,16 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         let max_patterns = usize::from(platform_version.system_limits.max_contract_schema_patterns);
+        let max_pattern_bytes =
+            usize::from(platform_version.system_limits.max_schema_pattern_bytes);
+        let max_contract_pattern_bytes = platform_version
+            .system_limits
+            .max_contract_schema_pattern_bytes as usize;
+        let max_case_folded = u64::from(
+            platform_version
+                .system_limits
+                .max_schema_pattern_case_folded_code_points,
+        );
         let size_limit = platform_version
             .system_limits
             .max_schema_pattern_compiled_size as usize;
@@ -226,33 +275,47 @@ impl DataContract {
         let definitions = Definitions::new(schema_defs);
         let document_types: Vec<Found> = document_schemas.values().map(Found::within).collect();
 
-        // One past the limit is as far as a count needs to go to be refused
+        // One past a limit is as far as a count needs to go to be refused
         let ceiling = max_patterns.saturating_add(1);
+        let bytes_ceiling = max_contract_pattern_bytes.saturating_add(1);
         let compiled_through_each = match definitions_count {
             DefinitionsCount::OncePerDocumentType => None,
-            DefinitionsCount::OncePerReference => {
-                Some(definitions.patterns_compiled_through_each(ceiling))
-            }
+            DefinitionsCount::OncePerReference => Some((
+                definitions.compiled_through_each(|found| found.patterns.len(), ceiling),
+                definitions.compiled_through_each(|found| found.pattern_bytes(), bytes_ceiling),
+            )),
         };
-        // The definitions' patterns count once in a contract with no document type
-        let mut count = if document_types.is_empty() {
-            definitions.patterns
-        } else {
-            0
-        };
-        for document_type in &document_types {
-            let of_definitions = match &compiled_through_each {
-                None => definitions.patterns,
-                Some(compiled_through_each) => document_type
+        // What the references of a document type compile, by `compiled_through_each`
+        let through_references =
+            |document_type: &Found, compiled_through_each: &BTreeMap<&str, usize>| {
+                document_type
                     .references
                     .iter()
                     .map(|definition| compiled_through_each.get(definition).copied().unwrap_or(0))
                     .fold(0usize, usize::saturating_add)
-                    .max(definitions.patterns),
+            };
+        // The definitions' patterns count once in a contract with no document type
+        let (mut count, mut bytes) = if document_types.is_empty() {
+            (definitions.patterns, definitions.pattern_bytes)
+        } else {
+            (0, 0)
+        };
+        for document_type in &document_types {
+            let (of_definitions, bytes_of_definitions) = match &compiled_through_each {
+                None => (definitions.patterns, definitions.pattern_bytes),
+                Some((patterns_through_each, bytes_through_each)) => (
+                    through_references(document_type, patterns_through_each)
+                        .max(definitions.patterns),
+                    through_references(document_type, bytes_through_each)
+                        .max(definitions.pattern_bytes),
+                ),
             };
             count = count
                 .saturating_add(document_type.patterns.len())
                 .saturating_add(of_definitions);
+            bytes = bytes
+                .saturating_add(document_type.pattern_bytes())
+                .saturating_add(bytes_of_definitions);
         }
         if count > max_patterns {
             return refusal(format!(
@@ -267,6 +330,25 @@ impl DataContract {
                 .iter()
                 .chain(definitions.definitions.values())
         };
+        let patterns = || schemas().flat_map(|found| &found.patterns);
+        if let Some((compiler, pattern)) =
+            patterns().find(|(_, pattern)| pattern.len() > max_pattern_bytes)
+        {
+            return refusal(format!(
+                "a `{}` may be at most {max_pattern_bytes} bytes long, and one of the contract's \
+                 is {} bytes long",
+                compiler.key(),
+                pattern.len()
+            ));
+        }
+        if bytes > max_contract_pattern_bytes {
+            return refusal(format!(
+                "the document schemas and `$defs` of a contract may hold patterns of at most \
+                 {max_contract_pattern_bytes} bytes together (`{PATTERN}` and `{REGEX_PATTERN}`), \
+                 one in `$defs` counted for each {}",
+                definitions_count.counted_for_each()
+            ));
+        }
         if definitions_count == DefinitionsCount::OncePerReference
             && schemas().any(|found| found.holds_pattern_properties)
         {
@@ -292,18 +374,46 @@ impl DataContract {
             ));
         }
 
-        let mut compiled = BTreeSet::new();
-        for &(compiler, pattern) in schemas().flat_map(|found| &found.patterns) {
-            if compiled.insert((compiler, pattern)) && !compiler.compiles(pattern, size_limit) {
+        // Every pattern is read before any is compiled: what a pattern's syntax shows bounds
+        // the time compiling it takes, which its compiled size does not
+        let mut read = BTreeSet::new();
+        for &(compiler, pattern) in patterns() {
+            if !read.insert((compiler, pattern)) {
+                continue;
+            }
+            let Some(syntax) = compiler.syntax(pattern) else {
+                return not_compiling(compiler, pattern, size_limit);
+            };
+            if case_folded_code_points(&syntax) > max_case_folded {
                 return refusal(format!(
-                    "the `{}` `{pattern}` is not a regular expression that compiles within \
-                     {size_limit} bytes",
+                    "the `{}` `{pattern}` matches case-insensitively and may fold more than \
+                     {max_case_folded} code points: a class naming a Unicode property, and a \
+                     negated or Perl class inside a bracketed class, count as every code point, \
+                     a range as the code points it spans, once more for each class around it",
                     compiler.key()
                 ));
             }
         }
+
+        let mut compiled = BTreeSet::new();
+        for &(compiler, pattern) in patterns() {
+            if compiled.insert((compiler, pattern)) && !compiler.compiles(pattern, size_limit) {
+                return not_compiling(compiler, pattern, size_limit);
+            }
+        }
         SimpleConsensusValidationResult::new()
     }
+}
+
+fn not_compiling(
+    compiler: Compiler,
+    pattern: &str,
+    size_limit: usize,
+) -> SimpleConsensusValidationResult {
+    refusal(format!(
+        "the `{}` `{pattern}` is not a regular expression that compiles within {size_limit} bytes",
+        compiler.key()
+    ))
 }
 
 fn refusal(message: String) -> SimpleConsensusValidationResult {

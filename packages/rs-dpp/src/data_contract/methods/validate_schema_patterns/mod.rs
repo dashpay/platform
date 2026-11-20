@@ -11,19 +11,24 @@ use v0::DefinitionsCount;
 
 impl DataContract {
     /// Holds the regular expressions a contract's schemas carry to a bound, before anything
-    /// compiles one: compiling takes time and memory in proportion to the compiled size, not
-    /// to the pattern's length, and every pattern is compiled when a contract is parsed and
-    /// again for the validator its documents are checked with.
+    /// compiles one: compiling takes memory in proportion to the compiled size, and time in
+    /// proportion to the compiled size, to the pattern's length and, under case-insensitive
+    /// matching, to the code points its classes span, and every pattern is compiled when a
+    /// contract is parsed and again for the validator its documents are checked with.
     ///
     /// A pattern is every string under a `pattern` key and every `regexPattern` of a contested
     /// index's `fieldMatches`, wherever the document schemas and `$defs` hold one: the walk
     /// reads keys, not the grammar, so a value a `const`, `enum` or `default` holds under one
     /// of these keys counts too. A pattern in `$defs` counts once for each document type,
     /// since the schema check reads every definition for each type it checks. A contract may
-    /// hold `max_contract_schema_patterns` patterns so counted, and each must compile within
-    /// `max_schema_pattern_compiled_size` bytes, a `pattern` as the document validator
-    /// compiles it and a `regexPattern` as the index parser does. A protocol version that
-    /// predates the rule refuses nothing.
+    /// hold `max_contract_schema_patterns` patterns so counted, of at most
+    /// `max_contract_schema_pattern_bytes` bytes together so counted, each at most
+    /// `max_schema_pattern_bytes` bytes long. Before any is compiled, each must parse and, when
+    /// it matches case-insensitively, fold at most `max_schema_pattern_case_folded_code_points`
+    /// code points as its syntax tree shows; then each must compile within
+    /// `max_schema_pattern_compiled_size` bytes. A `pattern` is read and compiled as the
+    /// document validator reads it, its ECMA escapes rewritten, and a `regexPattern` as the
+    /// index parser does. A protocol version that predates the rule refuses nothing.
     pub fn validate_schema_patterns(
         document_schemas: &BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
@@ -268,7 +273,7 @@ mod tests {
             );
         }
         // A long pattern compiles to little: the limit is on the compiled size
-        let long = format!("^({})$", vec!["[a-z]{1,20}"; 40].join("|"));
+        let long = format!("^({})$", vec!["[a-z]{1,20}"; 20].join("|"));
         assert!(validate(
             &schemas(schema_with_patterns(1, &long)),
             None,
@@ -725,5 +730,254 @@ mod tests {
             assert!(validate_for_mempool(document_schemas, None, platform_version).is_valid());
             assert!(validate(document_schemas, None, platform_version).is_valid());
         }
+    }
+
+    /// A bracketed class of `count` `\P{Any}` under `(?i)`: each item folds every code point
+    /// before it is negated to nothing, so the class compiles to almost nothing however long
+    /// translating it takes.
+    fn folding_every_code_point(count: usize) -> String {
+        format!("(?i)[{}]", r"\P{Any}".repeat(count))
+    }
+
+    /// The fragment of the refusal of a pattern longer than a pattern may be.
+    fn too_long_message() -> String {
+        format!(
+            "may be at most {} bytes long",
+            PlatformVersion::latest()
+                .system_limits
+                .max_schema_pattern_bytes
+        )
+    }
+
+    /// The fragment of the refusal of a pattern folding more code points than a pattern may.
+    fn folds_too_much_message() -> String {
+        format!(
+            "may fold more than {} code points",
+            PlatformVersion::latest()
+                .system_limits
+                .max_schema_pattern_case_folded_code_points
+        )
+    }
+
+    /// The fragment of the refusal of a contract whose patterns hold more bytes than it may.
+    fn too_many_bytes_message() -> String {
+        format!(
+            "patterns of at most {} bytes together",
+            PlatformVersion::latest()
+                .system_limits
+                .max_contract_schema_pattern_bytes
+        )
+    }
+
+    /// The refusal of `document_schemas` by consensus from protocol version 15 and by the
+    /// mempool before it, which hold it to the same bound.
+    fn refusals(document_schemas: &BTreeMap<DocumentName, Value>) -> [String; 2] {
+        [
+            refusal_message(validate(document_schemas, None, PlatformVersion::latest())),
+            refusal_message(validate_for_mempool(
+                document_schemas,
+                None,
+                before_the_rule(),
+            )),
+        ]
+    }
+
+    #[test]
+    fn should_refuse_a_pattern_longer_than_a_pattern_may_be_without_compiling_it() {
+        // Translating this one, which compiles to almost nothing, takes seconds
+        let pattern = folding_every_code_point(2852);
+        assert_eq!(pattern.len(), 19_970);
+        let shorter = folding_every_code_point(40);
+        for pattern in [&pattern, &shorter] {
+            for document_schemas in [
+                schemas(schema_with_patterns(1, pattern)),
+                schemas(schema_with_field_matches(1, pattern)),
+            ] {
+                for message in refusals(&document_schemas) {
+                    assert!(message.contains(&too_long_message()), "{message}");
+                    assert!(
+                        !message.contains(r"\P{Any}"),
+                        "the refusal does not repeat the pattern: {message}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_admit_a_pattern_as_long_as_a_pattern_may_be() {
+        let most_bytes = usize::from(
+            PlatformVersion::latest()
+                .system_limits
+                .max_schema_pattern_bytes,
+        );
+        let as_long = format!("^{}$", "a".repeat(most_bytes - 2));
+        assert!(validate(
+            &schemas(schema_with_patterns(1, &as_long)),
+            None,
+            PlatformVersion::latest()
+        )
+        .is_valid());
+
+        let one_byte_longer = format!("^{}$", "a".repeat(most_bytes - 1));
+        let message = refusal_message(validate(
+            &schemas(schema_with_patterns(1, &one_byte_longer)),
+            None,
+            PlatformVersion::latest(),
+        ));
+        assert!(message.contains(&too_long_message()), "{message}");
+    }
+
+    /// Every pattern is held to the bounds read from its source before any is compiled: the
+    /// first pattern does not compile within the size limit, and the contract is refused for
+    /// the second, which is too long.
+    #[test]
+    fn should_hold_every_pattern_to_its_source_bounds_before_compiling_one() {
+        let document_schemas = BTreeMap::from([
+            ("a".to_string(), schema_with_patterns(1, LARGE)),
+            (
+                "b".to_string(),
+                schema_with_patterns(1, &folding_every_code_point(40)),
+            ),
+        ]);
+        for message in refusals(&document_schemas) {
+            assert!(message.contains(&too_long_message()), "{message}");
+        }
+
+        let document_schemas = BTreeMap::from([
+            ("a".to_string(), schema_with_patterns(1, LARGE)),
+            (
+                "b".to_string(),
+                schema_with_patterns(1, &folding_every_code_point(1)),
+            ),
+        ]);
+        for message in refusals(&document_schemas) {
+            assert!(message.contains(&folds_too_much_message()), "{message}");
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_case_insensitive_pattern_folding_more_than_a_pattern_may() {
+        for pattern in [
+            folding_every_code_point(1),
+            r"(?i)\p{Any}".to_string(),
+            r"(?i)^\pL+$".to_string(),
+            r"(?i)[\x00-\x{10FFFF}]".to_string(),
+            // A negated class spans every code point, which the class around it folds again
+            r"(?i)[a[^b]]".to_string(),
+            r"(?i)[\x00-\x{FF}&&[^a]]".to_string(),
+            // Matching case-insensitively anywhere counts the whole pattern
+            r"(?i:a)[\x00-\x{FFFF}]".to_string(),
+            r"[\x00-\x{FFFF}](?i)a".to_string(),
+        ] {
+            for document_schemas in [
+                schemas(schema_with_patterns(1, &pattern)),
+                schemas(schema_with_field_matches(1, &pattern)),
+            ] {
+                for message in refusals(&document_schemas) {
+                    assert!(
+                        message.contains(&folds_too_much_message()),
+                        "{pattern}: {message}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The document validator compiles a pattern once its ECMA escapes are rewritten, and the
+    /// rewritten pattern is what the fold is counted on: here `\cJ` becomes the line feed that
+    /// ends the `(?x)` comment, which would otherwise hide the `(?i)` after it.
+    #[test]
+    fn should_count_the_fold_of_a_pattern_as_the_document_validator_reads_it() {
+        let pattern = format!(r"(?x)#\cJ(?i){}", r"[a[^b]]".repeat(3));
+        for message in refusals(&schemas(schema_with_patterns(1, &pattern))) {
+            assert!(message.contains(&folds_too_much_message()), "{message}");
+        }
+    }
+
+    #[test]
+    fn should_admit_a_case_insensitive_pattern_folding_as_much_as_a_pattern_may() {
+        let most_folded = PlatformVersion::latest()
+            .system_limits
+            .max_schema_pattern_case_folded_code_points;
+        for pattern in [
+            r"(?i)^[a-z0-9-]{3,63}$".to_string(),
+            r"(?i)^(support|concern|neutral)$".to_string(),
+            r"(?i)^[[:alpha:]]+$".to_string(),
+            // Perl classes are left as they are, and the document validator reads them as
+            // ASCII classes
+            r"(?i)^\w+$".to_string(),
+            // A range of exactly as many code points as a pattern may fold
+            format!(r"(?i)^[\x{{0}}-\x{{{:x}}}]$", most_folded - 1),
+        ] {
+            for document_schemas in [
+                schemas(schema_with_patterns(1, &pattern)),
+                schemas(schema_with_field_matches(1, &pattern)),
+            ] {
+                assert!(
+                    validate(&document_schemas, None, PlatformVersion::latest()).is_valid(),
+                    "{pattern}"
+                );
+                assert!(
+                    validate_for_mempool(&document_schemas, None, before_the_rule()).is_valid(),
+                    "{pattern}"
+                );
+            }
+        }
+        let one_more = format!(r"(?i)^[\x{{0}}-\x{{{:x}}}]$", most_folded);
+        let message = refusal_message(validate(
+            &schemas(schema_with_patterns(1, &one_more)),
+            None,
+            PlatformVersion::latest(),
+        ));
+        assert!(message.contains(&folds_too_much_message()), "{message}");
+    }
+
+    #[test]
+    fn should_hold_the_patterns_of_a_contract_to_the_most_bytes_they_may_hold_together() {
+        let platform_version = PlatformVersion::latest();
+        let most_bytes = usize::from(platform_version.system_limits.max_schema_pattern_bytes);
+        let most_together = platform_version
+            .system_limits
+            .max_contract_schema_pattern_bytes as usize;
+        let pattern = format!("^{}$", "a".repeat(most_bytes - 2));
+        let fitting = most_together / most_bytes;
+
+        let at_the_limit = schemas(schema_with_patterns(fitting, &pattern));
+        assert!(validate(&at_the_limit, None, platform_version).is_valid());
+
+        let over_the_limit = schemas(schema_with_patterns(fitting + 1, &pattern));
+        for message in refusals(&over_the_limit) {
+            assert!(message.contains(&too_many_bytes_message()), "{message}");
+        }
+    }
+
+    /// A pattern in `$defs` is compiled for each document type, and its bytes count for each.
+    #[test]
+    fn should_count_the_bytes_of_a_pattern_in_the_defs_for_each_document_type() {
+        let platform_version = PlatformVersion::latest();
+        let most_bytes = usize::from(platform_version.system_limits.max_schema_pattern_bytes);
+        let most_together = platform_version
+            .system_limits
+            .max_contract_schema_pattern_bytes as usize;
+        let pattern = format!("^{}$", "a".repeat(most_bytes - 2));
+        let schema_defs = BTreeMap::from([(
+            "label".to_string(),
+            platform_value!({ "type": "string", "pattern": pattern, "maxLength": 300 }),
+        )]);
+        let fitting = most_together / most_bytes;
+
+        assert!(validate(
+            &schemas_referring_to(fitting, "label"),
+            Some(&schema_defs),
+            platform_version
+        )
+        .is_valid());
+        let message = refusal_message(validate(
+            &schemas_referring_to(fitting + 1, "label"),
+            Some(&schema_defs),
+            platform_version,
+        ));
+        assert!(message.contains(&too_many_bytes_message()), "{message}");
     }
 }

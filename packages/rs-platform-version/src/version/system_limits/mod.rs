@@ -46,8 +46,9 @@ pub struct SystemLimits {
     /// under a `pattern` key, and every `regexPattern` of a contested index's `fieldMatches`,
     /// one in `$defs` counted once for each document type.
     /// Each is compiled when the contract is parsed and again for the validator its documents
-    /// are checked with, so this and `max_schema_pattern_compiled_size` bound the work and the
-    /// memory one contract costs every node. Read by `DataContract::validate_schema_patterns`
+    /// are checked with, so this, `max_schema_pattern_compiled_size` and the pattern length and
+    /// case-folding bounds below bound the work compiling one contract's patterns takes every
+    /// node. Read by `DataContract::validate_schema_patterns`
     /// 0, which contract registration and update run under full validation from protocol
     /// version 15 and never before; `check_tx` holds a contract to the same bound at every
     /// protocol version, as mempool policy where consensus has no such rule.
@@ -55,6 +56,21 @@ pub struct SystemLimits {
     /// The `regex` size limit, in bytes, every such pattern must compile within. Read with
     /// `max_contract_schema_patterns`.
     pub max_schema_pattern_compiled_size: u32,
+    /// Most bytes one such pattern may take as written. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_schema_pattern_bytes: u16,
+    /// Most bytes the patterns of one contract may take together as written, each counted as
+    /// often as `max_contract_schema_patterns` counts it (one in `$defs` once for each document
+    /// type). Compiling a pattern takes time in proportion to its length as well as to its
+    /// compiled size, so this bounds the time compiling a contract's patterns takes. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_contract_schema_pattern_bytes: u32,
+    /// Most code points translating one such pattern may case-fold, as
+    /// `validate_schema_patterns` 0 estimates them from the pattern's syntax: under
+    /// case-insensitive matching the `regex` crate walks every code point of a class before it
+    /// compiles the pattern, a walk the compiled size does not reflect. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_schema_pattern_case_folded_code_points: u32,
     /// Maximum bytes of a contract stored compiled (format version 2, its document types
     /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
     /// `None` in the earlier tables, which store no contract compiled. The format transitions

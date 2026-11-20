@@ -952,15 +952,22 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     document schemas and `$defs` hold more than 32 patterns
 ///     (`max_contract_schema_patterns`: every string under a `pattern` key and every
 ///     `regexPattern` of a contested index, one in `$defs` counted once for each document
-///     type), or a pattern that does not compile within 128 KiB
-///     (`max_schema_pattern_compiled_size`), before anything compiles one. Every pattern is
+///     type), patterns of more than 4 KiB together so counted
+///     (`max_contract_schema_pattern_bytes`), a pattern longer than 256 bytes
+///     (`max_schema_pattern_bytes`), or one matching case-insensitively whose classes fold more
+///     than 4096 code points as its syntax tree shows
+///     (`max_schema_pattern_case_folded_code_points`), all read before anything compiles one,
+///     and then a pattern that does not compile within 128 KiB
+///     (`max_schema_pattern_compiled_size`). Translating a pattern takes time in proportion to
+///     its length and to the code points its case-insensitive classes span, which the compiled
+///     size does not show. Every pattern is
 ///     compiled when a contract is parsed and again for the validator its documents are
 ///     checked with, under a limit of 5 or 10 MiB each and in any number, so one 20 KiB
 ///     contract cost a node tens of seconds to check and over a gigabyte to keep. The balance
 ///     pre-check estimates the registration fee before that, and its estimate parsed every
 ///     index, compiling the field matches of a contested one: `registration_cost` 3 bills an
 ///     index by the keys it declares instead, the same fee for every contract that registers.
-///     Both numbers are in every system limits table: `check_tx` holds a contract to them
+///     The numbers are in every system limits table: `check_tx` holds a contract to them
 ///     before the balance pre-check at every protocol version, as mempool policy where
 ///     consensus has no such rule, and there also keeps a schema declaring `format: regex` out
 ///     of the mempool, whose values the `jsonschema` crate compiles. Protocol v14 selects no

@@ -238,6 +238,20 @@ pub(in crate::execution) const TOO_MANY_PATTERNS_MESSAGE: &str = "patterns (`pat
 pub(in crate::execution) const PATTERN_TOO_LARGE_MESSAGE: &str =
     "is not a regular expression that compiles within";
 
+/// The fragment of the pattern bound's message for a pattern longer than a pattern may be.
+pub(in crate::execution) const PATTERN_TOO_LONG_MESSAGE: &str = "bytes long";
+
+/// The fragment of the pattern bound's message for a pattern folding more code points than a
+/// pattern may.
+pub(in crate::execution) const PATTERN_FOLDS_TOO_MUCH_MESSAGE: &str = "may fold more than";
+
+/// A bracketed class of `count` `\P{Any}` under `(?i)`: each item folds every code point
+/// before it is negated to nothing, so the class compiles to almost nothing however long
+/// translating it takes.
+pub(in crate::execution) fn folding_every_code_point(count: usize) -> String {
+    format!("(?i)[{}]", r"\P{Any}".repeat(count))
+}
+
 /// A pattern any limit admits.
 pub(in crate::execution) const SMALL_PATTERN: &str = "^[a-z]{1,20}$";
 

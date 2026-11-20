@@ -764,14 +764,24 @@ pub(crate) fn validator_regex_within(
 /// few values the compiler does not, such as an unknown Unicode property name (`\p{Foobar}`):
 /// a well-formed pattern the engine holds no character class for.
 pub(crate) fn validator_regex_parses(value: &str) -> bool {
+    validator_regex_syntax(value).is_some()
+}
+
+/// The syntax tree of `pattern` as the JSON Schema validator's regex dialect reads it, read as
+/// [`validator_regex_parses`] reads it; `None` when it does not parse.
+pub(crate) fn validator_regex_syntax(pattern: &str) -> Option<regex_syntax::ast::Ast> {
+    regex_syntax_parser().parse(&converted_regex(pattern)).ok()
+}
+
+/// The `regex-syntax` parser configured as the `regex` crate configures it by default: a nest
+/// limit of 250, no octal escapes, whitespace read as written, and no empty `{,n}` minimum.
+pub(crate) fn regex_syntax_parser() -> regex_syntax::ast::parse::Parser {
     regex_syntax::ast::parse::ParserBuilder::new()
         .nest_limit(250)
         .octal(false)
         .ignore_whitespace(false)
         .empty_min_range(false)
         .build()
-        .parse(&converted_regex(value))
-        .is_ok()
 }
 
 /// `pattern` with the JSON Schema validator's `convert_regex` rewrites applied, ready for
