@@ -72,6 +72,15 @@ impl Drop for ShieldedPrefetch {
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
+    /// Inject a callback-capable prefetch future for host teardown tests.
+    #[cfg(feature = "test-utils")]
+    pub fn spawn_shielded_prefetch_for_testing(
+        &self,
+        future: impl Future<Output = ()> + Send + 'static,
+    ) -> bool {
+        self.shielded_prefetch.spawn(future)
+    }
+
     /// Queue a best-effort anchor warm-up on the current runtime. Busy coordinator
     /// configuration is skipped; shutdown permanently closes task admission.
     pub fn prefetch_shielded_spend_anchors(&self) -> Result<(), PlatformWalletError> {
