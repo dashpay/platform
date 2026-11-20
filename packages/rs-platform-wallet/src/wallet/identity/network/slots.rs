@@ -398,8 +398,11 @@ impl IdentityWallet {
     /// reached Platform (`Submitted`), from what Platform holds at each
     /// claim's identity id (derived from its invitation outpoint alone), and
     /// end every claim lease restored for a slot an identity has filled
-    /// since. Run at startup: a claim interrupted or left unanswered by an
-    /// earlier process otherwise holds its slot for good.
+    /// since, and every `Reserved` one (nothing was sent for it, and the
+    /// operation that leased it ended with its process). Run at startup,
+    /// before any claim of this process leases a slot: a claim interrupted or
+    /// left unanswered by an earlier process otherwise holds its slot for
+    /// good.
     ///
     /// Per `Submitted` lease:
     /// - no identity at the id, or Platform not answering: it may still
@@ -435,7 +438,13 @@ impl IdentityWallet {
                 }
                 continue;
             }
+            // Nothing was sent for a `Reserved` claim, and the operation
+            // that leased it ended with the process that ran it: no claim
+            // can land there, and nothing else would release the lease.
             if lease.phase != SlotLeasePhase::Submitted {
+                if self.end_claim_lease(lease.invitation).await {
+                    resolution.ended += 1;
+                }
                 continue;
             }
             let identity_id = identity_id_for_out_point(lease.invitation);
@@ -2019,10 +2028,12 @@ mod tests {
             assert!(matches!(slot_state(&wallet, 0).await, SlotState::Leased(_)));
         }
 
+        /// Nothing was sent for a `Reserved` claim, and the process that
+        /// leased it is gone: its lease ends, stored durably.
         #[tokio::test]
-        async fn should_leave_a_reserved_claim_alone() {
+        async fn should_end_a_reserved_claim_lease_an_earlier_process_left() {
             let backend = Backend::new(full());
-            let (wallet, _) =
+            let (wallet, slot) =
                 wallet_with_claim(backend.clone(), None, SlotLeasePhase::Reserved).await;
 
             let resolution = wallet
@@ -2031,14 +2042,12 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(resolution, ClaimLeaseResolution::default());
-            assert!(matches!(
-                slot_state(&wallet, 0).await,
-                SlotState::Leased(SlotLease {
-                    phase: SlotLeasePhase::Reserved,
-                    ..
-                })
-            ));
+            assert_eq!(resolution.ended, 1, "{resolution:?}");
+            assert_eq!(
+                slot_state(&wallet, slot.identity_index).await,
+                SlotState::Free
+            );
+            assert!(ended_last(&backend));
         }
 
         /// A wallet whose node holds `at_lock_id` at the identity id of the
