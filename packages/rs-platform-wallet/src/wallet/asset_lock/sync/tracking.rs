@@ -132,7 +132,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// The Orchard recipient a tracked shielded funding was built to pay, if
     /// the row recorded one (see `TrackedAssetLock::shielded_recipient`).
-    #[cfg(any(feature = "shielded", test))]
+    #[cfg(feature = "shielded")]
     pub(crate) async fn tracked_shielded_recipient(
         &self,
         out_point: &OutPoint,
