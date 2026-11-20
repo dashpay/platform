@@ -19,10 +19,7 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
-use platform_version::version::feature_initial_protocol_versions::{
-    PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
-    YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION,
-};
+use platform_version::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -1274,9 +1271,6 @@ impl StateTransition {
             StateTransition::IdentityCreateFromShieldedPool(st) => {
                 active_version_range_for_keys_in_creation(st.public_keys(), 12..=LATEST_VERSION)
             }
-            StateTransition::IdentityTopUp(_)
-            | StateTransition::IdentityCreditWithdrawal(_)
-            | StateTransition::IdentityCreditTransfer(_) => ALL_VERSIONS,
             // A vote that names a yes/no poll, as a yes/no vote or as a resource vote, exists
             // from protocol version 15. Binaries from before it cannot decode one, so an earlier
             // version rejects it without charging, exactly as they do, and no masternode vote
@@ -1290,15 +1284,6 @@ impl StateTransition {
                 },
                 Vote::YesNoVote(_) => YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION,
             },
-            StateTransition::IdentityCreditTransferToAddresses(_)
-            | StateTransition::IdentityTopUpFromAddresses(_)
-            | StateTransition::AddressFundsTransfer(_)
-            | StateTransition::AddressFundingFromAssetLock(_)
-            | StateTransition::AddressCreditWithdrawal(_) => 11..=LATEST_VERSION,
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
-            | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
             // From protocol version 14 the bundle must bind its kind and its asset lock, which
             // only version 1 does. Version 0 is refused there on its version byte, before any
             // proof is verified: uncharged, with its asset lock left unspent, so a version 0 still
@@ -1308,17 +1293,13 @@ impl StateTransition {
                 ShieldFromAssetLockTransition::V0(_) => 12..=13,
                 ShieldFromAssetLockTransition::V1(_) => 14..=LATEST_VERSION,
             },
-            StateTransition::ShieldFromIdentity(_)
-            | StateTransition::IdentityTopUpFromShieldedPool(_)
-            | StateTransition::IdentityKeyLimitsUpdate(_)
-            | StateTransition::ContractUserModeration(_)
-            | StateTransition::ContractFeeClaim(_)
-            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
-            | StateTransition::TokenUnshieldWithShieldedFee(_)
-            | StateTransition::TokenPurchaseFromShieldedPool(_) => 14..=LATEST_VERSION,
-            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
-                PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
-            }
+            // Every other type is active in a range its contents cannot change, defined once on
+            // the type. The fallback is unreachable, since the type answers for every type this
+            // match leaves to it; it would keep a gap inactive, never active.
+            _ => self
+                .state_transition_type()
+                .fixed_active_version_range()
+                .unwrap_or(NO_VERSION),
         }
     }
 
