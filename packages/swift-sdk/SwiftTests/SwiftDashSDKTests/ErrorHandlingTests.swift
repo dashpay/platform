@@ -1479,7 +1479,7 @@ final class ErrorHandlingTests: XCTestCase {
             (PlatformPaymentClass(delivery: .notSent, isRetryable: true), .retry,
              "Nothing was sent. You can try again."),
             (PlatformPaymentClass(delivery: .notSent, isRetryable: false), .wait,
-             "Nothing was sent. An earlier payment may still be settling; wait for it to finish."),
+             "Nothing was sent. This request cannot go through as it is."),
             (PlatformPaymentClass(delivery: .lockHeld(held), isRetryable: false), .resume(held),
              "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."),
             (.maybeSent, .reconcile,

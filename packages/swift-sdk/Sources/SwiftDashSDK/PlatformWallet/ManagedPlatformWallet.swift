@@ -2902,17 +2902,13 @@ extension ManagedPlatformWallet {
             }
             try result.check()
             guard let outURI else {
-                // The call succeeded, so the voucher lock is funded, tracked
-                // and its outpoint was written: name it as held, so the host
-                // reclaims that voucher instead of funding a new invitation.
-                var raw = withUnsafeBytes(of: outOutpoint.txid) { Data($0) }
-                withUnsafeBytes(of: outOutpoint.vout.littleEndian) { raw.append(contentsOf: $0) }
+                // The call succeeded, so the voucher lock was funded and
+                // recorded (reclaimable from Sent invitations). Only the
+                // wallet knows whether it is still resumable, and this guard
+                // cannot ask it: `.maybeSent`, never a held lock.
                 throw PlatformWalletError.nullPointer(
                     "createInvitation returned a null URI",
-                    payment: PlatformPaymentClass(
-                        delivery: .lockHeld(AssetLockBuiltOutPoint(reportedBytes: raw)),
-                        isRetryable: false
-                    )
+                    payment: .maybeSent
                 )
             }
             let uri = String(cString: outURI)

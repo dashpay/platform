@@ -11,9 +11,10 @@ import SwiftDashSDK
 /// - a retryable `.notSent` offers a retry;
 /// - `.lockHeld` resumes the named lock and never funds a new one (an
 ///   invitation's voucher lock is reclaimed instead, `invitationVoucher`);
-/// - everything else waits: a non-retryable `.notSent` (an earlier payment
-///   may still be settling), `.maybeSent` (sync settles it) and an
-///   unclassified failure (unconfirmed, never retried).
+/// - everything else waits: a non-retryable `.notSent` (it cannot go
+///   through as it is, for the reason its message states), `.maybeSent`
+///   (sync settles it) and an unclassified failure (unconfirmed, never
+///   retried).
 ///
 /// Whether the failure keeps its slot is `holdsSlot`: only a `.notSent` one
 /// releases it.

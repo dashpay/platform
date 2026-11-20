@@ -279,17 +279,11 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
             &proofBytesPtr, &proofLen, &pathPtr
         ).check()
 
-        // Past a successful resume the lock stays tracked at this outpoint,
-        // so a guard below names it for the caller to resume again.
-        var rawOutPoint = txid
-        withUnsafeBytes(of: vout.littleEndian) { rawOutPoint.append(contentsOf: $0) }
-        let heldLock = PlatformPaymentClass(
-            delivery: .lockHeld(AssetLockBuiltOutPoint(reportedBytes: rawOutPoint)),
-            isRetryable: false
-        )
-
+        // Past a successful resume only the wallet knows whether the lock is
+        // still resumable (it may be consumed or consumption-unknown), and a
+        // guard here cannot ask it: `.maybeSent`, never a held lock.
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty", payment: heldLock)
+            throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty", payment: .maybeSent)
         }
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
@@ -303,7 +297,7 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         guard let pathPtr, pathPtr.pointee != 0 else {
             throw PlatformWalletError.unknown(
                 "FFI returned success but derivation path was NULL or empty",
-                payment: heldLock
+                payment: .maybeSent
             )
         }
         let path = String(cString: pathPtr)

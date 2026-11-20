@@ -153,8 +153,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// A deferred reservation token is unknown, already broadcast, or already
     /// released — the guard that turns a double-broadcast (or a broadcast after
     /// release) into a typed error instead of a second send. The call did NOT
-    /// touch the network. NOT retryable: rebuild the payment. (Release is
-    /// idempotent and never surfaces this.)
+    /// touch the network, but an earlier broadcast of the token may have sent
+    /// the payment, so it is `.maybeSent`: let sync settle it before building
+    /// the payment again. NOT retryable. (Release is idempotent and never
+    /// surfaces this.)
     case errorReservationTokenConsumed = 35
     /// A deferred reservation token was minted against a different wallet
     /// *generation* than the one broadcasting it (e.g. a wallet re-created under
@@ -267,10 +269,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// SPV startup or teardown panicked. Not retryable: restart the app.
     case errorSpvProcessRestartRequired = 59
     /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
-    /// the input cap; nothing was broadcast.
+    /// the input cap. A fresh build submitted nothing; a resumed lock over the
+    /// cap may have been sent by an earlier attempt, so read the error's
+    /// `payment` rather than this code.
     case errorAssetLockTooManyInputs = 60
     /// A shielded fund-from-asset-lock resume named a different Orchard
-    /// recipient than the one its tracked lock recorded; nothing was paid.
+    /// recipient than the one its tracked lock recorded. This call submitted
+    /// nothing new, but the lock is held (`.lockHeld`): resume it with the
+    /// recorded recipient.
     case errorAssetLockRecipientMismatch = 61
     /// The contact requests with that identity came or went privately, so a
     /// public request to it, in reply or as a rotation, would publish the
@@ -639,7 +645,7 @@ public enum PlatformPaymentRecovery: Equatable, Sendable {
     /// Nothing left the wallet and Rust allows running the operation again.
     case retry
     /// Nothing left the wallet, and Rust does not allow running it again as
-    /// it is: an earlier payment may still be settling. Offer no retry.
+    /// it is. The reason is the error's own (its message); offer no retry.
     case wait
     /// The payment holds the tracked asset lock at this outpoint: resume it,
     /// never fund a new one.
@@ -669,7 +675,7 @@ public enum PlatformPaymentRecovery: Equatable, Sendable {
         case .retry:
             return "Nothing was sent. You can try again."
         case .wait:
-            return "Nothing was sent. An earlier payment may still be settling; wait for it to finish."
+            return "Nothing was sent. This request cannot go through as it is."
         case .resume:
             return "The funds are held in an asset lock. Resume that lock to finish; do not start a new payment."
         case .reconcile:
