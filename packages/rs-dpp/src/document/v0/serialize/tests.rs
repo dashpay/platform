@@ -1,8 +1,10 @@
 use super::*;
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::random_document::CreateRandomDocument;
+use crate::data_contract::document_type::{DocumentPropertyType, DocumentType};
 use crate::tests::json_document::json_document_to_contract;
 use integer_encoding::VarInt;
 use platform_value::{Identifier, Value};
@@ -1758,4 +1760,463 @@ fn stamp_survives_the_wire_for_documents_stamped_past_required_since() {
 
     assert_eq!(before_back, stamped_before);
     assert_eq!(at_back, stamped_at);
+}
+
+/// `{ meta: { y, x } }`, `x` required from contract version 2 when `with_x`, else
+/// `{ meta: { y } }`: the type before and after the update that adds `x`.
+fn nested_required_since_document_type(with_x: bool) -> DocumentType {
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+    let meta = if with_x {
+        platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": {
+                "y": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "x": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+            },
+            "required": ["y", "x"],
+            "additionalProperties": false,
+        })
+    } else {
+        platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": {
+                "y": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "required": ["y"],
+            "additionalProperties": false,
+        })
+    };
+    let schema = platform_value!({
+        "type": "object",
+        "properties": { "meta": meta },
+        "required": ["meta"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        platform_value::Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type")
+}
+
+fn meta_properties(members: &[(&str, &str)]) -> BTreeMap<String, Value> {
+    let meta = members
+        .iter()
+        .map(|(name, value)| {
+            (
+                Value::Text(name.to_string()),
+                Value::Text(value.to_string()),
+            )
+        })
+        .collect();
+    BTreeMap::from([("meta".to_string(), Value::Map(meta))])
+}
+
+/// The bytes of the user properties of a format-3 document of the nested type: the length
+/// prefix of `meta`, then its members.
+fn meta_bytes(serialized: &[u8]) -> &[u8] {
+    // version 3, stamp, id, owner id, revision, time flags (no time fields)
+    let (_, version_length) = u64::decode_var(serialized).expect("expected the version");
+    let (_, stamp_length) =
+        u64::decode_var(&serialized[version_length..]).expect("expected the stamp");
+    let header = version_length + stamp_length + 32 + 32 + 1 + 2;
+    &serialized[header..]
+}
+
+#[test]
+fn should_store_a_member_required_from_a_contract_version_with_a_presence_byte_at_every_stamp() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = nested_required_since_document_type(true);
+    let document_type_ref = document_type.as_ref();
+
+    // At and above the version `x` is required from, `x` keeps the presence byte an optional
+    // member carries: `meta` is `y` (length 1, "a", no presence byte: required at every
+    // version), then `x` (present: 1, length 1, "b")
+    for stamp in [Some(2), Some(3), Some(1), None] {
+        let properties = match stamp {
+            Some(stamp) if stamp >= 2 => meta_properties(&[("y", "a"), ("x", "b")]),
+            _ => meta_properties(&[("y", "a")]),
+        };
+        let document = stamped_document(stamp, properties, document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("expected the document to serialize");
+        let expected: &[u8] = match stamp {
+            Some(stamp) if stamp >= 2 => &[5, 1, b'a', 1, 1, b'b'],
+            _ => &[3, 1, b'a', 0],
+        };
+        assert_eq!(meta_bytes(&serialized), expected, "stamp {stamp:?}");
+
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected the document to deserialize");
+        assert_eq!(deserialized, document, "stamp {stamp:?}");
+    }
+}
+
+#[test]
+fn should_read_a_document_stored_before_its_object_gained_a_member() {
+    let platform_version = PlatformVersion::latest();
+    let before = nested_required_since_document_type(false);
+    let after = nested_required_since_document_type(true);
+
+    let document = stamped_document(Some(1), meta_properties(&[("y", "a")]), before.as_ref());
+    let serialized = document
+        .serialize_v3(before.as_ref())
+        .expect("expected the document to serialize under the type before the update");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, after.as_ref(), platform_version)
+        .expect("a document stored before the update must read under the updated type");
+    assert_eq!(
+        deserialized.properties,
+        meta_properties(&[("y", "a")]),
+        "the member the update added reads as absent"
+    );
+}
+
+/// Protocol version 14 keeps the object layout it always wrote: a required member raw, an
+/// optional one behind a presence byte.
+#[test]
+fn should_keep_the_protocol_version_14_layout_of_an_object() {
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "meta": {
+                "type": "object",
+                "position": 0,
+                "properties": {
+                    "y": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "x": {"type": "string", "position": 1, "maxLength": 60_u32},
+                },
+                "required": ["y"],
+                "additionalProperties": false,
+            },
+        },
+        "required": ["meta"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    let document_type = DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type");
+    let document_type_ref = document_type.as_ref();
+
+    for (members, expected) in [
+        (vec![("y", "a")], vec![3u8, 1, b'a', 0]),
+        (vec![("y", "a"), ("x", "b")], vec![5u8, 1, b'a', 1, 1, b'b']),
+    ] {
+        let document = stamped_document(Some(1), meta_properties(&members), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("expected the document to serialize");
+        assert_eq!(meta_bytes(&serialized), expected.as_slice());
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected the document to deserialize");
+        assert_eq!(deserialized, document);
+    }
+}
+
+/// A required string member of an object, at `position`.
+fn positioned_string(position: u32) -> Value {
+    platform_value::platform_value!({"type": "string", "position": position, "maxLength": 60_u32})
+}
+
+/// An object at `position` holding `members` (name and position, in map order), every member a
+/// required string.
+fn positioned_object(members: &[(&str, u32)], position: u32) -> Value {
+    let properties = members
+        .iter()
+        .map(|(name, position)| (Value::Text(name.to_string()), positioned_string(*position)))
+        .collect();
+    let required = members
+        .iter()
+        .map(|(name, _)| Value::Text(name.to_string()))
+        .collect();
+    Value::Map(vec![
+        (
+            Value::Text("type".to_string()),
+            Value::Text("object".to_string()),
+        ),
+        (Value::Text("position".to_string()), Value::U32(position)),
+        (
+            Value::Text("properties".to_string()),
+            Value::Map(properties),
+        ),
+        (Value::Text("required".to_string()), Value::Array(required)),
+        (
+            Value::Text("additionalProperties".to_string()),
+            Value::Bool(false),
+        ),
+    ])
+}
+
+/// A type whose only property is `meta`, as written, with `$defs` `defs`.
+fn meta_document_type(
+    meta: Value,
+    defs: Option<BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> DocumentType {
+    use platform_value::platform_value;
+
+    let schema = platform_value!({
+        "type": "object",
+        "properties": { "meta": meta },
+        "required": ["meta"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        defs.as_ref(),
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type")
+}
+
+/// The member names of the object at `path` (dotted) of `document_type`, in the order it stores
+/// them.
+fn stored_member_order(document_type: &DocumentType, path: &str) -> Vec<String> {
+    let mut properties = document_type.properties();
+    let mut segments = path.split('.').peekable();
+    while let Some(segment) = segments.next() {
+        let Some(DocumentPropertyType::Object(members)) = properties
+            .get(segment)
+            .map(|property| &property.property_type)
+        else {
+            panic!("expected an object at {segment}");
+        };
+        if segments.peek().is_none() {
+            return members.keys().cloned().collect();
+        }
+        properties = members;
+    }
+    unreachable!("a path has at least one segment")
+}
+
+/// An object stores its members in the order its `properties` map lists them, at every protocol
+/// version, whatever their positions: a contract registered before protocol version 15 may list
+/// them out of position order, and its stored documents read as they were written.
+#[test]
+fn should_store_an_objects_members_in_map_order_at_every_protocol_version() {
+    let members = [("slug", 2), ("title", 0), ("description", 1)];
+    let values = meta_properties(&[("slug", "s"), ("title", "t"), ("description", "d")]);
+
+    for platform_version in [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        PlatformVersion::latest(),
+    ] {
+        let version = platform_version.protocol_version;
+        let document_type =
+            meta_document_type(positioned_object(&members, 0), None, platform_version);
+        assert_eq!(
+            stored_member_order(&document_type, "meta"),
+            ["slug", "title", "description"],
+            "protocol version {version}"
+        );
+
+        let document = stamped_document(Some(1), values.clone(), document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected the document to serialize");
+        assert_eq!(
+            meta_bytes(&serialized),
+            [6u8, 1, b's', 1, b't', 1, b'd'],
+            "protocol version {version}"
+        );
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected the document to deserialize");
+        assert_eq!(deserialized, document, "protocol version {version}");
+    }
+}
+
+/// The members a `$ref` brings and those of an object inside an object are stored in map order
+/// too.
+#[test]
+fn should_store_members_in_map_order_through_a_ref_and_inside_an_object() {
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+    let members = [("slug", 2), ("title", 0), ("description", 1)];
+    let members_value = |members: &[(&str, &str)]| {
+        meta_properties(members)
+            .remove("meta")
+            .expect("expected the members")
+    };
+    let inner = members_value(&[("slug", "s"), ("title", "t"), ("description", "d")]);
+    let stored = inner.clone();
+
+    let through_ref = meta_document_type(
+        platform_value!({ "$ref": "#/$defs/page", "position": 0 }),
+        Some(BTreeMap::from([(
+            "page".to_string(),
+            positioned_object(&members, 0),
+        )])),
+        platform_version,
+    );
+    let mut nested = positioned_object(&[], 0);
+    if let Value::Map(map) = &mut nested {
+        for (key, value) in map.iter_mut() {
+            match key.as_text() {
+                Some("properties") => {
+                    *value = Value::Map(vec![(
+                        Value::Text("page".to_string()),
+                        positioned_object(&members, 0),
+                    )])
+                }
+                Some("required") => *value = Value::Array(vec![Value::Text("page".to_string())]),
+                _ => {}
+            }
+        }
+    }
+    let inside_an_object = meta_document_type(nested, None, platform_version);
+
+    // A definition's own `required` is not read for storage, so the members a `$ref` brings
+    // carry the presence byte of optional members
+    for (document_type, path, properties, stored_properties, expected) in [
+        (
+            &through_ref,
+            "meta",
+            BTreeMap::from([("meta".to_string(), inner.clone())]),
+            BTreeMap::from([("meta".to_string(), stored.clone())]),
+            vec![9u8, 1, 1, b's', 1, 1, b't', 1, 1, b'd'],
+        ),
+        (
+            &inside_an_object,
+            "meta.page",
+            BTreeMap::from([(
+                "meta".to_string(),
+                Value::Map(vec![(Value::Text("page".to_string()), inner.clone())]),
+            )]),
+            BTreeMap::from([(
+                "meta".to_string(),
+                Value::Map(vec![(Value::Text("page".to_string()), stored.clone())]),
+            )]),
+            vec![7u8, 6, 1, b's', 1, b't', 1, b'd'],
+        ),
+    ] {
+        assert_eq!(
+            stored_member_order(document_type, path),
+            ["slug", "title", "description"],
+            "{path}"
+        );
+        let document = stamped_document(Some(1), properties, document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected the document to serialize");
+        assert_eq!(meta_bytes(&serialized), expected.as_slice(), "{path}");
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected the document to deserialize");
+        assert_eq!(deserialized.properties, stored_properties, "{path}");
+    }
+}
+
+/// A member an update adds after the object's existing ones, in its map and at its next
+/// position, reads as absent in a document stored before: an optional member, one required from
+/// the new version, and an object.
+#[test]
+fn should_read_a_document_stored_before_its_object_gained_a_member_of_each_kind() {
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+    let before = meta_document_type(
+        platform_value!({
+            "type": "object",
+            "position": 0,
+            "properties": { "y": positioned_string(0) },
+            "required": ["y"],
+            "additionalProperties": false,
+        }),
+        None,
+        platform_version,
+    );
+    let document = stamped_document(Some(1), meta_properties(&[("y", "a")]), before.as_ref());
+    let serialized = document
+        .serialize_v3(before.as_ref())
+        .expect("expected the document to serialize under the type before the update");
+    assert_eq!(meta_bytes(&serialized), [2u8, 1, b'a']);
+
+    for (added, x, required) in [
+        (
+            "an optional member",
+            positioned_string(1),
+            platform_value!(["y"]),
+        ),
+        (
+            "a member required from the new version",
+            platform_value!({
+                "type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 1
+            }),
+            platform_value!(["y", "x"]),
+        ),
+        (
+            "an object",
+            platform_value!({
+                "type": "object",
+                "position": 1,
+                "properties": { "p": positioned_string(0) },
+                "additionalProperties": false,
+            }),
+            platform_value!(["y"]),
+        ),
+    ] {
+        let after = meta_document_type(
+            platform_value!({
+                "type": "object",
+                "position": 0,
+                "properties": { "y": positioned_string(0), "x": x },
+                "required": required,
+                "additionalProperties": false,
+            }),
+            None,
+            platform_version,
+        );
+        assert_eq!(stored_member_order(&after, "meta"), ["y", "x"], "{added}");
+        let deserialized = DocumentV0::from_bytes(&serialized, after.as_ref(), platform_version)
+            .unwrap_or_else(|error| panic!("{added}: the stored document must read: {error}"));
+        assert_eq!(
+            deserialized.properties,
+            meta_properties(&[("y", "a")]),
+            "{added}: the member the update added reads as absent"
+        );
+    }
 }

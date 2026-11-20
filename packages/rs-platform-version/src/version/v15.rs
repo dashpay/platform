@@ -366,9 +366,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     same cap after the parse, with the same error (data contract create and update
 ///     `transform_into_action` 0, edited in place: no type is private before). The compiled
 ///     stored form of note 8 records the declaration. A contract update cannot add, remove or
-///     change it (`DocumentTypeUpdateError`), and may only add properties after a private type's
-///     existing ones, at the end of the type and of each object, since its immutable entries are
-///     read with the type as it is now (`DocumentTypeUpdateError` too). No reference may name a private type: a
+///     change it (`DocumentTypeUpdateError`), and, as for every type (note 49), may only add
+///     properties after the existing ones, at the end of the type and of each object, since its
+///     immutable entries are read with the type as it is now (`DocumentTypeUpdateError` too). No reference may name a private type: a
 ///     `findBy`, an `inList` list, a `countOf` or a `sumOf` naming one of the same contract is
 ///     refused by the contract parse (`InvalidContractStructure`), and every other reference,
 ///     to a type of the same contract or another, by contract registration
@@ -1085,6 +1085,52 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     contested name out, and the masternodes can lock it. Protocol v14 and earlier keep document
 ///     reference validation 0, which holds every create to `chooseFirst`.
 ///
+/// 49. **An object's members follow the update rules of the type's own properties**:
+///     document type `validate_update` 2 (`DPP_VALIDATION_VERSIONS_V6`) holds every object of
+///     every document type a contract has, private ones included, at every depth and through
+///     `$ref`, to what the type's own properties are held to.
+///     - An object's members keep their order (the schema's map order, in which they are stored
+///       at every protocol version) and their requiredness as the type parses it, including
+///       whether they are required from a contract version (`requiredSince`, which gives them a
+///       presence byte), and members are added only after them.
+///     - A member added to an object the type already has is optional, or required with
+///       `requiredSince` equal to the version the update creates. It is optional under a property
+///       listed in `immutable`, inside an object declaring a whole-object `const` or `enum`, and
+///       in a type whose moderators change fields.
+///     - A member the update adds is required exactly when a `required` list names it.
+///     - An object's `required` loses no name, gains only members the same update adds, and
+///       does not grow past the object's `maxProperties`.
+///     - No `required` list gains a dotted name, or loses one no other list still requires,
+///       including the type's own list, those of the objects the update adds, and entries
+///       written beside a `$ref` (`DocumentTypeUpdateError`,
+///       `DataContractInvalidRequiredFieldsUpdateError`).
+///     - Through a `$ref` members are added only as optional: the `required` beside a `$ref`
+///       stays as it is, and a definition's own lists are not read for storage and stay fixed,
+///       as do the lists below a `$ref`.
+///
+///     Positions:
+///     - `try_from_schema` 4 (`CONTRACT_VERSIONS_V7`) holds an object's positions, under full
+///       validation, to integers that follow one another from its lowest (unique, no gap; an
+///       object may start above 0, as DPNS `records` does), and still stores the members in map
+///       order.
+///     - Contract create basic structure 3 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) and contract
+///       `validate_update` 2 require every object a contract gains (at registration, or an
+///       object, document type or `$defs` definition an update adds) to list its members in
+///       position order (`InvalidContractStructure`), so for every such object the stored
+///       order is its position order.
+///     - A member an existing object gains comes after its existing ones in both orders. An
+///       object a contract registered earlier keeps its order and stays updatable.
+///
+///     `CONTRACT_VERSIONS_V7` selects `apply_required_since` 1, which admits `requiredSince` on a
+///     member its object's `required` (or, at registration, the `required` beside its `$ref`)
+///     names, stored with a presence byte at every contract version, and
+///     `validate_schema_compatibility` 2, which leaves the objects' `required` lists out of the
+///     JSON-schema diff for `validate_update` 2 to judge. The `requiredSince` bound every
+///     contract parse checks (no annotation past the contract's version) walks object members.
+///     Protocol v14 keeps `validate_update` 1, `apply_required_since` 0,
+///     `validate_schema_compatibility` 1, `try_from_schema` 3, which reads no nested position,
+///     and contract create basic structure 2.
+///
 /// 50. **A `chooseFirst` competitor's hash is billed by its blocks**: document reference
 ///     validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) bills the competitors query up to the
 ///     scan's budget (`choose_first_credits_per_candidate` times `max_choose_first_candidates`)
@@ -1120,12 +1166,12 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V6, // changed: document type update 2 preserves erasure constraints (note 41)
+        validation: DPP_VALIDATION_VERSIONS_V6, // changed: document type update 2 preserves erasure constraints (note 41) and holds every object to its existing members (note 49)
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V4, // changed: document erase bounds Some(0) admit the appended kind (note 41)
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: verify_hash_signature 1 refuses a high-S signature and an uncompressed-key header where the key is recovered (note 43)
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration and validate_update 2 refuses an update of a contract stored with a schema naming a key twice (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); max_size 1 holds a string bound past u16::MAX bytes there for the erase (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration and validate_update 2 refuses an update of a contract stored with a schema naming a key twice (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41) and checks an object's member positions (note 49); max_size 1 holds a string bound past u16::MAX bytes there for the erase (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42); apply_required_since 1 admits requiredSince on an object's member and validate_schema_compatibility 2 leaves the objects' required lists to validate_update 2 (note 49)
         document_versions: DOCUMENT_VERSIONS_V5, // changed: id_and_revision_from_bytes 0 reads a retained revision's id and revision without its properties (note 35)
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)

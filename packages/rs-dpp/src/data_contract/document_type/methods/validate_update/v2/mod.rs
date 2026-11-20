@@ -1,6 +1,7 @@
 //! Protocol v15 generation of document type update validation.
 //!
-//! v2 is v1 plus the keep-history document lifecycle. Two rules are new:
+//! v2 is v1 plus the keep-history document lifecycle and the member rules of
+//! every object. The lifecycle rules:
 //!
 //! * `canBeErased` is immutable in both directions. Widening it would give an
 //!   operation over already-stored revisions to a type registered without it;
@@ -19,10 +20,21 @@
 //! changed width would write and read its sums at a width its trees do not
 //! have.
 //!
-//! Every other check is v1's, which v2 delegates to once the rules above
-//! have passed. The one case where v1 alone would decide
-//! differently, an erasable type withdrawing deletion, is refused here before
-//! v1 sees it, so v1's option computation stays what it was.
+//! The member rules ([`nested_members`]) hold every object of every type,
+//! private ones included, at every depth, to what the type's own properties are
+//! held to: its members keep their order and requiredness, members are added
+//! only after them, a `required` list loses nothing and gains only members the
+//! same update adds, and a member added to an object that holds stored
+//! documents is required only with `requiredSince`.
+//!
+//! Every other check is v1's, which v2 delegates to once the rules above have
+//! passed. The one case where v1 alone would decide differently, an erasable
+//! type withdrawing deletion, is refused here before v1 sees it, so v1's option
+//! computation stays what it was. The member rules only add refusals, so
+//! running them first changes which error an update breaking several rules
+//! reports, never whether it is refused.
+
+mod nested_members;
 
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::{
@@ -88,6 +100,28 @@ impl DocumentTypeRef<'_> {
             ));
         }
 
+        let result = self.validate_member_order_kept(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let result = self.validate_required_lists_kept(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let result =
+            self.validate_member_requiredness_kept(new_document_type, new_contract_version);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         self.validate_update_v1(new_document_type, new_contract_version, platform_version)
     }
 }
+
+#[cfg(test)]
+mod tests;

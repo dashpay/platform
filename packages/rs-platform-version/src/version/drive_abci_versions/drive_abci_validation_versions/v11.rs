@@ -110,6 +110,9 @@ use super::{
 ///   `TokenPurchaseFromShieldedPool` is verified over its kind's preimage followed by the fee
 ///   bundle's Orchard commitment (`dpp.methods.token_pool_paid_fee_binding`), the fee bundle being
 ///   rebuilt first.
+/// - contract create `basic_structure` 3: v2, then every object of the contract's document
+///   schemas and `$defs` must list its members in position order (`InvalidContractStructure`),
+///   so the order its members are stored in, the map's, is their position order (v15 note 49).
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -146,6 +149,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .contract_user_moderation_state_transition
+            },
+            contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(3), // every object of a new contract lists its members in position order
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .contract_create_state_transition
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 transform_into_action: 1, // check_tx holds the update to the compiled size cap

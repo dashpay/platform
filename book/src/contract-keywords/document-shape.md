@@ -59,7 +59,7 @@ Rules at registration:
 - A property name is 1 to 64 letters, digits or underscores (`^[a-zA-Z0-9_]{1,64}$`). Protocol versions 1 to 13 also admitted `-`; from protocol version 14 it is refused.
 - Every property has a [`position`](property-schemas.md#position), a number. The top-level positions must run 0, 1, 2 and so on, with no gap and no number used twice (`MissingPositionsInDocumentTypePropertiesError`, 10411). A document is stored with its properties in `position` order and without their names, so the numbers are what tie the stored bytes to the schema.
 
-On update, a new property takes the next free position. It is optional unless it is listed in `required` with `requiredSince` set to the version the update creates. A property that already exists can never be removed, since stored documents may hold it.
+On update, a new property takes the next free position. It is optional unless it is listed in `required` with `requiredSince` set to the version the update creates. A property that already exists can never be removed, since stored documents may hold it. The members of an object follow the same rules from protocol version 15, in the order the object's `properties` map lists them, which is their position order in an object registered from then: see [Objects](property-schemas.md#objects).
 
 ## `additionalProperties`
 
@@ -98,7 +98,11 @@ On a contract update, from protocol version 14:
 - Nothing may be removed from the list.
 - A system timestamp or block height may not be added. So the set of values a type records is fixed once the type exists.
 
-Each of these is refused with `DataContractInvalidRequiredFieldsUpdateError` (10276). The `required` list of a nested object is fixed (`IncompatibleDocumentTypeSchemaError`, 10246).
+Each of these is refused with `DataContractInvalidRequiredFieldsUpdateError` (10276).
+
+The `required` list of an object property written inline follows the same rules from protocol version 15: it may gain only a member the same update adds to that object, annotated with `requiredSince`, and may lose nothing (10276). The `required` written beside a `$ref` can not change. Up to protocol version 14 it is fixed (`IncompatibleDocumentTypeSchemaError`, 10246).
+
+A dotted name (`"records.identity"`) in a `required` list is read by the document type parser as a requirement on the nested member, but the document validator reads it as a property named with a dot, which no document can hold: a type whose `required` holds one accepts no document. From protocol version 15 an update cannot add a dotted name to the type's `required`, to the `required` of an object the type has, or to that of an object the update adds, nor remove one unless another list still requires the member it names (10276). Require a nested member through its object's own `required`.
 
 ## `minProperties` and `maxProperties`
 

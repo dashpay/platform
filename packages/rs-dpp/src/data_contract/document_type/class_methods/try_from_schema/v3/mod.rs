@@ -2315,6 +2315,7 @@ mod derived_index_property_tests;
 /// Grammar owned by parser generation 3.
 pub(super) const PARSER_GENERATION: common::ParserGeneration = common::ParserGeneration {
     admit_lifecycle: false,
+    check_nested_member_positions: false,
     // CONTRACT_VERSIONS_V6 selects this parser with meta-schema v3. Parser
     // generation 4 also uses that schema and extends this grammar. These
     // constants belong to the parser generation rather than its version table.

@@ -11,6 +11,7 @@ use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureV
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractCreateStateTransitionBasicStructureValidationV1;
 use basic_structure::v2::DataContractCreateStateTransitionBasicStructureValidationV2;
+use basic_structure::v3::DataContractCreateStateTransitionBasicStructureValidationV3;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -105,14 +106,15 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
             Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
+            Some(3) => self.validate_basic_structure_v3(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
             })),
         }
     }
@@ -217,6 +219,7 @@ mod tests {
     use dpp::data_contract::document_type::accessors::{
         DocumentTypeV0MutGetters, DocumentTypeV1Setters,
     };
+    use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
     use dpp::data_contract::DataContract;
@@ -314,7 +317,9 @@ mod tests {
     /// zero-fraction float `position` used to panic in `insert_values_nested` during block
     /// execution (`ValidationMode::Validator`), which would shut the node down. Driving the exact
     /// bytes a validator processes through `process_raw_state_transitions` must now complete and
-    /// return a deterministic result without panicking.
+    /// return a deterministic result without panicking: from protocol version 15, which checks
+    /// an object's member positions at registration, the create is refused as a paid consensus
+    /// error.
     #[tokio::test]
     async fn nested_float_position_does_not_halt_block_execution() {
         let platform_version = PlatformVersion::latest();
@@ -441,12 +446,18 @@ mod tests {
             )
             .expect("block execution must not panic/error on a nested float position");
 
-        // The contract is accepted deterministically (the float `0.0` is a valid integer per the
-        // meta-schema and nested positions are not consensus-relevant). The point of the test is
-        // that block execution completed without the node-killing panic the old `.expect()` raised.
+        // The float `0.0` is an integer to the meta-schema, but from protocol version 15
+        // registration requires an object's member positions to be integer values, so the
+        // create is refused deterministically. The point of the test is that block
+        // execution completed without the node-killing panic the old `.expect()` raised.
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(message)
+                )),
+                ..
+            }] if message.contains("needs a position")
         );
 
         platform

@@ -240,6 +240,96 @@ mod tests {
         }
     }
 
+    /// An object's path, with its members' names and positions in map order.
+    type ObjectMembers = (String, Vec<(String, Option<u64>)>);
+
+    /// The objects of `properties` (a `properties` map) and of the objects inside them, at
+    /// every depth.
+    fn object_members(
+        properties: &serde_json::Map<String, serde_json::Value>,
+        path: &str,
+        objects: &mut Vec<ObjectMembers>,
+    ) {
+        for (name, schema) in properties {
+            let Some(serde_json::Value::Object(members)) = schema.get("properties") else {
+                continue;
+            };
+            let path = format!("{path}.{name}");
+            objects.push((
+                path.clone(),
+                members
+                    .iter()
+                    .map(|(member, schema)| {
+                        let position = schema.get("position").and_then(serde_json::Value::as_u64);
+                        (member.clone(), position)
+                    })
+                    .collect(),
+            ));
+            object_members(members, &path, objects);
+        }
+    }
+
+    /// An object stores its members in the schema's map order, and from protocol version 15 a
+    /// contract's objects must list them in position order, one after another. Every object of
+    /// every system contract, at every protocol version that has it, already does, so the system
+    /// contracts pass the rule new contracts are held to, and their objects are stored in their
+    /// position order.
+    #[test]
+    fn should_write_every_system_contract_object_in_position_order() {
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        let mut seen = BTreeSet::new();
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            for system_contract in SystemDataContract::ALL {
+                // A contract a version does not have fails to load its source
+                let Ok(source) = system_contract.source(platform_version) else {
+                    continue;
+                };
+                let mut objects = Vec::new();
+                if let Some(document_schemas) = source.document_schemas.as_object() {
+                    for (name, schema) in document_schemas {
+                        if let Some(serde_json::Value::Object(properties)) =
+                            schema.get("properties")
+                        {
+                            object_members(properties, name, &mut objects);
+                        }
+                    }
+                }
+                if let Some(definitions) = source
+                    .definitions
+                    .as_ref()
+                    .and_then(serde_json::Value::as_object)
+                {
+                    object_members(definitions, "$defs", &mut objects);
+                }
+                for (path, members) in objects {
+                    let origin = format!(
+                        "{system_contract:?} {path} at protocol version {}",
+                        platform_version.protocol_version
+                    );
+                    let first = members.first().and_then(|(_, position)| *position);
+                    for (index, (member, position)) in members.iter().enumerate() {
+                        assert_eq!(
+                            *position,
+                            first.map(|first| first + index as u64),
+                            "{origin}: member {member} is not where its position puts it"
+                        );
+                    }
+                    seen.insert(format!("{system_contract:?} {path}"));
+                }
+            }
+        }
+        // The objects the system contracts are known to have: a contract that stopped loading
+        // would leave them out
+        for object in [
+            "DPNS domain.records",
+            "DPNS domain.subdomainRules",
+            "ModerationCharters submittedCharter.rewardSplit",
+        ] {
+            assert!(seen.contains(object), "{object} was not checked: {seen:?}");
+        }
+    }
+
     #[test]
     fn test_load_system_data_contract_v8_vs_v9() {
         let contract_1 = load_system_data_contract(

@@ -14,7 +14,7 @@ mod required_since_tests {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-    use dpp::document::Document;
+    use dpp::document::{Document, DocumentV0};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::platform_value::platform_value;
     use dpp::prelude::DataContract;
@@ -23,6 +23,7 @@ mod required_since_tests {
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::util::storage_flags::StorageFlags;
+    use std::collections::BTreeMap;
 
     /// The full grandfathering story, in order:
     /// 1. contract v1 with a `note` document type (one required property);
@@ -724,6 +725,231 @@ mod required_since_tests {
                 .get_str("extra")
                 .expect("expected the migrated property"),
             "now present"
+        );
+    }
+
+    /// An object's member required from the contract version an update creates: documents
+    /// stored before the update read back without it and stay replaceable once they add it,
+    /// and every document written from that version on must hold it.
+    #[tokio::test]
+    async fn should_require_an_object_member_from_the_version_the_update_creates() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let note_schema = |with_lang: bool| {
+            let mut members = platform_value!({
+                "text": {"type": "string", "position": 0, "maxLength": 100_u32},
+            });
+            let mut required = vec![Value::Text("text".to_string())];
+            if with_lang {
+                members
+                    .set_value(
+                        "lang",
+                        platform_value!({
+                            "type": "string", "position": 1, "maxLength": 8_u32, "requiredSince": 2
+                        }),
+                    )
+                    .expect("expected a map");
+                required.push(Value::Text("lang".to_string()));
+            }
+            platform_value!({
+                "type": "object",
+                "documentsMutable": true,
+                "canBeDeleted": true,
+                "properties": {
+                    "body": {
+                        "type": "object",
+                        "position": 0,
+                        "properties": members,
+                        "required": required,
+                        "additionalProperties": false,
+                    },
+                },
+                "required": ["body"],
+                "additionalProperties": false
+            })
+        };
+
+        let mut contract =
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version)
+                .data_contract_owned();
+        contract
+            .set_document_schema(
+                "note",
+                note_schema(false),
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("expected to add the note document type");
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract");
+
+        let note = |body: Value, nonce: u64, contract: &DataContract| {
+            let note_type = contract
+                .document_type_for_name("note")
+                .expect("expected the note document type");
+            let entropy = [nonce as u8; 32];
+            let mut document = Document::V0(DocumentV0 {
+                owner_id: identity.id(),
+                properties: BTreeMap::from([("body".to_string(), body)]),
+                revision: Some(1),
+                ..Default::default()
+            });
+            document
+                .set_id_for_creation(note_type, &entropy, nonce, platform_version)
+                .expect("expected to set the document id");
+            (document, entropy)
+        };
+
+        // A note stored under contract version 1
+        let (stored_note, entropy) = note(platform_value!({"text": "hello"}), 1, &contract);
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            stored_note.clone(),
+            contract.document_type_for_name("note").expect("note"),
+            entropy,
+            &key,
+            1,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected a creation transition");
+        let result = process_and_commit(&mut platform, &platform_state, &transition).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Version 2 requires `body.lang` from version 2
+        let mut updated_contract = contract.clone();
+        updated_contract.set_version(2);
+        updated_contract
+            .set_document_schema(
+                "note",
+                note_schema(true),
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("expected to update the note document type");
+        let update_transition = DataContractUpdateTransition::new_from_data_contract(
+            updated_contract.clone(),
+            &identity.clone().into_partial_identity_info(),
+            key.id(),
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected an update transition");
+        let result = process_and_commit_serialized(
+            &mut platform,
+            &platform_state,
+            update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized update"),
+        )
+        .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "an object may gain a member required from the version the update creates"
+        );
+        let note_type_v2 = updated_contract
+            .document_type_for_name("note")
+            .expect("expected the updated note document type");
+
+        // The note stored before reads back under version 2, without `lang`
+        let stored = query_notes(&platform, &updated_contract, platform_version);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].properties().get("body"),
+            Some(&platform_value!({"text": "hello"})),
+            "a document stored before the update must read back without the added member"
+        );
+
+        // A new note must hold `lang`
+        for (nonce, body, accepted) in [
+            (3, platform_value!({"text": "no lang"}), false),
+            (
+                4,
+                platform_value!({"text": "with lang", "lang": "en"}),
+                true,
+            ),
+        ] {
+            let (document, entropy) = note(body, nonce, &updated_contract);
+            let transition = BatchTransition::new_document_creation_transition_from_document(
+                document,
+                note_type_v2,
+                entropy,
+                &key,
+                nonce,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected a creation transition");
+            let result = process_and_commit(&mut platform, &platform_state, &transition).await;
+            if accepted {
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
+                );
+            } else {
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError { ref error, .. }
+                        if error.to_string().contains("lang"),
+                    "a new document must hold the member its object requires from now on"
+                );
+            }
+        }
+
+        // Replacing the note stored before must add `lang`
+        let mut replacement = stored_note;
+        replacement.set_revision(Some(2));
+        replacement.set("body", platform_value!({"text": "hello", "lang": "en"}));
+        let transition = BatchTransition::new_document_replacement_transition_from_document(
+            replacement,
+            note_type_v2,
+            &key,
+            5,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected a replacement transition");
+        let result = process_and_commit(&mut platform, &platform_state, &transition).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "a document stored before the update is replaced by adding the member"
         );
     }
 
