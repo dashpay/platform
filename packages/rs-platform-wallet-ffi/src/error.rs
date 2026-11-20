@@ -3,7 +3,9 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::changeset::PersistenceErrorKind;
-use platform_wallet::{panicked_payment_class, PaymentDelivery, PlatformWalletError};
+use platform_wallet::{
+    handback_failure_payment_class, panicked_payment_class, PaymentDelivery, PlatformWalletError,
+};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -373,8 +375,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
     /// unknown, already broadcast, or already released — the guard that turns a
     /// double-broadcast (or a broadcast after release) into a typed error
-    /// instead of a second send. Did NOT touch the network; NOT retryable
-    /// (rebuild the payment). Release is idempotent and never surfaces this.
+    /// instead of a second send. Did NOT touch the network, but an earlier
+    /// broadcast of the token may have sent the payment, so it is `MaybeSent`:
+    /// let sync settle it before building the payment again. NOT retryable.
+    /// Release is idempotent and never surfaces this.
     ErrorReservationTokenConsumed = 35,
 
     /// Maps `SignedPaymentError::WalletMismatch`. The deferred reservation token
@@ -648,16 +652,18 @@ pub enum PlatformWalletFFIResultCode {
     /// An asset lock exceeds the asset-lock input cap (100: Dash Core relay
     /// policy, and Platform consensus for an instant proof): a drain of every
     /// eligible input, or a fixed amount (registration, top-up, invitation,
-    /// platform-address funding) held only in many small coins. Nothing was
-    /// broadcast. A drain host must not silently substitute a partial drain;
-    /// consolidating the coins lets either lock fit.
+    /// platform-address funding) held only in many small coins. A fresh build
+    /// submitted nothing; a resumed lock over the cap may have been sent by an
+    /// earlier attempt, so the result's `payment_delivery` says which. A drain
+    /// host must not silently substitute a partial drain; consolidating the
+    /// coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
     /// A shielded funding is being resumed to a different Orchard recipient
-    /// than the one its tracked asset lock recorded when it was built. Nothing
-    /// was submitted and nothing was paid; resume with the recorded recipient
-    /// (the row exposes it). Rows tracked before the recipient was recorded
-    /// carry none and accept the caller's.
+    /// than the one its tracked asset lock recorded when it was built. This
+    /// call submitted nothing new, but the lock is held (`LockHeld`): resume
+    /// it with the recorded recipient (the row exposes it). Rows tracked
+    /// before the recipient was recorded carry none and accept the caller's.
     ErrorAssetLockRecipientMismatch = 61,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
@@ -1034,6 +1040,14 @@ impl PlatformWalletFFIResult {
         error: &PlatformWalletError,
     ) -> Self {
         Self::err(code, message).with_payment_class(payment_class(error))
+    }
+
+    /// `code` and `message` for a payment whose wallet call succeeded but
+    /// whose result could not be handed back (a txid or link that would not
+    /// marshal), carrying the wallet's class for that failure
+    /// ([`handback_failure_payment_class`]): `MaybeSent`, never retryable.
+    pub fn handback_failure(code: PlatformWalletFFIResultCode, message: impl Into<String>) -> Self {
+        Self::err(code, message).with_payment_class(handback_failure_payment_class())
     }
 
     /// A `Success`-coded result that still carries an advisory `message`.

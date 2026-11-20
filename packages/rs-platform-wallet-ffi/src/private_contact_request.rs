@@ -1040,7 +1040,7 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
                 .ok()
                 .and_then(|mut slot| slot.take())
             {
-                return PlatformWalletFFIResult::err(code, message);
+                return PlatformWalletFFIResult::err_from_wallet_error(code, message, &error);
             }
             let error = match seed_mismatch_result(error) {
                 Ok(result) => return result,

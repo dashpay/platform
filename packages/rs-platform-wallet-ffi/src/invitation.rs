@@ -29,11 +29,11 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
-use platform_wallet::wallet::asset_lock::orchestration::handoff_failure_source;
+use platform_wallet::broadcaster::SpvBroadcaster;
 use platform_wallet::wallet::identity::crypto::{
     parse_invitation_uri, InviterInfo, ParsedInvitation,
 };
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{AssetLockManager, PlatformWalletError};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use platform_wallet::wallet::identity::network::{
@@ -45,7 +45,7 @@ use crate::dashpay::resolver_contact_crypto_provider;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, runtime};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// The maximum amount (duffs) an invitation voucher may lock.
@@ -208,9 +208,10 @@ unsafe fn platform_wallet_create_invitation_inner(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
+        let asset_locks = wallet.asset_locks().clone();
         let wallet_id = wallet.wallet_id();
         let network = wallet.network();
-        block_on_worker(async move {
+        let created = block_on_worker(async move {
             // SAFETY: see the fn-level safety doc — the caller pins
             // `core_signer_handle` for the duration of this call. Two views over
             // the same resolver handle: one as the asset-lock/Core signer, one
@@ -241,9 +242,10 @@ unsafe fn platform_wallet_create_invitation_inner(
                     &provider,
                 )
                 .await
-        })
+        });
+        (asset_locks, created)
     });
-    let result = unwrap_option_or_return!(option);
+    let (asset_locks, result) = unwrap_option_or_return!(option);
     let invitation = unwrap_result_or_return!(result);
 
     // Marshal the funding outpoint out through the crate's one conversion
@@ -259,6 +261,7 @@ unsafe fn platform_wallet_create_invitation_inner(
         Ok(c) => c,
         Err(_) => {
             return voucher_handoff_failure(
+                &asset_locks,
                 invitation.out_point,
                 PlatformWalletFFIResult::from(
                     "invitation URI contained an interior NUL".to_string(),
@@ -273,19 +276,19 @@ unsafe fn platform_wallet_create_invitation_inner(
 }
 
 /// Stamp `failure`, an invitation whose voucher was funded and recorded but
-/// whose link could not be handed back, with the wallet's class for it: the
-/// voucher's lock is held (`LockHeld` on `out_point`, not retryable), so the
-/// host reclaims that voucher from its Sent invitations instead of funding a
-/// new one. Code and message stay `failure`'s.
+/// whose link could not be handed back, with the class the wallet gives that
+/// failure ([`AssetLockManager::handoff_failure`]): the voucher's lock named
+/// as held while a resume can take it on, so the host reclaims that voucher
+/// from its Sent invitations instead of funding a new one; `MaybeSent` once
+/// the lock is consumed, consumption-unknown or gone. Never retryable. Code
+/// and message stay `failure`'s.
 fn voucher_handoff_failure(
+    asset_locks: &AssetLockManager<SpvBroadcaster>,
     out_point: dashcore::OutPoint,
     failure: PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
-    let held = PlatformWalletError::PaymentAlreadyDispatched {
-        held_lock: Some(out_point),
-        source: Box::new(handoff_failure_source()),
-    };
-    failure.with_payment_class(payment_class(&held))
+    let class = runtime().block_on(asset_locks.handoff_failure(out_point));
+    failure.with_payment_class(payment_class(&class))
 }
 
 /// Claim a DashPay invitation: register a NEW identity for the invitee, funded
@@ -746,28 +749,82 @@ mod tests {
     // module and `platform_wallet`'s `network::invitation`; these tests only
     // exercise the FFI's null/parameter guards and the wallet-lookup miss path.
 
-    /// A created invitation whose link cannot be handed back names its
-    /// voucher's lock as held, not retryable, so the host reclaims that
-    /// voucher instead of funding another invitation.
+    /// A created invitation whose link cannot be handed back carries the
+    /// wallet's class for its voucher lock: held (not retryable) while a
+    /// resume can take it on, so the host reclaims that voucher instead of
+    /// funding another invitation; `MaybeSent` when the wallet tracks no such
+    /// lock.
     #[test]
     fn should_name_the_voucher_lock_when_the_link_cannot_be_handed_back() {
-        let out_point = dashcore::OutPoint {
+        use platform_wallet::test_support::test_platform_wallet_manager;
+        use platform_wallet::{AssetLockFundingType, AssetLockStatus, TrackedAssetLock};
+
+        let tracked = dashcore::OutPoint {
             txid: dashcore::Txid::from_byte_array([5; 32]),
             vout: 2,
         };
-        let mut result = voucher_handoff_failure(
-            out_point,
-            PlatformWalletFFIResult::from("invitation URI contained an interior NUL".to_string()),
-        );
+        let untracked = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([6; 32]),
+            vout: 0,
+        };
+        let (_manager, wallet) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            wallet
+                .wallet_manager()
+                .write()
+                .await
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet registered")
+                .tracked_asset_locks
+                .insert(
+                    tracked,
+                    TrackedAssetLock {
+                        operation_id: None,
+                        shielded_recipient: None,
+                        out_point: tracked,
+                        transaction: dashcore::Transaction {
+                            version: 3,
+                            lock_time: 0,
+                            input: vec![],
+                            output: vec![],
+                            special_transaction_payload: None,
+                        },
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityInvitation,
+                        identity_index: 0,
+                        amount: 1_000_000,
+                        status: AssetLockStatus::ChainLocked,
+                        proof: None,
+                    },
+                );
+            (manager, wallet)
+        });
+        let link_failure = || {
+            PlatformWalletFFIResult::from("invitation URI contained an interior NUL".to_string())
+        };
 
+        let mut held = voucher_handoff_failure(wallet.asset_locks(), tracked, link_failure());
         assert_eq!(
-            result.payment_delivery,
+            held.payment_delivery,
             PlatformWalletFFIPaymentDelivery::LockHeld
         );
-        assert_eq!(result.held_asset_lock.txid, [5; 32]);
-        assert_eq!(result.held_asset_lock.vout, 2);
-        assert!(!result.retryable);
-        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+        assert_eq!(held.held_asset_lock.txid, [5; 32]);
+        assert_eq!(held.held_asset_lock.vout, 2);
+        assert!(!held.retryable);
+
+        let mut gone = voucher_handoff_failure(wallet.asset_locks(), untracked, link_failure());
+        assert_eq!(
+            gone.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+        assert_eq!(gone.held_asset_lock.txid, [0; 32]);
+        assert!(!gone.retryable);
+        assert_eq!(gone.code, held.code);
+        unsafe {
+            crate::error::platform_wallet_ffi_result_free(&mut held);
+            crate::error::platform_wallet_ffi_result_free(&mut gone);
+        }
     }
 
     /// A null `core_signer_handle` is rejected with `ErrorNullPointer` before

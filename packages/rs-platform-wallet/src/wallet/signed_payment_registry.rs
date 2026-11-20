@@ -83,7 +83,7 @@ use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
 // transaction handle path (`broadcast_finalized_transaction`), so both surfaces
 // measure a reservation's lifetime against key-wallet's TTL with one number.
 use crate::wallet::reservations::reservation_expired;
-use crate::PlatformWalletError;
+use crate::{PaymentDelivery, PlatformWalletError};
 
 /// Opaque handle to a registered, signed-but-unsent payment. Minted by
 /// [`SignedPaymentRegistry::register`]; consumed by
@@ -176,6 +176,45 @@ pub enum SignedPaymentError {
     /// on the network" signal).
     #[error(transparent)]
     Broadcast(#[from] PlatformWalletError),
+}
+
+impl SignedPaymentError {
+    /// Whether the payment behind the token may have left the wallet, decided
+    /// here as [`PlatformWalletError::payment_delivery`] decides it for a
+    /// wallet error, so the FFI copies it instead of choosing one.
+    pub fn payment_delivery(&self) -> PaymentDelivery {
+        match self {
+            // Unknown, already broadcast or already released: the registry
+            // cannot tell which, and an earlier broadcast of this token may
+            // have sent the payment.
+            Self::StaleToken(_) => PaymentDelivery::MaybeSent,
+            // The entry stays in the registry for the generation it was minted
+            // against; this call sent nothing.
+            Self::WalletMismatch(_) => PaymentDelivery::NotSent,
+            Self::WalletRemoved(token) => {
+                PlatformWalletError::WalletRemovedBeforeSend(token.to_string()).payment_delivery()
+            }
+            Self::StaleReservationToken(_) => {
+                PlatformWalletError::StaleReservation.payment_delivery()
+            }
+            Self::Broadcast(error) => error.payment_delivery(),
+        }
+    }
+
+    /// Whether a host may run the failed broadcast again, decided here as
+    /// [`PlatformWalletError::is_retryable`] decides it. Never for a token
+    /// refusal: running the same token again meets the same refusal (the
+    /// token is gone, bound to another generation, or past its lifetime).
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::StaleToken(_) | Self::WalletMismatch(_) => false,
+            Self::WalletRemoved(token) => {
+                PlatformWalletError::WalletRemovedBeforeSend(token.to_string()).is_retryable()
+            }
+            Self::StaleReservationToken(_) => PlatformWalletError::StaleReservation.is_retryable(),
+            Self::Broadcast(error) => error.is_retryable(),
+        }
+    }
 }
 
 /// The wallet handed to [`SignedPaymentRegistry::register`] is **not** the
@@ -646,6 +685,32 @@ mod tests {
     use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
     use crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS;
     use crate::PlatformWalletError;
+
+    /// Each token refusal carries the wallet's class: a token the registry no
+    /// longer holds may have been broadcast already (`MaybeSent`); the other
+    /// refusals sent nothing. None is retryable, and a broadcast failure keeps
+    /// its wallet error's class.
+    #[test]
+    fn should_class_each_token_refusal_by_what_it_proves_was_sent() {
+        use crate::PaymentDelivery::{MaybeSent, NotSent};
+
+        let token = ReservationToken(7);
+        for (error, delivery) in [
+            (SignedPaymentError::StaleToken(token), MaybeSent),
+            (SignedPaymentError::WalletMismatch(token), NotSent),
+            (SignedPaymentError::WalletRemoved(token), NotSent),
+            (SignedPaymentError::StaleReservationToken(token), NotSent),
+        ] {
+            assert_eq!(error.payment_delivery(), delivery, "{error:?}");
+            assert!(!error.is_retryable(), "{error:?}");
+        }
+
+        let unconfirmed = SignedPaymentError::Broadcast(
+            PlatformWalletError::TransactionBroadcastUnconfirmed("timeout".into()),
+        );
+        assert_eq!(unconfirmed.payment_delivery(), MaybeSent);
+        assert!(!unconfirmed.is_retryable());
+    }
 
     /// The [`AccountTypePreference`] a `build_signed_tx` funding account maps to
     /// — the registry now retains the full account handle (CoinJoin included),

@@ -944,11 +944,11 @@ pub unsafe extern "C" fn platform_wallet_prepare_dashpay_payment(
             wallet: std::sync::Arc::clone(&wallet),
             payment,
         });
-        return PlatformWalletFFIResult::err(
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::NotFound,
             "wallet is no longer registered in the manager (removed or re-created while the \
-             payment was being signed); no payment handle was published"
-                .to_string(),
+             payment was being signed); no payment handle was published",
+            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
     let fee = payment.fee_duffs();
@@ -1004,16 +1004,20 @@ pub unsafe extern "C" fn platform_wallet_send_prepared_dashpay_payment(
         unwrap_option_or_return!(PREPARED_DASHPAY_PAYMENT_STORAGE.remove(payment_handle));
     if out_txid.is_null() {
         abandon_prepared(prepared);
-        return PlatformWalletFFIResult::err(
+        let message = "out_txid is null; the payment was NOT broadcast and was abandoned";
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorNullPointer,
-            "out_txid is null; the payment was NOT broadcast and was abandoned".to_string(),
+            message,
+            &PlatformWalletError::InvalidParameter(message.to_string()),
         );
     }
     let Some(wallet) = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Clone::clone) else {
         abandon_prepared(prepared);
-        return PlatformWalletFFIResult::err(
+        let message = "invalid platform wallet handle";
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "invalid platform wallet handle".to_string(),
+            message,
+            &PlatformWalletError::InvalidParameter(message.to_string()),
         );
     };
     if !wallet
@@ -1021,9 +1025,10 @@ pub unsafe extern "C" fn platform_wallet_send_prepared_dashpay_payment(
         .is_same_generation(prepared.payment.core_wallet())
     {
         abandon_prepared(prepared);
-        return PlatformWalletFFIResult::err(
+        return PlatformWalletFFIResult::err_from_wallet_error(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "payment was prepared by a different wallet generation".to_string(),
+            "payment was prepared by a different wallet generation",
+            &PlatformWalletError::WalletRemovedBeforeSend(hex::encode(wallet.wallet_id())),
         );
     }
 
@@ -2483,6 +2488,11 @@ mod tests {
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         assert_eq!(fee, 7, "nothing is written on a refusal");
+        assert_eq!(
+            r.payment_delivery,
+            crate::error::PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert!(!r.retryable);
         assert_inputs_released(&core, &signer, 61);
 
         let mut txid = [0xAAu8; 32];
@@ -2509,6 +2519,11 @@ mod tests {
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert_eq!((txid, fee), ([0xAAu8; 32], 7));
+        assert_eq!(
+            r.payment_delivery,
+            crate::error::PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert!(!r.retryable);
         assert_inputs_released(&core, &signer, 63);
         assert_eq!(
             platform_wallet_abandon_prepared_dashpay_payment(payment).code,
@@ -2550,6 +2565,11 @@ mod tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
         assert_eq!((txid, fee), ([0xAAu8; 32], 7));
         assert_inputs_released(&core, &signer, 69);
+        assert_eq!(
+            r.payment_delivery,
+            crate::error::PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert!(!r.retryable);
         assert_eq!(
             platform_wallet_abandon_prepared_dashpay_payment(payment).code,
             PlatformWalletFFIResultCode::NotFound

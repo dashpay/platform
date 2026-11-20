@@ -394,10 +394,6 @@ where
     }
 }
 
-/// Estimate the number of [`MAX_ACTIONS_PER_BATCH`]-note batches needed to
-/// move the pool count from `current` to `target`, given `per_batch` notes
-/// per batch. Returns `0` when already at/above target. Pure arithmetic so
-/// it can be unit-tested without a wallet/SDK.
 /// The error a seed run ends with, classed for the whole run rather than the
 /// last batch alone. `dispatched` says the run already moved Core funds: a
 /// committed batch, or this batch's own lock broadcast (a finality retry that
@@ -424,6 +420,10 @@ fn seed_batch_failure(error: PlatformWalletError, dispatched: bool) -> PlatformW
     }
 }
 
+/// Estimate the number of [`MAX_ACTIONS_PER_BATCH`]-note batches needed to
+/// move the pool count from `current` to `target`, given `per_batch` notes
+/// per batch. Returns `0` when already at/above target. Pure arithmetic so
+/// it can be unit-tested without a wallet/SDK.
 fn estimate_batches(current: u64, target: u64, per_batch: u64) -> u64 {
     let per_batch = per_batch.max(1);
     target.saturating_sub(current).div_ceil(per_batch)

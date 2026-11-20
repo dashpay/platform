@@ -1770,6 +1770,15 @@ pub fn panicked_payment_class() -> (PaymentDelivery, bool) {
     (PaymentDelivery::MaybeSent, false)
 }
 
+/// The class of a payment whose wallet call succeeded but whose result a
+/// boundary could not hand back (a txid that would not marshal): the payment
+/// was dispatched, so it is [`PaymentDelivery::MaybeSent`] and never
+/// retryable, since a retry would pay twice. A boundary that fails to hand a
+/// payment's result back reports this class; it does not choose its own.
+pub fn handback_failure_payment_class() -> (PaymentDelivery, bool) {
+    (PaymentDelivery::MaybeSent, false)
+}
+
 /// The class of an SDK failure that ended a payment: `NotSent` only for the
 /// refusals that precede any dispatch (the signer had no key, the SDK refused
 /// a protocol version the network does not serve), `MaybeSent` for the rest.

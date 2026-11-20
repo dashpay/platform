@@ -30,8 +30,7 @@ use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
 use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIPaymentDelivery, PlatformWalletFFIResult,
-    PlatformWalletFFIResultCode,
+    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
 };
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
@@ -1099,16 +1098,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             // Success with no link is a broken invariant, not an empty
             // result: the funded voucher is recorded (persistence callback)
             // and reclaimable from the Sent list, but there is nothing to
-            // share — fail loudly instead of returning "". The call wrote
-            // the voucher's outpoint, so the failure names it as held: the
-            // host reclaims that voucher instead of funding a new invitation
-            // (← Swift `createInvitation`).
-            let mut failure = PlatformWalletFFIResult::err(
+            // share — fail loudly instead of returning "". Only the wallet
+            // knows whether the voucher's lock is still resumable, and this
+            // binding cannot ask it: the wallet's class for a payment whose
+            // result could not be handed back (`MaybeSent`, not retryable),
+            // never a held lock (← Swift `createInvitation`).
+            let failure = PlatformWalletFFIResult::handback_failure(
                 PlatformWalletFFIResultCode::ErrorNullPointer,
                 "create succeeded but returned no link; the voucher is recorded and reclaimable",
             );
-            failure.payment_delivery = PlatformWalletFFIPaymentDelivery::LockHeld;
-            failure.held_asset_lock = outpoint;
             crate::support::throw_pwffi_result(env, &failure);
             return ptr::null_mut();
         };
