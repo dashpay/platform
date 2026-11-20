@@ -952,8 +952,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     document schemas and `$defs` hold more than 32 patterns
 ///     (`max_contract_schema_patterns`: every string under a `pattern` key and every
 ///     `regexPattern` of a contested index, one in `$defs` counted once for each document
-///     type), patterns of more than 4 KiB together so counted
-///     (`max_contract_schema_pattern_bytes`), a pattern longer than 256 bytes
+///     type), patterns of more than 4 KiB together, one in `$defs` counted once for each
+///     document type (`max_contract_schema_pattern_bytes`), a pattern longer than 256 bytes
 ///     (`max_schema_pattern_bytes`), or one matching case-insensitively whose classes fold more
 ///     than 4096 code points as its syntax tree shows
 ///     (`max_schema_pattern_case_folded_code_points`), all read before anything compiles one,

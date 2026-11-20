@@ -10,9 +10,11 @@ const EVERY_CODE_POINT: u64 = 0x11_0000;
 /// The most code points an ASCII class (`[:alpha:]` and the others) holds.
 const ASCII_CODE_POINTS: u64 = 128;
 
-/// An upper bound on the code points the `regex` crate case-folds when it translates `ast` to
-/// the expression it compiles, or 0 when no flag of the pattern turns case-insensitive matching
-/// on.
+/// An estimate of the code points the `regex` crate case-folds when it translates `ast` to the
+/// expression it compiles, or 0 when no flag of the pattern turns case-insensitive matching on.
+/// It is not an exact count: a class gathered into the class around it is counted at the span
+/// it had before it was folded, which folding can widen, and a literal outside a class is not
+/// counted. The walk it bounds stays within a small multiple of it.
 ///
 /// Under case-insensitive matching the translator walks every code point of a class to add the
 /// ones that fold to it, before it negates the class: each class naming a Unicode property, each

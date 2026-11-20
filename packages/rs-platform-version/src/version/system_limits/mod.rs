@@ -59,14 +59,15 @@ pub struct SystemLimits {
     /// Most bytes one such pattern may take as written. Read with
     /// `max_contract_schema_patterns`, before any pattern is compiled.
     pub max_schema_pattern_bytes: u16,
-    /// Most bytes the patterns of one contract may take together as written, each counted as
-    /// often as `max_contract_schema_patterns` counts it (one in `$defs` once for each document
-    /// type). Compiling a pattern takes time in proportion to its length as well as to its
-    /// compiled size, so this bounds the time compiling a contract's patterns takes. Read with
-    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    /// Most bytes the patterns of one contract may take together as written, one in `$defs`
+    /// counted once for each document type, as the schema check reads every definition for
+    /// each type it checks. Compiling a pattern takes time in proportion to its length as well
+    /// as to its compiled size, so this bounds the time compiling a contract's patterns takes.
+    /// Read with `max_contract_schema_patterns`, before any pattern is compiled.
     pub max_contract_schema_pattern_bytes: u32,
     /// Most code points translating one such pattern may case-fold, as
-    /// `validate_schema_patterns` 0 estimates them from the pattern's syntax: under
+    /// `validate_schema_patterns` 0 estimates them from the pattern's syntax (an estimate, not
+    /// an exact count: the walk it bounds stays within a small multiple of it): under
     /// case-insensitive matching the `regex` crate walks every code point of a class before it
     /// compiles the pattern, a walk the compiled size does not reflect. Read with
     /// `max_contract_schema_patterns`, before any pattern is compiled.

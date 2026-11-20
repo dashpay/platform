@@ -340,5 +340,8 @@ The first three limits come from the meta-schema, the rest from `SystemLimits`: 
 | `max_summed_value_magnitude_without_type_total` | 134217728 (2^27), from protocol version 15 | the `minimum` and `maximum` of a summed property, unless it is never negative on a type that declares `documentsSummable` or `documentsAverageable` |
 | `max_contract_schema_patterns` | 32 (in blocks from protocol version 15; the mempool holds a contract to it at every version) | the patterns one contract holds: every `pattern`, and every `regexPattern` of a contested index, in its document schemas and `$defs`, one in `$defs` counted once for each document type |
 | `max_schema_pattern_compiled_size` | 131072 bytes (in blocks from protocol version 15; the mempool holds a contract to it at every version) | what any one of those patterns compiles to |
+| `max_schema_pattern_bytes` | 256 bytes (in blocks from protocol version 15; the mempool holds a contract to it at every version) | any one of those patterns, as written |
+| `max_contract_schema_pattern_bytes` | 4096 bytes (in blocks from protocol version 15; the mempool holds a contract to it at every version) | those patterns together, as written, one in `$defs` counted once for each document type |
+| `max_schema_pattern_case_folded_code_points` | 4096 (in blocks from protocol version 15; the mempool holds a contract to it at every version) | the code points any one of those patterns may fold when it matches case-insensitively, as estimated from its syntax |
 | `max_private_document_entry_size` | 4096 bytes (protocol version 15) | a private type's `private.entrySize` |
 | `max_private_document_entries_per_transition` | 16 (protocol version 15) | the entries one `PrivateDocumentCreateFromShieldedPool` appends |

@@ -22,7 +22,8 @@ impl DataContract {
     /// of these keys counts too. A pattern in `$defs` counts once for each document type,
     /// since the schema check reads every definition for each type it checks. A contract may
     /// hold `max_contract_schema_patterns` patterns so counted, of at most
-    /// `max_contract_schema_pattern_bytes` bytes together so counted, each at most
+    /// `max_contract_schema_pattern_bytes` bytes together (one in `$defs` once for each
+    /// document type), each at most
     /// `max_schema_pattern_bytes` bytes long. Before any is compiled, each must parse and, when
     /// it matches case-insensitively, fold at most `max_schema_pattern_case_folded_code_points`
     /// code points as its syntax tree shows; then each must compile within
@@ -272,7 +273,8 @@ mod tests {
                 "{message}"
             );
         }
-        // A long pattern compiles to little: the limit is on the compiled size
+        // A pattern near the length limit that compiles to little is admitted: the size limit
+        // is on what it compiles to
         let long = format!("^({})$", vec!["[a-z]{1,20}"; 20].join("|"));
         assert!(validate(
             &schemas(schema_with_patterns(1, &long)),
@@ -979,5 +981,37 @@ mod tests {
             platform_version,
         ));
         assert!(message.contains(&too_many_bytes_message()), "{message}");
+    }
+
+    /// The bytes of a definition's patterns count once for a document type however many of its
+    /// `$ref`s reach the definition: the count of patterns already holds what the `$ref`s compile.
+    #[test]
+    fn should_count_the_bytes_of_a_pattern_in_the_defs_once_for_a_document_type_however_often_it_is_reached(
+    ) {
+        let most_bytes = usize::from(
+            PlatformVersion::latest()
+                .system_limits
+                .max_schema_pattern_bytes,
+        );
+        let most_together = PlatformVersion::latest()
+            .system_limits
+            .max_contract_schema_pattern_bytes as usize;
+        let pattern = format!("^{}$", "a".repeat(most_bytes - 2));
+        let schema_defs =
+            BTreeMap::from([("labels".to_string(), schema_with_patterns(1, &pattern))]);
+        let references = most_together / most_bytes + 1;
+        assert!(references <= most());
+        let document_schemas = schema_referring_often_to(references, "labels");
+
+        assert!(
+            validate_for_mempool(&document_schemas, Some(&schema_defs), before_the_rule())
+                .is_valid()
+        );
+        assert!(validate(
+            &document_schemas,
+            Some(&schema_defs),
+            PlatformVersion::latest()
+        )
+        .is_valid());
     }
 }

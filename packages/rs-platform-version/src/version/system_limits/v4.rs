@@ -143,8 +143,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_schema_patterns: 32, // schema pattern bounds (consensus from v15, mempool policy before): a contract holds at most 32 patterns
     max_schema_pattern_compiled_size: 131_072, // and each compiles within 128 KiB
     max_schema_pattern_bytes: 256,    // each takes at most 256 bytes as written
-    max_contract_schema_pattern_bytes: 4096, // and all of them at most 4 KiB together, counted as the patterns are
-    max_schema_pattern_case_folded_code_points: 4096, // and each case-folds at most 4096 code points when it is translated
+    max_contract_schema_pattern_bytes: 4096, // and all of them at most 4 KiB together, one in `$defs` once for each document type
+    max_schema_pattern_case_folded_code_points: 4096, // and each is estimated to case-fold at most 4096 code points when it is translated
     max_compiled_contract_size: None, // no contract is stored compiled before protocol version 15
     max_private_document_entry_size: None, // no private document type before protocol version 15
     private_document_store_target_chunk_bytes: None,

@@ -199,16 +199,11 @@ impl<'a> Definitions<'a> {
         }
     }
 
-    /// For each definition, how much compiling what a `$ref` to it names compiles, measuring
-    /// what a definition holds itself by `own` (its patterns, or their bytes), when each `$ref`
-    /// met on the way compiles what it names in turn: its own, and what every `$ref` it holds
-    /// compiles. Counted up to `ceiling` and no further, which a cycle of definitions reaching a
-    /// pattern arrives at.
-    fn compiled_through_each(
-        &self,
-        own: impl Fn(&Found) -> usize,
-        ceiling: usize,
-    ) -> BTreeMap<&'a str, usize> {
+    /// For each definition, how many patterns compiling what a `$ref` to it names compiles,
+    /// when each `$ref` met on the way compiles what it names in turn: its own, and those of
+    /// every `$ref` it holds. Counted up to `ceiling` and no further, which a cycle of
+    /// definitions reaching a pattern arrives at.
+    fn patterns_compiled_through_each(&self, ceiling: usize) -> BTreeMap<&'a str, usize> {
         let mut compiled: BTreeMap<&str, usize> = BTreeMap::new();
         let mut referrers: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         // Each count still to add to what the definitions referring to one compile
@@ -217,7 +212,7 @@ impl<'a> Definitions<'a> {
             for &definition in &found.references {
                 referrers.entry(definition).or_default().push(name);
             }
-            let own = own(found).min(ceiling);
+            let own = found.patterns.len().min(ceiling);
             compiled.insert(name, own);
             if own > 0 {
                 pending.push((name, own));
@@ -243,7 +238,8 @@ impl<'a> Definitions<'a> {
 impl DataContract {
     /// Refuses, without compiling any pattern, more than `max_contract_schema_patterns`
     /// patterns, a pattern longer than `max_schema_pattern_bytes`, patterns longer than
-    /// `max_contract_schema_pattern_bytes` together (counted as the patterns are counted), and
+    /// `max_contract_schema_pattern_bytes` together (one in `$defs` once for each document
+    /// type), and
     /// with `refuse_regex_format` a schema declaring `format: regex`; then, still compiling
     /// none, the first that does not parse or that case-folds more than
     /// `max_schema_pattern_case_folded_code_points` code points; and only then the first that
@@ -275,48 +271,51 @@ impl DataContract {
         let definitions = Definitions::new(schema_defs);
         let document_types: Vec<Found> = document_schemas.values().map(Found::within).collect();
 
-        // One past a limit is as far as a count needs to go to be refused
+        // One past the limit is as far as a count needs to go to be refused
         let ceiling = max_patterns.saturating_add(1);
-        let bytes_ceiling = max_contract_pattern_bytes.saturating_add(1);
         let compiled_through_each = match definitions_count {
             DefinitionsCount::OncePerDocumentType => None,
-            DefinitionsCount::OncePerReference => Some((
-                definitions.compiled_through_each(|found| found.patterns.len(), ceiling),
-                definitions.compiled_through_each(|found| found.pattern_bytes(), bytes_ceiling),
-            )),
+            DefinitionsCount::OncePerReference => {
+                Some(definitions.patterns_compiled_through_each(ceiling))
+            }
         };
-        // What the references of a document type compile, by `compiled_through_each`
-        let through_references =
-            |document_type: &Found, compiled_through_each: &BTreeMap<&str, usize>| {
-                document_type
+        // The definitions' patterns count once in a contract with no document type
+        let mut count = if document_types.is_empty() {
+            definitions.patterns
+        } else {
+            0
+        };
+        for document_type in &document_types {
+            let of_definitions = match &compiled_through_each {
+                None => definitions.patterns,
+                Some(compiled_through_each) => document_type
                     .references
                     .iter()
                     .map(|definition| compiled_through_each.get(definition).copied().unwrap_or(0))
                     .fold(0usize, usize::saturating_add)
-            };
-        // The definitions' patterns count once in a contract with no document type
-        let (mut count, mut bytes) = if document_types.is_empty() {
-            (definitions.patterns, definitions.pattern_bytes)
-        } else {
-            (0, 0)
-        };
-        for document_type in &document_types {
-            let (of_definitions, bytes_of_definitions) = match &compiled_through_each {
-                None => (definitions.patterns, definitions.pattern_bytes),
-                Some((patterns_through_each, bytes_through_each)) => (
-                    through_references(document_type, patterns_through_each)
-                        .max(definitions.patterns),
-                    through_references(document_type, bytes_through_each)
-                        .max(definitions.pattern_bytes),
-                ),
+                    .max(definitions.patterns),
             };
             count = count
                 .saturating_add(document_type.patterns.len())
                 .saturating_add(of_definitions);
-            bytes = bytes
-                .saturating_add(document_type.pattern_bytes())
-                .saturating_add(bytes_of_definitions);
         }
+        // The bytes of the patterns, those of the definitions once for each document type, as the
+        // schema check reads every definition for each type it checks, and once in a contract
+        // with no document type. Not followed through `$ref`s: the count above already holds what
+        // they compile to `max_contract_schema_patterns` patterns of at most
+        // `max_schema_pattern_bytes` each
+        let bytes = if document_types.is_empty() {
+            definitions.pattern_bytes
+        } else {
+            document_types
+                .iter()
+                .map(|document_type| {
+                    document_type
+                        .pattern_bytes()
+                        .saturating_add(definitions.pattern_bytes)
+                })
+                .fold(0, usize::saturating_add)
+        };
         if count > max_patterns {
             return refusal(format!(
                 "the document schemas and `$defs` of a contract may hold at most {max_patterns} \
@@ -345,8 +344,7 @@ impl DataContract {
             return refusal(format!(
                 "the document schemas and `$defs` of a contract may hold patterns of at most \
                  {max_contract_pattern_bytes} bytes together (`{PATTERN}` and `{REGEX_PATTERN}`), \
-                 one in `$defs` counted for each {}",
-                definitions_count.counted_for_each()
+                 one in `$defs` counted for each document type"
             ));
         }
         if definitions_count == DefinitionsCount::OncePerReference
