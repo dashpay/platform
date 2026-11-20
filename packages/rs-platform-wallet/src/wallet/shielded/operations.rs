@@ -9956,6 +9956,11 @@ mod spend_plan_tests {
             ),
             "with a plan: got {planned:?}"
         );
+        let message = planned.unwrap_err().to_string();
+        assert!(
+            !message.contains("0 notes") && message.contains("plan the spend again"),
+            "no fresh selection is quoted as 0 notes for a fee of 0: {message}"
+        );
         let bare = reserve(None).await;
         assert!(
             matches!(

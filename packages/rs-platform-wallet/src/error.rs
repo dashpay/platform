@@ -1089,11 +1089,10 @@ pub enum PlatformWalletError {
     /// different fee, than the plan: the wallet's notes changed since it was made (a sync
     /// added or spent one, or another spend reserved one), or the spend is priced at another
     /// protocol version than the plan. Nothing is built or broadcast and no note stays
-    /// reserved; plan again and confirm the new fee.
-    #[error(
-        "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a fee \
-         of {fresh_fee}; plan the spend again"
-    )]
+    /// reserved; plan again and confirm the new fee. A `fresh_note_count` of 0 means the notes
+    /// no longer make any selection for the spend (spent, too few, or too many for one
+    /// transition), so there is no fresh fee to quote.
+    #[error("{}", describe_plan_change(*.fresh_fee, *.fresh_note_count))]
     ShieldedPlanChanged {
         fresh_fee: u64,
         fresh_note_count: usize,
@@ -1401,6 +1400,21 @@ impl PlatformWalletError {
             }
             _ => ContextProviderError::Generic(self.to_string()),
         }
+    }
+}
+
+/// [`PlatformWalletError::ShieldedPlanChanged`]'s message: the fresh selection when there is
+/// one, never a quote of 0 notes for a fee of 0.
+fn describe_plan_change(fresh_fee: u64, fresh_note_count: usize) -> String {
+    if fresh_note_count == 0 {
+        "Shielded spend plan changed: the planned notes no longer cover the spend in one \
+         transition; plan the spend again"
+            .to_string()
+    } else {
+        format!(
+            "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a \
+             fee of {fresh_fee}; plan the spend again"
+        )
     }
 }
 
