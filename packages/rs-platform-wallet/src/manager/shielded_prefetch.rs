@@ -4,6 +4,7 @@ use std::sync::{Mutex, PoisonError};
 use std::task::Poll;
 
 use dash_async::WorkerStatus;
+use futures::FutureExt;
 use tokio::runtime::{Handle, RuntimeFlavor};
 use tokio::task::JoinHandle;
 
@@ -15,6 +16,7 @@ use crate::error::PlatformWalletError;
 struct PrefetchState {
     sealed: bool,
     task: Option<TrackedTask>,
+    failure: Option<WorkerStatus>,
 }
 
 struct TrackedTask {
@@ -30,6 +32,12 @@ pub(super) struct ShieldedPrefetch {
 
 impl ShieldedPrefetch {
     fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> bool {
+        let Ok(runtime) = Handle::try_current() else {
+            return false;
+        };
+        if runtime.runtime_flavor() != RuntimeFlavor::MultiThread {
+            return false;
+        }
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if state.sealed {
             return false;
@@ -37,13 +45,21 @@ impl ShieldedPrefetch {
         if state
             .task
             .as_ref()
-            .is_none_or(|task| task.handle.is_finished())
+            .is_some_and(|task| !task.handle.is_finished())
         {
-            state.task = Some(TrackedTask {
-                handle: tokio::spawn(future),
-                runtime: Handle::current(),
-            });
+            return true;
         }
+        if let Some(task) = state.task.take() {
+            if let Some(Err(error)) = task.handle.now_or_never() {
+                if error.is_panic() {
+                    state.failure = Some(WorkerStatus::Panicked(error.to_string()));
+                }
+            }
+        }
+        state.task = Some(TrackedTask {
+            handle: runtime.spawn(future),
+            runtime,
+        });
         true
     }
 
@@ -65,14 +81,13 @@ impl ShieldedPrefetch {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(Err(error)) if !error.is_cancelled() => {
                         tracing::warn!(%error, "shielded prefetch task failed");
-                        state.task = None;
-                        return Poll::Ready(WorkerStatus::Panicked(error.to_string()));
+                        state.failure = Some(WorkerStatus::Panicked(error.to_string()));
                     }
                     Poll::Ready(_) => {}
                 }
             }
             state.task = None;
-            Poll::Ready(WorkerStatus::Ok)
+            Poll::Ready(state.failure.clone().unwrap_or(WorkerStatus::Ok))
         })
         .await
     }
@@ -87,31 +102,20 @@ impl Drop for ShieldedPrefetch {
                 return;
             }
             let TrackedTask { handle, runtime } = task;
-            let flavor = runtime.runtime_flavor();
             let join = move || {
                 runtime.block_on(async {
                     let _ = handle.await;
                 });
             };
-            match flavor {
-                RuntimeFlavor::MultiThread if Handle::try_current().is_ok() => {
-                    tokio::task::block_in_place(join)
-                }
-                RuntimeFlavor::MultiThread | RuntimeFlavor::CurrentThread
-                    if Handle::try_current().is_err() =>
-                {
-                    join()
-                }
-                RuntimeFlavor::CurrentThread => {
-                    // A current-thread runtime cannot be synchronously joined
-                    // from its worker without deadlocking. Manager drops on
-                    // that runtime are unsupported; explicit shutdown remains
-                    // the required async ownership barrier.
-                    panic!("dropping PlatformWalletManager on a current-thread runtime requires shutdown()")
-                }
-                _ => panic!(
-                    "dropping PlatformWalletManager on an unsupported runtime requires shutdown()"
-                ),
+            match Handle::try_current().map(|current| current.runtime_flavor()) {
+                Ok(RuntimeFlavor::MultiThread) => tokio::task::block_in_place(join),
+                Ok(_) => std::thread::scope(|scope| {
+                    scope
+                        .spawn(join)
+                        .join()
+                        .expect("prefetch join thread panicked");
+                }),
+                Err(_) => join(),
             }
         }
     }
@@ -129,6 +133,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Queue a best-effort anchor warm-up on the current runtime. Busy coordinator
     /// configuration is skipped; shutdown permanently closes task admission.
+    /// Requires a multi-thread Tokio runtime so plain manager drop can join
+    /// callback-capable work even when a runtime worker drops the manager.
     pub fn prefetch_shielded_spend_anchors(&self) -> Result<(), PlatformWalletError> {
         let Ok(slot) = self.shielded_coordinator.try_read() else {
             return Ok(());
@@ -142,7 +148,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }) {
             return Err(PlatformWalletError::ShutdownIncomplete(
-                "shielded spend-anchor prefetch admission is closed".into(),
+                "shielded spend-anchor prefetch requires open admission and a multi-thread runtime"
+                    .into(),
             ));
         }
         Ok(())
@@ -155,7 +162,7 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn should_cancel_a_delayed_prefetch_and_seal_admission() {
         let tasks = ShieldedPrefetch::default();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
@@ -206,6 +213,36 @@ mod tests {
             .await
             .unwrap();
         assert!(tasks.state.lock().unwrap().task.is_none());
+    }
+
+    #[tokio::test]
+    async fn should_reject_prefetch_on_a_current_thread_runtime() {
+        let tasks = ShieldedPrefetch::default();
+        assert!(!tasks.spawn(async { panic!("unjoinable task started") }));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_report_panics_even_after_a_replacement_prefetch() {
+        let tasks = ShieldedPrefetch::default();
+        assert!(tasks.spawn(async { panic!("prefetch panic") }));
+        loop {
+            if tasks
+                .state
+                .lock()
+                .unwrap()
+                .task
+                .as_ref()
+                .unwrap()
+                .handle
+                .is_finished()
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(tasks.spawn(async {}));
+        assert!(matches!(tasks.shutdown().await, WorkerStatus::Panicked(_)));
+        assert!(matches!(tasks.shutdown().await, WorkerStatus::Panicked(_)));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
