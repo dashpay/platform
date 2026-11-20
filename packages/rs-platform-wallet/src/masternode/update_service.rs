@@ -322,9 +322,8 @@ async fn fetch_operator_reward(
     wallet: &PlatformWallet,
     pro_tx_hash: &[u8; 32],
 ) -> Result<u16, PlatformWalletError> {
-    fetch_registration_payload(wallet, pro_tx_hash)
-        .await
-        .map(|registration| registration.operator_reward)
+    let transaction = fetch_registration_transaction(wallet, pro_tx_hash).await?;
+    Ok(registration_payload(&transaction)?.operator_reward)
 }
 
 /// The explicit service values a stage-two reactivation re-asserts —
@@ -845,20 +844,11 @@ pub(crate) async fn fetch_registration_transaction(
     fetch_transaction_checked(wallet, pro_tx_hash, "registration transaction").await
 }
 
-/// [`fetch_registration_transaction`] reduced to its payload. Shared by the
-/// payout rule here and the registrar update's owner-key verification — the
-/// ProRegTx is the one place the immutable `keyIDOwner` lives.
-pub(crate) async fn fetch_registration_payload(
-    wallet: &PlatformWallet,
-    pro_tx_hash: &[u8; 32],
-) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
-    let transaction = fetch_registration_transaction(wallet, pro_tx_hash).await?;
-    registration_payload(&transaction).cloned()
-}
-
 /// The payload of a registration transaction that
 /// [`fetch_registration_transaction`] returned, which has already bound it
-/// to the requested proTxHash.
+/// to the requested proTxHash. Shared by the payout rule here and the
+/// registrar update's owner-key verification — the ProRegTx is the one
+/// place the immutable `keyIDOwner` lives.
 pub(crate) fn registration_payload(
     transaction: &Transaction,
 ) -> Result<&ProviderRegistrationPayload, PlatformWalletError> {
