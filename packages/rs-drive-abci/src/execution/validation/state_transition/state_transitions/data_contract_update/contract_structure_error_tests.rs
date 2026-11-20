@@ -272,9 +272,8 @@ async fn should_refuse_an_update_adding_a_summed_u64_property_with_a_paid_consen
     assert_paid_contract_structure_error(&outcome, SUMMED_U64_MESSAGE, UPDATE_NONCE);
 }
 
-/// An update parses every document type under full validation, so a type it adds is held to
-/// the rule as at registration: `check_tx` admits the transition and the block refuses it,
-/// charging the owner.
+/// An update is held to the rule on the contract it would store, as a registration is: `check_tx`
+/// refuses the transition with the error the block charges the owner for.
 #[tokio::test]
 async fn should_refuse_an_update_adding_a_summed_transient_property_with_a_paid_consensus_error() {
     let outcome = update_contract_adding_schema(
@@ -284,7 +283,7 @@ async fn should_refuse_an_update_adding_a_summed_transient_property_with_a_paid_
     .await;
 
     assert_eq!(outcome.nonce_before, None);
-    assert_paid_contract_structure_error_in_block(&outcome, TRANSIENT_SUMMED_MESSAGE, UPDATE_NONCE);
+    assert_paid_contract_structure_error(&outcome, TRANSIENT_SUMMED_MESSAGE, UPDATE_NONCE);
 }
 
 #[tokio::test]

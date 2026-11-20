@@ -1048,9 +1048,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     which is required where a field moderators write is not. A contract registered earlier
 ///     keeps the types it has: one that keeps a total is held to it, and one that does not
 ///     is written as before. Protocol v14 and earlier register any bounds and read no total.
-///     Parser generation 4 also refuses, under full validation, a summed property the type
-///     lists as transient: a transient value is never stored, and the type's sums read the
-///     stored value of each document.
+///     Registration and update also refuse a document type summing a property it lists as
+///     transient (`validate_no_transient_summed_property` 0, `CONTRACT_VERSIONS_V7`), on the
+///     contract they would store once it is parsed, so a contract stored earlier still parses,
+///     and decodes with a document: a transient value is never stored, and the type's sums read
+///     the stored value of each document. A create on such a type, contested or not, which a
+///     contract registered earlier may hold, is refused with the same paid error before it
+///     reaches Drive.
 ///
 /// 47. **The token bundle of a token pool transition paid from the credit pool binds its fee
 ///     bundle**: `TokenShieldedTransferWithShieldedFee`, `TokenUnshieldWithShieldedFee` and

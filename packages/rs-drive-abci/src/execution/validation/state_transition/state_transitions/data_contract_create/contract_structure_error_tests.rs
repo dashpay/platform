@@ -412,9 +412,8 @@ fn dotted_summable_schema() -> Value {
     })
 }
 
-/// A registration rule checked under full validation only: `check_tx`, which parses a contract
-/// without it, admits the transition, and the block refuses it, charging the owner and bumping
-/// its nonce.
+/// A registration rule checked on the parsed contract registration would store, so `check_tx`
+/// refuses the transition with the error the block charges the owner for, bumping its nonce.
 #[tokio::test]
 async fn should_refuse_a_summed_transient_property_with_a_paid_consensus_error() {
     let outcome = register_contract_with_schema(
@@ -425,7 +424,7 @@ async fn should_refuse_a_summed_transient_property_with_a_paid_consensus_error()
     .outcome;
 
     assert_eq!(outcome.nonce_before, Some(0));
-    assert_paid_contract_structure_error_in_block(&outcome, TRANSIENT_SUMMED_MESSAGE, 1);
+    assert_paid_contract_structure_error(&outcome, TRANSIENT_SUMMED_MESSAGE, 1);
 }
 
 #[tokio::test]

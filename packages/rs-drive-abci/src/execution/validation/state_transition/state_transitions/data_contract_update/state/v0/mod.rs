@@ -528,6 +528,12 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             action
                 .data_contract_ref()
                 .ensure_private_entry_sizes(platform_version)?;
+            // As at registration, on the contract the update would store. Edited in place: the
+            // method's gate, `validate_no_transient_summed_property`, is `None` before protocol
+            // version 15, so it refuses nothing there
+            action
+                .data_contract_ref()
+                .validate_no_transient_summed_property(platform_version)?;
             Ok(action)
         });
 

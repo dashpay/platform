@@ -60,7 +60,7 @@ From protocol version 14, a document type is refused (`InvalidContractStructure`
 - a `propertyConstraints` rule reads one;
 - the type is `indexOnly` and declares any transient property.
 
-From protocol version 15 a type is also refused when it sums a transient property: one named by `documentsSummable`, `documentsAverageable`, or an index's `summable` or `averageable` (see [Counts, Sums and Averages](aggregates.md#rules-at-registration)). The type's sums read the stored value of each document, which a transient property never has.
+From protocol version 15 a contract registration or update is also refused when a type sums a transient property: one named by `documentsSummable`, `documentsAverageable`, or an index's `summable` or `averageable` (see [Counts, Sums and Averages](aggregates.md#rules-at-registration)). The type's sums read the stored value of each document, which a transient property never has. A contract registered earlier may hold such a type: it still loads, and a document create on the type is refused with the same error.
 
 Before protocol version 14 none of these was checked.
 

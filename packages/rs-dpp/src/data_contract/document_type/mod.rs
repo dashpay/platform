@@ -29,6 +29,7 @@ pub mod restricted_creation;
 pub mod schema;
 pub mod serialized_version;
 
+mod summed_properties;
 mod token_costs;
 mod validate_required_since_within_contract_version;
 pub(crate) use validate_required_since_within_contract_version::validate_required_since_within_contract_version;

@@ -1,21 +1,21 @@
-//! A summed property is never transient (generation 4, protocol version 15): Drive writes a
-//! document's value of the property into the type's sums, and a transient value is never
-//! stored. A registration rule: a stored contract still parses, and protocol version 14
-//! registers what it registered.
-use super::*;
+//! A summed property is never transient (protocol version 15): Drive writes a document's value
+//! of the property into the type's sums, and a transient value is never stored. A rule of
+//! registration and update, not of parsing: a contract stored with such a type still parses,
+//! and protocol version 14 registers what it registered.
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
-use platform_value::platform_value;
+use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::{platform_value, Identifier, Value};
+use std::collections::BTreeMap;
 
-fn parse_at_version(
-    schema: Value,
-    protocol_version: u32,
-    full_validation: bool,
-) -> Result<DocumentType, ProtocolError> {
+fn parse_at_version(schema: Value, protocol_version: u32, full_validation: bool) -> DocumentType {
     let platform_version =
         PlatformVersion::get(protocol_version).expect("expected platform version");
     let config = DataContractConfig::default_for_version(platform_version)
@@ -33,6 +33,20 @@ fn parse_at_version(
         &mut vec![],
         platform_version,
     )
+    .unwrap_or_else(|error| {
+        panic!("protocol version {protocol_version} must parse the type: {error:?}")
+    })
+}
+
+fn validate_at_version(
+    document_type: &DocumentType,
+    protocol_version: u32,
+) -> Result<(), ProtocolError> {
+    document_type
+        .as_ref()
+        .validate_no_transient_summed_property(
+            PlatformVersion::get(protocol_version).expect("expected platform version"),
+        )
 }
 
 fn latest() -> u32 {
@@ -108,12 +122,13 @@ fn summing_declarations() -> Vec<(&'static str, Value, Value)> {
 #[test]
 fn should_refuse_a_summed_property_listed_as_transient() {
     for (declaration, type_keywords, index_keywords) in summing_declarations() {
-        let error = parse_at_version(
+        let document_type = parse_at_version(
             transient_amount_schema(type_keywords, index_keywords),
             latest(),
             true,
-        )
-        .expect_err("a type summing a transient property must be refused");
+        );
+        let error = validate_at_version(&document_type, latest())
+            .expect_err("a type summing a transient property must be refused");
         let ProtocolError::ConsensusError(consensus) = &error else {
             panic!("{declaration}: expected a consensus error, got {error:?}");
         };
@@ -132,7 +147,7 @@ fn should_refuse_a_summed_property_listed_as_transient() {
 
 /// A type that sums a property and lists another as transient is unaffected.
 #[test]
-fn should_register_a_summed_property_beside_a_transient_one() {
+fn should_admit_a_summed_property_beside_a_transient_one() {
     let schema = platform_value!({
         "type": "object",
         "documentsSummable": "amount",
@@ -144,36 +159,43 @@ fn should_register_a_summed_property_beside_a_transient_one() {
         "transient": ["note"],
         "additionalProperties": false,
     });
-    let document_type = parse_at_version(schema, latest(), true)
-        .expect("a summed property that is not transient registers");
+    let document_type = parse_at_version(schema, latest(), true);
     assert_eq!(document_type.documents_summable(), Some("amount"));
     assert!(document_type.transient_fields().contains("note"));
+    validate_at_version(&document_type, latest())
+        .expect("a summed property that is not transient is admitted");
 }
 
-/// The rule is a registration rule: a contract stored with such a type, parsed without full
-/// validation, still loads.
+/// The rule is one of registration and update, not of parsing: a contract stored with such a
+/// type parses, with full validation too, as a document decoded with its contract parses it.
 #[test]
-fn should_load_a_stored_type_summing_a_transient_property() {
+fn should_parse_a_type_summing_a_transient_property() {
     for (declaration, type_keywords, index_keywords) in summing_declarations() {
-        parse_at_version(
-            transient_amount_schema(type_keywords, index_keywords),
-            latest(),
-            false,
-        )
-        .unwrap_or_else(|error| panic!("{declaration}: a stored type must load: {error:?}"));
+        for full_validation in [false, true] {
+            let document_type = parse_at_version(
+                transient_amount_schema(type_keywords.clone(), index_keywords.clone()),
+                latest(),
+                full_validation,
+            );
+            assert_eq!(
+                document_type.as_ref().summed_properties(),
+                vec!["amount"],
+                "{declaration}"
+            );
+        }
     }
 }
 
 /// Protocol version 14 keeps registering what it registered.
 #[test]
-fn should_keep_registering_a_summed_transient_property_at_protocol_version_14() {
+fn should_refuse_nothing_at_protocol_version_14() {
     for (declaration, type_keywords, index_keywords) in summing_declarations() {
-        parse_at_version(
+        let document_type = parse_at_version(
             transient_amount_schema(type_keywords, index_keywords),
             14,
             true,
-        )
-        .unwrap_or_else(|error| {
+        );
+        validate_at_version(&document_type, 14).unwrap_or_else(|error| {
             panic!("{declaration}: protocol version 14 must still register the type: {error:?}")
         });
     }

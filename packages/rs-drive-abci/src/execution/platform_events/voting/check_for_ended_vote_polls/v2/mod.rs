@@ -5,7 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -183,17 +183,13 @@ where
             ) {
                 return Ok(false);
             }
-            let mut summed_properties = document_type.documents_summable().into_iter().chain(
-                document_type
-                    .indexes()
-                    .values()
-                    .filter_map(|index| index.summable.as_deref()),
-            );
-            if summed_properties
-                .any(|property| read_document_sum_contribution(document, property).is_err())
-            {
-                return Ok(false);
-            }
+        }
+        if document_type
+            .summed_properties()
+            .into_iter()
+            .any(|property| read_document_sum_contribution(document, property).is_err())
+        {
+            return Ok(false);
         }
         if !self
             .drive

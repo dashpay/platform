@@ -56,6 +56,13 @@ pub struct DataContractMethodVersions {
     /// rule: the method refuses nothing there, so the shipped
     /// `create_document_types_from_document_schemas` 1 that calls it is inert.
     pub validate_schema_patterns: OptionalFeatureVersion,
+    /// `DataContract::validate_no_transient_summed_property` and the same method of a
+    /// `DocumentTypeRef`: refuses a document type that sums a property it lists as transient.
+    /// Contract registration and update run it on the contract they would store, and a document
+    /// create on the type it writes. `None` on versions that predate the rule: the method refuses
+    /// nothing there, so the shipped contract create and update and batch transformers that call
+    /// it are inert.
+    pub validate_no_transient_summed_property: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
