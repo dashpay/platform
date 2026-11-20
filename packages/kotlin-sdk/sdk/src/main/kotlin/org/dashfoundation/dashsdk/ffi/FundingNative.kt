@@ -204,7 +204,9 @@ internal object FundingNative {
      * See
      * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentityToRecipient].
      * [memoText] null or empty means no memo. Blocks for the ~30s Halo 2
-     * proof; returns the identity's proven post-debit credit balance.
+     * proof; returns the funding identity's credit balance from the verified
+     * snapshot (or a newer one the wallet already knows), not a receipt for
+     * this debit.
      */
     external fun shieldedShieldFromIdentityToRecipient(
         managerHandle: Long,

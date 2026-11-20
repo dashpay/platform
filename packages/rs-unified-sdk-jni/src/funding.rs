@@ -877,7 +877,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// own-address rejection belong to the FFI and the wallet. `memo_text` null or
 /// empty maps to a null pointer (no memo). The caller retains ownership of
 /// `signer_identity_handle`. Blocks for the ~30s Halo 2 proof; returns the
-/// identity's proven post-debit credit balance.
+/// funding identity's credit balance from the verified snapshot (or a newer
+/// one the wallet already knows), not a receipt for this debit.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldFromIdentityToRecipient(

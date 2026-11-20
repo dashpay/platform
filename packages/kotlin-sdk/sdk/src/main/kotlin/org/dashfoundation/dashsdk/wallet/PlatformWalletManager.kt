@@ -1997,13 +1997,15 @@ class PlatformWalletManager(
      * [shieldedIdentityDebitRecoveryRecords] to inspect its recovery state;
      * a completed sync is not permission to resubmit the payment.
      *
-     * Cancellation: if the caller is cancelled after the native call has
-     * completed, the post-debit balance is still returned (see
-     * [opReturningCompletedResult]), so a completed identity debit is never
-     * hidden. Handle the return before the next suspension point.
+     * Cancellation: if the native call successfully returns a balance,
+     * cancellation during the handoff does not discard it (see
+     * [opReturningCompletedResult]). Handle the result before the next
+     * suspension point.
      *
-     * Blocks for the ~30s Halo 2 proof; the note arrives on the recipient's
-     * next shielded sync pass.
+     * Blocks for the ~30s Halo 2 proof. A successful return does not confirm
+     * that this debit executed or that the recipient received the note. The
+     * wallet confirms the outgoing activity when shielded sync observes its
+     * note commitments on-chain. Do not use the returned balance as a receipt.
      *
      * @param walletId the 32-byte wallet id.
      * @param identityId the 32-byte funding identity id; must be managed by
@@ -2013,7 +2015,8 @@ class PlatformWalletManager(
      *   [shieldedTransfer] takes.
      * @param amount credits to shield (1 DASH = 1e11).
      * @param memo optional UTF-8 memo for the recipient's note.
-     * @return the identity's proven post-debit credit balance.
+     * @return the funding identity's credit balance from the verified
+     *   snapshot, or a newer balance already known to the wallet.
      */
     suspend fun shieldedShieldFromIdentityToRecipient(
         walletId: ByteArray,
