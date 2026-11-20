@@ -397,3 +397,53 @@ fn tc_code_011_c_backup_wal_shm_unlink_no_lossy_no_exists_gate() {
         "backup.rs WAL/SHM-unlink must not pre-gate remove_file on sibling.exists() (TOCTOU)"
     );
 }
+
+/// Directories the crate creates are owner-only, including the ones a manual
+/// backup to a not-yet-existing nested path materialises.
+#[test]
+fn should_create_missing_manual_backup_dirs_owner_only() {
+    let tmp = common::secure_tempdir().unwrap();
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(tmp.path().join("w.db"))).unwrap();
+    let outer = tmp.path().join("backups");
+    let inner = outer.join("nested");
+
+    persister.backup_to(&inner.join("manual.db")).unwrap();
+
+    for created in [&outer, &inner] {
+        let mode = std::fs::metadata(created).unwrap().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{} must be owner-only", created.display());
+    }
+}
+
+/// One restore under an insecure ancestor reports it once, not once per layer.
+#[test]
+#[tracing_test::traced_test]
+fn should_warn_once_per_restore_under_insecure_destination_parent() {
+    let tmp = common::secure_tempdir().unwrap();
+    let source_path = tmp.path().join("source.db");
+    let source = SqlitePersister::open(SqlitePersisterConfig::new(&source_path)).unwrap();
+    let backup = source.backup_to(tmp.path()).unwrap();
+    drop(source);
+
+    let insecure_parent = tmp.path().join("restore-once-target");
+    std::fs::create_dir(&insecure_parent).unwrap();
+    std::fs::set_permissions(&insecure_parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let destination = insecure_parent.join("restored.db");
+
+    SqlitePersister::restore_from_skip_backup(&destination, &backup).unwrap();
+
+    logs_assert(|lines: &[&str]| {
+        let count = lines
+            .iter()
+            .filter(|line| line.contains(ANCESTOR_WARNING))
+            .count();
+        if count == 1 {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected one ancestor warning per restore, got {count}"
+            ))
+        }
+    });
+}
