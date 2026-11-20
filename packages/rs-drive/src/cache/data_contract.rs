@@ -25,9 +25,10 @@ pub struct CommittedGeneration(u64);
 ///   thread. Its reads and rewrites land in the block cache, which is cleared when a block
 ///   starts ([`Self::clear_block_cache`]) and promoted into the global cache once the block
 ///   is committed ([`Self::merge_and_clear_block_cache`]).
-/// * **Committed-state readers** (the query threads) read with no transaction, concurrently
-///   with block execution, and populate the global cache with what they read. `check_tx`
-///   threads read through a fresh transaction of their own and never write to the cache.
+/// * **Committed-state readers** read with no transaction, concurrently with block
+///   execution: the query threads, which populate the global cache with what they read, and
+///   `check_tx`, most of whose reads leave the cache alone, while some (its fee estimation)
+///   populate the global cache as a query does. Neither writes the block cache.
 ///
 /// CONSENSUS-CRITICAL. Block execution serializes documents and validates transitions
 /// against whatever contract definition this cache hands it. If two honest validators
@@ -45,17 +46,25 @@ pub struct CommittedGeneration(u64);
 ///   thread that read a contract, was descheduled across the block's commit and promotion,
 ///   and inserted afterwards would clobber the promoted definition with the pre-block one.
 ///
-/// A third keeps the readers of different protocol versions apart. A contract is parsed under
-/// the protocol version of the reader that loaded it, and two versions may parse the same
-/// stored contract differently. A query thread reads at the version of the platform state it
-/// loaded, which on the first block of a protocol version, and for a query that loaded it just
-/// before the block's state was published, is still the previous version. Every entry records
-/// the version that parsed it (`DataContractFetchInfo::parsed_under_protocol_version`), and
-/// from protocol version 15 block execution and queries read through
+/// A third keeps a reader from protocol version 15 on from being served what a reader of
+/// another protocol version parsed. A contract is parsed under the protocol version of the
+/// reader that loaded it, and two versions may parse the same stored contract differently. A
+/// committed-state reader reads at the version of the platform state it loaded, which on the
+/// first block of a protocol version, and for a reader that loaded it just before the block's
+/// state was published, is still the previous version. Every entry records the version that
+/// parsed it (`DataContractFetchInfo::parsed_under_protocol_version`), and from protocol
+/// version 15 `Drive::get_contract_with_fetch_info` (generation 1) reads through
 /// [`Self::get_parsed_under`], which returns only entries parsed under the reader's version.
 /// Entries are keyed by contract alone, so a lookup from another version is a miss: the reader
 /// reads state as a node with an empty cache does, and replaces the entry with its own parse if
 /// it may cache.
+///
+/// Readers at protocol version 14 and earlier (generation 0) still read through the
+/// version-blind [`Self::get`], so a committed-state reader that lags behind an upgrade can be
+/// served an entry a later version parsed. No block is affected: block execution reads at the
+/// block's version, never behind it. `Drive::get_cached_contract_with_fetch_info` is
+/// version-blind as well; read through it only what no parse changes, such as the contract's
+/// version.
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
     block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
@@ -93,8 +102,9 @@ impl DataContractCache {
     /// a strictly higher version, as defense in depth. Contract versions increase strictly
     /// monotonically (the update transition enforces `new == old + 1`, token configuration
     /// updates and system contract migrations bump the version), so a lower version is never
-    /// fresh information. Same-version inserts overwrite: re-inserting an identical contract
-    /// with a freshly calculated fee is the normal cache-hit fee path.
+    /// fresh information. Same-version inserts overwrite: generation 0 of
+    /// `Drive::get_contract_with_fetch_info` re-inserts an identical contract with the fee it
+    /// calculated on a cache hit.
     pub fn insert_block(&self, fetch_info: Arc<DataContractFetchInfo>) {
         let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
 
@@ -665,8 +675,9 @@ mod tests {
             assert_eq!(cached.contract.version(), 2);
         }
 
-        /// Same-version inserts must overwrite: re-inserting the same contract with a
-        /// freshly calculated fee is the normal cache-hit fee path.
+        /// Same-version inserts must overwrite: generation 0 of
+        /// `Drive::get_contract_with_fetch_info` re-inserts the same contract with the fee it
+        /// calculated on a cache hit.
         #[test]
         fn test_insert_overwrites_same_version() {
             let data_contract_cache = DataContractCache::new(10, 10);

@@ -102,10 +102,11 @@ impl Drive {
 
     /// Returns the contract with fetch info and operations with the given ID.
     ///
-    /// Generation 0 with two changes: a cached copy is served only when it was parsed under
-    /// this reader's protocol version (`DataContractCache::get_parsed_under`), and a cache hit
-    /// is billed its cost priced under this reader's protocol version, never a fee stored on
-    /// the entry.
+    /// Generation 0 with three changes: a cached copy is served only when it was parsed under
+    /// this reader's protocol version (`DataContractCache::get_parsed_under`), a cache hit is
+    /// billed its cost priced under this reader's protocol version, never a fee stored on the
+    /// entry, and a cache hit never writes the cache (generation 0 stores the fee it calculated
+    /// for an entry without one).
     ///
     /// `add_to_cache_if_pulled` is whether this call may store a contract it pulled from state
     /// in the cache.
