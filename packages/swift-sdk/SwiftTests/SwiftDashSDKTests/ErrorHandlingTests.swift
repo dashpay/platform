@@ -948,7 +948,7 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(code, .errorIdentityLookupFailed)
         XCTAssertEqual(code.rawValue, 80)
         let detail = "could not look up identity 9fRYTJZW on Platform; nothing was sent"
-        guard case .identityLookupFailed(let message) =
+        guard case .identityLookupFailed(let message, _) =
             PlatformWalletError(code: code, message: detail) else {
             return XCTFail("lost typed identity-lookup-failed error")
         }
