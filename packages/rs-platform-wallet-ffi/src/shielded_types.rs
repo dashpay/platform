@@ -108,8 +108,11 @@ pub struct ShieldedSpendPlanFFI {
     /// withdrawal the reserve for Core, of which the Core fee is taken.
     pub amount: u64,
     /// What the recipient receives: `amount`, except for a withdrawal, where
-    /// it is the output the protocol pays: `amount` truncated to whole duffs,
-    /// minus the Core fee from protocol version 14.
+    /// it is a quote at the plan's protocol version of the output the protocol
+    /// pays: `amount` truncated to whole duffs at versions 12 and 13, minus the
+    /// Core fee as well from 14. The spend checks `amount` and `fee`, not this:
+    /// a withdrawal still queued when a later version pools it is paid at that
+    /// version.
     pub recipient_amount: u64,
     /// The exact fee for the selected notes.
     pub fee: u64,

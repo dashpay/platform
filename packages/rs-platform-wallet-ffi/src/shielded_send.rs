@@ -323,9 +323,11 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// at the maximum withdrawal.
 /// `core_fee_per_byte` is the Core fee rate of a withdrawal (kind `2`) and is
 /// ignored for the other kinds. A withdrawal's `amount` is the reserve for
-/// Core, of which the Core fee is taken: the plan's `recipient_amount` is what
-/// reaches the Core address, the reserve truncated to whole duffs minus the
-/// Core fee. The amount must lie within the protocol bounds for that rate (a
+/// Core, which the spend checks with the fee. The plan's `recipient_amount` is
+/// a quote at the plan's protocol version of what reaches the Core address:
+/// the reserve truncated to whole duffs at versions 12 and 13, minus the Core
+/// fee as well from 14; a withdrawal still queued when a later version pools
+/// it is paid at that version. The amount must lie within the protocol bounds for that rate (a
 /// withdrawal sweep is capped at the maximum), else
 /// `ErrorShieldedWithdrawalAmountOutOfRange`; a rate the protocol refuses (zero,
 /// not a Fibonacci number, or above the cap from protocol 14) returns
@@ -472,16 +474,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
-    shielded_transfer_inner(
-        handle,
-        wallet_id_bytes,
-        mnemonic_resolver_handle,
-        account,
-        recipient_raw_43,
-        amount,
-        memo_text,
-        None,
-    )
+    catch_spend_panic("shielded transfer", || {
+        shielded_transfer_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            recipient_raw_43,
+            amount,
+            memo_text,
+            None,
+        )
+    })
 }
 
 /// [`platform_wallet_manager_shielded_transfer`] against a plan from
@@ -634,15 +638,17 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
-    shielded_unshield_inner(
-        handle,
-        wallet_id_bytes,
-        mnemonic_resolver_handle,
-        account,
-        to_platform_addr_cstr,
-        amount,
-        None,
-    )
+    catch_spend_panic("shielded unshield", || {
+        shielded_unshield_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            to_platform_addr_cstr,
+            amount,
+            None,
+        )
+    })
 }
 
 /// [`platform_wallet_manager_shielded_unshield`] against a plan, refused as
@@ -764,16 +770,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     amount: u64,
     core_fee_per_byte: u32,
 ) -> PlatformWalletFFIResult {
-    shielded_withdraw_inner(
-        handle,
-        wallet_id_bytes,
-        mnemonic_resolver_handle,
-        account,
-        to_core_address_cstr,
-        amount,
-        core_fee_per_byte,
-        None,
-    )
+    catch_spend_panic("shielded withdraw", || {
+        shielded_withdraw_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            to_core_address_cstr,
+            amount,
+            core_fee_per_byte,
+            None,
+        )
+    })
 }
 
 /// [`platform_wallet_manager_shielded_withdraw`] against a plan, refused as
