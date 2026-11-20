@@ -1986,13 +1986,16 @@ class PlatformWalletManager(
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
      *    Platform has no balance for the identity yet; retry later.
      *
-     * Do NOT retry on either of these; a retry could debit the identity
-     * twice, and the next sync reconciles the outcome:
+     * Do NOT retry on either of these errors; the original debit may have executed:
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
      *    the transition may already have executed.
      *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedIdentityDebitPending]:
      *    an earlier identity debit is still unresolved, so this one was
      *    never built or broadcast.
+     *
+     * Sync attempts reconciliation but can leave the debit unresolved. Use
+     * [shieldedIdentityDebitRecoveryRecords] to inspect its recovery state;
+     * a completed sync is not permission to resubmit the payment.
      *
      * Cancellation: if the caller is cancelled after the native call has
      * completed, the post-debit balance is still returned (see
