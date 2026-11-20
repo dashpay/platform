@@ -42,12 +42,18 @@ struct TopUpIdentityView: View {
     /// its slot (`PaymentFailure.holdsSlot`; ← Kotlin `TopUpIdentityScreen`).
     @State private var failure: PaymentFailure? = nil
     @State private var newBalance: UInt64? = nil
+    /// The top-up may have been broadcast and its outcome is not confirmed
+    /// (Rust classes it `.maybeSent`): shown as pending, and the form is gone
+    /// so the same top-up cannot be sent again.
+    @State private var isPending: Bool = false
 
     var body: some View {
         NavigationStack {
             Form {
                 if newBalance != nil {
                     successSection
+                } else if isPending {
+                    pendingSection
                 } else {
                     walletSection
                     fundingSection
@@ -218,6 +224,31 @@ struct TopUpIdentityView: View {
         }
     }
 
+    private var pendingSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Top-up pending", systemImage: "clock")
+                    .foregroundColor(.orange)
+                    .font(.headline)
+                    .accessibilityIdentifier("topup.pending")
+                Text(
+                    "The top-up may still complete. Don't send it again; "
+                    + "a later sync refreshes the balance but can't confirm this top-up."
+                )
+                .font(.callout)
+                .foregroundColor(.secondary)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+        }
+    }
+
     // MARK: - Derived state
 
     private var canSubmit: Bool {
@@ -335,14 +366,21 @@ struct TopUpIdentityView: View {
                 }
             } catch {
                 // Presented by Rust's payment class: a top-up that may have
-                // left reads as unconfirmed, never as a failure to repeat,
-                // and the button stays off while the failure holds its slot.
-                // An error no payment raised shows as its own message.
+                // left (`.maybeSent`) is pending, not a failure, and the form
+                // is gone; any other failure shows its class's text, and the
+                // button stays off while it holds its slot. An error no
+                // payment raised shows as its own message.
                 let failure = PaymentFailure.ofPayment(error)
+                let mayHaveLeft: Bool
+                if case .reconcile? = failure?.recovery { mayHaveLeft = true } else { mayHaveLeft = false }
                 await MainActor.run {
                     self.failure = failure
-                    self.submitError = failure.map { SubmitError(title: $0.title, message: $0.message) }
-                        ?? SubmitError(message: error.localizedDescription)
+                    if mayHaveLeft {
+                        self.isPending = true
+                    } else {
+                        self.submitError = failure.map { SubmitError(title: $0.title, message: $0.message) }
+                            ?? SubmitError(message: error.localizedDescription)
+                    }
                     self.isToppingUp = false
                 }
             }

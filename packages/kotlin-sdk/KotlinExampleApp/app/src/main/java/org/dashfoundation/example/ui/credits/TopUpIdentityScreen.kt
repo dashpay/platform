@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.errors.PaymentRecovery
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -73,6 +74,10 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
     // The last failed top-up, presented by its payment class; the button
     // stays off while it holds its slot (PaymentFailure.holdsSlot).
     var failure by remember { mutableStateOf<PaymentFailure?>(null) }
+    // The top-up may have been broadcast and its outcome is not confirmed
+    // (Rust classes it MAYBE_SENT): shown as pending, and the same top-up
+    // cannot be sent again.
+    val pending = failure?.recovery == PaymentRecovery.Reconcile
 
     val amount = amountText.toLongOrNull()
     val canSubmit = wallet != null && manager != null && amount != null && amount > 0 &&
@@ -120,10 +125,24 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                 )
             }
 
+            if (pending) {
+                Text(
+                    "Top-up pending: it may still complete. Don't send it again; " +
+                        "a later sync refreshes the balance but can't confirm this top-up.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("topup.pending"),
+                )
+            }
+
             SubmitButton(
-                text = if (done) "Topped Up" else "Top Up Balance",
+                text = when {
+                    done -> "Topped Up"
+                    pending -> "Top-Up Pending"
+                    else -> "Top Up Balance"
+                },
                 isLoading = isSubmitting,
-                enabled = canSubmit && !done,
+                enabled = canSubmit && !done && !pending,
                 modifier = Modifier.fillMaxWidth().testTag("topUpIdentity.submit"),
             ) {
                 val mgr = manager ?: return@SubmitButton
@@ -151,9 +170,13 @@ fun TopUpIdentityScreen(identityIdHex: String, navController: NavHostController)
                         )
                         done = true
                     } catch (e: Exception) {
+                        // A top-up that may have left (MAYBE_SENT) is pending,
+                        // not a failure: no alert, and the button stays off.
                         val paymentFailure = PaymentFailure.ofPayment(e)
                         failure = paymentFailure
-                        error = paymentFailure?.message ?: e.message ?: "Top up failed"
+                        if (paymentFailure?.recovery != PaymentRecovery.Reconcile) {
+                            error = paymentFailure?.message ?: e.message ?: "Top up failed"
+                        }
                     } finally {
                         isSubmitting = false
                     }

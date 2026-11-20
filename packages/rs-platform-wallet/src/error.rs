@@ -702,6 +702,20 @@ pub enum PlatformWalletError {
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
+    /// Platform could not be asked for an identity an operation names, so
+    /// nothing was signed, reserved or broadcast: the operation never
+    /// started and may be retried as it is. Distinct from [`Self::Sdk`],
+    /// which a host that treats an unknown error as "may have gone through"
+    /// cannot tell from a failure after a dispatch, and from
+    /// [`Self::IdentityNotFound`], which is Platform's answer that the
+    /// identity does not exist. `source` is the SDK's error.
+    #[error("could not look up identity {identity_id} on Platform; nothing was sent: {source}")]
+    IdentityLookupFailed {
+        identity_id: Identifier,
+        #[source]
+        source: dash_sdk::Error,
+    },
+
     /// The contact requests with this identity came or went privately
     /// (protocol version 15): a `contactRequest` document to it, in reply or
     /// as a rotation, would publish the relationship, so it is sent privately.
@@ -1407,6 +1421,7 @@ impl PlatformWalletError {
             | Self::IdentityAlreadyExists(_)
             | Self::IdentityNotFound(_)
             | Self::IdentityBalanceUnavailable(_)
+            | Self::IdentityLookupFailed { .. }
             | Self::NoPrimaryIdentity
             | Self::InvitationNetworkMismatch { .. }
             | Self::ContactRequestNotFound(_)
@@ -1604,7 +1619,8 @@ impl PlatformWalletError {
     /// same call can get past by running again: a commitment tree not yet at
     /// a recorded anchor, a shielded broadcast refused before it was sent, a
     /// drain that ran out of budget, a private-contact store read that did
-    /// not finish, and a persister the store calls transiently unavailable.
+    /// not finish, an identity read before signing that Platform did not
+    /// answer, and a persister the store calls transiently unavailable.
     /// Never for a request another payment blocks (`NotSent`, but running
     /// it again meets the same refusal): the host waits for the earlier
     /// payment to settle.
@@ -1616,6 +1632,10 @@ impl PlatformWalletError {
             PaymentDelivery::NotSent => match self {
                 // Transient: the same call gets past it by running again.
                 Self::ShieldedNoRecordedAnchor(_)
+                // A read before anything was signed: Platform had no balance
+                // for the identity yet, or could not be asked.
+                | Self::IdentityBalanceUnavailable(_)
+                | Self::IdentityLookupFailed { .. }
                 | Self::ShieldedBroadcastFailed(_)
                 | Self::ShutdownIncomplete(_)
                 | Self::PrivateContactStoreNotRead(_) => true,
@@ -1647,7 +1667,6 @@ impl PlatformWalletError {
                 | Self::WalletAlreadyExists(_)
                 | Self::IdentityAlreadyExists(_)
                 | Self::IdentityNotFound(_)
-                | Self::IdentityBalanceUnavailable(_)
                 | Self::NoPrimaryIdentity
                 | Self::InvitationNetworkMismatch { .. }
                 | Self::ContactRequestNotFound(_)
@@ -2647,7 +2666,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 105;
+    const VARIANT_COUNT: usize = 106;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -2761,6 +2780,7 @@ mod payment_delivery_tests {
             E::ShieldedNotBound => 102,
             E::DocumentEraseBusy => 103,
             E::PaymentAlreadyDispatched { .. } => 104,
+            E::IdentityLookupFailed { .. } => 105,
         }
     }
 
@@ -2786,6 +2806,13 @@ mod payment_delivery_tests {
             (E::IdentityAlreadyExists(id()), NotSent),
             (E::IdentityNotFound(id()), NotSent),
             (E::IdentityBalanceUnavailable(id()), NotSent),
+            (
+                E::IdentityLookupFailed {
+                    identity_id: id(),
+                    source: dash_sdk::Error::Generic("lookup".into()),
+                },
+                NotSent,
+            ),
             (E::NoPrimaryIdentity, NotSent),
             (E::InvalidIdentityData(s()), MaybeSent),
             (
@@ -3205,6 +3232,8 @@ mod payment_delivery_tests {
                 | PlatformWalletError::ShieldedBroadcastFailed(_)
                 | PlatformWalletError::ShutdownIncomplete(_)
                 | PlatformWalletError::PrivateContactStoreNotRead(_)
+                | PlatformWalletError::IdentityBalanceUnavailable(_)
+                | PlatformWalletError::IdentityLookupFailed { .. }
         )
     }
 

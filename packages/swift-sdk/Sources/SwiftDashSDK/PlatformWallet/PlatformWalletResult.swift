@@ -70,11 +70,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorMasternodeListUnavailable = 46
     /// Address-nonce race: Platform rejected an address-funds transition (a
     /// transfer or withdrawal from Platform addresses, or an identity
-    /// registration or top-up from them) because the submitted address nonce
+    /// registration from them) because the submitted address nonce
     /// raced Platform's expected value (a lagging DAPI replica read). Not a
     /// retry signal: the verdict may follow an earlier dispatch that landed,
     /// so Rust classes it `.maybeSent` and not retryable. A shield does not
-    /// return it (see `errorShieldedSpendUnconfirmed`). The submitted/expected
+    /// return it (see `errorShieldedSpendUnconfirmed`), nor does an identity
+    /// top-up from Platform addresses (its nonce verdict is
+    /// `errorTransactionBroadcastUnconfirmed`, 20). The submitted/expected
     /// nonce values travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
     /// Atomic Core selection found no or insufficient unreserved UTXOs.
@@ -330,6 +332,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// Platform could not be asked for an identity the operation names (the
+    /// lookup failed, which is not Platform's answer that it does not exist,
+    /// 7). Nothing was signed, reserved or broadcast: retry as it is.
+    case errorIdentityLookupFailed = 80
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -481,6 +487,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
+            self = .errorIdentityLookupFailed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -907,6 +915,11 @@ public enum PlatformWalletError: LocalizedError {
     /// or accept made while another public request to that identity is being
     /// sent: one is sent at a time, and nothing is signed for the second.
     case publicContactRequestUnconfirmed(String, payment: PlatformPaymentClass? = nil)
+    /// Platform could not be asked for an identity the operation names (code
+    /// 80): the lookup itself failed, before anything was signed, reserved or
+    /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
+    /// SDK error it is never a possibly delivered operation.
+    case identityLookupFailed(String, payment: PlatformPaymentClass? = nil)
     case walletAlreadyExists(String, payment: PlatformPaymentClass? = nil)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -960,12 +973,13 @@ public enum PlatformWalletError: LocalizedError {
     /// was released. Retry only where `isRetryable` (Rust's) says so.
     case transactionBroadcastRejected(String, payment: PlatformPaymentClass? = nil)
     /// Address-nonce race (transfer or withdrawal from Platform addresses, or
-    /// identity registration / top-up from them): Platform rejected the
-    /// transition because the submitted address nonce raced its expected
-    /// value. Not a retry signal: the verdict may follow an earlier dispatch
-    /// that landed, so Rust classes it `.maybeSent` and not retryable;
-    /// reconcile the original operation before submitting another
-    /// transition. A shield does not return it. The submitted and
+    /// identity registration from them): Platform rejected the transition
+    /// because the submitted address nonce raced its expected value. Not a
+    /// retry signal: the verdict may follow an earlier dispatch that landed,
+    /// so Rust classes it `.maybeSent` and not retryable; reconcile the
+    /// original operation before submitting another transition. Shields and
+    /// address-funded identity top-ups do not return it (a top-up returns
+    /// `transactionBroadcastUnconfirmed`). The submitted and
     /// expected nonce values are in the message.
     case addressNonceMismatch(String, payment: PlatformPaymentClass? = nil)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
@@ -1170,6 +1184,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactStoreNotRead(_, let payment),
              .sdkPinnedBelowProtocolVersion(_, let payment),
              .publicContactRequestUnconfirmed(_, let payment),
+             .identityLookupFailed(_, let payment),
              .walletAlreadyExists(_, let payment),
              .shieldedBroadcastFailed(_, let payment),
              .shieldedBroadcastUnconfirmed(_, let payment),
@@ -1245,7 +1260,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestPending(let m, _), .privateContactPaymentsNotRestored(let m, _),
              .privateContactRecoveryUnsupported(let m, _),
              .privateContactStoreNotRead(let m, _), .sdkPinnedBelowProtocolVersion(let m, _),
-             .publicContactRequestUnconfirmed(let m, _),
+             .publicContactRequestUnconfirmed(let m, _), .identityLookupFailed(let m, _),
              .walletAlreadyExists(let m, _), .shieldedBroadcastFailed(let m, _),
              .shieldedBroadcastUnconfirmed(let m, _), .shieldedSpendUnconfirmed(let m, _),
              .shieldedNoRecordedAnchor(let m, _), .shieldedInsufficientBalance(let m, _),
@@ -1397,6 +1412,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail, payment: payment)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail, payment: payment)
+        case .errorIdentityLookupFailed:
+            self = .identityLookupFailed(detail, payment: payment)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail, payment: payment)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail, payment: payment)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail, payment: payment)

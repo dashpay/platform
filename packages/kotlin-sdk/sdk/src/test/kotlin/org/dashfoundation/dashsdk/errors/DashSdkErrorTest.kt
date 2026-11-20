@@ -489,6 +489,30 @@ class DashSdkErrorTest {
         assertFalse("a sync settles it, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * A failed identity lookup sent nothing: its own code, retryable as it is,
+     * apart from the unmapped SDK errors a host reads as possibly delivered.
+     */
+    @Test
+    fun shouldReportAFailedIdentityLookupByItsOwnCode() {
+        val detail = "could not look up identity on Platform; nothing was sent"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 80, detail, 0, 0, NOT_SENT, true)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityLookupFailed)
+        assertEquals(detail, mapped.message)
+        assertTrue("nothing was sent, so it may be retried as it is", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldReportAMissingIdentityBalanceAsRetryable() {
+        val detail = "Platform returned no balance for the identity"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, detail, 0, 0, NOT_SENT, true)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
+        assertEquals(detail, mapped.message)
+        assertTrue("nothing was sent, so the read may be retried", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
