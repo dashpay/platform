@@ -113,4 +113,25 @@ class IdentitySlotRetryTest {
         assertEquals("landed at 2", result)
         assertEquals(emptyList<Int>(), released)
     }
+
+    @Test
+    fun `a failure that may have reached Platform keeps the slot`() = runTest {
+        for (unconfirmed in listOf(
+            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("no result"),
+            DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(ByteArray(32), "no result"),
+        )) {
+            val released = mutableListOf<Int>()
+            val failure = runCatching {
+                IdentitySlotRetry.runReleasingOnFailure(
+                    first = 5,
+                    reacquire = { error("not reached") },
+                    release = { released += it },
+                    attempt = { throw unconfirmed },
+                )
+            }.exceptionOrNull()
+
+            assertTrue(failure === unconfirmed)
+            assertEquals("$unconfirmed", emptyList<Int>(), released)
+        }
+    }
 }

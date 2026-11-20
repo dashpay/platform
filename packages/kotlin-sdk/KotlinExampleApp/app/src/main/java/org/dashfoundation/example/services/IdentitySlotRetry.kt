@@ -39,15 +39,18 @@ object IdentitySlotRetry {
 
     /**
      * [run] for an operation that owns its slot until it ends: when it
-     * fails, the slot it reached is given back with [release]. A slot taken
-     * on chain or a landed operation is freed by the wallet already, so
-     * [release] must accept a slot that holds no lease.
+     * fails, the slot it reached is given back with [release], unless the
+     * failure [mayHaveReachedPlatform] (the operation may still land at that
+     * slot, so another one must not be leased it). A slot taken on chain or a
+     * landed operation is freed by the wallet already, so [release] must
+     * accept a slot that holds no lease.
      */
     suspend fun <S, T> runReleasingOnFailure(
         first: S,
         reacquire: suspend () -> S,
         release: suspend (S) -> Unit,
         limit: Int = IdentityRegistration.IDENTITY_SLOT_TAKEN_RETRY_LIMIT,
+        mayHaveReachedPlatform: (Throwable) -> Boolean = ::mayHaveReachedPlatform,
         attempt: suspend (S) -> T,
     ): T {
         var current = first
@@ -59,8 +62,17 @@ object IdentitySlotRetry {
                 attempt = attempt,
             )
         } catch (e: Throwable) {
-            release(current)
+            if (!mayHaveReachedPlatform(e)) release(current)
             throw e
         }
     }
+
+    /**
+     * The failures after which an identity create may still land: a
+     * broadcast whose result is unconfirmed (Core-funded, Platform-address
+     * and voucher registrations) or a shielded create reported unconfirmed.
+     */
+    fun mayHaveReachedPlatform(failure: Throwable): Boolean =
+        failure is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed ||
+            failure is DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed
 }

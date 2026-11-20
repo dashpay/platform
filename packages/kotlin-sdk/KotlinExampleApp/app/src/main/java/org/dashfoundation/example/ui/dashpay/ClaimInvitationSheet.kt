@@ -159,9 +159,24 @@ fun ClaimInvitationSheet(
                 val newIdentityId = withContext(NonCancellable) {
                     // The wallet chooses the index: the slot it leases to
                     // this invitation (the same one on a retried claim).
-                    suspend fun acquireSlot() = mgr.identityRegistration
-                        .acquireInvitationClaimSlot(wallet.handle, uri)
-                        .also { heldClaimSlot = HeldClaimSlot(wallet.handle, it) }
+                    // A lease this sheet held for another invitation (the
+                    // URI was edited after a refused claim) is given back
+                    // first: nothing else would ever release it.
+                    suspend fun acquireSlot(): InvitationClaimSlot {
+                        val acquired = mgr.identityRegistration
+                            .acquireInvitationClaimSlot(wallet.handle, uri)
+                        val previous = heldClaimSlot
+                        if (previous != null && !previous.isFor(wallet.handle, acquired)) {
+                            runCatching {
+                                mgr.identityRegistration.releaseInvitationClaimSlot(
+                                    previous.walletHandle,
+                                    previous.slot,
+                                )
+                            }
+                        }
+                        heldClaimSlot = HeldClaimSlot(wallet.handle, acquired)
+                        return acquired
+                    }
                     IdentitySlotRetry.run(
                         first = acquireSlot(),
                         reacquire = { acquireSlot() },
@@ -358,4 +373,9 @@ fun ClaimInvitationSheet(
 
 
 /** A claim slot and the wallet that leased it. */
-private class HeldClaimSlot(val walletHandle: Long, val slot: InvitationClaimSlot)
+private class HeldClaimSlot(val walletHandle: Long, val slot: InvitationClaimSlot) {
+    /** This is the lease of [other]'s invitation in the wallet [walletHandle]. */
+    fun isFor(walletHandle: Long, other: InvitationClaimSlot): Boolean =
+        this.walletHandle == walletHandle &&
+            slot.invitationOutPoint.contentEquals(other.invitationOutPoint)
+}
