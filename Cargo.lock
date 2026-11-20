@@ -8892,6 +8892,7 @@ dependencies = [
  "rand 0.8.8",
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
+ "secp256k1 0.33.1",
  "serde",
  "serde-wasm-bindgen 0.5.0",
  "serde_json",

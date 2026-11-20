@@ -116,6 +116,12 @@ sha2 = { version = "0.10" }
 dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 wasm-dpp2 = { path = "../wasm-dpp2" }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Smaller secp256k1 precomputed tables: about 1.1 MB less of the Brotli
+# download, in exchange for roughly a third slower signing and key derivation,
+# which the SDK does a few times per state transition.
+secp256k1 = { workspace = true, features = ["lowmemory"] }
+
 [dev-dependencies]
 # Self-dependency to enable `mocks` for the lib under test. Do not add
 # system-contract features here: Cargo unifies them into the tested lib, so
@@ -143,4 +149,5 @@ wasm-bindgen-test = "0.3.58"
 wasm-opt = false
 
 [package.metadata.cargo-machete]
-ignored = ["wasm-bindgen-futures", "wasm-sdk"]
+# secp256k1 is a direct dependency to enable lowmemory for the WASM target.
+ignored = ["wasm-bindgen-futures", "wasm-sdk", "secp256k1"]
