@@ -309,7 +309,9 @@ final class PlatformWalletShutdownTests: XCTestCase {
             ("withdraw", { try await manager.shieldedWithdraw(
                 walletId: Data(), resolver: resolver, toCoreAddress: "", amount: 1) }),
             ("create identity", { _ = try await manager.shieldedIdentityCreateFromPool(
-                walletId: Data(), resolver: resolver, identityIndex: 0, identityPubkeys: [],
+                walletId: Data(), resolver: resolver,
+                slot: ManagedPlatformWallet.RegistrationSlot(identityIndex: 0, token: 0),
+                identityPubkeys: [],
                 denomination: 1, sendToAddressOnCreationFailure: Data(), identitySigner: signer) }),
             ("fund asset lock", { try await manager.shieldedFundFromAssetLock(
                 walletId: Data(), fundingAccountIndex: 0, amountDuffs: 1, recipients: []) }),

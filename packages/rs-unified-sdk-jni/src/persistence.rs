@@ -51,6 +51,7 @@ use crate::support::{guard, net_from_ord, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::jstring;
 use jni::JNIEnv;
+use platform_wallet_ffi::identity_slot_lease_persistence::IdentitySlotLeaseFFI;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
@@ -265,6 +266,17 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
         ),
+        identity_slot_leases: bridge_overrides(
+            env,
+            bridge,
+            "onPersistIdentitySlotLeases",
+            PERSIST_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onLoadIdentitySlotLeases",
+            LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+        ),
     })
 }
 
@@ -328,6 +340,11 @@ struct BridgeOverrides {
     /// vouches for the contact requests read before it, which an inherited
     /// no-op contact upsert never keeps.
     private_contact_scan_state: bool,
+    /// `onPersistIdentitySlotLeases` and `onLoadIdentitySlotLeases`: an
+    /// inherited no-op store would acknowledge a claim's lease it never
+    /// kept, and an inherited empty load would hand a relaunch a free slot
+    /// a claim already took.
+    identity_slot_leases: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -363,6 +380,15 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         on_load_private_contact_scan_state_wallets_free_fn: overrides
             .private_contact_scan_state
             .then_some(tramp_load_private_contact_scan_state_wallets_free),
+        on_persist_identity_slot_leases_fn: overrides
+            .identity_slot_leases
+            .then_some(tramp_persist_identity_slot_leases),
+        on_load_identity_slot_leases_fn: overrides
+            .identity_slot_leases
+            .then_some(tramp_load_identity_slot_leases),
+        on_load_identity_slot_leases_free_fn: overrides
+            .identity_slot_leases
+            .then_some(tramp_load_identity_slot_leases_free),
         ..Default::default()
     }
 }
@@ -1402,6 +1428,134 @@ unsafe extern "C" fn tramp_load_private_contact_scan_state_free(
         drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
             addresses.cast_mut(),
             addresses_count,
+        )));
+    }
+}
+
+/// Packed `byte[]` row width of the invitation-claim slot leases, the same
+/// flat packing the scan state uses: a lease is `invitationOutPoint (raw
+/// txid ‖ vout u32 LE) ‖ identityIndex (u32 LE) ‖ phase`; a released lease
+/// crosses as its 36-byte outpoint.
+pub(crate) const IDENTITY_SLOT_LEASE_ENTRY_LEN: usize = 36 + 4 + 1;
+
+/// Descriptor of `NativePersistenceBridge.onPersistIdentitySlotLeases`:
+/// `(walletId, leases, released)`.
+const PERSIST_IDENTITY_SLOT_LEASES_DESCRIPTOR: &str = "([B[B[B)I";
+
+/// Descriptor of `NativePersistenceBridge.onLoadIdentitySlotLeases`:
+/// `(walletId) -> leases`.
+const LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR: &str = "([B)[B";
+
+fn pack_identity_slot_leases(rows: &[IdentitySlotLeaseFFI]) -> Vec<u8> {
+    let mut packed = Vec::with_capacity(rows.len() * IDENTITY_SLOT_LEASE_ENTRY_LEN);
+    for row in rows {
+        packed.extend_from_slice(&row.invitation_out_point);
+        packed.extend_from_slice(&row.identity_index.to_le_bytes());
+        packed.push(row.phase);
+    }
+    packed
+}
+
+/// The rows packed in `packed`, or `None` when its length is not a whole
+/// number of rows. The phase crosses as it came: Rust's load refuses one it
+/// does not know.
+fn unpack_identity_slot_leases(packed: &[u8]) -> Option<Vec<IdentitySlotLeaseFFI>> {
+    let (rows, rest) = packed.as_chunks::<IDENTITY_SLOT_LEASE_ENTRY_LEN>();
+    if !rest.is_empty() {
+        return None;
+    }
+    rows.iter()
+        .map(|row| {
+            Some(IdentitySlotLeaseFFI {
+                invitation_out_point: row[..36].try_into().ok()?,
+                identity_index: u32::from_le_bytes(row[36..40].try_into().ok()?),
+                phase: row[40],
+            })
+        })
+        .collect()
+}
+
+/// Deliver a round's invitation-claim slot leases (see
+/// `PersistIdentitySlotLeasesFn`) as two packed arrays.
+unsafe extern "C" fn tramp_persist_identity_slot_leases(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    leases: *const IdentitySlotLeaseFFI,
+    leases_count: usize,
+    released: *const [u8; 36],
+    released_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let leases = env.byte_array_from_slice(&pack_identity_slot_leases(slice_or_empty(
+            leases,
+            leases_count,
+        )))?;
+        let released: Vec<u8> = slice_or_empty(released, released_count)
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        let released = env.byte_array_from_slice(&released)?;
+        env.call_method(
+            bridge,
+            "onPersistIdentitySlotLeases",
+            PERSIST_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+            &[(&wid).into(), (&leases).into(), (&released).into()],
+        )?
+        .i()
+    })
+}
+
+/// Hand Rust a wallet's stored claim leases (see `LoadIdentitySlotLeasesFn`).
+/// The rows are minted as a raw array only once the whole read succeeded; a
+/// failed read, an exception or an array that is not a whole number of rows
+/// returns `ERR_JNI`, which fails the load rather than freeing a slot a
+/// claim already took.
+unsafe extern "C" fn tramp_load_identity_slot_leases(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_leases: *mut *const IdentitySlotLeaseFFI,
+    out_leases_count: *mut usize,
+) -> i32 {
+    *out_leases = ptr::null();
+    *out_leases_count = 0;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let packed: JByteArray = env
+            .call_method(
+                bridge,
+                "onLoadIdentitySlotLeases",
+                LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+                &[(&wid).into()],
+            )?
+            .l()?
+            .into();
+        env.convert_byte_array(&packed)
+    });
+    let Some(packed) = loaded else {
+        return ERR_JNI;
+    };
+    let Some(leases) = unpack_identity_slot_leases(&packed) else {
+        return ERR_JNI;
+    };
+    if !leases.is_empty() {
+        *out_leases_count = leases.len();
+        *out_leases = Box::into_raw(leases.into_boxed_slice()) as *const _;
+    }
+    0
+}
+
+/// Release the array [`tramp_load_identity_slot_leases`] minted.
+unsafe extern "C" fn tramp_load_identity_slot_leases_free(
+    _context: *mut c_void,
+    leases: *const IdentitySlotLeaseFFI,
+    leases_count: usize,
+) {
+    if !leases.is_null() {
+        drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
+            leases.cast_mut(),
+            leases_count,
         )));
     }
 }
@@ -5250,6 +5404,15 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onLoadPrivateContactScanStateWallets",
         LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR,
     ),
+    // Same: wired only for a bridge that overrides both.
+    (
+        "onPersistIdentitySlotLeases",
+        PERSIST_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+    ),
+    (
+        "onLoadIdentitySlotLeases",
+        LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+    ),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
@@ -5473,6 +5636,7 @@ mod tests {
                 header,
                 backfill,
                 private_contact_scan_state: false,
+                identity_slot_leases: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5485,6 +5649,7 @@ mod tests {
             header: false,
             backfill: false,
             private_contact_scan_state: false,
+            identity_slot_leases: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
@@ -5502,6 +5667,7 @@ mod tests {
                 header: false,
                 backfill: false,
                 private_contact_scan_state: wired,
+                identity_slot_leases: false,
             });
             assert_eq!(
                 extension.on_persist_private_contact_scan_state_fn.is_some(),
@@ -5600,6 +5766,81 @@ mod tests {
             "a marker byte other than 0 or 1 is not a row"
         );
         assert!(unpack_private_addresses(&[0; PRIVATE_ADDRESS_ENTRY_LEN - 1]).is_none());
+    }
+
+    /// The lease trio is wired only for a bridge that implements both its
+    /// store and its load; one that inherits either gets none of it, so
+    /// `FFIPersister` does not attest the capability and an invitation
+    /// claim is refused before it takes a slot.
+    #[test]
+    fn the_identity_slot_lease_slots_are_wired_only_for_a_bridge_that_stores_and_loads_them() {
+        for wired in [false, true] {
+            let extension = extension_for(BridgeOverrides {
+                sweeps: false,
+                header: false,
+                backfill: false,
+                private_contact_scan_state: false,
+                identity_slot_leases: wired,
+            });
+            assert_eq!(
+                extension.on_persist_identity_slot_leases_fn.is_some(),
+                wired
+            );
+            assert_eq!(extension.on_load_identity_slot_leases_fn.is_some(), wired);
+            assert_eq!(
+                extension.on_load_identity_slot_leases_free_fn.is_some(),
+                wired
+            );
+            assert!(extension.on_persist_private_contact_scan_state_fn.is_none());
+        }
+        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            method_descriptor(&names(&["[B", "[B", "[B"]), "int"),
+            PERSIST_IDENTITY_SLOT_LEASES_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(&names(&["[B"]), "[B"),
+            LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR
+        );
+    }
+
+    /// A lease survives the packed array the bridge stores and hands back, a
+    /// full-width vout and identity index included, and its phase crosses as
+    /// it came; an array that is not a whole number of rows is refused.
+    #[test]
+    fn the_identity_slot_lease_rows_round_trip_through_their_packed_array() {
+        let mut out_point = [7u8; 36];
+        out_point[32..].copy_from_slice(&u32::MAX.to_le_bytes());
+        let leases = [
+            IdentitySlotLeaseFFI {
+                invitation_out_point: out_point,
+                identity_index: u32::MAX,
+                phase: 1,
+            },
+            IdentitySlotLeaseFFI {
+                invitation_out_point: [3; 36],
+                identity_index: 4,
+                phase: 0,
+            },
+        ];
+        let packed = pack_identity_slot_leases(&leases);
+        assert_eq!(packed.len(), 2 * IDENTITY_SLOT_LEASE_ENTRY_LEN);
+        assert_eq!(&packed[..36], &out_point);
+        assert_eq!(&packed[36..40], &u32::MAX.to_le_bytes());
+        assert_eq!(packed[40], 1);
+        assert_eq!(
+            unpack_identity_slot_leases(&packed).as_deref(),
+            Some(&leases[..])
+        );
+        assert_eq!(unpack_identity_slot_leases(&[]).as_deref(), Some(&[][..]));
+        assert!(unpack_identity_slot_leases(&[0; IDENTITY_SLOT_LEASE_ENTRY_LEN + 1]).is_none());
+        let mut unknown_phase = pack_identity_slot_leases(&leases[..1]);
+        unknown_phase[40] = 9;
+        assert_eq!(
+            unpack_identity_slot_leases(&unknown_phase).map(|rows| rows[0].phase),
+            Some(9),
+            "the phase is Rust's to judge"
+        );
     }
 
     /// A bridge inheriting the no-op account writers gets neither account

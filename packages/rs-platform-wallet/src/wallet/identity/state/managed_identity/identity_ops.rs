@@ -597,7 +597,7 @@ impl ManagedIdentity {
     }
 
     /// Layer `keys` onto this identity in memory, returning their key rows.
-    fn layer_keys(&mut self, keys: Vec<KeyWithBreadcrumb>) -> IdentityKeysChangeSet {
+    pub(crate) fn layer_keys(&mut self, keys: Vec<KeyWithBreadcrumb>) -> IdentityKeysChangeSet {
         let identity_id = self.id();
         let mut current = self.identity.public_keys().clone();
         let mut keys_cs = IdentityKeysChangeSet::default();

@@ -7,6 +7,9 @@ use crate::event_handler::{
     FFIEventHandler, PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::handle::*;
+use crate::identity_slot_lease_persistence::{
+    FreeIdentitySlotLeasesFn, LoadIdentitySlotLeasesFn, PersistIdentitySlotLeasesFn,
+};
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
     FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
@@ -407,6 +410,15 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
+        persist_identity_slot_leases: slot!(
+            on_persist_identity_slot_leases_fn,
+            PersistIdentitySlotLeasesFn
+        ),
+        load_identity_slot_leases: slot!(on_load_identity_slot_leases_fn, LoadIdentitySlotLeasesFn),
+        load_identity_slot_leases_free: slot!(
+            on_load_identity_slot_leases_free_fn,
+            FreeIdentitySlotLeasesFn
         ),
     }
 }

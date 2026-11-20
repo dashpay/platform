@@ -948,6 +948,20 @@ impl Sdk {
         Ok(identity_id_for_out_point(funding.out_point))
     }
 
+    /// The outpoint of the invitation's voucher credit output: the asset lock
+    /// a claim spends, and what a wallet keys the claim's identity slot by.
+    ///
+    /// Costs one funding-tx fetch, for the reason
+    /// [`Sdk::invitation_prospective_identity_id`] gives.
+    pub async fn invitation_funding_out_point(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<OutPoint, InvitationError> {
+        Ok(inspect_invitation_funding(self, invitation)
+            .await?
+            .out_point)
+    }
+
     /// What an invitation is worth and whether it was already claimed — the
     /// invitee's pre-claim check, one network round trip before any username
     /// is picked.
@@ -1543,7 +1557,7 @@ fn ensure_invitation_network(
 /// The identity id Platform derives from an asset-lock outpoint. Both proof
 /// kinds hash only the outpoint, so the ChainLock derivation (which ignores
 /// its height) gives the id for either.
-fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
+pub fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
     ChainAssetLockProof::new(0, out_point.into()).create_identifier()
 }
 

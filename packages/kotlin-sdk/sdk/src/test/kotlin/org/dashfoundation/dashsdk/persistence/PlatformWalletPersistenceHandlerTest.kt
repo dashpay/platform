@@ -220,8 +220,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        // The private contact request scan state is bit 15 (0x8000).
-        assertEquals(0x8bbfL, handler.persistenceCapabilitiesBits())
+        // The private contact request scan state is bit 15 (0x8000), the
+        // invitation-claim slot leases bit 16 (0x10000).
+        assertEquals(0x18bbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -240,6 +241,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(
             diagnostic.contains(PlatformWalletPersistenceCapabilities.PRIVATE_CONTACT_REQUEST_SCAN_STATE),
         )
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.IDENTITY_SLOT_LEASES))
     }
 
     @Test

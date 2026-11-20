@@ -220,7 +220,8 @@ final class CoreToPlatformIntegrationTests: IntegrationTestCase {
         try await alice.waitForSpendable(exactly: fundingDuffs, timeout: 90)
 
         let wallet = alice.getPlatformWallet()
-        let identityIndex: UInt32 = 0
+        let slot = try await wallet.acquireRegistrationSlot()
+        let identityIndex = slot.identityIndex
         let keyCount: UInt32 = 3
 
         let pubkeys = try wallet.prePersistIdentityKeysForRegistration(
@@ -241,7 +242,7 @@ final class CoreToPlatformIntegrationTests: IntegrationTestCase {
         let (identityId, identity) = try await wallet.registerIdentityWithFunding(
             amountDuffs: assetLockDuffs,
             accountIndex: 0,
-            identityIndex: identityIndex,
+            slot: slot,
             identityPubkeys: pubkeys,
             signer: signer
         )

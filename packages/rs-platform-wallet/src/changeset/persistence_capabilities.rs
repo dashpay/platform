@@ -150,13 +150,27 @@ impl PersistenceCapabilities {
     /// is marked.
     pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 15);
 
+    /// Invitation-claim slot leases round-trip: each lease a claim takes on an
+    /// identity index (`PlatformWalletChangeSet::identity_slot_leases`) is
+    /// stored before any key is derived at that index, its phase is updated,
+    /// its release removes it, and loading restores the wallet's leases
+    /// (`IdentityManagerStartState::claim_leases`). A claim retried after a
+    /// restart then derives its keys at the slot its earlier attempt used, and
+    /// a registration never takes that slot.
+    ///
+    /// Honoured only with [`Self::ATOMIC_CHANGESETS`] and
+    /// [`Self::WALLET_RESTORE`] ([`Self::IDENTITY_SLOT_LEASE_RESTART`]): a
+    /// claim's identity lands in the same changeset that releases its lease.
+    /// Without the set an invitation claim is refused before it takes a slot.
+    pub const IDENTITY_SLOT_LEASES: Self = Self(1 << 16);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 15;
+    const HIGHEST_DECLARED_BIT: u32 = 16;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -179,6 +193,12 @@ impl PersistenceCapabilities {
     /// ignored, and nothing would read them again.
     pub const PRIVATE_CONTACT_SCAN_STATE_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::PRIVATE_CONTACT_REQUEST_SCAN_STATE.0);
+
+    /// Capabilities required for an invitation claim to take an identity slot:
+    /// the lease is stored durably, lands with its identity in one changeset,
+    /// and comes back on load.
+    pub const IDENTITY_SLOT_LEASE_RESTART: Self =
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::IDENTITY_SLOT_LEASES.0 | Self::WALLET_RESTORE.0);
 
     /// Capabilities required to durably reconcile an asset-lock status and
     /// restore that exact row after process restart.
@@ -278,6 +298,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
                 "private_contact_request_scan_state",
             ),
+            (
+                PersistenceCapabilities::IDENTITY_SLOT_LEASES,
+                "identity_slot_leases",
+            ),
         ];
 
         KNOWN
@@ -295,7 +319,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+    PersistenceCapabilities::IDENTITY_SLOT_LEASES.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -334,6 +358,14 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits(),
             0x8000
+        );
+        assert_eq!(
+            PersistenceCapabilities::IDENTITY_SLOT_LEASES.bits(),
+            0x10000
+        );
+        assert_eq!(
+            PersistenceCapabilities::IDENTITY_SLOT_LEASE_RESTART.bits(),
+            0x10081
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(

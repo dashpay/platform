@@ -110,7 +110,6 @@ class CreateIdentityFundingPolicyTest {
         val snapshot = createIdentitySubmissionSnapshot(
             fundingSource = source,
             amountText = "999",
-            identityIndexText = "42",
             selectedRecoveryLock = selectedLock,
         )!!
 
@@ -120,7 +119,6 @@ class CreateIdentityFundingPolicyTest {
 
         assertEquals(CreateIdentityFundingSource.AssetLockResume, snapshot.fundingSource)
         assertFalse(snapshot.includesDashPayKeys)
-        assertEquals(5, snapshot.identityIndex)
         assertEquals(null, snapshot.amount)
         assertEquals(5, snapshot.recoveryLock!!.registrationIndex)
         assertArrayEquals(ByteArray(32) { 7 }, snapshot.recoveryLock.outpointTxid)

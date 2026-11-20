@@ -98,6 +98,44 @@ pub enum PlatformWalletError {
     #[error("Identity already exists: {0}")]
     IdentityAlreadyExists(Identifier),
 
+    /// The wallet slot an identity was to be placed in already holds another
+    /// identity; nothing was changed.
+    #[error("identity index {identity_index} of this wallet already holds identity {occupant}")]
+    IdentitySlotOccupied {
+        identity_index: u32,
+        occupant: Identifier,
+    },
+
+    /// A registration or an invitation claim at an identity index its
+    /// holder does not lease: the index was not taken through
+    /// `IdentityWallet::acquire_identity_slot`, or its lease was released.
+    /// Refused before anything is funded or sent.
+    #[error("identity index {identity_index} is not leased to this operation")]
+    IdentitySlotNotHeld { identity_index: u32 },
+
+    /// The identity keys derived at `identity_index` already belong to
+    /// `identity_id` on Platform, an identity this wallet did not hold there.
+    /// It is now recorded in that slot and the operation's lease is released;
+    /// nothing was funded. Acquire a slot again and derive the keys at the
+    /// new index.
+    #[error(
+        "identity index {identity_index} already holds identity {identity_id} on Platform; \
+         it is recorded there, acquire another slot"
+    )]
+    IdentitySlotTakenOnChain {
+        identity_index: u32,
+        identity_id: Identifier,
+    },
+
+    /// The invitation claim leasing slot `identity_index` may have reached
+    /// Platform, so its slot is not given up on request: only the claim's
+    /// outcome frees it. Retry the claim instead, which gets the same slot.
+    #[error(
+        "the invitation claim at identity index {identity_index} may have reached Platform; \
+         its slot is freed only by the claim's outcome"
+    )]
+    IdentitySlotClaimSubmitted { identity_index: u32 },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

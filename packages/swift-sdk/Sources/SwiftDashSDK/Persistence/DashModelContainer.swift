@@ -96,7 +96,8 @@ public enum DashModelContainer {
             PersistentTrackedMasternode.self,
             PersistentIdentityBalanceMetadata.self,
             PersistentPrivateContactRequestsPosition.self,
-            PersistentPrivateShieldedAddress.self
+            PersistentPrivateShieldedAddress.self,
+            PersistentIdentitySlotLease.self
         ]
     }
 
@@ -398,7 +399,8 @@ public enum DashSchemaV4: VersionedSchema {
 
 /// Current schema: an asset lock records the optional Orchard recipient of its
 /// shielded funding, and the private contact request sync keeps its scan state
-/// (each identity's read position and its private contacts' shielded addresses).
+/// (each identity's read position and its private contacts' shielded addresses),
+/// and an invitation claim keeps the identity slot it leased.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

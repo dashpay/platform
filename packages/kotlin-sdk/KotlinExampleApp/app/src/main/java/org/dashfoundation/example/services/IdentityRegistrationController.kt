@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.example.services.assetlock.RegistrationLockTopUp
 
 /**
  * Per-slot state for a single identity registration attempt — 1:1 port of
@@ -61,13 +62,18 @@ class IdentityRegistrationController(
             override fun hashCode(): Int = identityId.contentHashCode()
         }
 
-        /** Failure terminal state; the message is shown inline. Stays until dismissed. */
-        data class Failed(val message: String) : Phase
+        /**
+         * Failure terminal state; the message is shown inline. Stays until
+         * dismissed. [topUp] is set when a resumed registration lock found
+         * its slot taken and can top up the identity there instead.
+         */
+        data class Failed(val message: String, val topUp: RegistrationLockTopUp? = null) : Phase
 
         /**
          * Unconfirmed terminal state (shielded only): the transition may have
          * reached a node and its result is not proved. The identity at
-         * [identityId] MAY already be live; the slot must stay held so a
+         * [identityId] MAY already be live. The wallet holds its slot (across
+         * a restart too), and this phase is never re-fired, so a
          * re-submission can't burn funds against the registered-key-hash check.
          */
         data class Unconfirmed(val identityId: ByteArray, val message: String) : Phase {
@@ -97,6 +103,21 @@ class IdentityRegistrationController(
      * ← Swift `FailureStage`.
      */
     enum class FailureStage { BroadcastNotSent }
+
+    private val _currentIdentityIndex = MutableStateFlow(identityIndex)
+
+    /**
+     * The slot the registration is at now. It starts at [identityIndex], the
+     * slot the coordinator keys this controller by, and moves when the wallet
+     * reports that slot taken on chain and the body continues at a new one
+     * ([moveToIdentityIndex]).
+     */
+    val currentIdentityIndex: StateFlow<Int> = _currentIdentityIndex.asStateFlow()
+
+    /** The body continues at slot [index]; see [currentIdentityIndex]. */
+    fun moveToIdentityIndex(index: Int) {
+        _currentIdentityIndex.value = index
+    }
 
     private val _phase = MutableStateFlow<Phase>(Phase.Idle)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
@@ -131,13 +152,15 @@ class IdentityRegistrationController(
      * drives the legitimate restart through them. ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the 32-byte identity
-     * id, or throws. It runs on its own dispatcher; the terminal phase flip
+     * id, or throws. It runs with this controller as its receiver, so it can
+     * report a move to another slot ([moveToIdentityIndex]). It runs on its own dispatcher; the terminal phase flip
      * hops back to [scope].
      */
     fun submit(
-        body: suspend () -> ByteArray,
+        body: suspend IdentityRegistrationController.() -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
         isBroadcastNotSent: (Throwable) -> Boolean = { false },
+        topUpOffer: (Throwable) -> RegistrationLockTopUp? = { null },
     ) {
         when (_phase.value) {
             is Phase.Idle, is Phase.PreparingKeys, is Phase.Failed -> Unit
@@ -149,7 +172,7 @@ class IdentityRegistrationController(
         terminalAt = null
         task = scope.launch {
             try {
-                val identityId = body()
+                val identityId = this@IdentityRegistrationController.body()
                 terminalAt = now()
                 _phase.value = Phase.Completed(identityId)
             } catch (e: Throwable) {
@@ -160,7 +183,7 @@ class IdentityRegistrationController(
                 } else {
                     _failureStage.value = if (isBroadcastNotSent(e)) FailureStage.BroadcastNotSent else null
                     terminalAt = now()
-                    _phase.value = Phase.Failed(e.message ?: "Registration failed")
+                    _phase.value = Phase.Failed(e.message ?: "Registration failed", topUpOffer(e))
                 }
             }
         }

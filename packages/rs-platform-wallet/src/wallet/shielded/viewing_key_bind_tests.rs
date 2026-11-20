@@ -196,6 +196,7 @@ where
 mod zero_amount_tests {
     use super::*;
     use crate::error::PlatformWalletError;
+    use crate::wallet::identity::SlotHolder;
     use dpp::address_funds::PlatformAddress;
     use dpp::identity::IdentityPublicKey;
     use dpp::prelude::Identifier;
@@ -204,7 +205,7 @@ mod zero_amount_tests {
     use futures::FutureExt;
     use grovedb_commitment_tree::ProvingKey;
 
-    struct PanicProver;
+    pub(super) struct PanicProver;
 
     impl OrchardProver for PanicProver {
         fn proving_key(&self) -> &ProvingKey {
@@ -321,6 +322,7 @@ mod zero_amount_tests {
                             &seed,
                             0,
                             0,
+                            SlotHolder::Registration { token: 0 },
                             vec![(
                                 identity_key.clone(),
                                 IdentityPublicKeyInCreation::from(&identity_key),
@@ -529,6 +531,7 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
                 anchor_height: None,
+                identity_index: None,
             },
         )
         .expect("persist pending reservation");
@@ -1082,6 +1085,7 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
                 anchor_height: None,
+                identity_index: None,
             },
         )
         .unwrap();
@@ -1161,4 +1165,126 @@ async fn fresh_address_and_own_check_follow_the_bound_account() {
         Some(false)
     );
     assert_eq!(wallet.is_own_shielded_address(1, &fresh).await, None);
+}
+
+mod identity_slot_tests {
+    use super::*;
+    use crate::error::PlatformWalletError;
+    use crate::wallet::identity::{SlotHolder, SlotRequest};
+    use dpp::address_funds::PlatformAddress;
+    use dpp::identity::IdentityPublicKey;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use dpp::version::PlatformVersion;
+
+    /// A record of an identity create from `id`'s notes that may still
+    /// execute, holding slot `identity_index`.
+    fn identity_create(identity_index: u32) -> PendingRedrive {
+        PendingRedrive {
+            activity_id: [4; 32],
+            anchor: [5; 32],
+            nullifiers: vec![[6; 32]],
+            st_bytes: vec![7; 32],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            anchor_height: None,
+            identity_index: Some(identity_index),
+        }
+    }
+
+    #[tokio::test]
+    async fn should_hold_the_slot_of_a_shielded_identity_create_after_a_restart() {
+        let dir = temp_dir("shielded_create_slot");
+        let seed = [0x42; 64];
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        // An earlier process saved the create's record; this wallet holds
+        // nothing for it in memory.
+        {
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut store =
+                FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).unwrap();
+            store
+                .arm_redrive(SubwalletId::new(wallet.wallet_id(), 0), identity_create(0))
+                .unwrap();
+        }
+
+        let coordinator = coordinator_at(&dir);
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(slot.identity_index, 1, "index 0 is the create's");
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_shielded_identity_create_without_its_slot_before_spending() {
+        let coordinator = coordinator_at(&temp_dir("shielded_create_no_slot"));
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let seed = [0x42; 64];
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        let denomination = PlatformVersion::latest()
+            .drive_abci
+            .validation_and_processing
+            .event_constants
+            .shielded_identity_create_denominations[0];
+        let (key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+            0,
+            Some(1),
+            PlatformVersion::latest(),
+        )
+        .unwrap();
+        let signer = simple_signer::signer::SimpleSigner::default();
+        let create = |identity_index, holder| {
+            let wallet = &wallet;
+            let coordinator = &coordinator;
+            let key = key.clone();
+            let signer = &signer;
+            async move {
+                wallet
+                    .shielded_identity_create_from_pool(
+                        coordinator,
+                        &seed,
+                        0,
+                        identity_index,
+                        holder,
+                        vec![(key.clone(), IdentityPublicKeyInCreation::from(&key))],
+                        denomination,
+                        PlatformAddress::P2pkh([0x11; 20]),
+                        signer,
+                        zero_amount_tests::PanicProver,
+                    )
+                    .await
+            }
+        };
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+
+        let refused = create(slot.identity_index, SlotHolder::Registration { token: 99 }).await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::IdentitySlotNotHeld { identity_index: 0 })
+            ),
+            "{refused:?}"
+        );
+        // Held, the slot is checked on Platform first; the mock node has no
+        // answer, so it fails closed before a note is selected.
+        let refused = create(slot.identity_index, slot.holder).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{refused:?}"
+        );
+    }
 }

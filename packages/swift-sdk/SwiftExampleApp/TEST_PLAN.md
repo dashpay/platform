@@ -142,7 +142,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ |  | `CreateIdentityView` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_signer`. New identity + credit balance appear. *Gateway to all Platform tests.* |
+| ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ |  | `CreateIdentityView` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_funding_signer`, at the slot the wallet leases (`platform_wallet_identity_slot_acquire_registration`). New identity + credit balance appear. *Gateway to all Platform tests.* |
 | ID-02 | Load / discover identity from wallet | Platform | Essential | ✅ |  | `LoadIdentityView` / `SearchWalletsForIdentitiesView` → `platform_wallet_discover_identities`. |
 | ID-03 | View identity (info / balance / revision / keys) | Platform | Essential | ✅ | read-only | `IdentityDetailView`, `KeysListView`, `KeyDetailView`. |
 | ID-04 | Transfer credits identity → identity | Platform | Essential | ✅ |  | `IdentityDetailView` → **Transfer Credits** (sheet, `TransferCreditsView`) → `wallet.transferCredits` → `platform_wallet_transfer_credits_with_signer` (keychain-signed). Recipient entered via `RecipientPickerView` (local identity / paste base58 id / DPNS name). *Anchor: the "platform-to-platform" Essential action.* Recipient balance increases; sender's drops. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Transfer* builder → `dash_sdk_identity_transfer_credits`.) |

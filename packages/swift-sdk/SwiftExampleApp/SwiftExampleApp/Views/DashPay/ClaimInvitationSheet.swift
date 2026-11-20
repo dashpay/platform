@@ -25,8 +25,8 @@ struct ClaimInvitationSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    /// Existing identities on this network — used to pick the next unused
-    /// registration index for the new identity.
+    /// Existing identities on this network: a claim the wallet refused as
+    /// already this wallet's continues with the listed identity.
     @Query private var identities: [PersistentIdentity]
 
     @State private var uri: String
@@ -34,6 +34,10 @@ struct ClaimInvitationSheet: View {
     @State private var isClaiming = false
     @State private var errorMessage: String?
     @State private var contactPrompt: ContactPrompt?
+    /// The wallet's lease on this claim's identity slot, from the moment it
+    /// is acquired until the claim lands. Released when the sheet closes
+    /// (see `releaseClaimSlot`).
+    @State private var claimSlot: ManagedPlatformWallet.InvitationClaimSlot?
 
     /// Post-claim "establish contact with <sender>?" prompt payload. Carries the
     /// inviter's DPNS username (`du`) rather than an identity id — the legacy link
@@ -52,10 +56,6 @@ struct ClaimInvitationSheet: View {
         self.walletId = walletId
         self.network = network
         _uri = State(initialValue: initialURI)
-        let raw = network.rawValue
-        _identities = Query(
-            filter: #Predicate<PersistentIdentity> { $0.networkRaw == raw }
-        )
     }
 
     var body: some View {
@@ -78,8 +78,8 @@ struct ClaimInvitationSheet: View {
                     // Gated while a claim is in flight: dismissing mid-claim
                     // would leave the unstructured task to finish (and show its
                     // contact prompt) behind a gone sheet, and a re-open could
-                    // start an overlapping claim racing the same unused
-                    // identity index. Mirrors ReclaimInvitationSheet.
+                    // start an overlapping claim of the same invitation.
+                    // Mirrors ReclaimInvitationSheet.
                     Button("Cancel") { dismiss() }
                         .disabled(isClaiming)
                 }
@@ -95,6 +95,7 @@ struct ClaimInvitationSheet: View {
             }
             .onChange(of: uri) { _, _ in refreshPreview() }
             .onAppear { refreshPreview() }
+            .onDisappear { releaseClaimSlot() }
             // Swipe-to-dismiss is gated for the same reason as Cancel above.
             .interactiveDismissDisabled(isClaiming)
             .alert(
@@ -200,47 +201,39 @@ struct ClaimInvitationSheet: View {
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                let identityIndex = nextUnusedIdentityIndex()
-
-                // Register the invitee's own keys exactly like a normal
-                // registration: master + auth keys, plus a DashPay enc/dec pair
-                // so the new identity can send the contact request back.
-                var keys = try wallet.prePersistIdentityKeysForRegistration(
-                    identityIndex: identityIndex,
-                    keyCount: Self.authKeyCount,
-                    network: network
-                )
-                keys.append(contentsOf: try IdentityRegistrationKeys.makeDashpayKeyPair(
-                    managedWallet: wallet,
-                    walletId: walletId,
-                    identityIndex: identityIndex,
-                    firstKeyId: Self.authKeyCount,
-                    network: network
-                ))
-
-                let newIdentityId: Identifier
-                do {
-                    let managed = try await wallet.claimInvitation(
-                        uri: submittedURI,
-                        identityIndex: identityIndex,
-                        identityPubkeys: keys,
-                        signer: signer,
-                        nowUnix: UInt32(Date().timeIntervalSince1970)
-                    )
-                    newIdentityId = try managed.getId()
-                } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
-                    // The invitation's identity is this wallet's. When the
-                    // wallet already lists it, the claim continues with it;
-                    // otherwise a rescan loads it.
-                    guard let recorded = identities.first(where: {
-                        $0.identityIdBase58 == claimedId && $0.wallet?.walletId == walletId
-                    }) else {
-                        errorMessage = "This invitation already created identity \(claimedId) "
-                            + "in this wallet. Run Re-scan for Identities to load it."
-                        return
-                    }
-                    newIdentityId = recorded.identityId
+                // The wallet leases the slot the claim's keys are derived at;
+                // a retry of this invitation gets the same slot back.
+                var slot = try await wallet.acquireInvitationClaimSlot(uri: submittedURI)
+                // A lease this sheet held for another invitation (the URI was
+                // edited after a refused claim) is given back first: nothing
+                // else would ever release it. A refusal means it may have
+                // reached Platform, and its outcome frees it.
+                if let previous = claimSlot, previous.invitationOutPoint != slot.invitationOutPoint {
+                    try? await wallet.releaseInvitationClaimSlot(previous)
                 }
+                claimSlot = slot
+                var slotTakenRetries = 0
+                var newIdentityId: Identifier?
+                while newIdentityId == nil {
+                    do {
+                        guard let claimed = try await claim(
+                            submittedURI, at: slot.identityIndex, in: wallet, signer: signer
+                        ) else { return }
+                        newIdentityId = claimed
+                    } catch PlatformWalletError.identitySlotTakenOnChain
+                        where slotTakenRetries < ManagedPlatformWallet.identitySlotTakenRetryLimit {
+                        // The keys at this slot belong to this wallet's own
+                        // identity: the wallet recorded it there and released
+                        // the lease; nothing was sent. Claim at the next slot.
+                        slotTakenRetries += 1
+                        claimSlot = nil
+                        slot = try await wallet.acquireInvitationClaimSlot(uri: submittedURI)
+                        claimSlot = slot
+                    }
+                }
+                guard let newIdentityId else { return }
+                // A landed claim's identity holds the slot now.
+                claimSlot = nil
                 kickDashPaySync(walletManager)
 
                 // Offer the contact-bootstrap when the link carried an inviter
@@ -258,6 +251,55 @@ struct ClaimInvitationSheet: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// Claim the invitation `uri` with keys derived at `identityIndex`, the
+    /// slot the wallet leased to it. Returns the new identity's id, or `nil`
+    /// after surfacing a refusal in `errorMessage`.
+    private func claim(
+        _ uri: String,
+        at identityIndex: UInt32,
+        in wallet: ManagedPlatformWallet,
+        signer: KeychainSigner
+    ) async throws -> Identifier? {
+        // Register the invitee's own keys exactly like a normal
+        // registration: master + auth keys, plus a DashPay enc/dec pair
+        // so the new identity can send the contact request back.
+        var keys = try wallet.prePersistIdentityKeysForRegistration(
+            identityIndex: identityIndex,
+            keyCount: Self.authKeyCount,
+            network: network
+        )
+        keys.append(contentsOf: try IdentityRegistrationKeys.makeDashpayKeyPair(
+            managedWallet: wallet,
+            walletId: walletId,
+            identityIndex: identityIndex,
+            firstKeyId: Self.authKeyCount,
+            network: network
+        ))
+
+        do {
+            let managed = try await wallet.claimInvitation(
+                uri: uri,
+                identityIndex: identityIndex,
+                identityPubkeys: keys,
+                signer: signer,
+                nowUnix: UInt32(Date().timeIntervalSince1970)
+            )
+            return try managed.getId()
+        } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
+            // The invitation's identity is this wallet's. When the wallet
+            // already lists it, the claim continues with it; otherwise a
+            // rescan loads it.
+            guard let recorded = identities.first(where: {
+                $0.identityIdBase58 == claimedId && $0.wallet?.walletId == walletId
+            }) else {
+                errorMessage = "This invitation already created identity \(claimedId) "
+                    + "in this wallet. Run Re-scan for Identities to load it."
+                return nil
+            }
+            return recorded.identityId
         }
     }
 
@@ -301,19 +343,17 @@ struct ClaimInvitationSheet: View {
         }
     }
 
-    /// One past the highest used registration index on this wallet, else 0.
-    /// Registration keys aren't gap-limited, so "next unused" is `max + 1`.
-    /// A slot held by an in-flight registration counts as used: its identity
-    /// row only lands after Platform accepts it, and reusing the slot would
-    /// register the same keys twice.
-    private func nextUnusedIdentityIndex() -> UInt32 {
-        let recorded = identities
-            .filter { $0.wallet?.walletId == walletId }
-            .map(\.identityIndex)
-        let held = walletManager.registrationCoordinator.controllers.keys
-            .filter { $0.walletId == walletId }
-            .map(\.identityIndex)
-        guard let highest = (recorded + held).max() else { return 0 }
-        return highest == UInt32.max ? UInt32.max : highest + 1
+    /// Give up the claim's slot when the sheet closes before the claim
+    /// landed. The wallet refuses while the claim may have reached Platform
+    /// (its outcome frees the slot then); that refusal keeps the slot, so it
+    /// is ignored here like any other failure.
+    private func releaseClaimSlot() {
+        guard let slot = claimSlot, let wallet = walletManager.wallet(for: walletId) else {
+            return
+        }
+        claimSlot = nil
+        Task {
+            try? await wallet.releaseInvitationClaimSlot(slot)
+        }
     }
 }

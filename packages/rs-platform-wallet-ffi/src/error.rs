@@ -808,6 +808,28 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
 
+    /// Maps `PlatformWalletError::IdentitySlotNotHeld`: a registration or an
+    /// invitation claim named an identity index its slot does not lease
+    /// (never acquired, or released). Nothing was funded or sent. The message
+    /// is a JSON object `{ "identityIndex": <u32> }`.
+    ErrorIdentitySlotNotHeld = 77,
+
+    /// Maps `PlatformWalletError::IdentitySlotTakenOnChain`: the identity
+    /// keys derived at the slot already belong to an identity on Platform.
+    /// The wallet recorded that identity in the slot and released the
+    /// operation's lease; nothing was funded. Acquire a slot again and derive
+    /// the keys at the new index (at most `IDENTITY_GAP_LIMIT` times in a
+    /// row). The message is a JSON object
+    /// `{ "identityIndex": <u32>, "identityId": "<base58>" }`.
+    ErrorIdentitySlotTakenOnChain = 78,
+
+    /// Maps `PlatformWalletError::IdentitySlotClaimSubmitted`: the release of
+    /// an invitation claim's slot was refused because the claim may have
+    /// reached Platform; only its outcome frees the slot. Retry the claim
+    /// (it gets the same slot) rather than abandoning it. The message is a
+    /// JSON object `{ "identityIndex": <u32> }`.
+    ErrorIdentitySlotClaimSubmitted = 79,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1080,6 +1102,25 @@ fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIRe
                 "identityId": identity_id.to_string(Encoding::Base58),
             })
             .to_string(),
+        )),
+        PlatformWalletError::IdentitySlotNotHeld { identity_index } => Some((
+            PlatformWalletFFIResultCode::ErrorIdentitySlotNotHeld,
+            serde_json::json!({ "identityIndex": identity_index }).to_string(),
+        )),
+        PlatformWalletError::IdentitySlotTakenOnChain {
+            identity_index,
+            identity_id,
+        } => Some((
+            PlatformWalletFFIResultCode::ErrorIdentitySlotTakenOnChain,
+            serde_json::json!({
+                "identityIndex": identity_index,
+                "identityId": identity_id.to_string(Encoding::Base58),
+            })
+            .to_string(),
+        )),
+        PlatformWalletError::IdentitySlotClaimSubmitted { identity_index } => Some((
+            PlatformWalletFFIResultCode::ErrorIdentitySlotClaimSubmitted,
+            serde_json::json!({ "identityIndex": identity_index }).to_string(),
         )),
         _ => None,
     }
@@ -2678,6 +2719,34 @@ mod tests {
 
     /// Codes 63/64 carry the identity they name as a STABLE JSON detail,
     /// `null` when Platform refused the broadcast and named no owner.
+    #[test]
+    fn should_carry_the_documented_json_detail_for_identity_slot_refusals() {
+        use dpp::prelude::Identifier;
+
+        let id = Identifier::from([7u8; 32]);
+        let not_held: PlatformWalletFFIResult =
+            PlatformWalletError::IdentitySlotNotHeld { identity_index: 3 }.into();
+        assert_eq!(not_held.code as u32, 77);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&not_held)).unwrap();
+        assert_eq!(detail["identityIndex"], 3);
+
+        let taken: PlatformWalletFFIResult = PlatformWalletError::IdentitySlotTakenOnChain {
+            identity_index: 4,
+            identity_id: id,
+        }
+        .into();
+        assert_eq!(taken.code as u32, 78);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&taken)).unwrap();
+        assert_eq!(detail["identityIndex"], 4);
+        assert_eq!(detail["identityId"], id.to_string(Encoding::Base58));
+
+        let submitted: PlatformWalletFFIResult =
+            PlatformWalletError::IdentitySlotClaimSubmitted { identity_index: 5 }.into();
+        assert_eq!(submitted.code as u32, 79);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&submitted)).unwrap();
+        assert_eq!(detail["identityIndex"], 5);
+    }
+
     #[test]
     fn should_carry_the_documented_json_detail_for_invitation_identity_outcomes() {
         use dpp::prelude::Identifier;

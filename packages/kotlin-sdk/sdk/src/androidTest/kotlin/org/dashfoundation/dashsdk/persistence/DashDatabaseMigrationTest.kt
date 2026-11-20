@@ -740,13 +740,52 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v16 -> v17 creates the invitation-claim slot lease table empty and
+     * leaves the existing rows alone; a lease written afterwards keeps every
+     * column, a full-width identity index included.
+     */
+    @Test
+    fun migrate16To17AddsIdentitySlotLeaseTable() {
+        helper.createDatabase(dbName, 16).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 2309809, 0, 0, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 17, true, DashDatabase.MIGRATION_16_17)
+
+        db.query("SELECT COUNT(*) FROM identity_slot_leases").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        db.query("SELECT syncedHeight FROM wallets WHERE walletId = x'01'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(2_309_809, c.getInt(0))
+        }
+        db.execSQL(
+            "INSERT INTO identity_slot_leases (walletId, invitationOutPoint, identityIndex, phase) " +
+                "VALUES (x'01', x'0A', -1, 1)",
+        )
+        db.query("SELECT invitationOutPoint, identityIndex, phase FROM identity_slot_leases").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(10).contentEquals(c.getBlob(0)))
+            assertEquals("the u32 bit pattern survives", -1, c.getInt(1))
+            assertEquals(1, c.getInt(2))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -760,16 +799,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v16 schema. */
+    /** The full chain from v1 must also land on a valid v17 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -786,6 +826,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 }

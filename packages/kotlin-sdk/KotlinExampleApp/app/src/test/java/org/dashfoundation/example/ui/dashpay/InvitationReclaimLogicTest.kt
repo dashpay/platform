@@ -157,15 +157,4 @@ class InvitationReclaimLogicTest {
         val failure = runCatching { InvitationReclaimLogic.outPointParts(ByteArray(35)) }
         assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
     }
-
-    @Test
-    fun nextUnusedIdentityIndexIsOnePastTheHighestUsedElseZero() {
-        assertEquals(0, InvitationReclaimLogic.nextUnusedIdentityIndex(emptyList()))
-        assertEquals(1, InvitationReclaimLogic.nextUnusedIdentityIndex(listOf(0)))
-        assertEquals(8, InvitationReclaimLogic.nextUnusedIdentityIndex(listOf(0, 3, 7)))
-        assertEquals(
-            Int.MAX_VALUE,
-            InvitationReclaimLogic.nextUnusedIdentityIndex(listOf(Int.MAX_VALUE)),
-        )
-    }
 }

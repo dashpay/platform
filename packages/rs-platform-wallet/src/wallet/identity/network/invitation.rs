@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
@@ -41,6 +41,7 @@ use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 use crate::wallet::identity::network::identity_handle::{
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair, MASTER_KEY_INDEX,
 };
+use crate::wallet::identity::network::registration::derived_keys;
 
 use super::*;
 
@@ -322,6 +323,16 @@ impl IdentityWallet {
             .await?)
     }
 
+    /// The outpoint of the invitation's voucher credit output, which keys
+    /// its claim's identity slot. Forwards to
+    /// [`dash_sdk::Sdk::invitation_funding_out_point`].
+    pub async fn invitation_funding_out_point(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<dashcore::OutPoint, PlatformWalletError> {
+        Ok(self.sdk.invitation_funding_out_point(invitation).await?)
+    }
+
     /// What an invitation is worth and whether it was already claimed.
     /// Forwards to [`dash_sdk::Sdk::invitation_claim_status`].
     pub async fn invitation_claim_status(
@@ -467,7 +478,7 @@ impl IdentityWallet {
     /// even when stored under this wallet's id. A wallet re-created under
     /// this handle's id since it was taken is not this wallet: its
     /// identities say nothing about this handle's claims.
-    async fn holds_identity(&self, identity_id: &Identifier) -> bool {
+    pub(super) async fn holds_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
         self.current_wallet_and_info(&wm).is_some_and(|(_, info)| {
             let manager = &info.identity_manager;
@@ -601,13 +612,51 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        // The claim must lease `identity_index` (from `acquire_identity_slot`),
+        // and its lease turns `Submitted` durably before anything is sent:
+        // from then on only the claim's outcome frees the slot.
+        let out_point = self.invitation_funding_out_point(&invitation).await?;
+        self.submit_claim_lease(identity_index, out_point).await?;
+
+        let our_keys = keys_map.clone();
         let identity = match self
             .sdk
             .claim_invitation(invitation, keys_map, identity_signer, settings)
             .await
         {
             Ok(identity) => identity,
-            Err(error) => return Err(self.claim_refusal(error).await),
+            Err(error) => {
+                // A claim that can never execute gives its slot back to the
+                // host; a failed store keeps it held, as before.
+                if claim_never_executes(&error) {
+                    if let Err(e) = self.unsubmit_claim_lease(identity_index, out_point).await {
+                        tracing::warn!(
+                            identity_index,
+                            error = %e,
+                            "an invitation claim was refused before it could execute, but its \
+                             slot could not be given back; it stays held"
+                        );
+                    }
+                }
+                let refusal = self.claim_refusal(error).await;
+                // Refused before sending because an identity already holds
+                // the master key derived at this index: it is this wallet's,
+                // so it is recorded in the slot (releasing the claim's lease)
+                // and the host retries at another index.
+                if let PlatformWalletError::InvitationKeysAlreadyRegistered {
+                    identity_id: Some(owner),
+                    ..
+                } = &refusal
+                {
+                    if let Some(taken) = self
+                        .slot_taken_on_chain(identity_index, &our_keys, Some(*owner))
+                        .await?
+                    {
+                        return Err(taken);
+                    }
+                }
+                return Err(refusal);
+            }
         };
 
         // Best-effort local bookkeeping — Platform has already accepted the
@@ -621,46 +670,22 @@ impl IdentityWallet {
             let mut wm = self.wallet_manager.write().await;
             match self.current_wallet_info_mut(&mut wm) {
                 Ok(info) => {
-                    match info.identity_manager.add_identity(
+                    // The identity, its keys with their breadcrumbs, in one
+                    // durable write; memory holds it only once stored.
+                    let keys = derived_keys(&identity, self.wallet_id, identity_index);
+                    if let Err(e) = info.identity_manager.place_in_slot(
                         identity.clone(),
                         identity_index,
                         self.wallet_id,
+                        keys,
                         &self.persister,
                     ) {
-                        Ok(()) => {
-                            let wallet_id = self.wallet_id;
-                            let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
-                                .public_keys()
-                                .iter()
-                                .map(|(k, v)| (*k, v.clone()))
-                                .collect();
-                            if let Some(managed) =
-                                info.identity_manager.managed_identity_mut(&identity_id)
-                            {
-                                managed.wallet_id = Some(wallet_id);
-                                for (key_id, pub_key) in public_keys {
-                                    if let Err(e) = managed.add_key(
-                                        pub_key,
-                                        Some((wallet_id, identity_index, key_id)),
-                                        &self.persister,
-                                    ) {
-                                        tracing::warn!(
-                                            error = %e,
-                                            %identity_id,
-                                            "claim_invitation: identity key breadcrumb not persisted"
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                error = %e,
-                                %identity_id,
-                                "claim_invitation: identity registered on Platform but local \
-                                 add_identity failed; it will self-heal on the next re-sync"
-                            );
-                        }
+                        tracing::warn!(
+                            error = %e,
+                            %identity_id,
+                            "claim_invitation: identity registered on Platform but not \
+                             recorded in its slot; it will self-heal on the next re-sync"
+                        );
                     }
                 }
                 Err(_) => {
@@ -677,9 +702,71 @@ impl IdentityWallet {
     }
 }
 
+/// Whether a claim the SDK refused with `error` can never execute, so its
+/// slot need not stay held for its outcome. Only refusals made before the
+/// claim was sent, or ones no node would accept it past:
+/// - `Invalid`, `NetworkMismatch`, `NotReady`: refused before anything was
+///   sent;
+/// - `NotChainLocked`: the funding transaction was not found or not yet
+///   chain-locked (before sending), or Platform refused the islock proof as
+///   stale, which every node refuses alike.
+///
+/// Every other refusal may follow a claim that reached Platform: the
+/// invitation claimed (by this wallet or another), a key already registered,
+/// or an SDK error. Those keep the slot held until the claim's outcome is
+/// known.
+fn claim_never_executes(error: &InvitationError) -> bool {
+    match error {
+        InvitationError::Invalid(_)
+        | InvitationError::NetworkMismatch { .. }
+        | InvitationError::NotReady(_)
+        | InvitationError::NotChainLocked(_) => true,
+        InvitationError::ClaimedByThisWallet { .. }
+        | InvitationError::AlreadyClaimed { .. }
+        | InvitationError::KeysAlreadyRegistered { .. }
+        | InvitationError::Sdk(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only refusals made before sending, or ones every node makes alike,
+    /// give a claim's slot back; any that may follow a claim that reached
+    /// Platform keep it.
+    #[test]
+    fn should_give_a_slot_back_only_for_a_claim_that_can_never_execute() {
+        let id = Identifier::from([7u8; 32]);
+        let sdk_error = || dash_sdk::Error::Generic("node".to_string());
+        for (error, never_executes) in [
+            (InvitationError::Invalid("bad link".to_string()), true),
+            (
+                InvitationError::NetworkMismatch {
+                    invitation: dashcore::Network::Testnet,
+                    wallet: dashcore::Network::Mainnet,
+                },
+                true,
+            ),
+            (InvitationError::NotReady(sdk_error()), true),
+            (InvitationError::NotChainLocked("later".to_string()), true),
+            (
+                InvitationError::ClaimedByThisWallet { identity_id: id },
+                false,
+            ),
+            (InvitationError::AlreadyClaimed { identity_id: id }, false),
+            (
+                InvitationError::KeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: None,
+                },
+                false,
+            ),
+            (InvitationError::Sdk(sdk_error()), false),
+        ] {
+            assert_eq!(claim_never_executes(&error), never_executes, "{error}");
+        }
+    }
 
     /// A real DIP-13 invitation funding path ends in a NORMAL (non-hardened)
     /// address-pool index. This is the record that a hardened-only gate silently

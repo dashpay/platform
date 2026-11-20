@@ -29,10 +29,11 @@ pub use crypto::{
     derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
     unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
-pub use network::{DashPayView, IdentityWallet};
+pub use network::{DashPayView, IdentitySlot, IdentityWallet, SlotRequest};
 pub use state::{
     BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, PrivateContact,
-    RegistrationIndex,
+    RegistrationIndex, SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement,
+    SlotState,
 };
 pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerprint};
 pub use types::{

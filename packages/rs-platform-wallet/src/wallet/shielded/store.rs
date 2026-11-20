@@ -185,6 +185,10 @@ pub struct PendingRedrive {
     /// automatic retries and permit separately authorized new payments.
     /// This is never a proof of failure and is always false for note spends.
     pub identity_user_abandoned: bool,
+    /// The identity slot an identity create from the pool derived its keys
+    /// at, held for it while it may still execute. `None` for every other
+    /// spend, and for a create saved before the index was kept.
+    pub identity_index: Option<u32>,
 }
 
 /// The DashPay private contact request a saved spend pays for: which identity
@@ -2035,6 +2039,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -2432,6 +2437,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x44; 32],
@@ -2442,6 +2448,7 @@ mod tests {
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
+            identity_index: None,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();
         store.arm_redrive(id, note_spend).unwrap();
