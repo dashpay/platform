@@ -1073,8 +1073,9 @@ pub enum PlatformWalletError {
 
     /// A spend run against a `ShieldedSpendPlan` selected different notes, or a
     /// different fee, than the plan: the wallet's notes changed since it was made (a sync
-    /// added or spent one, or another spend reserved one). Refused before any note was
-    /// reserved or anything built; plan again and confirm the new fee.
+    /// added or spent one, or another spend reserved one), or the spend is priced at another
+    /// protocol version than the plan. Nothing is built or broadcast and no note stays
+    /// reserved; plan again and confirm the new fee.
     #[error(
         "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a fee \
          of {fresh_fee}; plan the spend again"
@@ -1098,8 +1099,10 @@ pub enum PlatformWalletError {
 
     /// The network runs a protocol version this SDK has no tables for, so an operation priced
     /// or built at it (a shielded transfer, unshield, withdrawal or identity top-up from the
-    /// pool, or its plan; not a private document create) cannot be, and is refused before any
-    /// note was reserved or anything built. A retry does not lift it: only an SDK that knows the
+    /// pool, or its plan; not a private document create) cannot be. Nothing is built or
+    /// broadcast and no note stays reserved: a version verified before the spend refuses it
+    /// before any note is reserved or the network asked, and one the spend learns from its
+    /// anchor fetch releases its notes. A retry does not lift it: only an SDK that knows the
     /// version does, so a host asks the user to update the app.
     #[error(
         "The network runs protocol version {network}, which this SDK does not support \

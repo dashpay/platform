@@ -775,8 +775,9 @@ pub enum PlatformWalletFFIResultCode {
     /// against a plan (`platform_wallet_manager_shielded_plan_spend`, then a
     /// `_with_plan` spend export) selected different notes or a different fee
     /// than the plan, as the wallet's notes changed since (a sync added or
-    /// spent one, or another spend reserved one). Nothing was reserved, built
-    /// or broadcast. Plan again and have the new fee confirmed.
+    /// spent one, or another spend reserved one), or it is priced at another
+    /// protocol version than the plan. Nothing is built or broadcast and no
+    /// note stays reserved. Plan again and have the new fee confirmed.
     ErrorShieldedPlanChanged = 77,
 
     /// Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's
@@ -796,8 +797,10 @@ pub enum PlatformWalletFFIResultCode {
     /// network runs a protocol version this SDK has no tables for, so a
     /// shielded transfer, unshield, withdrawal or identity top-up from the
     /// pool, or its plan, cannot be priced (private document create does not
-    /// check it). Nothing was reserved, built
-    /// or broadcast. Retrying does not help: the host asks the user to update
+    /// check it). Nothing was built or broadcast and no note stays reserved:
+    /// a version verified before the spend refuses it before any note is
+    /// reserved or the network asked, and one the spend learns from its anchor
+    /// fetch releases its notes. Retrying does not help: the host asks the user to update
     /// the app. (80 is held by the external identity top-up PR, #5860.)
     ErrorNetworkProtocolVersionUnsupported = 81,
 

@@ -397,20 +397,24 @@ pub struct ShieldedSpendPlan {
     pub total_input: Credits,
     /// The selected notes' nullifiers, sorted.
     pub nullifiers: Vec<[u8; 32]>,
-    /// Commits to the kind (a withdrawal's Core fee rate too), the amount, the fee and the
-    /// selected notes.
+    /// Commits to the protocol version the fee was priced at, the kind (a withdrawal's Core
+    /// fee rate too), the amount, the fee and the selected notes.
     pub digest: [u8; 32],
 }
 
-/// The digest a plan commits to. `nullifiers` must be sorted.
+/// The digest a plan commits to: everything its price depends on, the protocol version it was
+/// priced at included, so that a spend at another version refuses it even at an equal fee.
+/// Every field after the domain tag is fixed width. `nullifiers` must be sorted.
 fn spend_digest(
     kind: ShieldedSpendKind,
     amount: Credits,
     fee: Credits,
     nullifiers: &[[u8; 32]],
+    platform_version: &PlatformVersion,
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"shielded-spend-plan");
+    hasher.update(platform_version.protocol_version.to_le_bytes());
     hasher.update([kind.tag()]);
     if let ShieldedSpendKind::Withdrawal { core_fee_per_byte } = kind {
         hasher.update(core_fee_per_byte.to_le_bytes());
@@ -461,6 +465,7 @@ impl ShieldedSpendPlan {
         fee: Credits,
         total_input: Credits,
         mut nullifiers: Vec<[u8; 32]>,
+        platform_version: &PlatformVersion,
     ) -> Self {
         nullifiers.sort_unstable();
         Self {
@@ -469,7 +474,7 @@ impl ShieldedSpendPlan {
             recipient_amount,
             fee,
             total_input,
-            digest: spend_digest(kind, amount, fee, &nullifiers),
+            digest: spend_digest(kind, amount, fee, &nullifiers, platform_version),
             nullifiers,
         }
     }
@@ -541,22 +546,24 @@ pub fn plan_spend(
         fee,
         total_input,
         selected.iter().map(|n| n.nullifier).collect(),
+        platform_version,
     ))
 }
 
 /// Refuse a spend whose fresh selection (`selected`, `fee` for `kind` and
-/// `amount`) does not match the plan whose digest is `expected`. Reads the borrowed selection
-/// only, so nothing is cloned for a selection it refuses.
+/// `amount`, priced at `platform_version`) does not match the plan whose digest is `expected`.
+/// Reads the borrowed selection only, so nothing is cloned for a selection it refuses.
 pub(crate) fn ensure_plan_holds(
     expected: &[u8; 32],
     kind: ShieldedSpendKind,
     amount: Credits,
     fee: Credits,
     selected: &[&ShieldedNote],
+    platform_version: &PlatformVersion,
 ) -> Result<(), PlatformWalletError> {
     let mut nullifiers: Vec<[u8; 32]> = selected.iter().map(|n| n.nullifier).collect();
     nullifiers.sort_unstable();
-    if spend_digest(kind, amount, fee, &nullifiers) != *expected {
+    if spend_digest(kind, amount, fee, &nullifiers, platform_version) != *expected {
         return Err(PlatformWalletError::ShieldedPlanChanged {
             fresh_fee: fee,
             fresh_note_count: nullifiers.len(),
@@ -1186,14 +1193,14 @@ mod tests {
         }
 
         let (same, _, fee) = selected(&notes, kind, platform_version);
-        ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, &same)
+        ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, &same, platform_version)
             .expect("an unchanged selection holds");
 
         // A larger note arrives: one note now covers it, at a different fee.
         let mut grown = notes.clone();
         grown.push(test_note(10 * NOTE, 7));
         let (moved, _, fee) = selected(&grown, kind, platform_version);
-        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, &moved)
+        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, &moved, platform_version)
             .expect_err("a moved selection must not hold");
         assert!(
             matches!(
@@ -1212,8 +1219,15 @@ mod tests {
             plan.digest
         );
         // The same notes for another kind or amount are another plan.
-        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE - 1, plan.fee, &same)
-            .expect_err("another amount");
+        let err = ensure_plan_holds(
+            &plan.digest,
+            kind,
+            2 * NOTE - 1,
+            plan.fee,
+            &same,
+            platform_version,
+        )
+        .expect_err("another amount");
         assert!(matches!(
             err,
             PlatformWalletError::ShieldedPlanChanged { .. }
@@ -1512,6 +1526,7 @@ mod tests {
             at_1.amount,
             at_1.fee,
             &selected,
+            platform_version,
         )
         .expect("the planned rate holds");
         let err = ensure_plan_holds(
@@ -1520,6 +1535,7 @@ mod tests {
             at_1.amount,
             at_1.fee,
             &selected,
+            platform_version,
         )
         .expect_err("another rate must not hold");
         assert!(matches!(

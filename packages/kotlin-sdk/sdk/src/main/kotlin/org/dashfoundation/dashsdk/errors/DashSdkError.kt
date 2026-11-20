@@ -802,8 +802,10 @@ sealed class DashSdkError(
          * `ErrorShieldedPlanChanged` (native code 77). A shielded spend run
          * against a plan (`platform_wallet_manager_shielded_plan_spend`, then
          * a `_with_plan` spend) selected different notes or a different fee
-         * than the plan, as the wallet's notes changed since. Nothing was
-         * reserved, built or broadcast: plan again and confirm the new fee.
+         * than the plan, as the wallet's notes changed since, or is priced at
+         * another protocol version than the plan. Nothing is built or
+         * broadcast and no note stays reserved: plan again and confirm the
+         * new fee.
          * ← Swift `PlatformWalletError.shieldedPlanChanged`.
          */
         class ShieldedPlanChanged(message: String, cause: Throwable? = null) :
@@ -834,9 +836,9 @@ sealed class DashSdkError(
          * `ErrorNetworkProtocolVersionUnsupported` (native code 81). The
          * network runs a protocol version this SDK has no tables for, so a
          * shielded transfer, unshield, withdrawal or identity top-up from the
-         * pool, or its plan, cannot be priced. Nothing was reserved,
-         * built or broadcast. A retry does not help: ask the user to update
-         * the app.
+         * pool, or its plan, cannot be priced. Nothing is built or broadcast
+         * and no note stays reserved. A retry does not help: ask the user to
+         * update the app.
          * ← Swift `PlatformWalletError.networkProtocolVersionUnsupported`.
          */
         class NetworkProtocolVersionUnsupported(message: String, cause: Throwable? = null) :

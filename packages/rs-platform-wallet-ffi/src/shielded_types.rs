@@ -93,7 +93,9 @@ pub struct ShieldedShieldPreflightFFI {
 ///
 /// `kind` is the spend's fee kind as `platform_wallet_shielded_estimate_fee`
 /// numbers it: `0` transfer, `1` unshield, `2` withdrawal, `4` identity top-up.
-/// Pass `digest` to the spend's `_with_plan` export to run exactly this plan.
+/// Pass `digest` to the spend's `_with_plan` export to run exactly this plan:
+/// it commits to the protocol version the fee was priced at, the kind (a
+/// withdrawal's Core fee rate too), the amount, the fee and the selected notes.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ShieldedSpendPlanFFI {

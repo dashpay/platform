@@ -330,7 +330,8 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 ///
 /// Writes the plan to `out_plan`. Run it with the spend's `_with_plan` export
 /// and the plan's `digest`, which refuses with `ErrorShieldedPlanChanged`
-/// when the notes moved since. An unknown `kind`, or a sweep with an amount,
+/// when the notes moved since or the spend is priced at another protocol
+/// version. An unknown `kind`, or a sweep with an amount,
 /// returns `ErrorInvalidParameter`; notes that cannot pay the amount and its
 /// fee, or a zero amount, return `ErrorWalletOperation`, and an amount only
 /// more notes than one transition spends would cover returns
@@ -353,11 +354,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_plan_spend(
     core_fee_per_byte: u32,
     out_plan: *mut ShieldedSpendPlanFFI,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(wallet_id_bytes);
     check_ptr!(out_plan);
-    // Zero the out-param before any fallible work so a reused struct never
-    // keeps a stale digest or fee after an error.
+    // Zero the out-param before any other check so a reused struct never
+    // keeps a stale digest or fee after an error, a null input included.
     *out_plan = ShieldedSpendPlanFFI::default();
+    check_ptr!(wallet_id_bytes);
 
     let Some(kind) = shielded_spend_kind(kind, core_fee_per_byte) else {
         return PlatformWalletFFIResult::err(
@@ -3435,6 +3436,20 @@ mod tests {
                 assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
                 assert_eq!(out, ShieldedSpendPlanFFI::default(), "kind {kind}");
             }
+            // A null wallet ID.
+            let mut out = stale;
+            let result = platform_wallet_manager_shielded_plan_spend(
+                0,
+                std::ptr::null(),
+                0,
+                0,
+                1,
+                false,
+                1,
+                &mut out,
+            );
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+            assert_eq!(out, ShieldedSpendPlanFFI::default(), "null wallet ID");
         }
     }
 

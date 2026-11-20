@@ -1599,6 +1599,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
     let platform_version = sdk.version();
     let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
         store,
         id,
         amount,
@@ -2380,6 +2381,7 @@ pub async fn unshield_with_plan<S: ShieldedStore, P: OrchardProver>(
     // address-write cost and the builder would reject the spend (and the built-fee check below
     // would refuse it).
     let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
         store,
         id,
         amount,
@@ -2606,6 +2608,7 @@ pub async fn transfer_with_plan<S: ShieldedStore, P: OrchardProver>(
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
     // against `ShieldedFeeKind::Base`.
     let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
         store,
         id,
         amount,
@@ -2824,8 +2827,16 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
     // cost and the builder would reject the spend (and the built-fee check below would refuse
     // it).
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(store, id, amount, kind, expected_plan, platform_version).await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        kind,
+        expected_plan,
+        platform_version,
+    )
+    .await?;
 
     info!(
         account,
@@ -3736,7 +3747,13 @@ async fn mark_notes_spent<S: ShieldedStore>(
 ///
 /// `platform_version` is the version the spend captured once: it selects here, checks the plan
 /// and builds the transition at it, so an SDK whose version moves meanwhile cannot change the fee.
+///
+/// A network whose protocol version `sdk` already verified and has no tables for is refused
+/// here with [`PlatformWalletError::NetworkProtocolVersionUnsupported`], before any note is
+/// reserved or the network is asked for anything; one learned later, during the anchor fetch,
+/// is refused by [`ensure_version_unchanged`].
 async fn reserve_unspent_notes<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     amount: u64,
@@ -3748,6 +3765,7 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     // a transition their protocol version does not activate.
     ensure_positive_amount(amount)?;
     ensure_spend_kind_active(kind, platform_version)?;
+    ensure_verified_network_version_supported(sdk)?;
     reserve_notes_matching(
         store,
         id,
@@ -3758,6 +3776,22 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
         platform_version,
     )
     .await
+}
+
+/// Refuse a spend when the network version `sdk` last verified is one this SDK has no tables
+/// for: it cannot be priced at that version, and a retry does not change that.
+fn ensure_verified_network_version_supported(
+    sdk: &Arc<dash_sdk::Sdk>,
+) -> Result<(), PlatformWalletError> {
+    match sdk.protocol_version_info().verified_version {
+        Some(network) if PlatformVersion::get(network).is_err() => {
+            Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                network,
+                latest_supported: PlatformVersion::latest().protocol_version,
+            })
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Refuse a spend, before anything is built, saved or broadcast, when the protocol version
@@ -4023,7 +4057,14 @@ async fn reserve_notes_matching<S: ShieldedStore>(
         };
     if let Some((kind, expected)) = expected_plan {
         let (selected, _, exact_fee) = &selection;
-        ensure_plan_holds(expected, kind, amount, *exact_fee, selected)?;
+        ensure_plan_holds(
+            expected,
+            kind,
+            amount,
+            *exact_fee,
+            selected,
+            platform_version,
+        )?;
     }
     let (selected, total_input, exact_fee) = selection.into_owned();
     let reservation = mark_notes_pending(&mut *guard, store, id, &selected)?;
@@ -9519,6 +9560,7 @@ mod spend_plan_tests {
         let plan = plan(&store, amount).await;
 
         let (selected, total_input, fee, reservation) = reserve_unspent_notes(
+            &sdk(),
             &store,
             ID,
             amount,
@@ -9548,6 +9590,7 @@ mod spend_plan_tests {
             let store = store.clone();
             async move {
                 reserve_unspent_notes(
+                    &sdk(),
                     &store,
                     ID,
                     NOTE / 2,
@@ -9597,6 +9640,7 @@ mod spend_plan_tests {
             let before = unspent(&store).await;
 
             let refused = reserve_unspent_notes(
+                &sdk(),
                 &store,
                 ID,
                 amount,
@@ -9689,6 +9733,7 @@ mod spend_plan_tests {
         .expect("plans");
 
         let (_, _, fee, reservation) = reserve_unspent_notes(
+            &sdk(),
             &store,
             ID,
             amount,
@@ -9701,6 +9746,52 @@ mod spend_plan_tests {
 
         assert_eq!(fee, plan.fee);
         reservation.cancel().await;
+    }
+
+    /// A plan commits to the protocol version it was priced at: a spend at another version
+    /// refuses it as a changed plan, with nothing reserved, even when the two versions price
+    /// the same notes at the same fee (an identity top-up from 14 to the newest).
+    #[tokio::test]
+    async fn should_refuse_a_plan_made_at_another_protocol_version_even_at_an_equal_fee() {
+        let kind = ShieldedSpendKind::IdentityTopUp;
+        let planned_at = PlatformVersion::get(14).expect("v14");
+        let spent_at = PlatformVersion::latest();
+        assert_ne!(planned_at.protocol_version, spent_at.protocol_version);
+        let notes: Vec<ShieldedNote> = (0..3).map(|i| note(i, NOTE)).collect();
+        let store = store_with(&notes).await;
+        let plan = super::super::note_selection::plan_spend(
+            &notes,
+            kind,
+            ShieldedSpendAmount::Exact(NOTE),
+            planned_at,
+        )
+        .expect("plans");
+        let at_spend = super::super::note_selection::plan_spend(
+            &notes,
+            kind,
+            ShieldedSpendAmount::Exact(NOTE),
+            spent_at,
+        )
+        .expect("plans");
+        assert_eq!(
+            (at_spend.fee, &at_spend.nullifiers),
+            (plan.fee, &plan.nullifiers),
+            "the same notes at the same fee"
+        );
+
+        let refused =
+            reserve_unspent_notes(&sdk(), &store, ID, NOTE, kind, Some(&plan.digest), spent_at)
+                .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedPlanChanged { .. })
+            ),
+            "got {:?}",
+            refused.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(unspent(&store).await, 3, "nothing reserved");
     }
 
     /// A built transition whose fee is not the planned one is refused before broadcast as a
@@ -9766,6 +9857,7 @@ mod spend_plan_tests {
                 let store = Arc::clone(&store);
                 async move {
                     reserve_unspent_notes(
+                        &sdk(),
                         &store,
                         ID,
                         amount,
@@ -10557,6 +10649,56 @@ mod spend_plan_tests {
                 "the note is released"
             );
             let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// A network version this SDK has no tables for, verified before the spend starts, refuses
+    /// every spend kind, planned or not, before it takes the store lock to reserve notes, so
+    /// before it reserves any note or fetches an anchor: the spend finishes while the test
+    /// holds the store.
+    #[tokio::test]
+    async fn should_refuse_every_spend_before_reserving_when_the_verified_network_version_is_unsupported(
+    ) {
+        use std::task::{Context, Poll, Waker};
+
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        for kind in EVERY_SPEND_KIND {
+            for planned in [true, false] {
+                let case =
+                    VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+                case.sdk
+                    .mock_verified_protocol_version(unsupported)
+                    .expect("a mock SDK");
+                // Hold the store: a spend that tries to reserve a note waits here.
+                let held = case.store.read().await;
+
+                let mut spend = Box::pin(case.run(kind, planned.then_some(&case.plan.digest)));
+                let Poll::Ready(refused) =
+                    spend.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+                else {
+                    panic!("{kind:?} planned={planned} waited for the store to reserve notes");
+                };
+
+                assert!(
+                    matches!(
+                        &refused,
+                        Err(PlatformWalletError::NetworkProtocolVersionUnsupported {
+                            network,
+                            latest_supported,
+                        }) if *network == unsupported
+                            && *latest_supported == PlatformVersion::latest().protocol_version
+                    ),
+                    "{kind:?} planned={planned}: got {refused:?}"
+                );
+                assert_eq!(
+                    held.get_unspent_notes(ID).expect("notes").len(),
+                    1,
+                    "nothing reserved ({kind:?} planned={planned})"
+                );
+                drop(spend);
+                drop(held);
+                let _ = std::fs::remove_file(&case.path);
+            }
         }
     }
 }

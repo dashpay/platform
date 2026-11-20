@@ -324,7 +324,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorPublicContactRequestUnconfirmed = 76
     /// A shielded spend run against a plan (`shieldedPlanSpend`) selected
     /// different notes or a different fee than the plan, as the wallet's
-    /// notes changed since. Nothing was reserved, built or broadcast.
+    /// notes changed since, or is priced at another protocol version than
+    /// the plan. Nothing is built or broadcast and no note stays reserved.
     case errorShieldedPlanChanged = 77
     /// The wallet's notes cover a shielded spend, or its plan, only with more
     /// notes than one shielded transition spends. Nothing was reserved, built
@@ -336,8 +337,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedWithdrawalAmountOutOfRange = 79
     /// The network runs a protocol version this SDK has no tables for, so a
     /// shielded transfer, unshield, withdrawal or identity top-up from the
-    /// pool, or its plan, cannot be priced. Nothing was reserved, built or
-    /// broadcast. A retry does not help: ask the user to update the app.
+    /// pool, or its plan, cannot be priced. Nothing is built or broadcast and
+    /// no note stays reserved. A retry does not help: ask the user to update
+    /// the app.
     case errorNetworkProtocolVersionUnsupported = 81
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -772,8 +774,9 @@ public enum PlatformWalletError: LocalizedError {
     case publicContactRequestUnconfirmed(String)
     /// A shielded spend run against a `ShieldedSpendPlan` selected different
     /// notes or a different fee than the plan, as the wallet's notes changed
-    /// since (code 77). Nothing was reserved, built or broadcast: plan again
-    /// and confirm the new fee before spending.
+    /// since, or is priced at another protocol version than the plan (code
+    /// 77). Nothing is built or broadcast and no note stays reserved: plan
+    /// again and confirm the new fee before spending.
     case shieldedPlanChanged(String)
     /// The wallet's notes cover a shielded spend, or its plan, only with more
     /// notes than one shielded transition spends (code 78). Nothing was
@@ -786,8 +789,8 @@ public enum PlatformWalletError: LocalizedError {
     case shieldedWithdrawalAmountOutOfRange(String)
     /// The network runs a protocol version this SDK has no tables for (code
     /// 81), so a shielded transfer, unshield, withdrawal or identity top-up
-    /// from the pool, or its plan, cannot be priced. Nothing was
-    /// reserved, built or broadcast; only an app update lifts it.
+    /// from the pool, or its plan, cannot be priced. Nothing is built or
+    /// broadcast and no note stays reserved; only an app update lifts it.
     case networkProtocolVersionUnsupported(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
