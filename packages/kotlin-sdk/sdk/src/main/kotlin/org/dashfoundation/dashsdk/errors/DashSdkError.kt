@@ -514,9 +514,11 @@ sealed class DashSdkError(
          * token is unknown, already broadcast, or already released — the guard
          * that turns a double-broadcast (or a broadcast after release) into a
          * typed error instead of a second send. The call did NOT touch the
-         * network. NOT retryable: rebuild the payment with
+         * network, but an earlier broadcast of the token may have sent the
+         * payment, so it is [PaymentDelivery.MAYBE_SENT]: let sync settle it
+         * before building the payment again with
          * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
-         * (Release is idempotent and never raises this.)
+         * NOT retryable. (Release is idempotent and never raises this.)
          */
         class ReservationTokenConsumed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

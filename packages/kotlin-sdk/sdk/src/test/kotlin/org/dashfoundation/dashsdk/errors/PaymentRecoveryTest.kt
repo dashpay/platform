@@ -44,7 +44,7 @@ class PaymentRecoveryTest {
     fun shouldShowTheClassSuggestionText() {
         assertEquals("Nothing was sent. You can try again.", PaymentRecovery.Retry.suggestion)
         assertEquals(
-            "Nothing was sent. An earlier payment may still be settling; wait for it to finish.",
+            "Nothing was sent. This request cannot go through as it is.",
             PaymentRecovery.Wait.suggestion,
         )
         listOf(

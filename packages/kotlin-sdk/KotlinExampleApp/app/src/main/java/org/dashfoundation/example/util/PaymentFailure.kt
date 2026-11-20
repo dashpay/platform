@@ -119,12 +119,21 @@ data class PaymentFailure(
         )
 
         /**
-         * The failure a payment screen's [error] stands for, or null when it
-         * is not an SDK error: the screen's own input check, thrown before
-         * anything was sent, which shows as its own message.
+         * The failure a payment screen's [error] stands for, or null when no
+         * payment was attempted, which the screen shows as its own message
+         * (← Swift `PaymentFailure.ofPayment`): the screen's own input check
+         * (not an SDK error), or a wallet error the native wallet gave no
+         * class. The native wallet classes every failure of a payment it ran,
+         * so a wallet error without one is a refusal before any payment (an
+         * input check, a native pointer or handle refusal). An unconfirmed
+         * shielded identity create and an rs-sdk-ffi error stay failures.
          */
-        fun ofPayment(error: Throwable, invitationVoucher: Boolean = false): PaymentFailure? =
-            if (error is DashSdkError) of(error, invitationVoucher) else null
+        fun ofPayment(error: Throwable, invitationVoucher: Boolean = false): PaymentFailure? = when (error) {
+            is DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed -> of(error, invitationVoucher)
+            is DashSdkError.PlatformWallet -> error.delivery?.let { of(error, invitationVoucher) }
+            is DashSdkError -> of(error, invitationVoucher)
+            else -> null
+        }
 
         /** The outpoint a resume call takes, from its wire-order txid and vout. */
         fun outPoint(txid: ByteArray, vout: Int): AssetLockBuiltOutPoint =

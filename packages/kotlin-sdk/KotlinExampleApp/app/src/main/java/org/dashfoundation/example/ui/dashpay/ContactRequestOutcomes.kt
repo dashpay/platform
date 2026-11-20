@@ -117,9 +117,12 @@ sealed interface ContactRequestSubmissionOutcome {
         /**
          * Reads the native payment class first: a failure it classes as maybe
          * sent or holding an asset lock may have gone through, whatever its
-         * type. Only the contact-request holds, which the wallet also classes
-         * as maybe sent, are told apart before it, as the screens mark that
-         * contact pending instead. An rs-sdk-ffi unconfirmed transition
+         * type. Only the two contact-request holds are told apart before it,
+         * because each carries a marker the class does not: the screens mark
+         * that contact pending (a private request in flight, which the wallet
+         * classes not sent and not retryable) or unconfirmed (a public
+         * request, classed maybe sent), instead of showing a generic failure
+         * or "may have gone through". An rs-sdk-ffi unconfirmed transition
          * carries no native class and keeps its own arm.
          */
         fun of(error: Throwable): ContactRequestSubmissionOutcome = when {

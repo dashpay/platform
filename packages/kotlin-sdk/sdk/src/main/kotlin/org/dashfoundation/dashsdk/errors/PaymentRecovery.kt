@@ -30,11 +30,10 @@ sealed class PaymentRecovery {
 
     /**
      * Nothing left the wallet, and running it again as it is is not
-     * allowed: an earlier payment may still be settling. Offer no retry.
+     * allowed. The reason is the error's own (its message); offer no retry.
      */
     data object Wait : PaymentRecovery() {
-        override val suggestion =
-            "Nothing was sent. An earlier payment may still be settling; wait for it to finish."
+        override val suggestion = "Nothing was sent. This request cannot go through as it is."
     }
 
     /** The payment holds the tracked asset lock at [outPoint]: resume it, never fund a new one. */

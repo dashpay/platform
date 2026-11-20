@@ -60,6 +60,27 @@ class PaymentFailureTest {
     }
 
     /**
+     * Only a payment that was attempted is a payment failure: a wallet error
+     * the native wallet gave no class is a refusal before any payment and
+     * shows as the screen's own message (← Swift
+     * `testShouldPresentOnlyAnAttemptedPaymentAsAPaymentFailure`).
+     */
+    @Test
+    fun shouldPresentOnlyAnAttemptedPaymentAsAPaymentFailure() {
+        assertEquals(PaymentFailure.Action.Wait, PaymentFailure.ofPayment(walletError(6, 2, false))?.action)
+        assertEquals(PaymentFailure.Action.Wait, PaymentFailure.ofPayment(DashSdkError.Timeout("t"))?.action)
+        assertNull(PaymentFailure.ofPayment(walletError(2, 4, false)))
+        assertNull(PaymentFailure.ofPayment(walletError(2, 0, false)))
+        assertNull(PaymentFailure.ofPayment(IllegalStateException("x")))
+        assertEquals(
+            PaymentFailure.Action.Wait,
+            PaymentFailure.ofPayment(
+                DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed(ByteArray(32), "unconfirmed"),
+            )?.action,
+        )
+    }
+
+    /**
      * A failure that may have left (MAYBE_SENT), holds a lock (LOCK_HELD) or
      * has no class holds its slot; any NOT_SENT one, retryable or not,
      * releases it (← Swift `testShouldHoldTheSlotUnlessNothingWasSent`).

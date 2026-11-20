@@ -11,8 +11,8 @@ package org.dashfoundation.dashsdk.errors
 enum class PaymentDelivery {
     /**
      * The payment never left the wallet and can never execute. A retry may be
-     * offered only where [DashSdkError.isRetryable] allows it; otherwise an
-     * earlier payment may still be settling, so wait for it.
+     * offered only where [DashSdkError.isRetryable] allows it; otherwise the
+     * request cannot go through as it is, for the reason the error states.
      */
     NOT_SENT,
 
