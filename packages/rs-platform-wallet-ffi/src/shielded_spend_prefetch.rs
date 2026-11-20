@@ -248,6 +248,63 @@ mod tests {
     }
 
     #[test]
+    fn should_join_an_active_borrowed_sdk_callback_before_plain_manager_drop_returns() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let context: &BorrowedSdkContext = Box::leak(Box::new(BorrowedSdkContext {
+            calls: AtomicUsize::new(0),
+            exited: AtomicBool::new(false),
+            entered: entered_tx,
+            release: Mutex::new(release_rx),
+        }));
+        let sdk = sdk_borrowing(context);
+        let manager = mock_manager_on(
+            sdk.clone(),
+            FFIPersister::new(PersistenceCallbacks::default()),
+        );
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        {
+            let _runtime = runtime().enter();
+            assert!(manager.spawn_shielded_prefetch_for_testing(async move {
+                response_rx.await.expect("delayed response");
+                let key = sdk
+                    .context_provider()
+                    .expect("callback provider")
+                    .get_quorum_public_key(1, [2; 32], 3)
+                    .expect("host supplies the quorum key");
+                assert_eq!(key, [7; 48]);
+            }));
+        }
+        response_tx.send(()).expect("release delayed response");
+        entered_rx.recv_timeout(WAIT).expect("SDK callback entered");
+        let (dropping_tx, dropping_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let dropper = std::thread::spawn(move || {
+            dropping_tx.send(()).expect("observe drop start");
+            drop(manager);
+            dropped_tx.send(()).expect("observe drop completion");
+        });
+        dropping_rx
+            .recv_timeout(WAIT)
+            .expect("manager drop started");
+        let early = dropped_rx.recv_timeout(Duration::from_millis(100));
+        release_tx.send(()).expect("release synchronous callback");
+        assert!(
+            matches!(early, Err(mpsc::RecvTimeoutError::Timeout)),
+            "manager drop returned during the borrowed callback: {early:?}"
+        );
+        dropped_rx.recv_timeout(WAIT).expect("drop joined callback");
+        dropper.join().expect("manager drop thread");
+        assert!(context.exited.load(Ordering::SeqCst));
+        assert_eq!(context.calls.load(Ordering::SeqCst), 1);
+        unsafe {
+            drop(Box::from_raw(
+                (context as *const BorrowedSdkContext).cast_mut(),
+            ))
+        };
+    }
+
+    #[test]
     fn should_cancel_a_delayed_sdk_response_before_releasing_its_borrowed_context() {
         let (entered_tx, entered_rx) = mpsc::channel();
         let (_release_tx, release_rx) = mpsc::channel();
