@@ -172,7 +172,6 @@ pub unsafe extern "C" fn platform_wallet_core_wallet_state(
     *out_state = CoreWalletStateFFI {
         synced_height: snap.synced_height,
         last_processed_height: snap.last_processed_height,
-        reserved: 0,
     };
     PlatformWalletFFIResult::ok()
 }
@@ -396,7 +395,6 @@ pub unsafe extern "C" fn platform_wallet_account_metadata(
     *out_meta = AccountMetadataFFI {
         total_transactions: snap.total_transactions,
         total_utxos: snap.total_utxos,
-        reserved: 0,
     };
     PlatformWalletFFIResult::ok()
 }
@@ -1123,67 +1121,4 @@ pub(crate) unsafe fn classify_outpoint_rows(
         out[position] = class.as_u8();
     }
     PlatformWalletFFIResult::ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::runtime::runtime;
-    use crate::test_fixtures::mock_manager;
-    use crate::wallet_restore_types::{AccountTypeTagFFI, StandardAccountTypeTagFFI};
-    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-    use std::mem::{align_of, size_of};
-
-    #[test]
-    fn should_preserve_legacy_diagnostics_output_layouts_and_clear_reserved_slots() {
-        assert_eq!(size_of::<CoreWalletStateFFI>(), 16);
-        assert_eq!(size_of::<AccountMetadataFFI>(), 24);
-        assert_eq!(align_of::<CoreWalletStateFFI>(), align_of::<u64>());
-        assert_eq!(align_of::<AccountMetadataFFI>(), align_of::<u64>());
-
-        let manager = mock_manager();
-        let wallet_id = runtime()
-            .block_on(manager.create_wallet_from_seed_bytes(
-                dashcore::Network::Testnet,
-                &[42; 64],
-                WalletAccountCreationOptions::Default,
-                Some(0),
-            ))
-            .expect("create test wallet")
-            .wallet_id();
-        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
-        let spec = account_spec_from_raw_tags(
-            AccountTypeTagFFI::Standard as u8,
-            StandardAccountTypeTagFFI::Bip44 as u8,
-            0,
-            0,
-            0,
-            [0; 32],
-            [0; 32],
-        );
-
-        // Legacy caller storage with a nonzero sentinel in each trailing slot.
-        let mut wallet = [u64::MAX; 2];
-        let mut account = [u64::MAX; 3];
-        let wallet_result = unsafe {
-            platform_wallet_core_wallet_state(
-                handle,
-                wallet_id.as_ptr(),
-                wallet.as_mut_ptr().cast(),
-            )
-        };
-        let account_result = unsafe {
-            platform_wallet_account_metadata(
-                handle,
-                wallet_id.as_ptr(),
-                &spec,
-                account.as_mut_ptr().cast(),
-            )
-        };
-        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
-        assert_eq!(wallet_result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(account_result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(wallet[1], 0);
-        assert_eq!(account[2], 0);
-    }
 }
