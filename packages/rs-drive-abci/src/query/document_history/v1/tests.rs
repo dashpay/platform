@@ -514,7 +514,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         );
         assert_eq!(
             exported
-                .verify(Network::Testnet, version, &provider)
+                .verify(request.clone(), Network::Testnet, version, &provider)
                 .unwrap(),
             Some(exported.history)
         );

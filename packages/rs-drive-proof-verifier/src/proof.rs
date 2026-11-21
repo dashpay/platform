@@ -1694,22 +1694,21 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
 }
 
 impl DocumentHistoryProofInfo {
-    /// Independently authenticate the retained response against the retained request.
-    ///
-    /// This shows the response answers `self.request`, not that `self.request` is the
-    /// query a caller wanted: a genuine proof for a later start time verifies against its
-    /// own request too. A caller checking a bundle it did not fetch compares `request` with
-    /// the request it expects first (the Rust SDK's
-    /// `history_request_below_protocol_15` gives the V0 form of a V1 request), or verifies
-    /// the response against that request with `DocumentHistory::maybe_from_proof`.
+    /// Independently authenticate the retained response against `request`, the request the
+    /// caller expects it to answer. A bundle this SDK fetched answers its own `request`, so
+    /// pass `self.request.clone()` to check it again. A caller checking a bundle it did not
+    /// fetch passes the request it built itself instead (below protocol 15, the Rust SDK's
+    /// `history_request_below_protocol_15` gives the V0 form of a V1 request): a genuine
+    /// proof of another page verifies against the bundle's own request too.
     pub fn verify(
         &self,
+        request: platform::GetDocumentHistoryRequest,
         network: Network,
         platform_version: &PlatformVersion,
         provider: &dyn ContextProvider,
     ) -> Result<Option<DocumentHistory>, Error> {
         DocumentHistory::maybe_from_proof(
-            self.request.clone(),
+            request,
             self.response.clone(),
             network,
             platform_version,

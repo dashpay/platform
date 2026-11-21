@@ -253,8 +253,13 @@ async fn should_fetch_history_proof_info_as_the_first_proved_read_from_an_unpinn
     assert_eq!(info.request.clone(), fixture.request);
     assert_eq!(sdk.protocol_version_number(), 15);
     assert_eq!(
-        info.verify(network, sdk.version(), &fixture.provider())
-            .unwrap(),
+        info.verify(
+            fixture.request.clone(),
+            network,
+            sdk.version(),
+            &fixture.provider()
+        )
+        .unwrap(),
         Some(info.history)
     );
 }
@@ -333,8 +338,13 @@ async fn should_fetch_signed_pv14_history_from_an_inclusive_start_time() {
     assert_eq!(info.history, history);
     assert_eq!(info.request, fixture.request);
     assert_eq!(
-        info.verify(Network::Devnet, sdk.version(), &fixture.provider())
-            .unwrap(),
+        info.verify(
+            fixture.request.clone(),
+            Network::Devnet,
+            sdk.version(),
+            &fixture.provider()
+        )
+        .unwrap(),
         Some(history)
     );
 }

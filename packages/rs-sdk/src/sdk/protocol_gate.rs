@@ -165,6 +165,12 @@ impl SharedProbeHold {
         }
     }
 
+    pub(super) fn clear(&self) {
+        if let Ok(mut current) = self.hold.lock() {
+            *current = None;
+        }
+    }
+
     fn answered(&self) -> u64 {
         self.answered.load(Ordering::Acquire)
     }
@@ -338,6 +344,13 @@ impl Sdk {
             return Err(*failure);
         }
         Ok(verified != 0 && verified < protocol_version)
+    }
+
+    /// Forget the probe hold, for a caller with a sign that the network moved past the
+    /// version the hold shows, such as a node refusing what that version serves. The next
+    /// request that needs more asks the network again.
+    pub(crate) fn forget_probe_hold(&self) {
+        self.probe_hold.clear();
     }
 
     /// Whether a verified answer shows the network at or above `protocol_version` after

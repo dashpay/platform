@@ -3020,6 +3020,27 @@ mod document_history {
         assert_eq!(sent(&sdk, &v1()).await, 1);
     }
 
+    /// Any other V0 failure is returned as it is: the network is not asked again and V1
+    /// is not sent.
+    #[tokio::test]
+    async fn should_not_ask_again_after_any_other_v0_failure() {
+        let sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(&sdk, &v0(), Err(Status::not_found("document not found"))).await;
+        answer_probe(&sdk, "newer").await;
+        DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .expect_err("V0 failed");
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(probes(&sdk).await, 0);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+        assert!(sdk.probe_hold.get().is_some(), "the hold is kept");
+    }
+
     /// When V0 is refused and the probe after it fails too, V0's error stands and V1 is
     /// not sent.
     #[tokio::test]
