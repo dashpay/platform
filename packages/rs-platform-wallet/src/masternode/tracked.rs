@@ -211,7 +211,6 @@ impl TrackedMasternode {
         let cached = self.snapshot.list.as_ref();
         let list = live.or(cached);
         let reg = self.snapshot.registration.as_ref();
-        let platform = self.snapshot.platform.as_ref();
 
         let membership = match list_now {
             None => ListMembership::ListUnavailable,
