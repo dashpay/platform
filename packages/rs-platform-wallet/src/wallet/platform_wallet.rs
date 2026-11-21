@@ -1739,6 +1739,7 @@ impl PlatformWallet {
         super::shielded::operations::transfer(
             &self.sdk,
             coordinator.store(),
+            coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
             &keyset,
@@ -1779,6 +1780,7 @@ impl PlatformWallet {
         super::shielded::operations::unshield(
             &self.sdk,
             coordinator.store(),
+            coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
             &keyset,
@@ -1822,6 +1824,7 @@ impl PlatformWallet {
             super::shielded::operations::identity_top_up_from_pool_with_metadata(
                 &self.sdk,
                 coordinator.store(),
+                coordinator.anchor_cache(),
                 Some(&self.persister),
                 self.wallet_id,
                 &keyset,
@@ -2327,6 +2330,7 @@ impl PlatformWallet {
         super::shielded::operations::withdraw(
             &self.sdk,
             coordinator.store(),
+            coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
             &keyset,
@@ -2386,6 +2390,7 @@ impl PlatformWallet {
             super::shielded::operations::identity_create_from_shielded_pool(
                 &self.sdk,
                 coordinator.store(),
+                coordinator.anchor_cache(),
                 Some(&self.persister),
                 self.wallet_id,
                 &keyset,
