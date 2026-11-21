@@ -136,6 +136,7 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdrawal_keys(
         mn.owner_key_hash.as_ref(),
         mn.payout_script.as_deref(),
         has_owner_key_index_hint.then_some(owner_key_index_hint),
+        None,
     ));
 
     let payout_address = match keys.payout_address {
@@ -238,6 +239,7 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
             mn.owner_key_hash.as_ref(),
             mn.payout_script.as_deref(),
             has_owner_key_index_hint.then_some(owner_key_index_hint),
+            None,
         ));
 
     let request = MasternodeWithdrawalRequest {

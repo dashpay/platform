@@ -20,16 +20,19 @@
 //! from the in-process key-wallet and never calls it. The master's scalar
 //! is wiped after use, and the returned scalar is wrapped in [`Zeroizing`].
 
+use std::convert::Infallible;
 use std::str::FromStr;
 
+use async_trait::async_trait;
+use dashcore::address::Payload;
 use dashcore::crypto::ecdsa::EcdsaSecretKey;
-use dashcore::{Address, Network, PrivateKey as DashPrivateKey, PublicKey};
+use dashcore::{Address, Network, PrivateKey as DashPrivateKey, PubkeyHash, PublicKey};
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::{Account, Wallet};
 use zeroize::Zeroizing;
 
 use super::mnemonic::key_derivation;
-use super::platform_wallet::PlatformWallet;
+use super::platform_wallet::{PlatformWallet, WalletId};
 use crate::error::PlatformWalletError;
 
 /// How many indexes of each chain of BIP-44 account 0
@@ -54,6 +57,28 @@ pub struct CoreAddressPrivateKey {
     /// Private key in WIF (Wallet Import Format) — network-aware
     /// (mainnet vs testnet/devnet/regtest version byte) and compressed.
     pub wif: String,
+}
+
+/// Supplies a wallet's master key on demand (#5740), for a wallet without
+/// resident private keys. It is called with no wallet-manager guard held, so
+/// it may wait on a Keychain prompt. The key it returns is wiped on drop.
+#[async_trait]
+pub trait MasterKeyProvider: Send + Sync {
+    /// Why the master key could not be supplied.
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// The master key of the wallet `wallet_id`.
+    async fn master_key(&self, wallet_id: &WalletId) -> Result<ExtendedPrivKey, Self::Error>;
+}
+
+/// No key source, for a call that never needs one.
+#[async_trait]
+impl MasterKeyProvider for Infallible {
+    type Error = Infallible;
+
+    async fn master_key(&self, _wallet_id: &WalletId) -> Result<ExtendedPrivKey, Infallible> {
+        match *self {}
+    }
 }
 
 /// Why a key reveal failed.
@@ -227,7 +252,7 @@ impl PlatformWallet {
             let wallet = manager
                 .get_wallet(&self.wallet_id())
                 .ok_or_else(|| self.wallet_not_found())?;
-            !wallet.is_external_signable() && !wallet.is_watch_only()
+            has_resident_keys(wallet)
         };
         let master = if has_resident_keys {
             None
@@ -245,6 +270,60 @@ impl PlatformWallet {
                 })
         };
         Ok(result?)
+    }
+
+    /// Derives the key at `path` from the resident keys, or from the master
+    /// key `master_key` supplies for a wallet without them, and checks that
+    /// its compressed public key hashes to `key_hash160`. `master_key` runs
+    /// with no wallet-manager guard held.
+    ///
+    /// # Errors
+    /// - [`CoreAddressKeyError::KeySource`] with the error of `master_key`.
+    /// - [`PlatformWalletError::WalletNotFound`] if the wallet was removed
+    ///   from its manager, such as while `master_key` ran.
+    /// - [`PlatformWalletError::KeyDerivation`] if derivation fails or the
+    ///   key does not hash to `key_hash160`, such as for another wallet's
+    ///   master key or a path that names another key.
+    pub(crate) async fn private_key_for_hash160<K: MasterKeyProvider>(
+        &self,
+        path: &DerivationPath,
+        key_hash160: &[u8; 20],
+        master_key: &K,
+    ) -> Result<Zeroizing<[u8; 32]>, CoreAddressKeyError<K::Error>> {
+        let has_resident_keys = {
+            let manager = self.wallet_manager().read().await;
+            let wallet = manager
+                .get_wallet(&self.wallet_id())
+                .ok_or_else(|| self.wallet_not_found())?;
+            has_resident_keys(wallet)
+        };
+        let master = if has_resident_keys {
+            None
+        } else {
+            Some(
+                master_key
+                    .master_key(&self.wallet_id())
+                    .await
+                    .map_err(CoreAddressKeyError::KeySource)?,
+            )
+        };
+
+        let address = Address::new(
+            self.network(),
+            Payload::PubkeyHash(PubkeyHash::from_byte_array(*key_hash160)),
+        );
+        let manager = self.wallet_manager().read().await;
+        let wallet = manager
+            .get_wallet(&self.wallet_id())
+            .ok_or_else(|| self.wallet_not_found())?;
+        let key = private_key_at(
+            path.clone(),
+            &address,
+            wallet,
+            master.as_ref(),
+            self.network(),
+        )?;
+        Ok(key.private_key)
     }
 
     /// Returns a copy of BIP-44 account 0, taken under a short
@@ -270,6 +349,12 @@ impl PlatformWallet {
     fn wallet_not_found(&self) -> PlatformWalletError {
         PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id()))
     }
+}
+
+/// Whether `wallet` derives from its own resident keys, rather than from a
+/// master key the host supplies.
+fn has_resident_keys(wallet: &Wallet) -> bool {
+    !wallet.is_external_signable() && !wallet.is_watch_only()
 }
 
 /// Parses `address_str` and checks it against `network`, so a string of
