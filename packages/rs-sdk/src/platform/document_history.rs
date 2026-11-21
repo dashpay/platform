@@ -10,12 +10,10 @@
 use super::fetch::fetch_proved;
 use super::{DocumentHistoryQuery, Fetch, ProtocolRequirement, Query};
 use crate::{Error, Sdk};
-use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
-use dapi_grpc::platform::v0::get_document_history_request::{GetDocumentHistoryRequestV0, Version};
 use dapi_grpc::platform::v0::{GetDocumentHistoryRequest, Proof, ResponseMetadata};
-use drive::query::document_history_drive_query::{
-    DocumentHistoryDriveQuery, DocumentHistoryFilter,
-};
+pub use dash_platform_queries::documents::document_history_query::history_request_below_protocol_15;
+use dash_platform_queries::Error as QueriesError;
+use drive::error::Error as DriveError;
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{DapiClientError, RequestSettings};
@@ -111,14 +109,22 @@ where
     // Asking the network for its version may have changed the version requests are
     // encoded with.
     let request = query.query(&sdk.query_settings())?;
-    let legacy = history_request_below_protocol_15(request)?.ok_or_else(|| {
-        sdk.protocol_version_not_active(
-            requirement.protocol_version,
-            requirement.method,
-            Some(REVISION_AND_CURSOR_FILTERS),
-            None,
-        )
-    })?;
+    let legacy = history_request_below_protocol_15(request)
+        .map_err(|error| match error {
+            // Refused as written, like the typed query's own validation.
+            QueriesError::Drive(DriveError::Query(error)) => {
+                Error::InvalidRequest(error.to_string())
+            }
+            error => Error::from(error),
+        })?
+        .ok_or_else(|| {
+            sdk.protocol_version_not_active(
+                requirement.protocol_version,
+                requirement.method,
+                Some(REVISION_AND_CURSOR_FILTERS),
+                None,
+            )
+        })?;
     match fetch_proved::<T, _>(sdk, legacy, request_settings).await {
         Err(error) if refuses_history_query_version(&error) => {
             sdk.forget_probe_hold();
@@ -153,66 +159,19 @@ fn refuses_history_query_version(error: &Error) -> bool {
         if status.message().starts_with(HISTORY_QUERY_VERSION_REFUSAL))
 }
 
-/// The V0 form of a V1 history request, as [`DocumentHistory::fetch`] sends it to a network
-/// below protocol 15: a start-time filter, the only one V0 has, one millisecond earlier.
-/// `Ok(None)` for a revision or cursor filter, and an error for a request V1 itself
-/// refuses (Drive's history query validation). A request that is not V1 is returned as
-/// it is.
-///
-/// A caller checking a [`DocumentHistoryProofInfo`] it did not fetch derives the request it
-/// expects with this, and passes it to [`DocumentHistoryProofInfo::verify`].
-pub fn history_request_below_protocol_15(
-    request: GetDocumentHistoryRequest,
-) -> Result<Option<GetDocumentHistoryRequest>, Error> {
-    let Some(Version::V1(v1)) = request.version else {
-        return Ok(Some(request));
-    };
-    let Some(Filter::StartAtMs(start_at_ms)) = v1.filter else {
-        return Ok(None);
-    };
-    let identifier = |bytes: &[u8]| {
-        <[u8; 32]>::try_from(bytes)
-            .map_err(|_| Error::InvalidRequest("history identifiers are 32 bytes".to_string()))
-    };
-    // Validated as V1 first: the V0 bound encodes differently, so an out-of-range time
-    // would select another page instead of being refused.
-    DocumentHistoryDriveQuery {
-        contract_id: identifier(&v1.data_contract_id)?,
-        document_type_name: v1.document_type_name.clone(),
-        document_id: identifier(&v1.document_id)?,
-        filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
-        limit: v1
-            .limit
-            .map(u16::try_from)
-            .transpose()
-            .map_err(|_| Error::InvalidRequest("history limit out of bounds".to_string()))?,
-    }
-    .validate()?;
-    Ok(Some(
-        GetDocumentHistoryRequestV0 {
-            data_contract_id: v1.data_contract_id,
-            document_type_name: v1.document_type_name,
-            document_id: v1.document_id,
-            limit: v1.limit,
-            offset: None,
-            // V1 starts at its time and V0 after it (Drive's `start_after_ms`), so V0 starts
-            // one millisecond earlier. No revision is written at time 0, so 0 stays 0.
-            start_at_ms: start_at_ms.saturating_sub(1),
-            prove: v1.prove,
-        }
-        .into(),
-    ))
-}
-
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
     use crate::SdkBuilder;
-    use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV1;
+    use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
+    use dapi_grpc::platform::v0::get_document_history_request::{
+        GetDocumentHistoryRequestV0, GetDocumentHistoryRequestV1, Version,
+    };
     use dapi_grpc::tonic::{Code, Status};
     use dpp::dashcore::Network;
     use dpp::document::{Document, DocumentV0};
     use dpp::version::PlatformVersion;
+    use drive::query::document_history_drive_query::DocumentHistoryFilter;
     use drive_proof_verifier::types::DocumentHistoryEntry;
 
     fn query(filter: DocumentHistoryFilter) -> DocumentHistoryQuery {
@@ -332,8 +291,59 @@ mod tests {
             prove: true,
         });
         let error = DocumentHistory::fetch(&sdk, raw).await.unwrap_err();
-        assert!(matches!(error, Error::Drive(_)), "{error:?}");
+        assert!(matches!(error, Error::InvalidRequest(_)), "{error:?}");
         assert_eq!(sdk.mock_dapi().lock().await.request_count(&v0), 0);
+    }
+
+    fn raw_v1(filter: Option<Filter>, prove: bool) -> GetDocumentHistoryRequest {
+        GetDocumentHistoryRequestV1 {
+            data_contract_id: vec![1; 32],
+            document_type_name: "note".into(),
+            document_id: vec![2; 32],
+            limit: Some(5),
+            prove,
+            filter,
+        }
+        .into()
+    }
+
+    /// A raw V1 request with no filter is refused as written: no protocol version serves it.
+    #[tokio::test]
+    async fn should_refuse_a_raw_v1_request_without_a_filter_as_invalid() {
+        let sdk = sdk_at_protocol_14();
+        let raw = raw_v1(None, true);
+        let error = DocumentHistory::fetch(&sdk, raw.clone()).await.unwrap_err();
+        assert!(
+            matches!(&error, Error::InvalidRequest(message) if message.contains("filter")),
+            "{error:?}"
+        );
+        assert_eq!(sdk.mock_dapi().lock().await.request_count(&raw), 0);
+    }
+
+    /// History is read with proofs only: an unproved raw request is refused before either
+    /// version is sent.
+    #[tokio::test]
+    async fn should_refuse_an_unproved_raw_request_before_sending_it() {
+        let sdk = sdk_at_protocol_14();
+        let raw = raw_v1(Some(Filter::StartAtMs(2000)), false);
+        let v0 = history_request_below_protocol_15(raw.clone())
+            .unwrap()
+            .unwrap();
+        for fetched in [
+            DocumentHistory::fetch(&sdk, raw.clone()).await.map(|_| ()),
+            DocumentHistoryProofInfo::fetch(&sdk, raw.clone())
+                .await
+                .map(|_| ()),
+        ] {
+            let error = fetched.unwrap_err();
+            assert!(
+                matches!(&error, Error::InvalidRequest(message) if message.contains("proofs only")),
+                "{error:?}"
+            );
+        }
+        let dapi = sdk.mock_dapi().lock().await;
+        assert_eq!(dapi.request_count(&v0), 0);
+        assert_eq!(dapi.request_count(&raw), 0);
     }
 
     #[test]

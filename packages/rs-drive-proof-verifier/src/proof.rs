@@ -1661,6 +1661,13 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
     type Request = platform::GetDocumentHistoryRequest;
     type Response = platform::GetDocumentHistoryResponse;
 
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        DocumentHistory::check_request(request, platform_version)
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -1697,8 +1704,9 @@ impl DocumentHistoryProofInfo {
     /// Independently authenticate the retained response against `request`, the request the
     /// caller expects it to answer. A bundle this SDK fetched answers its own `request`, so
     /// pass `self.request.clone()` to check it again. A caller checking a bundle it did not
-    /// fetch passes the request it built itself instead (below protocol 15, the Rust SDK's
-    /// `history_request_below_protocol_15` gives the V0 form of a V1 request): a genuine
+    /// fetch passes the request it built itself instead (below protocol 15,
+    /// `dash_platform_queries::documents::document_history_query::history_request_below_protocol_15`
+    /// gives the V0 form of a V1 request): a genuine
     /// proof of another page verifies against the bundle's own request too.
     pub fn verify(
         &self,
@@ -1720,6 +1728,24 @@ impl DocumentHistoryProofInfo {
 impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     type Request = platform::GetDocumentHistoryRequest;
     type Response = platform::GetDocumentHistoryResponse;
+
+    /// History is read with proofs only: an unproved request would be answered with a page
+    /// no proof covers, which then fails verification on every node.
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let prove = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+            get_document_history_request::Version::V0(request) => request.prove,
+            get_document_history_request::Version::V1(request) => request.prove,
+        };
+        if !prove {
+            return Err(Error::RequestError {
+                error: "document history is read with proofs only; set prove".to_owned(),
+            });
+        }
+        Ok(())
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
