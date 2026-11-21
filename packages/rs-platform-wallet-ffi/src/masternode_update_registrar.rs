@@ -676,8 +676,10 @@ fn candidate_to_ffi(candidate: ProviderKeyCandidate) -> ProviderKeyCandidateFFI 
 /// [`crate::provider_key_at_index::PROVIDER_KEY_KIND_VOTING`] = 8 — the
 /// same account-type tags every provider-key FFI uses), each joined against the
 /// live masternode list so a rotation picker can default to (and enforce)
-/// unused keys. Fails with `ErrorMasternodeListUnavailable` before the list
-/// has synced — "unused" cannot be asserted without it.
+/// unused keys. Fails with `ErrorMasternodeListUnavailable` while the list
+/// does not follow the chain (still syncing, a stale header tip, or a list
+/// behind the tip) — "unused" cannot be asserted without it. The error clears
+/// once sync catches up.
 ///
 /// Free with [`platform_wallet_manager_free_provider_key_candidates`].
 ///
