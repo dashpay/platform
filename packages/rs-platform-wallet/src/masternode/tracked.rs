@@ -1837,4 +1837,56 @@ mod tests {
 
         assert_eq!(platform.operator_payout_key_hash, Some([0x02; 20]));
     }
+
+    /// Drive disables every owner TRANSFER key when the payout stops being a
+    /// sole P2PKH output, and adds none: the fetched identity then has no
+    /// current payout key, so the one learned earlier must not survive.
+    #[test]
+    fn should_forget_a_learned_payout_key_once_the_owner_identity_disables_it() {
+        let identity = identity_with(
+            Identifier::from([9u8; 32]),
+            vec![
+                key(
+                    0,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    [0x01; 20],
+                    true,
+                ),
+                key(1, Purpose::OWNER, KeyType::ECDSA_HASH160, [0x11; 20], false),
+            ],
+        );
+        let mut platform = PlatformKeySnapshot {
+            payout_key_hash: Some([0x01; 20]),
+            ..Default::default()
+        };
+
+        platform.learn_owner_identity(&identity);
+
+        assert_eq!(platform.payout_key_hash, None);
+    }
+
+    /// Drive disables the operator identity's TRANSFER key when the operator
+    /// payout is removed, and adds none: the learned one must not survive.
+    #[test]
+    fn should_forget_a_learned_operator_payout_key_once_the_operator_identity_disables_it() {
+        let identity = identity_with(
+            Identifier::from([9u8; 32]),
+            vec![key(
+                0,
+                Purpose::TRANSFER,
+                KeyType::ECDSA_HASH160,
+                [0x01; 20],
+                true,
+            )],
+        );
+        let mut platform = PlatformKeySnapshot {
+            operator_payout_key_hash: Some([0x01; 20]),
+            ..Default::default()
+        };
+
+        platform.learn_operator_identity(&identity);
+
+        assert_eq!(platform.operator_payout_key_hash, None);
+    }
 }
