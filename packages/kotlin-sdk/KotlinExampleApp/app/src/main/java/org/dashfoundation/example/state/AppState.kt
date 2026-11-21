@@ -271,6 +271,10 @@ class AppState(
                     old?.closeSuspending()
                 }
             }
+        } catch (e: CancellationException) {
+            // A cancellation is not an SDK failure: keep whatever the
+            // cleanup reported, such as a failed network save.
+            throw e
         } catch (e: Exception) {
             _errorMessage.value = e.message ?: "Failed to initialize SDK"
             throw e
