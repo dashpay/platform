@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
@@ -39,7 +40,9 @@ import org.dashfoundation.example.ui.components.LabeledContent
  * Settings tab root — port of `SettingsView` + `OptionsView.swift`'s
  * Network section. Network switching rebuilds the SDK (new manager
  * instance, never reconfiguration); the picker is disabled while a switch
- * is in flight. Devnet requires a quorum URL, matching the iOS gating.
+ * is in flight. Devnet needs a devnet name or a quorum URL (persisted, iOS
+ * `platformDevnetName` / `platformQuorumURL`); its fields show on devnet and
+ * after a failed switch to it, so they can be filled before picking Devnet.
  *
  * The SPV-peers, Platform-overrides, faucet, and data-management sections
  * attach in B-M1's follow-up as their backing services land.
@@ -65,7 +68,11 @@ fun SettingsScreen(navController: NavHostController) {
     val errorMessage by appState.errorMessage.collectAsStateWithLifecycle()
     val useDocker by appState.useDockerSetup.collectAsStateWithLifecycle()
 
-    var quorumUrl by remember { mutableStateOf("") }
+    val devnetName by appState.devnetName.collectAsStateWithLifecycle()
+    val devnetQuorumUrl by appState.devnetQuorumUrl.collectAsStateWithLifecycle()
+    // ← OptionsView.swift `devnetSettingsNeeded`: a failed switch to
+    // Devnet keeps the app on the old network and shows the devnet fields.
+    var devnetSettingsNeeded by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -91,10 +98,17 @@ fun SettingsScreen(navController: NavHostController) {
                     // note below explains why (1:1 with the iOS disabled gate).
                     if (registrationInFlight) return@AccessiblePicker
                     scope.launch {
-                        appState.switchNetwork(
-                            selected,
-                            quorumUrl = quorumUrl.takeIf { it.isNotEmpty() },
-                        )
+                        // A failed build leaves the app on the old network
+                        // and is reported through AppState.errorMessage
+                        // (the alert below), so it must not escape here.
+                        try {
+                            appState.switchNetwork(selected)
+                            devnetSettingsNeeded = false
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            devnetSettingsNeeded = selected == Network.DEVNET
+                        }
                     }
                 }
                 if (registrationInFlight) {
@@ -124,14 +138,64 @@ fun SettingsScreen(navController: NavHostController) {
                         onCheckedChange = { appState.setUseDockerSetup(it) },
                     )
                 }
-                if (network == Network.DEVNET) {
+                if (network == Network.DEVNET || devnetSettingsNeeded) {
+                    if (network != Network.DEVNET) {
+                        Text(
+                            "Switching to Devnet failed. Fix these settings, then pick Devnet again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     androidx.compose.material3.OutlinedTextField(
-                        value = quorumUrl,
-                        onValueChange = { quorumUrl = it },
-                        label = { Text("Quorum URL (required for devnet)") },
-                        modifier = Modifier.fillMaxWidth(),
+                        value = devnetName,
+                        onValueChange = { appState.setDevnetName(it) },
+                        label = { Text("Devnet Name") },
+                        placeholder = { Text("e.g. palmatum (dashd -devnet=<name>)") },
+                        modifier = Modifier.fillMaxWidth().testTag("settings.devnetName"),
                         singleLine = true,
                     )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = devnetQuorumUrl,
+                        onValueChange = { appState.setDevnetQuorumUrl(it) },
+                        label = { Text("Quorum URL (optional)") },
+                        placeholder = {
+                            Text(
+                                if (devnetName.isNotBlank()) {
+                                    "https://quorums.${devnetName.trim()}.networks.dash.org"
+                                } else {
+                                    "https://quorums.<name>.networks.dash.org"
+                                },
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("settings.devnetQuorumUrl"),
+                        singleLine = true,
+                    )
+                    Text(
+                        "The devnet name is required to start SPV. DAPI nodes and SPV peers " +
+                            "are discovered from {Quorum URL}/masternodes; an empty URL uses " +
+                            "https://quorums.<name>.networks.dash.org.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (network == Network.DEVNET) {
+                        // ← OptionsView.swift rebuilds the SDK when a devnet
+                        // field changed; here that is an explicit button.
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        appState.initializeSdk(Network.DEVNET)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        // Reported through AppState.errorMessage.
+                                    }
+                                }
+                            },
+                            enabled = !isLoading && !registrationInFlight,
+                            modifier = Modifier.testTag("settings.devnetApply"),
+                        ) { Text("Apply Devnet Settings") }
+                    }
                 }
             }
 

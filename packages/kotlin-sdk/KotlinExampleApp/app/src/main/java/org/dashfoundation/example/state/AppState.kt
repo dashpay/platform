@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
@@ -69,6 +71,23 @@ class AppState(
     /** Comma-separated `host:port` SPV peers — iOS `localCorePeers` key. */
     private val _localCorePeers = MutableStateFlow("")
     val localCorePeers: StateFlow<String> = _localCorePeers.asStateFlow()
+
+    /**
+     * The devnet's name (`dashd -devnet=<name>`) — iOS `platformDevnetName`
+     * key (OptionsView.swift). SPV needs it on devnet: it goes into the user
+     * agent, and Dash Core devnet peers drop handshakes without it. It also
+     * gives the default quorum URL when [devnetQuorumUrl] is empty.
+     */
+    private val _devnetName = MutableStateFlow("")
+    val devnetName: StateFlow<String> = _devnetName.asStateFlow()
+
+    /**
+     * Devnet quorum service base URL — iOS `platformQuorumURL` key. Empty
+     * means "derive it from [devnetName]" (see [resolvedDevnetQuorumUrl]).
+     * Both the DAPI list and the SPV peers come from its `/masternodes`.
+     */
+    private val _devnetQuorumUrl = MutableStateFlow("")
+    val devnetQuorumUrl: StateFlow<String> = _devnetQuorumUrl.asStateFlow()
 
     /**
      * Bumped when wallet-scoped services must rebind without a network
@@ -133,6 +152,14 @@ class AppState(
         _useDockerSetup.value = prefs[KEY_DOCKER] ?: false
         _useLocalhostCore.value = prefs[KEY_USE_LOCAL_CORE] ?: false
         _localCorePeers.value = prefs[KEY_LOCAL_CORE_PEERS] ?: ""
+        _devnetName.value = prefs[KEY_DEVNET_NAME] ?: ""
+        _devnetQuorumUrl.value = prefs[KEY_DEVNET_QUORUM_URL] ?: ""
+        // A saved Devnet choice without devnet settings could never build an
+        // SDK, and bootstrap would fail on every launch with no way to reach
+        // Settings: start on the default network instead.
+        if (_currentNetwork.value == Network.DEVNET && resolvedDevnetQuorumUrl() == null) {
+            _currentNetwork.value = Network.DEFAULT
+        }
         prefs[KEY_QUORUM_MODE]?.let { QuorumMode.fromRawValue(it) }?.let { _quorumMode.value = it }
     }
 
@@ -148,11 +175,21 @@ class AppState(
     ) {
         _isLoading.value = true
         try {
+            // Devnet has no built-in endpoints: the SDK discovers its DAPI
+            // nodes from the quorum service, so take the URL from the devnet
+            // settings when the caller passed none.
+            val effectiveQuorumUrl = quorumUrl?.takeIf { it.isNotBlank() }
+                ?: if (network == Network.DEVNET) {
+                    resolvedDevnetQuorumUrl()
+                        ?: throw IllegalStateException(DEVNET_SETTINGS_MISSING)
+                } else {
+                    null
+                }
             val newSdk = Sdk.create(
                 SdkConfig(
                     network = network,
                     dapiAddresses = dapiAddresses,
-                    quorumUrl = quorumUrl,
+                    quorumUrl = effectiveQuorumUrl,
                     useDockerSetup = _useDockerSetup.value,
                 ),
                 Sdk.ContextProviderKind.ADAPTIVE,
@@ -298,18 +335,58 @@ class AppState(
         scope.launch { dataStore.edit { it[KEY_LOCAL_CORE_PEERS] = peers } }
     }
 
+    fun setDevnetName(name: String) {
+        _devnetName.value = name
+        scope.launch { dataStore.edit { it[KEY_DEVNET_NAME] = name } }
+    }
+
+    fun setDevnetQuorumUrl(url: String) {
+        _devnetQuorumUrl.value = url
+        scope.launch { dataStore.edit { it[KEY_DEVNET_QUORUM_URL] = url } }
+    }
+
     /**
-     * The SPV peer override for the current settings — port of
-     * `CoreContentView.spvPeerOverride()`'s custom-peers branch: honor
-     * [localCorePeers] verbatim when [useLocalhostCore] is on, else empty
-     * (the FFI falls back to the network's built-in seed nodes).
+     * The devnet quorum service URL: [devnetQuorumUrl] when set, else
+     * `https://quorums.<devnetName>.networks.dash.org`, the default the Rust
+     * trusted context provider uses for a named devnet. Null when neither
+     * is set.
      */
-    fun spvPeerOverride(): List<String> {
-        if (!_useLocalhostCore.value) return emptyList()
-        return _localCorePeers.value
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+    fun resolvedDevnetQuorumUrl(): String? {
+        _devnetQuorumUrl.value.trim().takeIf { it.isNotEmpty() }?.let { return it }
+        val name = devnetNameOrNull() ?: return null
+        return "https://quorums.$name.networks.dash.org"
+    }
+
+    /** The devnet name SPV needs on [network]; null off devnet or when unset. */
+    fun spvDevnetName(network: Network): String? =
+        if (network == Network.DEVNET) devnetNameOrNull() else null
+
+    private fun devnetNameOrNull(): String? =
+        _devnetName.value.trim().takeIf { it.isNotEmpty() }
+
+    /**
+     * The SPV peer override for [network] — port of
+     * `CoreSpvLauncher.peerOverride(network:)`: [localCorePeers] verbatim
+     * when [useLocalhostCore] is on; on devnet otherwise the active
+     * masternodes' Core P2P addresses from `{quorumUrl}/masternodes` (each
+     * reports its own port, so none is guessed); else empty (the FFI falls
+     * back to the network's built-in seed nodes). The devnet lookup blocks
+     * on HTTP, so it runs on [Dispatchers.IO].
+     */
+    suspend fun spvPeerOverride(network: Network = _currentNetwork.value): List<String> {
+        if (_useLocalhostCore.value) {
+            return _localCorePeers.value
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        }
+        if (network != Network.DEVNET) return emptyList()
+        val quorumUrl = resolvedDevnetQuorumUrl() ?: return emptyList()
+        return withContext(Dispatchers.IO) {
+            Sdk.discoverActiveMasternodes(quorumUrl, DEVNET_DAPI_PORT)
+                ?.map { it.spvPeer }
+                .orEmpty()
+        }
     }
 
     /** Devnet config changed without a network switch — force rebinds. */
@@ -321,13 +398,22 @@ class AppState(
         _errorMessage.value = null
     }
 
-    private companion object {
-        val KEY_NETWORK = stringPreferencesKey("currentNetwork")
-        val KEY_DOCKER = booleanPreferencesKey("useDockerSetup")
+    companion object {
+        /** Shown when Devnet is picked before its name or quorum URL is set. */
+        const val DEVNET_SETTINGS_MISSING =
+            "Devnet needs a devnet name or a quorum URL. Enter them under Devnet, then pick Devnet again."
+
+        /** DAPI port for nodes that report no `platformHTTPPort` (non-mainnet). */
+        private const val DEVNET_DAPI_PORT = 1443
+
+        private val KEY_NETWORK = stringPreferencesKey("currentNetwork")
+        private val KEY_DOCKER = booleanPreferencesKey("useDockerSetup")
 
         // Verbatim iOS UserDefaults key names (OptionsView.swift).
-        val KEY_USE_LOCAL_CORE = booleanPreferencesKey("useLocalhostCore")
-        val KEY_LOCAL_CORE_PEERS = stringPreferencesKey("localCorePeers")
-        val KEY_QUORUM_MODE = stringPreferencesKey("quorumMode")
+        private val KEY_USE_LOCAL_CORE = booleanPreferencesKey("useLocalhostCore")
+        private val KEY_LOCAL_CORE_PEERS = stringPreferencesKey("localCorePeers")
+        private val KEY_QUORUM_MODE = stringPreferencesKey("quorumMode")
+        private val KEY_DEVNET_NAME = stringPreferencesKey("platformDevnetName")
+        private val KEY_DEVNET_QUORUM_URL = stringPreferencesKey("platformQuorumURL")
     }
 }

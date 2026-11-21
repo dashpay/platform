@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.services.PlatformBalanceSyncService.PlatformSyncState
 import org.dashfoundation.dashsdk.wallet.SpvSubProgress
@@ -154,11 +155,20 @@ fun SyncStatusScreen() {
                                             context.filesDir,
                                             "spv/${network.networkName}",
                                         ).apply { mkdirs() }
-                                        val peers = appState.spvPeerOverride()
+                                        // ← CoreSpvLauncher.start: devnet needs
+                                        // its name (SPV user agent) and takes
+                                        // its peers from the quorum service.
+                                        val devnetName = appState.spvDevnetName(network)
+                                        if (network == Network.DEVNET && devnetName == null) {
+                                            error = "Set the devnet name in Settings to start SPV on devnet."
+                                            return@launch
+                                        }
+                                        val peers = appState.spvPeerOverride(network)
                                         currentManager.startSpv(
                                             dataDir = dataDir.absolutePath,
                                             peers = peers,
                                             restrictToConfiguredPeers = peers.isNotEmpty(),
+                                            devnetName = devnetName,
                                         )
                                     }
                                 } catch (e: Exception) {

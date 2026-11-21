@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Read-only DAPI address ban list — port of `BannedAddressesView.swift`.
@@ -193,11 +194,19 @@ private fun parseBanInfo(json: String): List<BannedAddressEntry> = runCatching {
     (0 until array.length()).map { i ->
         val obj = array.getJSONObject(i)
         BannedAddressEntry(
-            address = obj.optString("address", "—"),
+            address = obj.stringOrNull("address") ?: "—",
             banned = obj.optBoolean("banned", false),
             banCount = obj.optLong("banCount", 0L),
             bannedUntilMs = obj.optLong("bannedUntilMs", 0L),
-            reason = obj.optString("reason").takeIf { it.isNotBlank() },
+            reason = obj.stringOrNull("reason")?.takeIf { it.isNotBlank() },
         )
     }
 }.getOrElse { emptyList() }
+
+/**
+ * The string at [key], or null when it is absent or JSON `null`.
+ * `optString` turns a JSON `null` into the text "null", which a peer
+ * banned without a reason would otherwise show.
+ */
+private fun JSONObject.stringOrNull(key: String): String? =
+    if (isNull(key)) null else optString(key)
