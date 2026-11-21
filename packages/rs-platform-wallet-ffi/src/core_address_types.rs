@@ -86,8 +86,6 @@ pub struct CoreAddressEntryFFI {
     /// two-step DashPay contact payment (see
     /// `persistence::build_core_address_entry_ffi`).
     pub is_used: bool,
-    /// Cached balance in duffs from `AddressInfo.balance`.
-    pub balance: u64,
     /// Base58check-encoded address (NUL-terminated). Caller-scoped.
     pub address_base58: *const c_char,
     /// BIP32 derivation path (NUL-terminated). Caller-scoped.

@@ -1784,9 +1784,6 @@ struct AccountStorageDetailView: View {
                                     if addr.isUsed {
                                         Text("• used")
                                     }
-                                    if addr.balance > 0 {
-                                        Text("• \(addr.balance)")
-                                    }
                                 }
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
@@ -1860,8 +1857,7 @@ struct CoreAddressDetailView: View {
                 )
             }
             privateKeySection
-            Section("Balance / Activity") {
-                FieldRow(label: "Balance", value: "\(record.balance)")
+            Section("Activity") {
                 FieldRow(
                     label: "First Seen Height",
                     value: record.firstSeenHeight == 0 ? "—" : "\(record.firstSeenHeight)"
