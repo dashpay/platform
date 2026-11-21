@@ -1211,10 +1211,15 @@ mod tests {
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
+    use crate::masternode::live_provider_key_candidates_blocking;
+    use crate::test_support::sync_test_platform_wallet;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use crate::wallet::provider_key_at_index::ProviderKeyKind;
     use dash_spv::{
         BlockHeadersProgress, ClientConfig, MasternodesProgress, SyncProgress, SyncState,
     };
+    use dashcore::sml::masternode_list::MasternodeList;
+    use dashcore::BlockHash;
 
     fn unstarted_runtime() -> SpvRuntime {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
@@ -2422,12 +2427,17 @@ mod tests {
     }
 
     /// A runtime that does not follow the chain hands out no current list
-    /// through any gated read. An unstarted client is the simplest such
-    /// runtime.
+    /// through any gated read, the public one included. An unstarted client
+    /// is the simplest such runtime.
     #[tokio::test(flavor = "multi_thread")]
-    async fn should_have_no_current_masternode_list_entries_or_summaries_while_not_running() {
+    async fn should_have_no_current_masternode_list_through_any_read_while_not_running() {
         let runtime = unstarted_runtime();
 
+        let read = runtime.current_masternode_list().await;
+        assert!(
+            matches!(read, Err(PlatformWalletError::MasternodeListUnavailable)),
+            "expected MasternodeListUnavailable, got {read:?}"
+        );
         assert_eq!(runtime.current_masternode_list_summaries().await, None);
         assert!(runtime.current_masternode_list_entries().await.is_none());
         let blocking =
@@ -2475,12 +2485,6 @@ mod tests {
     /// a key a node still uses comes back as unused.
     #[test]
     fn should_refuse_a_list_restored_from_disk_while_sync_catches_up() {
-        use crate::masternode::live_provider_key_candidates_blocking;
-        use crate::test_support::sync_test_platform_wallet;
-        use crate::wallet::provider_key_at_index::ProviderKeyKind;
-        use dashcore::sml::masternode_list::MasternodeList;
-        use dashcore::BlockHash;
-
         const RESTORED_HEIGHT: u32 = 1_000;
         let wallet = sync_test_platform_wallet();
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -2538,18 +2542,6 @@ mod tests {
         }
 
         rt.block_on(runtime.stop()).unwrap();
-    }
-
-    /// The public list read is gated like the crate-private ones: a runtime
-    /// that does not follow the chain has no current list to hand out.
-    #[tokio::test]
-    async fn should_have_no_current_masternode_list_while_not_following_the_chain() {
-        let read = unstarted_runtime().current_masternode_list().await;
-
-        assert!(
-            matches!(read, Err(PlatformWalletError::MasternodeListUnavailable)),
-            "expected MasternodeListUnavailable, got {read:?}"
-        );
     }
 
     /// dash-spv raises `NotConnected` from its zero-peer check before the
