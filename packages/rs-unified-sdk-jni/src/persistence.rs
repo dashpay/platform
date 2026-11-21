@@ -851,6 +851,7 @@ unsafe extern "C" fn tramp_persist_account_address_pools(
                             JValue::Byte(a.pool_type_tag as i8),
                             JValue::Int(a.address_index as i32),
                             JValue::Bool(a.is_used as u8),
+                            JValue::Long(a.balance as i64),
                             (&base58).into(),
                             (&path).into(),
                         ],
@@ -993,7 +994,7 @@ const ACCOUNT_REGISTRATION_DESCRIPTOR: &str = "([BBBIII[B[B[B)I";
 
 /// `onPersistAccountAddressPoolEntry`'s descriptor, shared the same way.
 const ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR: &str =
-    "([BBBIII[B[BB[BZBIZLjava/lang/String;Ljava/lang/String;)I";
+    "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I";
 
 unsafe fn persist_changeset_sweep_batch(
     env: &mut JNIEnv,
@@ -3461,6 +3462,7 @@ fn build_core_address_pools(
                             }
                             let address_index = env.get_field(&r, "addressIndex", "I")?.i()? as u32;
                             let is_used = env.get_field(&r, "isUsed", "Z")?.z()?;
+                            let balance = env.get_field(&r, "balance", "J")?.j()? as u64;
                             // Both required — a null / interior-NUL aborts
                             // the load (the loader rejects a null and a row
                             // missing its path is the signing-break case).
@@ -3474,6 +3476,7 @@ fn build_core_address_pools(
                                     pool_type_tag,
                                     address_index,
                                     is_used,
+                                    balance,
                                     address_base58: ptr::null(),
                                     derivation_path: ptr::null(),
                                 },

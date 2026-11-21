@@ -15,6 +15,7 @@ mod history_replay;
 #[cfg(feature = "kv")]
 pub mod kv;
 pub mod persister;
+mod provider_accounts;
 pub mod rehydrate;
 pub mod reports;
 pub mod util;
