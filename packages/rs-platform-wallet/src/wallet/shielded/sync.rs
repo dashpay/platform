@@ -41,6 +41,7 @@ use tracing::{debug, info};
 
 use super::keys::AccountViewingKeys;
 use super::store::{ShieldedStore, SubwalletId};
+use super::tips::is_shielded_identity_account;
 use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
 
@@ -104,19 +105,40 @@ impl ShieldedSyncSummary {
     /// Sum of unspent balances across accounts, rejecting an unrepresentable
     /// wallet total even when every individual account balance fits in `u64`.
     pub fn balance_total(&self) -> Result<u64, PlatformWalletError> {
-        self.balances.values().try_fold(0u64, |total, balance| {
-            total.checked_add(*balance).ok_or_else(|| {
-                PlatformWalletError::ShieldedStoreError(
-                    "wallet-wide shielded balance exceeds u64".to_string(),
-                )
-            })
-        })
+        checked_balance_sum(self.balances.values())
+    }
+
+    /// Sum of unspent balances across the ordinary accounts, the ones a send
+    /// from the wallet's ordinary accounts can spend. Identity accounts
+    /// ([`is_shielded_identity_account`]) are bound and scanned with the
+    /// wallet but are left out. Rejects an unrepresentable total as
+    /// [`Self::balance_total`] does.
+    pub fn ordinary_balance_total(&self) -> Result<u64, PlatformWalletError> {
+        checked_balance_sum(
+            self.balances
+                .iter()
+                .filter(|(account, _)| !is_shielded_identity_account(**account))
+                .map(|(_, balance)| balance),
+        )
     }
 
     /// Sum of newly-spent counts across accounts.
     pub fn total_newly_spent(&self) -> usize {
         self.newly_spent_per_account.values().sum()
     }
+}
+
+/// Sum of `balances`, rejecting a total that does not fit in `u64`.
+fn checked_balance_sum<'a>(
+    mut balances: impl Iterator<Item = &'a u64>,
+) -> Result<u64, PlatformWalletError> {
+    balances.try_fold(0u64, |total, balance| {
+        total.checked_add(*balance).ok_or_else(|| {
+            PlatformWalletError::ShieldedStoreError(
+                "wallet-wide shielded balance exceeds u64".to_string(),
+            )
+        })
+    })
 }
 
 /// Result of a multi-subwallet note-sync pass.
@@ -998,6 +1020,7 @@ mod tests {
     use crate::changeset::ShieldedChangeSet;
     use crate::error::PlatformWalletError;
     use crate::wallet::shielded::keys::OrchardKeySet;
+    use crate::wallet::shielded::shielded_identity_account_index;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
     };
@@ -1013,6 +1036,38 @@ mod tests {
         assert_eq!(summary.balance_total().unwrap(), u64::MAX);
         summary.balances.insert(2, 1);
         assert!(matches!(summary.balance_total(),
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("wallet-wide shielded balance exceeds u64")));
+    }
+
+    #[test]
+    fn should_leave_identity_accounts_out_of_the_ordinary_balance() {
+        let identity_account = shielded_identity_account_index(0).unwrap();
+        let summary = ShieldedSyncSummary {
+            balances: BTreeMap::from([(0, 100), (1, 50), (identity_account, 900)]),
+            ..ShieldedSyncSummary::default()
+        };
+        assert_eq!(summary.ordinary_balance_total().unwrap(), 150);
+        assert_eq!(summary.balance_total().unwrap(), 1_050);
+    }
+
+    #[test]
+    fn should_report_zero_ordinary_balance_for_an_empty_summary() {
+        let summary = ShieldedSyncSummary::default();
+        assert_eq!(summary.ordinary_balance_total().unwrap(), 0);
+    }
+
+    #[test]
+    fn should_check_ordinary_balance_overflow() {
+        let identity_account = shielded_identity_account_index(0).unwrap();
+        let mut summary = ShieldedSyncSummary {
+            balances: BTreeMap::from([(0, u64::MAX - 1), (identity_account, u64::MAX)]),
+            ..ShieldedSyncSummary::default()
+        };
+        // The identity account's balance does not count toward the overflow.
+        assert_eq!(summary.ordinary_balance_total().unwrap(), u64::MAX - 1);
+        summary.balances.insert(1, 2);
+        assert!(matches!(summary.ordinary_balance_total(),
             Err(PlatformWalletError::ShieldedStoreError(message))
                 if message.contains("wallet-wide shielded balance exceeds u64")));
     }

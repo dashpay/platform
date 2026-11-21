@@ -506,6 +506,18 @@ public class PlatformWalletManager: ObservableObject {
     /// Rust. Every native pointer has been copied before publication.
     @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
 
+    /// The latest shielded balance update this manager accepted for each
+    /// wallet, keyed by the 32-byte wallet id. Rust emits an update when
+    /// the state it read changes and does not resend an unchanged one. This is the balance hosts show:
+    /// read `ordinaryBalance` for what the wallet holds and
+    /// `accountBalance(_:)` for what one account can spend. A wallet with
+    /// no entry has had no update yet. An update replaces the held one
+    /// only when its revision is higher. Stopping shielded sync and Clear
+    /// leave the entries to Rust (Clear's outcome arrives as an update);
+    /// shutdown empties the dictionary, because no update can arrive for
+    /// the native manager it released.
+    @Published public internal(set) var shieldedBalances: [Data: ShieldedBalanceUpdate] = [:]
+
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
     /// 2048 notes) via the Rust-side progress callback. Nil between
@@ -989,6 +1001,9 @@ public class PlatformWalletManager: ObservableObject {
         drainingNativeHandle = h
         handle = NULL_HANDLE
         isConfigured = false
+        // Balance updates are dropped from here on; the held ones describe
+        // a native manager that is going away.
+        shieldedBalances = [:]
         // Poll/reconcile cancellation is independent of admitted local-read
         // generations. Stop remaining reads and reconcile persistence steps
         // before the blocking shielded stop.
