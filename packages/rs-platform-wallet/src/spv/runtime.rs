@@ -886,7 +886,7 @@ impl SpvRuntime {
     pub async fn current_masternode_list(
         &self,
     ) -> Result<CurrentMasternodeList, PlatformWalletError> {
-        // TODO: switch to dash-spv's current-list read (rust-dashcore S1: masternode-list freshness).
+        // TODO: read the list from dash-spv once it returns it only while following the chain (rust-dashcore follow-up).
         self.while_following_the_chain(async {
             let list = {
                 let client_guard = self.client.read().await;
