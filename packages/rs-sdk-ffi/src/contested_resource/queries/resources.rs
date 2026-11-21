@@ -34,8 +34,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 ///   encoding: text verbatim, or with one backslash in front when it starts
 ///   with `"0x"` or a backslash; bytes and identifiers as `"0x"` hex. Text
 ///   and byte values parse back unchanged; other kinds (integers) are for
-///   display only. `index_values` addresses a poll only when it covers every
-///   property of the index.
+///   display only. `index_values` can be passed back as the key of
+///   `dash_sdk_contested_resource_get_vote_state` only when it covers every
+///   property of the index and every value is text or bytes.
 /// * Error message if operation fails
 ///
 /// # Safety

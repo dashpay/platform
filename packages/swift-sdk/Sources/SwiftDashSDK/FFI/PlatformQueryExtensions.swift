@@ -1500,7 +1500,8 @@ extension SDK {
         return result
     }
 
-    /// Get the vote state for a contested DPNS username
+    /// Get the vote state for a contested DPNS username. `name` is a label or
+    /// a full name in any case ("alice", "Alice.DASH"); the SDK normalizes it.
     @MainActor
     public func dpnsGetContestedVoteState(name: String, limit: UInt32 = 100) async throws -> [String: Any] {
         guard let handle = self.handle else {
@@ -1531,6 +1532,30 @@ extension SDK {
         }
 
         return voteState
+    }
+
+    /// Get the contested DPNS usernames: the normalized labels with a contest
+    /// on record, in ascending order. The SDK reads them in pages until
+    /// `limit` labels are read or none are left.
+    ///
+    /// - Parameters:
+    ///   - limit: Maximum number of labels; 0 returns every label.
+    ///   - startAfter: A normalized label to list after (exclusive), or `nil`
+    ///     to start from the first label.
+    @MainActor
+    public func dpnsGetAllContestedUsernames(limit: UInt32, startAfter: String?) async throws -> [String] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        let result = withOptionalCString(startAfter) { startAfterPtr in
+            dash_sdk_dpns_get_all_contested_usernames(handle, limit, startAfterPtr)
+        }
+        let jsonString = try processStringResult(result)
+        guard let data = jsonString.data(using: .utf8),
+              let labels = try? JSONSerialization.jsonObject(with: data) as? [String] else {
+            throw SDKError.serializationError("Failed to parse contested usernames JSON")
+        }
+        return labels
     }
 
     /// Get contested DPNS usernames that are not yet resolved
