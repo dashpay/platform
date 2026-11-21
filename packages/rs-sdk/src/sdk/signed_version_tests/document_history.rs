@@ -249,10 +249,7 @@ async fn should_fetch_history_proof_info_as_the_first_proved_read_from_an_unpinn
         .expect("first proof-info read must reach and verify PV15")
         .unwrap();
     fixture.assert_history(&info.history);
-    assert_eq!(
-        GetDocumentHistoryResponse::from(info.response.clone()),
-        fixture.response
-    );
+    assert_eq!(info.response.clone(), fixture.response);
     assert_eq!(sdk.protocol_version_number(), 15);
     assert_eq!(
         info.verify(

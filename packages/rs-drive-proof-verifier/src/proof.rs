@@ -1671,14 +1671,8 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
     where
         Self: Sized + 'a,
     {
-        let response = response.into();
-        let Some(platform::get_document_history_response::Version::V1(wire)) = &response.version
-        else {
-            return Err(Error::ResponseDecodeError {
-                error: "history proof info requires a version 1 response".to_owned(),
-            });
-        };
-        let wire = wire.clone();
+        let response: platform::GetDocumentHistoryResponse = response.into();
+        let wire = response.clone();
         let (history, metadata, proof) = DocumentHistory::maybe_from_proof_with_metadata(
             request,
             response,
@@ -1708,7 +1702,7 @@ impl DocumentHistoryProofInfo {
     ) -> Result<Option<DocumentHistory>, Error> {
         DocumentHistory::maybe_from_proof(
             request,
-            platform::GetDocumentHistoryResponse::from(self.response.clone()),
+            self.response.clone(),
             network,
             platform_version,
             provider,

@@ -135,7 +135,8 @@ pub use drive::query::document_history_drive_query::{
 pub struct DocumentHistory {
     /// Entries retain their complete cursor, including edits sharing a timestamp.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Absent for the legacy layout through protocol 14 and authenticated by protocol-15 proofs.
+    /// Absent for the legacy layout through protocol 14, whose history request (V0) proves
+    /// revisions only, and authenticated by protocol-15 proofs.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 /// Verified history with the complete wire response needed for independent verification.
@@ -143,10 +144,10 @@ pub struct DocumentHistory {
 pub struct DocumentHistoryProofInfo {
     /// Decoded and verified history page.
     pub history: DocumentHistory,
-    /// Original metadata and the quorum-signed proof whose GroveDB payload
-    /// carries one GroveDB proof of the page and lifecycle.
-    pub response:
-        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
+    /// Original metadata and the quorum-signed proof: a version 1 response from protocol 15,
+    /// whose GroveDB payload carries one proof of the page and lifecycle, or a version 0
+    /// response through protocol 14, which proves the page only.
+    pub response: dapi_grpc::platform::v0::GetDocumentHistoryResponse,
 }
 
 /// Multiple data contracts.

@@ -2,7 +2,11 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
-use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v1::Result as HistoryResponseResult;
+use dapi_grpc::platform::v0::get_document_history_response::{
+    get_document_history_response_v0::Result as HistoryResponseResultV0,
+    get_document_history_response_v1::Result as HistoryResponseResult,
+    Version as HistoryResponseVersion,
+};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
@@ -221,7 +225,12 @@ export interface DocumentHistoryQuery {
    * JavaScript would have rounded it before the query is built.
    */
   startAtMs?: bigint | number;
-  /** Complete exclusive cursor returned by a previous page. */
+  /**
+   * Complete exclusive cursor returned by a previous page.
+   *
+   * `startAfter`, `startAtRevision` and `revision` need Platform protocol version 15.
+   * Below it only `startAtMs` is served, and the others are refused before sending.
+   */
   startAfter?: { timeMs: bigint | number; revision: bigint | number } | DocumentHistoryEntry;
   startAtRevision?: bigint | number;
   revision?: bigint | number;
@@ -513,7 +522,8 @@ impl DocumentHistoryResultWasm {
     }
 
     /// Missing when the legacy storage generation cannot authenticate lifecycle
-    /// metadata.
+    /// metadata: always below Platform protocol version 15, whose history proofs
+    /// carry revisions only.
     #[wasm_bindgen(getter)]
     pub fn lifecycle(&self) -> Option<DocumentHistoryLifecycleWasm> {
         self.lifecycle.clone()
@@ -1106,14 +1116,32 @@ fn document_history_proof_response(
     contract_id: Identifier,
     document_type_name: &str,
 ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-    let Some(HistoryResponseResult::Proof(proof)) = result.response.result else {
+    // Protocol 14 answers with a version 0 response, protocol 15 with version 1.
+    let (proof, metadata) = match result.response.version {
+        Some(HistoryResponseVersion::V0(response)) => (
+            match response.result {
+                Some(HistoryResponseResultV0::Proof(proof)) => Some(proof),
+                _ => None,
+            },
+            response.metadata,
+        ),
+        Some(HistoryResponseVersion::V1(response)) => (
+            match response.result {
+                Some(HistoryResponseResult::Proof(proof)) => Some(proof),
+                _ => None,
+            },
+            response.metadata,
+        ),
+        None => (None, None),
+    };
+    let Some(proof) = proof else {
         return Err(WasmSdkError::generic(
             "verified document history response carries no proof",
         ));
     };
     Ok(ProofMetadataResponseWasm::from_sdk_parts(
         DocumentHistoryResultWasm::from_history(result.history, contract_id, document_type_name)?,
-        result.response.metadata.ok_or_else(|| {
+        metadata.ok_or_else(|| {
             WasmSdkError::generic("verified document history response carries no metadata")
         })?,
         proof,
@@ -1851,7 +1879,8 @@ mod history_wasm_tests {
             response: GetDocumentHistoryResponseV1 {
                 metadata: None,
                 result: Some(HistoryResponseResult::Proof(Default::default())),
-            },
+            }
+            .into(),
         };
         let error = document_history_proof_response(result, [1; 32].into(), "note")
             .expect_err("missing metadata must return an error");
@@ -2140,7 +2169,8 @@ mod history_wasm_tests {
                 response: GetDocumentHistoryResponseV1 {
                     metadata: Some(Default::default()),
                     result: Some(HistoryResponseResult::Proof(Default::default())),
-                },
+                }
+                .into(),
             },
             [1; 32].into(),
             "note",
