@@ -104,6 +104,12 @@ impl DocumentCreateTransitionActionV0 {
             transaction,
             platform_version,
         )?;
+        // Added in place at protocol version 15, inert before it, where no type declares a
+        // `sys.random` function: every such property is written with its placeholder here,
+        // which the draw from the block's random beacon replaces before the block commits, and
+        // a sent value is refused, before the contest resolution and every later check read
+        // the data. A refusal bumps the nonce.
+        let refusal = refusal.or_else(|| document_type.generate_random_properties(&mut data, None));
         if let Some(error) = refusal {
             let bump_action =
                 BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
@@ -263,5 +269,361 @@ impl DocumentCreateTransitionActionV0 {
             .into(),
             fee_result,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::DataContract;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::document::Document;
+    use grovedb_costs::OperationCost;
+    use std::collections::BTreeMap;
+
+    const OWNER: [u8; 32] = [42; 32];
+    const CONTRACT_ID: [u8; 32] = [9; 32];
+
+    /// The latest platform version with `sys.random.uniform` admitted, which no protocol
+    /// version does until block execution draws the values.
+    fn drawing_platform_version() -> PlatformVersion {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .random_generated_from = Some(0);
+        platform_version
+    }
+
+    /// A card whose `rarity` is drawn from 1 to 100, indexed by it when `indexed`.
+    fn card_schema(indexed: bool) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "name": { "type": "string", "maxLength": 32, "position": 0 },
+                "rarity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "generatedFrom": { "function": "sys.random.uniform" },
+                    "position": 1
+                }
+            },
+            "required": ["name", "rarity"],
+            "additionalProperties": false
+        });
+        if indexed {
+            schema
+                .insert(
+                    "indices".to_string(),
+                    platform_value!([{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }]),
+                )
+                .expect("the schema is a map");
+        }
+        schema
+    }
+
+    /// A card of a `set`, filed by its drawn rarity and its set's name, which the card never
+    /// stores: a derived index property.
+    fn set_card_schema() -> Value {
+        let mut schema = card_schema(false);
+        schema
+            .insert(
+                "indices".to_string(),
+                platform_value!([{
+                    "name": "byRarityAndSetName",
+                    "properties": [{ "rarity": "asc" }, { "setId.name": "asc" }]
+                }]),
+            )
+            .expect("the schema is a map");
+        schema
+            .get_mut("properties")
+            .expect("the schema has properties")
+            .expect("the schema has properties")
+            .insert(
+                "setId".to_string(),
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": { "type": "permanentDocument", "documentType": "set" },
+                    "position": 2
+                }),
+            )
+            .expect("the properties are a map");
+        schema
+            .get_mut("required")
+            .expect("the schema has required")
+            .expect("the schema has required")
+            .push(Value::Text("setId".to_string()))
+            .expect("required is an array");
+        schema
+    }
+
+    /// A contract with a `card` indexed by its drawn rarity and a `looseCard` that is not,
+    /// registered at `platform_version`.
+    fn contract(platform_version: &PlatformVersion) -> Arc<DataContractFetchInfo> {
+        contract_with(
+            platform_value!({
+                "card": card_schema(true),
+                "looseCard": card_schema(false)
+            }),
+            platform_version,
+        )
+    }
+
+    /// A contract with a `set` and a `setCard` indexed by its drawn rarity and its set's name,
+    /// registered at `platform_version`.
+    fn set_contract(platform_version: &PlatformVersion) -> Arc<DataContractFetchInfo> {
+        contract_with(
+            platform_value!({
+                "set": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "properties": {
+                        "name": { "type": "string", "maxLength": 32, "position": 0 }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                },
+                "setCard": set_card_schema()
+            }),
+            platform_version,
+        )
+    }
+
+    /// A contract of `document_schemas`, registered at `platform_version`.
+    fn contract_with(
+        document_schemas: Value,
+        platform_version: &PlatformVersion,
+    ) -> Arc<DataContractFetchInfo> {
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from(CONTRACT_ID),
+                "ownerId": Identifier::from(OWNER),
+                "version": 1u32,
+                "documentSchemas": document_schemas
+            }),
+            true,
+            platform_version,
+        )
+        .expect("the contract parses");
+        Arc::new(DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::default(),
+            fee: None,
+        })
+    }
+
+    /// A contract with a `namedCard` indexed by its drawn rarity and its name.
+    fn named_contract(platform_version: &PlatformVersion) -> Arc<DataContractFetchInfo> {
+        let mut schema = card_schema(false);
+        schema
+            .insert(
+                "indices".to_string(),
+                platform_value!([{
+                    "name": "byRarityAndName",
+                    "properties": [{ "rarity": "asc" }, { "name": "asc" }]
+                }]),
+            )
+            .expect("the schema is a map");
+        contract_with(platform_value!({ "namedCard": schema }), platform_version)
+    }
+
+    /// Builds the action of a create of a `document_type_name` document of the contract
+    /// `contract` builds, holding `data` (a name `Ace` unless `data` names one), and returns
+    /// what building it bills and, when its document is valid, what its insert prepays for the
+    /// draw: `Drive::prepay_random_document_index_entries` of the document the action writes.
+    fn create(
+        contract: fn(&PlatformVersion) -> Arc<DataContractFetchInfo>,
+        document_type_name: &str,
+        mut data: BTreeMap<String, Value>,
+    ) -> (FeeResult, FeeResult) {
+        data.entry("name".to_string())
+            .or_insert_with(|| Value::Text("Ace".to_string()));
+        let platform_version = drawing_platform_version();
+        let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+        let contract = contract(&platform_version);
+        let transition = DocumentCreateTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::from([1; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: Identifier::from(CONTRACT_ID),
+            }),
+            entropy: [2; 32],
+            data,
+            prefunded_voting_balance: None,
+        };
+        let (result, build_fee) =
+            DocumentCreateTransitionActionV0::try_from_borrowed_document_create_transition_with_contract_lookup(
+                &drive,
+                Identifier::from(OWNER),
+                None,
+                &transition,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(contract.clone()),
+                &platform_version,
+            )
+            .expect("the action builds");
+        assert!(
+            result.is_valid(),
+            "the create is valid: {:?}",
+            result.errors
+        );
+        let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(action)) =
+            result.into_data().expect("an action")
+        else {
+            panic!("a create action");
+        };
+        let document = Document::try_from_create_transition_action(
+            &action,
+            Identifier::from(OWNER),
+            &platform_version,
+        )
+        .expect("the document");
+        let prepayment = drive
+            .prepay_random_document_index_entries(
+                &document,
+                Identifier::from(OWNER),
+                &contract.contract,
+                contract
+                    .contract
+                    .document_type_for_name(document_type_name)
+                    .expect("the type"),
+                &BlockInfo::default(),
+                None,
+                &platform_version,
+            )
+            .expect("the prepayment is priced");
+        (build_fee, prepayment)
+    }
+
+    /// What a valid create of a `document_type_name` document of [`contract`] prepays.
+    fn prepayment(document_type_name: &str) -> FeeResult {
+        let (build_fee, prepayment) = create(contract, document_type_name, BTreeMap::new());
+        // Building the action bills no prepayment: the insert of its document charges it
+        assert_eq!(build_fee, FeeResult::default());
+        prepayment
+    }
+
+    #[test]
+    fn should_prepay_the_draw_of_an_indexed_random_property_on_create() {
+        let indexed = prepayment("card");
+        let unindexed = prepayment("looseCard");
+        assert!(indexed.storage_fee > unindexed.storage_fee);
+        assert!(indexed.processing_fee > unindexed.processing_fee);
+        // Pinned: the estimated cost of the `byRarity` entry a draw may create. A change to
+        // the estimate, the index layout or the fee schedule moves it.
+        assert_eq!(
+            indexed,
+            FeeResult {
+                storage_fee: 13_392_000,
+                processing_fee: 6_650_100,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn should_prepay_the_draw_into_an_index_holding_a_derived_index_property() {
+        // The create's document does not carry its set's name until its references are
+        // validated: the prepayment completes it as the insert does, estimated, rather than
+        // key an entry on a value it lacks
+        let (build_fee, fee) = create(
+            set_contract,
+            "setCard",
+            BTreeMap::from([("setId".to_string(), Value::Identifier([3; 32]))]),
+        );
+        assert_eq!(build_fee, FeeResult::default());
+        // Pinned: the estimated cost of the `byRarityAndSetName` entry a draw may create, with
+        // the set's name at its typical size (nothing is read), and the worst-case read of the
+        // set. A change to the estimate, the index layout or the fee schedule moves it.
+        assert_eq!(
+            fee,
+            FeeResult {
+                storage_fee: 20_574_000,
+                processing_fee: 9_003_340,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn should_build_the_action_of_a_create_whose_values_the_schema_refuses() {
+        // Building the action reads no value of the indexes a draw moves: a name of the wrong
+        // type, or a set reference that is no identifier, builds the action, unbilled, and the
+        // schema refuses it later, bumping the nonce
+        for (contract, document_type_name, data) in [
+            (
+                named_contract as fn(&PlatformVersion) -> Arc<DataContractFetchInfo>,
+                "namedCard",
+                BTreeMap::from([("name".to_string(), Value::Bool(false))]),
+            ),
+            (
+                set_contract,
+                "setCard",
+                BTreeMap::from([(
+                    "setId".to_string(),
+                    Value::Text("no identifier".to_string()),
+                )]),
+            ),
+        ] {
+            let platform_version = drawing_platform_version();
+            let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+            let contract = contract(&platform_version);
+            let mut data = data;
+            data.entry("name".to_string())
+                .or_insert_with(|| Value::Text("Ace".to_string()));
+            let transition = DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::from([1; 32]),
+                    identity_contract_nonce: 1,
+                    document_type_name: document_type_name.to_string(),
+                    data_contract_id: Identifier::from(CONTRACT_ID),
+                }),
+                entropy: [2; 32],
+                data,
+                prefunded_voting_balance: None,
+            };
+            let (result, build_fee) =
+                DocumentCreateTransitionActionV0::try_from_borrowed_document_create_transition_with_contract_lookup(
+                    &drive,
+                    Identifier::from(OWNER),
+                    None,
+                    &transition,
+                    &BlockInfo::default(),
+                    0,
+                    |_| Ok(contract.clone()),
+                    &platform_version,
+                )
+                .expect("the action builds");
+            assert!(
+                result.is_valid(),
+                "{document_type_name}: {:?}",
+                result.errors
+            );
+            assert_eq!(build_fee, FeeResult::default(), "{document_type_name}");
+        }
+    }
+
+    #[test]
+    fn should_prepay_nothing_for_a_random_property_in_no_index() {
+        assert_eq!(prepayment("looseCard"), FeeResult::default());
     }
 }

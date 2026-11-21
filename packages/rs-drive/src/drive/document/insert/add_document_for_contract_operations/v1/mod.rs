@@ -16,6 +16,7 @@ use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Metho
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::indexes_a_random_property;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
@@ -296,6 +297,46 @@ impl Drive {
                 &mut batch_operations,
                 platform_version,
             )?;
+        }
+
+        // The create of a document whose type indexes a `sys.random` property (protocol version
+        // 15) prepays the entries the draw from the block's random beacon may create in those
+        // indexes (`Self::prepay_random_document_index_entries`), here, with the insert: a
+        // create refused at any stage inserts nothing, so it prepays nothing. Only a create
+        // inserts such a document, since a moderator's restore is refused on such a type, and a
+        // change's dry run creates no draw. Added in place to this shipped generation: no type
+        // declares such a property before protocol version 15, whose draw method version is the
+        // first to be set.
+        if !estimates_a_change
+            && platform_version
+                .drive
+                .methods
+                .document
+                .draw_random_document_properties
+                .is_some()
+        {
+            let document_type = document_and_contract_info.document_type;
+            let draws_into_an_index = document_type
+                .indexes()
+                .values()
+                .any(|index| indexes_a_random_property(document_type, index));
+            if let Some(document) = document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_borrowed_document()
+                .filter(|_| draws_into_an_index)
+            {
+                let prepayment = self.prepay_random_document_index_entries(
+                    document,
+                    document.owner_id(),
+                    document_and_contract_info.contract,
+                    document_type,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(prepayment));
+            }
         }
 
         Ok(batch_operations)

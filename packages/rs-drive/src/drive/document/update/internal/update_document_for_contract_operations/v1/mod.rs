@@ -201,13 +201,6 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let drive_version = &platform_version.drive;
-        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        // A document whose type declares a `ttl` stays without storage flags when replaced,
-        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
-        // elements' sizes agree with what is stored.
-        let document_and_contract_info =
-            document_and_contract_info.without_storage_flags_if_expiring();
         if !document_and_contract_info.document_type.requires_revision()
         // if it requires revision then there are reasons for us to be able to update in drive
         {
@@ -215,6 +208,49 @@ impl Drive {
                 "this document type is not mutable",
             )));
         }
+        self.update_stored_document_operations_v1(
+            document_and_contract_info,
+            false,
+            references_follow_the_owner,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Gathers operations for rewriting a stored document with `document_and_contract_info`'s
+    /// document: its primary storage, and each index entry whose values changed, moved from
+    /// the stored document's position to the new one. The body of
+    /// [`Self::update_document_for_contract_operations_v1_body`] after its refusal of
+    /// document types a client cannot update, split out unchanged (the refusal reads only the
+    /// document type, which dropping storage flags leaves as it is), so an update gathers the
+    /// same operations as before at every protocol version, `references_follow_the_owner`
+    /// being the generation's. `draw_random_document_properties` calls it to fill the
+    /// `sys.random` properties of a document of any type, which keeps its owner, with
+    /// `index_trees_as_inserted`: the index trees it creates then carry storage flags only
+    /// where an insert's do (`index_trees_carry_storage_flags`). The primary storage and the
+    /// references keep the document's flags either way, as an insert's do.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::drive::document) fn update_stored_document_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        index_trees_as_inserted: bool,
+        references_follow_the_owner: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let drive_version = &platform_version.drive;
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        // A document whose type declares a `ttl` stays without storage flags when replaced,
+        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
+        // elements' sizes agree with what is stored.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
 
         // If we are going for estimated costs do an add instead as it always worse than an update
         if document_and_contract_info
@@ -284,7 +320,7 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
-        let Some((document, storage_flags)) = document_and_contract_info
+        let Some((document, document_storage_flags)) = document_and_contract_info
             .owned_document_info
             .document_info
             .get_borrowed_document_and_storage_flags()
@@ -292,6 +328,13 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "must have document and storage flags",
             )));
+        };
+        let storage_flags = if index_trees_as_inserted
+            && !document_and_contract_info.index_trees_carry_storage_flags()
+        {
+            None
+        } else {
+            document_storage_flags
         };
         // we need to construct the path for documents on the contract
         // the path is
@@ -313,7 +356,7 @@ impl Drive {
         let document_reference = make_document_reference(
             document,
             document_and_contract_info.document_type,
-            storage_flags,
+            document_storage_flags,
         );
 
         // next we need to get the old document from storage
@@ -416,7 +459,7 @@ impl Drive {
             && old_document_info
                 .get_storage_flags_ref()
                 .and_then(|flags| flags.owner_id())
-                != storage_flags.and_then(|flags| flags.owner_id());
+                != document_storage_flags.and_then(|flags| flags.owner_id());
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // Pre-built tree of every index path in the doctype. Walking
@@ -533,7 +576,7 @@ impl Drive {
                     document,
                     document_and_contract_info.document_type,
                     sum_value,
-                    storage_flags,
+                    document_storage_flags,
                 )
             } else {
                 document_reference.clone()
@@ -1128,7 +1171,8 @@ impl Drive {
                 // as a change, and an index skipping both was passed by above)
 
                 // We can only trust the reference content has not changed if there are no storage flags
-                let trust_refresh_reference = storage_flags.is_none() || references_take_new_owner;
+                let trust_refresh_reference =
+                    document_storage_flags.is_none() || references_take_new_owner;
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key

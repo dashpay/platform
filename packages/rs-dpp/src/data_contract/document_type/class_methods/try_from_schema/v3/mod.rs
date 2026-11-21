@@ -36,12 +36,12 @@ use crate::data_contract::document_type::index::{
     PreallocationBinding,
 };
 use crate::data_contract::document_type::property::DocumentPropertyType;
-use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::{
-    is_transient, DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder,
-    ReferenceOperands,
+    is_drawn_at_random, is_transient, DocumentPropertyReferenceTarget, PropertyReference,
+    ReferenceHolder, ReferenceOperands,
 };
+use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::{
     owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
@@ -76,7 +76,8 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
+    validate_random_declarations_after_moderation, validate_reference_lookup_sources,
+    validate_referencing_rules, validate_stored_version_reads,
 };
 
 mod ranked_prefix_overlap;
@@ -718,6 +719,11 @@ fn parse_generation_3(
     // immutable list and the fields only moderators write decide, on a type storing its
     // documents.
     apply_derived_index_properties(&mut v2, data_contract_id, name, full_validation)?;
+    // After `apply_moderator_abilities` and `apply_derived_index_properties`: an index holding a
+    // `sys.random` property may only key what neither a replace nor a moderator's change can
+    // add or move before the draw, and a moderator's restore may not bring back a placeholder.
+    validate_random_declarations_after_moderation(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
 
     if generation.admit_lifecycle {
         let can_be_erased = common::parse_can_be_erased_keyword(&v2.schema)?;
@@ -1334,6 +1340,14 @@ fn derived_index_field_error(
         ));
     }
     if !schema_property_is_fixed_once_written(referenced, path) {
+        if is_drawn_at_random(referenced, path) {
+            return Some(format!(
+                "\"{path}\" of \"{referenced_name}\" is drawn at random once the block's \
+                 transitions are accepted, which moves no entry another type keyed by the \
+                 placeholder, so the entry would no longer be found under the value it was \
+                 written under"
+            ));
+        }
         return Some(format!(
             "\"{path}\" of \"{referenced_name}\" can change once written, and the entry would \
              no longer be found under the value it was written under: make \
@@ -2142,6 +2156,8 @@ mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod dynamic_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_random_tests;
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
 #[cfg(all(test, feature = "validation"))]

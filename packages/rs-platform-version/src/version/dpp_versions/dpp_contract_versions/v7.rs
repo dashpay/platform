@@ -36,7 +36,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   entered is a contender named by its document id and an identity may enter several;
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
-///   property names, on an integer property;
+///   property names, on an integer property. Generation 1 parses `sys.random.uniform` too, but
+///   `random_generated_from` stays `None`, as in v6, so registration refuses it until block
+///   execution draws the values;
 /// - `validate_schema_patterns`, `Some(0)` rather than `None`: registration and update refuse
 ///   a contract whose document schemas and `$defs` hold more than
 ///   `max_contract_schema_patterns` patterns, or one that does not compile within
@@ -87,6 +89,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             // changed: also reads a reference whose target the referring document names
             apply_property_reference: Some(1),
+            // unchanged: sys.random.uniform stays refused until block execution draws the values
+            random_generated_from: None,
             // changed: the depth and cycle check reads a `$ref` pointer as the validator does
             // and holds arrays to the maximum depth as it does maps
             validate_max_depth: 2,

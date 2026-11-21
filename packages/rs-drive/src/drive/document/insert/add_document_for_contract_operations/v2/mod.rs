@@ -47,6 +47,8 @@ impl Drive {
                 platform_version,
             );
         }
+        // A type keeping history declares no `sys.random` property (its parser refuses one), so
+        // only generation 1 prepays the index entries a draw may create.
         self.add_document_or_estimate_change_operations_v2(
             document_and_contract_info,
             override_document,

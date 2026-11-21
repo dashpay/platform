@@ -103,6 +103,16 @@ impl DocumentReplaceTransitionActionV0 {
             transaction,
             platform_version,
         )?;
+        // Added in place at protocol version 15, inert before it, where no type declares a
+        // `sys.random` function: every such property keeps the stored value, written back when
+        // left out and refused when sent with another, so a replace cannot draw again. A
+        // refusal bumps the nonce.
+        let refusal = match refusal {
+            Some(error) => Some(error),
+            None => base
+                .document_type()?
+                .generate_random_properties(&mut data, Some(original_document.properties())),
+        };
         if let Some(error) = refusal {
             let bump_action =
                 BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
