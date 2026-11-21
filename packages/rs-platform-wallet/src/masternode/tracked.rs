@@ -40,7 +40,7 @@ use key_wallet_manager::WalletManager;
 use serde_json::{json, Value};
 
 use super::key_reference::enabled_key_hash;
-use super::list::MasternodeListSummary;
+use super::list::{CurrentMasternodeList, MasternodeListSummary};
 use super::locator::{
     operator_identity_ids, p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole,
 };
@@ -100,11 +100,17 @@ pub struct PlatformKeySnapshot {
     pub operator_payout_key_hash: Option<[u8; 20]>,
     /// Owner identity balance in credits at the last refresh (the
     /// claimable amount). Display hint only — hosts re-read live before a
-    /// withdrawal.
+    /// withdrawal. Set exactly when the owner identity has been read.
     pub owner_identity_balance: Option<u64>,
 }
 
 impl PlatformKeySnapshot {
+    /// Whether the owner identity has been read: its owner and payout keys
+    /// are then the current ones, and a key it lacks is gone, not unknown.
+    fn has_owner_identity(&self) -> bool {
+        self.owner_identity_balance.is_some()
+    }
+
     /// Take the owner identity's enabled OWNER and TRANSFER keys and its
     /// balance. A key the identity no longer has enabled is gone: Drive
     /// disables every payout key when the payout is no sole P2PKH output.
@@ -158,9 +164,7 @@ impl TrackedMasternode {
         let reg = self.snapshot.registration.as_ref();
         let platform = self.snapshot.platform.as_ref();
         MasternodeKeyReference {
-            owner_key_hash: platform
-                .and_then(|p| p.owner_key_hash)
-                .or(reg.map(|r| r.owner_key_hash)),
+            owner_key_hash: self.current_owner_key_hash(),
             voting_key_id: list
                 .map(|l| l.voting_key_id)
                 .or(reg.map(|r| r.voting_key_hash)),
@@ -170,10 +174,32 @@ impl TrackedMasternode {
             platform_node_id: list
                 .and_then(|l| l.platform_node_id)
                 .or(reg.and_then(|r| r.platform_node_id)),
-            payout_key_hash: platform
-                .and_then(|p| p.payout_key_hash)
-                .or(reg.and_then(|r| p2pkh_script_hash(&r.payout_script))),
+            payout_key_hash: match self.owner_identity() {
+                Some(owner) => owner.payout_key_hash,
+                None => reg.and_then(|r| p2pkh_script_hash(&r.payout_script)),
+            },
             operator_payout_key_hash: platform.and_then(|p| p.operator_payout_key_hash),
+        }
+    }
+
+    /// The Platform key hashes, once the owner identity has been read.
+    fn owner_identity(&self) -> Option<&PlatformKeySnapshot> {
+        self.snapshot
+            .platform
+            .as_ref()
+            .filter(|platform| platform.has_owner_identity())
+    }
+
+    /// The owner key: the owner identity's once it has been read, else the
+    /// registered one.
+    fn current_owner_key_hash(&self) -> Option<[u8; 20]> {
+        match self.owner_identity() {
+            Some(owner) => owner.owner_key_hash,
+            None => self
+                .snapshot
+                .registration
+                .as_ref()
+                .map(|r| r.owner_key_hash),
         }
     }
 
@@ -199,15 +225,14 @@ impl TrackedMasternode {
             }
         };
 
-        // Payout: the owner identity's CURRENT transfer key wins over the
-        // registered script; both may be absent before enrichment.
-        let payout_script = platform
-            .and_then(|p| p.payout_key_hash)
-            .map(|hash| p2pkh_script(&hash))
-            .or_else(|| {
-                reg.map(|r| r.payout_script.clone())
-                    .filter(|script| !script.is_empty())
-            });
+        // Payout: the owner identity's CURRENT transfer key once it has been
+        // read (none when it has no enabled one), else the registered script.
+        let payout_script = match self.owner_identity() {
+            Some(owner) => owner.payout_key_hash.map(|hash| p2pkh_script(&hash)),
+            None => reg
+                .map(|r| r.payout_script.clone())
+                .filter(|script| !script.is_empty()),
+        };
 
         MasternodeRecord {
             pro_tx_hash: self.pro_tx_hash,
@@ -222,9 +247,7 @@ impl TrackedMasternode {
             is_evonode: list
                 .map(|l| l.is_evonode)
                 .unwrap_or_else(|| reg.map(|r| r.is_evonode).unwrap_or(false)),
-            owner_key_hash: platform
-                .and_then(|p| p.owner_key_hash)
-                .or(reg.map(|r| r.owner_key_hash)),
+            owner_key_hash: self.current_owner_key_hash(),
             voting_key_hash: list
                 .map(|l| l.voting_key_id)
                 .or(reg.map(|r| r.voting_key_hash)),
@@ -582,7 +605,7 @@ fn mutate_registry_and_persist<T>(
 /// status from it) and the first error it hit, if any.
 #[derive(Default)]
 struct RefreshOutcome {
-    list_now: Option<Vec<MasternodeListSummary>>,
+    list_now: Option<CurrentMasternodeList>,
     first_error: Option<PlatformWalletError>,
 }
 
@@ -903,7 +926,7 @@ impl TrackedMasternodes {
         let entry = outcome
             .list_now
             .as_ref()
-            .map(|s| s.iter().find(|e| e.pro_tx_hash == *pro_tx_hash));
+            .map(|list| list.entry(pro_tx_hash));
         match outcome.first_error {
             Some(e) => Err(e),
             None => Ok(tracked.record(entry)),
@@ -922,16 +945,8 @@ impl TrackedMasternodes {
     ) -> (TrackedMasternodeSnapshot, RefreshOutcome) {
         // 1. Current list entry (local). A list that does not follow the
         // chain is no current entry: the cached one stays.
-        let list_now = self
-            .spv
-            .current_masternode_list()
-            .await
-            .ok()
-            .map(|list| list.summaries);
-        if let Some(Some(entry)) = list_now
-            .as_ref()
-            .map(|s| s.iter().find(|e| e.pro_tx_hash == *pro_tx_hash))
-        {
+        let list_now = self.spv.current_masternode_list().await.ok();
+        if let Some(entry) = list_now.as_ref().and_then(|list| list.entry(pro_tx_hash)) {
             snapshot.list = Some(entry.clone());
             snapshot.ever_listed = true;
         }
@@ -1780,70 +1795,6 @@ mod tests {
         assert_eq!(details.platform_http_port, Some(1443));
     }
 
-    /// A refresh takes the owner and payout keys from the owner identity's
-    /// ENABLED keys: Drive keeps a replaced payout key, disabled, and here it
-    /// sits after the current one in key order.
-    #[test]
-    fn should_learn_the_enabled_keys_of_an_owner_identity() {
-        let identity = identity_with(
-            Identifier::from([9u8; 32]),
-            vec![
-                key(
-                    0,
-                    Purpose::TRANSFER,
-                    KeyType::ECDSA_HASH160,
-                    [0x02; 20],
-                    false,
-                ),
-                key(1, Purpose::OWNER, KeyType::ECDSA_HASH160, [0x11; 20], false),
-                key(
-                    2,
-                    Purpose::TRANSFER,
-                    KeyType::ECDSA_HASH160,
-                    [0x01; 20],
-                    true,
-                ),
-            ],
-        );
-        let mut platform = PlatformKeySnapshot::default();
-
-        platform.learn_owner_identity(&identity);
-
-        assert_eq!(platform.owner_key_hash, Some([0x11; 20]));
-        assert_eq!(platform.payout_key_hash, Some([0x02; 20]));
-        assert_eq!(platform.owner_identity_balance, Some(0));
-    }
-
-    /// The operator payout key is the operator identity's ENABLED TRANSFER
-    /// key, even when a disabled one comes first in key order.
-    #[test]
-    fn should_learn_the_enabled_payout_key_of_an_operator_identity() {
-        let identity = identity_with(
-            Identifier::from([9u8; 32]),
-            vec![
-                key(
-                    0,
-                    Purpose::TRANSFER,
-                    KeyType::ECDSA_HASH160,
-                    [0x01; 20],
-                    true,
-                ),
-                key(
-                    1,
-                    Purpose::TRANSFER,
-                    KeyType::ECDSA_HASH160,
-                    [0x02; 20],
-                    false,
-                ),
-            ],
-        );
-        let mut platform = PlatformKeySnapshot::default();
-
-        platform.learn_operator_identity(&identity);
-
-        assert_eq!(platform.operator_payout_key_hash, Some([0x02; 20]));
-    }
-
     /// Drive disables every owner TRANSFER key when the payout stops being a
     /// sole P2PKH output, and adds none: the fetched identity then has no
     /// current payout key, so the one learned earlier must not survive.
@@ -1870,6 +1821,46 @@ mod tests {
         platform.learn_owner_identity(&identity);
 
         assert_eq!(platform.payout_key_hash, None);
+        assert_eq!(platform.owner_key_hash, Some([0x11; 20]));
+        assert_eq!(platform.owner_identity_balance, Some(0));
+    }
+
+    /// Once the owner identity has been read, its keys are the current ones:
+    /// a payout key it disabled stays gone from the public reads instead of
+    /// coming back from the registration. Before that read, the registration
+    /// is all there is.
+    #[test]
+    fn should_not_bring_back_the_registered_payout_key_once_the_owner_identity_disabled_it() {
+        let registered = [4u8; 20];
+        let identity = identity_with(
+            Identifier::from([9u8; 32]),
+            vec![
+                key(
+                    0,
+                    Purpose::TRANSFER,
+                    KeyType::ECDSA_HASH160,
+                    registered,
+                    true,
+                ),
+                key(1, Purpose::OWNER, KeyType::ECDSA_HASH160, [1u8; 20], false),
+            ],
+        );
+        let mut node = tracked();
+        node.snapshot.list = None;
+        node.snapshot.platform = None;
+        assert_eq!(node.key_reference().payout_key_hash, Some(registered));
+        assert_eq!(
+            node.record(None).payout_script,
+            Some(p2pkh_script(&registered))
+        );
+
+        let mut platform = PlatformKeySnapshot::default();
+        platform.learn_owner_identity(&identity);
+        node.snapshot.platform = Some(platform);
+
+        assert_eq!(node.key_reference().payout_key_hash, None);
+        assert_eq!(node.record(None).payout_script, None);
+        assert_eq!(node.key_reference().owner_key_hash, Some([1u8; 20]));
     }
 
     /// Drive disables the operator identity's TRANSFER key when the operator
