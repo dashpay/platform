@@ -207,6 +207,7 @@ impl Sdk {
 
         let mut voters = Voters::default();
         let mut start_at = None;
+        let mut last_page_empty = false;
         loop {
             let page_limit = match limit {
                 Some(limit) => {
@@ -232,6 +233,7 @@ impl Sdk {
             .await?;
             let read = page.0.len();
             let last = page.0.last().map(|voter| voter.0);
+            last_page_empty = read == 0;
             voters.0.extend(page.0);
 
             // A short page is the last one
@@ -243,8 +245,9 @@ impl Sdk {
             }
         }
 
-        // Finalization deletes the live votes, so no voter can also mean the contest ended
-        if voters.0.is_empty() && limit != Some(0) {
+        // Finalization deletes the live votes, so no voter, or an empty page after earlier
+        // ones, can also mean the contest ended
+        if (voters.0.is_empty() || last_page_empty) && limit != Some(0) {
             let state = self
                 .fetch_contested_resource_vote_state(&vote_poll, Some(1))
                 .await?;

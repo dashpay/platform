@@ -62,9 +62,11 @@ impl Sdk {
             let last = page.contenders.keys().last().copied();
             // A page naming a winner is the record of a contest that ended, which is whole
             let ended = page.winner.is_some();
+            // A record read after live pages (the contest ended between requests) replaces them:
+            // it carries the winner and the final tallies, and its contenders are whole
             match state.as_mut() {
-                None => state = Some(page),
-                Some(state) => state.contenders.extend(page.contenders),
+                Some(state) if !ended => state.contenders.extend(page.contenders),
+                _ => state = Some(page),
             }
 
             // A short page is the last one
