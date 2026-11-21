@@ -81,14 +81,14 @@ pub type ShieldedProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 pub type ShieldedTreeProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 use std::time::{Duration, Instant};
 
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 
 use super::activity::ShieldedActivityStatus;
 use super::activity_recorder::{identity_redrive_output_cmxs, IdentityRecoveryError};
 use super::balance::{
     ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
 };
-use super::file_store::FileBackedShieldedStore;
+use super::file_store::{raise_balance_change, BalanceChangeSignal, FileBackedShieldedStore};
 use super::keys::AccountViewingKeys;
 use super::store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedStore,
@@ -288,6 +288,15 @@ pub struct NetworkShieldedCoordinator {
     /// counter before the load and re-reading it inside the transaction
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
+
+    /// The balance change signal, shared with the store
+    /// ([`FileBackedShieldedStore::balance_change_signal`]). The store raises
+    /// it on every change to its per-subwallet state; the coordinator raises
+    /// it when the account registry or a wallet's hydration changes, the
+    /// other two inputs of [`local_balance_snapshot`](Self::local_balance_snapshot).
+    /// Watched by the balance emitter
+    /// ([`super::balance_emitter::run_balance_emitter`]).
+    balance_change: BalanceChangeSignal,
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -413,6 +422,7 @@ impl NetworkShieldedCoordinator {
         db_path: PathBuf,
         store: FileBackedShieldedStore,
     ) -> Self {
+        let balance_change = store.balance_change_signal();
         Self {
             sdk,
             network,
@@ -428,7 +438,31 @@ impl NetworkShieldedCoordinator {
             operation_admission: RwLock::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
+            balance_change,
         }
+    }
+
+    /// A receiver of the balance change signal (see the `balance_change`
+    /// field). Subscribing takes no lock.
+    pub(crate) fn subscribe_balance_changes(&self) -> watch::Receiver<u64> {
+        self.balance_change.subscribe()
+    }
+
+    /// Raise the balance change signal after a change to the account
+    /// registry or to a wallet's hydration.
+    fn signal_balance_change(&self) {
+        raise_balance_change(&self.balance_change);
+    }
+
+    /// The wallets with at least one registered account (snapshot). Takes
+    /// only the registry read lock.
+    pub(crate) async fn registered_wallets(&self) -> BTreeSet<WalletId> {
+        self.accounts
+            .read()
+            .await
+            .keys()
+            .map(|id| id.wallet_id)
+            .collect()
     }
 
     /// Snapshot of the clear counter, to be taken **before** reading the
@@ -824,6 +858,7 @@ impl NetworkShieldedCoordinator {
         if shape_changed {
             self.hydrated.write().await.remove(&wallet_id);
         }
+        self.signal_balance_change();
 
         // Purge ONLY the dropped / re-keyed subwallets' store state.
         // Skipped entirely on the identical-registration path (empty
@@ -881,6 +916,8 @@ impl NetworkShieldedCoordinator {
         } else {
             set.remove(&wallet_id);
         }
+        drop(set);
+        self.signal_balance_change();
     }
 
     /// Whether `wallet_id` is currently registered with exactly
@@ -956,6 +993,7 @@ impl NetworkShieldedCoordinator {
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
+        self.signal_balance_change();
         if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -1339,6 +1377,7 @@ impl NetworkShieldedCoordinator {
         self.hydrated.write().await.clear();
         self.clear_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.signal_balance_change();
 
         if let Some(e) = first_err {
             return Err(e);
@@ -1353,6 +1392,7 @@ impl NetworkShieldedCoordinator {
         // told the clear failed, keeps its own state.
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
+        self.signal_balance_change();
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
