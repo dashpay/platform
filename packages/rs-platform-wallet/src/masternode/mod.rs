@@ -154,18 +154,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// The key references known for `pro_tx_hash` (wire order): the DML
-    /// summary (voting / operator / platform node) merged with the owning
-    /// wallet's record (owner / payout) when it is one of a loaded wallet's
-    /// masternodes, and with the tracked-registry snapshot (owner / payout
-    /// from Platform, registration keys) when it is tracked. `None` when
-    /// nobody knows it. Blocking.
+    /// summary (voting / operator / platform node), while the list follows
+    /// the chain, merged with the owning wallet's record (owner / payout)
+    /// when it is one of a loaded wallet's masternodes, and with the
+    /// tracked-registry snapshot (owner / payout from Platform, registration
+    /// keys) when it is tracked. `None` when nobody knows it. Blocking.
     pub fn masternode_key_reference_blocking(
         &self,
         pro_tx_hash: &[u8; 32],
     ) -> Option<MasternodeKeyReference> {
         let from_list = self
             .spv()
-            .masternode_list_summaries_blocking()
+            .current_masternode_list_summaries_blocking()
+            .ok()
             .and_then(|summaries| {
                 summaries
                     .iter()
