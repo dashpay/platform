@@ -4,8 +4,8 @@
 //! Platform has recorded. Finding one means downloading and proof-verifying
 //! the whole recorded set (`ShieldedAnchors`), a round trip that otherwise
 //! sits serially in front of proving on every send. [`RecordedAnchorCache`]
-//! keeps the most recent set so a send can skip it when a send-screen
-//! prefetch, a previous send, or the reservation-release pass just fetched one.
+//! keeps the most recent set so a send can skip it when a previous send or
+//! the reservation-release pass just fetched one.
 //!
 //! # Why a cached set is safe to spend against
 //!
@@ -43,12 +43,11 @@
 //! argument needs a set fetched right before its note scan); it only fills it.
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use dash_sdk::platform::ContextProvider;
+use dash_sdk::platform::{ContextProvider, QuorumKeySource};
 
 /// How long a fetched recorded-anchor set may be reused by the spend path.
 ///
@@ -63,17 +62,6 @@ pub struct RecordedAnchorCache {
     ttl: Duration,
     sdk: OnceLock<Weak<dash_sdk::Sdk>>,
     state: Mutex<CacheState>,
-    prefetch_in_flight: AtomicBool,
-}
-
-/// Held by the one background prefetch in flight; released on drop, so also
-/// on error and cancellation.
-pub(crate) struct PrefetchGuard<'a>(&'a AtomicBool);
-
-impl Drop for PrefetchGuard<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
 }
 
 /// What verifies the SDK's proofs: the installed context provider and the
@@ -81,14 +69,14 @@ impl Drop for PrefetchGuard<'_> {
 #[derive(Debug)]
 struct ProofPolicy {
     provider: Weak<dyn ContextProvider>,
-    quorum_source: Option<u8>,
+    quorum_source: Option<QuorumKeySource>,
 }
 
 impl ProofPolicy {
     fn of(sdk: &dash_sdk::Sdk) -> Self {
         let provider = sdk.context_provider_arc();
         Self {
-            quorum_source: provider.quorum_source().map(|source| source as u8),
+            quorum_source: provider.quorum_source(),
             provider: Arc::downgrade(&provider),
         }
     }
@@ -184,7 +172,6 @@ impl RecordedAnchorCache {
             ttl,
             sdk: OnceLock::new(),
             state: Mutex::new(CacheState::default()),
-            prefetch_in_flight: AtomicBool::new(false),
         }
     }
 
@@ -255,15 +242,6 @@ impl RecordedAnchorCache {
         });
     }
 
-    /// Claim the background prefetch slot, or `None` while another prefetch
-    /// is in flight. Spends and the release pass never take it.
-    pub(crate) fn try_begin_prefetch(&self) -> Option<PrefetchGuard<'_>> {
-        self.prefetch_in_flight
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .ok()
-            .map(|_| PrefetchGuard(&self.prefetch_in_flight))
-    }
-
     /// Drop any cached set, and any still in flight; the next spend fetches
     /// a fresh one.
     pub fn invalidate(&self) {
@@ -290,7 +268,7 @@ mod tests {
     use dash_sdk::dpp::prelude::{DataContract, Identifier};
     use dash_sdk::dpp::version::PlatformVersion;
     use dash_sdk::error::ContextProviderError;
-    use dash_sdk::platform::QuorumKeySource;
+    use std::sync::atomic::Ordering;
 
     fn set(bytes: &[u8]) -> Arc<HashSet<[u8; 32]>> {
         Arc::new(bytes.iter().map(|b| [*b; 32]).collect())
@@ -495,15 +473,6 @@ mod tests {
         cache.invalidate();
 
         assert!(cache.get(10).is_none());
-    }
-
-    #[test]
-    fn should_allow_one_prefetch_at_a_time() {
-        let cache = RecordedAnchorCache::new();
-        let first = cache.try_begin_prefetch().expect("slot free");
-        assert!(cache.try_begin_prefetch().is_none(), "overlapping prefetch");
-        drop(first);
-        assert!(cache.try_begin_prefetch().is_some(), "released on drop");
     }
 
     /// A fetch sent before a failed spend invalidated the cache may return

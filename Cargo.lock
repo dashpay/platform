@@ -5511,7 +5511,7 @@ dependencies = [
  "key-wallet",
  "lazy_static",
  "once_cell",
- "parking_lot 0.12.5",
+ "parking_lot 0.13.0",
  "platform-wallet",
  "rs-sdk-ffi",
  "serde_json",

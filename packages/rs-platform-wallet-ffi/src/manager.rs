@@ -860,66 +860,50 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 /// Destroy a PlatformWalletManager handle.
 ///
 /// Runs the full lifecycle shutdown (quiesce + join every coordinator,
-/// SPV, the payment-hook tasks, shielded prefetches, and the event adapter)
-/// and removes the handle. Shutdown waits are bounded except for SPV's waits
-/// for a concurrent start/stop and in-flight client queries, and the shielded
-/// prefetch cancel-and-join barrier. Always returns `Success` for a live handle.
-///
-/// Returns `ErrorInvalidHandle` for a handle that is unknown or that another
-/// destroy call already consumed. Only the call that returns `Success` has
-/// waited for the teardown, so only that result permits freeing host contexts.
-///
-/// Shielded prefetches can call an SDK context provider whose host context is
-/// borrowed. Shutdown seals their admission, cancels their tasks, and joins
-/// them before returning. A synchronous context-provider callback already
-/// running must return before this barrier completes; a join timeout cannot
-/// authorize the host to free that borrowed context.
+/// SPV, the payment-hook tasks, and the event adapter) and removes the
+/// handle. Shutdown waits are bounded except for SPV's waits for a
+/// concurrent start/stop and in-flight client queries. Always returns
+/// `Success` for a live handle.
 ///
 /// A non-clean shutdown — a worker that outlived its join budget — is
 /// logged, **not** surfaced as an error, because it is no longer a
 /// safety problem the host could act on: a straggling worker holds a
-/// strong reference to its persistence/event callback vtables, and creation
-/// guarantees those context-carrying vtables are owned (`release_fn`
-/// required), so the host objects stay alive until that worker exits, at
-/// which point Rust releases them. The borrowed SDK context is protected
-/// separately by the mandatory prefetch join above.
+/// strong reference to the callback vtables, and creation guarantees
+/// every context-carrying vtable is owned (`release_fn` required), so
+/// the host objects stay alive until that worker exits, at which point
+/// Rust releases them. Nothing dangles, nothing needs a retry, nothing
+/// needs a deliberate leak on the host side.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
-    let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            format!("invalid manager handle: {handle}"),
-        );
-    };
-    // Before the teardown's SPV stop: an SPV start that is still
-    // constructing its client checks this under the runtime's shutdown
-    // lock and, finding its owner gone, stops that client instead of
-    // publishing a run loop nothing could stop (see
-    // `platform_wallet_manager_spv_start`).
-    manager.spv().release_owner();
-    // Run the full lifecycle shutdown to completion, not just the
-    // platform-address sync. `shutdown()` is idempotent, so this is
-    // safe even if the host already stopped some sync managers
-    // before calling destroy. Shielded prefetches are cancelled and joined
-    // without a timeout because their SDK context provider can borrow a
-    // host context that the host frees when destroy returns.
-    let report = runtime().block_on(manager.shutdown());
-    if !report.all_clean() {
-        // A worker panicked, exceeded its join budget, or stayed
-        // detached. Its persister/event-handler Arcs keep the host
-        // callback contexts alive until it actually exits. Borrowed SDK
-        // contexts are protected by shutdown's mandatory prefetch join.
-        tracing::warn!(
-            ?report,
-            "platform wallet manager shutdown did not join every worker \
-             cleanly; stragglers keep their callback contexts alive and \
-             release them on exit"
-        );
+    if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
+        // Before the teardown's SPV stop: an SPV start that is still
+        // constructing its client checks this under the runtime's shutdown
+        // lock and, finding its owner gone, stops that client instead of
+        // publishing a run loop nothing could stop (see
+        // `platform_wallet_manager_spv_start`).
+        manager.spv().release_owner();
+        // Run the full lifecycle shutdown to completion, not just the
+        // platform-address sync. `shutdown()` is idempotent, so this is
+        // safe even if the host already stopped some sync managers
+        // before calling destroy.
+        let report = runtime().block_on(manager.shutdown());
+        if !report.all_clean() {
+            // A worker panicked, exceeded its join budget, or stayed
+            // detached. Its persister/event-handler Arcs keep the host
+            // callback contexts alive until it actually exits, so this
+            // is diagnostic, not a UAF hazard.
+            tracing::warn!(
+                ?report,
+                "platform wallet manager shutdown did not join every worker \
+                 cleanly; stragglers keep their callback contexts alive and \
+                 release them on exit"
+            );
+        }
+        // Host contexts release with their last reference, which may outlive
+        // this manager through a wallet handle, worker or in-flight operation.
     }
-    // Host contexts release with their last reference, which may outlive
-    // this manager through a wallet handle, worker or in-flight operation.
     PlatformWalletFFIResult::ok()
 }
 
@@ -1287,9 +1271,8 @@ mod tests {
         );
 
         // Destroying a stale handle must not double-release.
-        let mut result = unsafe { platform_wallet_manager_destroy(handle) };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
-        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(persistence_releases.load(Ordering::SeqCst), 1);
         assert_eq!(event_releases.load(Ordering::SeqCst), 1);
     }

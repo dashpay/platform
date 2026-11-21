@@ -8568,8 +8568,8 @@ mod select_recorded_spends_tests {
         );
     }
 
-    /// A set already in the cache — from a send-screen prefetch or the
-    /// coordinator's release pass — takes the fetch off the send entirely.
+    /// A set already in the cache, from an earlier send or the coordinator's
+    /// release pass, takes the fetch off the send entirely.
     #[tokio::test]
     async fn should_not_fetch_when_a_prefetched_set_is_fresh() {
         let (path, store, note, recorded_root) = mid_block_store("cache_prefetched");

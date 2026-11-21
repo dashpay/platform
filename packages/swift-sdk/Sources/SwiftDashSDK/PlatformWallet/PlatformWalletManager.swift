@@ -939,8 +939,8 @@ public class PlatformWalletManager: ObservableObject {
         // network-switch UI freeze).
         //
         // Safe without `self`: `Handle` is a registry key from a monotonic
-        // counter (never reused), destroying an already-removed handle is a
-        // harmless `errorInvalidHandle`, and Rust owns the persistence/event callback contexts
+        // counter (never reused), destroying an already-removed handle is an
+        // Ok no-op, and Rust owns the persistence/event callback contexts
         // (handed over retained at `configure`, with a `release_fn`) — a
         // straggling worker keeps its handler alive through that retain and
         // Rust releases it when the worker exits.

@@ -10,8 +10,6 @@ pub(crate) use load::pool_validations_on_this_thread;
 mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
-mod shielded_prefetch;
-#[cfg(feature = "shielded")]
 pub mod shielded_sync;
 #[cfg(feature = "spv-context")]
 mod spv_quorums;
@@ -99,9 +97,6 @@ pub enum WalletWorker {
     /// budget, with the live handle re-parked on timeout so a destroy
     /// retry can re-join it.
     EventAdapter,
-    /// Callback-capable anchor warm-ups, cancelled and joined at shutdown.
-    #[cfg(feature = "shielded")]
-    ShieldedPrefetch,
 }
 
 // `dash_async::RegistryKey` is a blanket impl over
@@ -449,8 +444,6 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// `start` after wallets are registered.
     #[cfg(feature = "shielded")]
     pub(super) shielded_sync_manager: Arc<ShieldedSyncManager>,
-    #[cfg(feature = "shielded")]
-    shielded_prefetch: shielded_prefetch::ShieldedPrefetch,
     /// Network-scoped shielded coordinator. `None` until
     /// `configure_shielded` opens the per-network SQLite tree;
     /// once `Some`, every wallet's `bind_shielded` reuses the
@@ -722,8 +715,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
-            #[cfg(feature = "shielded")]
-            shielded_prefetch: shielded_prefetch::ShieldedPrefetch::default(),
             #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
@@ -1297,8 +1288,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// persister — reopening the same store additionally needs the manager
     /// dropped (see the [`Drop`] impl).
     ///
-    /// Shielded anchor warm-ups are sealed, cancelled, and joined first,
-    /// including any active borrowed SDK callback. Then ordering is fourfold:
+    /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
     ///    DashPay payment-hook work is joined. TXO-reconcile engine guards a
@@ -1320,9 +1310,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// 4. The event adapter — the sink those stores feed into — drains
     ///    LAST.
     ///
-    /// **The prefetch callback join and SPV stop's lock waits are unbounded.**
-    /// Pending prefetch network work is cancelled; an active synchronous SDK
-    /// callback must finish before its borrowed host context can be freed. SPV stop
+    /// **Every phase but SPV stop's lock waits is bounded.** SPV stop
     /// bounds its wait for the teardown task, which it never aborts: a
     /// teardown still running at the deadline is reported non-clean and
     /// stays owned for a later stop to join. Before that deadline starts,
@@ -1332,7 +1320,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// concurrently under `COORDINATOR_DRAIN_BUDGET`; the registry join
     /// uses each worker's join budget; the adapter join is bounded too
     /// (its live handle is re-parked on timeout so a retry re-joins it).
-    /// Past the prefetch join and SPV lock waits, a wedged await surfaces as a
+    /// Past those SPV lock waits, a wedged await therefore surfaces as a
     /// non-clean report instead of hanging the FFI's `destroy` forever.
     /// A host still writing a TXO-reconcile page holds its engine guard
     /// through SPV stop, so SPV teardown (and anything queued on the engine
@@ -1349,8 +1337,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        #[cfg(feature = "shielded")]
-        let prefetch_status = self.shielded_prefetch.shutdown().await;
         // Stop serving SPV quorum keys before SPV stops, whether or not the
         // stop is clean: a stopping client must not answer proof lookups.
         #[cfg(feature = "spv-context")]
@@ -1451,10 +1437,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
-        #[cfg(feature = "shielded")]
-        report
-            .per_worker
-            .insert(WalletWorker::ShieldedPrefetch, prefetch_status);
         report.per_worker.insert(WalletWorker::Spv, spv_status);
         report.per_worker.insert(
             WalletWorker::DashPayPayments,
@@ -1897,8 +1879,6 @@ mod tests {
             WalletWorker::Spv,
             WalletWorker::DashPayPayments,
             WalletWorker::EventAdapter,
-            #[cfg(feature = "shielded")]
-            WalletWorker::ShieldedPrefetch,
         ] {
             assert!(
                 report
