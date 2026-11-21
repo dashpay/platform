@@ -8,7 +8,7 @@
 //! [`fetch_document_history_with_lifecycle`] never falls back, for callers that need it.
 
 use super::fetch::fetch_proved;
-use super::{Fetch, ProtocolRequirement, Query};
+use super::{DocumentHistoryQuery, Fetch, ProtocolRequirement, Query};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
 use dapi_grpc::platform::v0::get_document_history_request::{GetDocumentHistoryRequestV0, Version};
@@ -50,10 +50,10 @@ impl Fetch for DocumentHistoryProofInfo {
 /// Fetch a page of a document's history with its authenticated lifecycle: request V1
 /// only, never the V0 fallback of [`DocumentHistory::fetch`]. On a network below protocol
 /// 15 it is refused with [`Error::ProtocolVersionNotActive`], so the answer always carries
-/// `lifecycle`.
-pub async fn fetch_document_history_with_lifecycle<Q: Query<GetDocumentHistoryRequest>>(
+/// `lifecycle`. It takes a [`DocumentHistoryQuery`], which always encodes to V1.
+pub async fn fetch_document_history_with_lifecycle(
     sdk: &Sdk,
-    query: Q,
+    query: DocumentHistoryQuery,
     request_settings: Option<RequestSettings>,
 ) -> Result<Option<DocumentHistory>, Error> {
     fetch_proved::<DocumentHistory, _>(sdk, query, request_settings)
@@ -69,8 +69,11 @@ pub async fn fetch_document_history_with_lifecycle<Q: Query<GetDocumentHistoryRe
 /// network proven at 15 serves it, and an SDK that cannot learn the network's version, or
 /// is pinned below 15 on a network at 15, refuses it as before.
 ///
+/// V1 is sent by encoding `query` again after the gate's version check, as every fetch is.
+///
 /// When V0 fails, the network may have reached 15 since it was proven below it. It is
-/// asked once more, past the probe hold, and V1 goes to the gate when it has.
+/// asked once more, past the probe hold, and V1 goes to the gate when it has. V0 bans no
+/// node: a node that refuses it may only have reached 15 first, and the probe needs it.
 async fn fetch_history<T, Q>(
     sdk: &Sdk,
     query: Q,
@@ -85,7 +88,7 @@ where
     let Some(requirement) = ProtocolRequirement::of_request(&request)
         .filter(|requirement| settings.network_protocol_basis() < requirement.protocol_version)
     else {
-        return fetch_proved::<T, _>(sdk, request, request_settings).await;
+        return fetch_proved::<T, _>(sdk, query, request_settings).await;
     };
     let proven_below = sdk
         .network_proven_below_with_settings(requirement.protocol_version, request_settings)
@@ -99,9 +102,9 @@ where
             )
         })?;
     if !proven_below {
-        return fetch_proved::<T, _>(sdk, request, request_settings).await;
+        return fetch_proved::<T, _>(sdk, query, request_settings).await;
     }
-    let legacy = legacy_history_request(request.clone()).ok_or_else(|| {
+    let legacy = history_request_below_protocol_15(request).ok_or_else(|| {
         sdk.protocol_version_not_active(
             requirement.protocol_version,
             requirement.method,
@@ -109,22 +112,39 @@ where
             None,
         )
     })?;
-    match fetch_proved::<T, _>(sdk, legacy, request_settings).await {
+    match fetch_proved::<T, _>(sdk, legacy, Some(v0_request_settings(request_settings))).await {
         Err(error)
             if sdk
                 .network_reached_past_hold(requirement.protocol_version, request_settings)
                 .await =>
         {
             tracing::debug!(%error, "history request V0 failed on a network now at protocol 15; sending V1");
-            fetch_proved::<T, _>(sdk, request, request_settings).await
+            fetch_proved::<T, _>(sdk, query, request_settings).await
         }
         answer => answer,
     }
 }
 
-/// The V0 form of a V1 history request: a start-time filter, the only one V0 has. `None`
-/// for a revision or cursor filter. A request that is not V1 is returned as it is.
-fn legacy_history_request(request: GetDocumentHistoryRequest) -> Option<GetDocumentHistoryRequest> {
+/// The caller's `request_settings` for sending V0, which bans no node that refuses it: a
+/// node that refuses V0 may only have reached protocol 15 first, and the probe after the
+/// failure needs it.
+fn v0_request_settings(request_settings: Option<RequestSettings>) -> RequestSettings {
+    RequestSettings {
+        ban_failed_address: Some(false),
+        ..request_settings.unwrap_or_default()
+    }
+}
+
+/// The V0 form of a V1 history request, as [`DocumentHistory::fetch`] sends it to a network
+/// below protocol 15: a start-time filter, the only one V0 has, one millisecond earlier.
+/// `None` for a revision or cursor filter. A request that is not V1 is returned as it is.
+///
+/// A caller checking a [`DocumentHistoryProofInfo`] it did not fetch derives the request it
+/// expects with this, and compares it with the bundle's `request` before
+/// [`DocumentHistoryProofInfo::verify`].
+pub fn history_request_below_protocol_15(
+    request: GetDocumentHistoryRequest,
+) -> Option<GetDocumentHistoryRequest> {
     let Some(Version::V1(v1)) = request.version else {
         return Some(request);
     };
@@ -150,7 +170,6 @@ fn legacy_history_request(request: GetDocumentHistoryRequest) -> Option<GetDocum
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
     use super::*;
-    use crate::platform::DocumentHistoryQuery;
     use crate::SdkBuilder;
     use dpp::dashcore::Network;
     use dpp::document::{Document, DocumentV0};
@@ -252,12 +271,25 @@ mod tests {
     }
 
     #[test]
+    fn should_send_v0_without_banning_a_node_that_refuses_it() {
+        let caller = RequestSettings {
+            retries: Some(3),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        };
+        let settings = v0_request_settings(Some(caller));
+        assert_eq!(settings.ban_failed_address, Some(false));
+        assert_eq!(settings.retries, Some(3));
+        assert_eq!(v0_request_settings(None).ban_failed_address, Some(false));
+    }
+
+    #[test]
     fn should_start_v0_at_zero_for_a_start_time_of_zero() {
         let settings_source = SdkBuilder::new_mock().build().unwrap();
         let v1 = query(DocumentHistoryFilter::StartAtTime(0))
             .query(&settings_source.query_settings())
             .unwrap();
-        let Some(Version::V0(v0)) = legacy_history_request(v1).unwrap().version else {
+        let Some(Version::V0(v0)) = history_request_below_protocol_15(v1).unwrap().version else {
             panic!("start-time requests become V0");
         };
         assert_eq!(v0.start_at_ms, 0);
@@ -273,7 +305,7 @@ mod tests {
             .query(&settings_source.query_settings())
             .unwrap();
         assert!(matches!(v1.version, Some(Version::V1(_))));
-        let Some(Version::V0(v0)) = legacy_history_request(v1).unwrap().version else {
+        let Some(Version::V0(v0)) = history_request_below_protocol_15(v1).unwrap().version else {
             panic!("start-time requests become V0");
         };
         assert_eq!(

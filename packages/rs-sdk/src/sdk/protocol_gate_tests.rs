@@ -2987,7 +2987,8 @@ mod document_history {
     }
 
     /// The network reached 15 after V0 was chosen, while a hold still showed it at 14:
-    /// the node refuses V0, the SDK asks once more past the hold and sends V1.
+    /// the node refuses V0 and is not banned for it, so the SDK can ask it once more past
+    /// the hold, and sends V1.
     #[tokio::test]
     async fn should_send_v1_when_the_network_reaches_15_after_v0_was_chosen() {
         let mut sdk = mock_sdk(V14, false, V14);
@@ -3017,5 +3018,36 @@ mod document_history {
         assert_eq!(sent(&sdk, &v0()).await, 1);
         assert_eq!(probes(&sdk).await, 1);
         assert_eq!(sent(&sdk, &v1()).await, 1);
+    }
+
+    /// When V0 is refused and the probe after it fails too, V0's error stands and V1 is
+    /// not sent.
+    #[tokio::test]
+    async fn should_keep_the_v0_error_when_the_probe_after_it_fails() {
+        let sdk = mock_sdk(V14, false, V14);
+        sdk.probe_hold.set(ProbeHold {
+            network: V14,
+            epoch: 1,
+            until_ms: u64::MAX,
+        });
+        answer(
+            &sdk,
+            &v0(),
+            Err(Status::unknown(
+                "unsupported version for query: document_history, currently supporting \
+                 versions 1 to 1 on platform protocol 15, given 0",
+            )),
+        )
+        .await;
+        let error = DocumentHistory::fetch_with_settings(&sdk, query(), once())
+            .await
+            .expect_err("V0 refused and the network's version unknown");
+        assert!(
+            matches!(&error, Error::DapiClientError(_)),
+            "V0's error stands: {error:?}"
+        );
+        assert_eq!(sent(&sdk, &v0()).await, 1);
+        assert_eq!(sent(&sdk, &v1()).await, 0);
+        assert_eq!(probes(&sdk).await, 1);
     }
 }
