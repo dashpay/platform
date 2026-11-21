@@ -67,6 +67,7 @@ pub const DRIVE_VERSION_V8: DriveVersion = DriveVersion {
             add_asset_lock_outpoint: 0,
             add_estimation_costs_for_adding_asset_lock: 0,
             fetch_asset_lock_outpoint_info: 0,
+            prove_asset_lock_outpoint_info: 0,
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V2, // changed in v8: compacted address-balance proof envelope (verify v1)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V1,

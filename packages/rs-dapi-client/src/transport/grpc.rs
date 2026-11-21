@@ -338,6 +338,10 @@ const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 /// or newer, and serves the methods and request fields 5.1 added.
 const PROTOCOL_VERSION_OF_5_1: u32 = 15;
 
+/// The first protocol version that guarantees the asset-lock outpoint RPC. Protocol 15 nodes
+/// from the v5.1 line can answer protocol queries but do not all implement this method.
+const PROTOCOL_VERSION_OF_5_2: u32 = 16;
+
 /// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
 /// answers for the credit pool instead.
 fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
@@ -403,6 +407,17 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_data_contracts_latest_versions
+);
+
+impl_transport_request_grpc!(
+    // Protocol 15 nodes do not uniformly implement this RPC; require the first protocol
+    // version guaranteed to carry it.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_2);
+    platform_proto::GetAssetLockOutpointInfoRequest,
+    platform_proto::GetAssetLockOutpointInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_asset_lock_outpoint_info
 );
 
 // rpc getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse);
