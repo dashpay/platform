@@ -57,7 +57,7 @@ pub struct Platform<C> {
     pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
     /// The state transitions this node was asked to prove the state before and after, and
     /// the proofs it has made of them
-    pub state_transition_execution_proofs: StateTransitionExecutionProofs,
+    pub(crate) state_transition_execution_proofs: StateTransitionExecutionProofs,
 }
 
 // @append_only

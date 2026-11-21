@@ -7936,7 +7936,9 @@ GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionR
  * withdrawals of an identity. When the node has it, the response's `proof`
  * and `metadata` are of the block that executed the transition, which can
  * be behind the node's latest block; without this flag they stay of the
- * node's latest block.
+ * node's latest block. While the node keeps the pair, any caller who knows
+ * the transition's hash gets it: its presence shows that this node was
+ * asked for it before the block was finalized, though not by whom.
  **/
 @property(nonatomic, readwrite) BOOL proveStateBeforeBlock;
 

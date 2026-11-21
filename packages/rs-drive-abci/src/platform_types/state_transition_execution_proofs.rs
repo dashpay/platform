@@ -50,6 +50,13 @@ pub const PROOF_RETENTION_BLOCKS: u64 = 64;
 /// transitions of a block past this are not proved, in block order.
 pub const MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK: usize = 32;
 
+/// How many registered transitions of one block are decoded to find the ones to prove, of any
+/// kind. A block can hold registered transitions of kinds that are not proved, and each costs a
+/// full decode before its kind is known; the registered transitions past this are not proved,
+/// in block order.
+pub const MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK: usize =
+    2 * MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK;
+
 /// How many bytes of proofs are kept at once. A pair that would go past this is not kept, and
 /// its client gets a proof of current state instead.
 pub const MAX_RETAINED_PROOF_BYTES: usize = 16 * 1024 * 1024;
@@ -254,15 +261,16 @@ impl StateTransitionExecutionProofs {
     /// a lease that is held already changes nothing. A lease whose release arrived first, or
     /// that is no newer than its issuer's low-water mark, is refused with
     /// [`RegistrationRefused::LeaseReleased`], so a caller still waiting learns that the node
-    /// holds nothing for it. A lease is held until it is released or expires, also once its
-    /// transition is proved, so that its release finds it.
+    /// holds nothing for it. A remembered release refuses its registration once and is then
+    /// forgotten: no other registration of that lease follows. A lease is held until it is
+    /// released or expires, also once its transition is proved, so that its release finds it.
     pub fn register(
         &self,
         hash: StateTransitionHash,
         lease: RegistrationLease,
     ) -> Result<(), RegistrationRefused> {
         let mut inner = self.inner();
-        if inner.released.contains_key(&lease) || inner.below_low_water_mark(&lease) {
+        if inner.released.remove(&lease).is_some() || inner.below_low_water_mark(&lease) {
             return Err(RegistrationRefused::LeaseReleased);
         }
         if inner
@@ -445,13 +453,29 @@ impl<C> Platform<C> {
             }
         };
 
+        // At most a budget of registered transitions is decoded, whatever their kind, so that
+        // registered transitions that are not proved cost a bounded amount of work too
+        let mut registered = raw_state_transitions
+            .iter()
+            .map(|raw_state_transition| (hash_single(raw_state_transition), raw_state_transition))
+            .filter(|(hash, _)| self.state_transition_execution_proofs.is_registered(hash));
+        let candidates = registered
+            .by_ref()
+            .take(MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK)
+            .collect::<Vec<_>>();
+        if registered.next().is_some() {
+            tracing::warn!(
+                decoded = MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK,
+                "more registered state transitions in the block than are decoded in one block; \
+                 the ones past the limit are not proved"
+            );
+        }
+
         // Only the kinds whose state before them a client can read are proved: their proofs
         // are a small fixed set of keys, so each costs a bounded amount of work. The scan stops
         // once the block's limit is reached, looking one past it only to say so.
-        let mut provable = raw_state_transitions
-            .iter()
-            .map(|raw_state_transition| (hash_single(raw_state_transition), raw_state_transition))
-            .filter(|(hash, _)| self.state_transition_execution_proofs.is_registered(hash))
+        let mut provable = candidates
+            .into_iter()
             .filter_map(|(hash, raw_state_transition)| {
                 match StateTransition::deserialize_from_bytes_untrusted(raw_state_transition) {
                     Ok(state_transition) => Some((hash, state_transition)),
@@ -804,6 +828,28 @@ mod tests {
             Err(RegistrationRefused::LeaseReleased)
         );
         assert!(!proofs.has_registered());
+    }
+
+    #[test]
+    fn should_forget_an_early_release_once_it_has_refused_its_registration() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+
+        // A wait's registration is still on its way while more later waits than the table
+        // holds are cancelled, each release followed by its late registration
+        let in_flight = issued(2, 5);
+        for sequence in 10..10 + 2 * MAX_REMEMBERED_RELEASES as u64 {
+            proofs.unregister(&[1; 32], &issued(2, sequence));
+            assert_eq!(
+                proofs.register([1; 32], issued(2, sequence)),
+                Err(RegistrationRefused::LeaseReleased)
+            );
+        }
+        // They never fill the table nor raise the issuer's mark
+        assert!(proofs.inner().released.is_empty());
+        assert!(proofs.inner().release_low_water_marks.is_empty());
+
+        // So the registration still on its way is taken when it arrives
+        assert_eq!(proofs.register([1; 32], in_flight), Ok(()));
     }
 
     #[test]

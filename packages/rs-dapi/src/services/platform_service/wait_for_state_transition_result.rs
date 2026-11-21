@@ -29,10 +29,11 @@ use dpp::util::hash::hash_single;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 use std::mem;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::runtime::Handle;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio::time::{Instant, timeout, timeout_at};
 use tracing::{Instrument, debug, trace};
 
@@ -110,9 +111,29 @@ impl PlatformServiceImpl {
                 .add_subscription(FilterType::PlatformTxId(hash_hex.clone()))
                 .await;
 
-            // Check if transaction already exists (after subscription is active)
+            // Check if transaction already exists (after subscription is active). A wait that asks
+            // for the state before the block registers with Drive at the same time: that state
+            // can only be proved before the block is finalized, which can happen during the
+            // lookup. The registration lasts as long as this wait: dropping it, whichever way
+            // the wait ends, a client hanging up or the transaction already being in a block
+            // included, releases it.
             trace!("Checking existing transaction for hash: {}", hash_hex);
-            match self.tenderdash_client.tx(hash_base64).await {
+            let registration_deadline =
+                optional_work_deadline(Instant::now() + wait_timeout, ingress_deadline);
+            let register = async {
+                if options.prove_state_before_block {
+                    self.register_state_transition_execution_proof(
+                        &state_transition_hash,
+                        registration_deadline,
+                    )
+                    .await
+                } else {
+                    None
+                }
+            };
+            let (lookup, _execution_proof_registration) =
+                tokio::join!(self.tenderdash_client.tx(hash_base64), register);
+            match lookup {
                 Ok(tx) => {
                     debug!(tx = hash_hex, "Transaction already exists, returning it");
                     let work_deadline =
@@ -126,26 +147,11 @@ impl PlatformServiceImpl {
                 }
             };
 
-            // The wait's own timeout starts once the lookup is done, as it always has. The
-            // optional registration below spends this wait's time, not more, and the optional
-            // calls also end before the ingress layer cuts the call off.
+            // The wait's own timeout starts once the lookup is done, as it always has, and the
+            // optional pair lookup also ends before the ingress layer cuts the call off
             let deadline = Instant::now() + wait_timeout;
             let work_deadline = optional_work_deadline(deadline, ingress_deadline);
             let timeout_duration = wait_timeout;
-
-            // The transition is not in a block yet, so Drive can still prove the state before
-            // its block: that proof can only be made before the block is committed. The
-            // registration lasts as long as this wait: dropping it, whichever way the wait
-            // ends, a client hanging up included, releases it.
-            let _execution_proof_registration = if options.prove_state_before_block {
-                self.register_state_transition_execution_proof(
-                    &state_transition_hash,
-                    work_deadline,
-                )
-                .await
-            } else {
-                None
-            };
 
             trace!(
                 "Waiting for transaction event with timeout: {:?}",
@@ -444,7 +450,9 @@ impl PlatformServiceImpl {
     /// The registration's lease is picked and armed before the call, so a wait cancelled while
     /// the call is on its way still releases it. The call may take a quarter of the time left
     /// before `deadline`, and at most [`EXECUTION_PROOF_CALL_TIMEOUT`]; with too little time
-    /// left there is no registration. Best effort: when Drive refuses or does not answer in
+    /// left there is no registration. Each registration holds one of the process's
+    /// registration permits until its release with Drive ends, after the wait itself; with none
+    /// free there is no registration. Best effort: when Drive refuses or does not answer in
     /// time, the wait answers with a proof of the state Drive holds when the transition is found.
     async fn register_state_transition_execution_proof(
         &self,
@@ -452,11 +460,17 @@ impl PlatformServiceImpl {
         deadline: Instant,
     ) -> Option<ExecutionProofRegistration> {
         let budget = execution_proof_call_budget(Some(deadline), 4)?;
+        let Ok(permit) = Arc::clone(&self.execution_proof_registration_permits).try_acquire_owned()
+        else {
+            debug!("too many execution proof registrations are held; this wait registers none");
+            return None;
+        };
         let mut registration = ExecutionProofRegistration {
             client: self.drive_client.get_internal_client(),
             state_transition_hash: state_transition_hash.to_vec(),
             lease: new_registration_lease(),
             armed: true,
+            permit: Some(permit),
         };
         let request = RegisterStateTransitionExecutionProofRequest {
             state_transition_hash: state_transition_hash.to_vec(),
@@ -621,6 +635,8 @@ struct ExecutionProofRegistration {
     lease: [u8; 16],
     /// Whether Drive may hold the registration, so it has to be released.
     armed: bool,
+    /// The process's registration permit, held until the release with Drive ends.
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl Drop for ExecutionProofRegistration {
@@ -638,7 +654,10 @@ impl Drop for ExecutionProofRegistration {
             state_transition_hash: mem::take(&mut self.state_transition_hash),
             lease: self.lease.to_vec(),
         };
+        let permit = self.permit.take();
         runtime.spawn(async move {
+            // Releases still on their way count against the registrations held
+            let _permit = permit;
             match timeout(
                 EXECUTION_PROOF_CALL_TIMEOUT,
                 client.unregister_state_transition_execution_proof(request),
@@ -753,9 +772,15 @@ mod tests {
         use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
         use dapi_grpc::tonic::transport::Server;
         use dapi_grpc::tonic::{Code, Request, Response, Status};
+        use super::event_wait::{LOOKUP_TIME, NotFoundTenderdash};
+        use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
+            Version as WaitRequestVersion, WaitForStateTransitionResultRequestV0,
+        };
         use dpp::util::hash::hash_single;
         use std::future::pending;
         use std::sync::{Arc, Mutex};
+        use tokio::sync::Semaphore;
         use std::time::Duration;
         use tokio::task::JoinHandle;
         use tokio::time::Instant;
@@ -1232,6 +1257,80 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_hold_a_registration_permit_until_its_release_with_drive_ends() {
+            let mut fixture = Fixture::new(Registration::Take);
+            let permits = Arc::new(Semaphore::new(1));
+            fixture.service.execution_proof_registration_permits = Arc::clone(&permits);
+
+            let first = fixture
+                .service
+                .register_state_transition_execution_proof(&[13; 32], far_deadline())
+                .await
+                .expect("expected a registration");
+
+            // While it is held no other wait registers, and Drive is not asked
+            assert!(
+                fixture
+                    .service
+                    .register_state_transition_execution_proof(&[14; 32], far_deadline())
+                    .await
+                    .is_none()
+            );
+            assert_eq!(fixture.calls().len(), 1);
+
+            // Its release, which runs on after the wait, keeps the permit until Drive answers it
+            drop(first);
+            fixture.wait_for_calls(2).await;
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while permits.available_permits() == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("expected the permit back once the release ended");
+
+            assert!(
+                fixture
+                    .service
+                    .register_state_transition_execution_proof(&[14; 32], far_deadline())
+                    .await
+                    .is_some()
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_while_the_transaction_lookup_is_still_on_its_way() {
+            let tenderdash = NotFoundTenderdash::start(LOOKUP_TIME).await;
+            let mut fixture = Fixture::new(Registration::Take);
+            tenderdash.serve(&mut fixture.service, Duration::from_secs(30));
+            let request = Request::new(WaitForStateTransitionResultRequest {
+                version: Some(WaitRequestVersion::V0(
+                    WaitForStateTransitionResultRequestV0 {
+                        state_transition_hash: vec![12; 32],
+                        prove: true,
+                        request_user_balance: false,
+                        prove_state_before_block: true,
+                    },
+                )),
+            });
+
+            // The block can be finalized during the lookup, so Drive is asked before it answers
+            tokio::select! {
+                _ = fixture.service.wait_for_state_transition_result_impl(request) => {
+                    panic!("no event comes, and the wait lasts 30 s")
+                }
+                registered = tokio::time::timeout(LOOKUP_TIME / 2, fixture.wait_for_calls(1)) => {
+                    registered.expect("expected Drive to get the registration before the lookup answered");
+                }
+            }
+
+            assert!(matches!(
+                &fixture.calls()[0],
+                Call::Register(hash, _) if hash == &vec![12; 32]
+            ));
+        }
+
+        #[tokio::test]
         async fn should_make_no_pair_lookup_when_no_time_is_left_for_it() {
             let fixture = Fixture::serving(RecordingDrive {
                 calls: Default::default(),
@@ -1305,13 +1404,13 @@ mod tests {
 
         /// How long the slow Tenderdash stand-in takes to answer that it does not hold a
         /// transaction.
-        const LOOKUP_TIME: Duration = Duration::from_millis(800);
+        pub(super) const LOOKUP_TIME: Duration = Duration::from_millis(800);
         /// The wait's own timeout.
         const WAIT_TIMEOUT: Duration = Duration::from_millis(1_000);
 
         /// A Tenderdash stand-in that answers every call, after a while, that it holds no such
         /// transaction.
-        struct NotFoundTenderdash {
+        pub(super) struct NotFoundTenderdash {
             url: String,
             server: JoinHandle<()>,
         }
@@ -1323,7 +1422,7 @@ mod tests {
         }
 
         impl NotFoundTenderdash {
-            async fn start(lookup_time: Duration) -> Self {
+            pub(super) async fn start(lookup_time: Duration) -> Self {
                 let listener = TcpListener::bind("127.0.0.1:0")
                     .await
                     .expect("slow lookup Tenderdash listener");
@@ -1356,6 +1455,13 @@ mod tests {
             /// whose waits last `wait_timeout`.
             fn service(&self, wait_timeout: Duration) -> PlatformServiceImpl {
                 let mut service = PlatformServiceImpl::without_backends();
+                self.serve(&mut service, wait_timeout);
+                service
+            }
+
+            /// Points `service`'s Tenderdash lookups here, lets the test deliver its events, and
+            /// makes its waits last `wait_timeout`.
+            pub(super) fn serve(&self, service: &mut PlatformServiceImpl, wait_timeout: Duration) {
                 let tenderdash = TenderdashClient::with_test_base_url(self.url.clone());
                 service.websocket_client = tenderdash.websocket_client();
                 service.websocket_client.set_connected_for_test();
@@ -1363,7 +1469,6 @@ mod tests {
                 let mut config = (*service.config).clone();
                 config.dapi.state_transition_wait_timeout = wait_timeout.as_millis() as u64;
                 service.config = Arc::new(config);
-                service
             }
         }
 

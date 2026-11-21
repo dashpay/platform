@@ -1308,7 +1308,9 @@ mod tests {
     mod state_transition_execution_proofs {
         use super::*;
         use crate::platform_types::platform_state::PlatformStateV0Methods;
-        use crate::platform_types::state_transition_execution_proofs::MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK;
+        use crate::platform_types::state_transition_execution_proofs::{
+            MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK, MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK,
+        };
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
         use dpp::dash_to_credits;
         use dpp::identity::accessors::IdentityGettersV0;
@@ -1706,6 +1708,67 @@ mod tests {
             let pending = platform.prove_registered_state_transitions_before_block(&[raw]);
 
             assert!(pending.is_empty());
+        }
+
+        /// A registered identity update, whose kind is decoded and not proved.
+        fn registered_identity_update(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            nonce: u64,
+        ) -> Vec<u8> {
+            let identity_update: StateTransition =
+                IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
+                    identity_id: Identifier::from([5; 32]),
+                    revision: 1,
+                    nonce,
+                    ..Default::default()
+                })
+                .into();
+            let raw = identity_update
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+            platform
+                .state_transition_execution_proofs
+                .register(hash_single(&raw), lease_of(1_000 + nonce))
+                .expect("expected to register");
+            raw
+        }
+
+        #[tokio::test]
+        async fn should_decode_at_most_the_per_block_budget_of_registered_state_transitions() {
+            let mut platform = platform();
+            let alice = sender(&mut platform, 240);
+            let bob = sender(&mut platform, 241);
+            let app = FullAbciApplication::new(&platform.platform);
+
+            finalize_real_block(&platform, &app, 1, FIRST_BLOCK_TIME_MS, None)
+                .expect("the first block must finalize");
+
+            let transfer = transfer(&alice, bob.identity.id(), 1).await;
+            platform
+                .state_transition_execution_proofs
+                .register(hash_single(&transfer), LEASE)
+                .expect("expected to register");
+
+            // Within the budget, the transfer after the registered updates is proved
+            let mut within = (1..MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK as u64)
+                .map(|nonce| registered_identity_update(&platform, nonce))
+                .collect::<Vec<_>>();
+            within.push(transfer.clone());
+            assert_eq!(
+                platform
+                    .prove_registered_state_transitions_before_block(&within)
+                    .len(),
+                1
+            );
+
+            // Past it, the transfer is not even decoded
+            let mut past = (1..=MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK as u64)
+                .map(|nonce| registered_identity_update(&platform, nonce))
+                .collect::<Vec<_>>();
+            past.push(transfer);
+            assert!(platform
+                .prove_registered_state_transitions_before_block(&past)
+                .is_empty());
         }
 
         #[tokio::test]

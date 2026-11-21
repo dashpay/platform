@@ -2,7 +2,7 @@
 // file: drive.proto
 
 import * as jspb from "google-protobuf";
-import * as platform_v0_platform_pb from "./platform/v0/platform_pb";
+import * as platform_v0_platform_pb from "../../../platform/v0/web/platform_pb";
 
 export class GetProofsRequest extends jspb.Message {
   getStateTransition(): Uint8Array | string;

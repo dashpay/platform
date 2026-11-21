@@ -13,7 +13,6 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::bls::SecretKey;
-use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
@@ -300,7 +299,6 @@ fn verify_with(
     verify_state_transition_result_around_block(
         request,
         response,
-        Network::Testnet,
         PlatformVersion::latest(),
         provider,
     )

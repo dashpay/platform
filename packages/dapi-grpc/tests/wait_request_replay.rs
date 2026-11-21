@@ -1,5 +1,10 @@
 //! A wait for a state transition recorded before `prove_state_before_block` existed replays.
-#![cfg(feature = "mocks")]
+// The Platform messages exist with `platform` and a generated client, or on wasm32
+#![cfg(all(
+    feature = "mocks",
+    feature = "platform",
+    any(feature = "client", target_arch = "wasm32")
+))]
 
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{

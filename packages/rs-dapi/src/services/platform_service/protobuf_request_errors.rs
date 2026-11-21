@@ -3,7 +3,8 @@
 use super::block_proof::tenderdash_commit_json;
 use super::{
     MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
-    MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl, ShieldedProofFailureBudget,
+    MAX_EXECUTION_PROOF_REGISTRATIONS, MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl,
+    ShieldedProofFailureBudget,
 };
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
@@ -95,6 +96,9 @@ impl PlatformServiceImpl {
             subscriber_manager: Arc::new(SubscriberManager::new()),
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
+            execution_proof_registration_permits: Arc::new(Semaphore::new(
+                MAX_EXECUTION_PROOF_REGISTRATIONS,
             )),
             get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
             get_owner_transactions_permits: Arc::new(Semaphore::new(

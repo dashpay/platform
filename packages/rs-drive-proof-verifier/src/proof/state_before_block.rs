@@ -23,7 +23,6 @@ use dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, Proof, ResponseMetadata, WaitForStateTransitionResultResponse,
 };
-use dpp::dashcore::Network;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::proof_result::{
     StateTransitionProofOutcome, StateTransitionProofResult,
@@ -89,10 +88,13 @@ pub struct StateTransitionResultAroundBlock {
 /// The state before the block is read for credit transfers, top-ups and credit withdrawals of
 /// an identity. For the other kinds the answer is [`StateBeforeBlockVerification::NotReadable`],
 /// and the response's own proof is still verified and returned.
+///
+/// The network is the one `provider` answers quorum keys for: the two blocks are checked to be
+/// of one chain, and each signature against the key `provider` gives for its quorum, so a
+/// caller scopes `provider` to the network it means, as for [`FromProof`](super::FromProof).
 pub fn verify_state_transition_result_around_block<I, O>(
     request: I,
     response: O,
-    _network: Network,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<StateTransitionResultAroundBlock, Error>
@@ -325,7 +327,6 @@ mod tests {
         verify_state_transition_result_around_block(
             request,
             response,
-            Network::Testnet,
             PlatformVersion::latest(),
             &UnreachableContextProvider,
         )
