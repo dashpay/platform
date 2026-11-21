@@ -60,7 +60,6 @@ use dashcore::Address;
 use dpp::prelude::Identifier;
 use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::AddressState;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -516,7 +515,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             to_contact_id,
         )?;
         let payment_address = external_account
-            .next_address(Some(&contact_xpub), true)
+            .next_address(Some(&contact_xpub))
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
         Ok((payment_address, found_paid))
     }
@@ -785,12 +784,7 @@ pub(super) fn reserve_address(account: &mut ManagedCoreFundsAccount, address: &A
     let reserved_at = now_secs();
     let mut reserved = false;
     for pool in account.managed_account_type_mut().address_pools_mut() {
-        if let Some(info) = pool.address_info_mut(address) {
-            if info.is_available() {
-                info.state = AddressState::Reserved { at: reserved_at };
-                reserved = true;
-            }
-        }
+        reserved |= pool.reserve(address, reserved_at);
     }
     reserved
 }
