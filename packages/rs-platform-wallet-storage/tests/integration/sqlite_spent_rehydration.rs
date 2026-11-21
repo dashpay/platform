@@ -302,7 +302,7 @@ fn two_account_wallet() -> (Wallet, ManagedWalletInfo, Address, Address) {
     let (wallet, mut info, first) = wallet_with_receive_address();
     let xpub = wallet.accounts.standard_bip32_accounts[&0].account_xpub;
     let account = info.accounts.standard_bip32_accounts.get_mut(&0).unwrap();
-    let second = account.next_receive_address(Some(&xpub), true).unwrap();
+    let second = account.next_receive_address(Some(&xpub)).unwrap();
     (wallet, info, first, second)
 }
 
@@ -636,7 +636,7 @@ async fn should_keep_replayed_output_only_in_its_owning_account() {
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
     let xpub = wallet.accounts.standard_bip32_accounts[&0].account_xpub;
     let account = info.accounts.standard_bip32_accounts.get_mut(&0).unwrap();
-    let address = account.next_receive_address(Some(&xpub), true).unwrap();
+    let address = account.next_receive_address(Some(&xpub)).unwrap();
     // vout 1: no pool row and no replay owner, so the first-account fallback
     // must hold. vout 2: tracked only by a contact's watch-only chain.
     let (unowned, contact) = (foreign_address(0x61), foreign_address(0x62));
@@ -699,10 +699,12 @@ async fn should_drop_replay_credit_for_contact_only_script() {
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
     let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
     let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
-    let [contact, ours]: [Address; 2] = account
-        .next_receive_addresses(Some(&xpub), 2, true)
-        .unwrap()
-        .try_into()
+    // Reserving hands out two distinct receive addresses.
+    let contact = account
+        .next_receive_address_and_reserve(Some(&xpub), 0)
+        .unwrap();
+    let ours = account
+        .next_receive_address_and_reserve(Some(&xpub), 0)
         .unwrap();
     let funding = spend_of(
         &[outside(16)],
@@ -1249,9 +1251,10 @@ async fn should_guard_a_restored_claim_in_an_account_registered_after_load() {
         with_late.accounts.standard_bip44_accounts[&7].clone()
     };
     let late_managed = || {
-        let mut managed = ManagedCoreFundsAccount::from_account(&late_account);
+        let mut managed =
+            ManagedCoreFundsAccount::from_account(&late_account).expect("managed late account");
         let address = managed
-            .next_receive_address(Some(&late_account.account_xpub), true)
+            .next_receive_address(Some(&late_account.account_xpub))
             .unwrap();
         (managed, address)
     };

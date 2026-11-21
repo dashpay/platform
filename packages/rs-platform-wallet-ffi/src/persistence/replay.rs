@@ -827,7 +827,7 @@ mod tests {
                 .standard_bip44_accounts
                 .get_mut(&0)
                 .unwrap()
-                .next_receive_address(Some(&xpub), true)
+                .next_receive_address(Some(&xpub))
                 .unwrap();
             let mut lock = transaction(90);
             lock.version = 3;

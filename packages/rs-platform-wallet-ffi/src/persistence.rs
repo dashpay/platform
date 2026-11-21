@@ -16234,7 +16234,7 @@ mod tests {
             .standard_bip44_accounts
             .get_mut(&0)
             .expect("bip44 account")
-            .next_receive_address(Some(&xpub), true)
+            .next_receive_address(Some(&xpub))
             .expect("receive address");
         (wallet, xpub_bytes, address)
     }

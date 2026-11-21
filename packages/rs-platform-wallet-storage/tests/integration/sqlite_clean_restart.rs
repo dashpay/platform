@@ -66,7 +66,7 @@ async fn clean_restart(recordless_winner: bool, finalized: bool, pending: bool) 
         .standard_bip44_accounts
         .get_mut(&0)
         .unwrap()
-        .next_receive_address(Some(&xpub), true)
+        .next_receive_address(Some(&xpub))
         .unwrap();
     let wallet = manager.get_wallet(&wallet_id).unwrap();
     persister

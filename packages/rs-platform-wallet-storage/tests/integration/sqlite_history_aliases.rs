@@ -1015,18 +1015,17 @@ async fn should_keep_one_literal_legacy_funding_record_when_its_script_is_owned(
             .unwrap();
         let mut pools = account.managed_account_type_mut().address_pools_mut();
         let pool = &mut pools[0];
+        // The next underived index: `insert` refuses an entry leaving a gap,
+        // and gap maintenance then advances past the installed entry.
+        let index = pool.highest_generated().map_or(0, |highest| highest + 1);
         let info = AddressInfo::new_from_script_pubkey_p2pkh(
-            script.clone(),
-            100,
-            pool.base_path.clone(),
+            script,
+            index,
+            pool.base_path().clone(),
             Network::Testnet,
         )
         .unwrap();
-        pool.addresses.insert(100, info);
-        pool.address_index.insert(address.clone(), 100);
-        pool.script_pubkey_index.insert(script, 100);
-        // Gap maintenance must advance past the manually installed entry.
-        pool.highest_generated = Some(pool.highest_generated.unwrap_or(0).max(100));
+        pool.insert(info).unwrap();
         assert!(account.contains_address(&address));
     }
     replay_recorded_history(

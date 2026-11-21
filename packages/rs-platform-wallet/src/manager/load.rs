@@ -1853,14 +1853,25 @@ mod idempotent_load_tests {
             .await
             .unwrap());
         assert!(manager.spv_manager.is_started());
-        let revision_before = manager.wallet_manager.read().await.monitor_revision();
+        let watched_before = manager
+            .wallet_manager
+            .read()
+            .await
+            .monitored_addresses()
+            .len();
         manager.spv_manager.install_history_fixture(&fixture).await;
         manager.load_from_persistor().await.unwrap();
         let visible = manager.get_wallet(&wallet_id).await.unwrap();
         assert_eq!(visible.balance().total(), 100_000);
         assert!(visible.core().is_current_generation().await);
         assert!(
-            manager.wallet_manager.read().await.monitor_revision() > revision_before,
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .monitored_addresses()
+                .len()
+                > watched_before,
             "successful explicit retry must register scripts with the running SPV client"
         );
         assert_eq!(manager.list_wallet_ids_blocking(), vec![wallet_id]);
@@ -4978,6 +4989,7 @@ mod masternode_collateral_load_tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
+                    recorded_history: Default::default(),
                 },
             );
             Ok(ClientStartState {
