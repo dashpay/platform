@@ -133,6 +133,32 @@ impl MockDashPlatformSdk {
         self
     }
 
+    /// [Self::set_response_height_for] for the response to `query`, a fetch of many `O`
+    /// answered from an expectation.
+    pub fn set_response_height_for_many<K, O, Q, R>(&mut self, query: Q, height: u64) -> &mut Self
+    where
+        K: Ord,
+        O: FetchMany<K, R>,
+        Q: Query<<O as FetchMany<K, R>>::Query>,
+        R: FromIterator<(K, Option<O>)>
+            + MockResponse
+            + FromProof<
+                <O as FetchMany<K, R>>::Query,
+                Request = <O as FetchMany<K, R>>::Query,
+                Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
+            > + Sync
+            + Send
+            + Default,
+    {
+        let (rich, _) = self
+            .encode_rich_to_wire::<Q, <O as FetchMany<K, R>>::Query, <O as FetchMany<K, R>>::Request>(
+                query,
+                <O as FetchMany<K, R>>::prepare_query,
+            );
+        self.response_heights_for.insert(Key::new(&rich), height);
+        self
+    }
+
     pub(crate) fn set_sdk(&mut self, sdk: Sdk) {
         self.sdk.store(Some(Arc::new(sdk)));
     }
