@@ -13,8 +13,8 @@ authors = [
 
 [dependencies]
 secp256k1 = { workspace = true }
-# Reach dash-pkc through rust-dashcore so its base-sdk rev is the only one in the
-# lockfile; a second rev would duplicate dash-pkc and break `cargo vendor`.
+# Reach dash-pkc through rust-dashcore so the crates.io release it requires is the
+# only one in the lockfile; a second version would duplicate dash-pkc.
 dashcore-crypto = { workspace = true, optional = true }
 # Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.

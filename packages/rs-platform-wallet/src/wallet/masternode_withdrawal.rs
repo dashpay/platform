@@ -225,7 +225,7 @@ impl PlatformWallet {
                     acct.managed_account_type()
                         .address_pools()
                         .iter()
-                        .filter_map(|p| p.highest_generated)
+                        .filter_map(|p| p.highest_generated())
                         .max()
                 })
                 .map(|h| h.saturating_add(1))
@@ -800,7 +800,7 @@ async fn broadcast_masternode_withdrawal(
     identity_id: Identifier,
     amount_credits: u64,
 ) -> Result<WithdrawalOutcome, PlatformWalletError> {
-    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     settle_masternode_withdrawal(identity_id, amount_credits, delivery, || {
         state_transition
             .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(sdk, None)

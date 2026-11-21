@@ -158,7 +158,7 @@ mod tests {
             .first_bip44_managed_account_mut()
             .expect("bip44 managed account");
         let change = account
-            .next_change_address(Some(&ctx.xpub), true)
+            .next_change_address(Some(&ctx.xpub))
             .expect("bip44 change address");
         let mut tx = Transaction::dummy(&change, 0..1, &[2_000]);
         tx.output.push(TxOut {
