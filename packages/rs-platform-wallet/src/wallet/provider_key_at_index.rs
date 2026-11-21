@@ -74,10 +74,18 @@
 
 use dashcore::bls_sig_utils::BlsScheme;
 use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
+use dashcore::Address;
+use dashcore::PubkeyHash;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
-use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
+use key_wallet::error::Error as KeyWalletError;
+use key_wallet::managed_account::address_pool::{
+    AddressPoolType, AddressState, PublicKeyType, DEFAULT_PROVIDER_KEY_WINDOW,
+};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, ProviderKeyRole};
+use key_wallet::{AddressInfo, AddressPool, Network};
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -808,6 +816,44 @@ impl PlatformWallet {
             }
         }
     }
+
+    /// This wallet's `role` key whose hash160 is `key_hash160`, as its index
+    /// and derivation path; `None` when the wallet does not hold it.
+    ///
+    /// Seedless: delegates to key-wallet's
+    /// [`ManagedWalletInfo::find_provider_key`], which checks the key at
+    /// `index_hint` first, then the provider pool, then
+    /// [`DEFAULT_PROVIDER_KEY_WINDOW`] keys past it. A hint is verified, never
+    /// trusted, so it finds a key past that window.
+    ///
+    /// Blocking (wallet-manager `blocking_read` — never call from an async
+    /// runtime worker).
+    ///
+    /// # Errors
+    /// - [`PlatformWalletError::WalletNotFound`] if the wallet was removed.
+    /// - [`PlatformWalletError::ProviderKeyLookup`] if key-wallet refuses
+    ///   the lookup, such as for an `index_hint` in the hardened range.
+    pub fn find_provider_key(
+        &self,
+        role: ProviderKeyRole,
+        key_hash160: &[u8; 20],
+        index_hint: Option<u32>,
+    ) -> Result<Option<(u32, DerivationPath)>, PlatformWalletError> {
+        let state = self.state_blocking();
+        let wallet = state
+            .try_wallet()
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        state
+            .core_wallet
+            .find_provider_key(
+                wallet,
+                role,
+                &PubkeyHash::from_byte_array(*key_hash160),
+                index_hint,
+                DEFAULT_PROVIDER_KEY_WINDOW,
+            )
+            .map_err(|source| PlatformWalletError::ProviderKeyLookup { role, source })
+    }
 }
 
 #[cfg(test)]
@@ -1347,5 +1393,292 @@ mod tests {
                 "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
             );
         }
+    }
+}
+
+#[cfg(all(test, feature = "eddsa"))]
+mod platform_node_pool_tests {
+    use super::*;
+    use crate::changeset::provider_key_account::provider_key_test_wallet;
+    use key_wallet::Network;
+
+    #[test]
+    fn should_restore_used_bookkeeping_when_inserting_a_used_platform_node_key() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let key = derive_platform_node_public_keys(&wallet, Network::Testnet, 8)
+            .expect("platform-node derivation")
+            .pop()
+            .expect("derived key");
+        let payload = dashcore::address::Payload::PubkeyHash(
+            dashcore::PubkeyHash::from_byte_array(key.node_id),
+        );
+        let address = dashcore::Address::new(Network::Testnet, payload);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        insert_platform_node_key(
+            &mut wallet_info,
+            Network::Testnet,
+            key.index,
+            address,
+            key.public_key,
+            true,
+        )
+        .expect("restore used platform-node row");
+
+        let account = wallet_info
+            .accounts
+            .provider_platform_keys
+            .as_ref()
+            .expect("managed platform-node account");
+        let pool = account
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
+            .cloned()
+            .expect("AbsentHardened pool");
+        let restored = pool.addresses().get(&key.index).expect("restored entry");
+        assert!(restored.is_used());
+        assert_eq!(pool.highest_used(), Some(key.index));
+    }
+
+    #[test]
+    fn should_refuse_a_platform_node_key_without_a_managed_account() {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        wallet_info.accounts.provider_platform_keys = None;
+        let address = dashcore::Address::new(
+            Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                [0x42; 20],
+            )),
+        );
+
+        let err = insert_platform_node_key(
+            &mut wallet_info,
+            Network::Testnet,
+            0,
+            address.clone(),
+            [0x24; 32],
+            false,
+        )
+        .expect_err("an unmanaged account must not report a successful insert");
+
+        assert!(matches!(err, PlatformNodePoolError::NoManagedAccount));
+    }
+
+    #[test]
+    fn should_clear_stale_used_bookkeeping_when_a_platform_node_key_is_downgraded() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 8)
+            .expect("platform-node derivation");
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        for key in [&keys[2], &keys[7]] {
+            let payload = dashcore::address::Payload::PubkeyHash(
+                dashcore::PubkeyHash::from_byte_array(key.node_id),
+            );
+            let address = dashcore::Address::new(Network::Testnet, payload);
+            insert_platform_node_key(
+                &mut wallet_info,
+                Network::Testnet,
+                key.index,
+                address.clone(),
+                key.public_key,
+                true,
+            )
+            .expect("insert used platform-node row");
+        }
+
+        for (key, expected_highest) in [(&keys[7], Some(keys[2].index)), (&keys[2], None)] {
+            let payload = dashcore::address::Payload::PubkeyHash(
+                dashcore::PubkeyHash::from_byte_array(key.node_id),
+            );
+            let address = dashcore::Address::new(Network::Testnet, payload);
+            insert_platform_node_key(
+                &mut wallet_info,
+                Network::Testnet,
+                key.index,
+                address.clone(),
+                key.public_key,
+                false,
+            )
+            .expect("downgrade platform-node row to available");
+
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_ref()
+                .expect("managed platform-node account");
+            let pool = account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
+                .expect("AbsentHardened pool");
+            assert!(!pool.addresses()[&key.index].is_used());
+            assert_eq!(pool.highest_used(), expected_highest);
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_platform_node_key_without_a_hardened_pool() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 1)
+            .expect("platform-node derivation");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = info
+            .accounts
+            .provider_platform_keys
+            .as_mut()
+            .expect("managed platform-node account must exist");
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            *pool = key_wallet::AddressPool::new_without_generation(
+                pool.base_path().clone(),
+                AddressPoolType::Absent,
+                pool.gap_limit(),
+                pool.network(),
+            );
+        }
+
+        let key = &keys[0];
+        let address = dashcore::Address::new(
+            Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                key.node_id,
+            )),
+        );
+        let result = insert_platform_node_key(
+            &mut info,
+            Network::Testnet,
+            key.index,
+            address.clone(),
+            key.public_key,
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(PlatformNodePoolError::MissingHardenedPool)
+        ));
+    }
+}
+
+#[cfg(test)]
+mod find_provider_key_tests {
+    use super::*;
+    use crate::test_support::sync_test_platform_wallet;
+    use dashcore::hashes::hash160;
+
+    /// An index well past the lookup window and the test wallet's pools.
+    const FAR_INDEX: u32 = 300;
+
+    fn key_hash(wallet: &PlatformWallet, kind: ProviderKeyKind, index: u32) -> [u8; 20] {
+        let derived = wallet
+            .derive_provider_key_at_index(kind, index, None, false)
+            .expect("public provider key");
+        hash160::Hash::hash(&derived.public_key_bytes).to_byte_array()
+    }
+
+    fn path(wallet: &PlatformWallet, account_type: AccountType, index: u32) -> DerivationPath {
+        account_type
+            .derivation_path(wallet.network())
+            .expect("account path")
+            .child(ChildNumber::from_normal_idx(index).expect("normal index"))
+    }
+
+    const ROLES: [(ProviderKeyRole, ProviderKeyKind, AccountType); 2] = [
+        (
+            ProviderKeyRole::Owner,
+            ProviderKeyKind::Owner,
+            AccountType::ProviderOwnerKeys,
+        ),
+        (
+            ProviderKeyRole::Voting,
+            ProviderKeyKind::Voting,
+            AccountType::ProviderVotingKeys,
+        ),
+    ];
+
+    #[test]
+    fn should_find_owner_and_voting_keys_by_their_hash() {
+        let wallet = sync_test_platform_wallet();
+        for (role, kind, account_type) in ROLES {
+            let hash = key_hash(&wallet, kind, 7);
+            assert_eq!(
+                wallet.find_provider_key(role, &hash, None).expect("lookup"),
+                Some((7, path(&wallet, account_type, 7))),
+                "{role:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_find_a_key_past_the_window_only_through_a_matching_hint() {
+        let wallet = sync_test_platform_wallet();
+        for (role, kind, account_type) in ROLES {
+            let hash = key_hash(&wallet, kind, FAR_INDEX);
+            assert_eq!(
+                wallet.find_provider_key(role, &hash, None).expect("lookup"),
+                None,
+                "{role:?} without a hint"
+            );
+            assert_eq!(
+                wallet
+                    .find_provider_key(role, &hash, Some(FAR_INDEX - 1))
+                    .expect("lookup"),
+                None,
+                "{role:?} with a wrong hint"
+            );
+            assert_eq!(
+                wallet
+                    .find_provider_key(role, &hash, Some(FAR_INDEX))
+                    .expect("lookup"),
+                Some((FAR_INDEX, path(&wallet, account_type, FAR_INDEX))),
+                "{role:?} with its hint"
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_find_an_owner_key_among_the_voting_keys() {
+        let wallet = sync_test_platform_wallet();
+        let owner_hash = key_hash(&wallet, ProviderKeyKind::Owner, 3);
+        assert_eq!(
+            wallet
+                .find_provider_key(ProviderKeyRole::Voting, &owner_hash, Some(3))
+                .expect("lookup"),
+            None
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_hardened_index_hint() {
+        let wallet = sync_test_platform_wallet();
+        let hash = key_hash(&wallet, ProviderKeyKind::Owner, 0);
+        let result = wallet.find_provider_key(ProviderKeyRole::Owner, &hash, Some(1 << 31));
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::ProviderKeyLookup {
+                    role: ProviderKeyRole::Owner,
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
     }
 }
