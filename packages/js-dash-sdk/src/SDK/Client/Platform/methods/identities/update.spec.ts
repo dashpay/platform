@@ -24,9 +24,11 @@ describe('Platform', () => {
           },
         };
         const identity: any = { getId: () => identityId };
+        const keyToDisable: any = { getId: () => 2 };
+        const privateKeys: any = {};
 
         await expect(
-          update.call(platformMock, identity, { disable: [{ getId: () => 2 }] }, {}),
+          update.call(platformMock, identity, { disable: [keyToDisable] }, privateKeys),
         ).to.be.rejectedWith(refusal);
 
         expect(await nonceManager.getIdentityNonce(identityId)).to.equal(BigInt(5));
