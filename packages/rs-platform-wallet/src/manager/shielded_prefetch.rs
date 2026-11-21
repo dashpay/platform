@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::Cell;
 use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
@@ -33,6 +34,28 @@ struct Shared {
     sealed: AtomicBool,
     slot: Mutex<Slot>,
     released: Notify,
+}
+
+thread_local! {
+    static POLLING: Cell<*const Shared> = const { Cell::new(std::ptr::null()) };
+}
+
+struct Polling(*const Shared);
+
+impl Polling {
+    fn enter(shared: &Shared) -> Self {
+        Self(
+            POLLING
+                .try_with(|polling| polling.replace(shared))
+                .unwrap_or(std::ptr::null()),
+        )
+    }
+}
+
+impl Drop for Polling {
+    fn drop(&mut self) {
+        let _ = POLLING.try_with(|polling| polling.set(self.0));
+    }
 }
 
 struct NotifyOnDrop<'a>(&'a Notify);
@@ -106,12 +129,15 @@ impl Shared {
                 slot.future = None;
             }
             if let Some(future) = slot.future.as_mut() {
-                match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(cx))) {
-                    Ok(Poll::Pending) => {
+                let polling = Polling::enter(self);
+                let poll = catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(cx)));
+                drop(polling);
+                match poll {
+                    Ok(Poll::Pending) if !self.sealed.load(Ordering::SeqCst) => {
                         slot.task = Some(cx.waker().clone());
                         return Poll::Pending;
                     }
-                    Ok(Poll::Ready(())) => {}
+                    Ok(_) => {}
                     Err(panic) => {
                         let message = panic_message(panic.as_ref());
                         tracing::warn!(message, "shielded prefetch task panicked");
@@ -127,6 +153,12 @@ impl Shared {
 
     fn seal(&self) {
         self.sealed.store(true, Ordering::SeqCst);
+    }
+
+    fn is_polling_on_this_thread(&self) -> bool {
+        POLLING
+            .try_with(|polling| std::ptr::eq(polling.get(), self))
+            .unwrap_or(false)
     }
 
     fn finish(slot: &mut Slot) -> WorkerStatus {
@@ -195,10 +227,15 @@ impl ShieldedPrefetch {
     }
 }
 
+/// A drop made from inside the prefetch's own callback cannot wait for that
+/// callback: it only seals, and the poll that is running the callback drops
+/// the future before it releases the slot.
 impl Drop for ShieldedPrefetch {
     fn drop(&mut self) {
         self.shared.seal();
-        self.shared.with_slot(Shared::finish);
+        if !self.shared.is_polling_on_this_thread() {
+            self.shared.with_slot(Shared::finish);
+        }
     }
 }
 
@@ -392,6 +429,28 @@ mod tests {
             })
             .await;
         releaser.join().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_not_deadlock_when_dropped_from_its_own_callback() {
+        let tasks = ShieldedPrefetch::default();
+        let shared = Arc::clone(&tasks.shared);
+        let (owner_tx, owner_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        assert!(spawn(&tasks, async move {
+            let owner: ShieldedPrefetch = owner_rx.recv().unwrap();
+            drop(owner);
+            dropped_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        }));
+        owner_tx.send(tasks).unwrap();
+        tokio::task::spawn_blocking(move || dropped_rx.recv_timeout(Duration::from_secs(5)))
+            .await
+            .unwrap()
+            .expect("drop inside the callback waited on its own poll");
+        while shared.with_slot(|slot| slot.future.is_some()) {
+            tokio::task::yield_now().await;
+        }
     }
 
     #[test]

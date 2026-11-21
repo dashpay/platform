@@ -865,6 +865,10 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 /// for a concurrent start/stop and in-flight client queries, and the shielded
 /// prefetch cancel-and-join barrier. Always returns `Success` for a live handle.
 ///
+/// Returns `ErrorInvalidHandle` for a handle that is unknown or that another
+/// destroy call already consumed. Only the call that returns `Success` has
+/// waited for the teardown, so only that result permits freeing host contexts.
+///
 /// Shielded prefetches can call an SDK context provider whose host context is
 /// borrowed. Shutdown seals their admission, cancels their tasks, and joins
 /// them before returning. A synchronous context-provider callback already
@@ -883,35 +887,39 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
-    if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
-        // Before the teardown's SPV stop: an SPV start that is still
-        // constructing its client checks this under the runtime's shutdown
-        // lock and, finding its owner gone, stops that client instead of
-        // publishing a run loop nothing could stop (see
-        // `platform_wallet_manager_spv_start`).
-        manager.spv().release_owner();
-        // Run the full lifecycle shutdown to completion, not just the
-        // platform-address sync. `shutdown()` is idempotent, so this is
-        // safe even if the host already stopped some sync managers
-        // before calling destroy. Shielded prefetches are cancelled and joined
-        // without a timeout because their SDK context provider can borrow a
-        // host context that the host frees when destroy returns.
-        let report = runtime().block_on(manager.shutdown());
-        if !report.all_clean() {
-            // A worker panicked, exceeded its join budget, or stayed
-            // detached. Its persister/event-handler Arcs keep the host
-            // callback contexts alive until it actually exits. Borrowed SDK
-            // contexts are protected by shutdown's mandatory prefetch join.
-            tracing::warn!(
-                ?report,
-                "platform wallet manager shutdown did not join every worker \
-                 cleanly; stragglers keep their callback contexts alive and \
-                 release them on exit"
-            );
-        }
-        // Host contexts release with their last reference, which may outlive
-        // this manager through a wallet handle, worker or in-flight operation.
+    let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    // Before the teardown's SPV stop: an SPV start that is still
+    // constructing its client checks this under the runtime's shutdown
+    // lock and, finding its owner gone, stops that client instead of
+    // publishing a run loop nothing could stop (see
+    // `platform_wallet_manager_spv_start`).
+    manager.spv().release_owner();
+    // Run the full lifecycle shutdown to completion, not just the
+    // platform-address sync. `shutdown()` is idempotent, so this is
+    // safe even if the host already stopped some sync managers
+    // before calling destroy. Shielded prefetches are cancelled and joined
+    // without a timeout because their SDK context provider can borrow a
+    // host context that the host frees when destroy returns.
+    let report = runtime().block_on(manager.shutdown());
+    if !report.all_clean() {
+        // A worker panicked, exceeded its join budget, or stayed
+        // detached. Its persister/event-handler Arcs keep the host
+        // callback contexts alive until it actually exits. Borrowed SDK
+        // contexts are protected by shutdown's mandatory prefetch join.
+        tracing::warn!(
+            ?report,
+            "platform wallet manager shutdown did not join every worker \
+             cleanly; stragglers keep their callback contexts alive and \
+             release them on exit"
+        );
     }
+    // Host contexts release with their last reference, which may outlive
+    // this manager through a wallet handle, worker or in-flight operation.
     PlatformWalletFFIResult::ok()
 }
 
@@ -1279,8 +1287,9 @@ mod tests {
         );
 
         // Destroying a stale handle must not double-release.
-        let result = unsafe { platform_wallet_manager_destroy(handle) };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let mut result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
         assert_eq!(persistence_releases.load(Ordering::SeqCst), 1);
         assert_eq!(event_releases.load(Ordering::SeqCst), 1);
     }

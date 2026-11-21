@@ -226,10 +226,16 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         let early = destroyed_rx.recv_timeout(Duration::from_millis(100));
+        let concurrent = code_of(unsafe { platform_wallet_manager_destroy(handle) });
         release_tx.send(()).expect("release synchronous callback");
         assert!(
             matches!(early, Err(mpsc::RecvTimeoutError::Timeout)),
             "destroy returned during the borrowed callback: {early:?}"
+        );
+        assert_eq!(
+            concurrent,
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "a destroy that lost the race must not report a completed teardown"
         );
         assert_eq!(
             destroyed_rx
