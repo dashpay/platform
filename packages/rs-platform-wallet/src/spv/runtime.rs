@@ -19,7 +19,7 @@ use dashcore::{PubkeyHash, QuorumHash, Transaction};
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::{
     BroadcastResult, ClientConfig, DashSpvClient, EventHandler, MasternodeListNotCurrentError,
-    SyncProgress, SyncState,
+    SyncProgress, SyncState, MASTERNODE_LIST_TIP_TOLERANCE,
 };
 
 use key_wallet_manager::WalletManager;
@@ -52,18 +52,12 @@ fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
     QuorumHash::from_byte_array(internal_order)
 }
 
-/// How many blocks the newest masternode list may trail the header tip
-/// while SPV still counts as synced.
-///
-/// dash-spv requests a diff for each new tip, so the list normally trails
-/// the tip only while that diff is in flight, by a block or two. It keeps
-/// masternode sync `Synced` when those updates fail, so a list further
-/// behind no longer follows the chain: it misses every quorum mined since.
-const MASTERNODE_LIST_TIP_LAG: u32 = 2;
-
 /// Whether `progress` reports header and masternode-list synchronization
 /// complete, with the newest masternode list at most
-/// [`MASTERNODE_LIST_TIP_LAG`] blocks behind the header tip.
+/// [`MASTERNODE_LIST_TIP_TOLERANCE`] blocks behind the header tip, as
+/// dash-spv's current-list rule allows. dash-spv keeps masternode sync
+/// `Synced` when later list updates fail, so a list further behind no longer
+/// follows the chain: it misses every quorum mined since.
 fn is_synced_to_tip(progress: &SyncProgress) -> bool {
     progress
         .headers()
@@ -72,7 +66,7 @@ fn is_synced_to_tip(progress: &SyncProgress) -> bool {
             masternodes.state() == SyncState::Synced
                 && masternodes
                     .current_height()
-                    .saturating_add(MASTERNODE_LIST_TIP_LAG)
+                    .saturating_add(MASTERNODE_LIST_TIP_TOLERANCE)
                     >= masternodes.block_header_tip_height()
         })
 }
@@ -418,9 +412,16 @@ impl SpvRuntime {
     /// header and masternode-list synchronization complete, with the newest
     /// masternode list at the header tip or just behind it.
     ///
+    /// A cheap progress check, not dash-spv's current-list rule
+    /// ([`DashSpvClient::current_masternode_list`]): it does not check the
+    /// header tip's age, and header sync leaves `Synced` only when every peer
+    /// is lost, so after the host sleeps it can return `true` while
+    /// [`Self::current_masternode_list`] refuses the list as stale.
+    ///
     /// A failed sync keeps its last progress, and masternode sync stays
     /// `Synced` when later list updates fail, so "synced" alone would vouch
     /// for a masternode list that no longer follows the chain.
+    // TODO: use a dash-spv check of the current-list rule that does not copy the list, once rust-dashcore offers one.
     pub async fn is_ready(&self) -> bool {
         if !self.is_running() {
             return false;
@@ -1205,7 +1206,7 @@ mod tests {
 
     use super::{
         classify_spv_send_error, is_synced_to_tip, quorum_lookup_key, SpvRuntime,
-        MASTERNODE_LIST_TIP_LAG,
+        MASTERNODE_LIST_TIP_TOLERANCE,
     };
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
@@ -1746,11 +1747,14 @@ mod tests {
         let tip = 1_100_000;
         assert!(is_synced_to_tip(&synced_progress(tip, tip)));
         assert!(
-            is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG)),
+            is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_TOLERANCE)),
             "a tip diff in flight must not drop readiness"
         );
         assert!(
-            !is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG - 1)),
+            !is_synced_to_tip(&synced_progress(
+                tip,
+                tip - MASTERNODE_LIST_TIP_TOLERANCE - 1
+            )),
             "a list behind the header tip must not be ready"
         );
         assert!(!is_synced_to_tip(&synced_progress(tip, 0)));
