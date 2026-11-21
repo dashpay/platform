@@ -80,12 +80,14 @@ fn key(id: u32, level: SecurityLevel) -> IdentityPublicKey {
     .into()
 }
 
-/// The identity on Platform at revision 1: MASTER 0, HIGH 1, CRITICAL 2.
+/// The identity on Platform at revision 1: MASTER 0, HIGH 1, CRITICAL 2 and
+/// CRITICAL 5, which keeps key 2 disableable (DIP-11).
 fn identity_at_revision_1() -> Identity {
     let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
     identity.add_public_key(key(0, SecurityLevel::MASTER));
     identity.add_public_key(key(1, SecurityLevel::HIGH));
     identity.add_public_key(key(2, SecurityLevel::CRITICAL));
+    identity.add_public_key(key(5, SecurityLevel::CRITICAL));
     identity.set_revision(1);
     identity.set_balance(BALANCE_BEFORE);
     identity
@@ -610,11 +612,11 @@ async fn should_authorize_an_update_with_a_master_key_added_elsewhere() {
     let wallet = wallet.identity();
 
     let signer = RecordingSigner::for_keys(&[4]);
-    update_until_broadcast(wallet, vec![], vec![1], &signer).await;
+    update_until_broadcast(wallet, vec![], vec![2], &signer).await;
 
     let (signing_key, signed) = signer.authorization();
     assert_eq!(signing_key, 4);
-    assert_eq!(signed, signable_update(3, &[], &[1]));
+    assert_eq!(signed, signable_update(3, &[], &[2]));
 }
 
 /// The cache already holds an update at revision 2 and the node answering
