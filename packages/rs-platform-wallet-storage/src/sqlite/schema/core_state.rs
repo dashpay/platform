@@ -154,7 +154,10 @@ pub fn apply(
                      refresh the record itself to update its confirmation height"
                 );
             }
-            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
+            // An output the wallet did not credit (`utxo_credit_verdicts`) is
+            // one its record names but the wallet does not hold: never unspent.
+            let uncredited = cs.utxo_credit_verdicts.contains_key(&utxo.outpoint);
+            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, uncredited)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
