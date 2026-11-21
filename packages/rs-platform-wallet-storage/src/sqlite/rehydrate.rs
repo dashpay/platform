@@ -17,6 +17,7 @@ use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::registered_collaterals;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -234,6 +235,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   address whose funds were since spent is not re-handed-out as fresh.
 /// - **InstantSend locks**: not applied here; stored lock rows mark no coin
 ///   until the shared history replay verifies them against SPV evidence.
+/// - **Locked outpoints** (masternode collateral and outpoints locked by
+///   hand): every `outpoint_locks` entry is handed to
+///   `ManagedWalletInfo::lock_outpoint` (an unlock to `unlock_outpoint`), so
+///   a locked coin comes back in the locked balance and out of coin
+///   selection, including one whose coin arrives only after the load.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
@@ -315,6 +321,24 @@ pub fn apply_persisted_core_state(
     // (FFI path) so the asset-lock proof CL-from-metadata fallback fires at launch.
     if let Some(cl) = &core.last_applied_chain_lock {
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
+    }
+
+    // Locked outpoints first: a lock needs no coin behind it, and the
+    // `update_balance()` below sets every restored coin's flag from the lock
+    // set, whatever flag the coin was restored with.
+    for (outpoint, locked) in &core.outpoint_locks {
+        if *locked {
+            wallet_info.lock_outpoint(*outpoint);
+        } else {
+            wallet_info.unlock_outpoint(outpoint);
+        }
+    }
+
+    // A masternode registration among the stored records locks its
+    // collateral too: a database from before locks were stored has no lock
+    // rows to restore it from.
+    for collateral in registered_collaterals(&core.records) {
+        wallet_info.lock_outpoint(collateral);
     }
 
     // Restore the UTXO set into the funds accounts that derive each unspent
@@ -4649,6 +4673,9 @@ mod tests {
             let deep = utxo(2, &coinjoin_address(&wallet, 100));
             for used in [HashMap::new(), ownerless(&[&placed.address, &deep.address])] {
                 let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                // A coin's lock flag follows the wallet's lock set, so the
+                // lock goes there and not only on the coin.
+                info.lock_outpoint(placed.outpoint);
                 load_into(
                     &mut info,
                     &manifest,

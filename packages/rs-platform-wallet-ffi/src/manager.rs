@@ -10,17 +10,19 @@ use crate::handle::*;
 use crate::persistence::{
     ApplyReplayEffectsFn, FFIPersister, FreeCoreHistoryForAccountingFn, FreeCoreInstantLockFn,
     FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn, FreeReplayClaimsFn,
-    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
-    LoadCoreHistoryForAccountingFn, LoadCoreInstantLockFn, LoadIdentityBalanceBlockTimeFn,
-    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadReplayClaimsFn,
-    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn,
-    PersistCoreHistoryAccountedFn, PersistCoreInstantLockFn, PersistDpnsNameStatesFn,
-    PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
+    FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn, LoadAssetLockOperationIdFn,
+    LoadAssetLockShieldedRecipientFn, LoadCoreHistoryForAccountingFn, LoadCoreInstantLockFn,
+    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
+    LoadPrivateContactScanStateWalletsFn, LoadReplayClaimsFn, LoadTrackedMasternodesFn,
+    LoadWalletLockedOutpointsFn, PersistAssetLockOperationIdFn,
+    PersistAssetLockShieldedRecipientFn, PersistCoreHistoryAccountedFn, PersistCoreInstantLockFn,
+    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistTransactionAccountingFn,
-    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
-    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
-    ReplayWalletFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetOutpointLocksFn,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
+    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks, ReplayWalletFn,
+    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -409,6 +411,18 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
+        wallet_changeset_outpoint_locks: slot!(
+            on_persist_wallet_changeset_outpoint_locks_fn,
+            PersistWalletChangesetOutpointLocksFn
+        ),
+        load_wallet_locked_outpoints: slot!(
+            on_load_wallet_locked_outpoints_fn,
+            LoadWalletLockedOutpointsFn
+        ),
+        load_wallet_locked_outpoints_free: slot!(
+            on_load_wallet_locked_outpoints_free_fn,
+            FreeWalletLockedOutpointsFn
         ),
         persist_transaction_accounting: slot!(
             on_persist_transaction_accounting_fn,

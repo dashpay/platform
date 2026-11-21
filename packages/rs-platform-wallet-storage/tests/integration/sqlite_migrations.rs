@@ -506,7 +506,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // Check the purge before V022 intentionally removes recordless unspent rows.
+    // Check the purge before V023 intentionally removes recordless unspent rows.
     mig::runner()
         .set_target(refinery::Target::Version(21))
         .run(&mut conn)
@@ -577,7 +577,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         )
         .unwrap(),
         0,
-        "V022 rebuilds recordless unspent outputs through rescan"
+        "V023 rebuilds recordless unspent outputs through rescan"
     );
 }
 

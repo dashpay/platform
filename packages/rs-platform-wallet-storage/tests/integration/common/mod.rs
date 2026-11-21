@@ -51,7 +51,8 @@ pub fn fresh_recovery_persister(
     (p, tmp, path)
 }
 
-/// Create a test directory that satisfies the persister's Unix parent policy.
+/// Create an owner-only test directory, so the persister logs no
+/// insecure-ancestor warning for it.
 pub fn secure_tempdir() -> std::io::Result<tempfile::TempDir> {
     let tmp = tempfile::tempdir()?;
     #[cfg(unix)]

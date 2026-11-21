@@ -1,6 +1,6 @@
 #![cfg(feature = "sqlite")]
 
-//! A wallet whose mined Core history was wiped (what V022 does to an older store)
+//! A wallet whose mined Core history was wiped (what V023 does to an older store)
 //! rebuilds it by rescanning from its birth height. These tests drive that
 //! rescan through the real manager, event adapter, store and load replay.
 
@@ -82,7 +82,7 @@ impl Chain {
     }
 }
 
-/// A registered wallet with no Core history, as V022 leaves it, and its first
+/// A registered wallet with no Core history, as V023 leaves it, and its first
 /// receive address.
 fn wiped_wallet(persister: &SqlitePersister) -> (WalletId, Address) {
     let (wallet, _, address) = wallet_with_receive_address();
@@ -149,6 +149,7 @@ fn rewind_v021(path: &std::path::Path) {
         .unwrap()
         .execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DROP TABLE core_locked_outpoints; \
              DROP INDEX idx_core_utxos_funding; DROP INDEX idx_core_utxos_claimant; \
              DELETE FROM refinery_schema_history WHERE version >= 21;",
         )
@@ -197,7 +198,7 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
     }
 }
 
-/// R3: a wallet upgraded from V018. V022 drops its mined Core history but keeps
+/// R3: a wallet upgraded from V018. V023 drops its mined Core history but keeps
 /// `last_processed_height` and the ChainLock, both above that history, so the
 /// rescan replays every historical block below a ChainLock the loaded wallet
 /// already holds: key-wallet's ChainLocked path, not the ordinary block one.
@@ -251,13 +252,13 @@ async fn should_rebuild_accounting_when_an_upgraded_wallet_rescans_below_its_cha
     }
     assert_eq!(sync_state(), (Some(500), Some(500), Some(400)));
 
-    // `rescan` opens through `SqlitePersister::open`, so V021 and V022 run first.
+    // `rescan` opens through `SqlitePersister::open`, so V021 and V023 run first.
     let state = rescan(&path, wallet_id, &chain.blocks()).await;
 
     assert_eq!(
         sync_state(),
         (Some(500), Some(0), Some(400)),
-        "V022 rewinds only the filter checkpoint"
+        "V023 rewinds only the filter checkpoint"
     );
     for tx in [&chain.funding, &chain.spend, &chain.lock] {
         assert!(
@@ -494,7 +495,7 @@ fn manager_of(
 }
 
 /// R4: a V019 store holding unmined spends of a confirmed funding. A block
-/// rescan redelivers the funding but never the spends, so V022 keeps their
+/// rescan redelivers the funding but never the spends, so V023 keeps their
 /// evidence for the load to authenticate: an InstantSend-locked spend and a
 /// signed pending send keep their inputs reserved, a forged claim is
 /// released. Nothing is redelivered from the mempool or InstantSend.

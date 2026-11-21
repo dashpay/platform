@@ -117,7 +117,7 @@ fn scan_observations(
             Ok(false) => {}
             Err(error) if policy == LoadPolicy::Recovery && !error.is_transient() => {
                 tracing::warn!(wallet_id = %hex::encode(wallet_id), %error,
-                    "V022 preserved wallet history because finality evidence is unreadable");
+                    "V023 preserved wallet history because finality evidence is unreadable");
                 return Ok(true);
             }
             Err(error) => return Err(error),
@@ -126,7 +126,7 @@ fn scan_observations(
     Ok(false)
 }
 
-/// Validate every birth height before V022 can discard mined history.
+/// Validate every birth height before V023 can discard mined history.
 fn rewind_sync_heights(tx: &Transaction<'_>, policy: LoadPolicy) -> Result<(), WalletStorageError> {
     let mut stmt = tx.prepare("SELECT rowid, birth_height FROM wallets")?;
     let mut rows = stmt.query([])?;
@@ -142,7 +142,7 @@ fn rewind_sync_heights(tx: &Transaction<'_>, policy: LoadPolicy) -> Result<(), W
                 LoadPolicy::Strict => return Err(error),
                 LoadPolicy::Recovery => {
                     tracing::warn!(rowid, error_kind = error.error_kind_str(), %error,
-                        "V022 rewound the sync watermark to zero for an invalid birth height; wallet metadata is unchanged");
+                        "V023 rewound the sync watermark to zero for an invalid birth height; wallet metadata is unchanged");
                     (0, true)
                 }
             },

@@ -101,20 +101,6 @@ pub enum WalletStorageError {
         source: std::io::Error,
     },
 
-    /// A database ancestor is writable without the sticky bit or is owned by
-    /// neither the current user nor root, allowing replacement despite `0600`.
-    ///
-    /// Names the offending ancestor rather than the database's own parent: the
-    /// walk runs to `/`, and a nine-component path leaves the user nothing to
-    /// act on otherwise.
-    #[error("{}", crate::parent_permissions::insecure_ancestor_message("database", .ancestor, .reason))]
-    InsecureParentDir {
-        /// The ancestor that was refused, not the database's parent.
-        ancestor: PathBuf,
-        /// Which of the two conditions fired; they need different remediations.
-        reason: crate::parent_permissions::InsecureAncestor,
-    },
-
     /// `delete_wallet` (or another wallet-id-keyed operation) was
     /// called with an id that has no matching `wallets` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
@@ -761,7 +747,6 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
-            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
@@ -878,7 +863,6 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
-            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
@@ -958,7 +942,6 @@ impl WalletStorageError {
             Self::SchemaVersionUnsupported { .. } => "schema_version_unsupported",
             Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
-            Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::WalletNotFound { .. } => "wallet_not_found",
             Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",

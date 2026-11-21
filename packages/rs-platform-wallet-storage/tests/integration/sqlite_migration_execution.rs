@@ -159,7 +159,7 @@ fn transaction_height_and_blob(conn: &Connection, wallet: &WalletId) -> (Option<
     .unwrap()
 }
 
-/// Assert V022 rewinds mined Core data while retaining wallet and identity state.
+/// Assert V023 rewinds mined Core data while retaining wallet and identity state.
 fn assert_migrated_data(conn: &Connection) {
     let full = wid(FULL_WALLET);
     assert_eq!(
@@ -186,7 +186,7 @@ fn assert_migrated_data(conn: &Connection) {
         "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
         &full,
     );
-    assert_eq!(utxos, 0, "V022 rescans mined outputs from birth");
+    assert_eq!(utxos, 0, "V023 rescans mined outputs from birth");
     assert_eq!(
         count(
             conn,
@@ -194,7 +194,7 @@ fn assert_migrated_data(conn: &Connection) {
             &full
         ),
         0,
-        "V022 rescans mined history with no retained unmined claims"
+        "V023 rescans mined history with no retained unmined claims"
     );
     let (synced, birth): (i64, i64) = conn.query_row(
         "SELECT s.synced_height, w.birth_height FROM core_sync_state s JOIN wallets w USING(wallet_id) WHERE wallet_id=?1",
@@ -259,7 +259,7 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
     let record: key_wallet::managed_account::transaction_record::TransactionRecord =
         platform_wallet_storage::sqlite::schema::blob::decode(&original_transaction.1).unwrap();
     assert_eq!(record.height(), Some(200));
-    // Pin preservation through V021 before the deliberate V022 rescan.
+    // Pin preservation through V021 before the deliberate V023 rescan.
     {
         let mut conn = Connection::open(&path).unwrap();
         mig::runner()
@@ -393,7 +393,7 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
             &wallet_id
         ),
         0,
-        "V022 removes the height-only record when its funding is rescanned"
+        "V023 removes the height-only record when its funding is rescanned"
     );
 }
 

@@ -85,6 +85,9 @@ pub struct HistoryReplay {
     pub sweeps: Vec<SweepBatch>,
     /// Materialized inputs withheld for final asset locks, requiring a durable hold.
     pub withheld_asset_lock_inputs: BTreeMap<OutPoint, Txid>,
+    /// Outpoints the replayed checks newly locked (masternode collateral), for
+    /// the load to store with its other locks.
+    pub locked_outpoints: Vec<OutPoint>,
     /// Recovery views cannot settle or resend even when proof is available.
     pub read_only: bool,
 }
@@ -757,6 +760,7 @@ pub async fn replay_recorded_history_with_evidence(
     }
     stage_recorded_spent_inputs(wallet_info, &replay, &placed);
 
+    let mut locked_outpoints = Vec::new();
     for stored in &replay {
         let result = wallet_info
             .check_core_transaction(
@@ -767,6 +771,7 @@ pub async fn replay_recorded_history_with_evidence(
                 false,
             )
             .await;
+        locked_outpoints.extend(result.locked_outpoints);
         if !result.swept_transactions.is_empty() {
             swept.extend(result.swept_transactions.iter().copied());
             sweeps.push(replay_sweep(
@@ -936,6 +941,7 @@ pub async fn replay_recorded_history_with_evidence(
         defeated,
         sweeps,
         withheld_asset_lock_inputs: BTreeMap::new(),
+        locked_outpoints,
         read_only: false,
     })
 }

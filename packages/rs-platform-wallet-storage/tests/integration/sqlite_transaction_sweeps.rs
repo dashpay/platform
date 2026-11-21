@@ -3774,7 +3774,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     migrations::run(&mut conn).unwrap();
     assert!(
         !row_exists(&conn, &w, &input),
-        "V022 rescans mined sweep holds"
+        "V023 rescans mined sweep holds"
     );
 }
 

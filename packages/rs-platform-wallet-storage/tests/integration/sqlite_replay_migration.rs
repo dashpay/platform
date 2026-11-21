@@ -16,7 +16,8 @@ fn rewind_to_v021(path: &std::path::Path) {
     rusqlite::Connection::open(path)
         .unwrap()
         .execute_batch(
-            "DROP INDEX IF EXISTS idx_core_utxos_funding;
+            "DROP TABLE core_locked_outpoints;
+         DROP INDEX IF EXISTS idx_core_utxos_funding;
          DROP INDEX IF EXISTS idx_core_utxos_claimant;
          DELETE FROM refinery_schema_history WHERE version >= 22;",
         )
@@ -404,7 +405,7 @@ async fn should_roll_back_the_entire_rescan_on_a_storage_write_failure() {
 }
 
 #[tokio::test]
-async fn should_keep_v021_accounting_archive_when_v022_rescans_the_record() {
+async fn should_keep_v021_accounting_archive_when_v023_rescans_the_record() {
     use platform_wallet_storage::sqlite::schema::blob;
     let (persister, _directory, path) = fresh_persister();
     let (mut wallet, mut info, address) = wallet_with_receive_address();
@@ -431,6 +432,7 @@ async fn should_keep_v021_accounting_archive_when_v022_rescans_the_record() {
         .unwrap();
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals;
+        DROP TABLE core_locked_outpoints;
         DROP INDEX idx_core_utxos_funding; DROP INDEX idx_core_utxos_claimant;
         DELETE FROM refinery_schema_history WHERE version>=21;",
     )
@@ -448,7 +450,7 @@ async fn should_keep_v021_accounting_archive_when_v022_rescans_the_record() {
         .unwrap();
     assert_eq!(
         archived, original,
-        "V022 must preserve V021's original bytes after clearing the live record"
+        "V023 must preserve V021's original bytes after clearing the live record"
     );
     let counts: (u32, u32, u32) = conn.query_row("SELECT (SELECT count(*) FROM core_transactions),
         (SELECT count(*) FROM core_transaction_inputs),

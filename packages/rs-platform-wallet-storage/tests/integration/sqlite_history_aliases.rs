@@ -46,6 +46,7 @@ fn migrated_fixture(
         let conn = persister.lock_conn_for_test();
         conn.execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DROP TABLE core_locked_outpoints; \
              DROP INDEX idx_core_utxos_funding; DROP INDEX idx_core_utxos_claimant; \
              DELETE FROM refinery_schema_history WHERE version >= 21;",
         )
