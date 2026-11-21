@@ -1777,8 +1777,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        // Parse response to read proof and metadata
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        // A response without a proof is refused before the transition is decoded
+        response.proof().or(Err(Error::NoProofInResult))?;
 
         let state_transition = StateTransition::deserialize_from_bytes_untrusted(
             &request.state_transition,
@@ -1787,45 +1787,63 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
-        let block_info = BlockInfo {
-            time_ms: mtd.time_ms,
-            height: mtd.height,
-            core_height: mtd.core_chain_locked_height,
-            // Response metadata is not part of the authenticated state ID.
-            // Current proof consumers do not require an epoch, so do not
-            // propagate an unsigned selector into the verification context.
-            epoch: Default::default(),
-        };
-
-        let query_platform_version = proof_query_platform_version(mtd)?;
-
-        // Transition families whose proof cannot be bound to execution
-        // (balance top-ups, credit transfers/withdrawals, address funds
-        // movements, shields, no-history token operations) yield a verified
-        // snapshot of the affected keys at the proof's block, tagged
-        // `AffectedState` on the `StateTransitionProofOutcome`. The tag is
-        // preserved here so SDK callers can enforce their required
-        // guarantee: strict waits reject snapshots, snapshot waits treat
-        // them as height-pinned state, never as execution evidence.
-        let (root_hash, outcome) =
-            with_contract_lookup(provider, platform_version, |contracts_provider_fn| {
-                Drive::verify_state_transition_was_executed_with_proof_for_query_version(
-                    &state_transition,
-                    &block_info,
-                    supported_grovedb_proof_bytes(proof)?,
-                    contracts_provider_fn,
-                    query_platform_version,
-                    platform_version,
-                )
-                .map_drive_error(proof, mtd)
-            })?;
-
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        Ok((Some(outcome), mtd.clone(), proof.clone()))
+        let (outcome, metadata, proof) = verify_state_transition_proof_outcome(
+            &state_transition,
+            &response,
+            platform_version,
+            provider,
+        )?;
+        Ok((Some(outcome), metadata, proof))
     }
+}
+
+/// Verifies the proof of a wait's response for a state transition the caller has decoded, as
+/// [`FromProof`] does for [`StateTransitionProofOutcome`].
+fn verify_state_transition_proof_outcome(
+    state_transition: &StateTransition,
+    response: &platform::WaitForStateTransitionResultResponse,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(StateTransitionProofOutcome, ResponseMetadata, Proof), Error> {
+    let proof = response.proof().or(Err(Error::NoProofInResult))?;
+    let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+    let block_info = BlockInfo {
+        time_ms: mtd.time_ms,
+        height: mtd.height,
+        core_height: mtd.core_chain_locked_height,
+        // Response metadata is not part of the authenticated state ID.
+        // Current proof consumers do not require an epoch, so do not
+        // propagate an unsigned selector into the verification context.
+        epoch: Default::default(),
+    };
+
+    let query_platform_version = proof_query_platform_version(mtd)?;
+
+    // Transition families whose proof cannot be bound to execution
+    // (balance top-ups, credit transfers/withdrawals, address funds
+    // movements, shields, no-history token operations) yield a verified
+    // snapshot of the affected keys at the proof's block, tagged
+    // `AffectedState` on the `StateTransitionProofOutcome`. The tag is
+    // preserved here so SDK callers can enforce their required
+    // guarantee: strict waits reject snapshots, snapshot waits treat
+    // them as height-pinned state, never as execution evidence.
+    let (root_hash, outcome) =
+        with_contract_lookup(provider, platform_version, |contracts_provider_fn| {
+            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                state_transition,
+                &block_info,
+                supported_grovedb_proof_bytes(proof)?,
+                contracts_provider_fn,
+                query_platform_version,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)
+        })?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    Ok((outcome, mtd.clone(), proof.clone()))
 }
 
 impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {

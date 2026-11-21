@@ -1,5 +1,6 @@
 use crate::clients::drive_client::DriveChannel;
 use crate::error::DapiError;
+use crate::server::grpc::{GRPC_REQUEST_TIME_SAFETY_MARGIN, parse_grpc_timeout};
 use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
@@ -43,6 +44,13 @@ impl PlatformServiceImpl {
         &self,
         request: Request<WaitForStateTransitionResultRequest>,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
+        // The ingress layer ends the call at the client's grpc-timeout, less a margin. The wait
+        // ends no later than that, and its optional calls take their time from what is left.
+        let call_deadline = request
+            .metadata()
+            .get("grpc-timeout")
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_grpc_timeout);
         let inner = request.into_inner();
         let v0 = match inner.version {
             Some(wait_for_state_transition_result_request::Version::V0(v0)) => v0,
@@ -80,6 +88,12 @@ impl PlatformServiceImpl {
 
         let span = tracing::trace_span!("wait_for_state_transition_result", tx = %hash_hex);
 
+        let deadline = wait_deadline(
+            Instant::now(),
+            Duration::from_millis(self.config.dapi.state_transition_wait_timeout),
+            call_deadline,
+        );
+
         async move {
             trace!("waitForStateTransitionResult called for hash: {}", hash_hex);
 
@@ -106,10 +120,7 @@ impl PlatformServiceImpl {
                 Ok(tx) => {
                     debug!(tx = hash_hex, "Transaction already exists, returning it");
                     return self
-                        .build_response_from_existing_tx(
-                            tx,
-                            options,
-                        )
+                        .build_response_from_existing_tx(tx, options, deadline)
                         .await;
                 }
                 Err(error) => {
@@ -117,11 +128,9 @@ impl PlatformServiceImpl {
                 }
             };
 
-            // Wait for transaction event with timeout. The deadline counts from here, so the
-            // optional registration below spends this wait's time, not more.
-            let timeout_duration =
-                Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
-            let deadline = Instant::now() + timeout_duration;
+            // Wait for transaction event until the deadline, which counted from the start of the
+            // call, so the optional registration below spends this wait's time, not more.
+            let timeout_duration = deadline.saturating_duration_since(Instant::now());
 
             // The transition is not in a block yet, so Drive can still prove the state before
             // its block: that proof can only be made before the block is committed. The
@@ -190,6 +199,7 @@ impl PlatformServiceImpl {
         &self,
         tx_response: crate::clients::tenderdash_client::TxResponse,
         options: WaitOptions,
+        deadline: Instant,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
         let mut response_v0 =
             wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
@@ -231,8 +241,7 @@ impl PlatformServiceImpl {
                 tx_data,
                 options,
                 u64::try_from(tx_response.height).unwrap_or(0),
-                // Nothing waited for the transition, so the answer has no deadline of its own
-                None,
+                Some(deadline),
             )
             .await;
         }
@@ -562,6 +571,15 @@ struct WaitOptions {
 /// goes on as it does without them, with the rest of its own deadline.
 const EXECUTION_PROOF_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// When a wait ends: after the configured wait timeout, or earlier when the client's
+/// grpc-timeout, less the margin the ingress layer keeps, ends the call first.
+fn wait_deadline(now: Instant, wait_timeout: Duration, grpc_timeout: Option<Duration>) -> Instant {
+    let call = grpc_timeout
+        .map(|timeout| timeout.saturating_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN))
+        .unwrap_or(wait_timeout);
+    now + wait_timeout.min(call)
+}
+
 /// The least time worth giving an optional call to Drive; with less left it is not made.
 const MIN_EXECUTION_PROOF_CALL_BUDGET: Duration = Duration::from_millis(10);
 
@@ -577,7 +595,8 @@ fn execution_proof_call_budget(deadline: Option<Instant>, share: u32) -> Option<
     (budget >= MIN_EXECUTION_PROOF_CALL_BUDGET).then_some(budget)
 }
 
-/// A lease no other registration has: a random half drawn once per process, and a count.
+/// A lease no other registration has: an issuer half drawn at random once per process, and a
+/// sequence number that increases for every lease, as Drive's low-water marks expect.
 fn new_registration_lease() -> [u8; 16] {
     static PROCESS: OnceLock<u64> = OnceLock::new();
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -755,8 +774,6 @@ mod tests {
         enum Registration {
             Take,
             Refuse,
-            /// Take it, and answer only after this long
-            TakeAfter(Duration),
             /// Take it, and never answer
             Stall,
         }
@@ -825,7 +842,6 @@ mod tests {
                 match self.registration {
                     Registration::Take => {}
                     Registration::Refuse => return Err(Status::resource_exhausted("full")),
-                    Registration::TakeAfter(delay) => tokio::time::sleep(delay).await,
                     Registration::Stall => pending::<()>().await,
                 }
                 Ok(Response::new(
@@ -1044,18 +1060,19 @@ mod tests {
 
         #[tokio::test]
         async fn should_release_a_registration_cancelled_before_drive_answered_it() {
-            let fixture = Fixture::new(Registration::TakeAfter(Duration::from_millis(500)));
-            let service = &fixture.service;
+            let fixture = Fixture::new(Registration::Stall);
+            let mut registration = Box::pin(
+                fixture
+                    .service
+                    .register_state_transition_execution_proof(&[8; 32], far_deadline()),
+            );
 
-            // Drive has taken the registration and not answered yet when the wait ends
-            let wait = async {
-                let _registration = service
-                    .register_state_transition_execution_proof(&[8; 32], far_deadline())
-                    .await
-                    .expect("expected time to register");
-                pending::<()>().await;
-            };
-            let _ = tokio::time::timeout(Duration::from_millis(100), wait).await;
+            // Cancel the wait once Drive has taken the registration and not answered it
+            tokio::select! {
+                _ = &mut registration => panic!("Drive never answers this registration"),
+                _ = fixture.wait_for_calls(1) => {}
+            }
+            drop(registration);
             fixture.wait_for_calls(2).await;
 
             let calls = fixture.calls();
@@ -1229,6 +1246,36 @@ mod tests {
                     .register_state_transition_execution_proof(&[12; 32], Instant::now())
                     .await
                     .is_none()
+            );
+        }
+    }
+
+    mod deadline {
+        use super::super::wait_deadline;
+        use crate::server::grpc::GRPC_REQUEST_TIME_SAFETY_MARGIN;
+        use std::time::Duration;
+        use tokio::time::Instant;
+
+        #[test]
+        fn should_end_a_wait_at_its_own_timeout_without_a_shorter_call_deadline() {
+            let now = Instant::now();
+            let wait = Duration::from_secs(30);
+
+            assert_eq!(wait_deadline(now, wait, None), now + wait);
+            assert_eq!(
+                wait_deadline(now, wait, Some(Duration::from_secs(60))),
+                now + wait
+            );
+        }
+
+        #[test]
+        fn should_end_a_wait_before_the_ingress_layer_ends_the_call() {
+            let now = Instant::now();
+            let grpc_timeout = Duration::from_secs(5);
+
+            assert_eq!(
+                wait_deadline(now, Duration::from_secs(30), Some(grpc_timeout)),
+                now + grpc_timeout - GRPC_REQUEST_TIME_SAFETY_MARGIN
             );
         }
     }

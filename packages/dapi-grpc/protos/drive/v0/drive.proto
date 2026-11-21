@@ -12,8 +12,10 @@ service DriveInternal {
   // transition's block is finalized. Only credit transfers, top-ups and credit
   // withdrawals of an identity are proved. Each registration holds a lease the
   // caller releases with unregisterStateTransitionExecutionProof when it stops
-  // waiting. RESOURCE_EXHAUSTED when Drive already holds as many registrations
-  // as it keeps.
+  // waiting. A lease is sent in one registration only: a caller that does not
+  // learn whether its registration arrived releases the lease and, to register
+  // again, takes a new one. RESOURCE_EXHAUSTED when Drive already holds as many
+  // registrations as it keeps.
   rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
       returns (RegisterStateTransitionExecutionProofResponse);
   // Undoes one registration of a state transition. A proof Drive already made
@@ -39,8 +41,12 @@ message GetProofsResponse {
 message RegisterStateTransitionExecutionProofRequest {
   // The hash of the state transition's bytes, its transaction hash in a block.
   bytes state_transition_hash = 1;
-  // 16 bytes the caller picks, unique to its wait. Registering with a lease
-  // that is held, or that was already released, changes nothing.
+  // 16 bytes the caller picks for one wait: 8 bytes naming the caller, the
+  // same in all its leases, then a big-endian 8-byte number it increases for
+  // every lease. Registering with a lease that is held, or whose release
+  // arrived first, changes nothing. A lease registered again after its
+  // release is taken again and held until it expires, so a caller never
+  // reuses one.
   bytes lease = 2;
 }
 
@@ -50,7 +56,8 @@ message UnregisterStateTransitionExecutionProofRequest {
   // The hash of the state transition's bytes, its transaction hash in a block.
   bytes state_transition_hash = 1;
   // The lease the registration was taken with. Releasing it ends only that
-  // registration, and releasing it before or again is allowed.
+  // registration. A release that arrives before its registration makes Drive
+  // refuse that registration, and releasing again is allowed.
   bytes lease = 2;
 }
 

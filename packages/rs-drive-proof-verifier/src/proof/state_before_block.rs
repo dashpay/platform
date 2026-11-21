@@ -15,7 +15,7 @@
 //! The pair shows the change of the block, not of one transition: another transition of the
 //! same block that touched the same keys is part of it.
 
-use super::{proof_query_platform_version, FromProof};
+use super::{proof_query_platform_version, verify_state_transition_proof_outcome};
 use crate::error::MapGroveDbError;
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error};
@@ -66,8 +66,8 @@ pub enum StateBeforeBlockVerification {
 /// node reports executed it when the response carries it.
 #[derive(Debug)]
 pub struct StateTransitionResultAroundBlock {
-    /// The state the response's own proof holds, as [`FromProof`] returns it for
-    /// [`StateTransitionProofOutcome`].
+    /// The state the response's own proof holds, as [`FromProof`](super::FromProof) returns it
+    /// for [`StateTransitionProofOutcome`].
     pub outcome: StateTransitionProofOutcome,
     /// The block the response's own proof is of. When `state_before_block` is present, it is the
     /// block the node reports executed the transition. The quorum signature covers its height,
@@ -78,8 +78,9 @@ pub struct StateTransitionResultAroundBlock {
     pub state_before_block: StateBeforeBlockVerification,
 }
 
-/// Verifies a wait's response as [`FromProof`] does for [`StateTransitionProofOutcome`], and
-/// the state before the response's block when the response carries it.
+/// Verifies a wait's response as [`FromProof`](super::FromProof) does for
+/// [`StateTransitionProofOutcome`], and the state before the response's block when the response
+/// carries it. The state transition is decoded once for both proofs.
 ///
 /// Both proofs are verified against the quorum signature of their own block, the two blocks
 /// must be of the same chain, and they must follow one another. The transition's inclusion in
@@ -91,7 +92,7 @@ pub struct StateTransitionResultAroundBlock {
 pub fn verify_state_transition_result_around_block<I, O>(
     request: I,
     response: O,
-    network: Network,
+    _network: Network,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<StateTransitionResultAroundBlock, Error>
@@ -143,12 +144,13 @@ where
         error: e.to_string(),
     })?;
 
-    let (outcome, metadata, _) = <StateTransitionProofOutcome as FromProof<
-        BroadcastStateTransitionRequest,
-    >>::maybe_from_proof_with_metadata(
-        request, response, network, platform_version, provider
+    // Decoded once, for the response's own proof and for the state before the block
+    let (outcome, metadata, _) = verify_state_transition_proof_outcome(
+        &state_transition,
+        &response,
+        platform_version,
+        provider,
     )?;
-    let outcome = outcome.ok_or(Error::NotFound)?;
 
     let state_before_block = match before {
         None => StateBeforeBlockVerification::NotInResponse,
@@ -194,7 +196,11 @@ fn verify_state_before_block(
         return Ok(StateBeforeBlockVerification::NotReadable);
     }
 
-    // The producer's version must be one this build knows, as for the response's own proof
+    // The same refusal as for the response's own proof: a producer version this build does not
+    // have is refused unless it is newer than the newest one, which is read with the newest
+    // tables. The proof of the state before the block needs no producer's tables: its balance
+    // and revision queries are built with the caller's rules, and a layout this build does not
+    // know fails against the signed root rather than authenticating other data.
     proof_query_platform_version(&metadata)?;
 
     let Some((root_hash, state)) = Drive::verify_state_transition_prior_state_with_proof(

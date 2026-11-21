@@ -21,7 +21,7 @@ const UNARY_TIMEOUT_SECS: u64 = 15;
 /// Timeouts for streaming requests - sync with envoy config if changed there
 const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
-const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
+pub(crate) const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
 
 impl DapiServer {
     /// Start the unified gRPC server that exposes both Platform and Core services.
@@ -215,8 +215,11 @@ where
 
 /// Parse inbound grpc-timeout header into Duration (RFC 8681 style units)
 fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
-    let value = headers.get("grpc-timeout")?;
-    let as_str = value.to_str().ok()?;
+    parse_grpc_timeout(headers.get("grpc-timeout")?.to_str().ok()?)
+}
+
+/// Parse a grpc-timeout value into Duration (RFC 8681 style units)
+pub(crate) fn parse_grpc_timeout(as_str: &str) -> Option<Duration> {
     if as_str.is_empty() {
         return None;
     }
